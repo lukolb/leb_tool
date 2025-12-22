@@ -1,0 +1,26 @@
+<?php
+declare(strict_types=1);
+require __DIR__ . '/../bootstrap.php';
+require __DIR__ . '/_layout.php';
+require_admin();
+
+$u = current_user();
+render_admin_header('Admin – Dashboard');
+?>
+<div class="card">
+  <div class="row-actions">
+    <span class="pill"><?=h($u['display_name'])?> · <?=h($u['role'])?></span>
+    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Verwaltung</h2>
+  <div class="actions">
+    <a class="btn primary" href="<?=h(url('admin/users.php'))?>">Nutzer & Klassen</a>
+    <a class="btn secondary" href="<?=h(url('admin/settings.php'))?>">Settings / Branding</a>
+    <a class="btn secondary" href="<?= url('admin/templates.php') ?>">Templates (PDF Upload & Felder auslesen)</a>
+  </div>
+  <p class="muted">Als nächstes: Templates hochladen → Felder auslesen → Reports pro Kind erzeugen.</p>
+</div>
+<?php render_admin_footer(); ?>
