@@ -40,6 +40,7 @@ render_teacher_header('Lehrkraft – Übersicht');
 
   <div class="actions">
     <a class="btn primary" href="<?=h(url('teacher/classes.php'))?>">Meine Klassen</a>
+    <a class="btn secondary" href="<?=h(url('teacher/entry.php'))?>">Eingaben ausfüllen</a>
   </div>
 </div>
 

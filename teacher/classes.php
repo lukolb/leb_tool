@@ -126,6 +126,7 @@ render_teacher_header('Klassen');
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
+                <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>">Eingaben</a>
                 <form method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
@@ -142,4 +143,5 @@ render_teacher_header('Klassen');
   <?php endif; ?>
 </div>
 
-<?php render_teacher_footer(); ?>
+<?php
+render_teacher_footer();
