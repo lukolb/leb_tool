@@ -1,0 +1,145 @@
+<?php
+// teacher/classes.php
+declare(strict_types=1);
+
+require __DIR__ . '/../bootstrap.php';
+require __DIR__ . '/_layout.php';
+require_teacher();
+
+$pdo = db();
+$u = current_user();
+$userId = (int)($u['id'] ?? 0);
+
+$err = '';
+$ok = '';
+
+function class_display(array $c): string {
+  $label = (string)($c['label'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $name = (string)($c['name'] ?? '');
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
+}
+
+// POST: toggle active/inactive (teachers can archive their classes; admins can toggle all)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  csrf_verify();
+  $action = (string)($_POST['action'] ?? '');
+
+  try {
+    if ($action === 'toggle_active') {
+      $classId = (int)($_POST['class_id'] ?? 0);
+      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+
+      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+
+      $st = $pdo->prepare("SELECT is_active FROM classes WHERE id=?");
+      $st->execute([$classId]);
+      $row = $st->fetch(PDO::FETCH_ASSOC);
+      if (!$row) throw new RuntimeException('Klasse nicht gefunden.');
+
+      $new = ((int)$row['is_active'] === 1) ? 0 : 1;
+      $pdo->prepare("UPDATE classes SET is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
+          ->execute([$new, $new, $classId]);
+
+      audit('teacher_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
+      $ok = $new ? 'Klasse aktiviert.' : 'Klasse inaktiv gesetzt.';
+    }
+  } catch (Throwable $e) {
+    $err = $e->getMessage();
+  }
+}
+
+$showInactive = (int)($_GET['show_inactive'] ?? 0) === 1;
+
+// Load classes assigned to teacher (admins see all)
+if (($u['role'] ?? '') === 'admin') {
+  $where = $showInactive ? '' : 'WHERE c.is_active=1';
+  $st = $pdo->query(
+    "SELECT c.*
+     FROM classes c
+     $where
+     ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+  );
+  $classes = $st->fetchAll(PDO::FETCH_ASSOC);
+} else {
+  $where = $showInactive ? '' : 'AND c.is_active=1';
+  $st = $pdo->prepare(
+    "SELECT c.*
+     FROM classes c
+     INNER JOIN user_class_assignments uca ON uca.class_id=c.id
+     WHERE uca.user_id=? $where
+     ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+  );
+  $st->execute([$userId]);
+  $classes = $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Group by school_year
+$grouped = [];
+foreach ($classes as $c) {
+  $y = (string)$c['school_year'];
+  if (!isset($grouped[$y])) $grouped[$y] = [];
+  $grouped[$y][] = $c;
+}
+
+render_teacher_header('Klassen');
+?>
+
+<div class="card">
+  <div class="row-actions">
+    <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
+  </div>
+
+  <h1 style="margin-top:0;">Klassen</h1>
+
+  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+
+  <div class="actions" style="justify-content:flex-start;">
+    <?php if ($showInactive): ?>
+      <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Inaktive ausblenden</a>
+    <?php else: ?>
+      <a class="btn secondary" href="<?=h(url('teacher/classes.php?show_inactive=1'))?>">Inaktive anzeigen</a>
+    <?php endif; ?>
+  </div>
+
+  <?php if (!$grouped): ?>
+    <div class="alert">Keine Klassen zugeordnet.</div>
+  <?php else: ?>
+    <?php foreach ($grouped as $year => $items): ?>
+      <details open style="margin-top:10px;">
+        <summary style="cursor:pointer; font-weight:700; padding:10px 0;"><?=h($year)?> (<?=count($items)?>)</summary>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Klasse</th>
+              <th>Status</th>
+              <th>Aktion</th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($items as $c): ?>
+            <tr>
+              <td><?=h(class_display($c))?></td>
+              <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
+              <td style="display:flex; gap:8px; flex-wrap:wrap;">
+                <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
+                <form method="post" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="toggle_active">
+                  <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                  <button class="btn secondary" type="submit"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </details>
+    <?php endforeach; ?>
+  <?php endif; ?>
+</div>
+
+<?php render_teacher_footer(); ?>

@@ -32,7 +32,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'role' => $u['role'],
         ];
         audit('login', (int)$u['id']);
-        redirect('admin/index.php');
+        if (($u['role'] ?? '') === 'admin') {
+          redirect('admin/index.php');
+        }
+        redirect('teacher/index.php');
       }
     }
   } catch (Throwable $e) {

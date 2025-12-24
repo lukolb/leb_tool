@@ -224,15 +224,16 @@ tr.flash {
               </a>
             </td>
             <td style="white-space:nowrap;">
-              <button
-                class="btn secondary js-extract"
-                type="button"
-                data-template-id="<?=h((string)$t['id'])?>"
-                data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">
-                Felder auslesen
-              </button>
-              <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
-            </td>
+                <button
+                  class="btn secondary js-extract"
+                  type="button"
+                  data-template-id="<?=h((string)$t['id'])?>"
+                  data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">
+                  Felder auslesen
+                </button>
+                <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
+                <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>">Mapping</a>
+              </td>
           </tr>
         <?php endforeach; ?>
       </tbody>

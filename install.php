@@ -207,26 +207,37 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS classes (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   school_year VARCHAR(20) NOT NULL,
+  grade_level INT NULL,
+  label VARCHAR(10) NULL,
   name VARCHAR(100) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  inactive_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_classes_year_name (school_year, name)
+  ,UNIQUE KEY uq_classes_year_grade_label (school_year, grade_level, label)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS students (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  master_student_id BIGINT UNSIGNED NULL,
   class_id BIGINT UNSIGNED NULL,
   first_name VARCHAR(100) NOT NULL,
   last_name VARCHAR(100) NOT NULL,
   date_of_birth DATE NULL,
   external_ref VARCHAR(100) NULL,
+  qr_token VARCHAR(80) NULL,
+  login_code VARCHAR(20) NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  KEY idx_students_master (master_student_id),
   KEY idx_students_class (class_id),
-  KEY idx_students_name (last_name, first_name)
+  KEY idx_students_name (last_name, first_name),
+  UNIQUE KEY uq_students_qr_token (qr_token),
+  KEY idx_students_login_code (login_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS templates (

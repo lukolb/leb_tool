@@ -405,6 +405,7 @@ render_admin_header('Feld-Editor');
             <th style="min-width:220px;">Gruppe</th>
             <th style="min-width:160px;">Typ</th>
             <th style="min-width:260px;">Label</th>
+            <th style="min-width:240px;">Stammfeld</th>
             <th style="min-width:420px;">Help</th>
             <th style="min-width:120px;">Kind</th>
             <th style="min-width:120px;">Lehrer</th>
@@ -911,6 +912,34 @@ function renderTable(){
     });
     tdL.appendChild(inpL);
 
+    // System binding (maps master data -> this form field)
+    const tdB = document.createElement('td');
+    const selB = document.createElement('select');
+    selB.innerHTML = `
+      <option value="">—</option>
+      <option value="student.first_name">Schüler: Vorname</option>
+      <option value="student.last_name">Schüler: Nachname</option>
+      <option value="student.date_of_birth">Schüler: Geburtsdatum</option>
+      <option value="class.display">Klasse: Anzeige (z.B. 4a)</option>
+      <option value="class.grade_level">Klasse: Stufe</option>
+      <option value="class.label">Klasse: Bezeichnung</option>
+      <option value="class.school_year">Schuljahr</option>
+    `;
+    const curBind = (f.meta && f.meta.system_binding) ? String(f.meta.system_binding) : '';
+    if (curBind) {
+      const opt = selB.querySelector(`option[value="${CSS.escape(curBind)}"]`);
+      if (opt) opt.selected = true;
+    }
+    selB.addEventListener('click',(e)=>e.stopPropagation());
+    selB.addEventListener('change',(e)=>{
+      e.stopPropagation();
+      fields[idx].meta = fields[idx].meta || {};
+      const v = selB.value;
+      if (v) fields[idx].meta.system_binding = v; else delete fields[idx].meta.system_binding;
+      markDirty(f.id);
+    });
+    tdB.appendChild(selB);
+
     const tdH = document.createElement('td');
     const inpH = document.createElement('input');
     inpH.type = 'text';
@@ -1028,7 +1057,7 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    tr.append(tdS, tdN, tdG, tdT, tdL, tdH, tdC, tdTe, tdR, tdX);
+    tr.append(tdS, tdN, tdG, tdT, tdL, tdB, tdH, tdC, tdTe, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
