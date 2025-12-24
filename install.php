@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS template_fields (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   template_id BIGINT UNSIGNED NOT NULL,
   field_name VARCHAR(255) NOT NULL,
-  field_type ENUM('text','multiline','date','number','checkbox','radio','select','signature') NOT NULL DEFAULT 'radio',
+  field_type ENUM('text','multiline','date','number','grade','checkbox','radio','select','signature') NOT NULL DEFAULT 'radio',
   label VARCHAR(255) NULL,
   help_text VARCHAR(500) NULL,
   is_multiline TINYINT(1) NOT NULL DEFAULT 0,
@@ -379,7 +379,61 @@ CREATE TABLE IF NOT EXISTS user_class_assignments (
   CONSTRAINT fk_uca_class FOREIGN KEY (class_id) REFERENCES classes(id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          
+CREATE TABLE IF NOT EXISTS option_scales (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(200) NOT NULL,
+  applies_to ENUM('radio','select','grade','any') NOT NULL DEFAULT 'any',
+  options_json LONGTEXT NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_option_scales_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS option_list_templates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(190) NOT NULL,
+  description TEXT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by_user_id INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_option_list_templates_name (name),
+  KEY idx_option_list_templates_active (is_active);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS option_list_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  list_id INT NOT NULL,
+  value VARCHAR(190) NOT NULL,
+  label VARCHAR(190) NOT NULL,
+  icon_id INT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  meta_json $JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_list_id_sort (list_id, sort_order),
+  KEY idx_option_list_items_icon (icon_id),
+  CONSTRAINT fk_option_list_items_list
+    FOREIGN KEY (list_id) REFERENCES option_list_templates(id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+          
+CREATE TABLE IF NOT EXISTS icon_library (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  filename VARCHAR(255) NOT NULL,
+  storage_path VARCHAR(255) NOT NULL,     -- z.B. uploads/icons/icon_1.png
+  file_ext VARCHAR(16) NOT NULL,
+  mime_type VARCHAR(80) NULL,
+  sha256 CHAR(64) NULL,
+  created_by_user_id INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_icon_storage_path (storage_path),
+  KEY idx_icon_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+          
 SQL;
 }
 ?>
