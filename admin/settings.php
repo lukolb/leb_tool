@@ -1,5 +1,7 @@
 <?php
+// admin/settings.php
 declare(strict_types=1);
+
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_admin();
@@ -8,7 +10,49 @@ $cfgPath = __DIR__ . '/../config.php';
 $cfg = app_config();
 
 $err = '';
-$ok = '';
+$ok  = '';
+
+function child_intro_file_abs(): string {
+  $cfg = app_config();
+  $uploadsRel = (string)($cfg['app']['uploads_dir'] ?? 'uploads');
+  $rootAbs = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+  return rtrim($rootAbs, '/\\') . '/' . trim($uploadsRel, '/\\') . '/child_intro.html';
+}
+
+function sanitize_intro_html(string $html): string {
+  // Keep it simple: remove scripts
+  $html = preg_replace('~<script\b[^>]*>.*?</script>~is', '', $html) ?? $html;
+  return trim($html);
+}
+
+function student_wizard_display_mode_from_post(string $v): string {
+  $v = strtolower(trim($v));
+  return in_array($v, ['groups', 'items'], true) ? $v : 'groups';
+}
+
+function parse_group_title_overrides_from_post(array $keys, array $titles): array {
+  $out = [];
+  $n = max(count($keys), count($titles));
+  for ($i = 0; $i < $n; $i++) {
+    $k = trim((string)($keys[$i] ?? ''));
+    $t = trim((string)($titles[$i] ?? ''));
+    if ($k === '' || $t === '') continue;
+    // prevent duplicates; last one wins
+    $out[$k] = $t;
+  }
+  return $out;
+}
+
+function known_intro_placeholders(): array {
+  return [
+    '{{org_name}}'      => 'Schule/Organisation',
+    '{{student_name}}'  => 'Schüler:in (Vorname Nachname)',
+    '{{first_name}}'    => 'Vorname',
+    '{{last_name}}'     => 'Nachname',
+    '{{class}}'         => 'Klasse (z.B. 4A)',
+    '{{school_year}}'   => 'Schuljahr (z.B. 2025/26)',
+  ];
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -17,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ---- Branding ----
     $brand = $cfg['app']['brand'] ?? [];
-    $brand['org_name'] = trim((string)($_POST['org_name'] ?? ($brand['org_name'] ?? 'LEG Tool')));
+    $brand['org_name'] = trim((string)($_POST['org_name'] ?? ($brand['org_name'] ?? 'LEB Tool')));
 
     $primary = trim((string)($_POST['brand_primary'] ?? ($brand['primary'] ?? '#0b57d0')));
     $secondary = trim((string)($_POST['brand_secondary'] ?? ($brand['secondary'] ?? '#111111')));
@@ -42,10 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       throw new RuntimeException('From Name darf nicht leer sein.');
     }
 
-    // Ensure mail keys exist
     if (!isset($cfg['mail']) || !is_array($cfg['mail'])) $cfg['mail'] = [];
     $cfg['mail']['from_email'] = $fromEmail === '' ? 'no-reply@example.org' : $fromEmail;
     $cfg['mail']['from_name']  = $fromName;
+
+    // ---- Student wizard settings ----
+    if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
+    $cfg['student']['wizard_display'] = student_wizard_display_mode_from_post(
+      (string)($_POST['student_wizard_display'] ?? ($cfg['student']['wizard_display'] ?? 'groups'))
+    );
+
+    $keys = $_POST['group_key'] ?? [];
+    $titles = $_POST['group_title'] ?? [];
+    if (!is_array($keys)) $keys = [];
+    if (!is_array($titles)) $titles = [];
+    $cfg['student']['group_titles'] = parse_group_title_overrides_from_post($keys, $titles);
 
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
@@ -76,6 +131,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $brand['logo_path'] = $uploadsDirRel . '/branding/logo.' . $ext;
     }
 
+    // ---- Student intro (WYSIWYG) ----
+    if ($action === 'save_student_intro') {
+      $html = (string)($_POST['student_intro_html'] ?? '');
+      $html = sanitize_intro_html($html);
+
+      $abs = child_intro_file_abs();
+      $dir = dirname($abs);
+      if (!is_dir($dir)) @mkdir($dir, 0755, true);
+
+      if (file_put_contents($abs, $html, LOCK_EX) === false) {
+        throw new RuntimeException('Konnte Intro-Datei nicht speichern (Rechte?).');
+      }
+    }
+
     // ---- Save cfg ----
     $cfg['app']['brand'] = $brand;
     $cfg['app']['default_school_year'] = $defaultSY;
@@ -85,10 +154,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       throw new RuntimeException('Konnte config.php nicht schreiben (Rechte?).');
     }
 
-    $ok = 'Einstellungen gespeichert.';
+    $ok = ($action === 'save_student_intro')
+      ? 'Intro gespeichert.'
+      : 'Einstellungen gespeichert.';
+
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
-    // reload cfg after save
     $cfg = app_config();
 
   } catch (Throwable $e) {
@@ -97,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $brand = $cfg['app']['brand'] ?? [];
-$org = $brand['org_name'] ?? 'LEG Tool';
+$org = $brand['org_name'] ?? 'LEB Tool';
 $primary = $brand['primary'] ?? '#0b57d0';
 $secondary = $brand['secondary'] ?? '#111111';
 $logo = $brand['logo_path'] ?? '';
@@ -105,7 +176,20 @@ $defaultSY = $cfg['app']['default_school_year'] ?? '';
 
 $mail = $cfg['mail'] ?? [];
 $fromEmail = $mail['from_email'] ?? 'no-reply@example.org';
-$fromName  = $mail['from_name'] ?? ($org ?: 'LEG Tool');
+$fromName  = $mail['from_name'] ?? ($org ?: 'LEB Tool');
+
+$studentCfg = $cfg['student'] ?? [];
+$wizardDisplay = (string)($studentCfg['wizard_display'] ?? 'groups');
+$wizardDisplay = in_array($wizardDisplay, ['groups', 'items'], true) ? $wizardDisplay : 'groups';
+
+$groupTitles = $studentCfg['group_titles'] ?? [];
+if (!is_array($groupTitles)) $groupTitles = [];
+
+$introAbs = child_intro_file_abs();
+$introHtml = '';
+if (is_file($introAbs)) {
+  $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
+}
 
 render_admin_header('Admin – Settings');
 ?>
@@ -123,7 +207,7 @@ render_admin_header('Admin – Settings');
 <!-- Live Preview Card -->
 <div class="card" id="previewCard">
   <h2>Live-Preview</h2>
-  <p class="muted">Änderungen werden hier sofort sichtbar (ohne Speichern). Gespeichert wird erst mit „Speichern“ / „Logo hochladen“.</p>
+  <p class="muted">Änderungen werden hier sofort sichtbar (ohne Speichern). Gespeichert wird erst mit „Speichern“ / „Logo hochladen“ / „Intro speichern“.</p>
 
   <div style="border:1px solid var(--border); border-radius:16px; overflow:hidden;">
     <div id="previewTopbar" style="background:#fff; border-bottom:1px solid var(--border);">
@@ -131,7 +215,7 @@ render_admin_header('Admin – Settings');
         <img id="previewLogo" src="<?= $logo ? h(url($logo)) : '' ?>" alt="Logo"
              style="height:34px; width:auto; display:<?= $logo ? 'block':'none' ?>; background:#fff;">
         <div>
-          <div id="previewOrg" style="font-weight:750; letter-spacing:.2px;"><?=h($org)?></div>
+          <div id="previewOrg" style="font-weight:750; letter-spacing:.2px;"><?=h((string)$org)?></div>
           <div style="color:var(--muted); font-size:12px;">Admin – Settings</div>
         </div>
       </div>
@@ -172,7 +256,7 @@ render_admin_header('Admin – Settings');
     <div class="grid">
       <div>
         <label>Organisation / Schule</label>
-        <input id="orgName" name="org_name" value="<?=h($org)?>" required>
+        <input id="orgName" name="org_name" value="<?=h((string)$org)?>" required>
       </div>
 
       <div>
@@ -184,10 +268,10 @@ render_admin_header('Admin – Settings');
         <label>Primary Color</label>
         <div class="grid" style="grid-template-columns:140px 1fr;">
           <div>
-            <input id="primaryPicker" type="color" value="<?=h($primary)?>" aria-label="Primary Color Picker" style="height:42px; padding:0; border-radius:12px;">
+            <input id="primaryPicker" type="color" value="<?=h((string)$primary)?>" aria-label="Primary Color Picker" style="height:42px; padding:0; border-radius:12px;">
           </div>
           <div>
-            <input id="primaryHex" name="brand_primary" value="<?=h($primary)?>" required placeholder="#0b57d0">
+            <input id="primaryHex" name="brand_primary" value="<?=h((string)$primary)?>" required placeholder="#0b57d0">
           </div>
         </div>
         <div class="muted">Picker oder Hex. (Live-Preview oben)</div>
@@ -197,10 +281,10 @@ render_admin_header('Admin – Settings');
         <label>Secondary Color</label>
         <div class="grid" style="grid-template-columns:140px 1fr;">
           <div>
-            <input id="secondaryPicker" type="color" value="<?=h($secondary)?>" aria-label="Secondary Color Picker" style="height:42px; padding:0; border-radius:12px;">
+            <input id="secondaryPicker" type="color" value="<?=h((string)$secondary)?>" aria-label="Secondary Color Picker" style="height:42px; padding:0; border-radius:12px;">
           </div>
           <div>
-            <input id="secondaryHex" name="brand_secondary" value="<?=h($secondary)?>" required placeholder="#111111">
+            <input id="secondaryHex" name="brand_secondary" value="<?=h((string)$secondary)?>" required placeholder="#111111">
           </div>
         </div>
         <div class="muted">Picker oder Hex. (Live-Preview oben)</div>
@@ -226,11 +310,11 @@ render_admin_header('Admin – Settings');
     <div class="grid">
       <div>
         <label>From E-Mail</label>
-        <input id="fromEmail" name="from_email" type="email" value="<?=h($fromEmail)?>" placeholder="no-reply@deine-domain.org">
+        <input id="fromEmail" name="from_email" type="email" value="<?=h((string)$fromEmail)?>" placeholder="no-reply@deine-domain.org">
       </div>
       <div>
         <label>From Name</label>
-        <input id="fromName" name="from_name" value="<?=h($fromName)?>" required placeholder="<?=h($org)?>">
+        <input id="fromName" name="from_name" value="<?=h((string)$fromName)?>" required placeholder="<?=h((string)$org)?>">
       </div>
     </div>
 
@@ -242,6 +326,114 @@ render_admin_header('Admin – Settings');
       Hinweis: Damit Mails zuverlässig ankommen, sollte deine Domain korrekt SPF/DKIM/DMARC setzen (später).
     </p>
   </form>
+</div>
+
+<div class="card">
+  <h2>Schülerbereich</h2>
+
+  <form method="post" autocomplete="off" id="studentCfgForm">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
+      <div>
+        <label>Wizard-Anzeige</label>
+        <select name="student_wizard_display">
+          <option value="groups" <?=$wizardDisplay==='groups'?'selected':''?>>Abschnitte (Gruppen)</option>
+          <option value="items" <?=$wizardDisplay==='items'?'selected':''?>>Einzelne Fragen (Items)</option>
+        </select>
+        <div class="muted">Wirkt sich auf den Schüler-Wizard aus.</div>
+      </div>
+      <div></div>
+    </div>
+
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn primary" type="submit">Speichern</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Schüler-Startseite (Intro)</h2>
+  <p class="muted">
+    Diese Seite sieht jede:r Schüler:in als erstes. Du kannst Platzhalter einfügen (z.B. für persönliche Begrüßung).
+  </p>
+
+  <div class="panel" style="padding:10px; margin-bottom:10px;">
+    <label>Platzhalter einfügen</label>
+    <div class="actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:6px;">
+      <select id="phSelect" class="input" style="min-width:260px;">
+        <?php foreach (known_intro_placeholders() as $token => $label): ?>
+          <option value="<?=h($token)?>"><?=h($label)?> — <?=h($token)?></option>
+        <?php endforeach; ?>
+      </select>
+      <button class="btn secondary" type="button" id="btnInsertPh">Einfügen</button>
+      <span class="muted">Beispiel: „Hallo {{first_name}}!“</span>
+    </div>
+  </div>
+
+  <!-- Quill (external) -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
+  <style>
+    #quillEditor{ background:#fff; border-radius:14px; overflow:hidden; }
+    #quillEditor .ql-toolbar{ border-top-left-radius:14px; border-top-right-radius:14px; }
+    #quillEditor .ql-container{ border-bottom-left-radius:14px; border-bottom-right-radius:14px; min-height:220px; }
+  </style>
+
+  <form method="post" id="studentIntroForm">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save_student_intro">
+    <input type="hidden" name="student_intro_html" id="studentIntroHtml">
+
+    <div id="quillEditor"></div>
+
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn primary" type="submit">Intro speichern</button>
+    </div>
+
+    <p class="muted">Gespeichert wird als <code>uploads/child_intro.html</code> (intern als HTML, aber du bearbeitest es visuell).</p>
+  </form>
+
+  <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+  <script>
+  (function(){
+    const initialHtml = <?=json_encode($introHtml)?>;
+
+    const quill = new Quill('#quillEditor', {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ header: [1, 2, false] }],
+          ['bold', 'italic', 'underline'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          ['link'],
+          ['clean']
+        ]
+      }
+    });
+
+    quill.root.innerHTML = initialHtml || '<p><strong>Hallo {{first_name}}!</strong></p><p>Bitte fülle den Bericht Schritt für Schritt aus.</p>';
+
+    const hidden = document.getElementById('studentIntroHtml');
+    const form = document.getElementById('studentIntroForm');
+
+    form.addEventListener('submit', () => {
+      hidden.value = quill.root.innerHTML || '';
+    });
+
+    const sel = document.getElementById('phSelect');
+    const btn = document.getElementById('btnInsertPh');
+    btn.addEventListener('click', () => {
+      const token = sel.value || '';
+      if (!token) return;
+      const range = quill.getSelection(true);
+      const pos = range ? range.index : quill.getLength();
+      quill.insertText(pos, token, 'user');
+      quill.setSelection(pos + token.length, 0, 'user');
+      quill.focus();
+    });
+  })();
+  </script>
 </div>
 
 <div class="card">
@@ -313,17 +505,13 @@ render_admin_header('Admin – Settings');
     if (hexLooksValid(s)) setCssVar('--secondary', s);
   }
 
-  // Org live preview
   orgInput.addEventListener('input', () => {
-    previewOrg.textContent = orgInput.value.trim() || 'LEG Tool';
-    // optional: default From-Name preview to org if From-Name empty
+    previewOrg.textContent = orgInput.value.trim() || 'LEB Tool';
   });
 
-  // Picker -> Hex + apply
   pPick.addEventListener('input', () => { pHex.value = pPick.value; applyColors(); });
   sPick.addEventListener('input', () => { sHex.value = sPick.value; applyColors(); });
 
-  // Hex -> Picker (only when valid) + apply
   pHex.addEventListener('input', () => {
     const v = pHex.value.trim();
     if (hexLooksValid(v)) pPick.value = v;
@@ -335,22 +523,19 @@ render_admin_header('Admin – Settings');
     applyColors();
   });
 
-  // Initial apply
   applyColors();
-  previewOrg.textContent = orgInput.value.trim() || 'LEG Tool';
+  previewOrg.textContent = orgInput.value.trim() || 'LEB Tool';
 
-  // Mail live preview
   function applyMailPreview(){
     const fe = (fromEmailInput.value || '').trim() || 'no-reply@example.org';
-    const fn = (fromNameInput.value || '').trim() || 'LEG Tool';
+    const fn = (fromNameInput.value || '').trim() || 'LEB Tool';
     previewFromEmail.textContent = fe;
     previewFromName.textContent = fn;
   }
-  fromEmailInput.addEventListener('input', applyMailPreview);
-  fromNameInput.addEventListener('input', applyMailPreview);
+  if (fromEmailInput) fromEmailInput.addEventListener('input', applyMailPreview);
+  if (fromNameInput) fromNameInput.addEventListener('input', applyMailPreview);
   applyMailPreview();
 
-  // Logo live preview
   if (logoInput) {
     logoInput.addEventListener('change', () => {
       const file = logoInput.files && logoInput.files[0];
@@ -365,7 +550,6 @@ render_admin_header('Admin – Settings');
     });
   }
 
-  // Reset preview to saved logo
   if (logoResetBtn) {
     logoResetBtn.addEventListener('click', () => {
       if (objectUrl) {
@@ -381,6 +565,33 @@ render_admin_header('Admin – Settings');
   window.addEventListener('beforeunload', () => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   });
+
+  // group title overrides UI
+  const rowsEl = document.getElementById('groupTitleRows');
+  const btnAdd = document.getElementById('btnAddGroupTitle');
+  const initial = <?=json_encode($groupTitles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+
+  function rowTpl(k='', t=''){
+    const div = document.createElement('div');
+    div.style.display = 'grid';
+    div.style.gridTemplateColumns = '1fr 1fr auto';
+    div.style.gap = '8px';
+    div.innerHTML = `
+      <input class="input" name="group_key[]" placeholder="Original (Template) – z.B. Deutsch" value="${String(k).replace(/"/g,'&quot;')}">
+      <input class="input" name="group_title[]" placeholder="Anzeige – z.B. Deutsch – Schreiben" value="${String(t).replace(/"/g,'&quot;')}">
+      <button class="btn danger" type="button" title="Entfernen">×</button>
+    `;
+    div.querySelector('button').addEventListener('click', ()=>div.remove());
+    return div;
+  }
+
+  if (rowsEl && btnAdd) {
+    const entries = initial && typeof initial === 'object' ? Object.entries(initial) : [];
+    if (!entries.length) rowsEl.appendChild(rowTpl());
+    else entries.forEach(([k,t]) => rowsEl.appendChild(rowTpl(k,t)));
+
+    btnAdd.addEventListener('click', () => rowsEl.appendChild(rowTpl()));
+  }
 })();
 </script>
 

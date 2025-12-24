@@ -173,13 +173,166 @@ function random_login_code(): string {
   return substr($raw, 0, 4) . '-' . substr($raw, 4, 4);
 }
 
-// POST actions: add, deactivate, copy
+function class_display(array $c): string {
+  $label = (string)($c['label'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $name = (string)($c['name'] ?? '');
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
+}
+
+/**
+ * Child input lock/unlock helpers (class-wide)
+ */
+function get_active_template(PDO $pdo): ?array {
+  $st = $pdo->query(
+    "SELECT id, name, template_version
+     FROM templates
+     WHERE is_active=1
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1"
+  );
+  $t = $st->fetch(PDO::FETCH_ASSOC);
+  return $t ?: null;
+}
+
+function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, int $userId): void {
+  // Create report_instances for all active students (idempotent via INSERT IGNORE)
+  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
+  $st->execute([$classId]);
+  $ids = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  if (!$ids) return;
+
+  $ins = $pdo->prepare(
+    "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id)
+     VALUES (?, ?, 'Standard', ?, 'draft', ?)"
+  );
+  foreach ($ids as $sid) {
+    $ins->execute([$templateId, $sid, $schoolYear, $userId]);
+  }
+}
+
+function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, int $userId, string $mode): int {
+  // mode: 'lock' => draft -> locked, keep submitted untouched
+  // mode: 'unlock' => locked -> draft, keep submitted untouched
+  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $st->execute([$classId]);
+  $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  if (!$studentIds) return 0;
+
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+
+  if ($mode === 'lock') {
+    $sql =
+      "UPDATE report_instances
+       SET status='locked', locked_by_user_id=?, locked_at=NOW()
+       WHERE template_id=? AND school_year=? AND period_label='Standard'
+         AND student_id IN ($in)
+         AND status='draft'";
+    $params = array_merge([$userId, $templateId, $schoolYear], $studentIds);
+  } else {
+    $sql =
+      "UPDATE report_instances
+       SET status='draft', locked_by_user_id=NULL, locked_at=NULL
+       WHERE template_id=? AND school_year=? AND period_label='Standard'
+         AND student_id IN ($in)
+         AND status='locked'";
+    $params = array_merge([$templateId, $schoolYear], $studentIds);
+  }
+
+  $q = $pdo->prepare($sql);
+  $q->execute($params);
+  return $q->rowCount();
+}
+
+function class_child_status_counts(PDO $pdo, int $templateId, int $classId, string $schoolYear): array {
+  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $st->execute([$classId]);
+  $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  $total = count($studentIds);
+  if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
+
+  $in = implode(',', array_fill(0, $total, '?'));
+
+  $q = $pdo->prepare(
+    "SELECT status, COUNT(*) AS c
+     FROM report_instances
+     WHERE template_id=? AND school_year=? AND period_label='Standard'
+       AND student_id IN ($in)
+     GROUP BY status"
+  );
+  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+  $m = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
+  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $stt = (string)$r['status'];
+    $m[$stt] = (int)$r['c'];
+  }
+  return $m;
+}
+
+/**
+ * NEW: per-student child status map + badge rendering
+ */
+function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  if (!$studentIds) return [];
+
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $sql =
+    "SELECT student_id, status
+     FROM report_instances
+     WHERE template_id=? AND school_year=? AND period_label='Standard'
+       AND student_id IN ($in)";
+  $q = $pdo->prepare($sql);
+  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+
+  $map = [];
+  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $map[(int)$r['student_id']] = (string)$r['status'];
+  }
+  return $map;
+}
+
+function child_status_badge(?string $status): string {
+  $status = (string)$status;
+  if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
+  if ($status === 'locked') return '<span class="badge danger">Gesperrt</span>';
+  if ($status === 'draft') return '<span class="badge">Entwurf</span>';
+  return '<span class="badge">Nicht angelegt</span>';
+}
+
+// POST actions: add, deactivate, copy, lock/unlock class
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
   $action = (string)($_POST['action'] ?? '');
 
   try {
-    if ($action === 'add') {
+    // class-wide child input lock/unlock
+    if ($action === 'child_lock_class' || $action === 'child_unlock_class') {
+      $tpl = get_active_template($pdo);
+      if (!$tpl) throw new RuntimeException('Kein aktives Template gefunden.');
+
+      $templateId = (int)$tpl['id'];
+      $schoolYear = (string)($class['school_year'] ?? '');
+      if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+
+      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $userId);
+
+      $mode = ($action === 'child_lock_class') ? 'lock' : 'unlock';
+      $changed = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $userId, $mode);
+
+      audit('teacher_child_' . $mode . '_class', $userId, [
+        'class_id'=>$classId,
+        'template_id'=>$templateId,
+        'school_year'=>$schoolYear,
+        'changed'=>$changed
+      ]);
+
+      $ok = ($mode === 'lock')
+        ? "Kinder-Eingabe gesperrt ({$changed} Reports)."
+        : "Kinder-Eingabe freigegeben ({$changed} Reports).";
+    }
+
+    elseif ($action === 'add') {
       $first = normalize_name((string)($_POST['first_name'] ?? ''));
       $last  = normalize_name((string)($_POST['last_name'] ?? ''));
       $dob   = normalize_date($_POST['date_of_birth'] ?? null);
@@ -226,8 +379,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $rows = read_csv_assoc($tmpPath);
       if (!$rows) throw new RuntimeException('CSV ist leer oder konnte nicht gelesen werden.');
 
-      // Expected Blackbaud headers (English):
-      // Student First Name, Student Last Name, Birth Date
       $created = 0;
       $skipped = 0;
 
@@ -250,7 +401,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($first === '' && $last === '') continue;
         if ($first === '' || $last === '') { $skipped++; continue; }
 
-        // Skip if already exists in target class
         $check->execute([$classId, $first, $last, $dob]);
         if ($check->fetch()) { $skipped++; continue; }
 
@@ -302,7 +452,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             continue;
           }
 
-          // unique token
           $token = '';
           for ($i=0; $i<40; $i++) {
             $cand = random_student_token();
@@ -311,7 +460,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
           if ($token === '') throw new RuntimeException('Konnte keinen eindeutigen QR-Token erzeugen.');
 
-          // unique code
           $code = '';
           for ($i=0; $i<40; $i++) {
             $cand = random_login_code();
@@ -349,7 +497,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         throw new RuntimeException('Keine Berechtigung für die Quellklasse.');
       }
 
-      // Load students from source
       $st = $pdo->prepare(
         "SELECT id, master_student_id, first_name, last_name, date_of_birth
          FROM students
@@ -376,7 +523,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
         if ($master <= 0) $master = ensure_master_id($pdo, $sid);
 
-        // Prevent duplicates in target class for same master
         $q = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
         $q->execute([$classId, $master]);
         if ($q->fetch()) continue;
@@ -406,7 +552,7 @@ $st = $pdo->prepare(
 $st->execute([$classId]);
 $students = $st->fetchAll();
 
-// Source classes for copy: other classes of teacher (or all for admins), different school year
+// Source classes for copy
 if (($u['role'] ?? '') === 'admin') {
   $cs = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id<>? ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $cs->execute([$classId]);
@@ -423,12 +569,16 @@ if (($u['role'] ?? '') === 'admin') {
   $sourceClasses = $cs->fetchAll();
 }
 
-function class_display(array $c): string {
-  $label = (string)($c['label'] ?? '');
-  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
-  $name = (string)($c['name'] ?? '');
-  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
-}
+// Status overview + per-student status map
+$activeTpl = get_active_template($pdo);
+$tplIdForUi = $activeTpl ? (int)$activeTpl['id'] : 0;
+$schoolYearUi = (string)($class['school_year'] ?? '');
+if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_school_year'] ?? '');
+
+$counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
+
+$studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
+$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
 
 render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' . class_display($class));
 ?>
@@ -465,6 +615,40 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 </div>
 
 <div class="card">
+  <h2 style="margin-top:0;">Kinder-Eingabe (Klasse)</h2>
+
+  <?php if (!$activeTpl): ?>
+    <div class="alert">Kein aktives Template – Kinder-Eingabe kann nicht gesteuert werden.</div>
+  <?php else: ?>
+    <p class="muted" style="margin:0 0 10px 0;">
+      Status (<?=h($schoolYearUi)?>): Entwurf: <strong><?= (int)$counts['draft'] ?></strong>,
+      Gesperrt: <strong><?= (int)$counts['locked'] ?></strong>,
+      Abgegeben: <strong><?= (int)$counts['submitted'] ?></strong>
+    </p>
+
+    <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
+      <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="child_unlock_class">
+        <button class="btn primary" type="submit">Für Kinder freigeben</button>
+      </form>
+
+      <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="child_lock_class">
+        <button class="btn danger" type="submit" onclick="return confirm('Kinder-Eingabe wirklich sperren? (Nur „Entwurf“ wird gesperrt.)');">Für Kinder sperren</button>
+      </form>
+    </div>
+
+    <div class="muted" style="margin-top:8px;">
+      Hinweis: „Sperren“ betrifft nur <code>draft</code>. Abgegebene (<code>submitted</code>) bleiben abgegeben.
+    </div>
+  <?php endif; ?>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;">Schüler</h2>
 
   <?php if (!$students): ?>
@@ -476,21 +660,30 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
           <th>Name</th>
           <th>Geburtsdatum</th>
           <th>Status</th>
+          <th>Kinder-Status</th>
           <th style="width:220px;">Aktion</th>
         </tr>
       </thead>
       <tbody>
         <?php foreach ($students as $s): ?>
+          <?php $sid = (int)($s['id'] ?? 0); ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
             <td><?=((int)$s['is_active']===1)?'<span class="badge success">aktiv</span>':'<span class="badge">inaktiv</span>'?></td>
             <td>
+              <?php if (!$tplIdForUi): ?>
+                <span class="muted">—</span>
+              <?php else: ?>
+                <?= child_status_badge($childStatusMap[$sid] ?? null) ?>
+              <?php endif; ?>
+            </td>
+            <td>
               <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
                 <input type="hidden" name="action" value="toggle_active">
-                <input type="hidden" name="student_id" value="<?=h((string)$s['id'])?>">
+                <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
                 <button class="btn secondary" type="submit"><?=((int)$s['is_active']===1)?'Deaktivieren':'Aktivieren'?></button>
               </form>
             </td>
@@ -498,6 +691,10 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
         <?php endforeach; ?>
       </tbody>
     </table>
+
+    <div class="muted" style="margin-top:8px;">
+      „Nicht angelegt“ heißt: Es gibt noch keinen passenden Eintrag in <code>report_instances</code> (für aktives Template / Schuljahr / Standard).
+    </div>
   <?php endif; ?>
 </div>
 
