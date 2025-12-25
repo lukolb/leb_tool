@@ -42,11 +42,12 @@ $title = 'QR-Codes – ' . (string)$class['school_year'] . ' · ' . class_displa
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?=h($title)?></title>
+    <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
     @media print {
       .noprint { display:none !important; }
-      body { background:#fff; }
+      body, body.page { background:#fff; }
       .card { box-shadow:none; border:none; }
     }
     .grid-cards {
