@@ -188,6 +188,10 @@ render_admin_header('Feld-Editor');
   </div>
 </div>
 
+<div id="dirtyWarning" class="alert danger" style="display: none">
+    <p><b>Achtung! Ungespeicherte Änderungen!</b></p>
+</div>
+
 <div class="card" id="metaCard">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
@@ -592,6 +596,12 @@ function getGroupPath(f){
 function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
+  
+  if (dirty.size) {
+        document.getElementById("dirtyWarning").style.display = "block";
+    } else {
+        document.getElementById("dirtyWarning").style.display = "none";
+    }
 }
 
 function isVisibleByFilter(f){
@@ -1261,6 +1271,7 @@ async function applyBulk(targetIds){
   renderGroupsBar();
   renderTable();
   updateMeta();
+  bulkGroup.value = null;
 }
 
 /* ---------- Auto group ---------- */
@@ -1348,6 +1359,12 @@ async function save(){
   dirty.clear();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
   updateMeta();
+  
+  if (dirty.size) {
+        document.getElementById("dirtyWarning").style.display = "block";
+    } else {
+        document.getElementById("dirtyWarning").style.display = "none";
+    }
 }
 
 /* ---------- Options dialog ---------- */

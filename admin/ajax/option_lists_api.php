@@ -14,6 +14,111 @@ function read_json_body(): array {
   return is_array($data) ? $data : [];
 }
 
+function json_decode_assoc(?string $s): array {
+  if (!$s) return [];
+  $j = json_decode($s, true);
+  return is_array($j) ? $j : [];
+}
+
+/**
+ * Find template_field IDs that reference an option_list_template via meta.option_list_template_id.
+ * Uses a broad LIKE filter and validates by decoding meta_json.
+ */
+function template_field_ids_for_option_list(PDO $pdo, int $listId): array {
+  $cand = $pdo->query("SELECT id, meta_json FROM template_fields WHERE meta_json IS NOT NULL AND meta_json LIKE '%option_list_template_id%'");
+  $ids = [];
+  foreach ($cand->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $meta = json_decode_assoc($r['meta_json'] ?? null);
+    if (!$meta) continue;
+    if (!array_key_exists('option_list_template_id', $meta)) continue;
+    if ((string)$meta['option_list_template_id'] !== (string)$listId) continue;
+    $ids[] = (int)$r['id'];
+  }
+  return $ids;
+}
+
+function options_object_from_db(PDO $pdo, int $listId): array {
+  $optionsObj = ['options' => []];
+  $stItems = $pdo->prepare("SELECT id, value, label, icon_id, sort_order FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
+  $stItems->execute([$listId]);
+  foreach ($stItems->fetchAll(PDO::FETCH_ASSOC) as $it) {
+    $val = trim((string)($it['value'] ?? ''));
+    $lab = trim((string)($it['label'] ?? ''));
+    if ($val === '' || $lab === '') continue;
+    $optionsObj['options'][] = [
+      'id' => (int)$it['id'],
+      'value' => $val,
+      'label' => $lab,
+      'icon_id' => ($it['icon_id'] !== null && $it['icon_id'] !== '') ? (int)$it['icon_id'] : null,
+    ];
+  }
+  return $optionsObj;
+}
+
+/**
+ * When option list item values change, update existing saved values in field_values so exports/UI remain consistent.
+ *
+ * Strategy:
+ *  - If fv.value_json contains {option_item_id}, we can always update fv.value_text to the new current item value.
+ *  - If no option_item_id is stored (legacy data), we try a safe fallback by matching fv.value_text to the *old*
+ *    item value, but only when that old value uniquely maps to a single item id.
+ */
+function update_field_values_for_option_list_changes(PDO $pdo, array $templateFieldIds, int $listId, array $oldIdToValue, array $newIdToValue): array {
+  $out = ['updated_value_text' => 0, 'updated_value_json' => 0];
+  if (!$templateFieldIds) return $out;
+
+  // Build helper maps for legacy fallback
+  $oldValueToId = [];
+  $oldValueDup = [];
+  foreach ($oldIdToValue as $oid => $oval) {
+    $k = (string)$oval;
+    if ($k === '') continue;
+    if (isset($oldValueToId[$k])) { $oldValueDup[$k] = true; continue; }
+    $oldValueToId[$k] = (int)$oid;
+  }
+
+  $in = implode(',', array_fill(0, count($templateFieldIds), '?'));
+
+  // 1) Update rows with option_item_id stored in value_json
+  $sel1 = $pdo->prepare("SELECT id, value_text, value_json FROM field_values WHERE template_field_id IN ($in) AND value_json IS NOT NULL AND value_json <> '' AND value_json LIKE '%option_item_id%'");
+  $sel1->execute($templateFieldIds);
+  $upd1 = $pdo->prepare("UPDATE field_values SET value_text=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+
+  foreach ($sel1->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $vj = json_decode_assoc($r['value_json'] ?? null);
+    $optId = isset($vj['option_item_id']) ? (int)$vj['option_item_id'] : 0;
+    if ($optId <= 0) continue;
+    if (!isset($newIdToValue[$optId])) continue;
+    $newVal = (string)$newIdToValue[$optId];
+    $curVal = $r['value_text'] !== null ? (string)$r['value_text'] : '';
+    if ($curVal === $newVal) continue;
+    $upd1->execute([$newVal, (int)$r['id']]);
+    $out['updated_value_text']++;
+  }
+
+  // 2) Legacy: no option_item_id in value_json (or value_json empty)
+  $sel2 = $pdo->prepare("SELECT id, value_text, value_json FROM field_values WHERE template_field_id IN ($in) AND (value_json IS NULL OR value_json='') AND value_text IS NOT NULL AND value_text <> ''");
+  $sel2->execute($templateFieldIds);
+  $upd2 = $pdo->prepare("UPDATE field_values SET value_text=?, value_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+
+  foreach ($sel2->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $oldVal = trim((string)($r['value_text'] ?? ''));
+    if ($oldVal === '') continue;
+    if (isset($oldValueDup[$oldVal])) continue; // ambiguous mapping; do nothing
+    if (!isset($oldValueToId[$oldVal])) continue;
+    $optId = (int)$oldValueToId[$oldVal];
+    if (!isset($newIdToValue[$optId])) continue;
+    $newVal = (string)$newIdToValue[$optId];
+    if ($newVal === $oldVal) continue;
+    $newJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+    $upd2->execute([$newVal, $newJson, (int)$r['id']]);
+    $out['updated_value_text']++;
+    $out['updated_value_json']++;
+  }
+
+  return $out;
+}
+
 try {
   // CSRF: Header oder JSON-field
   $data = read_json_body();
@@ -86,6 +191,14 @@ try {
     $items = $data['items'] ?? [];
     if (!is_array($items)) throw new RuntimeException('items ungültig.');
 
+    // Snapshot old mapping (id -> value) BEFORE changes so we can migrate saved field_values later.
+    $stOld = $pdo->prepare("SELECT id, value FROM option_list_items WHERE list_id=? ORDER BY id ASC");
+    $stOld->execute([$id]);
+    $oldIdToValue = [];
+    foreach ($stOld->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $oldIdToValue[(int)$r['id']] = (string)($r['value'] ?? '');
+    }
+
     $pdo->beginTransaction();
 
     $pdo->prepare("UPDATE option_list_templates SET name=?, description=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -141,57 +254,88 @@ try {
     $pdo->commit();
 
     // --- propagate updated options to linked template_fields (meta.option_list_template_id == $id)
+    $optionsObjWithIds = options_object_from_db($pdo, $id);
     $optionsObj = ['options' => []];
-    $stItems = $pdo->prepare("SELECT value, label, icon_id, sort_order FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
-    $stItems->execute([$id]);
-    $dbItems = $stItems->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($dbItems as $it) {
-      $val = trim((string)($it['value'] ?? ''));
-      $lab = trim((string)($it['label'] ?? ''));
-      if ($val === '' || $lab === '') continue;
+    foreach ($optionsObjWithIds['options'] as $o) {
+      // options_json stored in template_fields intentionally does NOT include item id (UI friendly)
       $optionsObj['options'][] = [
-        'value' => $val,
-        'label' => $lab,
-        'icon_id' => ($it['icon_id'] !== null && $it['icon_id'] !== '') ? (int)$it['icon_id'] : null,
+        'value' => (string)($o['value'] ?? ''),
+        'label' => (string)($o['label'] ?? ''),
+        'icon_id' => ($o['icon_id'] ?? null),
       ];
     }
     $optionsJson = json_encode($optionsObj, JSON_UNESCAPED_UNICODE);
 
-    $cand = $pdo->query("SELECT id, meta_json FROM template_fields WHERE meta_json IS NOT NULL AND meta_json LIKE '%option_list_template_id%'");
+    $templateFieldIds = template_field_ids_for_option_list($pdo, $id);
     $updFieldOpt = $pdo->prepare("UPDATE template_fields SET options_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
     $updFieldMeta = $pdo->prepare("UPDATE template_fields SET meta_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
     $updatedCount = 0;
-
-    foreach ($cand->fetchAll(PDO::FETCH_ASSOC) as $r) {
-      $meta = json_decode((string)$r['meta_json'], true);
-      if (!is_array($meta)) continue;
-      if (!array_key_exists('option_list_template_id', $meta)) continue;
-      if ((string)$meta['option_list_template_id'] !== (string)$id) continue;
-
-      // Update options_json (the canonical place for choices)
-      $updFieldOpt->execute([$optionsJson, (int)$r['id']]);
+    foreach ($templateFieldIds as $tfId) {
+      $updFieldOpt->execute([$optionsJson, $tfId]);
       $updatedCount++;
+    }
 
-      // If the project previously cached options inside meta, keep it in sync too (backwards compatibility).
-      $changedMeta = false;
-      if (array_key_exists('options', $meta) && is_array($meta['options'])) {
-        $meta['options'] = $optionsObj['options'];
-        $changedMeta = true;
-      }
-      if (array_key_exists('options_cache', $meta) && is_array($meta['options_cache'])) {
-        $meta['options_cache'] = $optionsObj['options'];
-        $changedMeta = true;
-      }
-      if ($changedMeta) {
-        $updFieldMeta->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+    // Re-run meta cache sync in one pass with proper fetch
+    if ($templateFieldIds) {
+      $in2 = implode(',', array_fill(0, count($templateFieldIds), '?'));
+      $st = $pdo->prepare("SELECT id, meta_json FROM template_fields WHERE id IN ($in2)");
+      $st->execute($templateFieldIds);
+      foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $meta = json_decode_assoc($r['meta_json'] ?? null);
+        if (!$meta) continue;
+        $changedMeta = false;
+        if (array_key_exists('options', $meta) && is_array($meta['options'])) {
+          $meta['options'] = $optionsObj['options'];
+          $changedMeta = true;
+        }
+        if (array_key_exists('options_cache', $meta) && is_array($meta['options_cache'])) {
+          $meta['options_cache'] = $optionsObj['options'];
+          $changedMeta = true;
+        }
+        if ($changedMeta) {
+          $updFieldMeta->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+        }
       }
     }
 
-    audit('option_list_save', (int)current_user()['id'], ['list_id'=>$id, 'items_saved'=>count($keepIds), 'template_fields_updated'=>$updatedCount]);
-    echo json_encode(['ok'=>true, 'template_fields_updated'=>$updatedCount], JSON_UNESCAPED_UNICODE);
+    // --- update already stored field_values (migrate old value_text to new current values)
+    $newIdToValue = [];
+    foreach ($optionsObjWithIds['options'] as $o) {
+      $newIdToValue[(int)$o['id']] = (string)($o['value'] ?? '');
+    }
+
+    // Only run migration when at least one value actually changed.
+    $valueChanged = false;
+    foreach ($oldIdToValue as $oid => $oval) {
+      if (!isset($newIdToValue[$oid])) continue;
+      if ((string)$oval !== (string)$newIdToValue[$oid]) { $valueChanged = true; break; }
+    }
+
+    $fieldValueStats = ['updated_value_text'=>0, 'updated_value_json'=>0];
+    if ($valueChanged && $templateFieldIds) {
+      $pdo->beginTransaction();
+      $fieldValueStats = update_field_values_for_option_list_changes($pdo, $templateFieldIds, $id, $oldIdToValue, $newIdToValue);
+      $pdo->commit();
+    }
+
+    audit('option_list_save', (int)current_user()['id'], [
+      'list_id'=>$id,
+      'items_saved'=>count($keepIds),
+      'template_fields_updated'=>$updatedCount,
+      'field_values_updated_value_text'=>(int)$fieldValueStats['updated_value_text'],
+      'field_values_updated_value_json'=>(int)$fieldValueStats['updated_value_json'],
+    ]);
+
+    echo json_encode([
+      'ok'=>true,
+      'template_fields_updated'=>$updatedCount,
+      'field_values_updated_value_text'=>(int)$fieldValueStats['updated_value_text'],
+      'field_values_updated_value_json'=>(int)$fieldValueStats['updated_value_json'],
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
-if ($action === 'duplicate_template') {
+
+  if ($action === 'duplicate_template') {
     $id = (int)($data['list_id'] ?? 0);
     if ($id <= 0) throw new RuntimeException('list_id fehlt.');
 
