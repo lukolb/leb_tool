@@ -49,7 +49,7 @@ function render_favicons(): void {
   // Existing files in assets/icons
   $ico16 = url('assets/icons/favicon-16x16.png');
   $ico32 = url('assets/icons/favicon-32x32.png');
-  $icoIco = url('assets/icons/lebtool-favicon.ico');
+  $icoIco = url('assets/icons/lebtool-favicon-big.ico');
   $apple = url('assets/icons/lebtool-icon-512x512.png');
 
   echo "\n    <!-- Favicons -->\n";
