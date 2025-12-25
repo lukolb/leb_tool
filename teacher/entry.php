@@ -91,6 +91,11 @@ render_teacher_header('Eingaben');
 <div id="app" class="card" style="display:none;">
   <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
 
+  <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
+    <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
+    <div class="progress"><div id="formsProgressBar" class="progress-bar"></div></div>
+  </div>
+
   <div id="classFieldsBox" class="card" style="margin:12px 0; display:none;">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <div>
@@ -99,6 +104,12 @@ render_teacher_header('Eingaben');
       </div>
       <div class="pill-mini" id="classFieldsStatus"></div>
     </div>
+
+    <div id="classFieldsProgressWrap" class="progress-wrap" style="display:none; margin-top:10px;">
+      <div class="progress-meta"><span id="classFieldsProgressText">—</span><span id="classFieldsProgressPct"></span></div>
+      <div class="progress"><div id="classFieldsProgressBar" class="progress-bar"></div></div>
+    </div>
+
     <div id="classFieldsForm" style="margin-top:10px;"></div>
   </div>
 
@@ -237,6 +248,16 @@ render_teacher_header('Eingaben');
   const elErrBox = document.getElementById('errBox');
   const elErrMsg = document.getElementById('errMsg');
   const elMetaTop = document.getElementById('metaTop');
+  const formsProgressWrap = document.getElementById('formsProgressWrap');
+  const formsProgressBar = document.getElementById('formsProgressBar');
+  const formsProgressText = document.getElementById('formsProgressText');
+  const formsProgressPct = document.getElementById('formsProgressPct');
+
+  const classFieldsProgressWrap = document.getElementById('classFieldsProgressWrap');
+  const classFieldsProgressBar = document.getElementById('classFieldsProgressBar');
+  const classFieldsProgressText = document.getElementById('classFieldsProgressText');
+  const classFieldsProgressPct = document.getElementById('classFieldsProgressPct');
+
   const elSavePill = document.getElementById('savePill');
 
   const classSelect = document.getElementById('classSelect');
@@ -274,6 +295,7 @@ render_teacher_header('Eingaben');
     values_child: {},
     class_report_instance_id: 0,
     class_fields: null,
+    progress_summary: null,
     fieldMap: {},
   };
 
@@ -501,12 +523,180 @@ render_teacher_header('Eingaben');
     return (v === null || typeof v === 'undefined') ? '' : String(v);
   }
 
+  // --- progress helpers ---
+  function teacherProgressFieldIds(){
+    const ids = [];
+    (state.groups || []).forEach(g => {
+      (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
+    });
+    return ids;
+  }
+
+  function computeDoneFromTeacherValues(reportId, fieldIds){
+    const ridKey = String(reportId);
+    const row = state.values_teacher[ridKey] || {};
+    let done = 0;
+    for (const fid of fieldIds) {
+      const v = row[String(fid)];
+      if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') done++;
+    }
+    return done;
+  }
+
+  function findStudentByReportId(reportId){
+    return (state.students || []).find(s => Number(s.report_instance_id) === Number(reportId)) || null;
+  }
+
+  function recomputeStudentProgress(student){
+    if (!student) return;
+    const tIds = teacherProgressFieldIds();
+    const tTotal = tIds.length;
+    const tDone = computeDoneFromTeacherValues(Number(student.report_instance_id || 0), tIds);
+
+    const cTotal = Number(student.progress_child_total || 0);
+    const cDone = Number(student.progress_child_done || 0);
+
+    const overallTotal = tTotal + cTotal;
+    const overallDone = tDone + cDone;
+    const overallMissing = Math.max(0, overallTotal - overallDone);
+
+    student.progress_teacher_total = tTotal;
+    student.progress_teacher_done = tDone;
+    student.progress_teacher_missing = Math.max(0, tTotal - tDone);
+
+    student.progress_overall_total = overallTotal;
+    student.progress_overall_done = overallDone;
+    student.progress_overall_missing = overallMissing;
+    student.progress_is_complete = (overallTotal > 0 && overallMissing === 0);
+  }
+
+  function recomputeFormsSummary(){
+    const total = (state.students || []).length;
+    let complete = 0;
+    (state.students || []).forEach(s => { if (s.progress_is_complete) complete++; });
+
+    if (!state.progress_summary) state.progress_summary = {};
+    state.progress_summary.students_total = total;
+    state.progress_summary.forms_complete = complete;
+    state.progress_summary.forms_incomplete = Math.max(0, total - complete);
+    state.progress_summary.teacher_fields_total = teacherProgressFieldIds().length;
+  }
+
+  function updateFormsProgressUI(){
+    if (!formsProgressWrap || !formsProgressBar) return;
+
+    const total = Number(state.progress_summary?.students_total ?? (state.students || []).length);
+    const complete = Number(state.progress_summary?.forms_complete ?? 0);
+
+    if (!total) {
+      formsProgressWrap.style.display = 'none';
+      return;
+    }
+
+    const pct = Math.round((complete / total) * 100);
+    formsProgressWrap.style.display = '';
+    if (formsProgressText) formsProgressText.textContent = `Formulare vollständig: ${complete}/${total}`;
+    if (formsProgressPct) formsProgressPct.textContent = `${pct}%`;
+    formsProgressBar.style.width = `${pct}%`;
+    formsProgressBar.classList.toggle('ok', complete === total);
+  }
+
+  function updateClassFieldsProgressUI(){
+    if (!classFieldsProgressWrap || !classFieldsProgressBar || !classFieldsStatus) return;
+
+    const cf = state.class_fields;
+    const ids = (cf && Array.isArray(cf.field_ids)) ? cf.field_ids : [];
+    const rid = classReportId();
+
+    if (!ids.length || !rid) {
+      classFieldsProgressWrap.style.display = 'none';
+      classFieldsStatus.textContent = '';
+      return;
+    }
+
+    let done = 0;
+    ids.forEach(fid => {
+      const v = teacherVal(rid, Number(fid));
+      if (String(v).trim() !== '') done++;
+    });
+
+    const total = ids.length;
+    const missing = Math.max(0, total - done);
+    const pct = Math.round((done / total) * 100);
+
+    classFieldsProgressWrap.style.display = '';
+    classFieldsStatus.textContent = `${done}/${total}`;
+    if (classFieldsProgressText) classFieldsProgressText.textContent = `Klassenfelder: ${done}/${total} (offen: ${missing})`;
+    if (classFieldsProgressPct) classFieldsProgressPct.textContent = `${pct}%`;
+    classFieldsProgressBar.style.width = `${pct}%`;
+    classFieldsProgressBar.classList.toggle('ok', missing === 0);
+  }
+
+  function updateStudentRowUI(student){
+    if (!student) return;
+    const row = document.getElementById(`srow-${student.id}`);
+    if (!row) return;
+
+    const overallTotal = Number(student.progress_overall_total || 0);
+    const overallDone = Number(student.progress_overall_done || 0);
+    const overallMissing = Number(student.progress_overall_missing || 0);
+    const teacherMissing = Number(student.progress_teacher_missing || 0);
+
+    const pct = overallTotal > 0 ? Math.round((overallDone / overallTotal) * 100) : 0;
+
+    const sub = row.querySelector('.js-srow-sub');
+    if (sub) {
+      const statusLbl = String(sub.getAttribute('data-statuslbl') || '');
+      sub.textContent = `Status: ${statusLbl} · offen: ${overallMissing} · Lehrer offen: ${teacherMissing}`;
+    }
+
+    const bar = row.querySelector('.js-prog-bar');
+    if (bar) {
+      bar.style.width = `${pct}%`;
+      bar.classList.toggle('ok', !!student.progress_is_complete);
+    }
+
+    const badge = row.querySelector('.js-prog-badge');
+    if (badge) {
+      badge.textContent = student.progress_is_complete ? '✓' : `offen: ${overallMissing}`;
+      badge.classList.toggle('ok', !!student.progress_is_complete);
+    }
+  }
+
+  function updateActiveStudentBadge(){
+    const s = activeStudent();
+    if (!s || !studentBadge) return;
+    const tDone = Number(s.progress_teacher_done || 0);
+    const tTotal = Number(s.progress_teacher_total || 0);
+    const oDone = Number(s.progress_overall_done || 0);
+    const oTotal = Number(s.progress_overall_total || 0);
+    const oMissing = Number(s.progress_overall_missing || 0);
+    const chk = s.progress_is_complete ? '✓' : '';
+    studentBadge.textContent = `${s.name} · Lehrer: ${tDone}/${tTotal} · Gesamt: ${oDone}/${oTotal} · offen: ${oMissing} ${chk}`.trim();
+  }
+
+  function onTeacherValueChanged(reportId, fieldId){
+    if (isClassFieldId(fieldId)) {
+      updateClassFieldsProgressUI();
+      return;
+    }
+
+    const st = findStudentByReportId(reportId);
+    if (!st) return;
+    recomputeStudentProgress(st);
+    recomputeFormsSummary();
+    updateFormsProgressUI();
+    updateStudentRowUI(st);
+    updateActiveStudentBadge();
+  }
+
   function scheduleSave(reportId, fieldId, value){
     const key = `${reportId}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
 
     if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
     state.values_teacher[String(reportId)][String(fieldId)] = value;
+    onTeacherValueChanged(reportId, fieldId);
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);
@@ -530,6 +720,7 @@ render_teacher_header('Eingaben');
 
     if (!state.values_teacher[String(rid)]) state.values_teacher[String(rid)] = {};
     state.values_teacher[String(rid)][String(fieldId)] = value;
+    onTeacherValueChanged(rid, fieldId);
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);
@@ -711,7 +902,9 @@ render_teacher_header('Eingaben');
     }
 
     classFieldsBox.style.display = 'block';
-    classFieldsStatus.textContent = `(${cf.fields.length})`;
+    // status/progress handled by updateClassFieldsProgressUI()
+    classFieldsStatus.textContent = '';
+    updateClassFieldsProgressUI();
 
     const rid = classReportId();
     const locked = false;
@@ -740,6 +933,10 @@ render_teacher_header('Eingaben');
 
     // ✅ always render class fields (independent from view)
     renderClassFields();
+    updateClassFieldsProgressUI();
+
+    // ✅ progress: how many forms are complete
+    updateFormsProgressUI();
 
     ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
     ui.showChild = !!toggleChild.checked;
@@ -765,12 +962,23 @@ render_teacher_header('Eingaben');
       div.className = 'srow' + (idx === ui.activeStudentIndex ? ' active' : '');
       const status = String(s.status || 'draft');
       const statusLbl = (status === 'locked') ? 'gesperrt' : (status === 'submitted' ? 'abgegeben' : 'Entwurf');
+      const overallTotal = Number(s.progress_overall_total || 0);
+      const overallDone = Number(s.progress_overall_done || 0);
+      const overallMissing = Number(s.progress_overall_missing || 0);
+      const teacherMissing = Number(s.progress_teacher_missing || 0);
+      const pct = overallTotal > 0 ? Math.round((overallDone / overallTotal) * 100) : 0;
+      const complete = !!s.progress_is_complete;
+
+      div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
-          <div class="sub">Status: ${esc(statusLbl)}</div>
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">Status: ${esc(statusLbl)} · offen: ${esc(overallMissing)} · Lehrer offen: ${esc(teacherMissing)}</div>
+          <div style="margin-top:6px;">
+            <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
+          </div>
         </div>
-        <span class="badge">${esc(statusLbl)}</span>
+        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : ('offen: ' + overallMissing)}</span>
       `;
       div.addEventListener('click', () => {
         ui.activeStudentIndex = idx;
@@ -785,7 +993,7 @@ render_teacher_header('Eingaben');
       studentForm.innerHTML = '<div class="alert">Keine Schüler gefunden.</div>';
       return;
     }
-    studentBadge.textContent = `${s.name} · Report #${s.report_instance_id}`;
+    updateActiveStudentBadge();
 
     const reportId = s.report_instance_id;
     const status = String(s.status || 'draft');
@@ -799,7 +1007,13 @@ render_teacher_header('Eingaben');
     }
 
     state.groups.forEach(g => {
-      html += `<div class="section-h" style="margin-top:10px;"><div class="t">${esc(g.title)}</div><div class="s">${g.fields.length} Felder</div></div>`;
+      const _gtTotal = (g.fields||[]).length;
+      let _gtDone = 0;
+      (g.fields||[]).forEach(_f => { const _v = teacherVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
+      const _gtMiss = Math.max(0, _gtTotal - _gtDone);
+      const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
+      html += `<div class="section-h" style="margin-top:10px;"><div class="t">${esc(g.title)}</div><div class="s">${_gtDone}/${_gtTotal} (offen: ${_gtMiss})</div></div>`;
+      html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
       g.fields.forEach(f => {
         const v = teacherVal(reportId, f.id);
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
@@ -1052,8 +1266,12 @@ render_teacher_header('Eingaben');
     state.values_child = j.values_child || {};
     state.class_report_instance_id = j.class_report_instance_id || 0;
     state.class_fields = j.class_fields || null;
+    state.progress_summary = j.progress_summary || null;
 
     rebuildFieldMap();
+    // keep client-side progress consistent (teacher edits update live)
+    (state.students||[]).forEach(recomputeStudentProgress);
+    recomputeFormsSummary();
     dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
 
     ui.activeStudentIndex = 0;

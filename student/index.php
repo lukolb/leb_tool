@@ -245,6 +245,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
             <div>
               <div style="font-weight:800;">Dein Bericht</div>
               <div class="muted" id="metaLine">Lade…</div>
+
+            <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
+              <div class="progress-meta"><span id="overallProgressText">—</span><span id="overallProgressPct"></span></div>
+              <div class="progress"><div id="overallProgressBar" class="progress-bar"></div></div>
+            </div>
             </div>
             <div class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</div>
           </div>
@@ -282,6 +287,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
+  const elOverallWrap = document.getElementById('overallProgressWrap');
+  const elOverallBar = document.getElementById('overallProgressBar');
+  const elOverallText = document.getElementById('overallProgressText');
+  const elOverallPct = document.getElementById('overallProgressPct');
   const elNav = document.getElementById('nav');
   const elTitle = document.getElementById('stepTitle');
   const elSub = document.getElementById('stepSub');
@@ -637,12 +646,19 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     elNav.innerHTML = html.join('');
 
+    updateOverallProgress();
+
     elNav.querySelectorAll('[data-jump]').forEach(el => {
       el.addEventListener('click', () => {
         const v = Number(el.getAttribute('data-jump'));
         if (!Number.isFinite(v) || v < 0) return;
         activeStep = v;
         render();
+        window.scrollTo({
+            top: 0, // Scrollt zum obersten Punkt des Dokuments
+            left: 0, // Bleibt auf der linken Seite
+            behavior: 'smooth' // Sorgt für einen sanften Scroll-Effekt
+        });
       });
     });
 
@@ -710,24 +726,33 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   function renderSectionHeader(groupTitle, fields){
     const st = groupStats(fields || []);
     const miss = st.missing;
+    const pct = (st.total > 0) ? Math.round((st.done / st.total) * 100) : 0;
+
     const right = (st.total > 0)
       ? `<span class="badge-mini ${miss===0?'ok':'miss'}">${miss===0?'✓':esc(String(miss))}</span>`
       : '';
     const sub = (st.total > 0) ? `${st.done}/${st.total} erledigt` : '';
+    const bar = (st.total > 0)
+      ? `<div class="progress sm" style="margin-top:6px;"><div class="progress-bar ${miss===0?'ok':''}" style="width:${pct}%;"></div></div>`
+      : '';
+
     return `<div class="section-h">
       <div>
         <div class="t">${esc(groupTitle)}</div>
         <div class="s">${esc(sub)}</div>
+        ${bar}
       </div>
       ${right}
     </div>`;
   }
+
 
   function renderGroupIntro(groupTitle, fields){
     const st = groupStats(fields || []);
     const miss = st.missing;
     const total = st.total;
     const done = st.done;
+    const pct = (total > 0) ? Math.round((done / total) * 100) : 0;
 
     return `
       <div class="group-intro">
@@ -735,13 +760,18 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         <h3>${esc(groupTitle)}</h3>
         <div class="muted">Hier kommen ${esc(String(total))} Fragen. Du kannst jederzeit im Menü springen.</div>
 
+        <div class="progress-wrap" style="margin-top:12px;">
+          <div class="progress-meta"><span>Fortschritt</span><span>${pct}%</span></div>
+          <div class="progress"><div class="progress-bar ${miss===0?'ok':''}" style="width:${pct}%;"></div></div>
+        </div>
+
         <div class="meta">
           <span class="gi-pill">✅ Erledigt: <strong style="color:inherit;">${esc(String(done))}</strong></span>
           <span class="gi-pill">⏳ Offen: <strong style="color:inherit;">${esc(String(miss))}</strong></span>
         </div>
 
-        <div class="actions" style="justify-content:flex-start; margin-top:12px;">
-          <button class="btn primary" type="button" id="btnStartGroup">Abschnitt starten</button>
+        <div style="margin-top:12px;">
+          <button class="btn" type="button" id="btnStartGroup">Starten</button>
         </div>
       </div>
     `;
@@ -921,6 +951,33 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     return missing;
   }
 
+  function totalFieldCount(){
+    const groups = getGroupsList();
+    let total = 0;
+    for (const g of groups) {
+      const fields = Array.isArray(g.fields) ? g.fields : [];
+      total += fields.length;
+    }
+    return total;
+  }
+
+  function updateOverallProgress(){
+    if (!elOverallWrap || !elOverallBar) return;
+    const total = totalFieldCount();
+    const missing = totalMissingCount();
+    const done = Math.max(0, total - missing);
+    const pct = (total > 0) ? Math.round((done/total)*100) : 0;
+
+    elOverallWrap.style.display = (total > 0) ? '' : 'none';
+    if (elOverallText) elOverallText.textContent = (total > 0)
+      ? `Fortschritt: ${done}/${total} (offen: ${missing})`
+      : '—';
+    if (elOverallPct) elOverallPct.textContent = (total > 0) ? (pct + '%') : '';
+
+    elOverallBar.style.width = (total > 0) ? (pct + '%') : '0%';
+    elOverallBar.classList.toggle('ok', total > 0 && missing === 0);
+  }
+
   async function handleSubmit(){
     if (isLocked()) return;
 
@@ -1002,6 +1059,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       btnNext.textContent = 'Los geht’s';
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
+      btnNext.style.visibility = 'visible';
     }
 
     else if (cur.kind === 'group') {
@@ -1013,6 +1071,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
+      btnNext.style.visibility = 'visible';
     }
 
     else if (cur.kind === 'group_intro') {
@@ -1036,6 +1095,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
+      btnNext.style.visibility = 'visible';
     }
 
     else if (cur.kind === 'field') {
@@ -1047,6 +1107,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
+      btnNext.style.visibility = 'visible';
     }
 
     else { // submit
@@ -1067,6 +1128,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       btnNext.textContent = '—';
       btnNext.disabled = true;
+      btnNext.style.visibility = 'hidden';
     }
 
     // Prev/Next behavior
@@ -1079,6 +1141,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (cur.kind === 'submit') return;
       activeStep = Math.min(activeStep + 1, flatSteps.length - 1);
       render();
+      window.scrollTo({
+            top: 0, // Scrollt zum obersten Punkt des Dokuments
+            left: 0, // Bleibt auf der linken Seite
+            behavior: 'smooth' // Sorgt für einen sanften Scroll-Effekt
+        });
     };
 
     updateReqHint();
@@ -1116,7 +1183,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         } else if (st === 'locked') {
           showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
         } else {
-          showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
+          showLockedOnly('Eingabe noch nicht freigegeben oder bereits abgegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben oder du hast deine Eingabe bereits abgegeben. Bitte versuche es später noch einmal.');
         }
         return;
       }

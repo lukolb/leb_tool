@@ -509,6 +509,95 @@ try {
     $valuesTeacher = load_values($pdo, $reportIds, $teacherFieldIds, 'teacher');
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child');
 
+    // --- progress (teacher / child / overall) ---
+    $teacherProgressIds = [];
+    foreach ($teacherFields as $f0) {
+      $m0 = meta_read($f0['meta_json'] ?? null);
+      if (is_system_bound($m0)) continue;
+      if (is_class_field($m0)) continue;
+      $teacherProgressIds[] = (int)$f0['id'];
+    }
+
+    $childProgressIds = [];
+    // load ALL child-editable fields for progress counting (not only paired)
+    $childFieldsAll = load_child_fields_for_pairing($pdo, $templateId);
+    foreach ($childFieldsAll as $cf0) {
+      $m0 = meta_read($cf0['meta_json'] ?? null);
+      if (is_system_bound($m0)) continue;
+      if (is_class_field($m0)) continue;
+      $childProgressIds[] = (int)$cf0['id'];
+    }
+
+    $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child');
+
+    $teacherTotal = count($teacherProgressIds);
+    $childTotal = count($childProgressIds);
+    $overallTotal = $teacherTotal + $childTotal;
+
+    $completeForms = 0;
+    foreach ($students as &$srow) {
+      $rid = (int)($srow['report_instance_id'] ?? 0);
+      $ridKey = (string)$rid;
+
+      $tDone = 0;
+      if ($teacherTotal > 0) {
+        foreach ($teacherProgressIds as $fid) {
+          $v = $valuesTeacher[$ridKey][(string)$fid] ?? '';
+          if (trim((string)$v) !== '') $tDone++;
+        }
+      }
+
+      $cDone = 0;
+      if ($childTotal > 0) {
+        foreach ($childProgressIds as $fid) {
+          $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
+          if (trim((string)$v) !== '') $cDone++;
+        }
+      }
+
+      $oDone = $tDone + $cDone;
+      $oMissing = max(0, $overallTotal - $oDone);
+      $isComplete = ($overallTotal > 0 && $oMissing === 0);
+      if ($isComplete) $completeForms++;
+
+      $srow['progress_teacher_total'] = $teacherTotal;
+      $srow['progress_teacher_done'] = $tDone;
+      $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone);
+
+      $srow['progress_child_total'] = $childTotal;
+      $srow['progress_child_done'] = $cDone;
+      $srow['progress_child_missing'] = max(0, $childTotal - $cDone);
+
+      $srow['progress_overall_total'] = $overallTotal;
+      $srow['progress_overall_done'] = $oDone;
+      $srow['progress_overall_missing'] = $oMissing;
+      $srow['progress_is_complete'] = $isComplete;
+    }
+    unset($srow);
+
+    // class fields progress (counts only class-scope editable fields)
+    $classTotal = count($classFieldIdsEditable);
+    $classDone = 0;
+    if ($classTotal > 0 && $classReportInstanceId > 0) {
+      $ridKey = (string)(int)$classReportInstanceId;
+      foreach ($classFieldIdsEditable as $fid) {
+        $v = $classValuesById[$ridKey][(string)$fid] ?? '';
+        if (trim((string)$v) !== '') $classDone++;
+      }
+    }
+
+    $progressSummary = [
+      'students_total' => count($students),
+      'forms_complete' => $completeForms,
+      'forms_incomplete' => max(0, count($students) - $completeForms),
+      'teacher_fields_total' => $teacherTotal,
+      'child_fields_total' => $childTotal,
+      'overall_fields_total' => $overallTotal,
+      'class_fields_total' => $classTotal,
+      'class_fields_done' => $classDone,
+      'class_fields_missing' => max(0, $classTotal - $classDone),
+    ];
+
     json_out([
       'ok' => true,
       'template' => [
@@ -520,6 +609,7 @@ try {
       'groups' => $groupsList,
       'values_teacher' => $valuesTeacher,
       'values_child' => $valuesChild,
+      'progress_summary' => $progressSummary,
       'class_report_instance_id' => $classReportInstanceId,
       'class_fields' => [
         // ✅ IMPORTANT: only editable class fields

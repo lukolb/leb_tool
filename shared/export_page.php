@@ -103,6 +103,11 @@ function export_class_display(array $c): string {
       </div>
     </div>
 
+    <div id="exportProgressWrap" class="progress-wrap" style="display:none; margin-top:10px;">
+      <div class="progress-meta"><span id="exportProgressText">—</span><span id="exportProgressPct"></span></div>
+      <div class="progress"><div id="exportProgressBar" class="progress-bar"></div></div>
+    </div>
+
     <div id="infoBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #b9dbff; background:#eaf4ff;">
       <strong>Hinweis:</strong>
       <span id="infoText"></span>
@@ -177,6 +182,11 @@ const infoBox = document.getElementById('infoBox');
 const infoText = document.getElementById('infoText');
 
 const warnBox = document.getElementById('warnBox');
+
+const progWrap = document.getElementById('exportProgressWrap');
+const progBar  = document.getElementById('exportProgressBar');
+const progText = document.getElementById('exportProgressText');
+const progPct  = document.getElementById('exportProgressPct');
 const warnText = document.getElementById('warnText');
 const btnWarnDetails = document.getElementById('btnWarnDetails');
 
@@ -196,6 +206,27 @@ let __missingRenderSource = null;
 let __fullStudentList = [];
 
 function setStatus(msg){ if (elStatus) elStatus.textContent = msg; }
+
+function showProgress(label, done, total){
+  if (!progWrap || !progBar) return;
+  const t = Math.max(0, Number(total||0));
+  const d = Math.max(0, Number(done||0));
+  const pct = (t>0) ? Math.max(0, Math.min(100, Math.round((d/t)*100))) : 0;
+  progWrap.style.display = '';
+  if (progText) progText.textContent = label || '';
+  if (progPct) progPct.textContent = (t>0) ? (pct + '%') : '';
+  progBar.style.width = (t>0) ? (pct + '%') : '0%';
+  progBar.classList.toggle('ok', t>0 && d>=t);
+}
+
+function hideProgress(){
+  if (!progWrap) return;
+  progWrap.style.display = 'none';
+  if (progBar) { progBar.style.width = '0%'; progBar.classList.remove('ok'); }
+  if (progText) progText.textContent = '';
+  if (progPct) progPct.textContent = '';
+}
+
 function setInfo(msg){
   if (!infoBox || !infoText) return;
   if (msg) { infoText.textContent = msg; infoBox.style.display = ''; }
@@ -347,12 +378,14 @@ async function check(){
 
   setInfo('');
   setStatus('Prüfe Daten …');
+  showProgress('Prüfe Daten …', 1, 3);
 
   try {
     const mode = currentMode();
 
     // 1) FULL PREVIEW (immer ohne student_id) -> füllt Dropdown korrekt
     const full = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
+    showProgress('Prüfe Daten …', 2, 3);
 
     // ✅ cache complete list
     __fullStudentList = Array.isArray(full.students) ? full.students : [];
@@ -377,9 +410,9 @@ async function check(){
 
     lastPreview = merged;
     updateWarnBoxFromPreview(merged);
-
     const cnt = __fullStudentList.length || 0;
     setStatus(`OK. ${cnt} Schüler:in(en) gefunden.`);
+    showProgress('Prüfen fertig', 3, 3);
     return merged;
 
   } catch (e) {
@@ -391,12 +424,13 @@ async function check(){
       if (elStudent) elStudent.innerHTML = '';
       if (warnBox) warnBox.style.display = 'none';
       if (btnWarnDetails) btnWarnDetails.style.display = 'none';
-
+      hideProgress();
       setStatus('Hinweis.');
       setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
       return null;
     }
 
+    hideProgress();
     setStatus('Fehler: ' + msg);
     throw e;
   }
@@ -691,12 +725,14 @@ async function fillPdfForStudent(templateBytes, student){
 }
 
 async function exportNow(){
+  hideProgress();
   const mode = currentMode();
   const classId = Number(elClass.value||0);
-  const selectedStudentId = elStudent.value;
+  const selectedStudentId = elStudent?.value;
 
   setInfo('');
   setStatus('Lade Exportdaten …');
+  showProgress('Lade Exportdaten …', 0, 1);
 
   let data;
   try {
@@ -706,6 +742,7 @@ async function exportNow(){
   } catch (e) {
     const msg = (e?.message || String(e));
     if (isNonFatalBusinessError(msg)) {
+      hideProgress();
       setStatus('Hinweis.');
       setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
       return;
@@ -724,18 +761,24 @@ async function exportNow(){
   if (!students.length) throw new Error('Keine Schüler:innen gefunden (Filter?).');
 
   const needZip = (mode === 'zip');
+  setStatus('Lade Bibliotheken …');
+  showProgress('Lade Bibliotheken …', 0, 1);
   await loadLibsIfNeeded(needZip);
+  showProgress('Bibliotheken geladen', 1, 1);
 
   setStatus('Lade PDF-Vorlage …');
+  showProgress('Lade PDF-Vorlage …', 0, 1);
   const tplResp = await fetch(data.pdf_url, { credentials: 'same-origin' });
   if (!tplResp.ok) throw new Error('PDF-Vorlage konnte nicht geladen werden.');
   const templateBytes = new Uint8Array(await tplResp.arrayBuffer());
+  showProgress('PDF-Vorlage geladen', 1, 1);
 
   const baseName = safeFilename((data.class?.display || 'Klasse') + ' ' + (data.class?.school_year || ''));
   const suffix = onlySubmittedFlag() ? ' - nur abgegebene' : '';
 
   if (mode === 'zip') {
     setStatus('Erzeuge PDFs …');
+    showProgress('Erzeuge PDFs …', 0, students.length);
     const zip = new window.JSZip();
     let done = 0;
     for (const s of students){
@@ -744,16 +787,20 @@ async function exportNow(){
       zip.file(fn + '.pdf', bytes);
       done++;
       setStatus(`Erzeuge PDFs … ${done}/${students.length}`);
+      showProgress('Erzeuge PDFs …', done, students.length);
     }
     setStatus('ZIP packen …');
+    showProgress('ZIP packen …', students.length, students.length);
     const out = await zip.generateAsync({ type: 'uint8array' });
     downloadBytes(out, baseName + suffix + '.zip', 'application/zip');
     setStatus('Fertig. ZIP wurde heruntergeladen.');
+    showProgress('Fertig', students.length, students.length);
     return;
   }
 
   if (mode === 'merged') {
     setStatus('Erzeuge eine zusammengeführte PDF …');
+    showProgress('Zusammenführen …', 0, students.length);
     const { PDFDocument } = window.PDFLib;
     const merged = await PDFDocument.create();
     let done = 0;
@@ -764,15 +811,18 @@ async function exportNow(){
       pages.forEach(p => merged.addPage(p));
       done++;
       setStatus(`Zusammenführen … ${done}/${students.length}`);
+      showProgress('Zusammenführen …', done, students.length);
     }
     const out = await merged.save();
     downloadBytes(out, baseName + suffix + '.pdf', 'application/pdf');
     setStatus('Fertig. PDF wurde heruntergeladen.');
+    showProgress('Fertig', students.length, students.length);
     return;
   }
 
   setStatus('Erzeuge PDF …');
-  const chosenId = elStudent.value;
+  showProgress('Erzeuge PDF …', 0, 1);
+  const chosenId = elStudent?.value;
   let s = students[0];
   if (chosenId) {
     const found = students.find(x => String(x.id) === String(chosenId));
@@ -782,6 +832,7 @@ async function exportNow(){
   const fn = safeFilename(s.name) || ('Schueler-' + s.id);
   downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
   setStatus('Fertig. PDF wurde heruntergeladen.');
+  showProgress('Fertig', 1, 1);
 }
 
 if (btnExport) {
@@ -806,6 +857,7 @@ if (btnExport) {
       await exportNow();
 
     } catch (e) {
+      showProgress('Fehler', 0, 1);
       setStatus('Fehler: ' + (e?.message || e));
     } finally {
       btnExport.disabled = false;

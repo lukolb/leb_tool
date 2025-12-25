@@ -126,3 +126,14 @@ th{color:#111; font-size:13px}
 }
 .row-actions{display:flex; flex-wrap:wrap; gap:8px}
 .small{font-size:12px}
+
+
+/* progress */
+.progress{ height:10px; background: rgba(0,0,0,0.08); border-radius:999px; overflow:hidden; }
+.progress.sm{ height:6px; }
+.progress-bar{ height:100%; width:0%; background: var(--primary); transition: width .25s ease; }
+.progress-bar.ok{ background: rgba(0,128,0,0.75); }
+.progress-meta{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color: var(--muted); margin-bottom:6px; }
+.progress-wrap{ margin-top:10px; }
+
+.badge.ok{ background: rgba(0,128,0,0.12); border-color: rgba(0,128,0,0.35); color: rgba(0,128,0,0.95); }
