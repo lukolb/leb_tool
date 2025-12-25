@@ -11,25 +11,25 @@ $err = '';
 $ok = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  csrf_verify();
-  $p1 = $_POST['p1'] ?? '';
-  $p2 = $_POST['p2'] ?? '';
+  try {
+    csrf_verify();
+    $p1 = (string)($_POST['p1'] ?? '');
+    $p2 = (string)($_POST['p2'] ?? '');
+    if (mb_strlen($p1) < 10) throw new RuntimeException('Passwort muss mindestens 10 Zeichen haben.');
+    if ($p1 !== $p2) throw new RuntimeException('Passwörter stimmen nicht überein.');
 
-  if ($pepper === '') $err = 'Konfiguration fehlt.';
-  elseif (strlen($p1) < 10) $err = 'Passwort muss mindestens 10 Zeichen haben.';
-  elseif ($p1 !== $p2) $err = 'Passwörter stimmen nicht überein.';
-  else {
     $hash = password_hash($p1 . $pepper, PASSWORD_DEFAULT);
-    $uid = (int)current_user()['id'];
+    $uid = (int)($_SESSION['user']['id'] ?? 0);
+    if ($uid <= 0) throw new RuntimeException('Ungültige Sitzung.');
 
-    $stmt = $pdo->prepare("UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?");
-    $stmt->execute([$hash, $uid]);
+    $st = $pdo->prepare("UPDATE users SET password_hash=? WHERE id=? LIMIT 1");
+    $st->execute([$hash, $uid]);
 
-    audit('user_change_password', $uid);
-    $ok = 'Passwort wurde geändert.';
+    $ok = 'Passwort aktualisiert.';
+  } catch (Throwable $e) {
+    $err = $e->getMessage();
   }
 }
-
 ?>
 <!doctype html>
 <html lang="de">
@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Passwort ändern</title>
+  <?php render_favicons(); ?>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:24px; max-width:520px;}
     .card{border:1px solid #ddd; border-radius:12px; padding:18px; margin:16px 0;}
@@ -67,4 +68,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </div>
 </body>
 </html>
-

@@ -16,6 +16,7 @@ function render_admin_header(string $title): void {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?=h($title)?></title>
+    <?php render_favicons(); ?>
     <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
     <style>:root{<?= $vars ?>}</style>
   </head>

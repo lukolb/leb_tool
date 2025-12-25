@@ -50,6 +50,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?=h($orgName)?> – Schülerbereich</title>
+  <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
       body.page{

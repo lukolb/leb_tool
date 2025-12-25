@@ -58,6 +58,7 @@ $logo = (string)($b['logo_path'] ?? '');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?=h($org)?> – Schüler Login</title>
+  <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
       body.page{

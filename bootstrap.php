@@ -39,6 +39,27 @@ function url(string $path): string {
   return APP_BASE_URL . $path;
 }
 
+/**
+ * Outputs favicon link tags.
+ *
+ * Centralized so all areas (admin/teacher/student) render the same favicon(s)
+ * and it keeps working when the app is installed in a subfolder (APP_BASE_URL).
+ */
+function render_favicons(): void {
+  // Existing files in assets/icons
+  $ico16 = url('assets/icons/favicon-16x16.png');
+  $ico32 = url('assets/icons/favicon-32x32.png');
+  $icoIco = url('assets/icons/lebtool-favicon.ico');
+  $apple = url('assets/icons/lebtool-icon-512x512.png');
+
+  echo "\n    <!-- Favicons -->\n";
+  echo '    <link rel="icon" href="' . h($icoIco) . '" sizes="any">' . "\n";
+  echo '    <link rel="icon" type="image/png" sizes="32x32" href="' . h($ico32) . '">' . "\n";
+  echo '    <link rel="icon" type="image/png" sizes="16x16" href="' . h($ico16) . '">' . "\n";
+  // iOS / iPadOS home screen icon (best available size in repo)
+  echo '    <link rel="apple-touch-icon" href="' . h($apple) . '">' . "\n";
+}
+
 function redirect(string $path): never {
   header('Location: ' . url($path));
   exit;
