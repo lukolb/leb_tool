@@ -26,6 +26,70 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
+function option_list_id_from_meta(array $meta): int {
+  $tid = $meta['option_list_template_id'] ?? null;
+  if ($tid === null || $tid === '') return 0;
+  return (int)$tid;
+}
+
+function load_option_list_items(PDO $pdo, int $listId): array {
+  if ($listId <= 0) return [];
+  $st = $pdo->prepare(
+    "SELECT id, value, label, icon_id
+     FROM option_list_items
+     WHERE list_id=?
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $st->execute([$listId]);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $out[] = [
+      'option_item_id' => (int)$r['id'],
+      'value' => (string)($r['value'] ?? ''),
+      'label' => (string)($r['label'] ?? ''),
+      'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
+    ];
+  }
+  return $out;
+}
+
+function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw, ?string $valueTextRaw): array {
+  $out = ['text' => $valueTextRaw, 'json' => $valueJsonRaw];
+  $listId = option_list_id_from_meta($meta);
+  if ($listId <= 0) return $out;
+
+  $vj = null;
+  if ($valueJsonRaw) {
+    $tmp = json_decode($valueJsonRaw, true);
+    if (is_array($tmp)) $vj = $tmp;
+  }
+
+  $optId = is_array($vj) && isset($vj['option_item_id']) ? (int)$vj['option_item_id'] : 0;
+  if ($optId > 0) {
+    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
+    $st->execute([$optId, $listId]);
+    $rowVal = $st->fetchColumn();
+    if ($rowVal !== false && $rowVal !== null) {
+      $out['text'] = (string)$rowVal;
+      return $out;
+    }
+  }
+
+  $vt = $valueTextRaw !== null ? trim((string)$valueTextRaw) : '';
+  if ($vt !== '') {
+    $st = $pdo->prepare("SELECT id, value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+    $st->execute([$listId, $vt]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $out['json'] = json_encode(['option_item_id' => (int)$row['id']], JSON_UNESCAPED_UNICODE);
+      $out['text'] = (string)($row['value'] ?? $vt);
+      return $out;
+    }
+  }
+
+  return $out;
+}
+
 function is_class_field(array $meta): bool {
   $scope = isset($meta['scope']) ? strtolower(trim((string)$meta['scope'])) : '';
   if ($scope === 'class') return true;
@@ -185,7 +249,7 @@ function load_teacher_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, options_json
+    "SELECT id, field_name, field_type, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -204,11 +268,12 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
   $params = array_merge($reportIds, $fieldIds, [$source]);
 
   $st = $pdo->prepare(
-    "SELECT report_instance_id, template_field_id, value_text
-     FROM field_values
-     WHERE report_instance_id IN ($inR)
-       AND template_field_id IN ($inF)
-       AND source=?"
+    "SELECT fv.report_instance_id, fv.template_field_id, fv.value_text, fv.value_json, tf.meta_json
+     FROM field_values fv
+     JOIN template_fields tf ON tf.id=fv.template_field_id
+     WHERE fv.report_instance_id IN ($inR)
+       AND fv.template_field_id IN ($inF)
+       AND fv.source=?"
   );
   $st->execute($params);
 
@@ -217,7 +282,9 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
     $rid = (string)(int)$r['report_instance_id'];
     $fid = (string)(int)$r['template_field_id'];
     if (!isset($out[$rid])) $out[$rid] = [];
-    $out[$rid][$fid] = ($r['value_text'] !== null) ? (string)$r['value_text'] : '';
+    $meta = meta_read($r['meta_json'] ?? null);
+    $res = resolve_option_value_text($pdo, $meta, $r['value_json'] !== null ? (string)$r['value_json'] : null, $r['value_text'] !== null ? (string)$r['value_text'] : null);
+    $out[$rid][$fid] = $res['text'] !== null ? (string)$res['text'] : '';
   }
   return $out;
 }
@@ -250,6 +317,8 @@ try {
     if ($schoolYear === '') $schoolYear = date('Y');
 
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+
+    $optCache = []; // listId => option definitions
 
     // students in class
     $st = $pdo->prepare(
@@ -286,10 +355,19 @@ try {
       $base = base_field_key((string)$cf['field_name']);
       if ($base === '') continue;
       if (isset($childByBase[$base])) continue;
+      $mcf = meta_read($cf['meta_json'] ?? null);
+      $listId = option_list_id_from_meta($mcf);
+      $optsChild = [];
+      if ($listId > 0) {
+        if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId);
+        $optsChild = $optCache[$listId];
+      } else {
+        $optsChild = decode_options($cf['options_json'] ?? null);
+      }
       $childByBase[$base] = [
         'id' => (int)$cf['id'],
         'field_type' => (string)($cf['field_type'] ?? ''),
-        'options' => decode_options($cf['options_json'] ?? null),
+        'options' => $optsChild,
       ];
     }
 
@@ -330,7 +408,14 @@ try {
       $m0 = meta_read($f0['meta_json'] ?? null);
       if (!is_class_field($m0) || is_system_bound($m0)) continue;
 
-      $optsTeacher = decode_options($f0['options_json'] ?? null);
+      $optsTeacher = [];
+      $listIdT = option_list_id_from_meta($m0);
+      if ($listIdT > 0) {
+        if (!isset($optCache[$listIdT])) $optCache[$listIdT] = load_option_list_items($pdo, $listIdT);
+        $optsTeacher = $optCache[$listIdT];
+      } else {
+        $optsTeacher = decode_options($f0['options_json'] ?? null);
+      }
       if (!$optsTeacher && (string)$f0['field_type'] === 'grade') {
         $optsTeacher = [
           ['value'=>'1','label'=>'1'],
@@ -372,7 +457,14 @@ try {
         ];
       }
 
-      $optsTeacher = decode_options($f['options_json'] ?? null);
+      $optsTeacher = [];
+      $listIdF = option_list_id_from_meta($meta);
+      if ($listIdF > 0) {
+        if (!isset($optCache[$listIdF])) $optCache[$listIdF] = load_option_list_items($pdo, $listIdF);
+        $optsTeacher = $optCache[$listIdF];
+      } else {
+        $optsTeacher = decode_options($f['options_json'] ?? null);
+      }
       if (!$optsTeacher && (string)$f['field_type'] === 'grade') {
         $optsTeacher = [
           ['value'=>'1','label'=>'1'],
@@ -488,9 +580,23 @@ try {
     $type = (string)$frow['field_type'];
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
+    $valueJson = null;
+
+    $valueJson = null;
+
     if (in_array($type, ['radio','select','grade'], true)) {
       $valueText = $valueText !== null ? trim($valueText) : '';
       if ($valueText === '') $valueText = null;
+
+      $listId = option_list_id_from_meta($meta);
+      if ($listId > 0 && $valueText !== null) {
+        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+        $st2->execute([$listId, $valueText]);
+        $optId = (int)($st2->fetchColumn() ?: 0);
+        if ($optId > 0) {
+          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+        }
+      }
     } elseif ($type === 'checkbox') {
       $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
     } else {
@@ -500,15 +606,15 @@ try {
 
     $up = $pdo->prepare(
       "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
-       VALUES (?, ?, ?, NULL, 'teacher', ?, NOW())
+       VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
        ON DUPLICATE KEY UPDATE
          value_text=VALUES(value_text),
-         value_json=NULL,
+         value_json=VALUES(value_json),
          source='teacher',
          updated_by_user_id=VALUES(updated_by_user_id),
          updated_at=NOW()"
     );
-    $up->execute([$reportId, $fieldId, $valueText, $userId]);
+    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
 
     audit('teacher_class_value_save', $userId, ['class_id'=>$classId,'report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
     json_out(['ok' => true]);
@@ -564,6 +670,16 @@ try {
     if (in_array($type, ['radio','select','grade'], true)) {
       $valueText = $valueText !== null ? trim($valueText) : '';
       if ($valueText === '') $valueText = null;
+
+      $listId = option_list_id_from_meta($meta);
+      if ($listId > 0 && $valueText !== null) {
+        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+        $st2->execute([$listId, $valueText]);
+        $optId = (int)($st2->fetchColumn() ?: 0);
+        if ($optId > 0) {
+          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+        }
+      }
     } elseif ($type === 'checkbox') {
       $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
     } else {
@@ -573,15 +689,15 @@ try {
 
     $up = $pdo->prepare(
       "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
-       VALUES (?, ?, ?, NULL, 'teacher', ?, NOW())
+       VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
        ON DUPLICATE KEY UPDATE
          value_text=VALUES(value_text),
-         value_json=NULL,
+         value_json=VALUES(value_json),
          source='teacher',
          updated_by_user_id=VALUES(updated_by_user_id),
          updated_at=NOW()"
     );
-    $up->execute([$reportId, $fieldId, $valueText, $userId]);
+    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
 
     audit('teacher_value_save', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
     json_out(['ok' => true]);

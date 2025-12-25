@@ -88,11 +88,10 @@ try {
 
     $pdo->beginTransaction();
 
-    // Update template
     $pdo->prepare("UPDATE option_list_templates SET name=?, description=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
         ->execute([$name, $desc, $id]);
 
-    // Existing items
+    // existing items
     $existing = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=?");
     $existing->execute([$id]);
     $existingIds = array_map('intval', array_column($existing->fetchAll(), 'id'));
@@ -110,7 +109,7 @@ try {
 
     $i = 0;
     foreach ($items as $row) {
-      if (!is_array($row)) continue;
+      if (!is_array($row)) { $i++; continue; }
 
       $itemId = isset($row['id']) ? (int)$row['id'] : 0;
       $value = trim((string)($row['value'] ?? ''));
@@ -120,13 +119,14 @@ try {
 
       if ($value === '' || $label === '') { $i++; continue; }
 
-      if ($itemId > 0) {
+      if ($itemId > 0 && in_array($itemId, $existingIds, true)) {
         $upd->execute([$value, $label, $iconId, $sort, $itemId, $id]);
         $keepIds[] = $itemId;
       } else {
         $ins->execute([$id, $value, $label, $iconId, $sort]);
         $keepIds[] = (int)$pdo->lastInsertId();
       }
+
       $i++;
     }
 
@@ -140,12 +140,58 @@ try {
 
     $pdo->commit();
 
-    audit('option_list_save', (int)current_user()['id'], ['list_id'=>$id, 'items_saved'=>count($keepIds)]);
-    echo json_encode(['ok'=>true], JSON_UNESCAPED_UNICODE);
+    // --- propagate updated options to linked template_fields (meta.option_list_template_id == $id)
+    $optionsObj = ['options' => []];
+    $stItems = $pdo->prepare("SELECT value, label, icon_id, sort_order FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
+    $stItems->execute([$id]);
+    $dbItems = $stItems->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($dbItems as $it) {
+      $val = trim((string)($it['value'] ?? ''));
+      $lab = trim((string)($it['label'] ?? ''));
+      if ($val === '' || $lab === '') continue;
+      $optionsObj['options'][] = [
+        'value' => $val,
+        'label' => $lab,
+        'icon_id' => ($it['icon_id'] !== null && $it['icon_id'] !== '') ? (int)$it['icon_id'] : null,
+      ];
+    }
+    $optionsJson = json_encode($optionsObj, JSON_UNESCAPED_UNICODE);
+
+    $cand = $pdo->query("SELECT id, meta_json FROM template_fields WHERE meta_json IS NOT NULL AND meta_json LIKE '%option_list_template_id%'");
+    $updFieldOpt = $pdo->prepare("UPDATE template_fields SET options_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    $updFieldMeta = $pdo->prepare("UPDATE template_fields SET meta_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    $updatedCount = 0;
+
+    foreach ($cand->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $meta = json_decode((string)$r['meta_json'], true);
+      if (!is_array($meta)) continue;
+      if (!array_key_exists('option_list_template_id', $meta)) continue;
+      if ((string)$meta['option_list_template_id'] !== (string)$id) continue;
+
+      // Update options_json (the canonical place for choices)
+      $updFieldOpt->execute([$optionsJson, (int)$r['id']]);
+      $updatedCount++;
+
+      // If the project previously cached options inside meta, keep it in sync too (backwards compatibility).
+      $changedMeta = false;
+      if (array_key_exists('options', $meta) && is_array($meta['options'])) {
+        $meta['options'] = $optionsObj['options'];
+        $changedMeta = true;
+      }
+      if (array_key_exists('options_cache', $meta) && is_array($meta['options_cache'])) {
+        $meta['options_cache'] = $optionsObj['options'];
+        $changedMeta = true;
+      }
+      if ($changedMeta) {
+        $updFieldMeta->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+      }
+    }
+
+    audit('option_list_save', (int)current_user()['id'], ['list_id'=>$id, 'items_saved'=>count($keepIds), 'template_fields_updated'=>$updatedCount]);
+    echo json_encode(['ok'=>true, 'template_fields_updated'=>$updatedCount], JSON_UNESCAPED_UNICODE);
     exit;
   }
-
-  if ($action === 'duplicate_template') {
+if ($action === 'duplicate_template') {
     $id = (int)($data['list_id'] ?? 0);
     if ($id <= 0) throw new RuntimeException('list_id fehlt.');
 

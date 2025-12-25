@@ -26,6 +26,77 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
+/**
+ * Option-list templates: keep selections stable even if the *value* changes.
+ * We store/resolve by option_list_items.id (option_item_id) and derive the current value from that.
+ */
+function option_list_id_from_meta(array $meta): int {
+  $tid = $meta['option_list_template_id'] ?? null;
+  if ($tid === null || $tid === '') return 0;
+  return (int)$tid;
+}
+
+function load_option_list_items(PDO $pdo, int $listId): array {
+  if ($listId <= 0) return [];
+  $st = $pdo->prepare(
+    "SELECT id, value, label, icon_id
+     FROM option_list_items
+     WHERE list_id=?
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $st->execute([$listId]);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $out[] = [
+      'option_item_id' => (int)$r['id'],
+      'value' => (string)($r['value'] ?? ''),
+      'label' => (string)($r['label'] ?? ''),
+      'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
+    ];
+  }
+  return $out;
+}
+
+function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw, ?string $valueTextRaw): array {
+  // Returns ['text'=>?, 'json'=>?] with text resolved to the CURRENT option_list_items.value (if possible).
+  $out = ['text' => $valueTextRaw, 'json' => $valueJsonRaw];
+  $listId = option_list_id_from_meta($meta);
+  if ($listId <= 0) return $out;
+
+  $vj = null;
+  if ($valueJsonRaw) {
+    $tmp = json_decode($valueJsonRaw, true);
+    if (is_array($tmp)) $vj = $tmp;
+  }
+
+  $optId = is_array($vj) && isset($vj['option_item_id']) ? (int)$vj['option_item_id'] : 0;
+  if ($optId > 0) {
+    $st = $pdo->prepare("SELECT id, value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
+    $st->execute([$optId, $listId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $out['text'] = (string)($row['value'] ?? '');
+      return $out;
+    }
+  }
+
+  // Backward compatibility: try to map by old value_text.
+  $vt = $valueTextRaw !== null ? trim((string)$valueTextRaw) : '';
+  if ($vt !== '') {
+    $st = $pdo->prepare("SELECT id, value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+    $st->execute([$listId, $vt]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $new = ['option_item_id' => (int)$row['id']];
+      $out['json'] = json_encode($new, JSON_UNESCAPED_UNICODE);
+      $out['text'] = (string)($row['value'] ?? $vt);
+      return $out;
+    }
+  }
+
+  return $out;
+}
+
 function group_key_from_meta(array $meta): string {
   $g = (string)($meta['group'] ?? '');
   $g = trim($g);
@@ -399,6 +470,7 @@ try {
     // groups: key => ['key'=>..., 'title'=>..., 'fields'=>...]
     $groups = [];
     $iconIds = [];
+    $optCache = []; // listId => options array
 
     foreach ($fieldsRaw as $r) {
       $fid = (int)$r['id'];
@@ -414,7 +486,12 @@ try {
       }
 
       $opts = [];
-      if (!empty($r['options_json'])) {
+      $listId = option_list_id_from_meta($meta);
+      if ($listId > 0) {
+        if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId);
+        $opts = $optCache[$listId];
+      } elseif (!empty($r['options_json'])) {
+        // legacy / manual options_json
         $oj = json_decode((string)$r['options_json'], true);
         if (is_array($oj) && isset($oj['options']) && is_array($oj['options'])) {
           $opts = $oj['options'];
@@ -425,7 +502,8 @@ try {
         if ($iid > 0) $iconIds[] = $iid;
       }
 
-      $val = $values[$fid] ?? ['text' => null, 'json' => null];
+      $raw = $values[$fid] ?? ['text' => null, 'json' => null];
+      $val = resolve_option_value_text($pdo, $meta, $raw['json'] ?? null, $raw['text'] ?? null);
 
       $groups[$gKey]['fields'][] = [
         'id' => $fid,
@@ -498,7 +576,7 @@ try {
     if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
 
     $st = $pdo->prepare(
-      "SELECT id, field_type
+      "SELECT id, field_type, meta_json
        FROM template_fields
        WHERE id=? AND template_id=? AND can_child_edit=1
        LIMIT 1"
@@ -508,11 +586,25 @@ try {
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
 
     $type = (string)$frow['field_type'];
+    $meta = meta_read($frow['meta_json'] ?? null);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+
+    // If this field uses an option-list template, persist a stable option_item_id in value_json.
+    $valueJson = null;
 
     if (in_array($type, ['radio','select','grade'], true)) {
       $valueText = $valueText !== null ? trim($valueText) : '';
       if ($valueText === '') $valueText = null;
+
+      $listId = option_list_id_from_meta($meta);
+      if ($listId > 0 && $valueText !== null) {
+        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+        $st2->execute([$listId, $valueText]);
+        $optId = (int)($st2->fetchColumn() ?: 0);
+        if ($optId > 0) {
+          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+        }
+      }
     } elseif ($type === 'checkbox') {
       $v = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
       $valueText = $v;
@@ -523,15 +615,15 @@ try {
 
     $up = $pdo->prepare(
       "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_student_id, updated_at)
-       VALUES (?, ?, ?, NULL, 'child', ?, NOW())
+       VALUES (?, ?, ?, ?, 'child', ?, NOW())
        ON DUPLICATE KEY UPDATE
          value_text=VALUES(value_text),
-         value_json=NULL,
+         value_json=VALUES(value_json),
          source='child',
          updated_by_student_id=VALUES(updated_by_student_id),
          updated_at=NOW()"
     );
-    $up->execute([$reportId, $fieldId, $valueText, $studentId]);
+    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
 
     json_out(['ok' => true]);
   }

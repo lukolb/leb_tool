@@ -29,7 +29,7 @@ render_admin_header('Feld-Editor');
     align-items:start;
   }
   .layout2.hide-preview{
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
   }
   @media (max-width: 1200px){
     .layout2{ grid-template-columns: 1fr; }
@@ -297,6 +297,10 @@ render_admin_header('Feld-Editor');
       <div>
         <label>Filter (Feldname/Label/Gruppe)</label>
         <input id="fieldFilter" placeholder="z.B. soc, work, eng, math …">
+        <div style="margin-top:8px;">
+          <label class="muted2" style="display:block; margin-bottom:4px;">Nicht enthält</label>
+          <input id="fieldExclude" placeholder="z.B. -T">
+        </div>
         <div class="muted2">Filter wirkt auf Bulk-Aktionen (sichtbare Zeilen) und Gruppenübersicht.</div>
       </div>
       <div class="actions" style="justify-content:flex-start;">
@@ -468,6 +472,7 @@ const btnShowAllGroups = document.getElementById('btnShowAllGroups');
 const btnClearGroupFilter = document.getElementById('btnClearGroupFilter');
 
 const fieldFilter = document.getElementById('fieldFilter');
+const fieldExclude = document.getElementById('fieldExclude');
 const btnClearFilter = document.getElementById('btnClearFilter');
 
 const selCount = document.getElementById('selCount');
@@ -515,6 +520,7 @@ let fields = [];
 let optionTemplates = [];
 
 let filterText = '';
+let excludeText = '';
 let groupFilter = '';
 let hiddenGroups = new Set();
 let collapsedGroupHeaders = new Set();
@@ -595,11 +601,20 @@ function isVisibleByFilter(f){
   if (groupFilter && gpath !== groupFilter && !gpath.startsWith(groupFilter + '/')) return false;
 
   const q = (filterText || '').toLowerCase().trim();
-  if (!q) return true;
+  const nq = (excludeText || '').toLowerCase().trim();
 
-  return String(f.name||'').toLowerCase().includes(q)
-      || String(f.label||'').toLowerCase().includes(q)
-      || gpath.toLowerCase().includes(q);
+  const hay = (
+    String(f.name||'').toLowerCase() + ' ' +
+    String(f.label||'').toLowerCase() + ' ' +
+    gpath.toLowerCase()
+  );
+
+  // Exclude filter: hide anything that contains the given substring.
+  if (nq && hay.includes(nq)) return false;
+
+  // Include filter: show all if empty, otherwise must match.
+  if (!q) return true;
+  return hay.includes(q);
 }
 
 function rebuildGroupDatalist(){
@@ -1174,7 +1189,7 @@ function buildBulkPatch(){
   const g = bulkGroup.value.trim();
   patch.meta_merge = {};
   if (g) patch.meta_merge.group = g;
-  else patch.meta_merge.group = null;
+  //else patch.meta_merge.group = null;
 
   if (bulkType.value) patch.type = bulkType.value;
 
@@ -1490,9 +1505,18 @@ fieldFilter.addEventListener('input', ()=>{
   renderTable();
   updateMeta();
 });
+
+fieldExclude.addEventListener('input', ()=>{
+  excludeText = fieldExclude.value || '';
+  renderGroupsBar();
+  renderTable();
+  updateMeta();
+});
 btnClearFilter.addEventListener('click', ()=>{
   fieldFilter.value='';
   filterText='';
+  if (fieldExclude) fieldExclude.value='';
+  excludeText='';
   renderGroupsBar();
   renderTable();
   updateMeta();

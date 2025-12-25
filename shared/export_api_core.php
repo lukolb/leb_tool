@@ -104,8 +104,9 @@ function load_template_fields(PDO $pdo, int $templateId): array {
 }
 
 function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
+  // Resolve option-list values by stable option_item_id (stored in value_json) so exports survive option value changes.
   $st = $pdo->prepare(
-    "SELECT tf.field_name, fv.value_text
+    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json
      FROM field_values fv
      JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
@@ -114,7 +115,10 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   $st->execute([$reportInstanceId]);
   $map = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $map[(string)$r['field_name']] = (string)($r['value_text'] ?? '');
+    $meta = meta_read_export($r['meta_json'] ?? null);
+    $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : null;
+    $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
+    $map[(string)$r['field_name']] = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
   }
   return $map;
 }
@@ -124,6 +128,40 @@ function meta_read_export(?string $json): array {
   if (!$json) return [];
   $a = json_decode($json, true);
   return is_array($a) ? $a : [];
+}
+
+function option_list_id_from_meta_export(array $meta): int {
+  $tid = $meta['option_list_template_id'] ?? null;
+  if ($tid === null || $tid === '') return 0;
+  return (int)$tid;
+}
+
+function resolve_option_value_text_export(PDO $pdo, array $meta, ?string $valueJson, ?string $valueText): string {
+  $listId = option_list_id_from_meta_export($meta);
+  if ($listId <= 0) return (string)($valueText ?? '');
+
+  $optId = 0;
+  if ($valueJson) {
+    $j = json_decode($valueJson, true);
+    if (is_array($j) && isset($j['option_item_id'])) $optId = (int)$j['option_item_id'];
+  }
+  if ($optId > 0) {
+    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
+    $st->execute([$optId, $listId]);
+    $v = $st->fetchColumn();
+    if ($v !== false && $v !== null) return (string)$v;
+  }
+
+  // fallback: by old value_text
+  $vt = trim((string)($valueText ?? ''));
+  if ($vt !== '') {
+    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+    $st->execute([$listId, $vt]);
+    $v = $st->fetchColumn();
+    if ($v !== false && $v !== null) return (string)$v;
+  }
+
+  return (string)($valueText ?? '');
 }
 
 function is_class_field_export(array $meta): bool {

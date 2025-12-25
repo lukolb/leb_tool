@@ -472,7 +472,7 @@ render_admin_header('Admin – Icon & Options');
         }))
         .filter(x => x.value !== '' && x.label !== '');
 
-      await api({
+      const j = await api({
         action: 'save_template',
         list_id: activeListId,
         name,
@@ -480,7 +480,10 @@ render_admin_header('Admin – Icon & Options');
         items: cleaned
       });
 
-      itemsMsg.textContent = 'OK gespeichert.';
+      const upd = (j && typeof j.template_fields_updated !== 'undefined') ? Number(j.template_fields_updated) : null;
+      itemsMsg.textContent = upd === null
+        ? 'OK gespeichert.'
+        : ('OK gespeichert. Template-Felder aktualisiert: ' + upd + '.');
       await loadLists();
       await selectList(activeListId);
     } catch(err){

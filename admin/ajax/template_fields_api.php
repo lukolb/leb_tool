@@ -174,6 +174,19 @@ try {
       ];
 
       foreach ($patch as $k => $v) {
+        // Protect existing meta/options unless the caller explicitly intends to overwrite.
+        // Rationale: bulk patch UI often sends empty/null keys; we must not wipe e.g. meta.group accidentally.
+        if ($k === 'meta') {
+          if ($v === null || $v === '' || $v === false) continue;
+          if (is_array($v)) $u['meta'] = $v;
+          continue;
+        }
+        if ($k === 'options') {
+          if ($v === null || $v === '' || $v === false) continue;
+          if (is_array($v)) $u['options'] = $v;
+          continue;
+        }
+
         if ($k === 'meta_merge' && is_array($v)) {
           $u['meta'] = array_merge($u['meta'] ?? [], $v);
           continue;
@@ -182,6 +195,7 @@ try {
           $u['options'] = $v;
           continue;
         }
+
         $u[$k] = $v;
       }
 
