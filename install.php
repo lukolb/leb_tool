@@ -186,267 +186,279 @@ function splitSqlStatements(string $sql): array {
 function getSchemaSql(): string {
   $JSON = "LONGTEXT";
   return <<<SQL
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+SET AUTOCOMMIT = 0;
+START TRANSACTION;
+SET time_zone = "+00:00";
 SET NAMES utf8mb4;
 
-CREATE TABLE IF NOT EXISTS users (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email VARCHAR(255) NOT NULL,
-  password_hash VARCHAR(255) NULL,
-  password_set_at DATETIME NULL,
-  display_name VARCHAR(255) NOT NULL,
-  role ENUM('admin','teacher') NOT NULL DEFAULT 'teacher',
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  must_change_password TINYINT(1) NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_users_email (email)
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `password_set_at` datetime DEFAULT NULL,
+  `display_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `role` enum('admin','teacher') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'teacher',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `must_change_password` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_users_email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS students (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  master_student_id BIGINT UNSIGNED NULL,
-  class_id BIGINT UNSIGNED NULL,
-  first_name VARCHAR(100) NOT NULL,
-  last_name VARCHAR(100) NOT NULL,
-  date_of_birth DATE NULL,
-  external_ref VARCHAR(100) NULL,
-  qr_token VARCHAR(80) NULL,
-  login_code VARCHAR(20) NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_students_master (master_student_id),
-  KEY idx_students_class (class_id),
-  KEY idx_students_name (last_name, first_name),
-  UNIQUE KEY uq_students_qr_token (qr_token),
-  KEY idx_students_login_code (login_code)
+CREATE TABLE IF NOT EXISTS `students` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `master_student_id` bigint UNSIGNED DEFAULT NULL,
+  `class_id` bigint UNSIGNED DEFAULT NULL,
+  `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `date_of_birth` date DEFAULT NULL,
+  `external_ref` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `qr_token` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `login_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_students_qr_token` (`qr_token`),
+  KEY `idx_students_class` (`class_id`),
+  KEY `idx_students_name` (`last_name`,`first_name`),
+  KEY `idx_students_master` (`master_student_id`),
+  KEY `idx_students_login_code` (`login_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS templates (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  name VARCHAR(255) NOT NULL,
-  template_version INT UNSIGNED NOT NULL DEFAULT 1,
-  pdf_storage_path VARCHAR(1024) NOT NULL,
-  pdf_original_filename VARCHAR(255) NOT NULL,
-  pdf_sha256 CHAR(64) NULL,
-  created_by_user_id BIGINT UNSIGNED NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_templates_name_version (name, template_version),
-  KEY idx_templates_active (is_active)
+CREATE TABLE IF NOT EXISTS `templates` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `template_version` int UNSIGNED NOT NULL DEFAULT '1',
+  `pdf_storage_path` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pdf_original_filename` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pdf_sha256` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_templates_name_version` (`name`,`template_version`),
+  KEY `idx_templates_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  
+CREATE TABLE IF NOT EXISTS `template_fields` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `template_id` bigint UNSIGNED NOT NULL,
+  `field_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `field_type` enum('text','multiline','date','number','grade','checkbox','radio','select','signature') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio',
+  `label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `help_text` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_multiline` tinyint(1) NOT NULL DEFAULT '0',
+  `is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `can_child_edit` tinyint(1) NOT NULL DEFAULT '0',
+  `can_teacher_edit` tinyint(1) NOT NULL DEFAULT '1',
+  `allowed_roles_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `options_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `meta_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_template_fields_template_fieldname` (`template_id`,`field_name`),
+  KEY `idx_template_fields_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS template_fields (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  template_id BIGINT UNSIGNED NOT NULL,
-  field_name VARCHAR(255) NOT NULL,
-  field_type ENUM('text','multiline','date','number','grade','checkbox','radio','select','signature') NOT NULL DEFAULT 'radio',
-  label VARCHAR(255) NULL,
-  help_text VARCHAR(500) NULL,
-  is_multiline TINYINT(1) NOT NULL DEFAULT 0,
-  is_required TINYINT(1) NOT NULL DEFAULT 0,
-  can_child_edit TINYINT(1) NOT NULL DEFAULT 0,
-  can_teacher_edit TINYINT(1) NOT NULL DEFAULT 1,
-  allowed_roles_json $JSON NULL,
-  options_json $JSON NULL,
-  meta_json $JSON NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_template_fields_template_fieldname (template_id, field_name),
-  KEY idx_template_fields_template (template_id)
+CREATE TABLE IF NOT EXISTS `report_instances` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `template_id` bigint UNSIGNED NOT NULL,
+  `student_id` bigint UNSIGNED NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('draft','submitted','locked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `locked_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `locked_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_report_unique` (`template_id`,`student_id`,`school_year`,`period_label`),
+  KEY `idx_report_student` (`student_id`),
+  KEY `idx_report_template` (`template_id`),
+  KEY `idx_report_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS report_instances (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  template_id BIGINT UNSIGNED NOT NULL,
-  student_id BIGINT UNSIGNED NOT NULL,
-  period_label VARCHAR(50) NOT NULL,
-  school_year VARCHAR(20) NOT NULL,
-  status ENUM('draft','submitted','locked') NOT NULL DEFAULT 'draft',
-  created_by_user_id BIGINT UNSIGNED NULL,
-  locked_by_user_id BIGINT UNSIGNED NULL,
-  locked_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_report_unique (template_id, student_id, school_year, period_label),
-  KEY idx_report_student (student_id),
-  KEY idx_report_template (template_id),
-  KEY idx_report_status (status)
+CREATE TABLE IF NOT EXISTS `field_values` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `report_instance_id` bigint UNSIGNED NOT NULL,
+  `template_field_id` bigint UNSIGNED NOT NULL,
+  `value_text` mediumtext COLLATE utf8mb4_unicode_ci,
+  `value_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `source` enum('child','teacher','system') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'teacher',
+  `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `updated_by_student_id` bigint UNSIGNED DEFAULT NULL,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_field_values_instance_field` (`report_instance_id`,`template_field_id`),
+  KEY `idx_field_values_instance` (`report_instance_id`),
+  KEY `idx_field_values_field` (`template_field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS field_values (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  report_instance_id BIGINT UNSIGNED NOT NULL,
-  template_field_id BIGINT UNSIGNED NOT NULL,
-  value_text MEDIUMTEXT NULL,
-  value_json $JSON NULL,
-  source ENUM('child','teacher','system') NOT NULL DEFAULT 'teacher',
-  updated_by_user_id BIGINT UNSIGNED NULL,
-  updated_by_student_id BIGINT UNSIGNED NULL,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_field_values_instance_field (report_instance_id, template_field_id),
-  KEY idx_field_values_instance (report_instance_id),
-  KEY idx_field_values_field (template_field_id)
+CREATE TABLE IF NOT EXISTS `report_collaborators` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `report_instance_id` bigint UNSIGNED NOT NULL,
+  `user_id` bigint UNSIGNED NOT NULL,
+  `role_label` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `can_edit` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_report_collab` (`report_instance_id`,`user_id`),
+  KEY `idx_collab_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS report_collaborators (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  report_instance_id BIGINT UNSIGNED NOT NULL,
-  user_id BIGINT UNSIGNED NOT NULL,
-  role_label VARCHAR(100) NULL,
-  can_edit TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_report_collab (report_instance_id, user_id),
-  KEY idx_collab_user (user_id)
+CREATE TABLE IF NOT EXISTS `qr_tokens` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `student_id` bigint UNSIGNED NOT NULL,
+  `report_instance_id` bigint UNSIGNED NOT NULL,
+  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `scope` enum('child_edit','child_view') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'child_edit',
+  `expires_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_used_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_qr_token_hash` (`token_hash`),
+  KEY `idx_qr_student` (`student_id`),
+  KEY `idx_qr_report` (`report_instance_id`),
+  KEY `idx_qr_validity` (`expires_at`,`revoked_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS qr_tokens (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  student_id BIGINT UNSIGNED NOT NULL,
-  report_instance_id BIGINT UNSIGNED NOT NULL,
-  token_hash CHAR(64) NOT NULL,
-  scope ENUM('child_edit','child_view') NOT NULL DEFAULT 'child_edit',
-  expires_at DATETIME NULL,
-  revoked_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_used_at DATETIME NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_qr_token_hash (token_hash),
-  KEY idx_qr_student (student_id),
-  KEY idx_qr_report (report_instance_id),
-  KEY idx_qr_validity (expires_at, revoked_at)
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `event_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` bigint UNSIGNED DEFAULT NULL,
+  `student_id` bigint UNSIGNED DEFAULT NULL,
+  `report_instance_id` bigint UNSIGNED DEFAULT NULL,
+  `template_field_id` bigint UNSIGNED DEFAULT NULL,
+  `ip_address` varbinary(16) DEFAULT NULL,
+  `user_agent` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `details_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_created` (`created_at`),
+  KEY `idx_audit_user` (`user_id`),
+  KEY `idx_audit_student` (`student_id`),
+  KEY `idx_audit_report` (`report_instance_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS audit_log (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  event_type VARCHAR(50) NOT NULL,
-  user_id BIGINT UNSIGNED NULL,
-  student_id BIGINT UNSIGNED NULL,
-  report_instance_id BIGINT UNSIGNED NULL,
-  template_field_id BIGINT UNSIGNED NULL,
-  ip_address VARBINARY(16) NULL,
-  user_agent VARCHAR(255) NULL,
-  details_json $JSON NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  KEY idx_audit_created (created_at),
-  KEY idx_audit_user (user_id),
-  KEY idx_audit_student (student_id),
-  KEY idx_audit_report (report_instance_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` bigint UNSIGNED NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_prt_token_hash` (`token_hash`),
+  KEY `idx_prt_user` (`user_id`),
+  KEY `idx_prt_valid` (`expires_at`,`used_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id BIGINT UNSIGNED NOT NULL,
-  token_hash CHAR(64) NOT NULL,
-  expires_at DATETIME NOT NULL,
-  used_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_prt_token_hash (token_hash),
-  KEY idx_prt_user (user_id),
-  KEY idx_prt_valid (expires_at, used_at),
-  CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS user_class_assignments (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id BIGINT UNSIGNED NOT NULL,
-  class_id BIGINT UNSIGNED NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_user_class (user_id, class_id),
-  KEY idx_uca_user (user_id),
-  KEY idx_uca_class (class_id),
-  CONSTRAINT fk_uca_user FOREIGN KEY (user_id) REFERENCES users(id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT fk_uca_class FOREIGN KEY (class_id) REFERENCES classes(id)
-    ON DELETE CASCADE ON UPDATE CASCADE
+CREATE TABLE IF NOT EXISTS `user_class_assignments` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` bigint UNSIGNED NOT NULL,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_class` (`user_id`,`class_id`),
+  KEY `idx_uca_user` (`user_id`),
+  KEY `idx_uca_class` (`class_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           
-CREATE TABLE IF NOT EXISTS option_scales (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  name VARCHAR(200) NOT NULL,
-  applies_to ENUM('radio','select','grade','any') NOT NULL DEFAULT 'any',
-  options_json LONGTEXT NOT NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_option_scales_name (name)
+CREATE TABLE IF NOT EXISTS `option_scales` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `applies_to` enum('radio','select','grade','any') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any',
+  `options_json` $JSON COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_option_scales_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS option_list_templates (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(190) NOT NULL,
-  description TEXT NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_by_user_id INT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_option_list_templates_name (name),
-  KEY idx_option_list_templates_active (is_active);
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS `option_list_templates` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(190) NOT NULL,
+  `description` text,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` int DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_option_list_templates_name` (`name`),
+  KEY `idx_option_list_templates_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS option_list_items (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  list_id INT NOT NULL,
-  value VARCHAR(190) NOT NULL,
-  label VARCHAR(190) NOT NULL,
-  icon_id INT NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  meta_json $JSON NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  KEY idx_list_id_sort (list_id, sort_order),
-  KEY idx_option_list_items_icon (icon_id),
-  CONSTRAINT fk_option_list_items_list
-    FOREIGN KEY (list_id) REFERENCES option_list_templates(id)
-    ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS `option_list_items` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `list_id` int NOT NULL,
+  `value` varchar(190) NOT NULL,
+  `label` varchar(190) NOT NULL,
+  `icon_id` int DEFAULT NULL,
+  `sort_order` int NOT NULL DEFAULT '0',
+  `meta_json` $JSON CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_list_id_sort` (`list_id`,`sort_order`),
+  KEY `idx_option_list_items_icon` (`icon_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
           
-CREATE TABLE IF NOT EXISTS icon_library (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  filename VARCHAR(255) NOT NULL,
-  storage_path VARCHAR(255) NOT NULL,     -- z.B. uploads/icons/icon_1.png
-  file_ext VARCHAR(16) NOT NULL,
-  mime_type VARCHAR(80) NULL,
-  sha256 CHAR(64) NULL,
-  created_by_user_id INT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_icon_storage_path (storage_path),
-  KEY idx_icon_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS `icon_library` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `filename` varchar(255) NOT NULL,
+  `storage_path` varchar(255) NOT NULL,
+  `file_ext` varchar(16) NOT NULL,
+  `mime_type` varchar(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `sha256` char(64) DEFAULT NULL,
+  `created_by_user_id` int DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_icon_storage_path` (`storage_path`),
+  KEY `idx_icon_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS classes (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  school_year VARCHAR(20) NOT NULL,
-  grade_level INT NULL,
-  label VARCHAR(10) NULL,
-  name VARCHAR(100) NOT NULL,
-  template_id BIGINT UNSIGNED NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  inactive_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  INDEX `idx_classes_template` (`template_id`) USING BTREE,
-  UNIQUE KEY uq_classes_year_name (school_year, name)
-  ,UNIQUE KEY uq_classes_year_grade_label (school_year, grade_level, label),
-  CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+CREATE TABLE IF NOT EXISTS `classes` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `grade_level` int DEFAULT NULL,
+  `label` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `template_id` bigint UNSIGNED DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `inactive_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_classes_year_name` (`school_year`,`name`),
+  UNIQUE KEY `uq_classes_year_grade_label` (`school_year`,`grade_level`,`label`),
+  KEY `idx_classes_active_year` (`is_active`,`school_year`),
+  KEY `idx_classes_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          
+ALTER TABLE `classes`
+  ADD CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE `option_list_items`
+  ADD CONSTRAINT `fk_option_list_items_list` FOREIGN KEY (`list_id`) REFERENCES `option_list_templates` (`id`) ON DELETE CASCADE;
+
+ALTER TABLE `password_reset_tokens`
+  ADD CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `user_class_assignments`
+  ADD CONSTRAINT `fk_uca_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_uca_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+COMMIT;
           
 SQL;
 }

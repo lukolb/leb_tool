@@ -648,6 +648,20 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
   <?php endif; ?>
 </div>
 
+
+<div class="card">
+  <h2 style="margin-top:0;">PDF-Export</h2>
+  <p class="muted" style="margin:0 0 10px 0;">
+    Exportiert die ausgefüllten Daten in die der Klasse zugeordnete PDF-Vorlage. Die PDFs werden <strong>nicht</strong> dauerhaft auf dem Server gespeichert.
+  </p>
+  <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
+    <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId))?>">Export öffnen</a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip'))?>">ZIP (alle)</a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=merged'))?>">Eine PDF (alle)</a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip&only_submitted=1'))?>">ZIP (nur abgegebene)</a>
+  </div>
+</div>
+
 <div class="card">
   <h2 style="margin-top:0;">Schüler</h2>
 
@@ -686,6 +700,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
                 <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
                 <button class="btn secondary" type="submit"><?=((int)$s['is_active']===1)?'Deaktivieren':'Aktivieren'?></button>
               </form>
+              <a class="btn secondary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>">PDF</a>
             </td>
           </tr>
         <?php endforeach; ?>

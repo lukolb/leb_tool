@@ -547,6 +547,7 @@ render_admin_header('Klassen');
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>">Bearbeiten</a>
                 <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id='.(int)$c['id']))?>">Schüler</a>
+                <a class="btn secondary" href="<?=h(url('admin/export.php?class_id='.(int)$c['id']))?>">Export</a>
                 <form method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">

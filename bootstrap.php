@@ -156,6 +156,19 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_students_login_code ON students (login_code)");
     }
 
+    // --- field_values: ensure unique key for safe UPSERTs (system bindings, etc.)
+    // If this index is missing, INSERT ... ON DUPLICATE KEY UPDATE will NOT update,
+    // causing duplicate rows and unpredictable reads (e.g. only first_name appearing).
+    if (!db_has_index($pdo, 'field_values', 'uq_field_values_instance_field')) {
+      $pdo->exec("CREATE UNIQUE INDEX uq_field_values_instance_field ON field_values (report_instance_id, template_field_id)");
+    }
+    if (!db_has_index($pdo, 'field_values', 'idx_field_values_instance')) {
+      $pdo->exec("CREATE INDEX idx_field_values_instance ON field_values (report_instance_id)");
+    }
+    if (!db_has_index($pdo, 'field_values', 'idx_field_values_field')) {
+      $pdo->exec("CREATE INDEX idx_field_values_field ON field_values (template_field_id)");
+    }
+
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }
@@ -305,6 +318,87 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
 }
 
 /**
+ * Format an ISO-ish date (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS) to a Moment-like pattern.
+ * Supported tokens: DD, D, MM, M, YYYY, YY, MMM, MMMM
+ * Examples: "DD.MM.YYYY", "MM/DD/YYYY", "D. MMMM YYYY".
+ */
+function format_date_pattern(?string $iso, string $pattern): string {
+  $iso = trim((string)$iso);
+  if ($iso === '') return '';
+
+  // Accept YYYY-MM-DD or any string DateTime can parse.
+  try {
+    $dt = new DateTimeImmutable($iso);
+  } catch (Throwable $e) {
+    // Try cut to date part (common DB format)
+    $datePart = substr($iso, 0, 10);
+    try {
+      $dt = new DateTimeImmutable($datePart);
+    } catch (Throwable $e2) {
+      return $iso; // fallback: keep original
+    }
+  }
+
+  // German month names
+  $monthsShort = [
+    1 => 'Jan', 2 => 'Feb', 3 => 'Mär', 4 => 'Apr', 5 => 'Mai', 6 => 'Jun',
+    7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Dez'
+  ];
+  $monthsLong = [
+    1 => 'Januar', 2 => 'Februar', 3 => 'März', 4 => 'April', 5 => 'Mai', 6 => 'Juni',
+    7 => 'Juli', 8 => 'August', 9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Dezember'
+  ];
+
+  $m = (int)$dt->format('n');
+  $repl = [
+    'MMMM' => $monthsLong[$m] ?? $dt->format('F'),
+    'MMM'  => $monthsShort[$m] ?? $dt->format('M'),
+    'YYYY' => $dt->format('Y'),
+    'YY'   => $dt->format('y'),
+    'DD'   => $dt->format('d'),
+    'D'    => (string)(int)$dt->format('j'),
+    'MM'   => $dt->format('m'),
+    'M'    => (string)(int)$dt->format('n'),
+  ];
+
+  $tokens = ['MMMM','MMM','YYYY','YY','DD','D','MM','M'];
+  $out = $pattern;
+  foreach ($tokens as $t) {
+    $out = str_replace($t, $repl[$t], $out);
+  }
+  return $out;
+}
+
+/**
+ * Resolve a binding template like:
+ *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
+ */
+function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null): string {
+  $tpl = (string)$tpl;
+  if ($tpl === '') return '';
+
+  $dateFmt = '';
+  if (($fieldType ?? '') === 'date' || isset($fieldMeta['date_format_mode']) || isset($fieldMeta['date_format_preset']) || isset($fieldMeta['date_format_custom'])) {
+    $mode = (string)($fieldMeta['date_format_mode'] ?? 'preset');
+    if ($mode === 'custom') $dateFmt = (string)($fieldMeta['date_format_custom'] ?? '');
+    else $dateFmt = (string)($fieldMeta['date_format_preset'] ?? '');
+    $dateFmt = trim($dateFmt);
+  }
+
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt) {
+    $key = (string)($m[1] ?? '');
+    $val = resolve_system_binding_value($key, $student, $class);
+    if ($val === null) return '';
+    if ($key === 'student.date_of_birth' && $dateFmt !== '') {
+      return format_date_pattern((string)$val, $dateFmt);
+    }
+    return (string)$val;
+  }, $tpl);
+
+  return $out === null ? '' : (string)$out;
+}
+
+/**
  * Upserts all bound (system) template fields into field_values for a report instance.
  * This is safe to call multiple times.
  */
@@ -334,7 +428,7 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   ];
 
   $tf = $pdo->prepare(
-    "SELECT id, meta_json
+    "SELECT id, field_type, meta_json
      FROM template_fields
      WHERE template_id=?"
   );
@@ -352,11 +446,31 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
       $meta = json_decode((string)$f['meta_json'], true);
       if (!is_array($meta)) $meta = [];
     }
-    $binding = isset($meta['system_binding']) ? (string)$meta['system_binding'] : '';
+
+    $fieldType = isset($f['field_type']) ? (string)$f['field_type'] : null;
+
+    $tpl = isset($meta['system_binding_tpl']) ? trim((string)$meta['system_binding_tpl']) : '';
+    if ($tpl !== '') {
+      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType);
+      $up->execute([$reportInstanceId, (int)$f['id'], $val]);
+      continue;
+    }
+
+    $binding = isset($meta['system_binding']) ? trim((string)$meta['system_binding']) : '';
     if ($binding === '') continue;
     $val = resolve_system_binding_value($binding, $student, $class);
     if ($val === null) continue;
-    $up->execute([$reportInstanceId, (int)$f['id'], $val]);
+
+    if ($binding === 'student.date_of_birth') {
+      $mode = (string)($meta['date_format_mode'] ?? 'preset');
+      $fmt = $mode === 'custom' ? (string)($meta['date_format_custom'] ?? '') : (string)($meta['date_format_preset'] ?? '');
+      $fmt = trim($fmt);
+      if ($fmt !== '' && (($fieldType ?? '') === 'date' || isset($meta['date_format_mode']))) {
+        $val = format_date_pattern((string)$val, $fmt);
+      }
+    }
+
+    $up->execute([$reportInstanceId, (int)$f['id'], (string)$val]);
   }
 }
 
