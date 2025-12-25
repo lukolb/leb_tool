@@ -34,7 +34,7 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
-$title = 'QR-Codes – ' . (string)$class['school_year'] . ' · ' . class_display($class);
+$title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . class_display($class);
 ?>
 <!doctype html>
 <html lang="de">
