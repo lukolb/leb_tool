@@ -26,6 +26,39 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
+function is_class_field(array $meta): bool {
+  $scope = isset($meta['scope']) ? strtolower(trim((string)$meta['scope'])) : '';
+  if ($scope === 'class') return true;
+  if (isset($meta['is_class_field']) && (int)$meta['is_class_field'] === 1) return true;
+  return false;
+}
+
+function resolve_label_placeholders(string $tpl, array $classValueByName): string {
+  $s = (string)$tpl;
+  if ($s === '' || strpos($s, '{{') === false) return $s;
+
+  $out = preg_replace_callback('/\{\{\s*([^}]+?)\s*\}\}/', function($m) use ($classValueByName) {
+    $token = trim((string)($m[1] ?? ''));
+    if ($token === '') return '';
+    $kind = 'field';
+    $key = $token;
+
+    $p = strpos($token, ':');
+    if ($p !== false) {
+      $kind = strtolower(trim(substr($token, 0, $p)));
+      $key = trim(substr($token, $p + 1));
+    }
+    if ($key === '') return '';
+
+    if ($kind === 'field' || $kind === 'value') {
+      return isset($classValueByName[$key]) ? (string)$classValueByName[$key] : '';
+    }
+    return '';
+  }, $s);
+
+  return $out === null ? $s : (string)$out;
+}
+
 function group_key_from_meta(array $meta): string {
   $g = (string)($meta['group'] ?? '');
   $g = trim($g);
@@ -43,14 +76,12 @@ function group_title_override(string $groupKey): string {
 
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
-  // ignore suffix like "-T" etc.
   $s = explode('-', $s, 2)[0];
   $s = preg_replace('/\s+/', ' ', $s) ?? $s;
   return trim($s);
 }
 
 function is_system_bound(array $meta): bool {
-  // Admin mapping (admin/template_mappings.php) stores bindings here.
   $tpl = $meta['system_binding_tpl'] ?? null;
   if (is_string($tpl) && trim($tpl) !== '') return true;
   $one = $meta['system_binding'] ?? null;
@@ -58,11 +89,6 @@ function is_system_bound(array $meta): bool {
   return false;
 }
 
-/**
- * options_json can be:
- *  - {"options":[{value,label,...}, ...]}   (project format)
- *  - [{value,label,...}, ...]              (fallback)
- */
 function decode_options(?string $json): array {
   if (!$json) return [];
   $j = json_decode($json, true);
@@ -72,10 +98,6 @@ function decode_options(?string $json): array {
   return [];
 }
 
-/**
- * IMPORTANT: Templates are assigned per class by admin (classes.template_id).
- * If no template is assigned, teacher must see an error message.
- */
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT t.id, t.name, t.template_version
@@ -91,7 +113,6 @@ function template_for_class(PDO $pdo, int $classId): array {
     throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
   }
 
-  // Ensure assigned template is active
   $st2 = $pdo->prepare("SELECT is_active FROM templates WHERE id=? LIMIT 1");
   $st2->execute([(int)$tpl['id']]);
   if ((int)$st2->fetchColumn() !== 1) {
@@ -101,15 +122,41 @@ function template_for_class(PDO $pdo, int $classId): array {
   return $tpl;
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId): array {
+function class_school_year(PDO $pdo, int $classId): string {
+  $st = $pdo->prepare("SELECT school_year FROM classes WHERE id=? LIMIT 1");
+  $st->execute([$classId]);
+  return (string)($st->fetchColumn() ?: '');
+}
+
+function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
-     WHERE template_id=? AND student_id=?
-     ORDER BY id DESC
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId]);
+  $st->execute([$templateId, $schoolYear]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if ($row) return (int)$row['id'];
+
+  $pdo->prepare(
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
+     VALUES (?, 0, '__class__', ?, 'draft', NULL, NOW(), NOW())"
+  )->execute([$templateId, $schoolYear]);
+
+  return (int)$pdo->lastInsertId();
+}
+
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear): array {
+  $st = $pdo->prepare(
+    "SELECT id, status
+     FROM report_instances
+     WHERE template_id=? AND student_id=? AND school_year=? AND period_label='Standard'
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1"
+  );
+  $st->execute([$templateId, $studentId, $schoolYear]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
 
   if ($ri) {
@@ -117,9 +164,10 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
   }
 
   $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, status, created_by_user_id, created_at, updated_at)
-     VALUES (?, ?, 'draft', NULL, NOW(), NOW())"
-  )->execute([$templateId, $studentId]);
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
+     VALUES (?, ?, 'Standard', ?, 'draft', NULL, NOW(), NOW())"
+  )->execute([$templateId, $studentId, $schoolYear]);
+
   $rid = (int)$pdo->lastInsertId();
   return ['id' => $rid, 'status' => 'draft'];
 }
@@ -196,9 +244,12 @@ try {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
-    // IMPORTANT: Use template assigned to this class (classes.template_id)
     $tpl = template_for_class($pdo, $classId);
     $templateId = (int)$tpl['id'];
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+
+    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
 
     // students in class
     $st = $pdo->prepare(
@@ -215,7 +266,7 @@ try {
     foreach ($studentsRaw as $s) {
       $sid = (int)$s['id'];
       $name = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
-      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid);
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear);
       $students[] = [
         'id' => $sid,
         'name' => $name,
@@ -225,13 +276,16 @@ try {
       $reportIds[] = (int)$ri['id'];
     }
 
-    // child fields -> map by base key
+    // include class report id so class values are returned within values_teacher
+    if ($classReportInstanceId > 0) $reportIds[] = (int)$classReportInstanceId;
+
+    // child pairing map by base key
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
-    $childByBase = []; // base => ['id'=>int,'field_type'=>string,'options'=>array]
+    $childByBase = [];
     foreach ($childFields as $cf) {
       $base = base_field_key((string)$cf['field_name']);
       if ($base === '') continue;
-      if (isset($childByBase[$base])) continue; // first wins
+      if (isset($childByBase[$base])) continue;
       $childByBase[$base] = [
         'id' => (int)$cf['id'],
         'field_type' => (string)($cf['field_type'] ?? ''),
@@ -239,18 +293,77 @@ try {
       ];
     }
 
-    // teacher fields -> groups with paired child
     $teacherFields = load_teacher_fields($pdo, $templateId);
-    $groups = [];
 
+    // ✅ determine EDITABLE class fields (scope=class AND not system-bound)
+    $classFieldIdsEditable = [];
+    foreach ($teacherFields as $f0) {
+      $m0 = meta_read($f0['meta_json'] ?? null);
+      if (!is_class_field($m0)) continue;
+      if (is_system_bound($m0)) continue;
+      $classFieldIdsEditable[] = (int)$f0['id'];
+    }
+
+    // load values for editable class fields
+    $classValuesById = [];
+    if ($classReportInstanceId > 0 && $classFieldIdsEditable) {
+      $classValuesById = load_values($pdo, [$classReportInstanceId], $classFieldIdsEditable, 'teacher');
+    }
+
+    // name => value for placeholder resolution
+    $classValueByName = [];
+    foreach ($teacherFields as $f0) {
+      $m0 = meta_read($f0['meta_json'] ?? null);
+      if (!is_class_field($m0) || is_system_bound($m0)) continue;
+      $fid0 = (string)(int)$f0['id'];
+      $val0 = '';
+      $ridKey = (string)(int)$classReportInstanceId;
+      if (isset($classValuesById[$ridKey]) && isset($classValuesById[$ridKey][$fid0])) {
+        $val0 = (string)$classValuesById[$ridKey][$fid0];
+      }
+      $classValueByName[(string)$f0['field_name']] = $val0;
+    }
+
+    // class fields definitions for UI
+    $classFieldsDefs = [];
+    foreach ($teacherFields as $f0) {
+      $m0 = meta_read($f0['meta_json'] ?? null);
+      if (!is_class_field($m0) || is_system_bound($m0)) continue;
+
+      $optsTeacher = decode_options($f0['options_json'] ?? null);
+      if (!$optsTeacher && (string)$f0['field_type'] === 'grade') {
+        $optsTeacher = [
+          ['value'=>'1','label'=>'1'],
+          ['value'=>'2','label'=>'2'],
+          ['value'=>'3','label'=>'3'],
+          ['value'=>'4','label'=>'4'],
+          ['value'=>'5','label'=>'5'],
+          ['value'=>'6','label'=>'6'],
+        ];
+      }
+
+      $classFieldsDefs[] = [
+        'id' => (int)$f0['id'],
+        'field_name' => (string)$f0['field_name'],
+        'field_type' => (string)$f0['field_type'],
+        'label' => (string)($f0['label'] ?? ''),
+        'help_text' => (string)($f0['help_text'] ?? ''),
+        'label_resolved' => resolve_label_placeholders((string)($f0['label'] ?? ''), $classValueByName),
+        'help_text_resolved' => resolve_label_placeholders((string)($f0['help_text'] ?? ''), $classValueByName),
+        'is_multiline' => (int)($f0['is_multiline'] ?? 0),
+        'options' => $optsTeacher,
+      ];
+    }
+
+    // teacher fields -> groups (excluding class fields + system bound)
+    $groups = [];
     foreach ($teacherFields as $f) {
       $meta = meta_read($f['meta_json'] ?? null);
-      // Fields that are pre-filled by admin/system bindings should not be editable here.
-      if (is_system_bound($meta)) {
-        continue;
-      }
-      $gKey = group_key_from_meta($meta);
 
+      if (is_system_bound($meta)) continue;
+      if (is_class_field($meta)) continue;
+
+      $gKey = group_key_from_meta($meta);
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = [
           'key' => $gKey,
@@ -261,7 +374,6 @@ try {
 
       $optsTeacher = decode_options($f['options_json'] ?? null);
       if (!$optsTeacher && (string)$f['field_type'] === 'grade') {
-        // Fallback: common German grades 1..6 if no scale configured.
         $optsTeacher = [
           ['value'=>'1','label'=>'1'],
           ['value'=>'2','label'=>'2'],
@@ -280,7 +392,9 @@ try {
         'field_name' => (string)$f['field_name'],
         'field_type' => (string)$f['field_type'],
         'label' => (string)($f['label'] ?? ''),
+        'label_resolved' => resolve_label_placeholders((string)($f['label'] ?? ''), $classValueByName),
         'help_text' => (string)($f['help_text'] ?? ''),
+        'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
         'child' => $child ? [
@@ -294,8 +408,6 @@ try {
     $groupsList = array_values($groups);
 
     // values
-    // NOTE: load_values() uses field ids, so we must pass ids of all teacher fields,
-    // even if some are filtered out for display; harmless to include all.
     $teacherFieldIds = array_map(fn($x)=>(int)$x['id'], $teacherFields);
     $childFieldIds = array_values(array_unique(array_filter(array_map(
       fn($x)=> (int)($x['id'] ?? 0),
@@ -316,7 +428,90 @@ try {
       'groups' => $groupsList,
       'values_teacher' => $valuesTeacher,
       'values_child' => $valuesChild,
+      'class_report_instance_id' => $classReportInstanceId,
+      'class_fields' => [
+        // ✅ IMPORTANT: only editable class fields
+        'field_ids' => $classFieldIdsEditable,
+        'fields' => $classFieldsDefs,
+        'values' => $classValuesById,
+        'value_by_name' => $classValueByName,
+      ],
     ]);
+  }
+
+  if ($action === 'save_class') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    $fieldId = (int)($data['template_field_id'] ?? 0);
+    if ($classId <= 0 || $reportId <= 0 || $fieldId <= 0) throw new RuntimeException('class_id/report_instance_id/template_field_id fehlt.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $tpl = template_for_class($pdo, $classId);
+    $templateId = (int)$tpl['id'];
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+
+    $st = $pdo->prepare(
+      "SELECT id, status, template_id, student_id, school_year, period_label
+       FROM report_instances
+       WHERE id=? LIMIT 1"
+    );
+    $st->execute([$reportId]);
+    $ri = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$ri) throw new RuntimeException('Report nicht gefunden.');
+
+    if ((int)($ri['template_id'] ?? 0) !== $templateId) throw new RuntimeException('Vorlagenkonflikt.');
+    if ((int)($ri['student_id'] ?? 0) !== 0) throw new RuntimeException('Kein Klassen-Report.');
+    if ((string)($ri['school_year'] ?? '') !== $schoolYear) throw new RuntimeException('Schuljahr-Konflikt.');
+    if ((string)($ri['period_label'] ?? '') !== '__class__') throw new RuntimeException('Perioden-Konflikt.');
+
+    $status = (string)($ri['status'] ?? 'draft');
+    if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
+
+    $st = $pdo->prepare(
+      "SELECT id, field_name, field_type, meta_json
+       FROM template_fields
+       WHERE id=? AND template_id=? AND can_teacher_edit=1
+       LIMIT 1"
+    );
+    $st->execute([$fieldId, $templateId]);
+    $frow = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
+
+    $meta = meta_read($frow['meta_json'] ?? null);
+    if (!is_class_field($meta)) throw new RuntimeException('Dieses Feld ist kein Klassenfeld.');
+    if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
+
+    $type = (string)$frow['field_type'];
+    $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+
+    if (in_array($type, ['radio','select','grade'], true)) {
+      $valueText = $valueText !== null ? trim($valueText) : '';
+      if ($valueText === '') $valueText = null;
+    } elseif ($type === 'checkbox') {
+      $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+    } else {
+      $valueText = $valueText !== null ? trim($valueText) : null;
+      if ($valueText === '') $valueText = null;
+    }
+
+    $up = $pdo->prepare(
+      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+       VALUES (?, ?, ?, NULL, 'teacher', ?, NOW())
+       ON DUPLICATE KEY UPDATE
+         value_text=VALUES(value_text),
+         value_json=NULL,
+         source='teacher',
+         updated_by_user_id=VALUES(updated_by_user_id),
+         updated_at=NOW()"
+    );
+    $up->execute([$reportId, $fieldId, $valueText, $userId]);
+
+    audit('teacher_class_value_save', $userId, ['class_id'=>$classId,'report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
+    json_out(['ok' => true]);
   }
 
   if ($action === 'save') {
@@ -324,7 +519,6 @@ try {
     $fieldId = (int)($data['template_field_id'] ?? 0);
     if ($reportId <= 0 || $fieldId <= 0) throw new RuntimeException('report_instance_id/template_field_id fehlt.');
 
-    // access check via report->student->class
     $st = $pdo->prepare(
       "SELECT ri.id, ri.status, ri.template_id, s.class_id, c.template_id AS class_template_id
        FROM report_instances ri
@@ -344,15 +538,10 @@ try {
     $status = (string)($ri['status'] ?? 'draft');
     if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
 
-    // IMPORTANT: Prevent saving into a report instance with a template that is not the one assigned to the class.
     $riTemplateId = (int)($ri['template_id'] ?? 0);
     $classTemplateId = (int)($ri['class_template_id'] ?? 0);
-    if ($classTemplateId <= 0) {
-      throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
-    }
-    if ($riTemplateId !== $classTemplateId) {
-      throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
-    }
+    if ($classTemplateId <= 0) throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+    if ($riTemplateId !== $classTemplateId) throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
 
     $templateId = $riTemplateId;
 
@@ -367,9 +556,7 @@ try {
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
 
     $meta = meta_read($frow['meta_json'] ?? null);
-    if (is_system_bound($meta)) {
-      throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
-    }
+    if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
     $type = (string)$frow['field_type'];
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;

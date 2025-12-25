@@ -409,6 +409,7 @@ render_admin_header('Feld-Editor');
             <th style="min-width:420px;">Help</th>
             <th style="min-width:120px;">Kind</th>
             <th style="min-width:120px;">Lehrer</th>
+            <th style="min-width:140px;">Klassenfeld</th>
             <th style="min-width:120px;">Req</th>
             <th style="min-width:420px;">Extras</th>
           </tr>
@@ -747,7 +748,7 @@ function renderTable(){
       const gr = document.createElement('tr');
       gr.className = 'group-row';
       const td = document.createElement('td');
-      td.colSpan = 10;
+      td.colSpan = 12;
 
       const isCollapsed = collapsedGroupHeaders.has(g);
       const cnt = byGroup.get(g)?.length ?? 0;
@@ -978,6 +979,32 @@ function renderTable(){
     });
     tdTe.appendChild(cbTe);
 
+    const tdK = document.createElement('td');
+    const cbK = document.createElement('input');
+    cbK.type = 'checkbox';
+    cbK.checked = (f.meta && String(f.meta.scope||'').toLowerCase()==='class') || (f.meta && Number(f.meta.is_class_field||0)===1);
+    cbK.addEventListener('click',(e)=>e.stopPropagation());
+    cbK.addEventListener('change',(e)=>{
+      e.stopPropagation();
+      fields[idx].meta = fields[idx].meta || {};
+      if (cbK.checked) {
+        fields[idx].meta.scope = 'class';
+        // sensible defaults: class-wide fields are usually teacher-only
+        fields[idx].can_teacher_edit = 1;
+        fields[idx].can_child_edit = 0;
+      } else {
+        if (fields[idx].meta) {
+          delete fields[idx].meta.scope;
+          delete fields[idx].meta.is_class_field;
+          if (Object.keys(fields[idx].meta).length === 0) fields[idx].meta = null;
+        }
+      }
+      markDirty(f.id);
+      renderTable();
+      updateMeta();
+    });
+    tdK.appendChild(cbK);
+
     const tdR = document.createElement('td');
     const cbR = document.createElement('input');
     cbR.type = 'checkbox';
@@ -1057,7 +1084,8 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    tr.append(tdS, tdN, tdG, tdT, tdL, tdB, tdH, tdC, tdTe, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Typ | Label | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdT, tdL, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }

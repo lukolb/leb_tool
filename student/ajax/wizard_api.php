@@ -29,6 +29,13 @@ function meta_read(?string $json): array {
 function group_key_from_meta(array $meta): string {
   $g = (string)($meta['group'] ?? '');
   $g = trim($g);
+
+  // Normalize: ignore suffix after '-' (e.g. "Ger1-T" -> "Ger1")
+  if ($g !== '' && strpos($g, '-') !== false) {
+    $g = explode('-', $g, 2)[0];
+    $g = trim($g);
+  }
+
   return $g !== '' ? $g : 'Allgemein';
 }
 
@@ -139,15 +146,65 @@ function template_for_student(PDO $pdo, int $studentId): array {
   ];
 }
 
-function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateId): array {
+function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
+  // Store class-wide values in a dedicated report instance:
+  // student_id=0, period_label='__class__', school_year = class school year.
+  $st = $pdo->prepare(
+    "SELECT id
+     FROM report_instances
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1"
+  );
+  $st->execute([$templateId, $schoolYear]);
+  $id = (int)($st->fetchColumn() ?: 0);
+  if ($id > 0) return $id;
+
+  $pdo->prepare(
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
+     VALUES (?, 0, '__class__', ?, 'draft', NULL, NOW(), NOW())"
+  )->execute([$templateId, $schoolYear]);
+
+  return (int)$pdo->lastInsertId();
+}
+
+function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array {
+  // Returns lookup keyed by field_name, but with values from the class report instance.
+  $st = $pdo->prepare(
+    "SELECT tf.id, tf.field_name, tf.label, tf.help_text, tf.field_type,
+            fv.value_text
+     FROM template_fields tf
+     LEFT JOIN field_values fv
+       ON fv.template_field_id=tf.id AND fv.report_instance_id=?
+     WHERE tf.template_id=?
+     ORDER BY tf.sort_order ASC, tf.id ASC"
+  );
+  $st->execute([$classReportId, $templateId]);
+  $out = [];
+  while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+    $name = (string)($r['field_name'] ?? '');
+    if ($name === '') continue;
+    $out[$name] = [
+      'id' => (int)($r['id'] ?? 0),
+      'name' => $name,
+      'type' => (string)($r['field_type'] ?? 'text'),
+      'label' => (string)($r['label'] ?? $name),
+      'help' => (string)($r['help_text'] ?? ''),
+      'value' => (string)($r['value_text'] ?? ''),
+    ];
+  }
+  return $out;
+}
+
+function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateId, string $schoolYear): array {
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
-     WHERE template_id=? AND student_id=?
-     ORDER BY id DESC
+     WHERE template_id=? AND student_id=? AND school_year=? AND period_label='Standard'
+     ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId]);
+  $st->execute([$templateId, $studentId, $schoolYear]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
 
   if ($ri) {
@@ -158,9 +215,9 @@ function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateI
   }
 
   $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, status, created_at, updated_at)
-     VALUES (?, ?, 'draft', NOW(), NOW())"
-  )->execute([$templateId, $studentId]);
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_at, updated_at)
+     VALUES (?, ?, 'Standard', ?, 'draft', NOW(), NOW())"
+  )->execute([$templateId, $studentId, $schoolYear]);
   $rid = (int)$pdo->lastInsertId();
 
   audit('student_report_instance_create', null, ['student_id'=>$studentId,'report_instance_id'=>$rid,'template_id'=>$templateId]);
@@ -184,7 +241,6 @@ function get_report_status(PDO $pdo, int $reportId): string {
   $s = (string)($st->fetchColumn() ?: '');
   return $s !== '' ? $s : 'draft';
 }
-
 
 function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array {
   // Returns lookup for ALL template fields (child + teacher), keyed by field_name
@@ -289,17 +345,25 @@ try {
   $tpl = template_for_student($pdo, $studentId);
   $templateId = (int)$tpl['id'];
 
-  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId);
+  // ✅ NEW: we need school_year BEFORE creating/finding the report instance
+  $studentRow = get_student_and_class($pdo, $studentId);
+  $schoolYear = (string)($studentRow['school_year'] ?? '');
+  if ($schoolYear === '') {
+    $cfg = app_config();
+    $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+  }
+  if ($schoolYear === '') throw new RuntimeException('Schuljahr konnte nicht ermittelt werden.');
+
+  // ✅ FIX: now with 4 args
+  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
   $reportId = (int)$ctx['report_instance_id'];
 
   $status = get_report_status($pdo, $reportId);
   $childCanEdit = ($status === 'draft');
 
   if ($action === 'bootstrap') {
-    $studentRow = get_student_and_class($pdo, $studentId);
+    // $studentRow is already loaded above
 
-    // Defensive: if class has no template, template_for_student already throws,
-    // but keep the studentRow for placeholder rendering.
     $introAbs = child_intro_file_abs();
     $introHtml = '';
     if (is_file($introAbs)) {
@@ -312,6 +376,25 @@ try {
 
     $fieldLookup = load_all_fields_lookup($pdo, $templateId, $reportId);
 
+    // Merge class-wide values into field_lookup so placeholders can resolve even if the student has no value.
+    $classId = (int)($studentRow['class_id'] ?? 0);
+    if ($classId > 0 && $schoolYear !== '') {
+      $classReportId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+      $classLookup = load_class_lookup($pdo, $templateId, $classReportId);
+
+      // Only fill missing/empty values from the class lookup (student values win).
+      foreach ($classLookup as $k => $v) {
+        if (!isset($fieldLookup[$k])) {
+          $fieldLookup[$k] = $v;
+          continue;
+        }
+        $sv = (string)($fieldLookup[$k]['value'] ?? '');
+        $cv = (string)($v['value'] ?? '');
+        if (trim($sv) === '' && trim($cv) !== '') {
+          $fieldLookup[$k]['value'] = $cv;
+        }
+      }
+    }
 
     // groups: key => ['key'=>..., 'title'=>..., 'fields'=>...]
     $groups = [];

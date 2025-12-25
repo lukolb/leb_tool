@@ -91,6 +91,17 @@ render_teacher_header('Eingaben');
 <div id="app" class="card" style="display:none;">
   <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
 
+  <div id="classFieldsBox" class="card" style="margin:12px 0; display:none;">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <div>
+        <h3 style="margin:0; font-size:16px;">Klassenfelder (für alle Schüler:innen)</h3>
+        <div style="opacity:.85; font-size:13px;">Diese Werte gelten für die gesamte Klasse und können in Labels/Hilfetexten per <code>{{Feldname}}</code> referenziert werden.</div>
+      </div>
+      <div class="pill-mini" id="classFieldsStatus"></div>
+    </div>
+    <div id="classFieldsForm" style="margin-top:10px;"></div>
+  </div>
+
   <!-- Grades view -->
   <div id="viewGrades" style="display:none;">
     <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
@@ -99,7 +110,6 @@ render_teacher_header('Eingaben');
         <select class="input" id="gradeGroupSelect" style="width:100%;"></select>
       </div>
 
-      <!-- NEW: orientation toggle -->
       <div style="min-width:260px;">
         <label class="label">Tabelle</label>
         <select class="input" id="gradeOrientation" style="width:100%;">
@@ -188,34 +198,24 @@ render_teacher_header('Eingaben');
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
 
-  /* === TABLES: compact, content-based sizing + sticky headers === */
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
 
-  /* sticky first column only as wide as needed (cap) */
   #itemTable th.sticky, #itemTable td.sticky,
   #gradeTable th.sticky, #gradeTable td.sticky{
     position:sticky; left:0; background:#fff; z-index:2;
     min-width: 220px; max-width: 320px;
   }
 
-  /* sticky header */
   #itemTable thead th, #gradeTable thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, #gradeTable thead th.sticky{ z-index:4; }
 
-  /* default non-sticky cells compact */
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   #gradeTable th:not(.sticky), #gradeTable td:not(.sticky){
-    /*width: 1px; /* allow shrink-to-fit with max-content table */
     max-width: 260px;
   }
 
-  /* compact grade inputs */
-  .gradeInput{
-    width: 6ch;
-    max-width: 8ch;
-    padding: 6px 8px;
-  }
+  .gradeInput{ width: 6ch; max-width: 8ch; padding: 6px 8px; }
 
   .cellWrap{ display:flex; flex-direction:column; gap:6px; }
   .cellChild{ display:none; padding:6px 8px; border:1px dashed var(--border); border-radius:10px; color:var(--muted); font-size:12px; background: rgba(0,0,0,0.02); }
@@ -228,8 +228,12 @@ render_teacher_header('Eingaben');
 (function(){
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
+  const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
 
   const elApp = document.getElementById('app');
+  const classFieldsBox = document.getElementById('classFieldsBox');
+  const classFieldsForm = document.getElementById('classFieldsForm');
+  const classFieldsStatus = document.getElementById('classFieldsStatus');
   const elErrBox = document.getElementById('errBox');
   const elErrMsg = document.getElementById('errMsg');
   const elMetaTop = document.getElementById('metaTop');
@@ -244,7 +248,7 @@ render_teacher_header('Eingaben');
   const viewItem = document.getElementById('viewItem');
 
   const gradeGroupSelect = document.getElementById('gradeGroupSelect');
-  const gradeOrientation = document.getElementById('gradeOrientation'); // NEW
+  const gradeOrientation = document.getElementById('gradeOrientation');
   const gradeSearch = document.getElementById('gradeSearch');
   const gradeHead = document.getElementById('gradeHead');
   const gradeBody = document.getElementById('gradeBody');
@@ -268,6 +272,8 @@ render_teacher_header('Eingaben');
     students: [],
     values_teacher: {},
     values_child: {},
+    class_report_instance_id: 0,
+    class_fields: null,
     fieldMap: {},
   };
 
@@ -280,19 +286,92 @@ render_teacher_header('Eingaben');
     itemFilter: '',
     gradeGroupKey: 'ALL',
     gradeFilter: '',
-    gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows', // NEW
+    gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows',
     saveTimers: new Map(),
     saveInFlight: 0,
   };
 
+  function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
+
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
+  
+  function buildFieldNameIndex(){
+    const idx = new Map();
+
+    // teacher fields (in groups)
+    (state.groups || []).forEach(g => {
+      (g.fields || []).forEach(f => {
+        const n = String(f.field_name || '').trim();
+        if (!n) return;
+        idx.set(n, f);
+        idx.set(n.toLowerCase(), f);
+      });
+    });
+
+    // class fields (not in groups)
+    if (state.class_fields && Array.isArray(state.class_fields.fields)) {
+      state.class_fields.fields.forEach(f => {
+        const n = String(f.field_name || '').trim();
+        if (!n) return;
+        idx.set(n, f);
+        idx.set(n.toLowerCase(), f);
+      });
+    }
+
+    return idx;
+  }
+
+  function resolveLabelTemplate(tpl){
+    const s = String(tpl ?? '');
+    if (!s || s.indexOf('{{') === -1) return s;
+
+    const idx = buildFieldNameIndex();
+
+    // values come from class report instance (only class-wide interpolation!)
+    const rid = classReportId();
+    const classValueByName = (state.class_fields && state.class_fields.value_by_name) ? state.class_fields.value_by_name : {};
+
+    return s.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawTok) => {
+      const token = String(rawTok || '').trim();
+      if (!token) return '';
+
+      let kind = 'field';
+      let key = token;
+      const p = token.indexOf(':');
+      if (p !== -1) {
+        kind = token.slice(0, p).trim().toLowerCase();
+        key = token.slice(p + 1).trim();
+      }
+      if (!key) return '';
+
+      // 1) fastest: value_by_name from API (exact field_name)
+      if (kind === 'field' || kind === 'value') {
+        if (classValueByName && Object.prototype.hasOwnProperty.call(classValueByName, key)) {
+          return String(classValueByName[key] ?? '');
+        }
+
+        // 2) try case-insensitive field lookup -> then read value via teacherVal (will use class report for class fields)
+        const ref = idx.get(key) || idx.get(key.toLowerCase());
+        if (ref && ref.id) {
+          const raw = teacherVal(rid, Number(ref.id));
+          return teacherDisplay(ref, raw);
+        }
+      }
+
+      return '';
+    });
+  }
 
   function rebuildFieldMap(){
     const map = {};
     (state.groups || []).forEach(g => {
       (g.fields || []).forEach(f => { map[String(f.id)] = f; });
     });
+    // class fields are NOT in groups (by design), so add them too:
+    if (state.class_fields && Array.isArray(state.class_fields.fields)) {
+      state.class_fields.fields.forEach(f => { map[String(f.id)] = f; });
+    }
     state.fieldMap = map;
   }
 
@@ -311,7 +390,6 @@ render_teacher_header('Eingaben');
     }
 
     const opts = Array.isArray(f.options) ? f.options : [];
-    // Build suggestions for both VALUE and LABEL so users can type either.
     const items = [];
     opts.forEach(o => {
       const v = String(o?.value ?? '').trim();
@@ -339,95 +417,6 @@ render_teacher_header('Eingaben');
     const hitL = opts.find(o => String(o?.label ?? '').toLowerCase() === low);
     if (hitL) return String(hitL.value ?? t);
     return t;
-  }
-
-  function setComboDisplayedValue(inp, f, actualValue){
-    const v = String(actualValue ?? '');
-    inp.dataset.actual = v;
-    inp.value = teacherDisplay(f, v);
-  }
-
-  function wireTeacherInputs(rootEl){
-    if (!rootEl) return;
-    rootEl.querySelectorAll('[data-teacher-input="1"]').forEach(inp => {
-      const reportId = Number(inp.getAttribute('data-report-id') || '0');
-      const fieldId = Number(inp.getAttribute('data-field-id') || '0');
-      if (!reportId || !fieldId) return;
-
-      const f = state.fieldMap[String(fieldId)];
-
-      // compact grade input
-      if (f && String(f.field_type || '') === 'grade') {
-        inp.classList.add('gradeInput');
-      }
-
-      if (inp.dataset.combo === '1') {
-        ensureDatalistForField(fieldId);
-
-        const actual = String(inp.dataset.actual ?? '');
-        if (f) setComboDisplayedValue(inp, f, actual);
-
-        const commit = () => {
-          const typed = inp.value;
-          const resolved = f ? resolveTypedToValue(f, typed) : String(typed ?? '').trim();
-          scheduleSave(reportId, fieldId, resolved);
-          if (f) setComboDisplayedValue(inp, f, resolved);
-          else inp.dataset.actual = resolved;
-        };
-
-        inp.addEventListener('change', commit);
-        inp.addEventListener('blur', commit);
-        inp.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter') { ev.preventDefault(); commit(); inp.blur(); }
-        });
-        return;
-      }
-
-      if (inp.type === 'checkbox') {
-        inp.addEventListener('change', () => scheduleSave(reportId, fieldId, inp.checked ? '1' : '0'));
-      } else {
-        inp.addEventListener('input', () => scheduleSave(reportId, fieldId, inp.value));
-      }
-
-      inp.addEventListener('focus', () => {
-        const wrap = inp.closest('.field');
-        if (wrap) wrap.scrollIntoView({block:'nearest'});
-      });
-    });
-  }
-
-  async function api(action, payload){
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload })
-    });
-    const j = await res.json().catch(()=>null);
-    if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
-    return j;
-  }
-
-  function showErr(msg){
-    elErrMsg.textContent = msg;
-    elErrBox.style.display = 'block';
-  }
-  function clearErr(){
-    elErrBox.style.display = 'none';
-    elErrMsg.textContent = '';
-  }
-  function setSaving(on){
-    elSavePill.style.display = on ? 'inline-flex' : 'none';
-  }
-
-  function teacherVal(reportId, fieldId){
-    const r = state.values_teacher[String(reportId)] || {};
-    const v = r[String(fieldId)];
-    return (v === null || typeof v === 'undefined') ? '' : String(v);
-  }
-  function childVal(reportId, fieldId){
-    const r = state.values_child[String(reportId)] || {};
-    const v = r[String(fieldId)];
-    return (v === null || typeof v === 'undefined') ? '' : String(v);
   }
 
   function optionLabel(options, value){
@@ -461,159 +450,159 @@ render_teacher_header('Eingaben');
     return v;
   }
 
-  // -------------------------
-  // Dynamic label/help placeholders (cross-field)
-  // -------------------------
-  // Allows using other field values inside label/help_text.
-  // Syntax:
-  //   {{other_field_name}}            -> teacher value (displayed) of that field
-  //   {{field:other_field_name}}      -> same as above
-  //   {{child:other_field_name}}      -> child value (displayed) of that field (if paired)
-  //   {{label:other_field_name}}      -> label of that field
-  //   {{help:other_field_name}}       -> help text of that field
-  // Unknown placeholders resolve to an empty string.
-
-  function baseFieldKey(name){
-    const s = String(name ?? '').trim().toLowerCase();
-    if (!s) return '';
-    const i = s.indexOf('-');
-    return (i >= 0) ? s.slice(0, i) : s;
-  }
-
-  function buildTeacherFieldNameIndex(){
-    const idx = new Map();
-    state.groups.forEach(g => {
-      g.fields.forEach(f => {
-        const n = String(f.field_name || '').trim();
-        if (n) idx.set(n, f);
-      });
+  async function api(action, payload){
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, csrf_token: csrf, ...payload })
     });
-    return idx;
+    const j = await res.json().catch(()=>null);
+    if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
+    return j;
   }
 
-  function findPairedFieldByBase(idx, key){
-    const base = baseFieldKey(key);
-    if (!base) return null;
-    for (const [name, f] of idx.entries()) {
-      if (baseFieldKey(name) === base) return f;
+  function showErr(msg){
+    elErrMsg.textContent = msg;
+    elErrBox.style.display = 'block';
+  }
+  function clearErr(){
+    elErrBox.style.display = 'none';
+    elErrMsg.textContent = '';
+  }
+  function setSaving(on){
+    elSavePill.style.display = on ? 'inline-flex' : 'none';
+  }
+
+  function isClassFieldId(fieldId){
+    const cf = state.class_fields;
+    if (!cf || !Array.isArray(cf.field_ids)) return false;
+    return cf.field_ids.includes(Number(fieldId));
+  }
+
+  function classReportId(){
+    return Number(state.class_report_instance_id || 0);
+  }
+
+  function teacherVal(reportId, fieldId){
+    if (isClassFieldId(fieldId)) {
+      const rid = classReportId();
+      const r = state.values_teacher[String(rid)] || {};
+      const v = r[String(fieldId)];
+      return (v === null || typeof v === 'undefined') ? '' : String(v);
     }
-    return null;
+    const r = state.values_teacher[String(reportId)] || {};
+    const v = r[String(fieldId)];
+    return (v === null || typeof v === 'undefined') ? '' : String(v);
   }
 
-  function resolveTeacherTextTemplate(tpl, reportId, idx){
-    const s = String(tpl ?? '');
-    if (!s.includes('{{')) return s;
-    return s.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, rawKey) => {
-      const token = String(rawKey || '').trim();
-      if (!token) return '';
-      let kind = 'field';
-      let key = token;
-      const p = token.indexOf(':');
-      if (p > 0) {
-        kind = token.slice(0, p).trim().toLowerCase();
-        key = token.slice(p + 1).trim();
-      }
-      if (!key) return '';
-
-      // prefer exact field_name match, else allow base matching
-      let ref = idx.get(key);
-      if (!ref) ref = findPairedFieldByBase(idx, key);
-      if (!ref) return '';
-
-      if (kind === 'label') return String(ref.label || ref.field_name || '');
-      if (kind === 'help') return String(ref.help_text || '');
-      if (kind === 'child') {
-        if (ref.child && ref.child.id) {
-          const raw = childVal(reportId, ref.child.id);
-          return raw ? childDisplay(ref, raw) : '';
-        }
-        return '';
-      }
-
-      // default: teacher field value (displayed)
-      const raw = teacherVal(reportId, ref.id);
-      return raw ? teacherDisplay(ref, raw) : '';
-    });
+  function childVal(reportId, fieldId){
+    const r = state.values_child[String(reportId)] || {};
+    const v = r[String(fieldId)];
+    return (v === null || typeof v === 'undefined') ? '' : String(v);
   }
 
-  function refreshDynamicTextsTeacher(rootEl, reportId){
-    const root = rootEl || document;
-    const idx = buildTeacherFieldNameIndex();
-    root.querySelectorAll('[data-fieldwrap="1"]').forEach(wrap => {
-      const fieldId = Number(wrap.getAttribute('data-field-id') || '0');
+  function scheduleSave(reportId, fieldId, value){
+    const key = `${reportId}:${fieldId}`;
+    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+
+    if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
+    state.values_teacher[String(reportId)][String(fieldId)] = value;
+
+    ui.saveTimers.set(key, setTimeout(async () => {
+      ui.saveTimers.delete(key);
+      ui.saveInFlight++;
+      setSaving(true);
+      try {
+        await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
+      } catch (e) {
+        showErr(e.message || String(e));
+      } finally {
+        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
+        if (ui.saveInFlight === 0) setSaving(false);
+      }
+    }, 350));
+  }
+
+  function scheduleSaveClass(fieldId, value){
+    const rid = classReportId();
+    const key = `class:${rid}:${fieldId}`;
+    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+
+    if (!state.values_teacher[String(rid)]) state.values_teacher[String(rid)] = {};
+    state.values_teacher[String(rid)][String(fieldId)] = value;
+
+    ui.saveTimers.set(key, setTimeout(async () => {
+      ui.saveTimers.delete(key);
+      ui.saveInFlight++;
+      setSaving(true);
+      try {
+        await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
+      } catch (e) {
+        showErr(e.message || String(e));
+      } finally {
+        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
+        if (ui.saveInFlight === 0) setSaving(false);
+      }
+    }, 350));
+  }
+
+  function wireTeacherInputs(rootEl){
+    if (!rootEl) return;
+
+    rootEl.querySelectorAll('[data-teacher-input="1"]').forEach(inp => {
+      const reportId = Number(inp.getAttribute('data-report-id') || '0');
+      const fieldId = Number(inp.getAttribute('data-field-id') || '0');
+      if (!reportId || !fieldId) return;
+
       const f = state.fieldMap[String(fieldId)];
-      if (!f) return;
-      const lbl = resolveTeacherTextTemplate(String(f.label || f.field_name || 'Feld'), reportId, idx);
-      const help = resolveTeacherTextTemplate(String(f.help_text || ''), reportId, idx);
 
-      const lblEl = wrap.querySelector('[data-dyn="label"]');
-      if (lblEl) lblEl.textContent = lbl;
-      const helpEl = wrap.querySelector('[data-dyn="help"]');
-      if (helpEl) {
-        helpEl.textContent = help;
-        helpEl.style.display = help.trim() ? '' : 'none';
+      if (f && String(f.field_type || '') === 'grade') {
+        inp.classList.add('gradeInput');
       }
-    });
-  }
 
-  function currentStudents(){
-    const f = normalize(ui.studentFilter);
-    if (!f) return state.students;
-    return state.students.filter(s => normalize(s.name).includes(f));
-  }
-  function activeStudent(){
-    const list = currentStudents();
-    if (!list.length) return null;
-    if (ui.activeStudentIndex < 0) ui.activeStudentIndex = 0;
-    if (ui.activeStudentIndex >= list.length) ui.activeStudentIndex = list.length - 1;
-    return list[ui.activeStudentIndex];
-  }
+      const isClass = isClassFieldId(fieldId);
+      const doSave = (val) => {
+        if (isClass) scheduleSaveClass(fieldId, val);
+        else scheduleSave(reportId, fieldId, val);
+      };
 
-  function gradeFields(groups){
-    const out = [];
-    groups.forEach(g => {
-      g.fields.forEach(f => {
-        if (String(f.field_type) === 'grade') out.push({...f, _group_key:g.key, _group_title:g.title});
+      if (inp.dataset.combo === '1') {
+        ensureDatalistForField(fieldId);
+
+        const actual = String(inp.dataset.actual ?? '');
+        inp.dataset.actual = actual;
+        if (f) inp.value = teacherDisplay(f, actual);
+
+        const commit = () => {
+          const typed = inp.value;
+          const resolved = f ? resolveTypedToValue(f, typed) : String(typed ?? '').trim();
+          doSave(resolved);
+          inp.dataset.actual = resolved;
+          if (f) inp.value = teacherDisplay(f, resolved);
+        };
+
+        inp.addEventListener('change', commit);
+        inp.addEventListener('blur', commit);
+        inp.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') { ev.preventDefault(); commit(); inp.blur(); }
+        });
+        return;
+      }
+
+      if (inp.type === 'checkbox') {
+        inp.addEventListener('change', () => doSave(inp.checked ? '1' : '0'));
+      } else {
+        inp.addEventListener('input', () => doSave(inp.value));
+      }
+
+      inp.addEventListener('focus', () => {
+        const wrap = inp.closest('.field');
+        if (wrap) wrap.scrollIntoView({block:'nearest'});
       });
     });
-    return out;
   }
 
-  function ensureSelect(selectEl){
-    if (!selectEl.options.length) {
-      selectEl.innerHTML = '';
-      const optAll = document.createElement('option');
-      optAll.value = 'ALL';
-      optAll.textContent = 'Alle';
-      selectEl.appendChild(optAll);
-      state.groups.forEach(g => {
-        const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
-        selectEl.appendChild(opt);
-      });
-    }
-    if (!selectEl.value) selectEl.value = 'ALL';
-  }
-
-  function render(){
-    elApp.style.display = 'block';
-    elMetaTop.textContent = `${state.template?.name ?? 'Template'} · ${state.students.length} Schüler:innen · ${state.groups.reduce((a,g)=>a+g.fields.length,0)} Felder`;
-
-    ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
-    ui.showChild = !!toggleChild.checked;
-
-    viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
-    viewStudent.style.display = (ui.view === 'student') ? 'block' : 'none';
-    viewItem.style.display = (ui.view === 'item') ? 'block' : 'none';
-
-    if (ui.showChild) elApp.classList.add('show-child');
-    else elApp.classList.remove('show-child');
-
-    if (ui.view === 'grades') renderGradesView();
-    else if (ui.view === 'student') renderStudentView();
-    else renderItemView();
-  }
+  // --- rendering helpers
 
   function renderInputHtml(f, reportId, value, locked){
     const dis = locked ? 'disabled' : '';
@@ -649,6 +638,122 @@ render_teacher_header('Eingaben');
 
     const inputType = (type === 'number') ? 'number' : ((type === 'date') ? 'date' : 'text');
     return `<input type="${esc(inputType)}" ${common} style="width:100%; margin-top:10px;" value="${esc(value)}">`;
+  }
+
+  function currentStudents(){
+    const f = normalize(ui.studentFilter);
+    if (!f) return state.students;
+    return state.students.filter(s => normalize(s.name).includes(f));
+  }
+
+  function activeStudent(){
+    const list = currentStudents();
+    if (!list.length) return null;
+    if (ui.activeStudentIndex < 0) ui.activeStudentIndex = 0;
+    if (ui.activeStudentIndex >= list.length) ui.activeStudentIndex = list.length - 1;
+    return list[ui.activeStudentIndex];
+  }
+
+  function gradeFields(groups){
+    const out = [];
+    groups.forEach(g => {
+      g.fields.forEach(f => {
+        if (String(f.field_type) === 'grade') out.push({...f, _group_key:g.key, _group_title:g.title});
+      });
+    });
+    return out;
+  }
+
+  function ensureSelect(selectEl){
+    if (!selectEl.options.length) {
+      selectEl.innerHTML = '';
+      const optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.textContent = 'Alle';
+      selectEl.appendChild(optAll);
+      state.groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.key;
+        opt.textContent = g.title;
+        selectEl.appendChild(opt);
+      });
+    }
+    if (!selectEl.value) selectEl.value = 'ALL';
+  }
+
+  function ensureGroupsSelect(){
+    if (!groupSelect.options.length) {
+      groupSelect.innerHTML = '';
+      const optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.textContent = 'Alle';
+      groupSelect.appendChild(optAll);
+      state.groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.key;
+        opt.textContent = g.title;
+        groupSelect.appendChild(opt);
+      });
+    }
+    if (!groupSelect.value) groupSelect.value = 'ALL';
+    ui.groupKey = groupSelect.value;
+  }
+
+  function renderClassFields(){
+    const cf = state.class_fields;
+    dbg('class_fields', cf);
+
+    if (!cf || !Array.isArray(cf.fields) || !cf.fields.length || !classReportId()) {
+      if (classFieldsBox) classFieldsBox.style.display = 'none';
+      if (classFieldsForm) classFieldsForm.innerHTML = '';
+      if (classFieldsStatus) classFieldsStatus.textContent = '';
+      return;
+    }
+
+    classFieldsBox.style.display = 'block';
+    classFieldsStatus.textContent = `(${cf.fields.length})`;
+
+    const rid = classReportId();
+    const locked = false;
+
+    const html = cf.fields.map(f => {
+      const fid = Number(f.id);
+      const v = teacherVal(rid, fid);
+      const lbl = String(f.label_resolved || f.label || f.field_name || '');
+      const help = String(f.help_text_resolved || f.help_text || '');
+      return `
+        <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
+          <div class="lbl" data-dyn="label">${esc(lbl)}</div>
+          <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
+          ${renderInputHtml(f, rid, v, locked)}
+        </div>
+      `;
+    }).join('');
+
+    classFieldsForm.innerHTML = html;
+    wireTeacherInputs(classFieldsForm);
+  }
+
+  function render(){
+    elApp.style.display = 'block';
+    elMetaTop.textContent = `${state.template?.name ?? 'Template'} · ${state.students.length} Schüler:innen · ${state.groups.reduce((a,g)=>a+g.fields.length,0)} Felder`;
+
+    // ✅ always render class fields (independent from view)
+    renderClassFields();
+
+    ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
+    ui.showChild = !!toggleChild.checked;
+
+    viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
+    viewStudent.style.display = (ui.view === 'student') ? 'block' : 'none';
+    viewItem.style.display = (ui.view === 'item') ? 'block' : 'none';
+
+    if (ui.showChild) elApp.classList.add('show-child');
+    else elApp.classList.remove('show-child');
+
+    if (ui.view === 'grades') renderGradesView();
+    else if (ui.view === 'student') renderStudentView();
+    else renderItemView();
   }
 
   function renderStudentView(){
@@ -700,14 +805,12 @@ render_teacher_header('Eingaben');
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
         const childInfo = (f.child && f.child.id) ? `<div class="child"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>` : '';
-        // Resolve dynamic placeholders in label/help against current values.
-        const idx = buildTeacherFieldNameIndex();
-        const lbl = resolveTeacherTextTemplate(String(f.label || f.field_name || 'Feld'), reportId, idx);
-        const help = resolveTeacherTextTemplate(String(f.help_text || ''), reportId, idx);
+        const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
+        const help = resolveLabelTemplate(String(f.help_text || ''));
         html += `
           <div class="field" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-            <div class="lbl" data-dyn="label">${esc(lbl)}</div>
-            <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
+            <div class="lbl">${esc(lbl)}</div>
+            <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked)}
             ${childInfo}
           </div>
@@ -723,14 +826,11 @@ render_teacher_header('Eingaben');
     });
 
     wireTeacherInputs(studentForm);
-    refreshDynamicTextsTeacher(studentForm, reportId);
   }
 
-  // NEW: render grades in two orientations
   function renderGradesView(){
     ensureSelect(gradeGroupSelect);
 
-    // apply persisted orientation to select
     if (gradeOrientation && gradeOrientation.value !== ui.gradeOrientation) {
       gradeOrientation.value = ui.gradeOrientation;
     }
@@ -749,10 +849,8 @@ render_teacher_header('Eingaben');
     }
 
     if (ui.gradeOrientation === 'students_cols') {
-      // === ROTATED: rows = fields, cols = students ===
       const sCols = state.students;
 
-      // head: sticky "Notenfeld", then students
       gradeHead.innerHTML = '';
       const tr = document.createElement('tr');
       const th0 = document.createElement('th');
@@ -775,7 +873,8 @@ render_teacher_header('Eingaben');
 
         const tdLabel = document.createElement('td');
         tdLabel.className = 'sticky';
-        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f.label || f.field_name)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title || '')}</div>`;
+        const lbl = resolveLabelTemplate(String(f.label || f.field_name));
+        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title || '')}</div>`;
         row.appendChild(tdLabel);
 
         sCols.forEach(s => {
@@ -805,7 +904,6 @@ render_teacher_header('Eingaben');
       return;
     }
 
-    // === DEFAULT: rows = students, cols = fields ===
     const sCols = state.students;
 
     gradeHead.innerHTML = '';
@@ -839,7 +937,8 @@ render_teacher_header('Eingaben');
 
     fields.forEach(f => {
       const th = document.createElement('th');
-      th.innerHTML = `<div style="font-weight:800;">${esc(f.label || f.field_name)}</div>`;
+      const lbl = resolveLabelTemplate(String(f.label || f.field_name));
+      th.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div>`;
       tr2.appendChild(th);
     });
     gradeHead.appendChild(tr2);
@@ -871,7 +970,6 @@ render_teacher_header('Eingaben');
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
-
         tr.appendChild(td);
       });
 
@@ -879,24 +977,6 @@ render_teacher_header('Eingaben');
     });
 
     wireTeacherInputs(gradeBody);
-  }
-
-  function ensureGroupsSelect(){
-    if (!groupSelect.options.length) {
-      groupSelect.innerHTML = '';
-      const optAll = document.createElement('option');
-      optAll.value = 'ALL';
-      optAll.textContent = 'Alle';
-      groupSelect.appendChild(optAll);
-      state.groups.forEach(g => {
-        const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
-        groupSelect.appendChild(opt);
-      });
-    }
-    if (!groupSelect.value) groupSelect.value = 'ALL';
-    ui.groupKey = groupSelect.value;
   }
 
   function renderItemView(){
@@ -908,9 +988,7 @@ render_teacher_header('Eingaben');
     let fields = [];
     groups.forEach(g => fields.push(...g.fields.map(f => ({...f, _group_title:g.title, _group_key:g.key}))));
 
-    if (filter) {
-      fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
-    }
+    if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
     const sCols = state.students;
 
@@ -932,7 +1010,8 @@ render_teacher_header('Eingaben');
       const row = document.createElement('tr');
       const tdLabel = document.createElement('td');
       tdLabel.className = 'sticky';
-      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f.label || f.field_name)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>`;
+      const lbl = resolveLabelTemplate(String(f.label || f.field_name));
+      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>`;
       row.appendChild(tdLabel);
 
       sCols.forEach(s => {
@@ -951,7 +1030,6 @@ render_teacher_header('Eingaben');
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
-
         row.appendChild(td);
       });
 
@@ -959,36 +1037,6 @@ render_teacher_header('Eingaben');
     });
 
     wireTeacherInputs(itemBody);
-  }
-
-  function scheduleSave(reportId, fieldId, value){
-    const key = `${reportId}:${fieldId}`;
-    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
-
-    if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
-    state.values_teacher[String(reportId)][String(fieldId)] = value;
-
-    // Update dynamic placeholders immediately (no full re-render)
-    if (ui.view === 'student') {
-      const s = activeStudent();
-      if (s && Number(s.report_instance_id) === Number(reportId)) {
-        refreshDynamicTextsTeacher(studentForm, reportId);
-      }
-    }
-
-    ui.saveTimers.set(key, setTimeout(async () => {
-      ui.saveTimers.delete(key);
-      ui.saveInFlight++;
-      setSaving(true);
-      try {
-        await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
-      } catch (e) {
-        showErr(e.message || String(e));
-      } finally {
-        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
-        if (ui.saveInFlight === 0) setSaving(false);
-      }
-    }, 350));
   }
 
   async function loadClass(classId){
@@ -1002,8 +1050,11 @@ render_teacher_header('Eingaben');
     state.students = j.students;
     state.values_teacher = j.values_teacher || {};
     state.values_child = j.values_child || {};
+    state.class_report_instance_id = j.class_report_instance_id || 0;
+    state.class_fields = j.class_fields || null;
 
     rebuildFieldMap();
+    dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
 
     ui.activeStudentIndex = 0;
     groupSelect.innerHTML = '';
@@ -1051,7 +1102,6 @@ render_teacher_header('Eingaben');
   gradeGroupSelect.addEventListener('change', () => renderGradesView());
   gradeSearch.addEventListener('input', () => { ui.gradeFilter = gradeSearch.value; renderGradesView(); });
 
-  // NEW: orientation change persists
   gradeOrientation.value = ui.gradeOrientation;
   gradeOrientation.addEventListener('change', () => {
     ui.gradeOrientation = gradeOrientation.value || 'students_rows';

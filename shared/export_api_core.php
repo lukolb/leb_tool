@@ -119,6 +119,41 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   return $map;
 }
 
+
+function meta_read_export(?string $json): array {
+  if (!$json) return [];
+  $a = json_decode($json, true);
+  return is_array($a) ? $a : [];
+}
+
+function is_class_field_export(array $meta): bool {
+  // Admin marks class-wide fields via meta_json: {"scope":"class"}
+  // (We also accept a legacy boolean flag if ever introduced.)
+  if (isset($meta['scope']) && is_string($meta['scope']) && strtolower(trim($meta['scope'])) === 'class') return true;
+  if (isset($meta['is_class_field']) && (int)$meta['is_class_field'] === 1) return true;
+  return false;
+}
+
+function find_class_report_instance(PDO $pdo, int $templateId, string $schoolYear): ?int {
+  // Class-wide values are stored in a dedicated report instance:
+  // student_id = 0, period_label = '__class__', school_year = class school year.
+  $st = $pdo->prepare(
+    "SELECT id
+     FROM report_instances
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1"
+  );
+  $st->execute([$templateId, $schoolYear]);
+  $id = (int)($st->fetchColumn() ?: 0);
+  return $id > 0 ? $id : null;
+}
+
+function load_class_values(PDO $pdo, int $classReportInstanceId): array {
+  // Returns field_name => value_text for the class report instance.
+  return load_values_for_report($pdo, $classReportInstanceId);
+}
+
 function missing_fields_for_student(array $templateFields, array $values): array {
   // IMPORTANT: warn on ALL fields (not only required)
   $missing = [];
@@ -210,6 +245,25 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   $students = load_students_for_export($pdo, $classId, $templateId, $schoolYear, $onlyStudentId, $onlySubmitted);
   $tf = load_template_fields($pdo, $templateId);
 
+  // Determine which fields are class-wide
+  $classFieldNames = [];
+  foreach ($tf as $f) {
+    $meta = meta_read_export($f['meta_json'] ?? null);
+    if (is_class_field_export($meta)) {
+      $n = (string)($f['field_name'] ?? '');
+      if ($n !== '') $classFieldNames[$n] = true;
+    }
+  }
+
+  // Load class-wide values once (and merge them into each student's values for export)
+  $classValues = [];
+  if ($includeValues && $classFieldNames) {
+    $classRiId = find_class_report_instance($pdo, $templateId, $schoolYear);
+    if ($classRiId) {
+      $classValues = load_class_values($pdo, (int)$classRiId);
+    }
+  }
+
   $outStudents = [];
   $warnByStudent = [];
   $studentsWithMissing = 0;
@@ -230,6 +284,15 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
         apply_system_bindings($pdo, (int)$ri['id']);
       }
       $values = load_values_for_report($pdo, (int)$ri['id']);
+
+      // Merge class-wide values (override per-student values for those fields)
+      if ($classValues && $classFieldNames) {
+        foreach ($classFieldNames as $fname => $_) {
+          if (array_key_exists($fname, $classValues)) {
+            $values[$fname] = (string)$classValues[$fname];
+          }
+        }
+      }
     }
 
     // If no report instance exists, we still warn (everything missing), but label it compactly:
