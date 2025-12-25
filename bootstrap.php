@@ -322,6 +322,7 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
  * Supported tokens: DD, D, MM, M, YYYY, YY, MMM, MMMM
  * Examples: "DD.MM.YYYY", "MM/DD/YYYY", "D. MMMM YYYY".
  */
+// Zeilen 325–382
 function format_date_pattern(?string $iso, string $pattern): string {
   $iso = trim((string)$iso);
   if ($iso === '') return '';

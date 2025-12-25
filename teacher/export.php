@@ -7,8 +7,18 @@ require __DIR__ . '/_layout.php';
 require_teacher();
 
 $pdo = db();
+$u = current_user();
+$userId = (int)($u['id'] ?? 0);
 
-$st = $pdo->query("SELECT c.* FROM classes c WHERE c.is_active=1 ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC");
+// Teacher: only assigned classes
+$st = $pdo->prepare(
+  "SELECT c.*
+   FROM classes c
+   INNER JOIN user_class_assignments uca ON uca.class_id=c.id
+   WHERE c.is_active=1 AND uca.user_id=?
+   ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+);
+$st->execute([$userId]);
 $classes = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $classId = (int)($_GET['class_id'] ?? 0);

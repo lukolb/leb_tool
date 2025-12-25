@@ -6,13 +6,13 @@ declare(strict_types=1);
  * Shared PDF export page (UI + JS).
  *
  * Expected variables (set by wrapper):
- *   - $exportApiUrl (string)   e.g. url('admin/ajax/export_api.php') or url('teacher/ajax/export_api.php')
- *   - $backUrl (string)        e.g. url('admin/index.php') or url('teacher/index.php')
- *   - $pageTitle (string)      e.g. 'PDF-Export'
- *   - $classId (int)           selected class id
- *   - $classes (array)         list of active classes rows
- *   - $csrf (string)           csrf token
- *   - $debugPdf (bool)         debug flag
+ *   - $exportApiUrl (string)
+ *   - $backUrl (string)
+ *   - $pageTitle (string)
+ *   - $classId (int)
+ *   - $classes (array)
+ *   - $csrf (string)
+ *   - $debugPdf (bool)
  */
 
 if (!isset($exportApiUrl, $backUrl, $pageTitle, $classId, $classes, $csrf, $debugPdf)) {
@@ -36,6 +36,15 @@ function export_class_display(array $c): string {
     <p class="muted" style="margin:0;">PDFs werden im Browser erzeugt und <strong>nicht</strong> auf dem Server gespeichert.</p>
   </div>
 
+  <?php if (!is_array($classes) || count($classes) === 0): ?>
+    <div class="card" style="border:1px solid #ffe08a; background:#fff7db; margin-bottom:14px;">
+      <strong>Keine Klassen gefunden.</strong>
+      <div class="muted" style="margin-top:6px;">
+        Für Lehrkräfte heißt das meistens: Es sind noch keine Klassen zugeordnet (<code>user_class_assignments</code>).
+      </div>
+    </div>
+  <?php else: ?>
+
   <div class="card" style="margin-bottom:14px;">
     <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:260px;">
@@ -47,7 +56,7 @@ function export_class_display(array $c): string {
             </option>
           <?php endforeach; ?>
         </select>
-        <div class="muted" style="margin-top:4px;">Exportiert die der Klasse zugeordnete Vorlage (Admin: Klassen → Vorlage).</div>
+        <div class="muted" style="margin-top:4px;">Exportiert die der Klasse zugeordnete Vorlage.</div>
       </div>
 
       <div style="min-width:340px;">
@@ -93,6 +102,24 @@ function export_class_display(array $c): string {
         Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern – es läuft komplett im Browser.
       </div>
     </div>
+
+    <div id="infoBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #b9dbff; background:#eaf4ff;">
+      <strong>Hinweis:</strong>
+      <span id="infoText"></span>
+    </div>
+
+    <div id="warnBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #ffe08a; background:#fff7db;">
+      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <strong>Achtung:</strong>
+          <span id="warnText"></span>
+          <div class="muted" style="margin-top:6px;">Beim Export kannst du die Warnung ignorieren oder abbrechen.</div>
+        </div>
+        <div style="white-space:nowrap;">
+          <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;">Details</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="muted" style="font-size:13px;">
@@ -102,6 +129,33 @@ function export_class_display(array $c): string {
         Debug aktiv (debug_pdf=1) – siehe Browser-Konsole
       </span>
     <?php endif; ?>
+  </div>
+
+  <?php endif; ?>
+</div>
+
+<!-- modal -->
+<div id="missingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:9999;">
+  <div style="max-width:920px; margin:6vh auto; background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden;">
+    <div style="padding:16px 18px; border-bottom:1px solid #eee;">
+      <div style="font-size:18px; font-weight:700;">Fehlende Einträge gefunden</div>
+      <div class="muted" id="missingModalSummary" style="margin-top:4px;"></div>
+
+      <div class="row" style="gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;">
+        <input id="missingSearch" class="input" style="flex:1; min-width:260px;" placeholder="Suchen (Schüler:in oder Feld) …">
+        <button class="btn secondary" id="btnExpandAll" type="button">Alle ausklappen</button>
+        <button class="btn secondary" id="btnCollapseAll" type="button">Alle einklappen</button>
+      </div>
+    </div>
+
+    <div style="padding:14px 18px; max-height:58vh; overflow:auto;">
+      <div id="missingModalList"></div>
+    </div>
+
+    <div style="padding:14px 18px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn secondary" id="btnMissingCancel" type="button">Abbrechen</button>
+      <button class="btn" id="btnMissingIgnore" type="button">Ignorieren & exportieren</button>
+    </div>
   </div>
 </div>
 
@@ -119,13 +173,41 @@ const elStatus = document.getElementById('statusLine');
 const btnCheck = document.getElementById('btnCheck');
 const btnExport = document.getElementById('btnExport');
 
-function setStatus(msg){ elStatus.textContent = msg; }
+const infoBox = document.getElementById('infoBox');
+const infoText = document.getElementById('infoText');
+
+const warnBox = document.getElementById('warnBox');
+const warnText = document.getElementById('warnText');
+const btnWarnDetails = document.getElementById('btnWarnDetails');
+
+const modal = document.getElementById('missingModal');
+const modalSummary = document.getElementById('missingModalSummary');
+const modalList = document.getElementById('missingModalList');
+const btnMissingCancel = document.getElementById('btnMissingCancel');
+const btnMissingIgnore = document.getElementById('btnMissingIgnore');
+const elMissingSearch = document.getElementById('missingSearch');
+const btnExpandAll = document.getElementById('btnExpandAll');
+const btnCollapseAll = document.getElementById('btnCollapseAll');
+
+let lastPreview = null;
+let __missingRenderSource = null;
+
+// ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
+let __fullStudentList = [];
+
+function setStatus(msg){ if (elStatus) elStatus.textContent = msg; }
+function setInfo(msg){
+  if (!infoBox || !infoText) return;
+  if (msg) { infoText.textContent = msg; infoBox.style.display = ''; }
+  else infoBox.style.display = 'none';
+}
 
 function currentMode(){
   const r = document.querySelector('input[name="mode"]:checked');
   return r ? r.value : 'zip';
 }
 function updateModeUI(){
+  if (!elStudentWrap) return;
   elStudentWrap.style.display = (currentMode() === 'single') ? '' : 'none';
 }
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
@@ -134,12 +216,14 @@ document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener(
 }));
 updateModeUI();
 
-elClass.addEventListener('change', () => {
-  const id = Number(elClass.value||0);
-  const url = new URL(window.location.href);
-  url.searchParams.set('class_id', String(id));
-  window.location.href = url.toString();
-});
+if (elClass) {
+  elClass.addEventListener('change', () => {
+    const id = Number(elClass.value||0);
+    const url = new URL(window.location.href);
+    url.searchParams.set('class_id', String(id));
+    window.location.href = url.toString();
+  });
+}
 
 async function loadLibsIfNeeded(needZip){
   if (!window.PDFLib){
@@ -162,19 +246,57 @@ async function loadLibsIfNeeded(needZip){
   }
 }
 
+function isNonFatalBusinessError(msg){
+  const m = (msg||'').toLowerCase();
+  return m.includes('keine vorlage zugeordnet')
+      || m.includes('vorlage zugeordnet')
+      || m.includes('vorlage wurde keine')
+      || m.includes('keine schüler')
+      || m.includes('keine schueler');
+}
+
 async function apiFetch(payload){
-  const resp = await fetch(EXPORT_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
-    body: JSON.stringify(payload)
-  });
-  const data = await resp.json().catch(()=> ({}));
-  if (!resp.ok || !data.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+  if (!EXPORT_API_URL) throw new Error('EXPORT_API_URL ist leer (Wrapper setzt $exportApiUrl nicht).');
+
+  let resp;
+  try {
+    resp = await fetch(EXPORT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    throw new Error('Netzwerkfehler beim API-Request: ' + (e?.message || e));
+  }
+
+  const raw = await resp.text();
+  let data = null;
+  try { data = JSON.parse(raw); } catch (e) { data = null; }
+
+  if (!resp.ok) {
+    const msg = data?.error ? String(data.error) : raw.slice(0, 300);
+    const err = new Error(msg || ('HTTP ' + resp.status));
+    err._httpStatus = resp.status;
+    err._raw = raw;
+    err._isJson = !!data;
+    throw err;
+  }
+
+  if (!data || !data.ok) {
+    const msg = data?.error ? String(data.error) : raw.slice(0, 300);
+    const err = new Error(msg || 'Ungültige API-Antwort.');
+    err._httpStatus = resp.status;
+    err._raw = raw;
+    err._isJson = !!data;
+    throw err;
+  }
+
   return data;
 }
 
-/** preserve selection on refill */
 function fillStudentSelect(students, keepId){
+  if (!elStudent) return;
   const keep = (keepId !== undefined && keepId !== null && String(keepId) !== '') ? String(keepId) : '';
   elStudent.innerHTML = '';
 
@@ -197,29 +319,102 @@ function fillStudentSelect(students, keepId){
   else elStudent.value = firstId;
 }
 
-function onlySubmittedFlag(){ return elOnlySubmitted.checked ? 1 : 0; }
+function onlySubmittedFlag(){ return (elOnlySubmitted && elOnlySubmitted.checked) ? 1 : 0; }
 
-async function check(){
-  const classId = Number(elClass.value||0);
-  const keepStudentId = elStudent.value;
+function updateWarnBoxFromPreview(preview){
+  const sum = preview?.warnings_summary;
+  const total = Number(sum?.total_missing || 0);
+  const studentsWith = Number(sum?.students_with_missing || 0);
 
-  setStatus('Prüfe Daten …');
-  const data = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
-  fillStudentSelect(data.students || [], keepStudentId);
+  if (!warnBox || !warnText) return;
 
-  const cnt = data.students?.length||0;
-  setStatus(`OK. ${cnt} Schüler:in(en) gefunden.`);
+  if (total > 0) {
+    warnText.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler:in(en).`;
+    warnBox.style.display = '';
+    if (btnWarnDetails) btnWarnDetails.style.display = '';
+  } else {
+    warnBox.style.display = 'none';
+    if (btnWarnDetails) btnWarnDetails.style.display = 'none';
+  }
 }
 
-btnCheck.addEventListener('click', async () => {
-  try { btnCheck.disabled = true; await check(); }
-  catch (e) { setStatus('Fehler: ' + (e?.message||e)); }
-  finally { btnCheck.disabled = false; }
-});
+let __refiningSinglePreview = false;
 
-elOnlySubmitted.addEventListener('change', () => {
-  check().catch(()=>{});
-});
+async function check(){
+  if (!elClass) return null;
+  const classId = Number(elClass.value||0);
+  const keepStudentId = elStudent?.value;
+
+  setInfo('');
+  setStatus('Prüfe Daten …');
+
+  try {
+    const mode = currentMode();
+
+    // 1) FULL PREVIEW (immer ohne student_id) -> füllt Dropdown korrekt
+    const full = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
+
+    // ✅ cache complete list
+    __fullStudentList = Array.isArray(full.students) ? full.students : [];
+
+    fillStudentSelect(__fullStudentList, keepStudentId);
+
+    // 2) Single: warnings_summary für ausgewählten Schüler nachziehen, ohne Liste zu zerstören
+    let merged = full;
+
+    if (mode === 'single' && elStudent && elStudent.value && !__refiningSinglePreview) {
+      const sid = Number(elStudent.value || 0);
+      if (sid > 0) {
+        __refiningSinglePreview = true;
+        try {
+          const single = await apiFetch({ action: 'preview', class_id: classId, student_id: sid, only_submitted: onlySubmittedFlag() });
+          merged = Object.assign({}, full, { warnings_summary: single.warnings_summary });
+        } finally {
+          __refiningSinglePreview = false;
+        }
+      }
+    }
+
+    lastPreview = merged;
+    updateWarnBoxFromPreview(merged);
+
+    const cnt = __fullStudentList.length || 0;
+    setStatus(`OK. ${cnt} Schüler:in(en) gefunden.`);
+    return merged;
+
+  } catch (e) {
+    const msg = (e?.message || String(e));
+
+    if (isNonFatalBusinessError(msg)) {
+      lastPreview = null;
+      __fullStudentList = [];
+      if (elStudent) elStudent.innerHTML = '';
+      if (warnBox) warnBox.style.display = 'none';
+      if (btnWarnDetails) btnWarnDetails.style.display = 'none';
+
+      setStatus('Hinweis.');
+      setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
+      return null;
+    }
+
+    setStatus('Fehler: ' + msg);
+    throw e;
+  }
+}
+
+if (btnCheck) {
+  btnCheck.addEventListener('click', async () => {
+    try { btnCheck.disabled = true; await check(); }
+    finally { btnCheck.disabled = false; }
+  });
+}
+if (elOnlySubmitted) elOnlySubmitted.addEventListener('change', () => { check().catch(()=>{}); });
+
+if (elStudent) {
+  elStudent.addEventListener('change', () => {
+    if (currentMode() === 'single') check().catch(()=>{});
+  });
+}
 
 function safeFilename(s){
   return (s||'export').toString()
@@ -236,6 +431,111 @@ function downloadBytes(bytes, filename, mime){
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+function escapeHtml(s){
+  return (s ?? '').toString()
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#039;');
+}
+
+// ---------- missing modal rendering (grouped by student) ----------
+function buildMissingHtml(preview, q){
+  const sum = preview?.warnings_summary || {};
+  const byStudent = Array.isArray(sum.by_student) ? sum.by_student : [];
+  const query = (q||'').toString().trim().toLowerCase();
+
+  const parts = [];
+  for (const s of byStudent) {
+    const studentName = (s.student_name || ('ID ' + s.student_id)).toString();
+    const fields = Array.isArray(s.missing_fields) ? s.missing_fields : [];
+    if (!fields.length) continue;
+
+    const filteredFields = !query ? fields : fields.filter(f => {
+      const label = ((f.label || f.field_name || '') + '').toLowerCase();
+      return studentName.toLowerCase().includes(query) || label.includes(query);
+    });
+    if (!filteredFields.length) continue;
+
+    const showN = 60;
+    const items = filteredFields.slice(0, showN).map(f => {
+      const label = (f.label || f.field_name || '').toString();
+      const req = Number(f.is_required || 0) === 1 ? ' (Pflicht)' : '';
+      return `<li style="margin:2px 0;">${escapeHtml(label)}${req}</li>`;
+    }).join('');
+
+    const moreCount = filteredFields.length - showN;
+    const more = moreCount > 0
+      ? `<div class="muted" style="margin-top:6px;">… und ${moreCount} weitere</div>`
+      : '';
+
+    parts.push(`
+      <details data-student="${escapeHtml(studentName)}" open>
+        <summary style="cursor:pointer; padding:8px 10px; border:1px solid #eee; border-radius:10px; margin:8px 0; background:#fafafa;">
+          <strong>${escapeHtml(studentName)}</strong>
+          <span class="muted"> – ${filteredFields.length} fehlend</span>
+        </summary>
+        <div style="padding:4px 10px 10px 10px;">
+          <ul style="margin:6px 0 0 18px; padding:0;">${items}</ul>
+          ${more}
+        </div>
+      </details>
+    `);
+  }
+  return parts.join('') || '<div class="muted">Keine passenden Treffer.</div>';
+}
+
+function openMissingModal(preview){
+  return new Promise((resolve) => {
+    const sum = preview?.warnings_summary || {};
+    const total = Number(sum.total_missing || 0);
+    const studentsWith = Number(sum.students_with_missing || 0);
+
+    __missingRenderSource = preview;
+
+    if (modalSummary) modalSummary.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler:in(en).`;
+
+    if (elMissingSearch) elMissingSearch.value = '';
+    if (modalList) modalList.innerHTML = buildMissingHtml(preview, '');
+
+    function cleanup(){
+      if (btnMissingCancel) btnMissingCancel.onclick = null;
+      if (btnMissingIgnore) btnMissingIgnore.onclick = null;
+      if (modal) modal.style.display = 'none';
+    }
+
+    if (btnMissingCancel) btnMissingCancel.onclick = () => { cleanup(); resolve(false); };
+    if (btnMissingIgnore) btnMissingIgnore.onclick = () => { cleanup(); resolve(true); };
+
+    if (modal) modal.style.display = '';
+  });
+}
+
+if (btnWarnDetails) {
+  btnWarnDetails.addEventListener('click', async () => {
+    if (!lastPreview) return;
+    await openMissingModal(lastPreview);
+  });
+}
+
+if (elMissingSearch) {
+  elMissingSearch.addEventListener('input', () => {
+    if (!__missingRenderSource || !modalList) return;
+    modalList.innerHTML = buildMissingHtml(__missingRenderSource, elMissingSearch.value);
+  });
+}
+if (btnExpandAll) {
+  btnExpandAll.addEventListener('click', () => {
+    document.querySelectorAll('#missingModalList details').forEach(d => d.open = true);
+  });
+}
+if (btnCollapseAll) {
+  btnCollapseAll.addEventListener('click', () => {
+    document.querySelectorAll('#missingModalList details').forEach(d => d.open = false);
+  });
 }
 
 // --------- PDF fill: keep form editable + render X via viewer (NeedAppearances) ----------
@@ -376,10 +676,9 @@ async function fillPdfForStudent(templateBytes, student){
     const f = list[0];
     if (isRadioGroup(f)) setSelect(f, v);
     else if (isDropdown(f) || isOptionList(f)) setSelect(f, v);
-    else if (typeof f?.setText === 'function') setText(f, v);
+    else if (typeof f.setText === 'function') setText(f, v);
   }
 
-  // Keep form editable & let viewer render the original X appearance
   try {
     const acro = form.acroForm;
     if (acro && acro.dict && PDFName && PDFBool) {
@@ -396,14 +695,30 @@ async function exportNow(){
   const classId = Number(elClass.value||0);
   const selectedStudentId = elStudent.value;
 
+  setInfo('');
   setStatus('Lade Exportdaten …');
-  const payload = { action: 'data', class_id: classId, only_submitted: onlySubmittedFlag() };
-  if (mode === 'single' && selectedStudentId) payload.student_id = Number(selectedStudentId);
 
-  const data = await apiFetch(payload);
+  let data;
+  try {
+    const payload = { action: 'data', class_id: classId, only_submitted: onlySubmittedFlag() };
+    if (mode === 'single' && selectedStudentId) payload.student_id = Number(selectedStudentId);
+    data = await apiFetch(payload);
+  } catch (e) {
+    const msg = (e?.message || String(e));
+    if (isNonFatalBusinessError(msg)) {
+      setStatus('Hinweis.');
+      setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
+      return;
+    }
+    throw e;
+  }
 
-  // keep selection stable
-  fillStudentSelect(data.students || [], selectedStudentId);
+  // ✅ FIX: Dropdown nicht mit single-response überschreiben
+  if (mode === 'single') {
+    fillStudentSelect(__fullStudentList, selectedStudentId);
+  } else {
+    fillStudentSelect(data.students || [], selectedStudentId);
+  }
 
   const students = data.students || [];
   if (!students.length) throw new Error('Keine Schüler:innen gefunden (Filter?).');
@@ -456,7 +771,6 @@ async function exportNow(){
     return;
   }
 
-  // single
   setStatus('Erzeuge PDF …');
   const chosenId = elStudent.value;
   let s = students[0];
@@ -470,19 +784,35 @@ async function exportNow(){
   setStatus('Fertig. PDF wurde heruntergeladen.');
 }
 
-btnExport.addEventListener('click', async () => {
-  try {
-    btnExport.disabled = true;
-    btnCheck.disabled = true;
-    await check();
-    await exportNow();
-  } catch (e) {
-    setStatus('Fehler: ' + (e?.message||e));
-  } finally {
-    btnExport.disabled = false;
-    btnCheck.disabled = false;
-  }
-});
+if (btnExport) {
+  btnExport.addEventListener('click', async () => {
+    try {
+      btnExport.disabled = true;
+      if (btnCheck) btnCheck.disabled = true;
+
+      const preview = await check();
+
+      const sum = preview?.warnings_summary || {};
+      const totalMissing = Number(sum.total_missing || 0);
+
+      if (preview && totalMissing > 0) {
+        const proceed = await openMissingModal(preview);
+        if (!proceed) {
+          setStatus('Export abgebrochen.');
+          return;
+        }
+      }
+
+      await exportNow();
+
+    } catch (e) {
+      setStatus('Fehler: ' + (e?.message || e));
+    } finally {
+      btnExport.disabled = false;
+      if (btnCheck) btnCheck.disabled = false;
+    }
+  });
+}
 
 // init
 (function initFromQuery(){
@@ -491,7 +821,7 @@ btnExport.addEventListener('click', async () => {
   const studentId = q.get('student_id') ? String(q.get('student_id')) : '';
   const onlySub = (q.get('only_submitted') === '1');
 
-  if (onlySub) elOnlySubmitted.checked = true;
+  if (elOnlySubmitted && onlySub) elOnlySubmitted.checked = true;
 
   if (mode === 'merged' || mode === 'zip' || mode === 'single') {
     const r = document.querySelector('input[name="mode"][value="' + mode + '"]');
@@ -499,10 +829,13 @@ btnExport.addEventListener('click', async () => {
   }
   updateModeUI();
 
+  if (!elClass) return;
+
   check().then(() => {
-    if (studentId) {
+    if (studentId && elStudent) {
       const opt = Array.from(elStudent.options).find(o => String(o.value) === studentId);
       if (opt) elStudent.value = studentId;
+      if (currentMode() === 'single') check().catch(()=>{});
     }
   }).catch(()=>{});
 })();
