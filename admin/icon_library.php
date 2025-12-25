@@ -33,7 +33,7 @@ render_admin_header('Admin – Icon & Options');
 }
 #itemsTbl{
   width:100%;
-  min-width: 980px;
+  min-width: 800px;
   border-collapse: separate;
   border-spacing:0;
 }
@@ -124,7 +124,7 @@ render_admin_header('Admin – Icon & Options');
       <div class="card" style="margin:0;">
         <h3 style="margin-top:0;">Vorlagen</h3>
 
-        <div class="grid" style="grid-template-columns:1fr 160px; gap:12px; align-items:end;">
+        <div class="grid" style="gap:12px; align-items:end;">
           <div>
             <label>Neue Vorlage</label>
             <input id="newListName" placeholder="z.B. Skala 1–6">
@@ -183,7 +183,7 @@ render_admin_header('Admin – Icon & Options');
               <thead>
                 <tr>
                   <th class="col-sort">Sort</th>
-                  <th>Value</th>
+                  <th class="col-sort">Value</th>
                   <th>Label</th>
                   <th class="col-ico">Icon</th>
                   <th style="width:90px; min-width:90px;">Aktion</th>
