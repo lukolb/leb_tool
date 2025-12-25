@@ -461,6 +461,101 @@ render_teacher_header('Eingaben');
     return v;
   }
 
+  // -------------------------
+  // Dynamic label/help placeholders (cross-field)
+  // -------------------------
+  // Allows using other field values inside label/help_text.
+  // Syntax:
+  //   {{other_field_name}}            -> teacher value (displayed) of that field
+  //   {{field:other_field_name}}      -> same as above
+  //   {{child:other_field_name}}      -> child value (displayed) of that field (if paired)
+  //   {{label:other_field_name}}      -> label of that field
+  //   {{help:other_field_name}}       -> help text of that field
+  // Unknown placeholders resolve to an empty string.
+
+  function baseFieldKey(name){
+    const s = String(name ?? '').trim().toLowerCase();
+    if (!s) return '';
+    const i = s.indexOf('-');
+    return (i >= 0) ? s.slice(0, i) : s;
+  }
+
+  function buildTeacherFieldNameIndex(){
+    const idx = new Map();
+    state.groups.forEach(g => {
+      g.fields.forEach(f => {
+        const n = String(f.field_name || '').trim();
+        if (n) idx.set(n, f);
+      });
+    });
+    return idx;
+  }
+
+  function findPairedFieldByBase(idx, key){
+    const base = baseFieldKey(key);
+    if (!base) return null;
+    for (const [name, f] of idx.entries()) {
+      if (baseFieldKey(name) === base) return f;
+    }
+    return null;
+  }
+
+  function resolveTeacherTextTemplate(tpl, reportId, idx){
+    const s = String(tpl ?? '');
+    if (!s.includes('{{')) return s;
+    return s.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, rawKey) => {
+      const token = String(rawKey || '').trim();
+      if (!token) return '';
+      let kind = 'field';
+      let key = token;
+      const p = token.indexOf(':');
+      if (p > 0) {
+        kind = token.slice(0, p).trim().toLowerCase();
+        key = token.slice(p + 1).trim();
+      }
+      if (!key) return '';
+
+      // prefer exact field_name match, else allow base matching
+      let ref = idx.get(key);
+      if (!ref) ref = findPairedFieldByBase(idx, key);
+      if (!ref) return '';
+
+      if (kind === 'label') return String(ref.label || ref.field_name || '');
+      if (kind === 'help') return String(ref.help_text || '');
+      if (kind === 'child') {
+        if (ref.child && ref.child.id) {
+          const raw = childVal(reportId, ref.child.id);
+          return raw ? childDisplay(ref, raw) : '';
+        }
+        return '';
+      }
+
+      // default: teacher field value (displayed)
+      const raw = teacherVal(reportId, ref.id);
+      return raw ? teacherDisplay(ref, raw) : '';
+    });
+  }
+
+  function refreshDynamicTextsTeacher(rootEl, reportId){
+    const root = rootEl || document;
+    const idx = buildTeacherFieldNameIndex();
+    root.querySelectorAll('[data-fieldwrap="1"]').forEach(wrap => {
+      const fieldId = Number(wrap.getAttribute('data-field-id') || '0');
+      const f = state.fieldMap[String(fieldId)];
+      if (!f) return;
+      const lbl = resolveTeacherTextTemplate(String(f.label || f.field_name || 'Feld'), reportId, idx);
+      const help = resolveTeacherTextTemplate(String(f.help_text || ''), reportId, idx);
+
+      const lblEl = wrap.querySelector('[data-dyn="label"]');
+      if (lblEl) lblEl.textContent = lbl;
+      const helpEl = wrap.querySelector('[data-dyn="help"]');
+      if (helpEl) {
+        helpEl.textContent = help;
+        helpEl.style.display = help.trim() ? '' : 'none';
+      }
+    });
+  }
+
   function currentStudents(){
     const f = normalize(ui.studentFilter);
     if (!f) return state.students;
@@ -605,10 +700,14 @@ render_teacher_header('Eingaben');
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
         const childInfo = (f.child && f.child.id) ? `<div class="child"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>` : '';
+        // Resolve dynamic placeholders in label/help against current values.
+        const idx = buildTeacherFieldNameIndex();
+        const lbl = resolveTeacherTextTemplate(String(f.label || f.field_name || 'Feld'), reportId, idx);
+        const help = resolveTeacherTextTemplate(String(f.help_text || ''), reportId, idx);
         html += `
-          <div class="field" data-fieldwrap="1">
-            <div class="lbl">${esc(f.label || f.field_name)}</div>
-            ${f.help_text ? `<div class="help">${esc(f.help_text)}</div>` : ''}
+          <div class="field" data-fieldwrap="1" data-field-id="${esc(f.id)}">
+            <div class="lbl" data-dyn="label">${esc(lbl)}</div>
+            <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked)}
             ${childInfo}
           </div>
@@ -624,6 +723,7 @@ render_teacher_header('Eingaben');
     });
 
     wireTeacherInputs(studentForm);
+    refreshDynamicTextsTeacher(studentForm, reportId);
   }
 
   // NEW: render grades in two orientations
@@ -867,6 +967,14 @@ render_teacher_header('Eingaben');
 
     if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
     state.values_teacher[String(reportId)][String(fieldId)] = value;
+
+    // Update dynamic placeholders immediately (no full re-render)
+    if (ui.view === 'student') {
+      const s = activeStudent();
+      if (s && Number(s.report_instance_id) === Number(reportId)) {
+        refreshDynamicTextsTeacher(studentForm, reportId);
+      }
+    }
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);

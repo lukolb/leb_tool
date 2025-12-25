@@ -352,6 +352,104 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     return (t === null || typeof t === 'undefined') ? '' : String(t);
   }
 
+  // -------------------------
+  // Dynamic label/help placeholders
+  // -------------------------
+  // Allows using other field values inside label/help_text.
+  // Syntax:
+  //   {{other_field_name}}            -> value of that field
+  //   {{field:other_field_name}}      -> same as above
+  //   {{label:other_field_name}}      -> label of that field
+  //   {{help:other_field_name}}       -> help text of that field
+  // Unknown placeholders resolve to an empty string.
+  function buildFieldNameIndex(){
+    const idx = new Map();
+    const steps = Array.isArray(state.steps) ? state.steps : [];
+    for (const s of steps) {
+      if (!s || s.is_intro) continue;
+      const fields = Array.isArray(s.fields) ? s.fields : [];
+      for (const f of fields) {
+        if (!f) continue;
+        const name = String(f.name || '').trim();
+        if (!name) continue;
+        idx.set(name, f);
+      }
+    }
+    // also include lookup for fields not present in steps (e.g. teacher-only or hidden fields)
+    const lookup = (state && state.field_lookup && typeof state.field_lookup === 'object') ? state.field_lookup : null;
+    if (lookup) {
+      for (const [k, v] of Object.entries(lookup)) {
+        if (!k) continue;
+        if (idx.has(k)) continue;
+        // Normalize to same shape as step fields
+        idx.set(k, {
+          name: String(v.name || k),
+          label: String(v.label || v.name || k),
+          help: String(v.help || ''),
+          value: { text: String(v.value ?? '') }
+        });
+      }
+    }
+    return idx;
+  }
+
+
+  function resolveTextTemplate(tpl, nameIndex){
+    const s = String(tpl ?? '');
+    if (!s.includes('{{')) return s;
+    return s.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, rawKey) => {
+      const token = String(rawKey || '').trim();
+      if (!token) return '';
+      let kind = 'field';
+      let key = token;
+      const p = token.indexOf(':');
+      if (p > 0) {
+        kind = token.slice(0, p).trim().toLowerCase();
+        key = token.slice(p + 1).trim();
+      }
+      if (!key) return '';
+      const ref = nameIndex.get(key);
+      if (!ref) return '';
+      if (kind === 'label') return String(ref.label || ref.name || '');
+      if (kind === 'help') return String(ref.help || '');
+      // default: field value
+      return fieldValueText(ref);
+    });
+  }
+
+  function refreshDynamicTexts(container){
+    const root = container || document;
+    const idx = buildFieldNameIndex();
+    root.querySelectorAll('[data-field]').forEach(wrap => {
+      const fid = Number(wrap.getAttribute('data-field'));
+      const f = findFieldById(fid);
+      if (!f) return;
+      const lbl = resolveTextTemplate(String(f.label || f.name || 'Feld'), idx);
+      const help = resolveTextTemplate(String(f.help || ''), idx);
+
+      const lblEl = wrap.querySelector('[data-dyn="label"]');
+      if (lblEl) lblEl.textContent = lbl;
+
+      const helpEl = wrap.querySelector('[data-dyn="help"]');
+      if (helpEl) {
+        helpEl.textContent = help;
+        helpEl.style.display = help.trim() ? '' : 'none';
+      }
+    });
+  }
+
+  function findFieldById(fid){
+    const steps = Array.isArray(state.steps) ? state.steps : [];
+    for (const s of steps) {
+      if (!s || s.is_intro) continue;
+      const fields = Array.isArray(s.fields) ? s.fields : [];
+      for (const f of fields) {
+        if (Number(f.id) === Number(fid)) return f;
+      }
+    }
+    return null;
+  }
+
   function fieldIsMissing(f){
     // Kids: everything required
     return fieldValueText(f).trim() === '';
@@ -652,8 +750,9 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   function renderFieldBlock(f){
     const fid = Number(f.id);
     const type = String(f.type || 'text');
-    const label = String(f.label || f.name || 'Feld');
-    const help = String(f.help || '');
+    const idx = buildFieldNameIndex();
+    const label = resolveTextTemplate(String(f.label || f.name || 'Feld'), idx);
+    const help = resolveTextTemplate(String(f.help || ''), idx);
     const multiline = !!f.multiline;
     const val = fieldValueText(f);
 
@@ -672,7 +771,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       }
 
       return `<div class="${wrapCls}" data-field="${fid}">
-        <div class="lbl">${esc(label)}</div>
+        <div class="lbl" data-dyn="label">${esc(label)}</div>
         <div class="opts">` +
           opts.map(o => {
             const oVal = optionValue(o);
@@ -685,22 +784,22 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
             </div>`;
           }).join('') +
         `</div>
-        ${help ? `<div class="help">${esc(help)}</div>` : ``}
+        <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
       </div>`;
     }
 
     if (multiline || type === 'textarea') {
       return `<div class="${wrapCls}" data-field="${fid}">
-        <div class="lbl">${esc(label)}</div>
+        <div class="lbl" data-dyn="label">${esc(label)}</div>
         <textarea rows="4" class="input" data-input="1" style="width:100%;">${esc(val)}</textarea>
-        ${help ? `<div class="help">${esc(help)}</div>` : ``}
+        <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
       </div>`;
     }
 
     return `<div class="${wrapCls}" data-field="${fid}">
-      <div class="lbl">${esc(label)}</div>
+      <div class="lbl" data-dyn="label">${esc(label)}</div>
       <input type="text" class="input" data-input="1" style="width:100%;" value="${esc(val)}">
-      ${help ? `<div class="help">${esc(help)}</div>` : ``}
+      <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
     </div>`;
   }
 
@@ -716,12 +815,15 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         renderNav();
         updateReqHint();
         markMissingBlocks(container);
+        // Update dynamic labels/help without re-rendering inputs.
+        refreshDynamicTexts(container);
       });
       inp.addEventListener('blur', () => {
         if (isLocked()) return;
         const v = inp.value;
         updateFieldLocal(fid, v);
         saveFieldValue(fid, v).catch(()=>{});
+        refreshDynamicTexts(container);
       });
     });
 
@@ -980,6 +1082,9 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     };
 
     updateReqHint();
+
+    // Resolve dynamic placeholders in labels/help_text against current answers.
+    refreshDynamicTexts(elBody);
 
     // Keep current group open in items mode
     if (displayMode === 'items') {

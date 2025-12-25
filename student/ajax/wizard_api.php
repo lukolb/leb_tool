@@ -185,6 +185,36 @@ function get_report_status(PDO $pdo, int $reportId): string {
   return $s !== '' ? $s : 'draft';
 }
 
+
+function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array {
+  // Returns lookup for ALL template fields (child + teacher), keyed by field_name
+  // Used for placeholder resolution in labels/help_text (e.g. {{field:Mat-text-1}})
+  $st = $pdo->prepare(
+    "SELECT tf.id, tf.field_name, tf.label, tf.help_text, tf.field_type,
+            fv.value_text
+     FROM template_fields tf
+     LEFT JOIN field_values fv
+       ON fv.template_field_id=tf.id AND fv.report_instance_id=?
+     WHERE tf.template_id=?
+     ORDER BY tf.sort_order ASC, tf.id ASC"
+  );
+  $st->execute([$reportId, $templateId]);
+  $out = [];
+  while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+    $name = (string)($r['field_name'] ?? '');
+    if ($name === '') continue;
+    $out[$name] = [
+      'id' => (int)($r['id'] ?? 0),
+      'name' => $name,
+      'type' => (string)($r['field_type'] ?? 'text'),
+      'label' => (string)($r['label'] ?? $name),
+      'help' => (string)($r['help_text'] ?? ''),
+      'value' => (string)($r['value_text'] ?? ''),
+    ];
+  }
+  return $out;
+}
+
 function load_child_fields(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
     "SELECT id, field_name, field_type, label, help_text, is_multiline, options_json, meta_json, sort_order
@@ -280,6 +310,9 @@ try {
     $fieldsRaw = load_child_fields($pdo, $templateId);
     $values = load_child_values($pdo, $reportId);
 
+    $fieldLookup = load_all_fields_lookup($pdo, $templateId, $reportId);
+
+
     // groups: key => ['key'=>..., 'title'=>..., 'fields'=>...]
     $groups = [];
     $iconIds = [];
@@ -315,6 +348,8 @@ try {
         'id' => $fid,
         'name' => (string)$r['field_name'],
         'type' => (string)$r['field_type'],
+        'label_raw' => (string)($r['label'] ?? $r['field_name']),
+        'help_raw' => (string)($r['help_text'] ?? ''),
         'label' => (string)($r['label'] ?? $r['field_name']),
         'help' => (string)($r['help_text'] ?? ''),
         'required' => true,
@@ -366,6 +401,7 @@ try {
       'report_status' => $status,
       'child_can_edit' => $childCanEdit,
       'steps' => $steps,
+      'field_lookup' => $fieldLookup,
       'ui' => [
         'display_mode' => student_wizard_display_mode(),
       ],
