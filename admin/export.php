@@ -24,6 +24,7 @@ $classId = (int)($_GET['class_id'] ?? 0);
 if ($classId <= 0 && $classes) $classId = (int)($classes[0]['id'] ?? 0);
 
 $csrf = csrf_token();
+$debugPdf = (int)($_GET['debug_pdf'] ?? 0) === 1;
 
 render_admin_header('PDF-Export');
 ?>
@@ -71,7 +72,6 @@ render_admin_header('PDF-Export');
       <div id="singleStudentWrap" style="min-width:260px; display:none;">
         <label for="studentId"><strong>Schüler:in</strong></label>
         <select id="studentId" class="input" style="width:100%;"></select>
-        <div class="muted" style="margin-top:4px;">Tipp: Direktlink aus der Schülerliste funktioniert auch.</div>
       </div>
 
       <div style="flex:1; min-width:240px;">
@@ -100,35 +100,43 @@ render_admin_header('PDF-Export');
 
   <div class="muted" style="font-size:13px;">
     Hinweis: Für die PDF-Befüllung wird <code>pdf-lib</code> und für ZIP <code>JSZip</code> geladen (nur für diese Seite).
+    <?php if ($debugPdf): ?>
+      <span style="margin-left:10px; padding:2px 8px; border-radius:999px; background:#fff7d6; border:1px solid #ffe59a;">
+        Debug aktiv (debug_pdf=1) – siehe Browser-Konsole
+      </span>
+    <?php endif; ?>
   </div>
 </div>
 
 <script>
 const CSRF = <?= json_encode($csrf) ?>;
+const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
 
 const elClass = document.getElementById('classId');
 const elStudentWrap = document.getElementById('singleStudentWrap');
 const elStudent = document.getElementById('studentId');
 const elOnlySubmitted = document.getElementById('onlySubmitted');
 const elStatus = document.getElementById('statusLine');
-const elWarnBox = document.getElementById('warnBox');
 const btnCheck = document.getElementById('btnCheck');
 const btnExport = document.getElementById('btnExport');
 
 function setStatus(msg){ elStatus.textContent = msg; }
-function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 
 function currentMode(){
   const r = document.querySelector('input[name="mode"]:checked');
   return r ? r.value : 'zip';
 }
-
 function updateModeUI(){
-  const m = currentMode();
-  elStudentWrap.style.display = (m === 'single') ? '' : 'none';
+  elStudentWrap.style.display = (currentMode() === 'single') ? '' : 'none';
 }
-
-document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', updateModeUI));
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
+  updateModeUI();
+  // Optional: refresh list when switching to single so selection list is up to date,
+  // but preserve selection if possible.
+  if (currentMode() === 'single') {
+    check().catch(()=>{});
+  }
+}));
 updateModeUI();
 
 elClass.addEventListener('change', () => {
@@ -170,68 +178,59 @@ async function apiFetch(payload){
   return data;
 }
 
-function renderWarnings(summary){
-  if (!summary) { elWarnBox.style.display = 'none'; elWarnBox.innerHTML=''; return; }
-  const totalMissing = Number(summary.total_missing||0);
-  const studentsWithMissing = Number(summary.students_with_missing||0);
-  if (totalMissing <= 0) { elWarnBox.style.display = 'none'; elWarnBox.innerHTML=''; return; }
-
-  const lines = [];
-  lines.push(`<div class="alert" style="margin:0;">`);
-  lines.push(`<strong>Warnung:</strong> ${studentsWithMissing} Schüler:in(en) haben fehlende Werte (${totalMissing} Feld(er)). Export ist trotzdem möglich.`);
-  lines.push(`</div>`);
-
-  if (Array.isArray(summary.by_student) && summary.by_student.length){
-    lines.push('<div style="margin-top:8px; max-height:260px; overflow:auto; border:1px solid #e6e6e6; border-radius:12px; padding:10px;">');
-    lines.push('<table class="table" style="margin:0;">');
-    lines.push('<thead><tr><th style="width:240px;">Schüler:in</th><th>Fehlende Felder</th></tr></thead>');
-    lines.push('<tbody>');
-    for (const r of summary.by_student){
-      const name = escapeHtml(r.student_name||('ID ' + r.student_id));
-      const miss = Array.isArray(r.missing_fields) ? r.missing_fields.map(x=>escapeHtml(x)).join(', ') : '';
-      lines.push(`<tr><td>${name}</td><td class="muted">${miss || '—'}</td></tr>`);
-    }
-    lines.push('</tbody></table></div>');
-  }
-
-  elWarnBox.style.display = '';
-  elWarnBox.innerHTML = lines.join('');
-}
-
-function fillStudentSelect(students){
+/**
+ * Fill student select and preserve selection.
+ * keepId: preferred id (string/number). If present in list, it stays selected.
+ */
+function fillStudentSelect(students, keepId){
+  const keep = (keepId !== undefined && keepId !== null && String(keepId) !== '') ? String(keepId) : '';
   elStudent.innerHTML = '';
-  (students||[]).forEach(s => {
+
+  let firstId = '';
+  let foundKeep = false;
+
+  (students||[]).forEach((s, idx) => {
     const opt = document.createElement('option');
-    opt.value = String(s.id);
-    const status = (s.report_status||'').toString();
-    opt.textContent = status ? `${s.name} (${status})` : s.name;
+    const id = String(s.id);
+    if (idx === 0) firstId = id;
+    opt.value = id;
+    opt.textContent = s.name || ('ID ' + id);
+    if (keep && id === keep) foundKeep = true;
     elStudent.appendChild(opt);
   });
+
+  if (!students || !students.length) return;
+
+  // restore selection if possible
+  if (keep && foundKeep) elStudent.value = keep;
+  else elStudent.value = firstId;
 }
 
 function onlySubmittedFlag(){ return elOnlySubmitted.checked ? 1 : 0; }
 
 async function check(){
-  setStatus('Prüfe Daten …');
-  elWarnBox.style.display='none';
   const classId = Number(elClass.value||0);
+
+  // IMPORTANT: preserve selection BEFORE refilling select
+  const keepStudentId = elStudent.value;
+
+  setStatus('Prüfe Daten …');
   const data = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
-  fillStudentSelect(data.students || []);
-  renderWarnings(data.warnings_summary || null);
+
+  fillStudentSelect(data.students || [], keepStudentId);
+
   const cnt = data.students?.length||0;
-  const ftxt = onlySubmittedFlag() ? ' (nur abgegebene)' : '';
-  setStatus(`OK. ${cnt} Schüler:in(en) gefunden${ftxt}. Vorlage: ${data.template?.name||''}`);
+  setStatus(`OK. ${cnt} Schüler:in(en) gefunden.`);
 }
 
 btnCheck.addEventListener('click', async () => {
-  try {
-    btnCheck.disabled = true;
-    await check();
-  } catch (e) {
-    setStatus('Fehler: ' + (e?.message||e));
-  } finally {
-    btnCheck.disabled = false;
-  }
+  try { btnCheck.disabled = true; await check(); }
+  catch (e) { setStatus('Fehler: ' + (e?.message||e)); }
+  finally { btnCheck.disabled = false; }
+});
+
+elOnlySubmitted.addEventListener('change', () => {
+  check().catch(()=>{});
 });
 
 function safeFilename(s){
@@ -248,54 +247,179 @@ function downloadBytes(bytes, filename, mime){
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => {
-    URL.revokeObjectURL(a.href);
-    a.remove();
-  }, 500);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 
+// --------- PDF fill: keep form editable + render X via viewer (NeedAppearances) ----------
+let __didDump = false;
+
 async function fillPdfForStudent(templateBytes, student){
-  const { PDFDocument } = window.PDFLib;
+  const PDFLib = window.PDFLib;
+  const { PDFDocument, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, PDFName, PDFBool } = PDFLib;
+
   const pdfDoc = await PDFDocument.load(templateBytes);
   const form = pdfDoc.getForm();
   const values = student.values || {};
 
-  for (const [key, raw] of Object.entries(values)){
-    const v = (raw ?? '').toString();
-    try {
-      const f = form.getField(key);
-      const ctor = f.constructor?.name || '';
+  const norm = (s) => (s ?? '').toString().trim();
+  const normLoose = (s) => norm(s).toLowerCase().replace(/\s+/g,'');
 
-      if (ctor.includes('PDFCheckBox')){
-        if (v === '1' || v.toLowerCase() === 'true' || v.toLowerCase() === 'on') f.check(); else f.uncheck();
-      } else if (ctor.includes('PDFRadioGroup')){
-        if (v !== '') f.select(v);
-      } else if (ctor.includes('PDFDropdown')){
-        if (v !== '') f.select(v);
-      } else {
-        if (typeof f.setText === 'function') f.setText(v);
-      }
-    } catch (e) {
-      // ignore missing/incompatible fields
-    }
+  const fieldsByName = new Map();
+  const fieldsByLoose = new Map();
+
+  const addToMap = (map, key, field) => {
+    if (!key) return;
+    const arr = map.get(key);
+    if (arr) arr.push(field); else map.set(key, [field]);
+  };
+
+  const allFields = form.getFields();
+  for (const f of allFields){
+    let name = '';
+    try { name = f.getName(); } catch (e) { name = ''; }
+    name = norm(name);
+    if (!name) continue;
+
+    addToMap(fieldsByName, name, f);
+    addToMap(fieldsByLoose, normLoose(name), f);
+    addToMap(fieldsByLoose, normLoose(name.replace(/\.+$/,'')), f);
+    addToMap(fieldsByLoose, normLoose(name.replace(/\[0\]$/,'')), f);
+    addToMap(fieldsByLoose, normLoose(name.replace(/\s+/g,'')), f);
   }
 
-  try { form.flatten(); } catch (e) {}
+  const getFieldList = (key) => {
+    const k = norm(key);
+    if (!k) return [];
+    const exact = fieldsByName.get(k);
+    if (exact && exact.length) return exact;
+    const loose = fieldsByLoose.get(normLoose(k));
+    if (loose && loose.length) return loose;
+    return [];
+  };
+
+  const isCheckBox = (f) => (PDFCheckBox && f instanceof PDFCheckBox) || (typeof f?.check === 'function' && typeof f?.uncheck === 'function');
+  const isRadioGroup = (f) => (PDFRadioGroup && f instanceof PDFRadioGroup) || (typeof f?.select === 'function' && typeof f?.getOptions === 'function' && !isCheckBox(f));
+  const isDropdown = (f) => (PDFDropdown && f instanceof PDFDropdown) || (typeof f?.select === 'function' && typeof f?.getOptions === 'function' && !isRadioGroup(f) && !isCheckBox(f));
+  const isOptionList = (f) => (PDFOptionList && f instanceof PDFOptionList);
+
+  const getOnValue = (cb) => {
+    try {
+      const af = cb?.acroField;
+      if (af && typeof af.getOnValue === 'function') {
+        const on = af.getOnValue();
+        if (on && typeof on.key === 'string') return on.key;
+        const s = String(on);
+        return s.startsWith('/') ? s.slice(1) : s;
+      }
+    } catch (e) {}
+    try {
+      const af = cb?.acroField;
+      if (af && typeof af.getWidgets === 'function') {
+        const ws = af.getWidgets();
+        if (ws && ws.length && typeof ws[0].getOnValue === 'function') {
+          const on = ws[0].getOnValue();
+          if (on && typeof on.key === 'string') return on.key;
+          const s = String(on);
+          return s.startsWith('/') ? s.slice(1) : s;
+        }
+      }
+    } catch (e) {}
+    return '';
+  };
+
+  const pickOption = (field, value) => {
+    const v = norm(value);
+    if (!v || typeof field?.getOptions !== 'function') return v;
+    try {
+      const opts = field.getOptions() || [];
+      const vL = normLoose(v);
+      const found = opts.find(o => normLoose(o) === vL);
+      return found || v;
+    } catch (e) {
+      return v;
+    }
+  };
+
+  const setText = (f, v) => { try { if (typeof f?.setText === 'function') f.setText(norm(v)); } catch(e) {} };
+  const setSelect = (f, v) => { try { if (v !== '') f.select(pickOption(f, v)); } catch(e) {} };
+
+  const setCheckGroupByOnValue = (checkboxes, desired) => {
+    const d = norm(desired);
+    const dL = normLoose(d);
+    for (const cb of checkboxes){
+      const on = getOnValue(cb);
+      const onL = normLoose(on);
+      try {
+        if (on && onL === dL) cb.check();
+        else cb.uncheck();
+      } catch(e) {}
+    }
+  };
+
+  if (DEBUG_PDF && !__didDump) {
+    __didDump = true;
+    try {
+      console.log('[PDF DEBUG] Field inventory:', allFields.map(f => {
+        let n = ''; try { n = f.getName(); } catch(e) {}
+        return {
+          name: n,
+          isCheckBox: isCheckBox(f),
+          isRadioGroup: isRadioGroup(f),
+          isDropdown: isDropdown(f),
+          ctor: (f?.constructor?.name || ''),
+          onValue: isCheckBox(f) ? getOnValue(f) : null,
+          options: (typeof f?.getOptions === 'function') ? (f.getOptions?.() || null) : null
+        };
+      }));
+    } catch(e) {}
+  }
+
+  for (const [key, raw] of Object.entries(values)){
+    const v = norm(raw);
+    const list = getFieldList(key);
+    if (!list.length) continue;
+
+    const checkboxes = list.filter(isCheckBox);
+    if (checkboxes.length) {
+      setCheckGroupByOnValue(checkboxes, v);
+      continue;
+    }
+
+    const f = list[0];
+    if (isRadioGroup(f)) setSelect(f, v);
+    else if (isDropdown(f) || isOptionList(f)) setSelect(f, v);
+    else if (typeof f?.setText === 'function') setText(f, v);
+  }
+
+  // Keep form editable & let viewer render the original X appearance
+  try {
+    const acro = form.acroForm;
+    if (acro && acro.dict && PDFName && PDFBool) {
+      acro.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+    }
+  } catch (e) {}
+  try { form.updateFieldAppearances(); } catch (e) {}
+
   return await pdfDoc.save();
 }
 
 async function exportNow(){
   const mode = currentMode();
   const classId = Number(elClass.value||0);
-  const onlyStudentId = (mode === 'single') ? Number(elStudent.value||0) : 0;
+
+  // Preserve current selection through API refresh.
+  const selectedStudentId = elStudent.value;
 
   setStatus('Lade Exportdaten …');
   const payload = { action: 'data', class_id: classId, only_submitted: onlySubmittedFlag() };
-  if (onlyStudentId > 0) payload.student_id = onlyStudentId;
+
+  // CRITICAL: in single mode request only this student from API (if your export_api supports it)
+  if (mode === 'single' && selectedStudentId) payload.student_id = Number(selectedStudentId);
+
   const data = await apiFetch(payload);
 
-  fillStudentSelect(data.students || []);
-  renderWarnings(data.warnings_summary || null);
+  // Refresh select with preservation (important: don't jump back!)
+  fillStudentSelect(data.students || [], selectedStudentId);
 
   const students = data.students || [];
   if (!students.length) throw new Error('Keine Schüler:innen gefunden (Filter?).');
@@ -348,9 +472,16 @@ async function exportNow(){
     return;
   }
 
-  // single
+  // single: export the selected student, not always students[0]
   setStatus('Erzeuge PDF …');
-  const s = students[0];
+  const chosenId = elStudent.value;
+  let s = students[0];
+
+  if (chosenId) {
+    const found = students.find(x => String(x.id) === String(chosenId));
+    if (found) s = found;
+  }
+
   const out = await fillPdfForStudent(templateBytes, s);
   const fn = safeFilename(s.name) || ('Schueler-' + s.id);
   downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
@@ -361,8 +492,8 @@ btnExport.addEventListener('click', async () => {
   try {
     btnExport.disabled = true;
     btnCheck.disabled = true;
-    await check(); // keep warnings up-to-date
-    await exportNow();
+    await check();      // refresh list BUT keep selection now
+    await exportNow();  // export selected student in single mode
   } catch (e) {
     setStatus('Fehler: ' + (e?.message||e));
   } finally {
@@ -371,11 +502,10 @@ btnExport.addEventListener('click', async () => {
   }
 });
 
-// Apply deep-link params (mode, student_id, only_submitted)
 (function initFromQuery(){
   const q = new URLSearchParams(window.location.search);
   const mode = (q.get('mode') || '').toLowerCase();
-  const studentId = Number(q.get('student_id') || 0);
+  const studentId = q.get('student_id') ? String(q.get('student_id')) : '';
   const onlySub = (q.get('only_submitted') === '1');
 
   if (onlySub) elOnlySubmitted.checked = true;
@@ -386,17 +516,15 @@ btnExport.addEventListener('click', async () => {
   }
   updateModeUI();
 
+  // First check loads list. After list exists, restore student selection from query.
   check().then(() => {
-    if (studentId > 0) {
-      const opt = Array.from(elStudent.options).find(o => Number(o.value) === studentId);
-      if (opt) elStudent.value = String(studentId);
+    if (studentId) {
+      // If the student exists (under current filter), keep it; otherwise keep current.
+      const opt = Array.from(elStudent.options).find(o => String(o.value) === studentId);
+      if (opt) elStudent.value = studentId;
     }
   }).catch(()=>{});
 })();
-
-elOnlySubmitted.addEventListener('change', () => {
-  check().catch(()=>{});
-});
 </script>
 
 <?php render_admin_footer(); ?>
