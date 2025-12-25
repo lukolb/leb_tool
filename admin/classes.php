@@ -56,6 +56,14 @@ function parse_labels(string $raw): array {
 }
 
 /**
+ * NEW: Wizard display normalize helper (per-class column classes.student_wizard_display)
+ */
+function normalize_wizard_display(string $v): string {
+  $v = strtolower(trim($v));
+  return in_array($v, ['groups','items'], true) ? $v : 'groups';
+}
+
+/**
  * Template-Status prüfen (true wenn aktiv).
  */
 function is_template_active(PDO $pdo, int $templateId): bool {
@@ -151,8 +159,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $templateIdRaw = (int)($_POST['template_id'] ?? 0);
       $templateId = assert_template_selectable($pdo, $templateIdRaw, null);
 
-      $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, is_active) VALUES (?, ?, ?, ?, ?, 1)")
-          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId]);
+      // NEW: student wizard display per class
+      $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
+
+      $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)")
+          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $wizardDisplay]);
       $classId = (int)$pdo->lastInsertId();
 
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -170,7 +181,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'school_year'=>$schoolYear,
         'grade_level'=>$gradeLevel,
         'label'=>$label,
-        'template_id'=>$templateId
+        'template_id'=>$templateId,
+        'student_wizard_display'=>$wizardDisplay
       ]);
       $ok = 'Klasse wurde angelegt.';
     }
@@ -194,6 +206,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $templateIdRaw = (int)($_POST['template_id'] ?? 0);
       $templateId = assert_template_selectable($pdo, $templateIdRaw, null);
 
+      // NEW: student wizard display per class (applied to all new classes)
+      $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
+
       $created = 0;
       $skipped = 0;
 
@@ -210,8 +225,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($q->fetch()) { $skipped++; continue; }
 
           $name = computed_name($g, $lab);
-          $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, is_active) VALUES (?, ?, ?, ?, ?, 1)")
-              ->execute([$schoolYear, $g, $lab, $name, $templateId]);
+          $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)")
+              ->execute([$schoolYear, $g, $lab, $name, $templateId, $wizardDisplay]);
           $cid = (int)$pdo->lastInsertId();
 
           foreach ($teacherIds as $tid) {
@@ -230,7 +245,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'labels'=>$labels,
         'created'=>$created,
         'skipped'=>$skipped,
-        'template_id'=>$templateId
+        'template_id'=>$templateId,
+        'student_wizard_display'=>$wizardDisplay
       ]);
       $ok = "Bulk erstellt: {$created} (übersprungen: {$skipped})";
     }
@@ -261,8 +277,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $templateIdRaw = (int)($_POST['template_id'] ?? 0);
       $templateId = assert_template_selectable($pdo, $templateIdRaw, $currentTemplateId);
 
-      $pdo->prepare("UPDATE classes SET school_year=?, grade_level=?, label=?, name=?, template_id=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
-          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $isActive, $isActive, $classId]);
+      // NEW: student wizard display per class (editable)
+      $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
+
+      $pdo->prepare("UPDATE classes SET school_year=?, grade_level=?, label=?, name=?, template_id=?, student_wizard_display=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
+          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $wizardDisplay, $isActive, $isActive, $classId]);
 
       // Update assignments
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -280,7 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'class_id'=>$classId,
         'is_active'=>$isActive,
         'teacher_ids'=>$teacherIds,
-        'template_id'=>$templateId
+        'template_id'=>$templateId,
+        'student_wizard_display'=>$wizardDisplay
       ]);
       $ok = 'Klasse wurde aktualisiert.';
     }
@@ -395,7 +415,7 @@ render_admin_header('Klassen');
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel">
       <h3 style="margin-top:0;">Einzeln</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr; gap:12px; align-items:end;">
+      <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr 1fr; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_single">
 
@@ -427,6 +447,16 @@ render_admin_header('Klassen');
           <div class="muted">Wenn leer: Lehrkraft sieht Hinweis „keine Vorlage zugeordnet“.</div>
         </div>
 
+        <!-- NEW: wizard display selection -->
+        <div>
+          <label>Schüler-Wizard</label>
+          <select name="student_wizard_display">
+            <option value="groups" selected>Abschnitte (Gruppen)</option>
+            <option value="items">Einzelne Fragen (Items)</option>
+          </select>
+          <div class="muted">Anzeigeform wird in der Klasse gespeichert (Admin/Lehrkraft können beide ändern).</div>
+        </div>
+
         <div>
           <label>Lehrkräfte</label>
           <select name="teacher_ids[]" multiple size="4">
@@ -445,7 +475,7 @@ render_admin_header('Klassen');
 
     <div class="panel">
       <h3 style="margin-top:0;">Bulk</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr; gap:12px; align-items:end;">
+      <form method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr 1fr; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_bulk">
 
@@ -478,6 +508,16 @@ render_admin_header('Klassen');
                 <?=($inactive ? ' – inaktiv' : '')?>
               </option>
             <?php endforeach; ?>
+          </select>
+          <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
+        </div>
+
+        <!-- NEW: wizard display selection -->
+        <div>
+          <label>Schüler-Wizard</label>
+          <select name="student_wizard_display">
+            <option value="groups" selected>Abschnitte (Gruppen)</option>
+            <option value="items">Einzelne Fragen (Items)</option>
           </select>
           <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
         </div>
@@ -519,6 +559,7 @@ render_admin_header('Klassen');
               <th>Vorlage</th>
               <th>Lehrkräfte</th>
               <th>Schüler</th>
+              <th>Wizard</th>
               <th>Status</th>
               <th>Aktionen</th>
             </tr>
@@ -543,6 +584,14 @@ render_admin_header('Klassen');
               </td>
               <td><?=h((string)($c['teacher_names'] ?? '—'))?></td>
               <td><?=h((string)$c['student_count'])?></td>
+              <td>
+                <?php
+                  $wiz = normalize_wizard_display((string)($c['student_wizard_display'] ?? 'groups'));
+                  echo $wiz === 'items'
+                    ? '<span class="badge">Items</span>'
+                    : '<span class="badge">Gruppen</span>';
+                ?>
+              </td>
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>">Bearbeiten</a>
@@ -568,7 +617,7 @@ render_admin_header('Klassen');
   <div class="card">
     <h2 style="margin-top:0;">Klasse bearbeiten: <?=h((string)$editClass['school_year'])?> · <?=h(class_display($editClass))?></h2>
 
-    <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr; gap:12px; align-items:end;">
+    <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px; align-items:end;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="update_class">
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
@@ -609,6 +658,17 @@ render_admin_header('Klassen');
           <?php endforeach; ?>
         </select>
         <div class="muted">Ohne Vorlage: Lehrkraft/Schüler sehen Hinweis, dass keine Vorlage zugeordnet ist.</div>
+      </div>
+
+      <!-- NEW: wizard display in edit -->
+      <div>
+        <label>Schüler-Wizard</label>
+        <?php $curWiz = normalize_wizard_display((string)($editClass['student_wizard_display'] ?? 'groups')); ?>
+        <select name="student_wizard_display">
+          <option value="groups" <?=$curWiz==='groups'?'selected':''?>>Abschnitte (Gruppen)</option>
+          <option value="items" <?=$curWiz==='items'?'selected':''?>>Einzelne Fragen (Items)</option>
+        </select>
+        <div class="muted">Wert wird direkt in <code>classes.student_wizard_display</code> gespeichert.</div>
       </div>
 
       <div>

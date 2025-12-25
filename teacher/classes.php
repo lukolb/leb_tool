@@ -20,6 +20,12 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
+// NEW: normalize wizard display (per-class)
+function normalize_wizard_display(string $v): string {
+  $v = strtolower(trim($v));
+  return in_array($v, ['groups','items'], true) ? $v : 'groups';
+}
+
 // POST: toggle active/inactive (teachers can archive their classes; admins can toggle all)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
@@ -46,6 +52,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       audit('teacher_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
       $ok = $new ? 'Klasse aktiviert.' : 'Klasse inaktiv gesetzt.';
     }
+
+    // NEW: teacher/admin can set per-class wizard display
+    elseif ($action === 'set_wizard_display') {
+      $classId = (int)($_POST['class_id'] ?? 0);
+      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+
+      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+
+      $mode = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
+
+      $pdo->prepare("UPDATE classes SET student_wizard_display=? WHERE id=?")
+          ->execute([$mode, $classId]);
+
+      audit('class_set_student_wizard_display', $userId, [
+        'class_id'=>$classId,
+        'student_wizard_display'=>$mode
+      ]);
+
+      $ok = 'Wizard-Anzeige wurde gespeichert.';
+    }
+
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
@@ -116,6 +145,7 @@ render_teacher_header('Klassen');
             <tr>
               <th>Klasse</th>
               <th>Status</th>
+              <th>Wizard</th>
               <th>Aktion</th>
             </tr>
           </thead>
@@ -124,6 +154,21 @@ render_teacher_header('Klassen');
             <tr>
               <td><?=h(class_display($c))?></td>
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
+
+              <td>
+                <?php $cur = normalize_wizard_display((string)($c['student_wizard_display'] ?? 'groups')); ?>
+                <form method="post" style="display:flex; gap:8px; align-items:center; margin:0;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="set_wizard_display">
+                  <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                  <select name="student_wizard_display" style="min-width:160px;">
+                    <option value="groups" <?=$cur==='groups'?'selected':''?>>Gruppen</option>
+                    <option value="items" <?=$cur==='items'?'selected':''?>>Items</option>
+                  </select>
+                  <button class="btn secondary" type="submit">Speichern</button>
+                </form>
+              </td>
+
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
                 <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>">Eingaben</a>

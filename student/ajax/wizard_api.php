@@ -110,13 +110,12 @@ function group_key_from_meta(array $meta): string {
   return $g !== '' ? $g : 'Allgemein';
 }
 
-function student_wizard_display_mode(): string {
-  $cfg = app_config();
-  $mode = (string)($cfg['student']['wizard_display'] ?? 'groups');
+function student_wizard_display_mode_from_class(array $classRow): string {
+  $mode = (string)($classRow['student_wizard_display'] ?? 'groups');
   $mode = strtolower(trim($mode));
-  if (!in_array($mode, ['groups','items'], true)) $mode = 'groups';
-  return $mode;
+  return in_array($mode, ['groups','items'], true) ? $mode : 'groups';
 }
+
 
 function group_title_override(string $groupKey): string {
   $cfg = app_config();
@@ -131,7 +130,8 @@ function get_student_and_class(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.class_id,
             c.school_year, c.grade_level, c.label, c.name AS class_name,
-            c.template_id AS class_template_id
+            c.template_id AS class_template_id,
+            c.student_wizard_display AS student_wizard_display
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -564,7 +564,7 @@ try {
       'steps' => $steps,
       'field_lookup' => $fieldLookup,
       'ui' => [
-        'display_mode' => student_wizard_display_mode(),
+        'display_mode' => student_wizard_display_mode_from_class($studentRow),
       ],
     ]);
   }

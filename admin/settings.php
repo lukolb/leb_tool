@@ -25,10 +25,6 @@ function sanitize_intro_html(string $html): string {
   return trim($html);
 }
 
-function student_wizard_display_mode_from_post(string $v): string {
-  $v = strtolower(trim($v));
-  return in_array($v, ['groups', 'items'], true) ? $v : 'groups';
-}
 
 function parse_group_title_overrides_from_post(array $keys, array $titles): array {
   $out = [];
@@ -92,9 +88,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
-    $cfg['student']['wizard_display'] = student_wizard_display_mode_from_post(
-      (string)($_POST['student_wizard_display'] ?? ($cfg['student']['wizard_display'] ?? 'groups'))
-    );
 
     $keys = $_POST['group_key'] ?? [];
     $titles = $_POST['group_title'] ?? [];
@@ -179,8 +172,6 @@ $fromEmail = $mail['from_email'] ?? 'no-reply@example.org';
 $fromName  = $mail['from_name'] ?? ($org ?: 'LEB Tool');
 
 $studentCfg = $cfg['student'] ?? [];
-$wizardDisplay = (string)($studentCfg['wizard_display'] ?? 'groups');
-$wizardDisplay = in_array($wizardDisplay, ['groups', 'items'], true) ? $wizardDisplay : 'groups';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -325,31 +316,6 @@ render_admin_header('Admin – Settings');
     <p class="muted">
       Hinweis: Damit Mails zuverlässig ankommen, sollte deine Domain korrekt SPF/DKIM/DMARC setzen (später).
     </p>
-  </form>
-</div>
-
-<div class="card">
-  <h2>Schülerbereich</h2>
-
-  <form method="post" autocomplete="off" id="studentCfgForm">
-    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-    <input type="hidden" name="action" value="save">
-
-    <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
-      <div>
-        <label>Wizard-Anzeige</label>
-        <select name="student_wizard_display">
-          <option value="groups" <?=$wizardDisplay==='groups'?'selected':''?>>Abschnitte (Gruppen)</option>
-          <option value="items" <?=$wizardDisplay==='items'?'selected':''?>>Einzelne Fragen (Items)</option>
-        </select>
-        <div class="muted">Wirkt sich auf den Schüler-Wizard aus.</div>
-      </div>
-      <div></div>
-    </div>
-
-    <div class="actions" style="margin-top:12px;">
-      <button class="btn primary" type="submit">Speichern</button>
-    </div>
   </form>
 </div>
 
