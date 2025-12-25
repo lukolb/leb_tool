@@ -331,7 +331,6 @@ function format_date_pattern(?string $iso, string $pattern): string {
   try {
     $dt = new DateTimeImmutable($iso);
   } catch (Throwable $e) {
-    // Try cut to date part (common DB format)
     $datePart = substr($iso, 0, 10);
     try {
       $dt = new DateTimeImmutable($datePart);
@@ -351,6 +350,7 @@ function format_date_pattern(?string $iso, string $pattern): string {
   ];
 
   $m = (int)$dt->format('n');
+
   $repl = [
     'MMMM' => $monthsLong[$m] ?? $dt->format('F'),
     'MMM'  => $monthsShort[$m] ?? $dt->format('M'),
@@ -362,12 +362,17 @@ function format_date_pattern(?string $iso, string $pattern): string {
     'M'    => (string)(int)$dt->format('n'),
   ];
 
-  $tokens = ['MMMM','MMM','YYYY','YY','DD','D','MM','M'];
-  $out = $pattern;
-  foreach ($tokens as $t) {
-    $out = str_replace($t, $repl[$t], $out);
-  }
-  return $out;
+  // Replace ONLY tokens in the original pattern (longest first to avoid partial matches)
+  $out = preg_replace_callback(
+    '/(MMMM|MMM|YYYY|YY|DD|MM|D|M)/',
+    static function(array $m) use ($repl): string {
+      $tok = $m[1];
+      return $repl[$tok] ?? $tok;
+    },
+    $pattern
+  );
+
+  return (string)$out;
 }
 
 /**
