@@ -55,6 +55,37 @@ function parse_labels(string $raw): array {
   return array_values(array_unique($out));
 }
 
+/**
+ * Template-Status prüfen (true wenn aktiv).
+ */
+function is_template_active(PDO $pdo, int $templateId): bool {
+  if ($templateId <= 0) return false;
+  $st = $pdo->prepare("SELECT is_active FROM templates WHERE id=? LIMIT 1");
+  $st->execute([$templateId]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ? ((int)($row['is_active'] ?? 0) === 1) : false;
+}
+
+/**
+ * Stellt sicher, dass ein Template ausgewählt werden darf.
+ * - erlaubt: null/0 (keine Vorlage)
+ * - erlaubt: aktives Template
+ * - erlaubt: inaktives Template nur, wenn es bereits zugeordnet ist (edit scenario)
+ */
+function assert_template_selectable(PDO $pdo, ?int $newTemplateId, ?int $currentTemplateId = null): ?int {
+  $tid = $newTemplateId ?? 0;
+  if ($tid <= 0) return null;
+
+  if (is_template_active($pdo, $tid)) return $tid;
+
+  // inaktiv: nur zulassen, wenn es bereits der Klasse zugeordnet ist
+  if ($currentTemplateId !== null && $currentTemplateId > 0 && $tid === (int)$currentTemplateId) {
+    return $tid;
+  }
+
+  throw new RuntimeException('Die ausgewählte Vorlage ist inaktiv und kann nicht neu zugeordnet werden.');
+}
+
 function delete_class_with_all_data(PDO $pdo, int $classId): array {
   // gather students
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
@@ -91,7 +122,14 @@ function delete_class_with_all_data(PDO $pdo, int $classId): array {
 }
 
 // Teachers list
-$teachers = $pdo->query("SELECT id, display_name, email FROM users WHERE role='teacher' AND deleted_at IS NULL ORDER BY display_name ASC")->fetchAll();
+$teachers = $pdo->query("SELECT id, display_name, email FROM users WHERE role='teacher' AND deleted_at IS NULL ORDER BY display_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+// Templates list (for class assignment)
+$templates = $pdo->query(
+  "SELECT id, name, template_version, is_active
+   FROM templates
+   ORDER BY is_active DESC, template_version DESC, id DESC"
+)->fetchAll(PDO::FETCH_ASSOC);
 
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -109,8 +147,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $name = computed_name($gradeLevel, $label);
 
-      $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, is_active) VALUES (?, ?, ?, ?, 1)")
-          ->execute([$schoolYear, $gradeLevel, $label, $name]);
+      // template assignment (optional) -> darf nicht inaktiv sein
+      $templateIdRaw = (int)($_POST['template_id'] ?? 0);
+      $templateId = assert_template_selectable($pdo, $templateIdRaw, null);
+
+      $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, is_active) VALUES (?, ?, ?, ?, ?, 1)")
+          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId]);
       $classId = (int)$pdo->lastInsertId();
 
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -123,7 +165,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      audit('admin_class_create', $userId, ['class_id'=>$classId,'school_year'=>$schoolYear,'grade_level'=>$gradeLevel,'label'=>$label]);
+      audit('admin_class_create', $userId, [
+        'class_id'=>$classId,
+        'school_year'=>$schoolYear,
+        'grade_level'=>$gradeLevel,
+        'label'=>$label,
+        'template_id'=>$templateId
+      ]);
       $ok = 'Klasse wurde angelegt.';
     }
 
@@ -142,6 +190,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!is_array($teacherIds)) $teacherIds = [];
       $teacherIds = array_values(array_filter(array_map('intval', $teacherIds), fn($x)=>$x>0));
 
+      // template assignment (optional) - applied to all new classes -> darf nicht inaktiv sein
+      $templateIdRaw = (int)($_POST['template_id'] ?? 0);
+      $templateId = assert_template_selectable($pdo, $templateIdRaw, null);
+
       $created = 0;
       $skipped = 0;
 
@@ -158,8 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($q->fetch()) { $skipped++; continue; }
 
           $name = computed_name($g, $lab);
-          $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, is_active) VALUES (?, ?, ?, ?, 1)")
-              ->execute([$schoolYear, $g, $lab, $name]);
+          $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, is_active) VALUES (?, ?, ?, ?, ?, 1)")
+              ->execute([$schoolYear, $g, $lab, $name, $templateId]);
           $cid = (int)$pdo->lastInsertId();
 
           foreach ($teacherIds as $tid) {
@@ -171,13 +223,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $pdo->commit();
-      audit('admin_class_create_bulk', $userId, ['school_year'=>$schoolYear,'grade_from'=>$gradeFrom,'grade_to'=>$gradeTo,'labels'=>$labels,'created'=>$created,'skipped'=>$skipped]);
+      audit('admin_class_create_bulk', $userId, [
+        'school_year'=>$schoolYear,
+        'grade_from'=>$gradeFrom,
+        'grade_to'=>$gradeTo,
+        'labels'=>$labels,
+        'created'=>$created,
+        'skipped'=>$skipped,
+        'template_id'=>$templateId
+      ]);
       $ok = "Bulk erstellt: {$created} (übersprungen: {$skipped})";
     }
 
     elseif ($action === 'update_class') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+
+      // aktuelles Template der Klasse laden (für "inaktiv aber bereits zugeordnet" Regel)
+      $stCur = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+      $stCur->execute([$classId]);
+      $curRow = $stCur->fetch(PDO::FETCH_ASSOC);
+      if (!$curRow) throw new RuntimeException('Klasse nicht gefunden.');
+      $currentTemplateId = (int)($curRow['template_id'] ?? 0);
 
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $gradeLevel = (int)($_POST['grade_level'] ?? 0);
@@ -190,8 +257,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $name = computed_name($gradeLevel, $label);
 
-      $pdo->prepare("UPDATE classes SET school_year=?, grade_level=?, label=?, name=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
-          ->execute([$schoolYear, $gradeLevel, $label, $name, $isActive, $isActive, $classId]);
+      // template assignment (optional)
+      $templateIdRaw = (int)($_POST['template_id'] ?? 0);
+      $templateId = assert_template_selectable($pdo, $templateIdRaw, $currentTemplateId);
+
+      $pdo->prepare("UPDATE classes SET school_year=?, grade_level=?, label=?, name=?, template_id=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
+          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $isActive, $isActive, $classId]);
 
       // Update assignments
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -205,7 +276,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $pdo->commit();
 
-      audit('admin_class_update', $userId, ['class_id'=>$classId,'is_active'=>$isActive,'teacher_ids'=>$teacherIds]);
+      audit('admin_class_update', $userId, [
+        'class_id'=>$classId,
+        'is_active'=>$isActive,
+        'teacher_ids'=>$teacherIds,
+        'template_id'=>$templateId
+      ]);
       $ok = 'Klasse wurde aktualisiert.';
     }
 
@@ -262,16 +338,20 @@ if ($editId > 0) {
   }
 }
 
-// Classes list with teacher names
+// Classes list with teacher names + template
 $where = $showInactive ? "" : "WHERE c.is_active=1";
 $classes = $pdo->query(
   "SELECT c.*,
           (SELECT COUNT(*) FROM students s WHERE s.class_id=c.id) AS student_count,
           GROUP_CONCAT(DISTINCT u.display_name ORDER BY u.display_name SEPARATOR ', ') AS teacher_names,
-          GROUP_CONCAT(DISTINCT u.id ORDER BY u.id SEPARATOR ',') AS teacher_ids
+          GROUP_CONCAT(DISTINCT u.id ORDER BY u.id SEPARATOR ',') AS teacher_ids,
+          t.name AS template_name,
+          t.template_version AS template_version,
+          t.is_active AS template_is_active
    FROM classes c
    LEFT JOIN user_class_assignments uca ON uca.class_id=c.id
    LEFT JOIN users u ON u.id=uca.user_id AND u.deleted_at IS NULL
+   LEFT JOIN templates t ON t.id=c.template_id
    $where
    GROUP BY c.id
    ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
@@ -315,7 +395,7 @@ render_admin_header('Klassen');
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel">
       <h3 style="margin-top:0;">Einzeln</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr; gap:12px; align-items:end;">
+      <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_single">
 
@@ -331,6 +411,22 @@ render_admin_header('Klassen');
           <label>Bezeichnung</label>
           <input name="label" type="text" placeholder="a" required>
         </div>
+
+        <div>
+          <label>Vorlage</label>
+          <select name="template_id">
+            <option value="0">— Keine —</option>
+            <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
+              <option value="<?=h((string)$tid)?>" <?=($inactive ? 'disabled' : '')?>>
+                <?=h((string)$tpl['name'])?>
+                <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
+                <?=($inactive ? ' – inaktiv' : '')?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+          <div class="muted">Wenn leer: Lehrkraft sieht Hinweis „keine Vorlage zugeordnet“.</div>
+        </div>
+
         <div>
           <label>Lehrkräfte</label>
           <select name="teacher_ids[]" multiple size="4">
@@ -349,7 +445,7 @@ render_admin_header('Klassen');
 
     <div class="panel">
       <h3 style="margin-top:0;">Bulk</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr; gap:12px; align-items:end;">
+      <form method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_bulk">
 
@@ -369,6 +465,21 @@ render_admin_header('Klassen');
           <label>Bezeichnungen</label>
           <input name="labels" type="text" placeholder="a-b oder a,b,c" required>
           <div class="muted" style="margin-top:6px;">Beispiele: <code>a-b</code>, <code>a,b</code></div>
+        </div>
+
+        <div>
+          <label>Vorlage</label>
+          <select name="template_id">
+            <option value="0">— Keine —</option>
+            <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
+              <option value="<?=h((string)$tid)?>" <?=($inactive ? 'disabled' : '')?>>
+                <?=h((string)$tpl['name'])?>
+                <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
+                <?=($inactive ? ' – inaktiv' : '')?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+          <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
         </div>
 
         <div style="grid-column:1/-1;">
@@ -405,6 +516,7 @@ render_admin_header('Klassen');
           <thead>
             <tr>
               <th>Klasse</th>
+              <th>Vorlage</th>
               <th>Lehrkräfte</th>
               <th>Schüler</th>
               <th>Status</th>
@@ -415,6 +527,20 @@ render_admin_header('Klassen');
           <?php foreach ($items as $c): ?>
             <tr>
               <td><?=h(class_display($c))?></td>
+              <td>
+                <?php
+                  $tplName = (string)($c['template_name'] ?? '');
+                  $tplVer  = (int)($c['template_version'] ?? 0);
+                  $tplAct  = (int)($c['template_is_active'] ?? 0);
+                  if ($tplName === '') {
+                    echo '<span class="muted">—</span>';
+                  } else {
+                    echo h($tplName);
+                    if ($tplVer > 0) echo ' <span class="muted">(v' . h((string)$tplVer) . ')</span>';
+                    if ($tplAct !== 1) echo ' <span class="badge">inaktiv</span>';
+                  }
+                ?>
+              </td>
               <td><?=h((string)($c['teacher_names'] ?? '—'))?></td>
               <td><?=h((string)$c['student_count'])?></td>
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
@@ -441,7 +567,7 @@ render_admin_header('Klassen');
   <div class="card">
     <h2 style="margin-top:0;">Klasse bearbeiten: <?=h((string)$editClass['school_year'])?> · <?=h(class_display($editClass))?></h2>
 
-    <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr; gap:12px; align-items:end;">
+    <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr; gap:12px; align-items:end;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="update_class">
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
@@ -465,6 +591,25 @@ render_admin_header('Klassen');
           <option value="0" <?=((int)($editClass['is_active'] ?? 1)===0)?'selected':''?>>inaktiv</option>
         </select>
       </div>
+
+      <div>
+        <label>Vorlage</label>
+        <?php $curTplId = (int)($editClass['template_id'] ?? 0); ?>
+        <select name="template_id">
+          <option value="0">— Keine —</option>
+          <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
+            <option value="<?=h((string)$tid)?>"
+              <?=($tid===$curTplId ? 'selected' : '')?>
+              <?=($inactive && $tid!==$curTplId ? 'disabled' : '')?>>
+              <?=h((string)$tpl['name'])?>
+              <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
+              <?=($inactive ? ' – inaktiv' : '')?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <div class="muted">Ohne Vorlage: Lehrkraft/Schüler sehen Hinweis, dass keine Vorlage zugeordnet ist.</div>
+      </div>
+
       <div>
         <label>Lehrkräfte</label>
         <select name="teacher_ids[]" multiple size="6">

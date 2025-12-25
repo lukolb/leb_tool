@@ -72,15 +72,32 @@ function decode_options(?string $json): array {
   return [];
 }
 
-function current_active_template(PDO $pdo): array {
-  $tpl = $pdo->query(
-    "SELECT id, name, template_version
-     FROM templates
-     WHERE is_active=1
-     ORDER BY template_version DESC, id DESC
+/**
+ * IMPORTANT: Templates are assigned per class by admin (classes.template_id).
+ * If no template is assigned, teacher must see an error message.
+ */
+function template_for_class(PDO $pdo, int $classId): array {
+  $st = $pdo->prepare(
+    "SELECT t.id, t.name, t.template_version
+     FROM classes c
+     LEFT JOIN templates t ON t.id=c.template_id
+     WHERE c.id=?
      LIMIT 1"
-  )->fetch(PDO::FETCH_ASSOC);
-  if (!$tpl) throw new RuntimeException('Kein aktives Template vorhanden.');
+  );
+  $st->execute([$classId]);
+  $tpl = $st->fetch(PDO::FETCH_ASSOC);
+
+  if (!$tpl || (int)($tpl['id'] ?? 0) <= 0) {
+    throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+  }
+
+  // Ensure assigned template is active
+  $st2 = $pdo->prepare("SELECT is_active FROM templates WHERE id=? LIMIT 1");
+  $st2->execute([(int)$tpl['id']]);
+  if ((int)$st2->fetchColumn() !== 1) {
+    throw new RuntimeException('Die zugeordnete Vorlage ist inaktiv.');
+  }
+
   return $tpl;
 }
 
@@ -179,7 +196,8 @@ try {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
-    $tpl = current_active_template($pdo);
+    // IMPORTANT: Use template assigned to this class (classes.template_id)
+    $tpl = template_for_class($pdo, $classId);
     $templateId = (int)$tpl['id'];
 
     // students in class
@@ -276,6 +294,8 @@ try {
     $groupsList = array_values($groups);
 
     // values
+    // NOTE: load_values() uses field ids, so we must pass ids of all teacher fields,
+    // even if some are filtered out for display; harmless to include all.
     $teacherFieldIds = array_map(fn($x)=>(int)$x['id'], $teacherFields);
     $childFieldIds = array_values(array_unique(array_filter(array_map(
       fn($x)=> (int)($x['id'] ?? 0),
@@ -306,9 +326,10 @@ try {
 
     // access check via report->student->class
     $st = $pdo->prepare(
-      "SELECT ri.id, ri.status, ri.template_id, s.class_id
+      "SELECT ri.id, ri.status, ri.template_id, s.class_id, c.template_id AS class_template_id
        FROM report_instances ri
        INNER JOIN students s ON s.id=ri.student_id
+       INNER JOIN classes c ON c.id=s.class_id
        WHERE ri.id=? LIMIT 1"
     );
     $st->execute([$reportId]);
@@ -323,7 +344,18 @@ try {
     $status = (string)($ri['status'] ?? 'draft');
     if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
 
-    $templateId = (int)($ri['template_id'] ?? 0);
+    // IMPORTANT: Prevent saving into a report instance with a template that is not the one assigned to the class.
+    $riTemplateId = (int)($ri['template_id'] ?? 0);
+    $classTemplateId = (int)($ri['class_template_id'] ?? 0);
+    if ($classTemplateId <= 0) {
+      throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+    }
+    if ($riTemplateId !== $classTemplateId) {
+      throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
+    }
+
+    $templateId = $riTemplateId;
+
     $st = $pdo->prepare(
       "SELECT id, field_type, meta_json
        FROM template_fields

@@ -52,7 +52,8 @@ function group_title_override(string $groupKey): string {
 function get_student_and_class(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.class_id,
-            c.school_year, c.grade_level, c.label, c.name AS class_name
+            c.school_year, c.grade_level, c.label, c.name AS class_name,
+            c.template_id AS class_template_id
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -107,18 +108,38 @@ function render_intro_placeholders(string $html, array $studentRow): string {
   return str_replace(array_keys($rep), array_values($rep), $html);
 }
 
-function find_or_create_report_instance(PDO $pdo, int $studentId): array {
-  $tpl = $pdo->query(
-    "SELECT id, name, template_version
-     FROM templates
-     WHERE is_active=1
-     ORDER BY template_version DESC, id DESC
-     LIMIT 1"
-  )->fetch(PDO::FETCH_ASSOC);
-  if (!$tpl) throw new RuntimeException('Kein aktives Template vorhanden.');
+/**
+ * IMPORTANT: template is assigned per class (classes.template_id).
+ * If no template is assigned -> student cannot proceed (teacher must fix in admin/classes.php).
+ */
+function template_for_student(PDO $pdo, int $studentId): array {
+  $st = $pdo->prepare(
+    "SELECT c.id AS class_id, c.template_id, t.id AS tid, t.name, t.template_version, t.is_active
+     FROM students s
+     INNER JOIN classes c ON c.id=s.class_id
+     LEFT JOIN templates t ON t.id=c.template_id
+     WHERE s.id=? LIMIT 1"
+  );
+  $st->execute([$studentId]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
 
-  $templateId = (int)$tpl['id'];
+  $tid = (int)($row['tid'] ?? 0);
+  if ($tid <= 0) {
+    throw new RuntimeException('Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
+  }
+  if ((int)($row['is_active'] ?? 0) !== 1) {
+    throw new RuntimeException('Die Vorlage deiner Klasse ist aktuell inaktiv. Bitte wende dich an deine Lehrkraft.');
+  }
 
+  return [
+    'id' => $tid,
+    'name' => (string)($row['name'] ?? ''),
+    'template_version' => (int)($row['template_version'] ?? 0),
+  ];
+}
+
+function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateId): array {
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
@@ -131,7 +152,6 @@ function find_or_create_report_instance(PDO $pdo, int $studentId): array {
 
   if ($ri) {
     return [
-      'template' => $tpl,
       'report_instance_id' => (int)$ri['id'],
       'status' => (string)$ri['status'],
     ];
@@ -146,7 +166,6 @@ function find_or_create_report_instance(PDO $pdo, int $studentId): array {
   audit('student_report_instance_create', null, ['student_id'=>$studentId,'report_instance_id'=>$rid,'template_id'=>$templateId]);
 
   return [
-    'template' => $tpl,
     'report_instance_id' => $rid,
     'status' => 'draft',
   ];
@@ -236,9 +255,11 @@ try {
     throw new RuntimeException('Ungültige Aktion.');
   }
 
-  $ctx = find_or_create_report_instance($pdo, $studentId);
-  $tpl = $ctx['template'];
+  // IMPORTANT: use template assigned to the student's class
+  $tpl = template_for_student($pdo, $studentId);
   $templateId = (int)$tpl['id'];
+
+  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId);
   $reportId = (int)$ctx['report_instance_id'];
 
   $status = get_report_status($pdo, $reportId);
@@ -247,6 +268,8 @@ try {
   if ($action === 'bootstrap') {
     $studentRow = get_student_and_class($pdo, $studentId);
 
+    // Defensive: if class has no template, template_for_student already throws,
+    // but keep the studentRow for placeholder rendering.
     $introAbs = child_intro_file_abs();
     $introHtml = '';
     if (is_file($introAbs)) {
@@ -271,7 +294,6 @@ try {
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'fields' => []];
       } else {
-        // if override changed, keep latest (config is source of truth)
         $groups[$gKey]['title'] = $gTitle;
       }
 
@@ -325,12 +347,10 @@ try {
       'fields' => [],
     ];
 
-    // preserve insertion order (already by field sort); but groups are associative:
-    // We keep the order by first appearance in fieldsRaw (which created groups).
     foreach ($groups as $gKey => $gData) {
       $steps[] = [
         'key' => $gKey,
-        'title' => (string)$gData['title'], // display title (override-capable)
+        'title' => (string)$gData['title'],
         'fields' => $gData['fields'],
       ];
     }

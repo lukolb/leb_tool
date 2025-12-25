@@ -16,7 +16,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
 
-    if (($_POST['action'] ?? '') === 'upload') {
+    $action = (string)($_POST['action'] ?? '');
+
+    if ($action === 'toggle_active') {
+      $templateId = (int)($_POST['template_id'] ?? 0);
+      if ($templateId <= 0) throw new RuntimeException('Ungültiges Template.');
+
+      // toggle anhand DB-Status, damit kein Manipulationsrisiko über hidden field besteht
+      $st = $pdo->prepare("SELECT is_active FROM templates WHERE id=? LIMIT 1");
+      $st->execute([$templateId]);
+      $row = $st->fetch(PDO::FETCH_ASSOC);
+      if (!$row) throw new RuntimeException('Template nicht gefunden.');
+
+      $cur = (int)($row['is_active'] ?? 0);
+      $next = $cur === 1 ? 0 : 1;
+
+      $pdo->prepare("UPDATE templates SET is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          ->execute([$next, $templateId]);
+
+      audit('template_toggle_active', (int)current_user()['id'], ['template_id' => $templateId, 'is_active' => $next]);
+      $ok = $next === 1 ? "Template #{$templateId} ist jetzt aktiv." : "Template #{$templateId} ist jetzt inaktiv.";
+    }
+
+    if ($action === 'upload') {
       $name = trim((string)($_POST['name'] ?? ''));
       $version = (int)($_POST['version'] ?? 1);
 
@@ -161,6 +183,9 @@ tr.flash {
   0% { background: rgba(176,0,32,0.18); }
   100% { background: transparent; }
 }
+
+/* NEW: inactive templates muted */
+tr.tpl-inactive { opacity: 0.65; }
 </style>
 
 <div class="card">
@@ -209,31 +234,42 @@ tr.flash {
     <table>
       <thead>
         <tr>
-          <th>ID</th><th>Name</th><th>Version</th><th>PDF</th><th>Aktion</th>
+          <th>ID</th><th>Name</th><th>Version</th><th>Status</th><th>PDF</th><th>Aktion</th>
         </tr>
       </thead>
       <tbody>
-        <?php foreach ($templates as $t): ?>
-          <tr>
+        <?php foreach ($templates as $t): $isActive = (int)($t['is_active'] ?? 0) === 1; ?>
+          <tr class="<?=($isActive ? '' : 'tpl-inactive')?>">
             <td><?=h((string)$t['id'])?></td>
             <td><?=h($t['name'])?></td>
             <td><?=h((string)$t['template_version'])?></td>
+            <td style="white-space:nowrap;">
+              <form method="post" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                <input type="hidden" name="action" value="toggle_active">
+                <input type="hidden" name="template_id" value="<?=h((string)$t['id'])?>">
+                <button class="btn <?=($isActive ? 'secondary' : 'primary')?>" type="submit"
+                        title="<?=($isActive ? 'Template deaktivieren' : 'Template aktivieren')?>">
+                  <?=($isActive ? 'aktiv' : 'inaktiv')?>
+                </button>
+              </form>
+            </td>
             <td>
               <a href="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>" target="_blank">
                 <?=h($t['pdf_original_filename'] ?: 'PDF')?>
               </a>
             </td>
             <td style="white-space:nowrap;">
-                <button
-                  class="btn secondary js-extract"
-                  type="button"
-                  data-template-id="<?=h((string)$t['id'])?>"
-                  data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">
-                  Felder auslesen
-                </button>
-                <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
-                <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>">Mapping</a>
-              </td>
+              <button
+                class="btn secondary js-extract"
+                type="button"
+                data-template-id="<?=h((string)$t['id'])?>"
+                data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">
+                Felder auslesen
+              </button>
+              <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
+              <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>">Mapping</a>
+            </td>
           </tr>
         <?php endforeach; ?>
       </tbody>
@@ -267,6 +303,7 @@ tr.flash {
         <?php foreach ($templates as $t): ?>
           <option value="<?=h((string)$t['id'])?>">
             #<?=h((string)$t['id'])?> · <?=h($t['name'])?> v<?=h((string)$t['template_version'])?>
+            <?=((int)($t['is_active'] ?? 0) === 1 ? '' : ' (inaktiv)')?>
           </option>
         <?php endforeach; ?>
       </select>

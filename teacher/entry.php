@@ -98,6 +98,16 @@ render_teacher_header('Eingaben');
         <label class="label">Fach/Gruppe</label>
         <select class="input" id="gradeGroupSelect" style="width:100%;"></select>
       </div>
+
+      <!-- NEW: orientation toggle -->
+      <div style="min-width:260px;">
+        <label class="label">Tabelle</label>
+        <select class="input" id="gradeOrientation" style="width:100%;">
+          <option value="students_rows">Schüler: Zeilen · Notenfelder: Spalten</option>
+          <option value="students_cols">Notenfelder: Zeilen · Schüler: Spalten</option>
+        </select>
+      </div>
+
       <div style="min-width:220px;">
         <label class="label">Suche</label>
         <input class="input" id="gradeSearch" type="search" placeholder="Notenfeld…" style="width:100%;">
@@ -108,7 +118,7 @@ render_teacher_header('Eingaben');
     </div>
 
     <div style="overflow:auto; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
-      <table class="table" id="gradeTable" style="min-width:1200px; margin:0;">
+      <table class="table" id="gradeTable" style="margin:0;">
         <thead id="gradeHead"></thead>
         <tbody id="gradeBody"></tbody>
       </table>
@@ -153,7 +163,7 @@ render_teacher_header('Eingaben');
     </div>
 
     <div style="overflow:auto; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
-      <table class="table" id="itemTable" style="min-width:1200px; margin:0;">
+      <table class="table" id="itemTable" style="margin:0;">
         <thead id="itemHead"></thead>
         <tbody id="itemBody"></tbody>
       </table>
@@ -178,24 +188,33 @@ render_teacher_header('Eingaben');
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
 
-  /* tables: fixed layout so student columns are equal width */
-  #itemTable, #gradeTable { table-layout: fixed; width: max-content; }
+  /* === TABLES: compact, content-based sizing + sticky headers === */
+  #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
 
-  /* sticky first column wider */
+  /* sticky first column only as wide as needed (cap) */
   #itemTable th.sticky, #itemTable td.sticky,
   #gradeTable th.sticky, #gradeTable td.sticky{
     position:sticky; left:0; background:#fff; z-index:2;
-    min-width: 280px; width: 280px; max-width: 280px;
+    min-width: 220px; max-width: 320px;
   }
 
+  /* sticky header */
   #itemTable thead th, #gradeTable thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, #gradeTable thead th.sticky{ z-index:4; }
 
-  /* all student columns equal and wide enough */
+  /* default non-sticky cells compact */
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   #gradeTable th:not(.sticky), #gradeTable td:not(.sticky){
-    min-width: 240px; width: 240px; max-width: 240px;
+    /*width: 1px; /* allow shrink-to-fit with max-content table */
+    max-width: 260px;
+  }
+
+  /* compact grade inputs */
+  .gradeInput{
+    width: 6ch;
+    max-width: 8ch;
+    padding: 6px 8px;
   }
 
   .cellWrap{ display:flex; flex-direction:column; gap:6px; }
@@ -225,6 +244,7 @@ render_teacher_header('Eingaben');
   const viewItem = document.getElementById('viewItem');
 
   const gradeGroupSelect = document.getElementById('gradeGroupSelect');
+  const gradeOrientation = document.getElementById('gradeOrientation'); // NEW
   const gradeSearch = document.getElementById('gradeSearch');
   const gradeHead = document.getElementById('gradeHead');
   const gradeBody = document.getElementById('gradeBody');
@@ -260,6 +280,7 @@ render_teacher_header('Eingaben');
     itemFilter: '',
     gradeGroupKey: 'ALL',
     gradeFilter: '',
+    gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows', // NEW
     saveTimers: new Map(),
     saveInFlight: 0,
   };
@@ -303,7 +324,6 @@ render_teacher_header('Eingaben');
     items.forEach(it => {
       const op = document.createElement('option');
       op.value = it.value;
-      // Some browsers show the text, some only value – keep both useful.
       op.textContent = it.label;
       dl.appendChild(op);
     });
@@ -336,15 +356,16 @@ render_teacher_header('Eingaben');
 
       const f = state.fieldMap[String(fieldId)];
 
+      // compact grade input
+      if (f && String(f.field_type || '') === 'grade') {
+        inp.classList.add('gradeInput');
+      }
+
       if (inp.dataset.combo === '1') {
         ensureDatalistForField(fieldId);
 
-        // Initialize displayed label from stored value.
         const actual = String(inp.dataset.actual ?? '');
-        if (f) {
-          // If actual is empty but value was label (rare), try to map back.
-          setComboDisplayedValue(inp, f, actual);
-        }
+        if (f) setComboDisplayedValue(inp, f, actual);
 
         const commit = () => {
           const typed = inp.value;
@@ -427,7 +448,6 @@ render_teacher_header('Eingaben');
     return v;
   }
 
-  // IMPORTANT: child scale can differ -> use f.child.options for mapping
   function childDisplay(f, raw){
     const v = String(raw ?? '');
     if (!v) return '';
@@ -516,9 +536,6 @@ render_teacher_header('Eingaben');
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
-      // Combo input for fast keyboard entry:
-      // - user can type option VALUE (e.g. "1") OR label
-      // - datalist shows suggestions
       const dlId = `dl_${String(f.id)}`;
       const shown = teacherDisplay(f, value);
       const actual = String(value ?? '');
@@ -609,8 +626,14 @@ render_teacher_header('Eingaben');
     wireTeacherInputs(studentForm);
   }
 
+  // NEW: render grades in two orientations
   function renderGradesView(){
     ensureSelect(gradeGroupSelect);
+
+    // apply persisted orientation to select
+    if (gradeOrientation && gradeOrientation.value !== ui.gradeOrientation) {
+      gradeOrientation.value = ui.gradeOrientation;
+    }
 
     ui.gradeGroupKey = gradeGroupSelect.value || 'ALL';
     const filter = normalize(ui.gradeFilter);
@@ -619,6 +642,70 @@ render_teacher_header('Eingaben');
     if (ui.gradeGroupKey !== 'ALL') fields = fields.filter(f => f._group_key === ui.gradeGroupKey);
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
+    if (fields.length === 0) {
+      gradeHead.innerHTML = '<tr><th class="sticky">—</th><th>Keine Notenfelder gefunden</th></tr>';
+      gradeBody.innerHTML = '';
+      return;
+    }
+
+    if (ui.gradeOrientation === 'students_cols') {
+      // === ROTATED: rows = fields, cols = students ===
+      const sCols = state.students;
+
+      // head: sticky "Notenfeld", then students
+      gradeHead.innerHTML = '';
+      const tr = document.createElement('tr');
+      const th0 = document.createElement('th');
+      th0.className = 'sticky';
+      th0.textContent = 'Notenfeld';
+      tr.appendChild(th0);
+
+      sCols.forEach(s => {
+        const th = document.createElement('th');
+        const status = String(s.status || 'draft');
+        const statusLbl = (status === 'locked') ? 'gesperrt' : (status === 'submitted' ? 'abgegeben' : 'Entwurf');
+        th.innerHTML = `<div style="font-weight:800;">${esc(s.name)}</div><div class="muted" style="font-size:12px;">${esc(statusLbl)}</div>`;
+        tr.appendChild(th);
+      });
+      gradeHead.appendChild(tr);
+
+      gradeBody.innerHTML = '';
+      fields.forEach(f => {
+        const row = document.createElement('tr');
+
+        const tdLabel = document.createElement('td');
+        tdLabel.className = 'sticky';
+        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f.label || f.field_name)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title || '')}</div>`;
+        row.appendChild(tdLabel);
+
+        sCols.forEach(s => {
+          const td = document.createElement('td');
+          const reportId = s.report_instance_id;
+          const status = String(s.status||'draft');
+          const locked = (status === 'locked');
+          const v = teacherVal(reportId, f.id);
+
+          const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
+          const shownChild = rawChild ? childDisplay(f, rawChild) : '';
+
+          const missingCls = (v === '') ? 'missing' : '';
+          td.innerHTML = `
+            <div class="cellWrap ${missingCls}">
+              ${renderInputHtml(f, reportId, v, locked)}
+              ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
+            </div>
+          `;
+          row.appendChild(td);
+        });
+
+        gradeBody.appendChild(row);
+      });
+
+      wireTeacherInputs(gradeBody);
+      return;
+    }
+
+    // === DEFAULT: rows = students, cols = fields ===
     const sCols = state.students;
 
     gradeHead.innerHTML = '';
@@ -627,15 +714,6 @@ render_teacher_header('Eingaben');
     th0.className = 'sticky';
     th0.textContent = 'Schüler:in';
     tr1.appendChild(th0);
-
-    if (fields.length === 0) {
-      const th = document.createElement('th');
-      th.textContent = 'Keine Notenfelder gefunden';
-      tr1.appendChild(th);
-      gradeHead.appendChild(tr1);
-      gradeBody.innerHTML = '';
-      return;
-    }
 
     const groupOrder = [];
     const groupCounts = {};
@@ -864,6 +942,14 @@ render_teacher_header('Eingaben');
 
   gradeGroupSelect.addEventListener('change', () => renderGradesView());
   gradeSearch.addEventListener('input', () => { ui.gradeFilter = gradeSearch.value; renderGradesView(); });
+
+  // NEW: orientation change persists
+  gradeOrientation.value = ui.gradeOrientation;
+  gradeOrientation.addEventListener('change', () => {
+    ui.gradeOrientation = gradeOrientation.value || 'students_rows';
+    localStorage.setItem('leb_grade_orientation', ui.gradeOrientation);
+    renderGradesView();
+  });
 
   window.addEventListener('keydown', (ev) => {
     if (ev.altKey && !ev.ctrlKey && !ev.metaKey) {

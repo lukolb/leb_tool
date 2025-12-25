@@ -10,7 +10,7 @@ $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.first_name, s.last_name, s.class_id,
-          c.school_year, c.grade_level, c.label, c.name AS class_name
+          c.school_year, c.grade_level, c.label, c.name AS class_name, c.template_id
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
    WHERE s.id=? LIMIT 1"
@@ -34,6 +34,9 @@ $studentName = trim((string)($me['first_name'] ?? '') . ' ' . (string)($me['last
 $classDisp = class_display($me);
 $schoolYear = (string)($me['school_year'] ?? '');
 
+$classTemplateId = (int)($me['template_id'] ?? 0);
+$hasTemplate = ($classTemplateId > 0);
+
 $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
 $orgName = (string)($brand['org_name'] ?? 'LEB Tool');
@@ -49,6 +52,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   <title><?=h($orgName)?> – Schülerbereich</title>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
+      body.page{
+        font-family: "Druckschrift";
+      }
+      
     :root{ --primary: <?=h($primary)?>; --secondary: <?=h($secondary)?>; }
 
     .page-shell{ max-width: 1200px; margin: 0 auto; }
@@ -216,17 +223,21 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     </div>
 
     <!-- NEW: Locked-only container (shown when the teacher hasn't released input yet) -->
-    <div id="lockedOnly" class="card" style="display:none;">
+    <div id="lockedOnly" class="card" style="display:<?= $hasTemplate ? 'none' : 'block' ?>;">
       <div class="locked-only">
-        <h2>Eingabe noch nicht freigegeben</h2>
-        <p class="muted">
-          Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.
+        <h2 id="lockedTitle"><?= $hasTemplate ? 'Eingabe noch nicht freigegeben' : 'Keine Vorlage zugeordnet' ?></h2>
+        <p class="muted" id="lockedText">
+          <?php if ($hasTemplate): ?>
+            Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.
+          <?php else: ?>
+            Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.
+          <?php endif; ?>
         </p>
       </div>
     </div>
 
     <!-- Wizard shell (hidden completely when locked) -->
-    <div id="wizShell" class="wiz">
+    <div id="wizShell" class="wiz" style="<?= $hasTemplate ? '' : 'display:none;' ?>">
       <div class="sidebar">
         <div class="card">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
@@ -253,7 +264,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           <div class="wiz-actions">
             <div class="left">
               <button class="btn secondary" type="button" id="btnPrev">Zurück</button>
-              <button class="btn secondary" type="button" id="btnNext">Weiter</button>
+              <button class="btn primary" type="button" id="btnNext">Weiter</button>
             </div>
             <div class="pill-mini" id="reqHint"></div>
           </div>
@@ -266,6 +277,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
+  const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -321,12 +333,15 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     return (!state.child_can_edit) || String(state.report_status) !== 'draft';
   }
 
-  function showLockedOnly(){
-    // Hide everything wizard-related, show message only
+  function showLockedOnly(title, text){
     if (elWizShell) elWizShell.style.display = 'none';
     if (elLockedOnly) elLockedOnly.style.display = 'block';
 
-    // safety: also disable buttons if they exist (even though hidden)
+    const tEl = document.getElementById('lockedTitle');
+    const pEl = document.getElementById('lockedText');
+    if (tEl && title) tEl.textContent = title;
+    if (pEl && text) pEl.textContent = text;
+
     if (btnPrev) btnPrev.disabled = true;
     if (btnNext) btnNext.disabled = true;
   }
@@ -850,7 +865,17 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   function render(){
     // NEW: if locked, do not render any wizard content at all
-    if (isLocked()) { showLockedOnly(); return; }
+    if (isLocked()) {
+        const st = String(state.report_status || '');
+        if (st === 'submitted') {
+          showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+        } else if (st === 'locked') {
+          showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+        } else {
+          showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
+        }
+        return;
+      }
 
     buildFlatSteps();
 
@@ -968,12 +993,25 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   (async function init(){
     try {
+        if (!HAS_TEMPLATE) {
+            // Server hat bereits die "Keine Vorlage" Meldung angezeigt.
+            // Wizard bleibt komplett aus.
+            return;
+          }
+    
       const j = await api('bootstrap', {});
       state = j;
 
       // NEW: If locked, show ONLY the locked message and stop here.
       if (isLocked()) {
-        showLockedOnly();
+        const st = String(state.report_status || '');
+        if (st === 'submitted') {
+          showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+        } else if (st === 'locked') {
+          showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+        } else {
+          showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
+        }
         return;
       }
 
@@ -981,12 +1019,19 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       activeStep = 0;
       render();
     } catch (e) {
-      // If loading fails, show error in wizard body (locked-only stays hidden)
-      elMeta.textContent = 'Fehler beim Laden.';
-      elBody.innerHTML = `<div class="alert danger"><strong>${esc(e?.message || 'Fehler')}</strong></div>`;
-      btnPrev.disabled = true;
-      btnNext.disabled = true;
-    }
+        const msg = String(e?.message || 'Fehler');
+
+        // Wenn API "keine Vorlage" meldet, zeigen wir locked-only statt Wizard-Fehler.
+        if (msg.toLowerCase().includes('keine vorlage') || msg.toLowerCase().includes('vorlage zugeordnet')) {
+          showLockedOnly('Keine Vorlage zugeordnet', 'Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
+          return;
+        }
+
+        elMeta.textContent = 'Fehler beim Laden.';
+        elBody.innerHTML = `<div class="alert danger"><strong>${esc(msg)}</strong></div>`;
+        btnPrev.disabled = true;
+        btnNext.disabled = true;
+      }
   })();
 })();
 </script>

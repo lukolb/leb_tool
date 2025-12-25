@@ -1,3 +1,8 @@
+@font-face {
+    font-family: "Druckschrift";
+    src: url("Druckschrift.otf") format("opentype");
+}
+
 :root{
   --primary:#0b57d0;
   --secondary:#111111;

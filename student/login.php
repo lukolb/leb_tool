@@ -60,6 +60,10 @@ $logo = (string)($b['logo_path'] ?? '');
   <title><?=h($org)?> – Schüler Login</title>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
+      body.page{
+        font-family: "Druckschrift";
+      }
+      
     :root{--primary:<?=h((string)($b['primary'] ?? '#0b57d0'))?>;--secondary:<?=h((string)($b['secondary'] ?? '#111'))?>;}
 
     .code-wrap{
