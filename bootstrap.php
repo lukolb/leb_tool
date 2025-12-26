@@ -2,16 +2,75 @@
 // bootstrap.php
 declare(strict_types=1);
 
-$configPath = __DIR__ . '/config.php';
-if (!file_exists($configPath)) {
+$configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
+define('APP_CONFIG_PATH', $configPath);
+if (!file_exists(APP_CONFIG_PATH)) {
   // install not completed
   header('Location: install.php');
   exit;
 }
-$config = require $configPath;
+$config = require APP_CONFIG_PATH;
 
 session_name($config['app']['session_name'] ?? 'legtool_sess');
 session_start();
+
+
+// --- UI language (only affects dynamic field labels/group titles) ---
+function ui_lang(): string {
+  $lang = (string)($_SESSION['ui_lang'] ?? 'de');
+  $lang = strtolower(trim($lang));
+  return in_array($lang, ['de','en'], true) ? $lang : 'de';
+}
+
+function ui_lang_set(string $lang): void {
+  $lang = strtolower(trim($lang));
+  if (!in_array($lang, ['de','en'], true)) return;
+  $_SESSION['ui_lang'] = $lang;
+}
+
+function is_ajax_request(): bool {
+  $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
+  if (strpos($uri, '/ajax/') !== false) return true;
+  $xrw = (string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
+  if (strtolower($xrw) === 'xmlhttprequest') return true;
+  $accept = (string)($_SERVER['HTTP_ACCEPT'] ?? '');
+  return stripos($accept, 'application/json') !== false;
+}
+
+/**
+ * Build current URL with lang=... (keeps other query params)
+ */
+function url_with_lang(string $lang): string {
+  $lang = strtolower(trim($lang));
+  if (!in_array($lang, ['de','en'], true)) $lang = 'de';
+  $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
+  $parts = parse_url($uri);
+  $path = (string)($parts['path'] ?? '');
+  $qs = (string)($parts['query'] ?? '');
+  parse_str($qs, $q);
+  $q['lang'] = $lang;
+  $newQs = http_build_query($q);
+  return $path . ($newQs ? ('?' . $newQs) : '');
+}
+
+// One-shot: allow switching language via ?lang=de|en
+if (isset($_GET['lang'])) {
+  ui_lang_set((string)$_GET['lang']);
+
+  // Avoid breaking fetch/ajax calls. For normal GET navigations, strip ?lang=... and redirect.
+  if (!is_ajax_request() && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'GET') {
+    $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
+    $parts = parse_url($uri);
+    $path = (string)($parts['path'] ?? '');
+    $qs = (string)($parts['query'] ?? '');
+    parse_str($qs, $q);
+    unset($q['lang']);
+    $newQs = http_build_query($q);
+    header('Location: ' . $path . ($newQs ? ('?' . $newQs) : ''));
+    exit;
+  }
+}
+
 
 // Base path comes from config (prevents /admin/admin/... issues)
 $basePath = (string)($config['app']['base_path'] ?? '');
@@ -21,7 +80,10 @@ if ($basePath === '/') $basePath = '';
 define('APP_BASE_URL', $basePath);
 
 function app_config(): array {
-  return require __DIR__ . '/config.php';
+  static $cfg = null;
+  if ($cfg !== null) return $cfg;
+  $cfg = require APP_CONFIG_PATH;
+  return $cfg;
 }
 
 function brand(): array {
@@ -83,19 +145,29 @@ function db(): PDO {
 
   $cfg = app_config();
   $db = $cfg['db'];
-  $port = $db['port'] ?? 3306;
-  $charset = $db['charset'] ?? 'utf8mb4';
-  $dsn = "mysql:host={$db['host']};port={$port};dbname={$db['name']};charset={$charset}";
+  $driver = $db['driver'] ?? 'mysql';
 
-  $pdo = new PDO($dsn, $db['user'], $db['pass'], [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-  ]);
+  if ($driver === 'sqlite') {
+    $dbPath = (string)($db['path'] ?? ':memory:');
+    $pdo = new PDO('sqlite:' . $dbPath, null, null, [
+      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+  } else {
+    $port = $db['port'] ?? 3306;
+    $charset = $db['charset'] ?? 'utf8mb4';
+    $dsn = "mysql:host={$db['host']};port={$port};dbname={$db['name']};charset={$charset}";
 
-  // Lightweight, additive schema migrations (shared-hosting friendly).
-  // We only add missing columns / indexes that newer features rely on.
-  // If DB user lacks ALTER privileges, the app will still run (features may be limited).
-  ensure_schema($pdo);
+    $pdo = new PDO($dsn, $db['user'], $db['pass'], [
+      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+
+    // Lightweight, additive schema migrations (shared-hosting friendly).
+    // We only add missing columns / indexes that newer features rely on.
+    // If DB user lacks ALTER privileges, the app will still run (features may be limited).
+    ensure_schema($pdo);
+  }
   return $pdo;
 }
 

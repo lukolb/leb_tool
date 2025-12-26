@@ -52,6 +52,35 @@ render_admin_header('Feld-Editor');
   }
   .col-resizer:hover{ background: rgba(0,0,0,0.08); }
   .col-resizer.dragging{ background: rgba(176,0,32,0.12); border-color: rgba(176,0,32,0.35); }
+  
+  /* Drag handle only in field name col */
+    .fieldname-cell{
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+    }
+
+    .drag-handle{
+      width:18px;
+      min-width:18px;
+      height:18px;
+      margin-top:2px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background: rgba(0,0,0,0.03);
+      cursor: grab;
+      user-select: none;
+    }
+
+    .drag-handle:active{ cursor: grabbing; }
+
+    /* Optional: damit man Feldname-Text markieren kann */
+    .fieldname-text{
+      user-select: text;
+    }
 
   .panel{
     border:1px solid var(--border);
@@ -98,7 +127,7 @@ render_admin_header('Feld-Editor');
   }
   #fieldsTbl{
     width: 100%;
-    min-width: 1750px;
+    min-width: 2000px;
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -128,6 +157,15 @@ render_admin_header('Feld-Editor');
     background: rgba(0,0,0,0.035);
     font-weight: 700;
   }
+  /* nur die linke Gruppen-Zelle ist sticky-left */
+    tr.group-row td.group-sticky{
+      position: sticky;
+      left: 0;
+      z-index: 9;                 /* über normalen Zellen; unter thead (10) */
+      background: rgba(0,0,0,0.035);
+    }
+  /* damit die Gruppenzeile auch unter dem sticky THEAD korrekt liegt */
+  #fieldsTbl thead th{ z-index: 10; }
   tr.group-row td .gwrap{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   }
@@ -178,6 +216,19 @@ render_admin_header('Feld-Editor');
   .dlg-foot{ padding: 12px 14px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; }
   .dlg-body textarea{ min-height: 220px; font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
   .dlg-title{ margin:0; }
+
+  /* Split banner */
+  .split-banner{
+    border: 1px solid rgba(0,0,0,0.08);
+    background: rgba(0,150,255,0.06);
+    border-radius: 14px;
+    padding: 10px 12px;
+    display:none;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .split-banner strong{ font-weight:700; }
 </style>
 
 <div class="card">
@@ -188,8 +239,24 @@ render_admin_header('Feld-Editor');
   </div>
 </div>
 
-<div id="dirtyWarning" class="alert danger" style="display: none">
-    <p><b>Achtung! Ungespeicherte Änderungen!</b></p>
+<div id="dirtyWarning" class="alert danger" style="display:none">
+  <p style="margin:0; display:flex; align-items:center; gap:12px;">
+    <b>Achtung! Ungespeicherte Änderungen!</b>
+    <button class="btn primary" type="button" id="btnSaveTop" style="margin-left:auto;">
+      Speichern
+    </button>
+  </p>
+</div>
+
+<!-- Hinweis für "DE | EN" Split (ohne Fokus-Verlust / ohne confirm()) -->
+<div class="card split-banner" id="splitBanner">
+  <div class="muted2" id="splitBannerText">—</div>
+  <div class="actions" style="justify-content:flex-start; gap:8px;">
+    <button class="btn secondary" type="button" id="btnSplitNow">Jetzt trennen</button>
+    <button class="btn secondary" type="button" id="btnSplitDismiss">Ignorieren</button>
+    <button class="btn secondary" type="button" id="btnSplitAll">Alle trennen</button>
+    <button class="btn secondary" type="button" id="btnSplitResetIgnored">Ignorierte zurücksetzen</button>
+  </div>
 </div>
 
 <div class="card" id="metaCard">
@@ -411,8 +478,10 @@ render_admin_header('Feld-Editor');
             <th class="sticky-col-0" style="width:46px;">✓</th>
             <th class="sticky-col-1" style="min-width:220px;">Feldname</th>
             <th style="min-width:220px;">Gruppe</th>
+            <th style="min-width:220px;">Gruppentitel (EN)</th>
             <th style="min-width:160px;">Typ</th>
             <th style="min-width:260px;">Label</th>
+            <th style="min-width:260px;">Label (EN)</th>
             <th style="min-width:240px;">Stammfeld</th>
             <th style="min-width:420px;">Help</th>
             <th style="min-width:120px;">Kind</th>
@@ -457,8 +526,8 @@ render_admin_header('Feld-Editor');
 </div>
 
 <script type="module">
-import * as pdfjsLib from "<?=h(url('assets/pdfjs/pdf.min.mjs'))?>";
-pdfjsLib.GlobalWorkerOptions.workerSrc = "<?=h(url('assets/pdfjs/pdf.worker.min.mjs'))?>";
+import * as pdfjsLib from <?= json_encode(url('assets/pdfjs/pdf.min.mjs')) ?>;
+pdfjsLib.GlobalWorkerOptions.workerSrc = <?= json_encode(url('assets/pdfjs/pdf.worker.min.mjs')) ?>;
 
 const csrf = "<?=h(csrf_token())?>";
 const templateId = <?= (int)$templateId ?>;
@@ -469,6 +538,13 @@ const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
 const metaLine = document.getElementById('metaLine');
 const tbody = document.querySelector('#fieldsTbl tbody');
 const saveHint = document.getElementById('saveHint');
+
+const splitBanner = document.getElementById('splitBanner');
+const splitBannerText = document.getElementById('splitBannerText');
+const btnSplitNow = document.getElementById('btnSplitNow');
+const btnSplitResetIgnored = document.getElementById('btnSplitResetIgnored');
+const btnSplitDismiss = document.getElementById('btnSplitDismiss');
+let splitCandidate = null; // { fieldId, idx, de, en, inpDE, inpEN }
 
 const groupList = document.getElementById('groupList');
 const groupsBar = document.getElementById('groupsBar');
@@ -481,6 +557,7 @@ const btnClearFilter = document.getElementById('btnClearFilter');
 
 const selCount = document.getElementById('selCount');
 const btnSave = document.getElementById('btnSave');
+const btnSaveTop = document.getElementById('btnSaveTop');
 
 const bulkGroup = document.getElementById('bulkGroup');
 const bulkType = document.getElementById('bulkType');
@@ -533,7 +610,91 @@ let selected = new Set();
 let dirty = new Set();
 let lastFoundRowId = null;
 
+let isRowDragging = false;
+let dragScrollRaf = 0;
+let lastDragClientY = 0;
+
 let modalFieldId = null;
+
+const IGN_SPLIT_LS_KEY = `template_fields_ignored_split_v1:${templateId}`;
+
+function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+function startDragAutoScroll(){
+  if (dragScrollRaf) return;
+
+  const step = () => {
+    if (!isRowDragging) { dragScrollRaf = 0; return; }
+
+    const r = tableScroll.getBoundingClientRect();
+    const y = lastDragClientY;
+
+    const edge = 48;          // px: wie nah am Rand
+    const maxSpeed = 22;      // px pro Frame (feinjustieren)
+
+    let dy = 0;
+
+    // oben
+    if (y < r.top + edge) {
+      const t = (r.top + edge - y) / edge;        // 0..1
+      dy = -Math.ceil(maxSpeed * clamp(t, 0, 1));
+    }
+    // unten
+    else if (y > r.bottom - edge) {
+      const t = (y - (r.bottom - edge)) / edge;   // 0..1
+      dy = Math.ceil(maxSpeed * clamp(t, 0, 1));
+    }
+
+    if (dy !== 0) {
+      tableScroll.scrollTop += dy;
+    }
+
+    dragScrollRaf = requestAnimationFrame(step);
+  };
+
+  dragScrollRaf = requestAnimationFrame(step);
+}
+
+// Global: Mausposition während Drag tracken (auch wenn Cursor über PDF/außerhalb Table ist)
+window.addEventListener('dragover', (e)=>{
+  if (!isRowDragging) return;
+
+  // notwendig, damit "dragover" weiter feuert und Drop möglich bleibt
+  // (bei manchen Browsern sonst hakelig)
+  e.preventDefault();
+
+  lastDragClientY = e.clientY;
+  startDragAutoScroll();
+}, { passive: false });
+
+// Wenn Drag irgendwo endet: Loop stoppen (zusätzliche Sicherheit)
+window.addEventListener('drop', ()=>{
+  isRowDragging = false;
+  if (dragScrollRaf) cancelAnimationFrame(dragScrollRaf);
+  dragScrollRaf = 0;
+});
+
+window.addEventListener('dragend', ()=>{
+  isRowDragging = false;
+  if (dragScrollRaf) cancelAnimationFrame(dragScrollRaf);
+  dragScrollRaf = 0;
+});
+
+function loadIgnoredSplit(){
+  try{
+    const raw = localStorage.getItem(IGN_SPLIT_LS_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(arr)) return new Set(arr.map(x=>Number(x)).filter(n=>Number.isFinite(n) && n>0));
+  }catch(e){}
+  return new Set();
+}
+function saveIgnoredSplit(){
+  try{
+    localStorage.setItem(IGN_SPLIT_LS_KEY, JSON.stringify([...ignoredSplit]));
+  }catch(e){}
+}
+
+let ignoredSplit = loadIgnoredSplit(); // fieldId -> ignore split-hint
 
 // --- PDF preview state
 const pdfUrl = "<?=h($pdfUrl)?>";
@@ -596,13 +757,219 @@ function getGroupPath(f){
 function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
-  
-  if (dirty.size) {
-        document.getElementById("dirtyWarning").style.display = "block";
-    } else {
-        document.getElementById("dirtyWarning").style.display = "none";
-    }
+
+  if (dirty.size) document.getElementById("dirtyWarning").style.display = "block";
+  else document.getElementById("dirtyWarning").style.display = "none";
 }
+
+/* ---- Split hint ("DE | EN") ---- */
+function hideSplitBanner(){
+  splitCandidate = null;
+  splitBanner.style.display = 'none';
+  splitBannerText.textContent = '—';
+}
+
+function getRowInputsForField(fieldId){
+  const id = String(fieldId);
+
+  // Falls die Zeile gerade nicht gerendert ist (gefiltert/zugeklappt), geben wir null zurück
+  const tr = tbody.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+  if (!tr) return { inpDE: null, inpEN: null };
+
+  const inpDE = tr.querySelector(`input[data-role="label_de"][data-field-id="${CSS.escape(id)}"]`);
+  const inpEN = tr.querySelector(`input[data-role="label_en"][data-field-id="${CSS.escape(id)}"]`);
+
+  return { inpDE: inpDE || null, inpEN: inpEN || null };
+}
+
+function scanForSplitCandidate(){
+  // Wenn schon ein Banner aktiv ist, nicht überschreiben
+  if (splitCandidate) return;
+
+  for (let i = 0; i < fields.length; i++){
+    const f = fields[i];
+    const raw = String(f.label ?? '').trim();
+    const en = String(f.label_en ?? '').trim();
+
+    if (!raw.includes('|')) continue;
+    if (en !== '') continue;
+
+    // optional: nur wenn Feld aktuell sichtbar (falls du willst)
+    // if (!isVisibleByFilter(f)) continue;
+    
+    if (ignoredSplit.has(Number(f.id))) continue;
+
+    queueSplitCandidate(f.id, i, null, null);
+
+    // Banner soll genau EINEN Kandidaten zeigen
+    if (splitCandidate) return;
+  }
+}
+
+function queueSplitCandidate(fieldId, idx, inpDE=null, inpEN=null){
+    if (ignoredSplit.has(Number(fieldId))) return; // <- ignoriert bleibt ignoriert
+
+  // Falls wir keine Inputs haben (Scan), versuche sie aus der Tabelle zu holen
+  if (!inpDE || !inpEN) {
+    const got = getRowInputsForField(fieldId);
+    inpDE = inpDE || got.inpDE;
+    inpEN = inpEN || got.inpEN;
+  }
+
+  const raw = String(inpDE?.value ?? fields[idx]?.label ?? '').trim();
+  const parsed = parseDeEnSplit(raw);
+  if (!parsed) {
+    if (splitCandidate?.fieldId === fieldId) hideSplitBanner();
+    return;
+  }
+
+  const { de, en } = parsed;
+
+  const currentEN = String(inpEN?.value ?? fields[idx]?.label_en ?? '').trim();
+  if (currentEN !== '') {
+    if (splitCandidate?.fieldId === fieldId) hideSplitBanner();
+    return;
+  }
+
+  if (splitCandidate && splitCandidate.fieldId !== fieldId) return;
+
+  splitCandidate = { fieldId, idx, de, en, inpDE, inpEN };
+
+  const total = countSplitCandidates();
+  splitBannerText.innerHTML =
+    `<strong>Hinweis:</strong> „DE | EN“ erkannt (${total}×) → <span class="muted2">DE: ${escapeHtml(de)} · EN: ${escapeHtml(en)}</span>`;
+
+  splitBanner.style.display = 'flex';
+}
+
+const btnSplitAll = document.getElementById('btnSplitAll');
+
+function parseDeEnSplit(raw){
+  const s = String(raw ?? '').trim();
+  if (!s.includes('|')) return null;
+
+  const parts = s.split('|').map(x => String(x).trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const de = parts[0];
+  const en = parts.slice(1).join(' | ');
+  if (!de || !en) return null;
+
+  return { de, en };
+}
+
+function syncFieldLabelDom(fieldId, de, en){
+  const id = String(fieldId);
+
+  // Update im aktuell gerenderten DOM (falls sichtbar)
+  const deInp = tbody.querySelector(`input[data-role="label_de"][data-field-id="${CSS.escape(id)}"]`);
+  const enInp = tbody.querySelector(`input[data-role="label_en"][data-field-id="${CSS.escape(id)}"]`);
+
+  if (deInp && deInp.value !== String(de)) deInp.value = String(de);
+  if (enInp && enInp.value !== String(en)) enInp.value = String(en);
+}
+
+function applySplitToFieldByIndex(idx){
+  const f = fields[idx];
+  if (!f) return false;
+
+  const parsed = parseDeEnSplit(f.label);
+  if (!parsed) return false;
+
+  // Nur splitten, wenn EN noch leer ist
+  const currentEN = String(f.label_en ?? '').trim();
+  if (currentEN !== '') return false;
+
+  fields[idx].label = parsed.de;
+  fields[idx].label_en = parsed.en;
+  markDirty(f.id);
+
+  // Sofort sichtbar machen (ohne renderTable)
+  syncFieldLabelDom(f.id, parsed.de, parsed.en);
+
+  return true;
+}
+
+function countSplitCandidates(){
+  let n = 0;
+  for (const f of fields){
+    const parsed = parseDeEnSplit(f.label);
+    if (!parsed) continue;
+    if (String(f.label_en ?? '').trim() !== '') continue;
+    n++;
+  }
+  return n;
+}
+
+btnSplitNow.addEventListener('click', ()=>{
+  if (!splitCandidate) return;
+
+  const { fieldId, idx, de, en } = splitCandidate;
+
+  // Daten aktualisieren
+  fields[idx].label = de;
+  fields[idx].label_en = en;
+  markDirty(fieldId);
+
+  // Sofort in Tabelle sichtbar machen (auch wenn Candidate aus Scan kam)
+  syncFieldLabelDom(fieldId, de, en);
+
+  hideSplitBanner();
+
+  // Nächsten Kandidaten direkt anbieten
+  scanForSplitCandidate();
+
+  // Optional: Meta/Status aktualisieren
+  updateMeta();
+});
+
+btnSplitAll.addEventListener('click', ()=>{
+  let changed = 0;
+
+  // Wenn du NUR "sichtbare" splitten willst:
+  // const list = fields.map((f,i)=>({f,i})).filter(x=>isVisibleByFilter(x.f));
+  // for (const {i} of list) { if (applySplitToFieldByIndex(i)) changed++; }
+
+  // Standard: ALLE im Template splitten
+  for (let i = 0; i < fields.length; i++){
+    if (applySplitToFieldByIndex(i)) changed++;
+  }
+
+  hideSplitBanner();
+
+  // Wenn viele geändert wurden, ist ein einmaliges Render ok (damit garantiert alles konsistent ist)
+  // (und weil du gerade NICHT in einem Input tippst, ist Fokusverlust egal)
+  if (changed > 0) {
+    // scroll position erhalten
+    const st = tableScroll.scrollTop;
+    renderTable();
+    tableScroll.scrollTop = st;
+  }
+
+  // Neu scannen (falls noch Kandidaten übrig sind)
+  scanForSplitCandidate();
+  updateMeta();
+
+  // Optional: kleine Statusmeldung
+  if (changed) saveHint.textContent = `Getrennt: ${changed} Felder (noch offen: ${countSplitCandidates()})`;
+});
+
+btnSplitDismiss.addEventListener('click', ()=>{
+  if (splitCandidate?.fieldId) {
+    ignoredSplit.add(Number(splitCandidate.fieldId));
+    saveIgnoredSplit();
+  }
+  hideSplitBanner();
+  scanForSplitCandidate();
+});
+
+btnSplitResetIgnored.addEventListener('click', ()=>{
+  ignoredSplit = new Set();
+  try { localStorage.removeItem(IGN_SPLIT_LS_KEY); } catch(e) {}
+  hideSplitBanner();
+  scanForSplitCandidate();
+  saveHint.textContent = 'Ignorierte Split-Hinweise zurückgesetzt.';
+});
 
 function isVisibleByFilter(f){
   const gpath = getGroupPath(f);
@@ -619,10 +986,7 @@ function isVisibleByFilter(f){
     gpath.toLowerCase()
   );
 
-  // Exclude filter: hide anything that contains the given substring.
   if (nq && hay.includes(nq)) return false;
-
-  // Include filter: show all if empty, otherwise must match.
   if (!q) return true;
   return hay.includes(q);
 }
@@ -718,6 +1082,7 @@ function renderGroupsBar(){
       if (collapsedGroupHeaders.has(g)) collapsedGroupHeaders.delete(g);
       else collapsedGroupHeaders.add(g);
       renderTable();
+      scanForSplitCandidate();
       renderGroupsBar();
     });
 
@@ -736,12 +1101,14 @@ function renderGroupsBar(){
         rebuildGroupDatalist();
         renderGroupsBar();
         renderTable();
+        scanForSplitCandidate();
         updateMeta();
         return;
       }
       groupFilter = (groupFilter === g) ? '' : g;
       renderGroupsBar();
       renderTable();
+      scanForSplitCandidate();
       updateMeta();
     });
 
@@ -752,7 +1119,7 @@ function renderGroupsBar(){
 /* ---------- TABLE ---------- */
 function renderTable(){
   tbody.innerHTML = '';
-  rowByFieldName = new Map(); // map visible rows by name (like templates.php)
+  rowByFieldName = new Map();
 
   const visibleFields = fields.filter(isVisibleByFilter);
   const byGroup = new Map();
@@ -771,38 +1138,52 @@ function renderTable(){
       seenGroup.add(g);
 
       const gr = document.createElement('tr');
-      gr.className = 'group-row';
-      const td = document.createElement('td');
-      td.colSpan = 12;
+        gr.className = 'group-row';
 
-      const isCollapsed = collapsedGroupHeaders.has(g);
-      const cnt = byGroup.get(g)?.length ?? 0;
-      td.innerHTML = `
-        <div class="gwrap">
-          <span class="gbtn">${isCollapsed ? '+' : '–'}</span>
-          <span>${escapeHtml(g)}</span>
-          <span class="gmeta">(${cnt})</span>
-          <span class="gmeta">Alt-Klick = ausblenden</span>
-        </div>
-      `;
-      td.addEventListener('click', (e)=>{
-        e.preventDefault();
-        if (e.altKey) {
-          if (g !== '—') hiddenGroups.add(g);
-          rebuildGroupDatalist();
+        const isCollapsed = collapsedGroupHeaders.has(g);
+        const cnt = byGroup.get(g)?.length ?? 0;
+
+        const html = `
+          <div class="gwrap">
+            <span class="gbtn">${isCollapsed ? '+' : '–'}</span>
+            <span>${escapeHtml(g)}</span>
+            <span class="gmeta">(${cnt})</span>
+            <span class="gmeta">Alt-Klick = ausblenden</span>
+          </div>
+        `;
+
+        // Linke, sticky Zelle: deckt ✓ + Feldname ab
+        const tdLeft = document.createElement('td');
+        tdLeft.className = 'group-sticky';
+        tdLeft.colSpan = 3;
+        tdLeft.innerHTML = html;
+
+        // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
+        const tdRight = document.createElement('td');
+        tdRight.colSpan = 11;
+        tdRight.innerHTML = '&nbsp;'; // nur Fläche
+
+        // Klick-Handling auf der ganzen Zeile (nicht nur links)
+        gr.addEventListener('click', (e)=>{
+          e.preventDefault();
+          if (e.altKey) {
+            if (g !== '—') hiddenGroups.add(g);
+            rebuildGroupDatalist();
+            renderGroupsBar();
+            renderTable();
+            scanForSplitCandidate();
+            updateMeta();
+            return;
+          }
+          if (collapsedGroupHeaders.has(g)) collapsedGroupHeaders.delete(g);
+          else collapsedGroupHeaders.add(g);
           renderGroupsBar();
           renderTable();
-          updateMeta();
-          return;
-        }
-        if (collapsedGroupHeaders.has(g)) collapsedGroupHeaders.delete(g);
-        else collapsedGroupHeaders.add(g);
-        renderGroupsBar();
-        renderTable();
-      });
+          scanForSplitCandidate();
+        });
 
-      gr.appendChild(td);
-      tbody.appendChild(gr);
+        gr.append(tdLeft, tdRight);
+        tbody.appendChild(gr);
     }
 
     if (collapsedGroupHeaders.has(g)) continue;
@@ -812,18 +1193,12 @@ function renderTable(){
 
     const tr = document.createElement('tr');
     tr.dataset.id = String(f.id);
-    tr.draggable = true;
 
-    // map first visible row per field_name
     if (!rowByFieldName.has(f.name)) rowByFieldName.set(f.name, tr);
 
     if (selected.has(f.id)) tr.classList.add('is-selected');
     if (lastFoundRowId === f.id) tr.classList.add('is-found');
 
-    tr.addEventListener('dragstart', (e)=>{
-      e.dataTransfer.setData('text/plain', String(f.id));
-      e.dataTransfer.effectAllowed = 'move';
-    });
     tr.addEventListener('dragover', (e)=>{
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
@@ -840,12 +1215,9 @@ function renderTable(){
       const tag = (e.target?.tagName || '').toLowerCase();
       if (['input','select','textarea','button','label'].includes(tag)) return;
 
-      // Use pageWidgets (like templates.php) for reliable highlight
-      const widgets = pageWidgets.get(currentPage) || [];
       const any = [...pageWidgets.entries()].find(([p, arr]) => arr.some(w => w.name === f.name));
       const targetPage = any ? Number(any[0]) : (f.meta?.page ? Number(f.meta.page) : currentPage);
 
-      // pick first widget rect for that name on that page
       const wlist = pageWidgets.get(targetPage) || [];
       const w = wlist.find(x => x.name === f.name);
 
@@ -878,13 +1250,48 @@ function renderTable(){
       e.stopPropagation();
       if (cb.checked) selected.add(f.id); else selected.delete(f.id);
       renderTable();
+      scanForSplitCandidate();
       updateMeta();
     });
     tdS.appendChild(cb);
 
     const tdN = document.createElement('td');
     tdN.className = 'sticky-col-1';
-    tdN.textContent = f.name;
+
+    const fnWrap = document.createElement('div');
+    fnWrap.className = 'fieldname-cell';
+
+    const handle = document.createElement('span');
+    handle.className = 'drag-handle';
+    handle.title = 'Ziehen zum Sortieren';
+    handle.textContent = '⋮⋮';
+    handle.draggable = true;
+
+    // Dragstart NUR am Handle
+    handle.addEventListener('dragstart', (e)=>{
+        isRowDragging = true;
+        lastDragClientY = e.clientY;
+
+        e.dataTransfer.setData('text/plain', String(f.id));
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      
+    handle.addEventListener('dragend', ()=>{
+        isRowDragging = false;
+        if (dragScrollRaf) cancelAnimationFrame(dragScrollRaf);
+        dragScrollRaf = 0;
+      });
+
+    // Nicht row-click auslösen
+    handle.addEventListener('click', (e)=>e.stopPropagation());
+    handle.addEventListener('mousedown', (e)=>e.stopPropagation());
+
+    const fnText = document.createElement('span');
+    fnText.className = 'fieldname-text';
+    fnText.textContent = f.name;
+
+    fnWrap.append(handle, fnText);
+    tdN.appendChild(fnWrap);
 
     const tdG = document.createElement('td');
     const inpG = document.createElement('input');
@@ -903,6 +1310,44 @@ function renderTable(){
       updateMeta();
     });
     tdG.appendChild(inpG);
+
+    // Gruppentitel (EN) – wird in meta gespeichert und auf alle Felder derselben Gruppe angewendet
+    // Wichtig: NICHT bei jedem Tastendruck renderTable() (sonst Fokusverlust).
+    const tdGE = document.createElement('td');
+    const inpGE = document.createElement('input');
+    inpGE.dataset.role = 'group_title_en';
+    inpGE.dataset.fieldId = String(f.id);
+    inpGE.type = 'text';
+    inpGE.placeholder = 'z. B. Language Arts';
+    inpGE.value = (f.meta && f.meta.group_title_en) ? String(f.meta.group_title_en) : '';
+    inpGE.addEventListener('click', (e)=>e.stopPropagation());
+    inpGE.addEventListener('input', (e)=>{
+      e.stopPropagation();
+      fields[idx].meta = fields[idx].meta || {};
+      const v = inpGE.value;
+      if (String(v).trim()) fields[idx].meta.group_title_en = String(v).trim();
+      else delete fields[idx].meta.group_title_en;
+      markDirty(f.id);
+      // absichtlich kein renderTable() hier -> Fokus bleibt
+    });
+    inpGE.addEventListener('blur', (e)=>{
+      // Beim Verlassen einmalig auf die gesamte Gruppe übertragen (ohne Re-Render während der Eingabe)
+      e.stopPropagation();
+      const v = String(inpGE.value || '').trim();
+      const gCur = getGroupPath(fields[idx]);
+      for (let i=0; i<fields.length; i++){
+        if (getGroupPath(fields[i]) !== gCur) continue;
+        fields[i].meta = fields[i].meta || {};
+        if (v) fields[i].meta.group_title_en = v;
+        else delete fields[i].meta.group_title_en;
+        markDirty(fields[i].id);
+      }
+      // Metazeile / Gruppenbar aktualisieren reicht
+      syncGroupTitleEnDom(gCur, v);
+      renderGroupsBar();
+      updateMeta();
+    });
+    tdGE.appendChild(inpGE);
 
     const tdT = document.createElement('td');
     const selT = document.createElement('select');
@@ -923,22 +1368,46 @@ function renderTable(){
       }
       markDirty(f.id);
       renderTable();
+      scanForSplitCandidate();
     });
     tdT.appendChild(selT);
 
     const tdL = document.createElement('td');
     const inpL = document.createElement('input');
     inpL.type = 'text';
+    inpL.dataset.role = 'label_de';
+    inpL.dataset.fieldId = String(f.id);
     inpL.value = f.label || f.name;
     inpL.addEventListener('click',(e)=>e.stopPropagation());
     inpL.addEventListener('input',(e)=>{
+        ignoredSplit.delete(Number(f.id));
+        saveIgnoredSplit();
       e.stopPropagation();
       fields[idx].label = inpL.value;
       markDirty(f.id);
+      // nur Hinweis einblenden, KEIN confirm/blur => Fokus bleibt
+      queueSplitCandidate(f.id, idx, inpL, inpLE);
     });
     tdL.appendChild(inpL);
 
-    // System binding (maps master data -> this form field)
+    const tdLE = document.createElement('td');
+    const inpLE = document.createElement('input');
+    inpLE.type = 'text';
+    inpLE.dataset.role = 'label_en';
+    inpLE.dataset.fieldId = String(f.id);
+    inpLE.placeholder = 'English label (optional)';
+    inpLE.value = (f.label_en !== undefined && f.label_en !== null) ? String(f.label_en) : '';
+    inpLE.addEventListener('click',(e)=>e.stopPropagation());
+    inpLE.addEventListener('input',(e)=>{
+      e.stopPropagation();
+      fields[idx].label_en = inpLE.value;
+      markDirty(f.id);
+      // wenn EN gefüllt wurde, Hinweis ggf. schließen
+      if (String(inpLE.value||'').trim() !== '' && splitCandidate?.fieldId === f.id) hideSplitBanner();
+    });
+    tdLE.appendChild(inpLE);
+
+    // System binding
     const tdB = document.createElement('td');
     const selB = document.createElement('select');
     selB.innerHTML = `
@@ -1014,7 +1483,6 @@ function renderTable(){
       fields[idx].meta = fields[idx].meta || {};
       if (cbK.checked) {
         fields[idx].meta.scope = 'class';
-        // sensible defaults: class-wide fields are usually teacher-only
         fields[idx].can_teacher_edit = 1;
         fields[idx].can_child_edit = 0;
       } else {
@@ -1026,6 +1494,7 @@ function renderTable(){
       }
       markDirty(f.id);
       renderTable();
+      scanForSplitCandidate();
       updateMeta();
     });
     tdK.appendChild(cbK);
@@ -1075,6 +1544,7 @@ function renderTable(){
           delete fields[idx].meta.option_list_template_id;
           markDirty(f.id);
           renderTable();
+          scanForSplitCandidate();
           return;
         }
         try {
@@ -1109,9 +1579,22 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Typ | Label | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdT, tdL, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
+  }
+}
+
+function syncGroupTitleEnDom(groupPath, value){
+  const v = String(value || '');
+  const inputs = tbody.querySelectorAll('input[data-role="group_title_en"][data-field-id]');
+  for (const el of inputs) {
+    const fid = Number(el.dataset.fieldId || 0);
+    if (!fid) continue;
+    const ff = fields.find(x => x.id === fid);
+    if (!ff) continue;
+    if (getGroupPath(ff) !== groupPath) continue;
+    if (el.value !== v) el.value = v;
   }
 }
 
@@ -1133,6 +1616,7 @@ function reorderByDrag(srcId, dstId){
     }
   });
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 }
 
@@ -1190,6 +1674,7 @@ async function applyOptionTemplateToField(fieldId, listId){
 
   markDirty(fieldId);
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 }
 
@@ -1199,7 +1684,6 @@ function buildBulkPatch(){
   const g = bulkGroup.value.trim();
   patch.meta_merge = {};
   if (g) patch.meta_merge.group = g;
-  //else patch.meta_merge.group = null;
 
   if (bulkType.value) patch.type = bulkType.value;
 
@@ -1270,8 +1754,9 @@ async function applyBulk(targetIds){
   rebuildGroupDatalist();
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
-  bulkGroup.value = null;
+  bulkGroup.value = '';
 }
 
 /* ---------- Auto group ---------- */
@@ -1279,7 +1764,6 @@ function extractPrefix(nameRaw){
   let name = String(nameRaw || '').trim();
   if (!name) return '';
 
-  // ✅ ignore everything after '-'
   if (name.includes('-')) name = name.split('-')[0];
 
   let m = name.match(/^([A-Za-z]+)\d+$/);
@@ -1313,6 +1797,7 @@ function autoGroupPrefix(ids){
   rebuildGroupDatalist();
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 }
 
@@ -1332,6 +1817,7 @@ function autoGroupPage(ids){
   rebuildGroupDatalist();
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 }
 
@@ -1345,6 +1831,7 @@ async function save(){
       id: f.id,
       type: f.type,
       label: f.label,
+      label_en: (f.label_en ?? ''),
       help_text: f.help_text,
       multiline: f.multiline,
       required: f.required,
@@ -1359,12 +1846,9 @@ async function save(){
   dirty.clear();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
   updateMeta();
-  
-  if (dirty.size) {
-        document.getElementById("dirtyWarning").style.display = "block";
-    } else {
-        document.getElementById("dirtyWarning").style.display = "none";
-    }
+
+  if (dirty.size) document.getElementById("dirtyWarning").style.display = "block";
+  else document.getElementById("dirtyWarning").style.display = "none";
 }
 
 /* ---------- Options dialog ---------- */
@@ -1376,6 +1860,7 @@ function setGrade16(fieldId){
   delete fields[idx].meta.option_list_template_id;
   markDirty(fieldId);
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 }
 
@@ -1426,6 +1911,7 @@ optionsModal.addEventListener('close', ()=>{
 
   markDirty(fieldId);
   renderTable();
+  scanForSplitCandidate();
 });
 
 /* ---------- Date dialog ---------- */
@@ -1459,11 +1945,11 @@ dateModal.addEventListener('close', ()=>{
   }
   markDirty(fieldId);
   renderTable();
+  scanForSplitCandidate();
 });
 
 /* ---------- Preview resizer ---------- */
 const LS_KEY = 'template_fields_preview_ratio_v2';
-function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
 
 function applyPreviewRatio(ratio){
   const r = clamp(Number(ratio)||0.45, 0.22, 0.70);
@@ -1520,6 +2006,7 @@ fieldFilter.addEventListener('input', ()=>{
   filterText = fieldFilter.value || '';
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 });
 
@@ -1527,6 +2014,7 @@ fieldExclude.addEventListener('input', ()=>{
   excludeText = fieldExclude.value || '';
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 });
 btnClearFilter.addEventListener('click', ()=>{
@@ -1536,6 +2024,7 @@ btnClearFilter.addEventListener('click', ()=>{
   excludeText='';
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 });
 
@@ -1544,18 +2033,21 @@ btnApplyVisible.addEventListener('click', ()=>applyBulk(getVisibleIds()));
 btnAutoGroupPrefix.addEventListener('click', ()=>autoGroupPrefix(getSelectedIds().length ? getSelectedIds() : getVisibleIds()));
 btnAutoGroupPage.addEventListener('click', ()=>autoGroupPage(getSelectedIds().length ? getSelectedIds() : getVisibleIds()));
 btnSave.addEventListener('click', save);
+btnSaveTop.addEventListener('click', save);
 
 btnShowAllGroups.addEventListener('click', ()=>{
   hiddenGroups = new Set();
   groupFilter = '';
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 });
 btnClearGroupFilter.addEventListener('click', ()=>{
   groupFilter = '';
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 });
 
@@ -1579,6 +2071,7 @@ async function load(){
   fields = fields.map((f, i)=>({
     ...f,
     label: (f.label && String(f.label).trim()) ? f.label : f.name,
+    label_en: (f.label_en ?? ''),
     can_teacher_edit: (typeof f.can_teacher_edit === 'number') ? f.can_teacher_edit : 1
   }));
 
@@ -1595,6 +2088,7 @@ async function load(){
   renderGroupsBar();
   renderTable();
   updateMeta();
+  scanForSplitCandidate();
   await loadPdf();
 }
 
@@ -1606,7 +2100,6 @@ async function buildPageWidgetsFromPdf(){
   const fo = await pdfDoc.getFieldObjects();
   if (!fo || typeof fo !== 'object') return;
 
-  // 1) erst sammeln, um zu erkennen ob pdf.js 0-based liefert
   const tmp = [];
   let hasZero = false;
 
@@ -1629,16 +2122,12 @@ async function buildPageWidgetsFromPdf(){
     }
   }
 
-  // 2) konsequent normalisieren
   const numPages = Number(pdfDoc?.numPages || 0);
 
   for (const t of tmp) {
     let p = t.pNum;
-
-    // ✅ wenn irgendwo page=0 vorkommt -> alles als 0-based behandeln
     if (hasZero) p = p + 1;
 
-    // Clamp
     if (p < 1) p = 1;
     if (numPages && p > numPages) p = numPages;
 
@@ -1667,7 +2156,6 @@ async function renderPage(){
 
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  // ✅ draw all widgets on current page light-blue (like templates.php)
   const widgets = pageWidgets.get(currentPage) || [];
   if (widgets.length) {
     ctx.save();
@@ -1689,7 +2177,6 @@ async function renderPage(){
     ctx.restore();
   }
 
-  // draw current highlight in red on top
   if (currentHighlight && currentHighlight.page === currentPage && currentHighlight.rect) {
     const [x1,y1,x2,y2] = currentHighlight.rect;
     const p1 = viewport.convertToViewportPoint(x1,y1);
@@ -1720,7 +2207,6 @@ async function renderPage(){
 btnPrevPage.addEventListener('click', async ()=>{ if (currentPage>1){ currentPage--; await renderPage(); }});
 btnNextPage.addEventListener('click', async ()=>{ if (pdfDoc && currentPage<pdfDoc.numPages){ currentPage++; await renderPage(); }});
 
-/* PDF click -> use widgets map (like templates.php) -> table jump */
 pdfCanvas.addEventListener('click', async (ev) => {
   if (!pdfDoc) return;
 
@@ -1755,11 +2241,9 @@ pdfCanvas.addEventListener('click', async (ev) => {
 
   const hit = hits[0].w;
 
-  // highlight exact widget rect (important for duplicates)
   currentHighlight = { page: currentPage, rect: hit.rect, name: hit.name };
   await renderPage();
 
-  // ensure table shows it (unhide/un-collapse if needed)
   const field = fields.find(f=>String(f.name) === String(hit.name));
   if (field) {
     const g = getGroupPath(field);
@@ -1767,18 +2251,15 @@ pdfCanvas.addEventListener('click', async (ev) => {
     collapsedGroupHeaders.delete(g);
   }
 
-  // do not force-clear user's filter; try to reveal minimally
   renderGroupsBar();
   renderTable();
+  scanForSplitCandidate();
   updateMeta();
 
   let tr = rowByFieldName.get(hit.name);
 
-  // if still not visible because filter/groupFilter is active, reveal it
   if (!tr && field) {
-    // turn off groupFilter first (keeps typed filter if they want)
     groupFilter = '';
-    // if typed filter hides it, clear it
     const q = (filterText || '').toLowerCase().trim();
     const ok = !q || String(field.name||'').toLowerCase().includes(q) || String(field.label||'').toLowerCase().includes(q) || getGroupPath(field).toLowerCase().includes(q);
     if (!ok) {
@@ -1787,6 +2268,7 @@ pdfCanvas.addEventListener('click', async (ev) => {
     }
     renderGroupsBar();
     renderTable();
+    scanForSplitCandidate();
     updateMeta();
     tr = rowByFieldName.get(hit.name);
   }

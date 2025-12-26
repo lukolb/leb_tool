@@ -42,7 +42,7 @@ try {
     if (!$template) throw new RuntimeException('Template nicht gefunden.');
 
     $st = $pdo->prepare("
-      SELECT id, field_name, field_type, label, help_text, is_multiline, is_required,
+      SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, is_required,
              can_child_edit, can_teacher_edit, options_json, meta_json, sort_order
       FROM template_fields
       WHERE template_id=?
@@ -57,6 +57,7 @@ try {
         'name' => (string)$r['field_name'],
         'type' => (string)$r['field_type'],
         'label' => (string)($r['label'] ?? ''),
+        'label_en' => (string)($r['label_en'] ?? ''),
         'help_text' => (string)($r['help_text'] ?? ''),
         'multiline' => (int)$r['is_multiline'] === 1 ? 1 : 0,
         'required' => (int)$r['is_required'] === 1 ? 1 : 0,
@@ -83,6 +84,7 @@ try {
       UPDATE template_fields
       SET field_type=?,
           label=?,
+          label_en=?,
           help_text=?,
           is_multiline=?,
           is_required=?,
@@ -107,6 +109,8 @@ try {
       $label = trim((string)($u['label'] ?? ''));
       if ($label === '') $label = ' ';
 
+      $labelEn = trim((string)($u['label_en'] ?? ''));
+      if ($labelEn === '') $labelEn = null;
       $help = trim((string)($u['help_text'] ?? ''));
       if ($help === '') $help = null;
 
@@ -132,7 +136,7 @@ try {
         $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE);
       }
 
-      $upd->execute([$type, $label, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      $upd->execute([$type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
       $count++;
     }
 
@@ -207,7 +211,7 @@ try {
     $pdo->beginTransaction();
     $upd = $pdo->prepare("
       UPDATE template_fields
-      SET field_type=?, label=?, help_text=?, is_multiline=?, is_required=?,
+      SET field_type=?, label=?, label_en=?, help_text=?, is_multiline=?, is_required=?,
           can_child_edit=?, can_teacher_edit=?, options_json=?, meta_json=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND template_id=?
     ");

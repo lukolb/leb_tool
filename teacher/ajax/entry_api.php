@@ -129,13 +129,30 @@ function group_key_from_meta(array $meta): string {
   return $g !== '' ? $g : 'Allgemein';
 }
 
-function group_title_override(string $groupKey): string {
+function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): string {
+  $de = trim((string)$labelDe);
+  $en = trim((string)$labelEn);
+  if ($lang === 'en' && $en !== '') return $en;
+  return $de;
+}
+
+function group_title_override_lang(string $groupKey, string $lang): string {
   $cfg = app_config();
-  $map = $cfg['student']['group_titles'] ?? [];
+  $bucket = ($lang === 'en') ? 'group_titles_en' : 'group_titles';
+  $map = $cfg['student'][$bucket] ?? [];
   if (!is_array($map)) return $groupKey;
   $t = $map[$groupKey] ?? null;
   $t = is_string($t) ? trim($t) : '';
   return $t !== '' ? $t : $groupKey;
+}
+
+function group_title_from_meta(array $meta, string $groupKey, string $lang): string {
+  if ($lang === 'en') {
+    $t = (string)($meta['group_title_en'] ?? '');
+    $t = trim($t);
+    if ($t !== '') return $t;
+  }
+  return group_title_override_lang($groupKey, $lang);
 }
 
 function normalize_period_label(?string $s): string {
@@ -343,7 +360,7 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
 
 function load_teacher_fields(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
      FROM template_fields
      WHERE template_id=? AND can_teacher_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -408,6 +425,7 @@ try {
 
   $pdo = db();
   $u = current_user();
+  $lang = ui_lang();
   $userId = (int)($u['id'] ?? 0);
 
   $action = (string)($data['action'] ?? '');
@@ -541,9 +559,9 @@ try {
         'id' => (int)$f0['id'],
         'field_name' => (string)$f0['field_name'],
         'field_type' => (string)$f0['field_type'],
-        'label' => (string)($f0['label'] ?? ''),
+        'label' => label_for_lang($f0['label'] ?? null, $f0['label_en'] ?? null, $lang),
         'help_text' => (string)($f0['help_text'] ?? ''),
-        'label_resolved' => resolve_label_placeholders((string)($f0['label'] ?? ''), $classValueByName),
+        'label_resolved' => resolve_label_placeholders(label_for_lang($f0['label'] ?? null, $f0['label_en'] ?? null, $lang), $classValueByName),
         'help_text_resolved' => resolve_label_placeholders((string)($f0['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
@@ -562,7 +580,7 @@ try {
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = [
           'key' => $gKey,
-          'title' => group_title_override($gKey),
+          'title' => group_title_from_meta($meta, $gKey, $lang),
           'fields' => [],
         ];
       }
@@ -593,8 +611,8 @@ try {
         'id' => (int)$f['id'],
         'field_name' => (string)$f['field_name'],
         'field_type' => (string)$f['field_type'],
-        'label' => (string)($f['label'] ?? ''),
-        'label_resolved' => resolve_label_placeholders((string)($f['label'] ?? ''), $classValueByName),
+        'label' => label_for_lang($f['label'] ?? null, $f['label_en'] ?? null, $lang),
+        'label_resolved' => resolve_label_placeholders(label_for_lang($f['label'] ?? null, $f['label_en'] ?? null, $lang), $classValueByName),
         'help_text' => (string)($f['help_text'] ?? ''),
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),

@@ -137,3 +137,17 @@ th{color:#111; font-size:13px}
 .progress-wrap{ margin-top:10px; }
 
 .badge.ok{ background: rgba(0,128,0,0.12); border-color: rgba(0,128,0,0.35); color: rgba(0,128,0,0.95); }
+
+
+/* Language switch (teacher/student) */
+.lang-switch{ margin-left:auto; display:flex; gap:8px; align-items:center; }
+.lang-switch .lang{
+  text-decoration:none;
+  font-size:18px;
+  line-height:1;
+  padding:6px 8px;
+  border-radius:10px;
+  border:1px solid transparent;
+}
+.lang-switch .lang:hover{ background: rgba(0,0,0,0.04); }
+.lang-switch .lang.active{ border-color: var(--border); background: rgba(11,87,208,0.06); }

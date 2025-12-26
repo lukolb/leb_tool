@@ -30,6 +30,12 @@ function render_teacher_header(string $title): void {
           <div class="brand-title"><?=h($org)?></div>
           <div class="brand-subtitle"><?=h($title)?></div>
         </div>
+
+        <?php $lang = ui_lang(); ?>
+        <div class="lang-switch" aria-label="Sprache wechseln">
+          <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
+          <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+        </div>
       </div>
     </div>
     <div class="container">

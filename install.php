@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS `template_fields` (
   `field_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `field_type` enum('text','multiline','date','number','grade','checkbox','radio','select','signature') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio',
   `label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `label_en` VARCHAR(255) NULL
   `help_text` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `is_multiline` tinyint(1) NOT NULL DEFAULT '0',
   `is_required` tinyint(1) NOT NULL DEFAULT '0',
@@ -404,6 +405,7 @@ CREATE TABLE IF NOT EXISTS `option_list_items` (
   `list_id` int NOT NULL,
   `value` varchar(190) NOT NULL,
   `label` varchar(190) NOT NULL,
+  `label_en` VARCHAR(190) NOT NULL DEFAULT ''
   `icon_id` int DEFAULT NULL,
   `sort_order` int NOT NULL DEFAULT '0',
   `meta_json` $JSON CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,

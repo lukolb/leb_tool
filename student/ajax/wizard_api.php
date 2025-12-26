@@ -117,13 +117,31 @@ function student_wizard_display_mode_from_class(array $classRow): string {
 }
 
 
-function group_title_override(string $groupKey): string {
+function label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback=''): string {
+  $de = trim((string)$labelDe);
+  $en = trim((string)$labelEn);
+  if ($lang === 'en' && $en !== '') return $en;
+  if ($de !== '') return $de;
+  return $fallback;
+}
+
+function group_title_override_lang(string $groupKey, string $lang): string {
   $cfg = app_config();
-  $map = $cfg['student']['group_titles'] ?? [];
+  $bucket = ($lang === 'en') ? 'group_titles_en' : 'group_titles';
+  $map = $cfg['student'][$bucket] ?? [];
   if (!is_array($map)) return $groupKey;
   $t = $map[$groupKey] ?? null;
   $t = is_string($t) ? trim($t) : '';
   return $t !== '' ? $t : $groupKey;
+}
+
+function group_title_from_meta(array $meta, string $groupKey, string $lang): string {
+  if ($lang === 'en') {
+    $t = (string)($meta['group_title_en'] ?? '');
+    $t = trim($t);
+    if ($t !== '') return $t;
+  }
+  return group_title_override_lang($groupKey, $lang);
 }
 
 function get_student_and_class(PDO $pdo, int $studentId): array {
@@ -259,7 +277,7 @@ function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array
       'id' => (int)($r['id'] ?? 0),
       'name' => $name,
       'type' => (string)($r['field_type'] ?? 'text'),
-      'label' => (string)($r['label'] ?? $name),
+      'label' => label_for_lang($r['label'] ?? null, $r['label_en'] ?? null, ui_lang(), $name),
       'help' => (string)($r['help_text'] ?? ''),
       'value' => (string)($r['value_text'] ?? ''),
     ];
@@ -344,7 +362,7 @@ function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array
 
 function load_child_fields(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -400,6 +418,7 @@ function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId): bool
 try {
   $pdo = db();
   $studentId = (int)($_SESSION['student']['id'] ?? 0);
+  $lang = ui_lang();
   if ($studentId <= 0) throw new RuntimeException('Nicht eingeloggt.');
 
   $data = read_json_body();
@@ -477,7 +496,7 @@ try {
       $meta = meta_read($r['meta_json'] ?? null);
 
       $gKey = group_key_from_meta($meta);
-      $gTitle = group_title_override($gKey);
+      $gTitle = group_title_from_meta($meta, $gKey, $lang);
 
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'fields' => []];
@@ -510,8 +529,9 @@ try {
         'name' => (string)$r['field_name'],
         'type' => (string)$r['field_type'],
         'label_raw' => (string)($r['label'] ?? $r['field_name']),
+        'label_en_raw' => (string)($r['label_en'] ?? ''),
         'help_raw' => (string)($r['help_text'] ?? ''),
-        'label' => (string)($r['label'] ?? $r['field_name']),
+        'label' => label_for_lang($r['label'] ?? null, $r['label_en'] ?? null, $lang, (string)$r['field_name']),
         'help' => (string)($r['help_text'] ?? ''),
         'required' => true,
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,

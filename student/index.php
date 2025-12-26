@@ -217,6 +217,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
             <div class="c">Klasse <?=h($classDisp)?><?= $schoolYear ? ' · ' . h($schoolYear) : '' ?></div>
           </div>
           <div class="actions" style="justify-content:flex-end;">
+            <?php $lang = ui_lang(); ?>
+            <div class="lang-switch" aria-label="Sprache wechseln" style="margin-right:8px;">
+                <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
+                <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+              </div>
             <a class="btn secondary" href="<?=h(url('student/logout.php'))?>">Logout</a>
           </div>
         </div>
@@ -337,6 +342,98 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
     return j;
   }
+  
+    // ---------- Language switch without page reload ----------
+  const langLinks = document.querySelectorAll('.lang-switch a.lang');
+  let currentLang = <?= json_encode(ui_lang()) ?>;
+
+  function setActiveLangUI(next){
+    document.querySelectorAll('.lang-switch a.lang').forEach(a=>{
+      a.classList.toggle('active', (a.dataset.lang || '') === next);
+    });
+    currentLang = next;
+  }
+
+  function rememberFocus(){
+    const ae = document.activeElement;
+    if (!ae) return null;
+
+    // Merke: Field-ID + Cursorposition (nur wenn wir in einem Feld sind)
+    const wrap = ae.closest?.('[data-field]');
+    if (!wrap) return null;
+
+    const fid = wrap.getAttribute('data-field');
+    const role = ae.matches('input,textarea') ? (ae.tagName.toLowerCase()) : null;
+
+    let selStart = null, selEnd = null;
+    try {
+      if (role && typeof ae.selectionStart === 'number') {
+        selStart = ae.selectionStart;
+        selEnd = ae.selectionEnd;
+      }
+    } catch(e){}
+
+    return { fid, role, selStart, selEnd };
+  }
+
+  function restoreFocus(info){
+    if (!info || !info.fid) return;
+    const el = document.querySelector(`[data-field="${CSS.escape(String(info.fid))}"] ${info.role || 'input,textarea'}`);
+    if (!el) return;
+    el.focus({ preventScroll:true });
+    try{
+      if (typeof info.selStart === 'number' && typeof el.setSelectionRange === 'function') {
+        el.setSelectionRange(info.selStart, info.selEnd ?? info.selStart);
+      }
+    }catch(e){}
+  }
+
+  async function switchLangNoReload(href, nextLang){
+    // 1) Position & Step merken
+    const scrollY = window.scrollY;
+    const focusInfo = rememberFocus();
+    const keepStep = activeStep;
+
+    // 2) Serverseitig Sprache umstellen (ohne Navigation)
+    //    (ruft deinen bestehenden url_with_lang(..) auf, der Session/Cookie setzt)
+    await fetch(href, { method:'GET', credentials:'same-origin', cache:'no-store' });
+
+    // 3) Wizard-Data neu laden (nun in neuer Sprache)
+    const j = await api('bootstrap', {});
+    state = j;
+
+    // 4) Step beibehalten (soweit möglich)
+    buildFlatSteps();
+    activeStep = Math.max(0, Math.min(keepStep, flatSteps.length - 1));
+
+    // 5) UI updaten + rendern + scroll/focus restore
+    setActiveLangUI(nextLang);
+    render();
+
+    window.scrollTo({ top: scrollY, left: 0, behavior: 'instant' });
+    restoreFocus(focusInfo);
+  }
+
+  langLinks.forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      // Kein echter Seitenwechsel
+      e.preventDefault();
+
+      const nextLang = (a.dataset.lang || '').trim();
+      if (!nextLang || nextLang === currentLang) return;
+
+      try{
+        // optional: währenddessen Klicks blocken
+        a.style.pointerEvents = 'none';
+        await switchLangNoReload(a.href, nextLang);
+      } catch(err){
+        // Fallback: wenn irgendwas schiefgeht, normal navigieren
+        window.location.href = a.href;
+      } finally {
+        a.style.pointerEvents = '';
+      }
+    });
+  });
 
   function isLocked(){
     // NEW: if locked, student sees ONLY the locked message (no wizard contents)
