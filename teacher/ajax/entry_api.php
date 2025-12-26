@@ -35,10 +35,10 @@ function option_list_id_from_meta(array $meta): int {
 function load_option_list_items(PDO $pdo, int $listId): array {
   if ($listId <= 0) return [];
   $st = $pdo->prepare(
-    "SELECT id, value, label, icon_id
-     FROM option_list_items
-     WHERE list_id=?
-     ORDER BY sort_order ASC, id ASC"
+    "SELECT id, value, label, label_en, icon_id
+        FROM option_list_items
+        WHERE list_id=?
+        ORDER BY sort_order ASC, id ASC"
   );
   $st->execute([$listId]);
   $out = [];
@@ -47,6 +47,7 @@ function load_option_list_items(PDO $pdo, int $listId): array {
       'option_item_id' => (int)$r['id'],
       'value' => (string)($r['value'] ?? ''),
       'label' => (string)($r['label'] ?? ''),
+      'label_en' => (string)($r['label_en'] ?? ''),
       'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
     ];
   }
@@ -133,7 +134,7 @@ function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): strin
   $de = trim((string)$labelDe);
   $en = trim((string)$labelEn);
   if ($lang === 'en' && $en !== '') return $en;
-  return $de;
+  return $de !== '' ? $de : $en;
 }
 
 function group_title_override_lang(string $groupKey, string $lang): string {
@@ -913,10 +914,11 @@ try {
 
     // delegation: if a group is delegated, only that colleague (or admin) may edit it
     $schoolYear = (string)($ri['school_year'] ?? '');
-    $periodLabel = (string)($ri['period_label'] ?? 'Standard');
+    $periodLabelDeleg = 'Standard';
+
     $gKey = group_key_from_meta($meta);
-    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gKey)) {
-      throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
+    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $gKey)) {
+        throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
 
     $type = (string)$frow['field_type'];

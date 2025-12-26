@@ -39,16 +39,20 @@ function template_field_ids_for_option_list(PDO $pdo, int $listId): array {
 
 function options_object_from_db(PDO $pdo, int $listId): array {
   $optionsObj = ['options' => []];
-  $stItems = $pdo->prepare("SELECT id, value, label, icon_id, sort_order FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
+  // NEW: label_en
+  $stItems = $pdo->prepare("SELECT id, value, label, label_en, icon_id, sort_order FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
   $stItems->execute([$listId]);
   foreach ($stItems->fetchAll(PDO::FETCH_ASSOC) as $it) {
     $val = trim((string)($it['value'] ?? ''));
     $lab = trim((string)($it['label'] ?? ''));
+    $labEn = trim((string)($it['label_en'] ?? ''));
     if ($val === '' || $lab === '') continue;
+
     $optionsObj['options'][] = [
       'id' => (int)$it['id'],
       'value' => $val,
       'label' => $lab,
+      'label_en' => $labEn, // NEW (may be empty)
       'icon_id' => ($it['icon_id'] !== null && $it['icon_id'] !== '') ? (int)$it['icon_id'] : null,
     ];
   }
@@ -167,8 +171,9 @@ try {
     $tpl = $st->fetch();
     if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden.');
 
+    // NEW: label_en
     $it = $pdo->prepare("
-      SELECT id, list_id, value, label, icon_id, sort_order
+      SELECT id, list_id, value, label, label_en, icon_id, sort_order
       FROM option_list_items
       WHERE list_id=?
       ORDER BY sort_order ASC, id ASC
@@ -210,13 +215,14 @@ try {
     $existingIds = array_map('intval', array_column($existing->fetchAll(), 'id'));
     $keepIds = [];
 
+    // NEW: label_en
     $ins = $pdo->prepare("
-      INSERT INTO option_list_items (list_id, value, label, icon_id, sort_order, meta_json)
-      VALUES (?, ?, ?, ?, ?, NULL)
+      INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json)
+      VALUES (?, ?, ?, ?, ?, ?, NULL)
     ");
     $upd = $pdo->prepare("
       UPDATE option_list_items
-      SET value=?, label=?, icon_id=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
+      SET value=?, label=?, label_en=?, icon_id=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND list_id=?
     ");
 
@@ -227,16 +233,18 @@ try {
       $itemId = isset($row['id']) ? (int)$row['id'] : 0;
       $value = trim((string)($row['value'] ?? ''));
       $label = trim((string)($row['label'] ?? ''));
+      $labelEn = trim((string)($row['label_en'] ?? '')); // NEW (optional)
       $iconId = isset($row['icon_id']) && $row['icon_id'] !== null && $row['icon_id'] !== '' ? (int)$row['icon_id'] : null;
       $sort = (int)($row['sort_order'] ?? $i);
 
+      // Require value + DE label
       if ($value === '' || $label === '') { $i++; continue; }
 
       if ($itemId > 0 && in_array($itemId, $existingIds, true)) {
-        $upd->execute([$value, $label, $iconId, $sort, $itemId, $id]);
+        $upd->execute([$value, $label, $labelEn, $iconId, $sort, $itemId, $id]);
         $keepIds[] = $itemId;
       } else {
-        $ins->execute([$id, $value, $label, $iconId, $sort]);
+        $ins->execute([$id, $value, $label, $labelEn, $iconId, $sort]);
         $keepIds[] = (int)$pdo->lastInsertId();
       }
 
@@ -255,12 +263,14 @@ try {
 
     // --- propagate updated options to linked template_fields (meta.option_list_template_id == $id)
     $optionsObjWithIds = options_object_from_db($pdo, $id);
+
+    // IMPORTANT: options_json stored in template_fields must now contain per-language labels
     $optionsObj = ['options' => []];
     foreach ($optionsObjWithIds['options'] as $o) {
-      // options_json stored in template_fields intentionally does NOT include item id (UI friendly)
       $optionsObj['options'][] = [
         'value' => (string)($o['value'] ?? ''),
         'label' => (string)($o['label'] ?? ''),
+        'label_en' => (string)($o['label_en'] ?? ''), // NEW
         'icon_id' => ($o['icon_id'] ?? null),
       ];
     }
@@ -284,6 +294,8 @@ try {
         $meta = json_decode_assoc($r['meta_json'] ?? null);
         if (!$meta) continue;
         $changedMeta = false;
+
+        // Keep meta caches in sync too
         if (array_key_exists('options', $meta) && is_array($meta['options'])) {
           $meta['options'] = $optionsObj['options'];
           $changedMeta = true;
@@ -292,6 +304,7 @@ try {
           $meta['options_cache'] = $optionsObj['options'];
           $changedMeta = true;
         }
+
         if ($changedMeta) {
           $updFieldMeta->execute([json_encode($meta, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
         }
@@ -351,16 +364,19 @@ try {
         ->execute([$newName, (string)($src['description'] ?? ''), (int)current_user()['id']]);
     $newId = (int)$pdo->lastInsertId();
 
-    $items = $pdo->prepare("SELECT value, label, icon_id, sort_order, meta_json FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
+    // NEW: label_en
+    $items = $pdo->prepare("SELECT value, label, label_en, icon_id, sort_order, meta_json FROM option_list_items WHERE list_id=? ORDER BY sort_order ASC, id ASC");
     $items->execute([$id]);
     $rows = $items->fetchAll();
 
-    $ins = $pdo->prepare("INSERT INTO option_list_items (list_id, value, label, icon_id, sort_order, meta_json) VALUES (?, ?, ?, ?, ?, ?)");
+    // NEW: label_en
+    $ins = $pdo->prepare("INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?)");
     foreach ($rows as $r) {
       $ins->execute([
         $newId,
         (string)$r['value'],
         (string)$r['label'],
+        (string)($r['label_en'] ?? ''),
         $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
         (int)$r['sort_order'],
         $r['meta_json']

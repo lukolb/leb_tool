@@ -184,7 +184,8 @@ render_admin_header('Admin – Icon & Options');
                 <tr>
                   <th class="col-sort">Sort</th>
                   <th class="col-sort">Value</th>
-                  <th>Label</th>
+                  <th>Label (DE)</th>
+                  <th>Label (EN)</th>
                   <th class="col-ico">Icon</th>
                   <th style="width:90px; min-width:90px;">Aktion</th>
                 </tr>
@@ -195,6 +196,7 @@ render_admin_header('Admin – Icon & Options');
 
           <div class="muted small" style="margin-top:10px;">
             Tipp: <strong>Value</strong> ist der gespeicherte Wert (z.B. <code>1</code>, <code>yes</code>, <code>A</code>), <strong>Label</strong> ist das, was angezeigt wird.
+            <br>Wenn <strong>Label (EN)</strong> leer ist, wird automatisch <strong>Label (DE)</strong> verwendet.
           </div>
 
           <div class="muted small" id="itemsMsg" style="margin-top:8px;"></div>
@@ -309,7 +311,7 @@ render_admin_header('Admin – Icon & Options');
 
   let listsCache = [];
   let activeListId = 0;
-  let activeItems = []; // [{id?, sort_order, value,label,icon_id}]
+  let activeItems = []; // [{id?, sort_order, value,label,label_en,icon_id}]
   let iconsForPicker = []; // from iconsCache
 
   function renderLists(){
@@ -346,7 +348,8 @@ render_admin_header('Admin – Icon & Options');
       tr.innerHTML = `
         <td class="col-sort"><input type="number" value="${Number(it.sort_order ?? idx)}" min="0" step="1"></td>
         <td><input type="text" value="${escapeAttr(it.value || '')}" placeholder="z.B. 1 / yes / A"></td>
-        <td><input type="text" value="${escapeAttr(it.label || '')}" placeholder="Anzeige-Text"></td>
+        <td><input type="text" value="${escapeAttr(it.label || '')}" placeholder="Anzeige-Text (DE)"></td>
+        <td><input type="text" value="${escapeAttr(it.label_en || '')}" placeholder="Display text (EN)"></td>
         <td class="col-ico">
           <select>${iconOptionsHtml(it.icon_id || '')}</select>
           <div class="muted small" style="margin-top:6px; display:flex; gap:8px; align-items:center;">
@@ -363,6 +366,7 @@ render_admin_header('Admin – Icon & Options');
       const inpSort = tr.querySelector('td.col-sort input');
       const inpValue = tr.querySelectorAll('td input[type="text"]')[0];
       const inpLabel = tr.querySelectorAll('td input[type="text"]')[1];
+      const inpLabelEn = tr.querySelectorAll('td input[type="text"]')[2];
       const selIcon = tr.querySelector('select');
       const delBtn = tr.querySelector('.js-del');
       const prevSpan = tr.querySelector('.js-icon-preview');
@@ -377,6 +381,7 @@ render_admin_header('Admin – Icon & Options');
       inpSort.addEventListener('input', ()=> { activeItems[idx].sort_order = parseInt(inpSort.value || '0', 10); });
       inpValue.addEventListener('input', ()=> { activeItems[idx].value = inpValue.value; });
       inpLabel.addEventListener('input', ()=> { activeItems[idx].label = inpLabel.value; });
+      inpLabelEn.addEventListener('input', ()=> { activeItems[idx].label_en = inpLabelEn.value; });
       selIcon.addEventListener('change', ()=> { activeItems[idx].icon_id = selIcon.value ? parseInt(selIcon.value,10) : null; updatePreview(); });
 
       delBtn.addEventListener('click', ()=> {
@@ -416,6 +421,7 @@ render_admin_header('Admin – Icon & Options');
       sort_order: x.sort_order,
       value: x.value,
       label: x.label,
+      label_en: x.label_en, // NEW
       icon_id: x.icon_id
     }));
 
@@ -451,7 +457,7 @@ render_admin_header('Admin – Icon & Options');
   });
 
   btnAddItem.addEventListener('click', () => {
-    activeItems.push({ sort_order: activeItems.length, value:'', label:'', icon_id:null });
+    activeItems.push({ sort_order: activeItems.length, value:'', label:'', label_en:'', icon_id:null }); // NEW
     renderItems();
   });
 
@@ -461,13 +467,14 @@ render_admin_header('Admin – Icon & Options');
       const name = (editListName.value || '').trim();
       if (!name) throw new Error('Name fehlt.');
 
-      // Clean items: require value + label
+      // Clean items: require value + label (DE); EN optional
       const cleaned = activeItems
         .map((x, idx) => ({
           id: x.id || null,
           sort_order: Number.isFinite(Number(x.sort_order)) ? Number(x.sort_order) : idx,
           value: String(x.value || '').trim(),
           label: String(x.label || '').trim(),
+          label_en: String(x.label_en || '').trim(), // NEW
           icon_id: x.icon_id ? Number(x.icon_id) : null
         }))
         .filter(x => x.value !== '' && x.label !== '');

@@ -39,7 +39,7 @@ function option_list_id_from_meta(array $meta): int {
 function load_option_list_items(PDO $pdo, int $listId): array {
   if ($listId <= 0) return [];
   $st = $pdo->prepare(
-    "SELECT id, value, label, icon_id
+    "SELECT id, value, label, label_en, icon_id
      FROM option_list_items
      WHERE list_id=?
      ORDER BY sort_order ASC, id ASC"
@@ -51,6 +51,7 @@ function load_option_list_items(PDO $pdo, int $listId): array {
       'option_item_id' => (int)$r['id'],
       'value' => (string)($r['value'] ?? ''),
       'label' => (string)($r['label'] ?? ''),
+      'label_en' => (string)($r['label_en'] ?? ''),
       'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
     ];
   }
@@ -115,7 +116,6 @@ function student_wizard_display_mode_from_class(array $classRow): string {
   $mode = strtolower(trim($mode));
   return in_array($mode, ['groups','items'], true) ? $mode : 'groups';
 }
-
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback=''): string {
   $de = trim((string)$labelDe);
@@ -200,13 +200,12 @@ function render_intro_placeholders(string $html, array $studentRow): string {
     '{{school_year}}'  => htmlspecialchars($schoolYear, ENT_QUOTES, 'UTF-8'),
   ];
 
-  // exact tokens (intentionally simple and predictable)
   return str_replace(array_keys($rep), array_values($rep), $html);
 }
 
 /**
  * IMPORTANT: template is assigned per class (classes.template_id).
- * If no template is assigned -> student cannot proceed (teacher must fix in admin/classes.php).
+ * If no template is assigned -> student cannot proceed.
  */
 function template_for_student(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
@@ -236,8 +235,6 @@ function template_for_student(PDO $pdo, int $studentId): array {
 }
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
-  // Store class-wide values in a dedicated report instance:
-  // student_id=0, period_label='__class__', school_year = class school year.
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
@@ -258,9 +255,9 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
 }
 
 function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array {
-  // Returns lookup keyed by field_name, but with values from the class report instance.
+  // NOTE: include label_en so label_for_lang can work
   $st = $pdo->prepare(
-    "SELECT tf.id, tf.field_name, tf.label, tf.help_text, tf.field_type,
+    "SELECT tf.id, tf.field_name, tf.label, tf.label_en, tf.help_text, tf.field_type,
             fv.value_text
      FROM template_fields tf
      LEFT JOIN field_values fv
@@ -270,6 +267,7 @@ function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array
   );
   $st->execute([$classReportId, $templateId]);
   $out = [];
+  $lang = ui_lang();
   while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
     $name = (string)($r['field_name'] ?? '');
     if ($name === '') continue;
@@ -277,7 +275,7 @@ function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array
       'id' => (int)($r['id'] ?? 0),
       'name' => $name,
       'type' => (string)($r['field_type'] ?? 'text'),
-      'label' => label_for_lang($r['label'] ?? null, $r['label_en'] ?? null, ui_lang(), $name),
+      'label' => label_for_lang($r['label'] ?? null, $r['label_en'] ?? null, $lang, $name),
       'help' => (string)($r['help_text'] ?? ''),
       'value' => (string)($r['value_text'] ?? ''),
     ];
@@ -332,10 +330,9 @@ function get_report_status(PDO $pdo, int $reportId): string {
 }
 
 function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array {
-  // Returns lookup for ALL template fields (child + teacher), keyed by field_name
-  // Used for placeholder resolution in labels/help_text (e.g. {{field:Mat-text-1}})
+  // Lookup for ALL template fields (child + teacher), keyed by field_name
   $st = $pdo->prepare(
-    "SELECT tf.id, tf.field_name, tf.label, tf.help_text, tf.field_type,
+    "SELECT tf.id, tf.field_name, tf.label, tf.label_en, tf.help_text, tf.field_type,
             fv.value_text
      FROM template_fields tf
      LEFT JOIN field_values fv
@@ -345,6 +342,7 @@ function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array
   );
   $st->execute([$reportId, $templateId]);
   $out = [];
+  $lang = ui_lang();
   while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
     $name = (string)($r['field_name'] ?? '');
     if ($name === '') continue;
@@ -352,7 +350,7 @@ function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array
       'id' => (int)($r['id'] ?? 0),
       'name' => $name,
       'type' => (string)($r['field_type'] ?? 'text'),
-      'label' => (string)($r['label'] ?? $name),
+      'label' => label_for_lang($r['label'] ?? null, $r['label_en'] ?? null, $lang, $name),
       'help' => (string)($r['help_text'] ?? ''),
       'value' => (string)($r['value_text'] ?? ''),
     ];
@@ -431,11 +429,9 @@ try {
     throw new RuntimeException('Ungültige Aktion.');
   }
 
-  // IMPORTANT: use template assigned to the student's class
   $tpl = template_for_student($pdo, $studentId);
   $templateId = (int)$tpl['id'];
 
-  // ✅ NEW: we need school_year BEFORE creating/finding the report instance
   $studentRow = get_student_and_class($pdo, $studentId);
   $schoolYear = (string)($studentRow['school_year'] ?? '');
   if ($schoolYear === '') {
@@ -444,7 +440,6 @@ try {
   }
   if ($schoolYear === '') throw new RuntimeException('Schuljahr konnte nicht ermittelt werden.');
 
-  // ✅ FIX: now with 4 args
   $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
   $reportId = (int)$ctx['report_instance_id'];
 
@@ -452,8 +447,6 @@ try {
   $childCanEdit = ($status === 'draft');
 
   if ($action === 'bootstrap') {
-    // $studentRow is already loaded above
-
     $introAbs = child_intro_file_abs();
     $introHtml = '';
     if (is_file($introAbs)) {
@@ -472,7 +465,6 @@ try {
       $classReportId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
       $classLookup = load_class_lookup($pdo, $templateId, $classReportId);
 
-      // Only fill missing/empty values from the class lookup (student values win).
       foreach ($classLookup as $k => $v) {
         if (!isset($fieldLookup[$k])) {
           $fieldLookup[$k] = $v;
@@ -486,7 +478,6 @@ try {
       }
     }
 
-    // groups: key => ['key'=>..., 'title'=>..., 'fields'=>...]
     $groups = [];
     $iconIds = [];
     $optCache = []; // listId => options array
@@ -506,6 +497,7 @@ try {
 
       $opts = [];
       $listId = option_list_id_from_meta($meta);
+
       if ($listId > 0) {
         if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId);
         $opts = $optCache[$listId];
@@ -513,9 +505,11 @@ try {
         // legacy / manual options_json
         $oj = json_decode((string)$r['options_json'], true);
         if (is_array($oj) && isset($oj['options']) && is_array($oj['options'])) {
+          // allow optional label_en in JSON; pass through as-is
           $opts = $oj['options'];
         }
       }
+
       foreach ($opts as $o) {
         $iid = (int)($o['icon_id'] ?? 0);
         if ($iid > 0) $iconIds[] = $iid;
@@ -535,8 +529,8 @@ try {
         'help' => (string)($r['help_text'] ?? ''),
         'required' => true,
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,
-        'group' => $gKey, // internal key (stable)
-        'options' => $opts,
+        'group' => $gKey,
+        'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
       ];
     }
@@ -609,7 +603,6 @@ try {
     $meta = meta_read($frow['meta_json'] ?? null);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
-    // If this field uses an option-list template, persist a stable option_item_id in value_json.
     $valueJson = null;
 
     if (in_array($type, ['radio','select','grade'], true)) {

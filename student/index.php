@@ -56,7 +56,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       body.page{
         font-family: "Druckschrift";
       }
-      
+
     :root{ --primary: <?=h($primary)?>; --secondary: <?=h($secondary)?>; }
 
     .page-shell{ max-width: 1200px; margin: 0 auto; }
@@ -164,14 +164,14 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     .q{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; }
     .q.missing{ border-color: rgba(176,0,32,0.25); background: rgba(176,0,32,0.03); }
-    .q .lbl{ font-weight:800; margin-bottom:6px; }
+    .q .lbl{ font-weight:800; }
     .q .help{ color:var(--muted); font-size:12px; margin-top:6px; }
 
     .opts{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:8px; }
     .opt{ display:flex; gap:10px; align-items:center; padding:10px; border-radius:14px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; }
     .opt:hover{ background: rgba(0,0,0,0.02); }
     .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
-    .opt img{ width:38px; height:38px; object-fit: contain; border-radius:10px; border:1px solid var(--border); background: rgba(0,0,0,0.02); }
+    .opt img{ width:38px; height:38px; object-fit: contain; }
     .opt .lbl{ font-weight:750; }
 
     .wiz-actions{ display:flex; gap:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-top:10px; }
@@ -194,6 +194,14 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }
     .locked-only h2{ margin:0 0 6px; }
     .locked-only p{ margin: 0; }
+
+    /* progress bars */
+    .progress-wrap{ }
+    .progress-meta{ display:flex; justify-content:space-between; gap:10px; font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .progress{ height:10px; border-radius:999px; border:1px solid var(--border); background: rgba(0,0,0,0.02); overflow:hidden; }
+    .progress-bar{ height:100%; width:0%; background: var(--primary); border-radius:999px; transition: width .2s ease; }
+    .progress.sm{ height:8px; }
+    .progress-bar.ok{ background: rgba(0,128,0,0.65); }
   </style>
 </head>
 <body class="page">
@@ -219,16 +227,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           <div class="actions" style="justify-content:flex-end;">
             <?php $lang = ui_lang(); ?>
             <div class="lang-switch" aria-label="Sprache wechseln" style="margin-right:8px;">
-                <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
-                <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
-              </div>
+              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
+              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+            </div>
             <a class="btn secondary" href="<?=h(url('student/logout.php'))?>">Logout</a>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- NEW: Locked-only container (shown when the teacher hasn't released input yet) -->
+    <!-- Locked-only container -->
     <div id="lockedOnly" class="card" style="display:<?= $hasTemplate ? 'none' : 'block' ?>;">
       <div class="locked-only">
         <h2 id="lockedTitle"><?= $hasTemplate ? 'Eingabe noch nicht freigegeben' : 'Keine Vorlage zugeordnet' ?></h2>
@@ -242,7 +250,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       </div>
     </div>
 
-    <!-- Wizard shell (hidden completely when locked) -->
+    <!-- Wizard shell -->
     <div id="wizShell" class="wiz" style="<?= $hasTemplate ? '' : 'display:none;' ?>">
       <div class="sidebar">
         <div class="card">
@@ -251,10 +259,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
               <div style="font-weight:800;">Dein Bericht</div>
               <div class="muted" id="metaLine">Lade…</div>
 
-            <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
-              <div class="progress-meta"><span id="overallProgressText">—</span><span id="overallProgressPct"></span></div>
-              <div class="progress"><div id="overallProgressBar" class="progress-bar"></div></div>
-            </div>
+              <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
+                <div class="progress-meta"><span id="overallProgressText">—</span><span id="overallProgressPct"></span></div>
+                <div class="progress"><div id="overallProgressBar" class="progress-bar"></div></div>
+              </div>
             </div>
             <div class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</div>
           </div>
@@ -307,7 +315,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const btnNext = document.getElementById('btnNext');
   const savePill = document.getElementById('savePill');
 
-  // NEW: containers for hard lock mode
   const elLockedOnly = document.getElementById('lockedOnly');
   const elWizShell = document.getElementById('wizShell');
 
@@ -321,12 +328,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     steps: [],
   };
 
-  // Derived
-  let displayMode = 'groups'; // 'groups' | 'items'
+  let displayMode = 'groups';
   let flatSteps = [];
   let activeStep = 0;
 
-  // save debounce map
   const pendingTimers = new Map();
   let saveInFlight = 0;
 
@@ -342,8 +347,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
     return j;
   }
-  
-    // ---------- Language switch without page reload ----------
+
+  // ---------- Language switch without page reload ----------
   const langLinks = document.querySelectorAll('.lang-switch a.lang');
   let currentLang = <?= json_encode(ui_lang()) ?>;
 
@@ -357,11 +362,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   function rememberFocus(){
     const ae = document.activeElement;
     if (!ae) return null;
-
-    // Merke: Field-ID + Cursorposition (nur wenn wir in einem Feld sind)
     const wrap = ae.closest?.('[data-field]');
     if (!wrap) return null;
-
     const fid = wrap.getAttribute('data-field');
     const role = ae.matches('input,textarea') ? (ae.tagName.toLowerCase()) : null;
 
@@ -372,7 +374,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         selEnd = ae.selectionEnd;
       }
     } catch(e){}
-
     return { fid, role, selStart, selEnd };
   }
 
@@ -389,24 +390,18 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   }
 
   async function switchLangNoReload(href, nextLang){
-    // 1) Position & Step merken
     const scrollY = window.scrollY;
     const focusInfo = rememberFocus();
     const keepStep = activeStep;
 
-    // 2) Serverseitig Sprache umstellen (ohne Navigation)
-    //    (ruft deinen bestehenden url_with_lang(..) auf, der Session/Cookie setzt)
     await fetch(href, { method:'GET', credentials:'same-origin', cache:'no-store' });
 
-    // 3) Wizard-Data neu laden (nun in neuer Sprache)
     const j = await api('bootstrap', {});
     state = j;
 
-    // 4) Step beibehalten (soweit möglich)
     buildFlatSteps();
     activeStep = Math.max(0, Math.min(keepStep, flatSteps.length - 1));
 
-    // 5) UI updaten + rendern + scroll/focus restore
     setActiveLangUI(nextLang);
     render();
 
@@ -416,18 +411,14 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   langLinks.forEach(a=>{
     a.addEventListener('click', async (e)=>{
-      // Kein echter Seitenwechsel
       e.preventDefault();
-
       const nextLang = (a.dataset.lang || '').trim();
       if (!nextLang || nextLang === currentLang) return;
 
       try{
-        // optional: währenddessen Klicks blocken
         a.style.pointerEvents = 'none';
         await switchLangNoReload(a.href, nextLang);
       } catch(err){
-        // Fallback: wenn irgendwas schiefgeht, normal navigieren
         window.location.href = a.href;
       } finally {
         a.style.pointerEvents = '';
@@ -436,7 +427,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   });
 
   function isLocked(){
-    // NEW: if locked, student sees ONLY the locked message (no wizard contents)
     return (!state.child_can_edit) || String(state.report_status) !== 'draft';
   }
 
@@ -461,13 +451,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   // -------------------------
   // Dynamic label/help placeholders
   // -------------------------
-  // Allows using other field values inside label/help_text.
-  // Syntax:
-  //   {{other_field_name}}            -> value of that field
-  //   {{field:other_field_name}}      -> same as above
-  //   {{label:other_field_name}}      -> label of that field
-  //   {{help:other_field_name}}       -> help text of that field
-  // Unknown placeholders resolve to an empty string.
   function buildFieldNameIndex(){
     const idx = new Map();
     const steps = Array.isArray(state.steps) ? state.steps : [];
@@ -481,13 +464,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         idx.set(name, f);
       }
     }
-    // also include lookup for fields not present in steps (e.g. teacher-only or hidden fields)
     const lookup = (state && state.field_lookup && typeof state.field_lookup === 'object') ? state.field_lookup : null;
     if (lookup) {
       for (const [k, v] of Object.entries(lookup)) {
         if (!k) continue;
         if (idx.has(k)) continue;
-        // Normalize to same shape as step fields
         idx.set(k, {
           name: String(v.name || k),
           label: String(v.label || v.name || k),
@@ -498,7 +479,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }
     return idx;
   }
-
 
   function resolveTextTemplate(tpl, nameIndex){
     const s = String(tpl ?? '');
@@ -518,7 +498,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (!ref) return '';
       if (kind === 'label') return String(ref.label || ref.name || '');
       if (kind === 'help') return String(ref.help || '');
-      // default: field value
       return fieldValueText(ref);
     });
   }
@@ -557,7 +536,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   }
 
   function fieldIsMissing(f){
-    // Kids: everything required
     return fieldValueText(f).trim() === '';
   }
 
@@ -572,16 +550,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   function getGroupsList(){
     return (Array.isArray(state.steps) ? state.steps : []).filter(s => s && !s.is_intro);
-  }
-
-  function groupFieldsByKey(gKey){
-    const groups = getGroupsList();
-    for (const g of groups) {
-      const k = String(g.key || g.title || '');
-      const t = String(g.title || g.key || '');
-      if (String(k) === String(gKey) || String(t) === String(gKey)) return Array.isArray(g.fields) ? g.fields : [];
-    }
-    return [];
   }
 
   function buildFlatSteps(){
@@ -610,7 +578,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         });
       }
     } else {
-      // items: NEW "group intro" page before first item of each group
       for (const g of groups) {
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
@@ -676,7 +643,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (displayMode === 'groups') {
         return flatSteps.findIndex(s => s.kind==='group' && String(s.group)===String(gKey));
       }
-      // items: jump to group intro
       return flatSteps.findIndex(s => s.kind==='group_intro' && String(s.group)===String(gKey));
     }
 
@@ -700,7 +666,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           </div>
         </div>`);
       } else {
-        // items: nested list (compact), but group jump goes to group intro page
         const idx = stepIndexForGroupKey(gKey);
 
         html.push(`<div class="group" data-group="${esc(gKey)}">
@@ -751,11 +716,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         if (!Number.isFinite(v) || v < 0) return;
         activeStep = v;
         render();
-        window.scrollTo({
-            top: 0, // Scrollt zum obersten Punkt des Dokuments
-            left: 0, // Bleibt auf der linken Seite
-            behavior: 'smooth' // Sorgt für einen sanften Scroll-Effekt
-        });
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
       });
     });
 
@@ -781,7 +742,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   }
 
   async function saveFieldValue(fieldId, valueText){
-    // safety: never save if locked (even if someone forces UI visible)
     if (isLocked()) return;
     saveInFlight++;
     setSaving(true);
@@ -806,72 +766,37 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }, delayMs));
   }
 
+  // ===== CHANGED: option labels now support bilingual labels from option_list_items (label / label_en) =====
   function optionLabel(o){
-    const lbl = (o && (o.label ?? o.title ?? o.name)) ? String(o.label ?? o.title ?? o.name) : '';
-    if (lbl) return lbl;
-    const val = (o && (o.value ?? o.key ?? o.id)) ? String(o.value ?? o.key ?? o.id) : '';
-    return val || 'Option';
+    if (!o) return 'Option';
+
+    // Preferred: language-specific label if present
+    if (currentLang === 'en') {
+      const le = (typeof o.label_en !== 'undefined') ? String(o.label_en || '').trim() : '';
+      if (le) return le;
+    }
+
+    const ld = (typeof o.label !== 'undefined') ? String(o.label || '').trim() : '';
+    if (ld) return ld;
+
+    const val = (typeof o.value !== 'undefined') ? String(o.value ?? '').trim() : '';
+    if (val) return val;
+
+    const key = (typeof o.key !== 'undefined') ? String(o.key ?? '').trim() : '';
+    if (key) return key;
+
+    const id = (typeof o.id !== 'undefined') ? String(o.id ?? '').trim() : '';
+    if (id) return id;
+
+    return 'Option';
   }
+
   function optionValue(o){
     if (!o) return '';
     if (typeof o.value !== 'undefined') return String(o.value);
     if (typeof o.key !== 'undefined') return String(o.key);
     if (typeof o.id !== 'undefined') return String(o.id);
     return optionLabel(o);
-  }
-
-  function renderSectionHeader(groupTitle, fields){
-    const st = groupStats(fields || []);
-    const miss = st.missing;
-    const pct = (st.total > 0) ? Math.round((st.done / st.total) * 100) : 0;
-
-    const right = (st.total > 0)
-      ? `<span class="badge-mini ${miss===0?'ok':'miss'}">${miss===0?'✓':esc(String(miss))}</span>`
-      : '';
-    const sub = (st.total > 0) ? `${st.done}/${st.total} erledigt` : '';
-    const bar = (st.total > 0)
-      ? `<div class="progress sm" style="margin-top:6px;"><div class="progress-bar ${miss===0?'ok':''}" style="width:${pct}%;"></div></div>`
-      : '';
-
-    return `<div class="section-h">
-      <div>
-        <div class="t">${esc(groupTitle)}</div>
-        <div class="s">${esc(sub)}</div>
-        ${bar}
-      </div>
-      ${right}
-    </div>`;
-  }
-
-
-  function renderGroupIntro(groupTitle, fields){
-    const st = groupStats(fields || []);
-    const miss = st.missing;
-    const total = st.total;
-    const done = st.done;
-    const pct = (total > 0) ? Math.round((done / total) * 100) : 0;
-
-    return `
-      <div class="group-intro">
-        <p class="kicker">Neuer Abschnitt</p>
-        <h3>${esc(groupTitle)}</h3>
-        <div class="muted">Hier kommen ${esc(String(total))} Fragen. Du kannst jederzeit im Menü springen.</div>
-
-        <div class="progress-wrap" style="margin-top:12px;">
-          <div class="progress-meta"><span>Fortschritt</span><span>${pct}%</span></div>
-          <div class="progress"><div class="progress-bar ${miss===0?'ok':''}" style="width:${pct}%;"></div></div>
-        </div>
-
-        <div class="meta">
-          <span class="gi-pill">✅ Erledigt: <strong style="color:inherit;">${esc(String(done))}</strong></span>
-          <span class="gi-pill">⏳ Offen: <strong style="color:inherit;">${esc(String(miss))}</strong></span>
-        </div>
-
-        <div style="margin-top:12px;">
-          <button class="btn" type="button" id="btnStartGroup">Starten</button>
-        </div>
-      </div>
-    `;
   }
 
   function renderFieldBlock(f){
@@ -889,10 +814,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (['radio','select','grade'].includes(type) || type === 'checkbox') {
       let opts = [];
       if (type === 'checkbox') {
-        opts = [
-          { value: '1', label: 'Ja' },
-          { value: '0', label: 'Nein' },
-        ];
+        // CHANGED: localize built-in Yes/No
+        opts = (currentLang === 'en')
+          ? [{ value:'1', label:'Yes' }, { value:'0', label:'No' }]
+          : [{ value:'1', label:'Ja'  }, { value:'0', label:'Nein' }];
       } else {
         opts = Array.isArray(f.options) ? f.options : [];
       }
@@ -942,7 +867,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         renderNav();
         updateReqHint();
         markMissingBlocks(container);
-        // Update dynamic labels/help without re-rendering inputs.
         refreshDynamicTexts(container);
       });
       inp.addEventListener('blur', () => {
@@ -1078,7 +1002,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   async function handleSubmit(){
     if (isLocked()) return;
 
-    // flush debounces
     for (const [k,t] of pendingTimers.entries()) {
       clearTimeout(t);
       pendingTimers.delete(k);
@@ -1100,7 +1023,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       const j = await api('bootstrap', {});
       state = j;
 
-      // If submit locks the report, switch to locked-only
       if (isLocked()) {
         showLockedOnly();
         return;
@@ -1121,18 +1043,17 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   }
 
   function render(){
-    // NEW: if locked, do not render any wizard content at all
     if (isLocked()) {
-        const st = String(state.report_status || '');
-        if (st === 'submitted') {
-          showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
-        } else if (st === 'locked') {
-          showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
-        } else {
-          showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
-        }
-        return;
+      const st = String(state.report_status || '');
+      if (st === 'submitted') {
+        showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+      } else if (st === 'locked') {
+        showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+      } else {
+        showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
       }
+      return;
+    }
 
     buildFlatSteps();
 
@@ -1162,10 +1083,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     else if (cur.kind === 'group') {
       elTitle.textContent = cur.title;
       elSub.textContent = 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.';
-      const section = renderSectionHeader(cur.title, cur.fields || []);
-      elBody.innerHTML = section + ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || '<p class="muted">Keine Felder.</p>');
+      elBody.innerHTML = ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || '<p class="muted">Keine Felder.</p>');
       attachFieldHandlers(elBody);
-
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
@@ -1175,21 +1094,22 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       const fields = Array.isArray(cur.fields) ? cur.fields : [];
       elTitle.textContent = cur.groupTitle || cur.title || 'Abschnitt';
       elSub.textContent = 'Bevor es losgeht: kurze Übersicht.';
-      elBody.innerHTML = renderGroupIntro(cur.groupTitle || cur.title || 'Abschnitt', fields);
-
+      elBody.innerHTML = `
+        <div class="group-intro">
+          <p class="kicker">Neuer Abschnitt</p>
+          <h3>${esc(cur.groupTitle || cur.title || 'Abschnitt')}</h3>
+          <div class="muted">Hier kommen ${esc(String(fields.length))} Fragen. Du kannst jederzeit im Menü springen.</div>
+          <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">Starten</button></div>
+        </div>
+      `;
       const b = document.getElementById('btnStartGroup');
       if (b) {
         b.addEventListener('click', () => {
-          // jump to first field of this group
           const idx = flatSteps.findIndex(s => s.kind === 'field' && String(s.group) === String(cur.group));
           if (idx >= 0) { activeStep = idx; render(); }
-          else { // no fields? just move on
-            activeStep = Math.min(activeStep + 1, flatSteps.length - 1);
-            render();
-          }
+          else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
       }
-
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
@@ -1201,7 +1121,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       elSub.textContent = 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.';
       elBody.innerHTML = renderFieldBlock(f);
       attachFieldHandlers(elBody);
-
       btnNext.textContent = 'Weiter';
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
@@ -1228,9 +1147,9 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       btnNext.style.visibility = 'hidden';
     }
 
-    // Prev/Next behavior
     btnPrev.onclick = () => {
       if (activeStep > 0) { activeStep--; render(); }
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
     };
     btnNext.onclick = () => {
       const cur = flatSteps[activeStep];
@@ -1238,19 +1157,12 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (cur.kind === 'submit') return;
       activeStep = Math.min(activeStep + 1, flatSteps.length - 1);
       render();
-      window.scrollTo({
-            top: 0, // Scrollt zum obersten Punkt des Dokuments
-            left: 0, // Bleibt auf der linken Seite
-            behavior: 'smooth' // Sorgt für einen sanften Scroll-Effekt
-        });
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
     };
 
     updateReqHint();
-
-    // Resolve dynamic placeholders in labels/help_text against current answers.
     refreshDynamicTexts(elBody);
 
-    // Keep current group open in items mode
     if (displayMode === 'items') {
       const cur = flatSteps[activeStep];
       const curGroup = cur && (cur.group || cur.groupTitle);
@@ -1263,16 +1175,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   (async function init(){
     try {
-        if (!HAS_TEMPLATE) {
-            // Server hat bereits die "Keine Vorlage" Meldung angezeigt.
-            // Wizard bleibt komplett aus.
-            return;
-          }
-    
+      if (!HAS_TEMPLATE) return;
+
       const j = await api('bootstrap', {});
       state = j;
 
-      // NEW: If locked, show ONLY the locked message and stop here.
       if (isLocked()) {
         const st = String(state.report_status || '');
         if (st === 'submitted') {
@@ -1289,19 +1196,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       activeStep = 0;
       render();
     } catch (e) {
-        const msg = String(e?.message || 'Fehler');
-
-        // Wenn API "keine Vorlage" meldet, zeigen wir locked-only statt Wizard-Fehler.
-        if (msg.toLowerCase().includes('keine vorlage') || msg.toLowerCase().includes('vorlage zugeordnet')) {
-          showLockedOnly('Keine Vorlage zugeordnet', 'Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
-          return;
-        }
-
-        elMeta.textContent = 'Fehler beim Laden.';
-        elBody.innerHTML = `<div class="alert danger"><strong>${esc(msg)}</strong></div>`;
-        btnPrev.disabled = true;
-        btnNext.disabled = true;
+      const msg = String(e?.message || 'Fehler');
+      if (msg.toLowerCase().includes('keine vorlage') || msg.toLowerCase().includes('vorlage zugeordnet')) {
+        showLockedOnly('Keine Vorlage zugeordnet', 'Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
+        return;
       }
+      elMeta.textContent = 'Fehler beim Laden.';
+      elBody.innerHTML = `<div class="alert danger"><strong>${esc(msg)}</strong></div>`;
+      btnPrev.disabled = true;
+      btnNext.disabled = true;
+    }
   })();
 })();
 </script>

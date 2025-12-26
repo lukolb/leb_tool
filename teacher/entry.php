@@ -59,7 +59,7 @@ if (($u['role'] ?? '') !== 'admin') {
             <?php endif; ?>
           </div>
         <h1 style="margin-top:0;">Delegationen sind getrennt</h1>
-        <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations‑Inbox</a>.</p>
+        <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations-Inbox</a>.</p>
       </div>
       <?php
       render_teacher_footer();
@@ -101,7 +101,6 @@ function class_display(array $c): string {
   $name = (string)($c['name'] ?? '');
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
-
 
 if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
@@ -397,15 +396,14 @@ render_teacher_header('Eingaben');
 
   .missing{ outline:2px solid rgba(200,20,20,0.12); background: rgba(200,20,20,0.04); border-radius:12px; padding:4px; }
 
-.modal{ position:fixed; inset:0; z-index:9999; }
-.modal-backdrop{ position:absolute; inset:0; background: rgba(0,0,0,0.35); }
-.modal-card{ position:relative; width:min(980px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow:auto; margin:12px auto; background:#fff; border-radius:16px; padding:14px; box-shadow: 0 12px 40px rgba(0,0,0,0.22); border:1px solid rgba(0,0,0,0.08); }
-.del-row{ border:1px solid var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; gap:10px; align-items:center; background:#fff; }
-.del-row .l{ min-width:0; }
-.del-row .l .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.del-row .l .s{ color:var(--muted); font-size:12px; margin-top:2px; }
-.badge-del{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(11,87,208,0.22); background: rgba(11,87,208,0.08); font-size:12px; color: rgba(11,87,208,0.9); }
-
+  .modal{ position:fixed; inset:0; z-index:9999; }
+  .modal-backdrop{ position:absolute; inset:0; background: rgba(0,0,0,0.35); }
+  .modal-card{ position:relative; width:min(980px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow:auto; margin:12px auto; background:#fff; border-radius:16px; padding:14px; box-shadow: 0 12px 40px rgba(0,0,0,0.22); border:1px solid rgba(0,0,0,0.08); }
+  .del-row{ border:1px solid var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; gap:10px; align-items:center; background:#fff; }
+  .del-row .l{ min-width:0; }
+  .del-row .l .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .del-row .l .s{ color:var(--muted); font-size:12px; margin-top:2px; }
+  .badge-del{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(11,87,208,0.22); background: rgba(11,87,208,0.08); font-size:12px; color: rgba(11,87,208,0.9); }
 </style>
 
 <script>
@@ -413,6 +411,9 @@ render_teacher_header('Eingaben');
   const DELEGATED_MODE = (<?= (int)$jsDelegatedMode ?> === 1);
   const CURRENT_USER_ID = Number(<?= (int)$jsUserId ?>);
   const CAN_DELEGATE = (<?= (int)$jsCanDelegate ?> === 1);
+
+  // ✅ NEW: UI language for option label rendering (de/en)
+  const UI_LANG = <?= json_encode(ui_lang()) ?>;
 
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
@@ -444,7 +445,7 @@ render_teacher_header('Eingaben');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
   const dlgList = document.getElementById('dlgList');
-  
+
   const btnDelegationDoneTop = document.getElementById('btnDelegationDoneTop');
   const dlgDone = document.getElementById('dlgDelegationDone');
   const dlgDoneGroup = document.getElementById('dlgDoneGroup');
@@ -513,7 +514,112 @@ render_teacher_header('Eingaben');
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
-  
+
+  function optionLabel(options, value){
+    const v = String(value ?? '');
+    if (!v) return '';
+    if (!Array.isArray(options)) return v;
+
+    const hit = options.find(o => String(o?.value ?? '') === v);
+    if (!hit) return v;
+
+    // ✅ NEW: language-aware option labels
+    if (UI_LANG === 'en') {
+      const le = String(hit?.label_en ?? '').trim();
+      if (le) return le;
+    }
+    const ld = String(hit?.label ?? '').trim();
+    return ld ? ld : String(hit?.value ?? v);
+  }
+
+  function teacherDisplay(f, raw){
+    const v = String(raw ?? '');
+    if (!v) return '';
+    const type = String(f?.field_type ?? '');
+    if (type === 'select' || type === 'radio' || type === 'grade') {
+      return optionLabel(Array.isArray(f.options) ? f.options : null, v);
+    }
+    return v;
+  }
+
+  function childDisplay(f, raw){
+    const v = String(raw ?? '');
+    if (!v) return '';
+    const child = f && f.child ? f.child : null;
+    const childType = String(child?.field_type ?? '');
+    const opts = child && Array.isArray(child.options) ? child.options : null;
+
+    if (childType === 'select' || childType === 'radio' || childType === 'grade') {
+      return optionLabel(opts, v);
+    }
+    return v;
+  }
+
+  function ensureDatalistForField(fieldId){
+    const f = state.fieldMap[String(fieldId)];
+    if (!f) return;
+    const type = String(f.field_type || '');
+    if (!(type === 'radio' || type === 'select' || type === 'grade')) return;
+    const dlId = `dl_${String(fieldId)}`;
+
+    let dl = document.getElementById(dlId);
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = dlId;
+      document.body.appendChild(dl);
+    }
+
+    const opts = Array.isArray(f.options) ? f.options : [];
+    const items = [];
+
+    opts.forEach(o => {
+      const v = String(o?.value ?? '').trim();
+      const ld = String(o?.label ?? '').trim();
+      const le = String(o?.label_en ?? '').trim();
+
+      const labelShown = (UI_LANG === 'en' && le) ? le : (ld || v);
+
+      // allow typing the canonical value
+      if (v) items.push({ value: v, label: labelShown || v });
+
+      // allow typing DE label
+      if (ld && ld !== v) items.push({ value: ld, label: ld });
+
+      // allow typing EN label
+      if (le && le !== v && le !== ld) items.push({ value: le, label: le });
+    });
+
+    dl.innerHTML = '';
+    items.forEach(it => {
+      const op = document.createElement('option');
+      op.value = it.value;
+      op.textContent = it.label;
+      dl.appendChild(op);
+    });
+  }
+
+  function resolveTypedToValue(f, typed){
+    const t = String(typed ?? '').trim();
+    if (!t) return '';
+    const opts = Array.isArray(f?.options) ? f.options : [];
+
+    // exact value
+    const hitV = opts.find(o => String(o?.value ?? '') === t);
+    if (hitV) return String(hitV.value ?? t);
+
+    const low = t.toLowerCase();
+
+    // match DE label
+    const hitLD = opts.find(o => String(o?.label ?? '').toLowerCase() === low);
+    if (hitLD) return String(hitLD.value ?? t);
+
+    // ✅ NEW: match EN label
+    const hitLE = opts.find(o => String(o?.label_en ?? '').toLowerCase() === low);
+    if (hitLE) return String(hitLE.value ?? t);
+
+    return t;
+  }
+
   function buildFieldNameIndex(){
     const idx = new Map();
 
@@ -591,81 +697,6 @@ render_teacher_header('Eingaben');
       state.class_fields.fields.forEach(f => { map[String(f.id)] = f; });
     }
     state.fieldMap = map;
-  }
-
-  function ensureDatalistForField(fieldId){
-    const f = state.fieldMap[String(fieldId)];
-    if (!f) return;
-    const type = String(f.field_type || '');
-    if (!(type === 'radio' || type === 'select' || type === 'grade')) return;
-    const dlId = `dl_${String(fieldId)}`;
-
-    let dl = document.getElementById(dlId);
-    if (!dl) {
-      dl = document.createElement('datalist');
-      dl.id = dlId;
-      document.body.appendChild(dl);
-    }
-
-    const opts = Array.isArray(f.options) ? f.options : [];
-    const items = [];
-    opts.forEach(o => {
-      const v = String(o?.value ?? '').trim();
-      const l = String(o?.label ?? '').trim();
-      if (v) items.push({ value: v, label: l || v });
-      if (l && l !== v) items.push({ value: l, label: l });
-    });
-
-    dl.innerHTML = '';
-    items.forEach(it => {
-      const op = document.createElement('option');
-      op.value = it.value;
-      op.textContent = it.label;
-      dl.appendChild(op);
-    });
-  }
-
-  function resolveTypedToValue(f, typed){
-    const t = String(typed ?? '').trim();
-    if (!t) return '';
-    const opts = Array.isArray(f?.options) ? f.options : [];
-    const hitV = opts.find(o => String(o?.value ?? '') === t);
-    if (hitV) return String(hitV.value ?? t);
-    const low = t.toLowerCase();
-    const hitL = opts.find(o => String(o?.label ?? '').toLowerCase() === low);
-    if (hitL) return String(hitL.value ?? t);
-    return t;
-  }
-
-  function optionLabel(options, value){
-    const v = String(value ?? '');
-    if (!v) return '';
-    if (!Array.isArray(options)) return v;
-    const hit = options.find(o => String(o?.value ?? '') === v);
-    return hit ? String(hit.label ?? hit.value ?? v) : v;
-  }
-
-  function teacherDisplay(f, raw){
-    const v = String(raw ?? '');
-    if (!v) return '';
-    const type = String(f?.field_type ?? '');
-    if (type === 'select' || type === 'radio' || type === 'grade') {
-      return optionLabel(Array.isArray(f.options) ? f.options : null, v);
-    }
-    return v;
-  }
-
-  function childDisplay(f, raw){
-    const v = String(raw ?? '');
-    if (!v) return '';
-    const child = f && f.child ? f.child : null;
-    const childType = String(child?.field_type ?? '');
-    const opts = child && Array.isArray(child.options) ? child.options : null;
-
-    if (childType === 'select' || childType === 'radio' || childType === 'grade') {
-      return optionLabel(opts, v);
-    }
-    return v;
   }
 
   async function api(action, payload){
