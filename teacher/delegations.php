@@ -14,17 +14,18 @@ render_teacher_header('Delegationen');
     <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
   </div>
 
-  <h1 style="margin-top:0;">Delegations‑Inbox</h1>
+  <h1 style="margin-top:0;">Delegationen</h1>
   <p class="muted" style="margin-top:-6px;">
-    Hier siehst du alle <strong>an dich delegierten Fachbereiche</strong> (pro Klasse). Diese sind getrennt von deinen eigenen Klassen.
+    Hier siehst du alle Delegationen in Klassen, auf die du Zugriff hast – sowohl <strong>an dich</strong> als auch <strong>an andere</strong>.
+    Du kannst Delegationen hier auch <strong>neu zuweisen</strong> oder <strong>aufheben</strong>.
   </p>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <div style="min-width:260px;">
       <label class="label">Suche</label>
-      <input class="input" id="q" type="search" placeholder="Klasse / Gruppe…" style="width:100%;">
+      <input class="input" id="q" type="search" placeholder="Klasse / Gruppe / Kolleg:in…" style="width:100%;">
     </div>
-    <div class="muted" style="padding-bottom:10px;">Klicke auf „Öffnen“, um direkt in die delegierte Bearbeitung zu springen.</div>
+    <div class="muted" style="padding-bottom:10px;">„Bearbeiten…“ öffnet den Dialog zum Zuweisen/Status/Kommentar.</div>
   </div>
 </div>
 
@@ -34,6 +35,43 @@ render_teacher_header('Delegationen');
   <div id="list"></div>
 </div>
 
+<div id="dlgEdit" class="modal" style="display:none;">
+  <div class="modal-backdrop" data-close="1"></div>
+  <div class="modal-card" style="width:min(860px, calc(100vw - 24px));">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <h3 style="margin:0;">Delegation bearbeiten</h3>
+      <button class="btn secondary" type="button" data-close="1">Schließen</button>
+    </div>
+
+    <div class="muted" style="margin-top:6px;" id="dlgMeta">—</div>
+
+    <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div style="min-width:280px;">
+        <label class="label">Delegiert an</label>
+        <select class="input" id="dlgUser" style="width:100%;"></select>
+        <div class="muted" style="font-size:12px; margin-top:4px;">„— aufheben —“ entfernt die Delegation komplett.</div>
+      </div>
+
+      <div style="min-width:160px;">
+        <label class="label">Status</label>
+        <select class="input" id="dlgSt" style="width:100%;">
+          <option value="open">offen</option>
+          <option value="done">fertig</option>
+        </select>
+      </div>
+
+      <div style="flex:1; min-width:240px;">
+        <label class="label">Kommentar</label>
+        <input class="input" id="dlgNote" type="text" placeholder="z.B. bitte prüfen…" style="width:100%;">
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button class="btn" type="button" id="dlgSave">Speichern</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
 .inbox-class{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:12px; }
 .inbox-class h3{ margin:0; font-size:16px; }
@@ -41,21 +79,33 @@ render_teacher_header('Delegationen');
 .inbox-row{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:10px; border:1px solid var(--border); border-radius:12px; margin-top:10px; }
 .inbox-row .l{ min-width:0; }
 .inbox-row .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.inbox-row .s{ color:var(--muted); font-size:12px; margin-top:3px; }
+.inbox-row .s{ color:var(--muted); font-size:12px; margin-top:3px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
 .badge-st{ display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; border:1px solid rgba(11,87,208,0.25); background: rgba(11,87,208,0.08); font-size:12px; color: rgba(11,87,208,0.95); }
 .badge-st.done{ border-color: rgba(20,140,60,0.25); background: rgba(20,140,60,0.08); color: rgba(20,140,60,0.95); }
+.badge-who{ display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; border:1px solid rgba(0,0,0,0.10); background: rgba(0,0,0,0.04); font-size:12px; color: rgba(0,0,0,0.75); }
+.modal{ position:fixed; inset:0; z-index:9999; }
+.modal-backdrop{ position:absolute; inset:0; background: rgba(0,0,0,0.35); }
+.modal-card{ position:relative; margin:12px auto; background:#fff; border-radius:16px; padding:14px; box-shadow: 0 12px 40px rgba(0,0,0,0.22); border:1px solid rgba(0,0,0,0.08); max-height: calc(100vh - 24px); overflow:auto; }
 </style>
 
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('teacher/ajax/delegations_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
+  const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
 
   const errBox = document.getElementById('errBox');
   const errMsg = document.getElementById('errMsg');
   const listCard = document.getElementById('listCard');
   const listEl = document.getElementById('list');
   const q = document.getElementById('q');
+
+  const dlg = document.getElementById('dlgEdit');
+  const dlgMeta = document.getElementById('dlgMeta');
+  const dlgUser = document.getElementById('dlgUser');
+  const dlgSt = document.getElementById('dlgSt');
+  const dlgNote = document.getElementById('dlgNote');
+  const dlgSave = document.getElementById('dlgSave');
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function showErr(msg){ errMsg.textContent = msg; errBox.style.display='block'; }
@@ -73,12 +123,63 @@ render_teacher_header('Delegationen');
   }
 
   let data = [];
+  let users = [];
+  let editCtx = null; // class_id, period_label, group_key, ...
+
+  function buildUsersSelect(selectedUserId){
+    dlgUser.innerHTML = '';
+    const optNone = document.createElement('option');
+    optNone.value = '0';
+    optNone.textContent = '— aufheben —';
+    dlgUser.appendChild(optNone);
+
+    users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = String(u.id);
+      opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+      dlgUser.appendChild(opt);
+    });
+
+    dlgUser.value = String(selectedUserId || 0);
+  }
+
+  function syncDisableIfClearing(){
+    const uid = Number(dlgUser.value || '0');
+    const dis = (uid <= 0);
+    dlgSt.disabled = dis;
+    dlgNote.disabled = dis;
+    if (dis) {
+      dlgSt.value = 'open';
+      dlgNote.value = '';
+    }
+  }
+
+  function openModal(ctx){
+    editCtx = ctx;
+    dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
+    buildUsersSelect(ctx.user_id || 0);
+    dlgSt.value = String(ctx.status || 'open');
+    dlgNote.value = String(ctx.note || '');
+    syncDisableIfClearing();
+    dlg.style.display = 'block';
+  }
+
+  function closeModal(){
+    dlg.style.display = 'none';
+    editCtx = null;
+  }
 
   function render(){
     const f = String(q.value||'').toLowerCase().trim();
+
     const filtered = !f ? data : data.filter(c => {
       if ((c.class_title||'').toLowerCase().includes(f)) return true;
-      return (c.groups||[]).some(g => (g.group_title||g.group_key||'').toLowerCase().includes(f));
+      if ((c.school_year||'').toLowerCase().includes(f)) return true;
+      return (c.groups||[]).some(g => {
+        const a = (g.group_title||g.group_key||'').toLowerCase();
+        const b = (g.user_name||'').toLowerCase();
+        return a.includes(f) || b.includes(f);
+      });
     });
 
     if (!filtered.length) {
@@ -87,23 +188,39 @@ render_teacher_header('Delegationen');
       return;
     }
 
-    const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
-
     const html = filtered.map(c => {
       const gHtml = (c.groups||[]).map(g => {
         const st = String(g.status||'open');
         const note = String(g.note||'').trim();
+        const who = String(g.user_name||'').trim();
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? 'fertig' : 'offen';
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
+
         return `
           <div class="inbox-row">
             <div class="l">
               <div class="t">${esc(g.group_title || g.group_key)}</div>
-              <div class="s"><span class="${badgeCls}">${esc(badgeTxt)}</span>${note ? ' · ' + esc(note) : ''}</div>
+              <div class="s">
+                <span class="${badgeCls}">${esc(badgeTxt)}</span>
+                <span class="badge-who">→ ${esc(who || ('#'+String(g.user_id||'')))}</span>
+                ${note ? ('<span>· ' + esc(note) + '</span>') : ''}
+              </div>
             </div>
-            <div class="row-actions" style="margin:0;">
-              <a class="btn secondary" href="${openUrl}">Öffnen</a>
+            <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
+              ${g.is_mine ? `<a class="btn secondary" href="${openUrl}">Öffnen</a>` : ``}
+              <button class="btn secondary" type="button"
+                data-edit="1"
+                data-class-id="${esc(c.class_id)}"
+                data-period-label="${esc(c.period_label||'')}"
+                data-class-title="${esc(c.class_title||'')}"
+                data-group-key="${esc(g.group_key||'')}"
+                data-group-title="${esc(g.group_title||g.group_key||'')}"
+                data-user-id="${esc(g.user_id||'')}"
+                data-user-name="${esc(g.user_name||'')}"
+                data-status="${esc(st)}"
+                data-note="${esc(note)}"
+              >Bearbeiten…</button>
             </div>
           </div>
         `;
@@ -120,15 +237,62 @@ render_teacher_header('Delegationen');
 
     listCard.style.display = 'block';
     listEl.innerHTML = html;
+
+    listEl.querySelectorAll('[data-edit="1"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openModal({
+          class_id: Number(btn.getAttribute('data-class-id')||'0'),
+          period_label: String(btn.getAttribute('data-period-label')||'Standard'),
+          class_title: String(btn.getAttribute('data-class-title')||''),
+          group_key: String(btn.getAttribute('data-group-key')||''),
+          group_title: String(btn.getAttribute('data-group-title')||''),
+          user_id: Number(btn.getAttribute('data-user-id')||'0'),
+          user_name: String(btn.getAttribute('data-user-name')||''),
+          status: String(btn.getAttribute('data-status')||'open'),
+          note: String(btn.getAttribute('data-note')||''),
+        });
+      });
+    });
   }
 
   q.addEventListener('input', render);
+
+  if (dlg) {
+    dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', closeModal));
+  }
+  if (dlgUser) dlgUser.addEventListener('change', syncDisableIfClearing);
+
+  if (dlgSave) {
+    dlgSave.addEventListener('click', async () => {
+      if (!editCtx) return;
+      try {
+        const uid = Number(dlgUser.value || '0');
+        await api('save', {
+          class_id: editCtx.class_id,
+          period_label: editCtx.period_label,
+          group_key: editCtx.group_key,
+          user_id: uid,
+          status: uid > 0 ? String(dlgSt.value || 'open') : 'open',
+          note: uid > 0 ? String(dlgNote.value || '') : ''
+        });
+
+        const j = await api('load', {});
+        data = j.items || [];
+        users = j.users || users;
+        closeModal();
+        render();
+      } catch (e) {
+        showErr(e.message || String(e));
+      }
+    });
+  }
 
   (async () => {
     try {
       clearErr();
       const j = await api('load', {});
       data = j.items || [];
+      users = j.users || [];
       render();
     } catch (e) {
       showErr(e.message || String(e));

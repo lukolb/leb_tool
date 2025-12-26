@@ -789,6 +789,63 @@ try {
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
   }
+  
+    // Delegated teachers: only update status/note for delegations assigned to them.
+  // No user reassignment and no clearing.
+  if ($action === 'delegations_mark') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $periodLabel = trim((string)($data['period_label'] ?? ''));
+    $groupKey = trim((string)($data['group_key'] ?? ''));
+    $status = trim((string)($data['status'] ?? 'open'));
+    $note = (string)($data['note'] ?? '');
+
+    if ($classId <= 0 || $groupKey === '') throw new RuntimeException('Ungültige Parameter.');
+
+    // must have access to class (delegations inbox grants class access)
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Kein Zugriff.');
+    }
+
+    // resolve school year
+    $stc = $pdo->prepare("SELECT school_year FROM classes WHERE id=? LIMIT 1");
+    $stc->execute([$classId]);
+    $cRow = $stc->fetch(PDO::FETCH_ASSOC);
+    if (!$cRow) throw new RuntimeException('Klasse nicht gefunden.');
+    $schoolYear = (string)($cRow['school_year'] ?? '');
+
+    // current delegations
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $cur = $delegations[$groupKey] ?? null;
+    if (!$cur || (int)($cur['user_id'] ?? 0) <= 0) {
+      throw new RuntimeException('Keine Delegation für diese Gruppe vorhanden.');
+    }
+
+    // only delegate themselves (admins can do anything)
+    if (($u['role'] ?? '') !== 'admin') {
+      if ((int)$cur['user_id'] !== $userId) {
+        throw new RuntimeException('Nicht deine Delegation.');
+      }
+    }
+
+    if ($status !== 'open' && $status !== 'done') $status = 'open';
+    $note = trim($note);
+
+    // upsert with same user_id (NO reassignment)
+    upsert_class_group_delegation(
+      $pdo,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $groupKey,
+      (int)$cur['user_id'],
+      $status,
+      $note,
+      $userId
+    );
+
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
+  }
 
   if ($action === 'save_class') {
     $classId = (int)($data['class_id'] ?? 0);

@@ -48,11 +48,16 @@ if (($u['role'] ?? '') !== 'admin') {
       render_teacher_header('Eingaben');
       ?>
       <div class="card">
-        <div class="row-actions">
-          <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
-    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
-          <a class="btn" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
-        </div>
+        <div class="row-actions" style="justify-content:space-between; align-items:center;">
+            <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
+            <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
+
+            <?php if (!$delegatedMode): ?>
+              <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+            <?php else: ?>
+              <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
+            <?php endif; ?>
+          </div>
         <h1 style="margin-top:0;">Delegationen sind getrennt</h1>
         <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations‑Inbox</a>.</p>
       </div>
@@ -113,6 +118,8 @@ render_teacher_header('Eingaben');
     <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
     <?php if (!$delegatedMode): ?>
         <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+      <?php else: ?>
+        <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
       <?php endif; ?>
   </div>
 
@@ -154,6 +161,48 @@ render_teacher_header('Eingaben');
 </div>
 
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
+
+<?php if ($delegatedMode): ?>
+<div id="dlgDelegationDone" class="modal" style="display:none;">
+  <div class="modal-backdrop" data-close="1"></div>
+  <div class="modal-card">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <h3 style="margin:0;">Delegation-Status</h3>
+      <button class="btn secondary" type="button" data-close="1">Schließen</button>
+    </div>
+
+    <div class="muted" style="margin-top:6px;">
+      Markiere deine delegierten Fachbereiche als <strong>fertig</strong> (optional mit Kommentar).
+    </div>
+
+    <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div style="min-width:240px;">
+        <label class="label">Fach/Gruppe</label>
+        <select class="input" id="dlgDoneGroup" style="width:100%;"></select>
+      </div>
+      <div style="min-width:160px;">
+        <label class="label">Status</label>
+        <select class="input" id="dlgDoneStatus" style="width:100%;">
+          <option value="open">offen</option>
+          <option value="done">fertig</option>
+        </select>
+      </div>
+      <div style="flex:1; min-width:240px;">
+        <label class="label">Kommentar</label>
+        <input class="input" id="dlgDoneNote" type="text" placeholder="z.B. Deutsch komplett, bitte prüfen…" style="width:100%;">
+      </div>
+      <div>
+        <button class="btn" type="button" id="dlgDoneSave">Speichern</button>
+      </div>
+    </div>
+
+    <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
+      <div class="muted" style="margin-bottom:8px;">Meine Delegationen</div>
+      <div id="dlgDoneList" style="display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if (!$delegatedMode): ?>
     <div id="dlgDelegations" class="modal" style="display:none;">
@@ -388,7 +437,6 @@ render_teacher_header('Eingaben');
   const classFieldsProgressPct = document.getElementById('classFieldsProgressPct');
 
   const elSavePill = document.getElementById('savePill');
-  const btnDelegations = document.getElementById('btnDelegations');
   const dlg = document.getElementById('dlgDelegations');
   const dlgGroup = document.getElementById('dlgGroup');
   const dlgUser = document.getElementById('dlgUser');
@@ -396,7 +444,14 @@ render_teacher_header('Eingaben');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
   const dlgList = document.getElementById('dlgList');
-
+  
+  const btnDelegationDoneTop = document.getElementById('btnDelegationDoneTop');
+  const dlgDone = document.getElementById('dlgDelegationDone');
+  const dlgDoneGroup = document.getElementById('dlgDoneGroup');
+  const dlgDoneStatus = document.getElementById('dlgDoneStatus');
+  const dlgDoneNote = document.getElementById('dlgDoneNote');
+  const dlgDoneSave = document.getElementById('dlgDoneSave');
+  const dlgDoneList = document.getElementById('dlgDoneList');
 
   const classSelect = document.getElementById('classSelect');
   const viewSelect = document.getElementById('viewSelect');
@@ -688,17 +743,20 @@ render_teacher_header('Eingaben');
     return (state.students || []).find(s => Number(s.report_instance_id) === Number(reportId)) || null;
   }
 
-  function recomputeStudentProgress(student){
+    function recomputeStudentProgress(student){
     if (!student) return;
+
+    // teacher fields = ONLY current state.groups (already filtered in delegated mode)
     const tIds = teacherProgressFieldIds();
     const tTotal = tIds.length;
     const tDone = computeDoneFromTeacherValues(Number(student.report_instance_id || 0), tIds);
 
-    const cTotal = Number(student.progress_child_total || 0);
-    const cDone = Number(student.progress_child_done || 0);
+    // delegated mode: completion = only delegated teacher fields
+    const cTotal = DELEGATED_MODE ? 0 : Number(student.progress_child_total || 0);
+    const cDone  = DELEGATED_MODE ? 0 : Number(student.progress_child_done || 0);
 
     const overallTotal = tTotal + cTotal;
-    const overallDone = tDone + cDone;
+    const overallDone  = tDone + cDone;
     const overallMissing = Math.max(0, overallTotal - overallDone);
 
     student.progress_teacher_total = tTotal;
@@ -708,6 +766,8 @@ render_teacher_header('Eingaben');
     student.progress_overall_total = overallTotal;
     student.progress_overall_done = overallDone;
     student.progress_overall_missing = overallMissing;
+
+    // in delegated mode, this indicates "my delegated part complete"
     student.progress_is_complete = (overallTotal > 0 && overallMissing === 0);
   }
 
@@ -736,7 +796,11 @@ render_teacher_header('Eingaben');
 
     const pct = Math.round((complete / total) * 100);
     formsProgressWrap.style.display = '';
-    if (formsProgressText) formsProgressText.textContent = `Formulare vollständig: ${complete}/${total}`;
+    if (formsProgressText) {
+        formsProgressText.textContent = DELEGATED_MODE
+          ? `Delegierte Aufgaben vollständig: ${complete}/${total}`
+          : `Formulare vollständig: ${complete}/${total}`;
+      }
     if (formsProgressPct) formsProgressPct.textContent = `${pct}%`;
     formsProgressBar.style.width = `${pct}%`;
     formsProgressBar.classList.toggle('ok', complete === total);
@@ -1495,8 +1559,6 @@ render_teacher_header('Eingaben');
     render();
   }
 
-
-
 // --- delegations modal ---
 function openDelegations(preselectGroupKey){
   if (!dlg) return;
@@ -1540,6 +1602,70 @@ function closeDelegations(){
   dlg.style.display = 'none';
 }
 
+  function openDoneModal(preselectGroupKey){
+    if (!dlgDone) return;
+    dlgDone.style.display = 'block';
+
+    // dropdown groups = state.groups (already delegated-only)
+    dlgDoneGroup.innerHTML = '';
+    (state.groups||[]).forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.key;
+      opt.textContent = g.title || g.key;
+      dlgDoneGroup.appendChild(opt);
+    });
+
+    if (preselectGroupKey) dlgDoneGroup.value = String(preselectGroupKey);
+    if (!dlgDoneGroup.value && dlgDoneGroup.options.length) dlgDoneGroup.value = dlgDoneGroup.options[0].value;
+
+    syncDoneForm();
+    renderDoneList();
+  }
+
+  function closeDoneModal(){
+    if (!dlgDone) return;
+    dlgDone.style.display = 'none';
+  }
+
+  function syncDoneForm(){
+    const gk = String(dlgDoneGroup.value || '');
+    const g = (state.groups||[]).find(x => String(x.key) === gk);
+    const del = g && g.delegation ? g.delegation : null;
+
+    dlgDoneStatus.value = (del && del.status) ? String(del.status) : 'open';
+    dlgDoneNote.value = (del && del.note) ? String(del.note) : '';
+  }
+
+  function renderDoneList(){
+    if (!dlgDoneList) return;
+    const rows = [];
+
+    (state.groups||[]).forEach(g => {
+      const del = g.delegation || null;
+      const statusLbl = (del && del.status === 'done') ? 'fertig' : 'offen';
+      const note = String(del?.note || '').trim();
+
+      rows.push(`
+        <div class="del-row">
+          <div class="l">
+            <div class="t">${esc(g.title || g.key)}</div>
+            <div class="s">${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
+          </div>
+          <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">Bearbeiten</button>
+        </div>
+      `);
+    });
+
+    dlgDoneList.innerHTML = rows.length ? rows.join('') : `<div class="muted">Keine delegierten Gruppen gefunden.</div>`;
+
+    dlgDoneList.querySelectorAll('[data-done-edit]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const gk = String(btn.getAttribute('data-done-edit') || '');
+        if (gk) openDoneModal(gk);
+      });
+    });
+  }
+
 function syncDelegationForm(){
   const gk = String(dlgGroup.value || '');
   const g = (state.groups||[]).find(x => String(x.key) === gk);
@@ -1582,6 +1708,39 @@ function renderDelegationsList(){
 }
 
 if (btnDelegationsTop) btnDelegationsTop.addEventListener('click', () => openDelegations());
+
+  if (btnDelegationDoneTop) {
+    btnDelegationDoneTop.addEventListener('click', () => openDoneModal());
+  }
+
+  if (dlgDone) {
+    dlgDone.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', () => closeDoneModal()));
+  }
+
+  if (dlgDoneGroup) {
+    dlgDoneGroup.addEventListener('change', () => syncDoneForm());
+  }
+
+  if (dlgDoneSave) {
+    dlgDoneSave.addEventListener('click', async () => {
+      const gk = String(dlgDoneGroup.value || '').trim();
+      if (!gk) return;
+
+      const status = String(dlgDoneStatus.value || 'open');
+      const note = String(dlgDoneNote.value || '');
+
+      await api('delegations_mark', {
+        class_id: state.class_id,
+        period_label: state.period_label,
+        group_key: gk,
+        status,
+        note
+      });
+
+      await loadClass(state.class_id);
+      openDoneModal(gk);
+    });
+  }
 
 if (dlg) {
   dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', () => closeDelegations()));
