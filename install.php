@@ -446,6 +446,25 @@ CREATE TABLE IF NOT EXISTS `classes` (
   KEY `idx_classes_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
           
+CREATE TABLE IF NOT EXISTS `class_group_delegations` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+  `group_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `user_id` bigint UNSIGNED NOT NULL,
+  `status` enum('open','done') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_class_group_deleg` (`class_id`,`school_year`,`period_label`,`group_key`),
+  KEY `idx_class_group_deleg_user` (`user_id`),
+  KEY `idx_class_group_deleg_class` (`class_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+          
 ALTER TABLE `classes`
   ADD CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 

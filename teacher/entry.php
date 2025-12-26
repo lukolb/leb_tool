@@ -11,6 +11,11 @@ $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
 $classId = (int)($_GET['class_id'] ?? 0);
+$delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
+
+$jsDelegatedMode = $delegatedMode ? 1 : 0;
+$jsUserId = $userId;
+$jsCanDelegate = $delegatedMode ? 0 : 1;
 
 if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
@@ -27,6 +32,64 @@ if (($u['role'] ?? '') === 'admin') {
   $classes = $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// Delegations must be accessed ONLY via inbox (separate from own classes).
+$ownClassIds = array_map(fn($r) => (int)($r['id'] ?? 0), $classes);
+$hasOwnClass = ($classId > 0 && in_array($classId, $ownClassIds, true));
+
+if (($u['role'] ?? '') !== 'admin') {
+  if (!$delegatedMode) {
+    // Own work: allow only own classes
+    if ($classId <= 0 && $classes) {
+      $classId = (int)($classes[0]['id'] ?? 0);
+    }
+    $hasOwnClass = ($classId > 0 && in_array($classId, $ownClassIds, true));
+
+    if ($classId > 0 && !$hasOwnClass) {
+      render_teacher_header('Eingaben');
+      ?>
+      <div class="card">
+        <div class="row-actions">
+          <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
+    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
+          <a class="btn" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
+        </div>
+        <h1 style="margin-top:0;">Delegationen sind getrennt</h1>
+        <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations‑Inbox</a>.</p>
+      </div>
+      <?php
+      render_teacher_footer();
+      exit;
+    }
+  } else {
+    // Delegated work: class_id must be provided and must be accessible via delegation.
+    if ($classId <= 0) {
+      render_teacher_header('Delegation');
+      ?>
+      <div class="card">
+        <div class="row-actions">
+          <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">← Delegationen</a>
+        </div>
+        <div class="alert danger"><strong>Keine Klasse ausgewählt.</strong></div>
+      </div>
+      <?php
+      render_teacher_footer();
+      exit;
+    }
+
+    if (!user_can_access_class($pdo, $userId, $classId)) {
+      http_response_code(403);
+      echo '403 Forbidden';
+      exit;
+    }
+
+    // IMPORTANT: Do not show other classes here.
+    $stc = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+    $stc->execute([$classId]);
+    $only = $stc->fetch(PDO::FETCH_ASSOC);
+    $classes = $only ? [$only] : [];
+  }
+}
+
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -34,9 +97,6 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
-if ($classId <= 0 && $classes) {
-  $classId = (int)($classes[0]['id'] ?? 0);
-}
 
 if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
@@ -48,11 +108,18 @@ render_teacher_header('Eingaben');
 ?>
 
 <div class="card">
-  <div class="row-actions">
+  <div class="row-actions" style="justify-content:space-between; align-items:center;">
     <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
+    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
+    <?php if (!$delegatedMode): ?>
+        <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+      <?php endif; ?>
   </div>
 
-  <h1 style="margin-top:0;">Eingaben ausfüllen</h1>
+  <h1 style="margin-top:0;"><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+  <?php if ($delegatedMode): ?>
+    <div class="alert" style="margin-top:10px;"><strong>Delegation:</strong> Du siehst hier nur die an dich delegierten Fachbereiche. Andere Bereiche sind schreibgeschützt.</div>
+  <?php endif; ?>
   <p class="muted" style="margin-top:-6px;">
     Tipps: <strong>Tab</strong> zum schnellen Springen · <strong>Shift+Tab</strong> zurück ·
     <strong>Alt+S</strong> Schülereingaben ein/aus · <strong>Alt+M</strong> Ansicht wechseln
@@ -61,7 +128,7 @@ render_teacher_header('Eingaben');
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <div style="min-width:260px;">
       <label class="label">Klasse</label>
-      <select class="input" id="classSelect" style="width:100%;">
+      <select class="input" id="classSelect" style="width:100%;" <?= $delegatedMode ? 'disabled' : '' ?>>
         <?php foreach ($classes as $c): $id = (int)$c['id']; ?>
           <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>><?=h((string)$c['school_year'] . ' · ' . class_display($c))?></option>
         <?php endforeach; ?>
@@ -87,6 +154,53 @@ render_teacher_header('Eingaben');
 </div>
 
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
+
+<?php if (!$delegatedMode): ?>
+    <div id="dlgDelegations" class="modal" style="display:none;">
+      <div class="modal-backdrop" data-close="1"></div>
+      <div class="modal-card">
+        <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+          <h3 style="margin:0;">Fachbereiche delegieren</h3>
+          <button class="btn secondary" type="button" data-close="1">Schließen</button>
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          Hier kannst du pro <strong>Fach/Gruppe</strong> eine Kollegin/einen Kollegen als Bearbeiter:in festlegen.
+          Delegierte Gruppen sind für andere Lehrkräfte <strong>schreibgeschützt</strong> (Admin darf immer).
+        </div>
+
+        <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
+          <div style="min-width:240px;">
+            <label class="label">Fach/Gruppe</label>
+            <select class="input" id="dlgGroup" style="width:100%;"></select>
+          </div>
+          <div style="min-width:280px;">
+            <label class="label">Kolleg:in</label>
+            <select class="input" id="dlgUser" style="width:100%;"></select>
+            <div class="muted" style="font-size:12px; margin-top:4px;">Leer = Delegation aufheben</div>
+          </div>
+          <div style="min-width:160px;">
+            <label class="label">Status</label>
+            <select class="input" id="dlgStatus" style="width:100%;">
+              <option value="open">offen</option>
+              <option value="done">fertig</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:240px;">
+            <label class="label">Notiz</label>
+            <input class="input" id="dlgNote" type="text" placeholder="z.B. Deutsch fertig, Mathe offen…" style="width:100%;">
+          </div>
+          <div>
+            <button class="btn" type="button" id="dlgSave">Speichern</button>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
+          <div class="muted" style="margin-bottom:8px;">Aktuelle Delegationen</div>
+          <div id="dlgList" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+      </div>
+    </div>
+<?php endif; ?>
 
 <div id="app" class="card" style="display:none;">
   <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
@@ -233,10 +347,25 @@ render_teacher_header('Eingaben');
   .show-child .cellChild{ display:block; }
 
   .missing{ outline:2px solid rgba(200,20,20,0.12); background: rgba(200,20,20,0.04); border-radius:12px; padding:4px; }
+
+.modal{ position:fixed; inset:0; z-index:9999; }
+.modal-backdrop{ position:absolute; inset:0; background: rgba(0,0,0,0.35); }
+.modal-card{ position:relative; width:min(980px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow:auto; margin:12px auto; background:#fff; border-radius:16px; padding:14px; box-shadow: 0 12px 40px rgba(0,0,0,0.22); border:1px solid rgba(0,0,0,0.08); }
+.del-row{ border:1px solid var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; gap:10px; align-items:center; background:#fff; }
+.del-row .l{ min-width:0; }
+.del-row .l .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.del-row .l .s{ color:var(--muted); font-size:12px; margin-top:2px; }
+.badge-del{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(11,87,208,0.22); background: rgba(11,87,208,0.08); font-size:12px; color: rgba(11,87,208,0.9); }
+
 </style>
 
 <script>
 (function(){
+  const DELEGATED_MODE = (<?= (int)$jsDelegatedMode ?> === 1);
+  const CURRENT_USER_ID = Number(<?= (int)$jsUserId ?>);
+  const CAN_DELEGATE = (<?= (int)$jsCanDelegate ?> === 1);
+
+  const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
@@ -259,6 +388,15 @@ render_teacher_header('Eingaben');
   const classFieldsProgressPct = document.getElementById('classFieldsProgressPct');
 
   const elSavePill = document.getElementById('savePill');
+  const btnDelegations = document.getElementById('btnDelegations');
+  const dlg = document.getElementById('dlgDelegations');
+  const dlgGroup = document.getElementById('dlgGroup');
+  const dlgUser = document.getElementById('dlgUser');
+  const dlgStatus = document.getElementById('dlgStatus');
+  const dlgNote = document.getElementById('dlgNote');
+  const dlgSave = document.getElementById('dlgSave');
+  const dlgList = document.getElementById('dlgList');
+
 
   const classSelect = document.getElementById('classSelect');
   const viewSelect = document.getElementById('viewSelect');
@@ -290,6 +428,9 @@ render_teacher_header('Eingaben');
     class_id: 0,
     template: null,
     groups: [],
+    delegation_users: [],
+    delegations: [],
+    period_label: 'Standard',
     students: [],
     values_teacher: {},
     values_child: {},
@@ -795,8 +936,8 @@ render_teacher_header('Eingaben');
 
   // --- rendering helpers
 
-  function renderInputHtml(f, reportId, value, locked){
-    const dis = locked ? 'disabled' : '';
+  function renderInputHtml(f, reportId, value, locked, canEdit=true){
+    const dis = (locked || !canEdit) ? 'disabled' : '';
     const common = `class="input" data-teacher-input="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${dis}`;
 
     const type = String(f.field_type || 'text');
@@ -865,7 +1006,10 @@ render_teacher_header('Eingaben');
       state.groups.forEach(g => {
         const opt = document.createElement('option');
         opt.value = g.key;
-        opt.textContent = g.title;
+        const del = g.delegation;
+        const delTxt = del && del.user_id ? ` → ${del.user_name || ('#'+del.user_id)}` : '';
+        const lockTxt = (g.can_edit === 0) ? ' 🔒' : '';
+        opt.textContent = (g.title || g.key) + delTxt + lockTxt;
         selectEl.appendChild(opt);
       });
     }
@@ -1012,7 +1156,22 @@ render_teacher_header('Eingaben');
       (g.fields||[]).forEach(_f => { const _v = teacherVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
-      html += `<div class="section-h" style="margin-top:10px;"><div class="t">${esc(g.title)}</div><div class="s">${_gtDone}/${_gtTotal} (offen: ${_gtMiss})</div></div>`;
+      const canEditGroup = (Number(g.can_edit||0) === 1);
+      const del = g.delegation;
+      const delBadge = (del && del.user_id) ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>` : '';
+      const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
+      const delegBtn = CAN_DELEGATE
+  ? `<button class="btn secondary" type="button" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
+  : '';
+      html += `
+          <div class="section-h" style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
+            <div class="t">${esc(g.title)} ${delBadge} ${lockBadge}</div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <div class="s">${_gtDone}/${_gtTotal} (offen: ${_gtMiss})</div>
+              ${delegBtn}
+            </div>
+          </div>
+        `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
       g.fields.forEach(f => {
         const v = teacherVal(reportId, f.id);
@@ -1025,7 +1184,7 @@ render_teacher_header('Eingaben');
           <div class="field" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-            ${renderInputHtml(f, reportId, v, locked)}
+            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${childInfo}
           </div>
         `;
@@ -1033,6 +1192,14 @@ render_teacher_header('Eingaben');
     });
 
     studentForm.innerHTML = html;
+    
+    studentForm.querySelectorAll('[data-open-deleg]').forEach(b => {
+        b.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const gk = String(b.getAttribute('data-open-deleg') || '');
+          if (gk) openDelegations(gk);
+        });
+      });
 
     studentForm.querySelectorAll('[data-fieldwrap="1"]').forEach(el => {
       if (ui.showChild) el.classList.add('show-child');
@@ -1097,6 +1264,8 @@ render_teacher_header('Eingaben');
           const status = String(s.status||'draft');
           const locked = (status === 'locked');
           const v = teacherVal(reportId, f.id);
+          const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
+          const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
           const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
           const shownChild = rawChild ? childDisplay(f, rawChild) : '';
@@ -1104,7 +1273,7 @@ render_teacher_header('Eingaben');
           const missingCls = (v === '') ? 'missing' : '';
           td.innerHTML = `
             <div class="cellWrap ${missingCls}">
-              ${renderInputHtml(f, reportId, v, locked)}
+              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
               ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
             </div>
           `;
@@ -1173,6 +1342,8 @@ render_teacher_header('Eingaben');
         const reportId = s.report_instance_id;
         const locked = (status === 'locked');
         const v = teacherVal(reportId, f.id);
+        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
+        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
@@ -1180,7 +1351,7 @@ render_teacher_header('Eingaben');
         const missingCls = (v === '') ? 'missing' : '';
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked)}
+            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
@@ -1234,13 +1405,15 @@ render_teacher_header('Eingaben');
         const status = String(s.status||'draft');
         const locked = (status === 'locked');
         const v = teacherVal(reportId, f.id);
+        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
+        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
 
         td.innerHTML = `
           <div class="cellWrap">
-            ${renderInputHtml(f, reportId, v, locked)}
+            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
@@ -1261,14 +1434,48 @@ render_teacher_header('Eingaben');
     state.class_id = classId;
     state.template = j.template;
     state.groups = j.groups;
+    
+    // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
+    if (DELEGATED_MODE) {
+      const uid = CURRENT_USER_ID;
+      state.groups = (state.groups || []).filter(g => {
+        const delUid = Number(g?.delegation?.user_id || 0);
+        return (delUid > 0 && delUid === uid);
+      });
+    }
+    
+    state.delegation_users = j.delegation_users || [];
+    state.delegations = j.delegations || [];
+    state.period_label = j.period_label || 'Standard';
+
+    // reset group selects (delegation badges etc.)
+    groupSelect.innerHTML = '';
+    gradeGroupSelect.innerHTML = '';
     state.students = j.students;
     state.values_teacher = j.values_teacher || {};
     state.values_child = j.values_child || {};
     state.class_report_instance_id = j.class_report_instance_id || 0;
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
+    
+    // In delegated mode: class fields should not be visible/editable here
+    if (DELEGATED_MODE) {
+      state.class_fields = null;
+    }
 
     rebuildFieldMap();
+    
+    if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
+      elApp.style.display = 'block';
+      if (classFieldsBox) classFieldsBox.style.display = 'none';
+      elMetaTop.textContent = 'Keine Delegationen vorhanden.';
+      viewGrades.style.display = 'none';
+      viewStudent.style.display = 'none';
+      viewItem.style.display = 'none';
+      showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
+      return;
+    }
+    
     // keep client-side progress consistent (teacher edits update live)
     (state.students||[]).forEach(recomputeStudentProgress);
     recomputeFormsSummary();
@@ -1287,6 +1494,121 @@ render_teacher_header('Eingaben');
     elApp.style.display = 'block';
     render();
   }
+
+
+
+// --- delegations modal ---
+function openDelegations(preselectGroupKey){
+  if (!dlg) return;
+  if (DELEGATED_MODE) return; // delegierter darf hier nicht delegieren
+  dlg.style.display = 'block';
+
+  // groups dropdown
+  dlgGroup.innerHTML = '';
+  (state.groups||[]).forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.key;
+    opt.textContent = g.title || g.key;
+    dlgGroup.appendChild(opt);
+  });
+
+  if (preselectGroupKey) {
+    dlgGroup.value = String(preselectGroupKey);
+  }
+  if (!dlgGroup.value && dlgGroup.options.length) dlgGroup.value = dlgGroup.options[0].value;
+
+  // users dropdown
+  dlgUser.innerHTML = '';
+  const optNone = document.createElement('option');
+  optNone.value = '';
+  optNone.textContent = '— (Delegation aufheben) —';
+  dlgUser.appendChild(optNone);
+  (state.delegation_users||[]).forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = String(u.id);
+    opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+    dlgUser.appendChild(opt);
+  });
+
+  // sync form with selected group
+  syncDelegationForm();
+  renderDelegationsList();
+}
+
+function closeDelegations(){
+  if (!dlg) return;
+  dlg.style.display = 'none';
+}
+
+function syncDelegationForm(){
+  const gk = String(dlgGroup.value || '');
+  const g = (state.groups||[]).find(x => String(x.key) === gk);
+  const del = g && g.delegation ? g.delegation : null;
+
+  dlgUser.value = (del && del.user_id) ? String(del.user_id) : '';
+  dlgStatus.value = (del && del.status) ? String(del.status) : 'open';
+  dlgNote.value = (del && del.note) ? String(del.note) : '';
+}
+
+function renderDelegationsList(){
+  if (!dlgList) return;
+  const rows = [];
+  (state.groups||[]).forEach(g => {
+    const del = g.delegation;
+    if (!del || !del.user_id) return;
+    const statusLbl = (del.status === 'done') ? 'fertig' : 'offen';
+    const note = String(del.note || '').trim();
+    rows.push(`
+      <div class="del-row">
+        <div class="l">
+          <div class="t">${esc(g.title || g.key)}</div>
+          <div class="s">→ ${esc(del.user_name || ('#'+del.user_id))} · ${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
+        </div>
+        <button class="btn secondary" type="button" data-clear-deleg="${esc(g.key)}">Aufheben</button>
+      </div>
+    `);
+  });
+  dlgList.innerHTML = rows.length ? rows.join('') : `<div class="muted">Keine Delegationen gesetzt.</div>`;
+
+  dlgList.querySelectorAll('[data-clear-deleg]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const gk = String(btn.getAttribute('data-clear-deleg') || '');
+      if (!gk) return;
+      await api('delegations_save', { class_id: state.class_id, period_label: state.period_label, delegations: [{ group_key: gk, user_id: 0 }] });
+      await loadClass(state.class_id);
+      openDelegations();
+    });
+  });
+}
+
+if (btnDelegationsTop) btnDelegationsTop.addEventListener('click', () => openDelegations());
+
+if (dlg) {
+  dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', () => closeDelegations()));
+}
+
+if (dlgGroup) {
+  dlgGroup.addEventListener('change', () => syncDelegationForm());
+}
+
+if (dlgSave) {
+  dlgSave.addEventListener('click', async () => {
+    const gk = String(dlgGroup.value || '').trim();
+    if (!gk) return;
+    const uid = dlgUser.value ? Number(dlgUser.value) : 0;
+    const status = String(dlgStatus.value || 'open');
+    const note = String(dlgNote.value || '');
+
+    await api('delegations_save', {
+      class_id: state.class_id,
+      period_label: state.period_label,
+      delegations: [{ group_key: gk, user_id: uid, status, note }]
+    });
+
+    await loadClass(state.class_id);
+    openDelegations();
+  });
+}
 
   classSelect.addEventListener('change', () => {
     const cid = Number(classSelect.value || '0');

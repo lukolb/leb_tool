@@ -8,6 +8,16 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
+// Delegations inbox count (groups delegated to this teacher)
+$delegationCount = 0;
+try {
+  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=?");
+  $st->execute([$userId]);
+  $delegationCount = (int)($st->fetchColumn() ?: 0);
+} catch (Throwable $e) {
+  // ignore
+}
+
 // Load classes assigned to teacher (admins see all)
 if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
@@ -17,7 +27,7 @@ if (($u['role'] ?? '') === 'admin') {
     "SELECT c.id, c.school_year, c.grade_level, c.label, c.name
      FROM classes c
      JOIN user_class_assignments uca ON uca.class_id=c.id
-     WHERE uca.user_id=?
+     WHERE uca.user_id=? AND is_active = 1
      ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
   );
   $st->execute([$userId]);
@@ -26,6 +36,14 @@ if (($u['role'] ?? '') === 'admin') {
 
 render_teacher_header('Lehrkraft – Übersicht');
 ?>
+
+<div class="card">
+  <div class="row-actions">
+    <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Meine Klassen</a>
+    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen<?= $delegationCount>0 ? ' <span class="badge">'.h((string)$delegationCount).'</span>' : '' ?></a>
+  </div>
+</div>
+
 
 <div class="card">
   <div class="row-actions">

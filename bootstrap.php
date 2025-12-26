@@ -223,9 +223,22 @@ function user_can_access_class(PDO $pdo, int $userId, int $classId): bool {
   $u = current_user();
   if (($u['role'] ?? '') === 'admin') return true;
 
+  // 1) Explicit class assignments (Klassenzuordnung)
   $q = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
   $q->execute([$userId, $classId]);
-  return (bool)$q->fetch();
+  if ((bool)$q->fetch()) return true;
+
+  // 2) Delegations: a teacher may access a class if at least one group was delegated to them.
+  //    (IMPORTANT: This must NOT create user_class_assignments, otherwise the delegate appears as class teacher.)
+  try {
+    $q2 = $pdo->prepare("SELECT 1 FROM class_group_delegations WHERE class_id=? AND user_id=? LIMIT 1");
+    $q2->execute([$classId, $userId]);
+    if ((bool)$q2->fetch()) return true;
+  } catch (Throwable $e) {
+    // If table doesn't exist yet (during migration), ignore and fall back to assignments only.
+  }
+
+  return false;
 }
 
 // --------------------

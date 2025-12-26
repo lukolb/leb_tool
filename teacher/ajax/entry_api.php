@@ -138,6 +138,111 @@ function group_title_override(string $groupKey): string {
   return $t !== '' ? $t : $groupKey;
 }
 
+function normalize_period_label(?string $s): string {
+  $s = trim((string)$s);
+  return $s !== '' ? $s : 'Standard';
+}
+
+function load_teachers_for_delegation(PDO $pdo): array {
+  // Regular teachers + admins can be selected as delegates.
+  $st = $pdo->query(
+    "SELECT id, display_name, role
+     FROM users
+     WHERE is_active=1 AND deleted_at IS NULL AND role IN ('teacher','admin')
+     ORDER BY display_name ASC, id ASC"
+  );
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $out[] = [
+      'id' => (int)$r['id'],
+      'name' => trim((string)($r['display_name'] ?? '')),
+      'role' => (string)($r['role'] ?? ''),
+    ];
+  }
+  return $out;
+}
+
+function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+  $periodLabel = normalize_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT d.group_key, d.user_id, d.status, d.note,
+            u.display_name
+     FROM class_group_delegations d
+     LEFT JOIN users u ON u.id=d.user_id
+     WHERE d.class_id=? AND d.school_year=? AND d.period_label=?
+     ORDER BY d.group_key ASC"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel]);
+
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $g = trim((string)($r['group_key'] ?? ''));
+    if ($g === '') continue;
+    $out[$g] = [
+      'group_key' => $g,
+      'user_id' => (int)($r['user_id'] ?? 0),
+      'user_name' => trim((string)($r['display_name'] ?? '')),
+      'status' => (string)($r['status'] ?? 'open'),
+      'note' => (string)($r['note'] ?? ''),
+    ];
+  }
+  return $out;
+}
+
+function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey, int $userId, string $status, string $note, int $actorUserId): void {
+  $groupKey = trim($groupKey);
+  if ($groupKey === '') throw new RuntimeException('group_key fehlt.');
+  $periodLabel = normalize_period_label($periodLabel);
+  $status = ($status === 'done') ? 'done' : 'open';
+
+  if ($userId <= 0) {
+    // clear
+    $pdo->prepare(
+      "DELETE FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey]);
+    return;
+  }
+  // NOTE: Do NOT auto-assign delegates as class teachers (separation requirement).
+
+  $pdo->prepare(
+    "INSERT INTO class_group_delegations (class_id, school_year, period_label, group_key, user_id, status, note, created_by_user_id, updated_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       user_id=VALUES(user_id),
+       status=VALUES(status),
+       note=VALUES(note),
+       updated_by_user_id=VALUES(updated_by_user_id),
+       updated_at=NOW()"
+  )->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $actorUserId, $actorUserId]);
+
+  audit('class_group_delegation_upsert', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status]);
+}
+
+function delegated_user_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey): int {
+  $groupKey = trim($groupKey);
+  if ($groupKey === '') return 0;
+  $periodLabel = normalize_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT user_id
+     FROM class_group_delegations
+     WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?
+     LIMIT 1"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+  return (int)($st->fetchColumn() ?: 0);
+}
+
+function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, string $groupKey): bool {
+  if (($currentUser['role'] ?? '') === 'admin') return true;
+  $uid = (int)($currentUser['id'] ?? 0);
+  if ($uid <= 0) return false;
+  $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  if ($assigned <= 0) return true;        // not delegated => anyone with class access may edit
+  return $assigned === $uid;              // delegated => only that teacher
+}
+
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
   $s = explode('-', $s, 2)[0];
@@ -283,7 +388,12 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
     $fid = (string)(int)$r['template_field_id'];
     if (!isset($out[$rid])) $out[$rid] = [];
     $meta = meta_read($r['meta_json'] ?? null);
-    $res = resolve_option_value_text($pdo, $meta, $r['value_json'] !== null ? (string)$r['value_json'] : null, $r['value_text'] !== null ? (string)$r['value_text'] : null);
+    $res = resolve_option_value_text(
+      $pdo,
+      $meta,
+      $r['value_json'] !== null ? (string)$r['value_json'] : null,
+      $r['value_text'] !== null ? (string)$r['value_text'] : null
+    );
     $out[$rid][$fid] = $res['text'] !== null ? (string)$res['text'] : '';
   }
   return $out;
@@ -499,6 +609,23 @@ try {
 
     $groupsList = array_values($groups);
 
+    // --- delegations (per class/school_year/period_label + group) ---
+    $periodLabel = 'Standard';
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $delegationUsers = load_teachers_for_delegation($pdo);
+
+    // annotate groups with permissions + delegation meta for UI
+    $groupsList2 = [];
+    foreach ($groupsList as $g0) {
+      $gk = (string)($g0['key'] ?? '');
+      $del = $gk !== '' && isset($delegations[$gk]) ? $delegations[$gk] : null;
+      $canEditGroup = $gk !== '' ? can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gk) : true;
+      $g0['delegation'] = $del;
+      $g0['can_edit'] = $canEditGroup ? 1 : 0;
+      $groupsList2[] = $g0;
+    }
+    $groupsList = $groupsList2;
+
     // values
     $teacherFieldIds = array_map(fn($x)=>(int)$x['id'], $teacherFields);
     $childFieldIds = array_values(array_unique(array_filter(array_map(
@@ -607,6 +734,9 @@ try {
       ],
       'students' => $students,
       'groups' => $groupsList,
+      'delegation_users' => $delegationUsers,
+      'delegations' => array_values($delegations),
+      'period_label' => $periodLabel,
       'values_teacher' => $valuesTeacher,
       'values_child' => $valuesChild,
       'progress_summary' => $progressSummary,
@@ -619,6 +749,45 @@ try {
         'value_by_name' => $classValueByName,
       ],
     ]);
+  }
+
+  if ($action === 'delegations_save') {
+    $classId = (int)($data['class_id'] ?? 0);
+    if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+    $periodLabel = normalize_period_label((string)($data['period_label'] ?? 'Standard'));
+
+    $items = $data['delegations'] ?? null;
+    if (!is_array($items)) throw new RuntimeException('delegations fehlt.');
+
+    $pdo->beginTransaction();
+    try {
+      foreach ($items as $it) {
+        if (!is_array($it)) continue;
+        $gk = trim((string)($it['group_key'] ?? ''));
+        if ($gk === '') continue;
+
+        $uid = (int)($it['user_id'] ?? 0);
+        $status = (string)($it['status'] ?? 'open');
+        $note = (string)($it['note'] ?? '');
+
+        upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, $uid, $status, $note, $userId);
+      }
+
+      $pdo->commit();
+    } catch (Throwable $e2) {
+      $pdo->rollBack();
+      throw $e2;
+    }
+
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
   }
 
   if ($action === 'save_class') {
@@ -667,10 +836,16 @@ try {
     if (!is_class_field($meta)) throw new RuntimeException('Dieses Feld ist kein Klassenfeld.');
     if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
+    // delegation: if a group is delegated, only that colleague (or admin) may edit it
+    $schoolYear = (string)($ri['school_year'] ?? '');
+    $periodLabel = (string)($ri['period_label'] ?? 'Standard');
+    $gKey = group_key_from_meta($meta);
+    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gKey)) {
+      throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
+    }
+
     $type = (string)$frow['field_type'];
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
-
-    $valueJson = null;
 
     $valueJson = null;
 
@@ -716,7 +891,7 @@ try {
     if ($reportId <= 0 || $fieldId <= 0) throw new RuntimeException('report_instance_id/template_field_id fehlt.');
 
     $st = $pdo->prepare(
-      "SELECT ri.id, ri.status, ri.template_id, s.class_id, c.template_id AS class_template_id
+      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
        FROM report_instances ri
        INNER JOIN students s ON s.id=ri.student_id
        INNER JOIN classes c ON c.id=s.class_id
@@ -754,8 +929,19 @@ try {
     $meta = meta_read($frow['meta_json'] ?? null);
     if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
+    // ✅ Delegation serverseitig erzwingen
+    $schoolYear = (string)($ri['school_year'] ?? '');
+    $periodLabel = (string)($ri['period_label'] ?? 'Standard');
+    $gKey = group_key_from_meta($meta);
+    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gKey)) {
+      throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
+    }
+
     $type = (string)$frow['field_type'];
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+
+    // ✅ immer initialisieren (sonst Undefined variable)
+    $valueJson = null;
 
     if (in_array($type, ['radio','select','grade'], true)) {
       $valueText = $valueText !== null ? trim($valueText) : '';
