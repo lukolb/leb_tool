@@ -8,6 +8,7 @@ $pass  = $_POST['password'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
+    csrf_verify();
     $pdo = db();
     $stmt = $pdo->prepare("SELECT id, email, password_hash, display_name, role, is_active, deleted_at FROM users WHERE email=? LIMIT 1");
     $stmt->execute([trim((string)$email)]);
@@ -77,6 +78,7 @@ $logo = $b['logo_path'] ?? '';
       <?php endif; ?>
 
       <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <label>E-Mail</label>
         <input name="email" type="email" value="<?=h((string)$email)?>" required>
 
