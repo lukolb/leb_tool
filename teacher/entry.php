@@ -311,7 +311,7 @@ render_teacher_header('Eingaben');
   <!-- Student view -->
   <div id="viewStudent" style="display:none;">
     <div style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
-      <div style="position:sticky; top:14px; align-self:start;">
+      <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
           <input class="input" id="studentSearch" type="search" placeholder="Schüler suchen…" style="width:100%;">
         </div>
