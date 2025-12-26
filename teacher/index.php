@@ -39,14 +39,7 @@ render_teacher_header('Lehrkraft – Übersicht');
 
 <div class="card">
   <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Meine Klassen</a>
-    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen<?= $delegationCount>0 ? ' <span class="badge">'.h((string)$delegationCount).'</span>' : '' ?></a>
-  </div>
-</div>
-
-
-<div class="card">
-  <div class="row-actions">
+    <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
     <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
     <?php if (($u['role'] ?? '') === 'admin'): ?>
       <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">Admin</a>
@@ -54,11 +47,37 @@ render_teacher_header('Lehrkraft – Übersicht');
   </div>
 
   <h1 style="margin-top:0;">Hallo <?=h((string)($u['display_name'] ?? ''))?></h1>
-  <p class="muted">Hier verwaltest du deine Klassen und Schüler. Danach können Berichte vorbereitet und ausgefüllt werden.</p>
+  <p class="muted">Hier findest du alle wichtigen Wege rund um Klassen, Delegationen und Eingaben auf einen Blick.</p>
 
-  <div class="actions">
-    <a class="btn primary" href="<?=h(url('teacher/classes.php'))?>">Meine Klassen</a>
-    <a class="btn secondary" href="<?=h(url('teacher/entry.php'))?>">Eingaben ausfüllen</a>
+  <div class="nav-grid">
+    <a class="nav-tile primary" href="<?=h(url('teacher/classes.php'))?>">
+      <div class="nav-title">Meine Klassen</div>
+      <p class="nav-desc">Zugeordnete Klassen ansehen, Schülerinnen und Schüler verwalten.</p>
+    </a>
+    <a class="nav-tile primary" href="<?=h(url('teacher/entry.php'))?>">
+      <div class="nav-title">Eingaben ausfüllen</div>
+      <p class="nav-desc">Berichte vorbereiten und direkt im Browser bearbeiten.</p>
+    </a>
+    <a class="nav-tile" href="<?=h(url('teacher/delegations.php'))?>">
+      <div class="nav-title">Delegationen</div>
+      <p class="nav-desc">Geteilte Klassen und Aufgaben im Blick behalten.</p>
+      <div class="nav-meta">
+        <?php if ($delegationCount>0): ?>
+          <span class="badge"><?=h((string)$delegationCount)?></span>
+          <span class="small">offene Delegationen</span>
+        <?php else: ?>
+          <span class="small muted">Keine offenen Delegationen</span>
+        <?php endif; ?>
+      </div>
+    </a>
+    <a class="nav-tile" href="<?=h(url('teacher/qr_print.php'))?>">
+      <div class="nav-title">QR-Codes drucken</div>
+      <p class="nav-desc">Zugänge und Aushänge für Klassen schnell bereitstellen.</p>
+    </a>
+    <a class="nav-tile" href="<?=h(url('teacher/export.php'))?>">
+      <div class="nav-title">PDF-Export</div>
+      <p class="nav-desc">Berichte herunterladen oder weitergeben.</p>
+    </a>
   </div>
 </div>
 
