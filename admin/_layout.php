@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+function nav_is_active(array $files): bool {
+  $current = basename(parse_url((string)($_SERVER['PHP_SELF'] ?? ''), PHP_URL_PATH));
+  return in_array($current, $files, true);
+}
+
 function render_admin_header(string $title): void {
   $b = brand();
   $org = $b['org_name'] ?? 'LEG Tool';
@@ -30,6 +35,29 @@ function render_admin_header(string $title): void {
           <div class="brand-title"><?=h($org)?></div>
           <div class="brand-subtitle"><?=h($title)?></div>
         </div>
+      </div>
+    </div>
+    <div class="menu-bar">
+      <div class="nav-shell">
+        <nav class="nav-menu" aria-label="Admin Navigation">
+          <?php
+          $items = [
+            ['Dashboard', 'admin/index.php', ['index.php']],
+            ['Klassen', 'admin/classes.php', ['classes.php']],
+            ['Nutzer', 'admin/users.php', ['users.php']],
+            ['Schüler', 'admin/students.php', ['students.php']],
+            ['Templates', 'admin/templates.php', ['templates.php']],
+            ['Felder', 'admin/template_fields.php', ['template_fields.php']],
+            ['Mappings', 'admin/template_mappings.php', ['template_mappings.php']],
+            ['Optionen', 'admin/option_scales.php', ['option_scales.php']],
+            ['Export', 'admin/export.php', ['export.php']],
+          ];
+          foreach ($items as [$label, $href, $files]):
+            $active = nav_is_active($files) ? 'active' : '';
+          ?>
+            <a class="nav-link <?=$active?>" href="<?=h(url($href))?>"><?=h($label)?></a>
+          <?php endforeach; ?>
+        </nav>
       </div>
     </div>
     <div class="container">
