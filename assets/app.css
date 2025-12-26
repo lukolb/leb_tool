@@ -44,6 +44,13 @@ body.page{
 .brand-title{font-weight:750; letter-spacing:.2px}
 .brand-subtitle{color:var(--muted); font-size:12px}
 
+.menu-bar{background:#fff; border-bottom:1px solid var(--border); box-shadow:0 1px 6px rgba(16,24,40,.05);}
+.nav-shell{max-width:1200px; margin:0 auto; padding:0 16px; overflow-x:auto;}
+.nav-menu{display:flex; gap:10px; align-items:center; padding:10px 6px; margin:0; list-style:none;}
+.nav-link{padding:8px 12px; border-radius:10px; color:var(--secondary); text-decoration:none; font-weight:600; border:1px solid transparent; white-space:nowrap;}
+.nav-link:hover{background:rgba(0,0,0,0.04);}
+.nav-link.active{background:rgba(11,87,208,0.1); color:var(--primary); border-color:rgba(11,87,208,0.3);}
+
 h1{margin:18px 0 12px}
 h2{margin:0 0 12px}
 
