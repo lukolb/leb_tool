@@ -75,9 +75,9 @@ try {
     (int)current_user()['id']
   ]);
   $iconId = (int)$pdo->lastInsertId();
-  audit('icon_upload', (int)current_user()['id'], ['icon_id'=>$id,'file'=>basename($destAbs)]);
+  audit('icon_upload', (int)current_user()['id'], ['icon_id'=>$iconId,'file'=>basename($destAbs)]);
 
-  echo json_encode(['ok'=>true, 'icon_id'=>$id, 'filename'=>basename($destAbs)], JSON_UNESCAPED_UNICODE);
+  echo json_encode(['ok'=>true, 'icon_id'=>$iconId, 'filename'=>basename($destAbs)], JSON_UNESCAPED_UNICODE);
   exit;
 
 } catch (Throwable $e) {
