@@ -269,6 +269,18 @@ function require_login(): void {
   if (!current_user()) redirect('login.php');
 }
 
+function get_role(): string {
+    $u = current_user();
+    $role = (string)($u['role'] ?? '');
+    if ($role == 'teacher') {
+      return "teacher";
+    } else if($role == 'admin') {
+        return "admin";
+    } else {
+        return null;
+    }
+}
+
 function require_admin(): void {
   require_login();
   $u = current_user();

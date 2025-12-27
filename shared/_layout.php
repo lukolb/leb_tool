@@ -32,9 +32,7 @@ function nav_items_for_role(string $role): array {
 }
 
 function render_role_header(string $title): void {
-  $user = current_user();
-  $role = (string)($user['role'] ?? '');
-  $role = $role === 'admin' ? 'admin' : 'teacher';
+  $role = get_role();
 
   $b = brand();
   $org = (string)($b['org_name'] ?? 'LEG Tool');

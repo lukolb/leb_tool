@@ -8,10 +8,12 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
+$toClassesUrl = get_role() == "admin" ? 'admin/classes.php' : 'teacher/classes.php';
+
 $classId = (int)($_GET['class_id'] ?? ($_POST['class_id'] ?? 0));
 if ($classId <= 0) {
   render_teacher_header('Schüler');
-  echo '<div class="card"><div class="alert danger"><strong>class_id fehlt.</strong></div><a class="btn secondary" href="'.h(url('teacher/index.php')).'">← Übersicht</a></div>';
+  echo '<div class="card"><h2>Schüler-Zugangscodes</h2><div class="alert danger"><strong>class_id fehlt.</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">← Zurück zu den Klassen</a></div>';
   render_teacher_footer();
   exit;
 }
@@ -27,7 +29,7 @@ $clsSt->execute([$classId]);
 $class = $clsSt->fetch();
 if (!$class) {
   render_teacher_header('Schüler');
-  echo '<div class="card"><div class="alert danger"><strong>Klasse nicht gefunden.</strong></div><a class="btn secondary" href="'.h(url('teacher/index.php')).'">← Übersicht</a></div>';
+  echo '<div class="card"><h2>Schüler-Zugangscodes</h2><div class="alert danger"><strong>Klasse nicht gefunden.</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">← Zurück zu den Klassen</a></div>';
   render_teacher_footer();
   exit;
 }
@@ -585,7 +587,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 
 <div class="card">
     <div class="row-actions" style="float: right;">
-    <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">← zurück zu den Klassen</a>
+    <a class="btn secondary" href="<?=h(url($toClassesUrl))?>">← zurück zu den Klassen</a>
   </div>
 
   <h1>Klasse <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
