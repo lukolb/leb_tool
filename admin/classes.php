@@ -460,7 +460,7 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Anlegen</a>
         </div>
       </form>
     </div>
@@ -525,7 +525,7 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Bulk anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Bulk anlegen</a>
         </div>
       </form>
     </div>
@@ -684,7 +684,7 @@ render_admin_header('Klassen');
 
       <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
         <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Abbrechen</a>
-        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Speichern</a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Speichern</a>
       </div>
     </form>
 
@@ -716,5 +716,23 @@ render_admin_header('Klassen');
     </form>
   </div>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener('mousedown', function (e) {
+    const option = e.target;
+
+    if (
+      option.tagName === 'OPTION' &&
+      option.parentElement &&
+      option.parentElement.matches("select[multiple]")
+    ) {
+      e.preventDefault();
+      option.selected = !option.selected;
+      option.parentElement.focus();
+    }
+  });
+});
+</script>
 
 <?php render_admin_footer(); ?>

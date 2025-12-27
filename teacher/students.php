@@ -752,7 +752,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <input type="file" name="csv_file" accept=".csv,text/csv" required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Importieren</a>
+      <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Importieren</a>
     </div>
   </form>
 </div>
@@ -791,7 +791,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <div class="actions" style="justify-content:flex-start; margin-top:12px;">
         <a class="btn secondary" type="button" id="btnSelectNone">Keinen ausschließen</a>
         <a class="btn secondary" type="button" id="btnSelectAll">Alle ausschließen</a>
-        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Übernehmen</a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Übernehmen</a>
       </div>
     </form>
 

@@ -225,7 +225,7 @@ tr.tpl-inactive { opacity: 0.65; }
     <label>PDF Datei</label>
     <div class="actions actions-row">
         <input class="file-input" type="file" name="pdf" accept=".pdf,application/pdf" required>
-        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Hochladen</a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Hochladen</a>
     </div>
   </form>
 </div>

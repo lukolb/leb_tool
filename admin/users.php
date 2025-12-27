@@ -275,7 +275,7 @@ render_admin_header('User');
 
           <a href="#"
              class="btn primary"
-             onclick="this.parentNode.submit(); return false;">
+             onclick="this.parentNode.parentNode.submit(); return false;">
              Import starten
           </a>
         </div>
