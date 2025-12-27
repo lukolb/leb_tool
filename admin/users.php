@@ -213,9 +213,6 @@ render_admin_header('User');
   <h1>User</h1>
 </div>
 
-<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
-<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
 <div class="card">
   <?php if ($bulk): ?>
     <div class="alert">
@@ -283,6 +280,9 @@ render_admin_header('User');
     </div>
   </div>
 </div>
+
+<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;">Bestehende User</h2>
