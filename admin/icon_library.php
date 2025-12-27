@@ -109,6 +109,7 @@ render_admin_header('Admin – Icon & Options');
         </div>
 
         <h3 style="margin:14px 0 8px;">Vorhandene Icons</h3>
+        <div id="iconMsg" class="muted small" style="margin-bottom:8px;"></div>
         <div id="iconGrid" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:12px;"></div>
       </div>
     </div>
@@ -221,6 +222,7 @@ render_admin_header('Admin – Icon & Options');
 
   // ---------------- Icons (DB-backed)
   const iconGrid = document.getElementById('iconGrid');
+  const iconMsg = document.getElementById('iconMsg');
   const iconFilter = document.getElementById('iconFilter');
   const btnReloadIcons = document.getElementById('btnReloadIcons');
   const iconUploadForm = document.getElementById('iconUploadForm');
@@ -249,8 +251,15 @@ render_admin_header('Admin – Icon & Options');
         <div style="margin-top:6px;">
           <input readonly value="${escapeAttr(ic.storage_path)}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:10px;">
         </div>
+        <div class="actions" style="margin-top:10px; justify-content:flex-end;">
+          <button class="btn secondary js-del-icon" data-id="${ic.id}" type="button" style="border-color:#b00020; color:#b00020;">Löschen</button>
+        </div>
       </div>
     `).join('');
+
+    iconGrid.querySelectorAll('.js-del-icon').forEach(btn => {
+      btn.addEventListener('click', () => deleteIcon(btn.dataset.id));
+    });
   }
 
   function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -269,6 +278,30 @@ render_admin_header('Admin – Icon & Options');
 
   iconFilter.addEventListener('input', renderIcons);
   btnReloadIcons.addEventListener('click', loadIcons);
+
+  function setIconMsg(txt, isError=false){
+    iconMsg.textContent = txt || '';
+    iconMsg.style.color = isError ? '#b00020' : '';
+  }
+
+  async function deleteIcon(id){
+    if (!id) return;
+    if (!confirm('Icon wirklich löschen?')) return;
+    setIconMsg('Lösche…');
+
+    const resp = await fetch(<?=json_encode(url('admin/ajax/icon_delete.php'))?>, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ icon_id: Number(id) })
+    });
+    const j = await resp.json().catch(()=>({}));
+    if (!resp.ok || !j.ok){
+      setIconMsg('Fehler: ' + (j.error || ('HTTP ' + resp.status)), true);
+      return;
+    }
+    setIconMsg('Icon gelöscht.');
+    await loadIcons();
+  }
 
   iconUploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
