@@ -479,6 +479,9 @@ ALTER TABLE `password_reset_tokens`
 ALTER TABLE `user_class_assignments`
   ADD CONSTRAINT `fk_uca_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_uca_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+          
+CREATE TRIGGER `delete_old_password_tokens` BEFORE INSERT ON `audit_log` FOR EACH ROW DELETE FROM password_reset_tokens WHERE expires_at < NOW();
+          
 COMMIT;
           
 SQL;

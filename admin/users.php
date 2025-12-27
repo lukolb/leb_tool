@@ -46,7 +46,7 @@ function create_user(PDO $pdo, string $email, string $name, string $role, bool $
   $id = (int)$pdo->lastInsertId();
 
   if ($sendInvite) {
-    $token = create_password_reset_token($id, 60, true);
+    $token = create_password_reset_token($id, 48, true);
     $link = absolute_url('reset_password.php?token=' . urlencode($token));
     $html = build_set_password_email($name, $email, $link);
     send_email($email, 'Konto erstellen – Passwort setzen', $html);

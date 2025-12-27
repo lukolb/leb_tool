@@ -8,6 +8,10 @@ require_admin();
 header('Content-Type: application/json; charset=utf-8');
 
 try {
+    $data = json_decode(file_get_contents('php://input'), true) ?: [];
+  // CSRF: Header oder JSON-field
+  if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
+  if (!isset($_POST['csrf_token']) && isset($_SERVER['HTTP_X_CSRF_TOKEN'])) $_POST['csrf_token'] = (string)$_SERVER['HTTP_X_CSRF_TOKEN'];
   csrf_verify();
 
   $data = json_decode(file_get_contents('php://input'), true) ?: [];

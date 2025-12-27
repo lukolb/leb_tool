@@ -596,7 +596,7 @@ function send_email(string $to, string $subject, string $htmlBody): bool {
 // --------------------
 // Password reset tokens
 // --------------------
-function create_password_reset_token(int $userId, int $minutesValid = 60, bool $invalidateOld = true): string {
+function create_password_reset_token(int $userId, int $hoursValid = 1, bool $invalidateOld = true): string {
   $pdo = db();
   if ($invalidateOld) {
     $pdo->prepare("UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=? AND used_at IS NULL")->execute([$userId]);
@@ -604,7 +604,7 @@ function create_password_reset_token(int $userId, int $minutesValid = 60, bool $
 
   $raw = bin2hex(random_bytes(32));
   $hash = hash('sha256', $raw);
-  $expires = (new DateTimeImmutable('now'))->modify("+{$minutesValid} minutes")->format('Y-m-d H:i:s');
+  $expires = (new DateTimeImmutable('now'))->modify("+{$hoursValid} hours")->format('Y-m-d H:i:s');
 
   $stmt = $pdo->prepare(
     "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)"
@@ -632,7 +632,7 @@ function build_set_password_email(string $name, string $email, string $link): st
     <p>Hallo {$safeName},</p>
     <p>für dich wurde ein Konto (<strong>{$safeEmail}</strong>) angelegt. Bitte setze dein Passwort über diesen Link:</p>
     <p><a href="{$safeLink}" style="display:inline-block; padding:10px 14px; background:{$primary}; color:#fff; text-decoration:none; border-radius:10px;">Passwort setzen</a></p>
-    <p class="muted" style="color:#666;">Der Link ist zeitlich begrenzt gültig.</p>
+    <p class="muted" style="color:#666;">Der Link ist 48 h gültig.</p>
   </div>
 HTML;
 }
