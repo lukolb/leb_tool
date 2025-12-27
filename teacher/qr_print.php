@@ -75,9 +75,9 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
 <body class="page">
   <div class="container">
     <div class="card noprint">
-      <div class="row-actions">
-        <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id='.(int)$classId))?>">← zurück</a>
-        <button class="btn primary" onclick="window.print()">Drucken</button>
+        <div class="row-actions" style="margin-bottom: 10px;">
+          <a class="btn secondary" onclick="window.close()">Schließen</a>
+        <a class="btn primary" onclick="window.print()">Drucken</a>
       </div>
       <h1 style="margin-top:0;"><?=h($title)?></h1>
       <div class="alert">

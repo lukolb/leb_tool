@@ -77,7 +77,7 @@ $logo = $b['logo_path'] ?? '';
         <div class="alert danger"><strong><?=h($err)?></strong></div>
       <?php endif; ?>
 
-      <form method="post" autocomplete="off">
+      <form id="loginForm" method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <label>E-Mail</label>
         <input name="email" type="email" value="<?=h((string)$email)?>" required>
@@ -86,7 +86,7 @@ $logo = $b['logo_path'] ?? '';
         <input name="password" type="password" required>
 
         <div class="actions">
-          <button class="btn primary" type="submit">Anmelden</button>
+            <a class="btn primary" type="submit" onclick="document.getElementById('loginForm').submit(); return false;">Anmelden</a>
           <a class="btn secondary" href="<?=h(url('forgot_password.php'))?>">Passwort vergessen?</a>
         </div>
       </form>

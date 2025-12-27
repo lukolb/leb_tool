@@ -10,17 +10,13 @@ render_teacher_header('Delegationen');
 ?>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
-  </div>
-
-  <h1 style="margin-top:0;">Delegationen</h1>
+  <h1>Delegationen</h1>
   <p class="muted" style="margin-top:-6px;">
     Hier siehst du alle Delegationen in Klassen, auf die du Zugriff hast – sowohl <strong>an dich</strong> als auch <strong>an andere</strong>.
     Du kannst Delegationen hier auch <strong>neu zuweisen</strong> oder <strong>aufheben</strong>.
   </p>
 
-  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
+  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; display: none;">
     <div style="min-width:260px;">
       <label class="label">Suche</label>
       <input class="input" id="q" type="search" placeholder="Klasse / Gruppe / Kolleg:in…" style="width:100%;">
@@ -40,7 +36,6 @@ render_teacher_header('Delegationen');
   <div class="modal-card" style="width:min(860px, calc(100vw - 24px));">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <h3 style="margin:0;">Delegation bearbeiten</h3>
-      <button class="btn secondary" type="button" data-close="1">Schließen</button>
     </div>
 
     <div class="muted" style="margin-top:6px;" id="dlgMeta">—</div>
@@ -65,7 +60,8 @@ render_teacher_header('Delegationen');
         <input class="input" id="dlgNote" type="text" placeholder="z.B. bitte prüfen…" style="width:100%;">
       </div>
 
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; margin-top: 10px;">
+        <button class="btn secondary" type="button" data-close="1">Schließen</button>
         <button class="btn" type="button" id="dlgSave">Speichern</button>
       </div>
     </div>
@@ -76,7 +72,7 @@ render_teacher_header('Delegationen');
 .inbox-class{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:12px; }
 .inbox-class h3{ margin:0; font-size:16px; }
 .inbox-meta{ color:var(--muted); font-size:12px; margin-top:4px; }
-.inbox-row{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:10px; border:1px solid var(--border); border-radius:12px; margin-top:10px; }
+.inbox-row{ display:flex; justify-content:space-between; gap:10px; padding:10px; border:1px solid var(--border); border-radius:12px; margin-top:10px; }
 .inbox-row .l{ min-width:0; }
 .inbox-row .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .inbox-row .s{ color:var(--muted); font-size:12px; margin-top:3px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
@@ -209,7 +205,7 @@ render_teacher_header('Delegationen');
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
               ${g.is_mine ? `<a class="btn secondary" href="${openUrl}">Öffnen</a>` : ``}
-              <button class="btn secondary" type="button"
+              <a class="btn primary" type="button"
                 data-edit="1"
                 data-class-id="${esc(c.class_id)}"
                 data-period-label="${esc(c.period_label||'')}"
@@ -220,7 +216,7 @@ render_teacher_header('Delegationen');
                 data-user-name="${esc(g.user_name||'')}"
                 data-status="${esc(st)}"
                 data-note="${esc(note)}"
-              >Bearbeiten…</button>
+              >Bearbeiten…</a>
             </div>
           </div>
         `;

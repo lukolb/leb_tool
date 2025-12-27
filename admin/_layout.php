@@ -26,6 +26,7 @@ function render_admin_header(string $title): void {
     <style>:root{<?= $vars ?>}</style>
   </head>
   <body class="page">
+      <div class="fixedHeader">
     <div class="topbar">
       <div class="brand">
         <?php if ($logo): ?>
@@ -44,13 +45,13 @@ function render_admin_header(string $title): void {
           $items = [
             ['Dashboard', 'admin/index.php', ['index.php']],
             ['Klassen', 'admin/classes.php', ['classes.php']],
-            ['Nutzer', 'admin/users.php', ['users.php']],
             ['Schüler', 'admin/students.php', ['students.php']],
             ['Templates', 'admin/templates.php', ['templates.php']],
-            ['Felder', 'admin/template_fields.php', ['template_fields.php']],
-            ['Mappings', 'admin/template_mappings.php', ['template_mappings.php']],
-            ['Optionen', 'admin/option_scales.php', ['option_scales.php']],
+            ['Options-Listen', 'admin/icon_library.php', ['icon_library.php']],
             ['Export', 'admin/export.php', ['export.php']],
+            ['Nutzer', 'admin/users.php', ['users.php']],
+            ['Einstellungen', 'admin/settings.php', ['settings.php']],
+            ['Abmelden', 'logout.php', ['logout.php']],
           ];
           foreach ($items as [$label, $href, $files]):
             $active = nav_is_active($files) ? 'active' : '';
@@ -60,7 +61,8 @@ function render_admin_header(string $title): void {
         </nav>
       </div>
     </div>
-    <div class="container">
+      </div>
+          <div class="container">
   <?php
 }
 

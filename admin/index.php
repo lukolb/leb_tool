@@ -8,9 +8,9 @@ $u = current_user();
 render_admin_header('Admin – Dashboard');
 ?>
 <div class="card">
+    <h1>Dashboard</h1>
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
   </div>
 </div>
 
@@ -43,15 +43,7 @@ render_admin_header('Admin – Dashboard');
       <div class="nav-title">Templates</div>
       <p class="nav-desc">PDF-Vorlagen hochladen, strukturieren und für Eingaben vorbereiten.</p>
     </a>
-    <a class="nav-tile" href="<?=h(url('admin/template_fields.php'))?>">
-      <div class="nav-title">Felder & Zuordnungen</div>
-      <p class="nav-desc">Ausgelesene Felder prüfen und den richtigen Reports zuordnen.</p>
-    </a>
-    <a class="nav-tile" href="<?=h(url('admin/template_mappings.php'))?>">
-      <div class="nav-title">Template-Mappings</div>
-      <p class="nav-desc">Felder mit Skalen und Eingabefeldern verbinden.</p>
-    </a>
-    <a class="nav-tile" href="<?=h(url('admin/option_scales.php'))?>">
+    <a class="nav-tile" href="<?=h(url('admin/icon_library.php'))?>">
       <div class="nav-title">Optionen & Skalen</div>
       <p class="nav-desc">Antwortoptionen, Skalen und Auswahllisten verwalten.</p>
     </a>

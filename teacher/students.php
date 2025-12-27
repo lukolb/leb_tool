@@ -582,26 +582,28 @@ $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $school
 
 render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' . class_display($class));
 ?>
+
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">&larr; Übersicht</a>
-    <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Klassen</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
+    <div class="row-actions" style="float: right;">
+    <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">← zurück zu den Klassen</a>
   </div>
 
-  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
-  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+  <h1>Klasse <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
+</div>
 
-  <h1 style="margin-top:0;">Klasse <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
+<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
+<div class="card">
+    <h2>Schüler-Zugangscodes</h2>
   <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
-    <a class="btn secondary" href="<?=h(url('teacher/qr_print.php?class_id='.(int)$classId))?>" target="_blank">QR-Codes drucken</a>
+    <a class="btn primary" href="<?=h(url('teacher/qr_print.php?class_id='.(int)$classId))?>" target="_blank">QR-Codes drucken</a>
 
     <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
-      <button class="btn secondary" type="submit">Login-Codes/QR erstellen</button>
+      <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">Login-Codes/QR erstellen</a>
     </form>
 
     <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
@@ -609,7 +611,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
       <input type="hidden" name="regen" value="1">
-      <button class="btn secondary" type="submit" onclick="return confirm('Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.');">Neu generieren</button>
+      <a class="btn secondary" type="submit" onclick="if(confirm('Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.')) { this.parentNode.submit(); return false; }">Neu generieren</a>
     </form>
   </div>
 </div>
@@ -631,19 +633,15 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_unlock_class">
-        <button class="btn primary" type="submit">Für Kinder freigeben</button>
+        <a class="btn primary" type="submit"onclick="if(confirm('Kinder-Eingabe wirklich freigeben?')) { this.parentNode.submit(); return false; }">Für Kinder freigeben</a>
       </form>
 
       <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_lock_class">
-        <button class="btn danger" type="submit" onclick="return confirm('Kinder-Eingabe wirklich sperren? (Nur „Entwurf“ wird gesperrt.)');">Für Kinder sperren</button>
+        <a class="btn danger" type="submit" onclick="if(confirm('Kinder-Eingabe wirklich sperren?')) { this.parentNode.submit(); return false; }">Für Kinder sperren</a>
       </form>
-    </div>
-
-    <div class="muted" style="margin-top:8px;">
-      Hinweis: „Sperren“ betrifft nur <code>draft</code>. Abgegebene (<code>submitted</code>) bleiben abgegeben.
     </div>
   <?php endif; ?>
 </div>
@@ -698,9 +696,9 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
                 <input type="hidden" name="action" value="toggle_active">
                 <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
-                <button class="btn secondary" type="submit"><?=((int)$s['is_active']===1)?'Deaktivieren':'Aktivieren'?></button>
+                <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$s['is_active']===1)?'Deaktivieren':'Aktivieren'?></a>
               </form>
-              <a class="btn secondary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>">PDF</a>
+              <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>">PDF</a>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -714,7 +712,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Schüler manuell anlegen</h2>
+  <h2>Schüler manuell anlegen</h2>
   <form method="post" class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="add">
@@ -739,8 +737,8 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Schüler per Blackbaud-CSV importieren</h2>
-  <p class="muted">CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>. (Alternative Header werden auch versucht.)</p>
+  <h2>Schüler per Blackbaud-CSV importieren</h2>
+  <p class="muted">CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.</p>
 
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -752,14 +750,14 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <input type="file" name="csv_file" accept=".csv,text/csv" required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <button class="btn primary" type="submit">Importieren</button>
+      <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Importieren</a>
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Schüler aus Vorjahr übernehmen</h2>
-  <p class="muted">Kopiert aktive Schüler aus einer anderen Klasse in diese Klasse. Du kannst einzelne Schüler ausschließen. Die Kopie behält eine interne Verbindung (master_student_id), damit Stammdaten später automatisiert gemappt werden können.</p>
+  <h2>Schüler aus Vorjahr übernehmen</h2>
+  <p class="muted">Kopiert aktive Schüler aus einer anderen Klasse in diese Klasse. Du kannst einzelne Schüler ausschließen.</p>
 
   <?php if (!$sourceClasses): ?>
     <div class="alert">Keine Quellklassen verfügbar (dir sind keine weiteren Klassen zugeordnet).</div>
@@ -778,7 +776,6 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
               <option value="<?=h((string)$c['id'])?>"><?=h((string)$c['school_year'])?> · <?=h(class_display($c))?></option>
             <?php endforeach; ?>
           </select>
-          <div class="muted" style="margin-top:6px;">Nach Auswahl wird die Schülerliste geladen.</div>
         </div>
 
         <div>
@@ -790,9 +787,9 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       </div>
 
       <div class="actions" style="justify-content:flex-start; margin-top:12px;">
-        <button class="btn secondary" type="button" id="btnSelectNone">Keinen ausschließen</button>
-        <button class="btn secondary" type="button" id="btnSelectAll">Alle ausschließen</button>
-        <button class="btn primary" type="submit">Übernehmen</button>
+        <a class="btn secondary" type="button" id="btnSelectNone">Keinen ausschließen</a>
+        <a class="btn secondary" type="button" id="btnSelectAll">Alle ausschließen</a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Übernehmen</a>
       </div>
     </form>
 

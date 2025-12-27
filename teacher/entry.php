@@ -47,17 +47,17 @@ if (($u['role'] ?? '') !== 'admin') {
     if ($classId > 0 && !$hasOwnClass) {
       render_teacher_header('Eingaben');
       ?>
+        <div class=<"card">
+            <div class="row-actions" style="float: right;">
+              <?php if (!$delegatedMode): ?>
+                  <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+                <?php else: ?>
+                  <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
+                <?php endif; ?>
+            </div>
+          <h1><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+        </div>
       <div class="card">
-        <div class="row-actions" style="justify-content:space-between; align-items:center;">
-            <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
-            <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
-
-            <?php if (!$delegatedMode): ?>
-              <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
-            <?php else: ?>
-              <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
-            <?php endif; ?>
-          </div>
         <h1 style="margin-top:0;">Delegationen sind getrennt</h1>
         <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations-Inbox</a>.</p>
       </div>
@@ -71,9 +71,9 @@ if (($u['role'] ?? '') !== 'admin') {
       render_teacher_header('Delegation');
       ?>
       <div class="card">
-        <div class="row-actions">
-          <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">← Delegationen</a>
+          <h1 style="margin-top:0;"><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
         </div>
+      <div class="card">
         <div class="alert danger"><strong>Keine Klasse ausgewählt.</strong></div>
       </div>
       <?php
@@ -112,17 +112,18 @@ render_teacher_header('Eingaben');
 ?>
 
 <div class="card">
-  <div class="row-actions" style="justify-content:space-between; align-items:center;">
-    <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
-    <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>">Delegationen</a>
+  <div class="row-actions" style="float: right;">
     <?php if (!$delegatedMode): ?>
         <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
       <?php else: ?>
         <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
       <?php endif; ?>
   </div>
+  <h1><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+</div>
 
-  <h1 style="margin-top:0;"><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+<div class="card">
+
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong>Delegation:</strong> Du siehst hier nur die an dich delegierten Fachbereiche. Andere Bereiche sind schreibgeschützt.</div>
   <?php endif; ?>
@@ -151,9 +152,6 @@ render_teacher_header('Eingaben');
     </div>
 
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <label class="pill-mini" style="cursor:pointer; user-select:none;">
-        <input type="checkbox" id="toggleChild" style="margin-right:8px;"> Schülereingaben anzeigen
-      </label>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
     </div>
   </div>
@@ -167,7 +165,6 @@ render_teacher_header('Eingaben');
   <div class="modal-card">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <h3 style="margin:0;">Delegation-Status</h3>
-      <button class="btn secondary" type="button" data-close="1">Schließen</button>
     </div>
 
     <div class="muted" style="margin-top:6px;">
@@ -190,7 +187,8 @@ render_teacher_header('Eingaben');
         <label class="label">Kommentar</label>
         <input class="input" id="dlgDoneNote" type="text" placeholder="z.B. Deutsch komplett, bitte prüfen…" style="width:100%;">
       </div>
-      <div>
+      <div style="display:flex; gap:8px; margin-top: 10px;">
+        <button class="btn secondary" type="button" data-close="1">Schließen</button>
         <button class="btn" type="button" id="dlgDoneSave">Speichern</button>
       </div>
     </div>
@@ -209,7 +207,6 @@ render_teacher_header('Eingaben');
       <div class="modal-card">
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
           <h3 style="margin:0;">Fachbereiche delegieren</h3>
-          <button class="btn secondary" type="button" data-close="1">Schließen</button>
         </div>
         <div class="muted" style="margin-top:6px;">
           Hier kannst du pro <strong>Fach/Gruppe</strong> eine Kollegin/einen Kollegen als Bearbeiter:in festlegen.
@@ -237,9 +234,10 @@ render_teacher_header('Eingaben');
             <label class="label">Notiz</label>
             <input class="input" id="dlgNote" type="text" placeholder="z.B. Deutsch fertig, Mathe offen…" style="width:100%;">
           </div>
-          <div>
-            <button class="btn" type="button" id="dlgSave">Speichern</button>
-          </div>
+      <div style="display:flex; gap:8px; margin-top: 10px;">
+        <button class="btn secondary" type="button" data-close="1">Schließen</button>
+        <button class="btn" type="button" id="dlgSave">Speichern</button>
+      </div>
         </div>
 
         <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
@@ -250,21 +248,12 @@ render_teacher_header('Eingaben');
     </div>
 <?php endif; ?>
 
-<div id="app" class="card" style="display:none;">
-  <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
-
-  <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
-    <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
-    <div class="progress"><div id="formsProgressBar" class="progress-bar"></div></div>
-  </div>
-
   <div id="classFieldsBox" class="card" style="margin:12px 0; display:none;">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <div>
-        <h3 style="margin:0; font-size:16px;">Klassenfelder (für alle Schüler:innen)</h3>
+        <h2>Klassenfelder (für alle Schüler:innen)</h2>
         <div style="opacity:.85; font-size:13px;">Diese Werte gelten für die gesamte Klasse und können in Labels/Hilfetexten per <code>{{Feldname}}</code> referenziert werden.</div>
       </div>
-      <div class="pill-mini" id="classFieldsStatus"></div>
     </div>
 
     <div id="classFieldsProgressWrap" class="progress-wrap" style="display:none; margin-top:10px;">
@@ -273,6 +262,18 @@ render_teacher_header('Eingaben');
     </div>
 
     <div id="classFieldsForm" style="margin-top:10px;"></div>
+  </div>
+
+<div id="app" class="card" style="display:none;">
+    <h2>Schülerfelder</h2>
+      <label id="showStudentEntries" class="pill-mini" style="cursor:pointer; user-select:none;">
+        <input type="checkbox" id="toggleChild" style="margin-right:8px;"> Schülereingaben anzeigen
+      </label>
+  <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
+
+  <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
+    <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
+    <div class="progress"><div id="formsProgressBar" class="progress-bar"></div></div>
   </div>
 
   <!-- Grades view -->
@@ -319,7 +320,7 @@ render_teacher_header('Eingaben');
       </div>
       <div>
         <div class="row-actions" style="justify-content:space-between;">
-          <div class="pill-mini" id="studentBadge">—</div>
+            <div class="pill-mini" id="studentBadge" style="font-weight: bold">—</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn secondary" type="button" id="btnPrevStudent">← Vorherige</button>
             <button class="btn secondary" type="button" id="btnNextStudent">Nächste →</button>
@@ -394,7 +395,8 @@ render_teacher_header('Eingaben');
   .cellChild{ display:none; padding:6px 8px; border:1px dashed var(--border); border-radius:10px; color:var(--muted); font-size:12px; background: rgba(0,0,0,0.02); }
   .show-child .cellChild{ display:block; }
 
-  .missing{ outline:2px solid rgba(200,20,20,0.12); background: rgba(200,20,20,0.04); border-radius:12px; padding:4px; }
+  .missing{ outline:2px solid rgba(200,20,20,0.5); background: rgba(200,20,20,0.2); border-radius:12px; padding:4px; }
+  .missing:not(.field){ width: fit-content; }
 
   .modal{ position:fixed; inset:0; z-index:9999; }
   .modal-backdrop{ position:absolute; inset:0; background: rgba(0,0,0,0.35); }
@@ -423,7 +425,6 @@ render_teacher_header('Eingaben');
   const elApp = document.getElementById('app');
   const classFieldsBox = document.getElementById('classFieldsBox');
   const classFieldsForm = document.getElementById('classFieldsForm');
-  const classFieldsStatus = document.getElementById('classFieldsStatus');
   const elErrBox = document.getElementById('errBox');
   const elErrMsg = document.getElementById('errMsg');
   const elMetaTop = document.getElementById('metaTop');
@@ -461,6 +462,7 @@ render_teacher_header('Eingaben');
   const viewGrades = document.getElementById('viewGrades');
   const viewStudent = document.getElementById('viewStudent');
   const viewItem = document.getElementById('viewItem');
+  const showStudentEntries = document.getElementById('showStudentEntries');
 
   const gradeGroupSelect = document.getElementById('gradeGroupSelect');
   const gradeOrientation = document.getElementById('gradeOrientation');
@@ -838,7 +840,7 @@ render_teacher_header('Eingaben');
   }
 
   function updateClassFieldsProgressUI(){
-    if (!classFieldsProgressWrap || !classFieldsProgressBar || !classFieldsStatus) return;
+    if (!classFieldsProgressWrap || !classFieldsProgressBar) return;
 
     const cf = state.class_fields;
     const ids = (cf && Array.isArray(cf.field_ids)) ? cf.field_ids : [];
@@ -846,7 +848,6 @@ render_teacher_header('Eingaben');
 
     if (!ids.length || !rid) {
       classFieldsProgressWrap.style.display = 'none';
-      classFieldsStatus.textContent = '';
       return;
     }
 
@@ -861,7 +862,6 @@ render_teacher_header('Eingaben');
     const pct = Math.round((done / total) * 100);
 
     classFieldsProgressWrap.style.display = '';
-    classFieldsStatus.textContent = `${done}/${total}`;
     if (classFieldsProgressText) classFieldsProgressText.textContent = `Klassenfelder: ${done}/${total} (offen: ${missing})`;
     if (classFieldsProgressPct) classFieldsProgressPct.textContent = `${pct}%`;
     classFieldsProgressBar.style.width = `${pct}%`;
@@ -1039,11 +1039,11 @@ render_teacher_header('Eingaben');
 
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
-      return `<label style="display:flex; align-items:center; gap:10px; margin-top:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">Ja / Nein</span></label>`;
+      return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">Ja / Nein</span></label>`;
     }
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
-      return `<textarea rows="4" ${common} style="width:100%; margin-top:10px;">${esc(value)}</textarea>`;
+      return `<textarea rows="4" ${common} style="width:100%;">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -1057,14 +1057,14 @@ render_teacher_header('Eingaben');
           data-actual="${esc(actual)}"
           list="${esc(dlId)}"
           autocomplete="off"
-          style="width:100%; margin-top:10px;"
+          style="width:100%;"
           value="${esc(shown)}"
         >
       `;
     }
 
     const inputType = (type === 'number') ? 'number' : ((type === 'date') ? 'date' : 'text');
-    return `<input type="${esc(inputType)}" ${common} style="width:100%; margin-top:10px;" value="${esc(value)}">`;
+    return `<input type="${esc(inputType)}" ${common} style="width:100%;" value="${esc(value)}">`;
   }
 
   function currentStudents(){
@@ -1136,13 +1136,11 @@ render_teacher_header('Eingaben');
     if (!cf || !Array.isArray(cf.fields) || !cf.fields.length || !classReportId()) {
       if (classFieldsBox) classFieldsBox.style.display = 'none';
       if (classFieldsForm) classFieldsForm.innerHTML = '';
-      if (classFieldsStatus) classFieldsStatus.textContent = '';
       return;
     }
 
     classFieldsBox.style.display = 'block';
     // status/progress handled by updateClassFieldsProgressUI()
-    classFieldsStatus.textContent = '';
     updateClassFieldsProgressUI();
 
     const rid = classReportId();
@@ -1183,6 +1181,7 @@ render_teacher_header('Eingaben');
     viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
     viewStudent.style.display = (ui.view === 'student') ? 'block' : 'none';
     viewItem.style.display = (ui.view === 'item') ? 'block' : 'none';
+    showStudentEntries.style.display = (ui.view === 'student' || ui.view === 'item') ? 'block' : 'none';
 
     if (ui.showChild) elApp.classList.add('show-child');
     else elApp.classList.remove('show-child');
@@ -1242,7 +1241,7 @@ render_teacher_header('Eingaben');
     if (locked) {
       html += `<div class="alert danger"><strong>Dieser Bericht ist gesperrt.</strong> Eingaben können nicht mehr geändert werden.</div>`;
     } else if (status === 'submitted') {
-      html += `<div class="alert"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
+      html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
     }
 
     state.groups.forEach(g => {
@@ -1256,7 +1255,7 @@ render_teacher_header('Eingaben');
       const delBadge = (del && del.user_id) ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>` : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = CAN_DELEGATE
-  ? `<button class="btn secondary" type="button" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
+  ? `<button class="btn" type="button" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
   : '';
       html += `
           <div class="section-h" style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
@@ -1275,8 +1274,9 @@ render_teacher_header('Eingaben');
         const childInfo = (f.child && f.child.id) ? `<div class="child"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>` : '';
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
+        const missingCls = (v === '') ? 'missing' : '';
         html += `
-          <div class="field" data-fieldwrap="1" data-field-id="${esc(f.id)}">
+          <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
@@ -1350,7 +1350,7 @@ render_teacher_header('Eingaben');
         const tdLabel = document.createElement('td');
         tdLabel.className = 'sticky';
         const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title || '')}</div>`;
+        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f._group_title || '')}</div><div class="muted" style="font-size:12px;">${esc(lbl)}</div>`;
         row.appendChild(tdLabel);
 
         sCols.forEach(s => {
@@ -1416,7 +1416,7 @@ render_teacher_header('Eingaben');
     fields.forEach(f => {
       const th = document.createElement('th');
       const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-      th.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div>`;
+      th.innerHTML = `<div  class="muted" style="font-size:12px;">${esc(lbl)}</div>`;
       tr2.appendChild(th);
     });
     gradeHead.appendChild(tr2);
@@ -1506,8 +1506,9 @@ render_teacher_header('Eingaben');
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
 
-        td.innerHTML = `
-          <div class="cellWrap">
+        const missingCls = (v === '') ? 'missing' : '';
+          td.innerHTML = `
+          <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>

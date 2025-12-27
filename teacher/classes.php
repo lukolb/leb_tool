@@ -117,15 +117,13 @@ render_teacher_header('Klassen');
 ?>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('teacher/index.php'))?>">← Übersicht</a>
-  </div>
+    <h1>Klassen</h1>
 
-  <h1 style="margin-top:0;">Klassen</h1>
-
+</div>
   <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
   <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
+<div class="card">
   <div class="actions" style="justify-content:flex-start;">
     <?php if ($showInactive): ?>
       <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Inaktive ausblenden</a>
@@ -170,13 +168,13 @@ render_teacher_header('Klassen');
               </td>
 
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
-                <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>">Eingaben</a>
-                <form method="post" style="display:inline;">
+                <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
+                <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>">Eingaben</a>
+                <form id="classActiveForm" method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <button class="btn secondary" type="submit"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></button>
+                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
                 </form>
               </td>
             </tr>

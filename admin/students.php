@@ -144,16 +144,10 @@ render_admin_header('Schüler');
 ?>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Klassen</a>
-  </div>
+  <h1>Schüler (Admin)</h1>
+</div>
 
-  <h1 style="margin-top:0;">Schüler (Admin)</h1>
-
-  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
-  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
+<div class="card">
   <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;">
     <div>
       <label>Suche</label>
@@ -196,6 +190,9 @@ render_admin_header('Schüler');
 
   <div class="muted" style="margin-top:10px;">Maximal 500 Treffer (Performance).</div>
 </div>
+
+<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;">Liste</h2>

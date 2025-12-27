@@ -27,13 +27,73 @@ function export_class_display(array $c): string {
 }
 ?>
 
-<div class="container" style="max-width:1100px;">
-  <div class="card" style="margin-bottom:14px;">
-    <div class="row-actions">
-      <a class="btn secondary" href="<?=h($backUrl)?>">← Zurück</a>
-    </div>
-    <h1 style="margin-top:0;"><?=h($pageTitle)?></h1>
-    <p class="muted" style="margin:0;">PDFs werden im Browser erzeugt und <strong>nicht</strong> auf dem Server gespeichert.</p>
+<style>
+    .export-mode {
+  min-width: 320px;
+}
+
+.export-title {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.export-list {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.export-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.export-row + .export-row {
+  border-top: 1px solid #eee;
+}
+
+/* Radio-Buttons komplett ausblenden */
+.export-row input {
+  display: none;
+}
+
+/* Hover */
+.export-row:hover {
+  background: #f7f7f7;
+}
+
+/* Aktiv */
+.export-row:has(input:checked) {
+  background: #eef4ff;
+}
+
+/* feiner Indikator links */
+.export-row:has(input:checked)::before {
+  content: '';
+  width: 3px;
+  height: 100%;
+  background: #3b82f6;
+  margin-right: 6px;
+  border-radius: 2px;
+}
+
+.export-main {
+  font-weight: 500;
+}
+
+.export-sub {
+  font-size: 0.85em;
+  color: #666;
+}
+</style>
+
+  <div class="card">
+    <h1><?=h($pageTitle)?></h1>
   </div>
 
   <?php if (!is_array($classes) || count($classes) === 0): ?>
@@ -48,7 +108,7 @@ function export_class_display(array $c): string {
   <div class="card" style="margin-bottom:14px;">
     <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:260px;">
-        <label for="classId"><strong>Klasse</strong></label>
+          <label for="classId" class="export-title">Klasse</label>
         <select id="classId" class="input" style="width:100%;">
           <?php foreach ($classes as $c): ?>
             <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
@@ -59,17 +119,32 @@ function export_class_display(array $c): string {
         <div class="muted" style="margin-top:4px;">Exportiert die der Klasse zugeordnete Vorlage.</div>
       </div>
 
-      <div style="min-width:340px;">
-        <label><strong>Export-Variante</strong></label>
-        <div class="row" style="gap:14px; flex-wrap:wrap;">
-          <label class="row" style="gap:6px;"><input type="radio" name="mode" value="zip" checked> ZIP (eine PDF pro Schüler:in)</label>
-          <label class="row" style="gap:6px;"><input type="radio" name="mode" value="merged"> Eine PDF (alle Schüler:innen)</label>
-          <label class="row" style="gap:6px;"><input type="radio" name="mode" value="single"> Einzelne:r Schüler:in</label>
+      <div class="export-mode">
+        <label class="export-title">Export-Variante</label>
+
+        <div class="export-list">
+          <label class="export-row">
+            <input type="radio" name="mode" value="zip" checked>
+            <span class="export-main">ZIP-Export</span>
+            <span class="export-sub">eine PDF pro Schüler:in</span>
+          </label>
+
+          <label class="export-row">
+            <input type="radio" name="mode" value="merged">
+            <span class="export-main">Gesamt-PDF</span>
+            <span class="export-sub">alle Schüler:innen in einer Datei</span>
+          </label>
+
+          <label class="export-row">
+            <input type="radio" name="mode" value="single">
+            <span class="export-main">Einzel-Export</span>
+            <span class="export-sub">nur eine ausgewählte Person</span>
+          </label>
         </div>
       </div>
 
       <div style="min-width:220px;">
-        <label><strong>Filter</strong></label>
+        <label class="export-title">Filter</label>
         <label class="row" style="gap:8px; margin-top:6px;">
           <input type="checkbox" id="onlySubmitted">
           Nur abgegebene (submitted)
@@ -77,15 +152,15 @@ function export_class_display(array $c): string {
       </div>
 
       <div id="singleStudentWrap" style="min-width:260px; display:none;">
-        <label for="studentId"><strong>Schüler:in</strong></label>
+        <label class="export-title" for="studentId">Schüler:in</label>
         <select id="studentId" class="input" style="width:100%;"></select>
       </div>
 
       <div style="flex:1; min-width:240px;">
         <label><strong>&nbsp;</strong></label>
         <div class="row" style="gap:10px; justify-content:flex-end;">
-          <button class="btn secondary" id="btnCheck" type="button">Prüfen</button>
-          <button class="btn" id="btnExport" type="button">Export starten</button>
+          <a class="btn secondary" id="btnCheck" type="button">Prüfen</a>
+          <a class="btn primary" id="btnExport" type="button" style="margin-left: 10px;">Export starten</a>
         </div>
         <div class="muted" style="margin-top:4px; text-align:right;">Warnungen blockieren den Export nicht.</div>
       </div>
@@ -96,10 +171,7 @@ function export_class_display(array $c): string {
     <div class="row" style="justify-content:space-between; align-items:center;">
       <div>
         <strong>Status</strong>
-        <div class="muted" id="statusLine">Bereit.</div>
-      </div>
-      <div class="muted" style="text-align:right; max-width:520px;">
-        Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern – es läuft komplett im Browser.
+        <div class="muted" id="statusLine" style="padding-top: 10px">Bereit.</div>
       </div>
     </div>
 
@@ -113,22 +185,24 @@ function export_class_display(array $c): string {
       <span id="infoText"></span>
     </div>
 
-    <div id="warnBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #ffe08a; background:#fff7db;">
+    <div id="warnBox" class="alert info">
       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
-        <div>
+          <div style="float: left;">
           <strong>Achtung:</strong>
           <span id="warnText"></span>
           <div class="muted" style="margin-top:6px;">Beim Export kannst du die Warnung ignorieren oder abbrechen.</div>
         </div>
-        <div style="white-space:nowrap;">
+        <div style="white-space:nowrap; text-align: end">
           <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;">Details</button>
         </div>
       </div>
     </div>
+      <div class="muted" style="max-width:520px; padding-top: 10px">
+        Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern
+      </div>
   </div>
 
   <div class="muted" style="font-size:13px;">
-    Hinweis: Für die PDF-Befüllung wird <code>pdf-lib</code> und für ZIP <code>JSZip</code> geladen (nur für diese Seite).
     <?php if ($debugPdf): ?>
       <span style="margin-left:10px; padding:2px 8px; border-radius:999px; background:#fff7d6; border:1px solid #ffe59a;">
         Debug aktiv (debug_pdf=1) – siehe Browser-Konsole
@@ -137,7 +211,6 @@ function export_class_display(array $c): string {
   </div>
 
   <?php endif; ?>
-</div>
 
 <!-- modal -->
 <div id="missingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:9999;">
