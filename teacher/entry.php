@@ -602,24 +602,24 @@ render_teacher_header('Eingaben');
 
   function resolveTypedToValue(f, typed){
     const t = String(typed ?? '').trim();
-    if (!t) return '';
+    if (!t) return { value: '', valid: true };
     const opts = Array.isArray(f?.options) ? f.options : [];
 
     // exact value
     const hitV = opts.find(o => String(o?.value ?? '') === t);
-    if (hitV) return String(hitV.value ?? t);
+    if (hitV) return { value: String(hitV.value ?? t), valid: true };
 
     const low = t.toLowerCase();
 
     // match DE label
     const hitLD = opts.find(o => String(o?.label ?? '').toLowerCase() === low);
-    if (hitLD) return String(hitLD.value ?? t);
+    if (hitLD) return { value: String(hitLD.value ?? t), valid: true };
 
     // ✅ NEW: match EN label
     const hitLE = opts.find(o => String(o?.label_en ?? '').toLowerCase() === low);
-    if (hitLE) return String(hitLE.value ?? t);
+    if (hitLE) return { value: String(hitLE.value ?? t), valid: true };
 
-    return t;
+    return { value: t, valid: false };
   }
 
   function buildFieldNameIndex(){
@@ -1002,10 +1002,19 @@ render_teacher_header('Eingaben');
 
         const commit = () => {
           const typed = inp.value;
-          const resolved = f ? resolveTypedToValue(f, typed) : String(typed ?? '').trim();
-          doSave(resolved);
-          inp.dataset.actual = resolved;
-          if (f) inp.value = teacherDisplay(f, resolved);
+          const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
+
+          if (!res.valid) {
+            inp.setCustomValidity('Ungültiger Wert');
+            inp.reportValidity();
+            inp.value = teacherDisplay(f, inp.dataset.actual ?? '');
+            return;
+          }
+
+          inp.setCustomValidity('');
+          doSave(res.value);
+          inp.dataset.actual = res.value;
+          if (f) inp.value = teacherDisplay(f, res.value);
         };
 
         inp.addEventListener('change', commit);
