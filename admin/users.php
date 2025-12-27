@@ -197,17 +197,23 @@ $users = $pdo->query(
 render_admin_header('User');
 ?>
 
+<style>
+    .actions-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .actions-row .file-input {
+        max-width: 260px; /* optional */
+      }
+</style>
+
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Klassen</a>
-  </div>
+  <h1>User</h1>
+</div>
 
-  <h1 style="margin-top:0;">User</h1>
-
-  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
-  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
+<div class="card">
   <?php if ($bulk): ?>
     <div class="alert">
       Bulk-Import: erstellt <?=h((string)$bulk['created'])?>, übersprungen <?=h((string)$bulk['skipped'])?>.
@@ -223,7 +229,7 @@ render_admin_header('User');
   <?php endif; ?>
 
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
-    <div class="panel">
+    <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
       <h2 style="margin-top:0;">Neuen User anlegen</h2>
       <form method="post" class="grid" style="grid-template-columns: 1fr 1fr 140px auto; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -257,17 +263,26 @@ render_admin_header('User');
       <div class="actions" style="justify-content:flex-start; margin:10px 0;">
         <a class="btn secondary" href="<?=h(url('admin/users.php?download=csv_template'))?>">CSV-Template herunterladen</a>
       </div>
-      <form method="post" enctype="multipart/form-data">
+      <form method="post" enctype="multipart/form-data" id="bulkImportForm">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="bulk_import">
-        <input type="file" name="csv" accept=".csv,text/csv" required>
-        <div class="actions" style="justify-content:flex-start; margin-top:10px;">
-          <button class="btn primary" type="submit">Import starten</button>
+
+        <div class="actions actions-row">
+          <input class="file-input" type="file" name="csv" accept=".csv,text/csv" required>
+
+          <a href="#"
+             class="btn primary"
+             onclick="this.parentNode.submit(); return false;">
+             Import starten
+          </a>
         </div>
       </form>
     </div>
   </div>
 </div>
+
+<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;">Bestehende User</h2>
@@ -295,7 +310,7 @@ render_admin_header('User');
         <td><?=((int)$usr['is_active']===1) ? '<span class="badge">ja</span>' : '<span class="badge">nein</span>'?></td>
         <td>
           <details>
-            <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Bearbeiten</summary>
+            <summary id="userEditBtn" class="btn secondary" style="display:inline-block; cursor:pointer;">Bearbeiten</summary>
             <div class="panel" style="margin-top:10px;">
               <form method="post" class="grid" style="grid-template-columns: 1fr 140px 140px auto; gap:10px; align-items:end;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">

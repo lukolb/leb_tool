@@ -38,15 +38,14 @@ render_teacher_header('Lehrkraft – Übersicht');
 ?>
 
 <div class="card">
+    <h1>Dashboard</h1>
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-    <?php if (($u['role'] ?? '') === 'admin'): ?>
-      <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">Admin</a>
-    <?php endif; ?>
   </div>
+</div>
 
-  <h1 style="margin-top:0;">Hallo <?=h((string)($u['display_name'] ?? ''))?></h1>
+<div class="card">
+  <h2>Verwaltung</h2>
   <p class="muted">Hier findest du alle wichtigen Wege rund um Klassen, Delegationen und Eingaben auf einen Blick.</p>
 
   <div class="nav-grid">
@@ -70,10 +69,6 @@ render_teacher_header('Lehrkraft – Übersicht');
         <?php endif; ?>
       </div>
     </a>
-    <a class="nav-tile" href="<?=h(url('teacher/qr_print.php'))?>">
-      <div class="nav-title">QR-Codes drucken</div>
-      <p class="nav-desc">Zugänge und Aushänge für Klassen schnell bereitstellen.</p>
-    </a>
     <a class="nav-tile" href="<?=h(url('teacher/export.php'))?>">
       <div class="nav-title">PDF-Export</div>
       <p class="nav-desc">Berichte herunterladen oder weitergeben.</p>
@@ -82,7 +77,7 @@ render_teacher_header('Lehrkraft – Übersicht');
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Deine Klassen</h2>
+  <h2>Deine Klassen</h2>
 
   <?php if (!$classes): ?>
     <div class="alert">Noch keine Klassen zugeordnet. Bitte wende dich an den Admin, damit dir Klassen zugeordnet werden.</div>

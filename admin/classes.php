@@ -388,34 +388,26 @@ foreach ($classes as $c) {
 render_admin_header('Klassen');
 ?>
 
+<style>
+    #editClass {
+        scroll-margin-top: 250px;
+      }
+</style>
+
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/users.php'))?>">User</a>
-    <a class="btn secondary" href="<?=h(url('admin/students.php'))?>">Schüler</a>
-  </div>
-
-  <h1 style="margin-top:0;">Klassenverwaltung</h1>
-
-  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
-  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
-  <div class="actions" style="justify-content:flex-start;">
-    <?php if ($showInactive): ?>
-      <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Inaktive ausblenden</a>
-    <?php else: ?>
-      <a class="btn secondary" href="<?=h(url('admin/classes.php?show_inactive=1'))?>">Inaktive anzeigen</a>
-    <?php endif; ?>
-  </div>
+  <h1>Klassenverwaltung</h1>
 </div>
+
+<?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;">Klassen anlegen</h2>
 
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
-    <div class="panel">
+    <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
       <h3 style="margin-top:0;">Einzeln</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr 1fr; gap:12px; align-items:end;">
+      <form method="post" id="createClassSingle" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_single">
 
@@ -468,14 +460,14 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <button class="btn primary" type="submit">Anlegen</button>
+          <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Anlegen</a>
         </div>
       </form>
     </div>
 
     <div class="panel">
       <h3 style="margin-top:0;">Bulk</h3>
-      <form method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr 1fr; gap:12px; align-items:end;">
+      <form id="createClassBulk" method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_bulk">
 
@@ -533,7 +525,7 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <button class="btn primary" type="submit">Bulk anlegen</button>
+          <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Bulk anlegen</a>
         </div>
       </form>
     </div>
@@ -542,6 +534,14 @@ render_admin_header('Klassen');
 
 <div class="card">
   <h2 style="margin-top:0;">Klassen (nach Schuljahr)</h2>
+
+  <div class="actions" style="justify-content:flex-start;">
+    <?php if ($showInactive): ?>
+      <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Inaktive ausblenden</a>
+    <?php else: ?>
+      <a class="btn secondary" href="<?=h(url('admin/classes.php?show_inactive=1'))?>">Inaktive anzeigen</a>
+    <?php endif; ?>
+  </div>
 
   <?php if (!$grouped): ?>
     <div class="alert">Keine Klassen gefunden.</div>
@@ -594,14 +594,14 @@ render_admin_header('Klassen');
               </td>
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>">Bearbeiten</a>
+                <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>#editClass">Bearbeiten</a>
                 <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id='.(int)$c['id']))?>">Schüler</a>
                 <a class="btn secondary" href="<?=h(url('admin/export.php?class_id='.(int)$c['id']))?>">Export</a>
                 <form method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <button class="btn secondary" type="submit"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></button>
+                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
                 </form>
               </td>
             </tr>
@@ -614,10 +614,10 @@ render_admin_header('Klassen');
 </div>
 
 <?php if ($editClass): ?>
-  <div class="card">
+  <div class="card" id="editClass">
     <h2 style="margin-top:0;">Klasse bearbeiten: <?=h((string)$editClass['school_year'])?> · <?=h(class_display($editClass))?></h2>
 
-    <form method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px; align-items:end;">
+    <form id="classEditForm" method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="update_class">
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
@@ -683,8 +683,8 @@ render_admin_header('Klassen');
       </div>
 
       <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-        <button class="btn primary" type="submit">Speichern</button>
-        <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Zurück</a>
+        <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Abbrechen</a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Speichern</a>
       </div>
     </form>
 
@@ -698,7 +698,7 @@ render_admin_header('Klassen');
 
     <?php $must = (string)$editClass['school_year'] . ' ' . class_display($editClass); ?>
 
-    <form method="post" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items:end;">
+    <form method="post" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items: end;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="delete_class">
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">

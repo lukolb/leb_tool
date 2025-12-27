@@ -26,6 +26,7 @@ function render_teacher_header(string $title): void {
     <style>:root{<?= $vars ?>}</style>
   </head>
   <body class="page">
+      <div class="fixedHeader">
     <div class="topbar">
       <div class="brand">
         <?php if ($logo): ?>
@@ -48,12 +49,12 @@ function render_teacher_header(string $title): void {
         <nav class="nav-menu" aria-label="Lehrkraft Navigation">
           <?php
           $items = [
-            ['Übersicht', 'teacher/index.php', ['index.php']],
-            ['Klassen', 'teacher/classes.php', ['classes.php']],
+            ['Dashboard', 'teacher/index.php', ['index.php']],
+            ['Klassen', 'teacher/classes.php', ['classes.php', 'students.php']],
             ['Eingaben', 'teacher/entry.php', ['entry.php']],
             ['Delegationen', 'teacher/delegations.php', ['delegations.php']],
-            ['QR-Druck', 'teacher/qr_print.php', ['qr_print.php']],
             ['Export', 'teacher/export.php', ['export.php']],
+            ['Abmelden', 'logout.php', ['logout.php']],
           ];
           foreach ($items as [$label, $href, $files]):
             $active = nav_is_active($files) ? 'active' : '';
@@ -63,6 +64,7 @@ function render_teacher_header(string $title): void {
         </nav>
       </div>
     </div>
+      </div>
     <div class="container">
   <?php
 }

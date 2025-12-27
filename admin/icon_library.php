@@ -10,7 +10,7 @@ render_admin_header('Admin – Icon & Options');
 ?>
 
 <style>
-.tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.tabs { display:flex; gap:8px; flex-wrap:wrap; }
 .tabbtn {
   border:1px solid var(--border);
   background: var(--card, #fff);
@@ -65,21 +65,19 @@ render_admin_header('Admin – Icon & Options');
 </style>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">Templates</a>
-    <a class="btn secondary" href="<?=h(url('admin/settings.php'))?>">Settings</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
+    <h1>Options-Listen</h1>
 </div>
 
 <div class="card">
   <div class="tabs">
-    <button class="tabbtn active" data-tab="icons">Icons</button>
-    <button class="tabbtn" data-tab="lists">Option-Listen</button>
+    <button class="tabbtn active" data-tab="lists">Option-Listen</button>
+    <button class="tabbtn" data-tab="icons">Icons</button>
   </div>
+</div>
 
-  <div id="tab-icons" class="tabpanel active">
+<div class="card">
+
+  <div id="tab-icons" class="tabpanel">
     <h2 style="margin-top:0;">Icon Library</h2>
     <p class="muted">Hier lädst du Symbole hoch. Diese werden in der Datenbank gespeichert (inkl. Pfad), damit du sie später in Option-Listen auswählen kannst.</p>
 
@@ -116,7 +114,7 @@ render_admin_header('Admin – Icon & Options');
     </div>
   </div>
 
-  <div id="tab-lists" class="tabpanel">
+  <div id="tab-lists" class="tabpanel active">
     <h2 style="margin-top:0;">Option-Listen Vorlagen</h2>
     <p class="muted">Erstelle hier Auswahllisten (z.B. Skala 1–6, Ja/Nein, Smileys). Diese Vorlagen nutzt du später in <code>template_fields.php</code> für Radio/Select-Felder.</p>
 
@@ -143,8 +141,8 @@ render_admin_header('Admin – Icon & Options');
           <table style="width:100%; border-collapse:separate; border-spacing:0;">
             <thead>
               <tr>
-                <th style="position:sticky; top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">ID</th>
-                <th style="position:sticky; top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">Name</th>
+                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">ID</th>
+                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">Name</th>
               </tr>
             </thead>
             <tbody id="listsTbody"></tbody>

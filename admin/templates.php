@@ -144,6 +144,16 @@ render_admin_header('Admin – Templates');
   box-sizing: border-box;
 }
 
+.actions-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.actions-row .file-input {
+    max-width: 260px; /* optional */
+}
+
 .copybar{
   display:flex;
   gap:12px;
@@ -189,12 +199,7 @@ tr.tpl-inactive { opacity: 0.65; }
 </style>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/icon_library.php'))?>">Icon Library</a>
-    <a class="btn secondary" href="<?=h(url('admin/settings.php'))?>">Settings</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
+    <h1>Templates</h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
@@ -202,7 +207,7 @@ tr.tpl-inactive { opacity: 0.65; }
 
 <div class="card">
   <h2>PDF Template hochladen</h2>
-  <form method="post" enctype="multipart/form-data" autocomplete="off">
+  <form id="uploadTemplateForm" method="post" enctype="multipart/form-data" autocomplete="off">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="upload">
 
@@ -218,10 +223,9 @@ tr.tpl-inactive { opacity: 0.65; }
     </div>
 
     <label>PDF Datei</label>
-    <input type="file" name="pdf" accept=".pdf,application/pdf" required>
-
-    <div class="actions" style="margin-top:12px;">
-      <button class="btn primary" type="submit">Hochladen</button>
+    <div class="actions actions-row">
+        <input class="file-input" type="file" name="pdf" accept=".pdf,application/pdf" required>
+        <a class="btn primary" type="submit" onclick="this.parentNode.submit(); return false;">Hochladen</a>
     </div>
   </form>
 </div>
@@ -260,13 +264,13 @@ tr.tpl-inactive { opacity: 0.65; }
               </a>
             </td>
             <td style="white-space:nowrap;">
-              <button
+              <a
                 class="btn secondary js-extract"
                 type="button"
                 data-template-id="<?=h((string)$t['id'])?>"
                 data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">
                 Felder auslesen
-              </button>
+              </a>
               <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
               <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>">Mapping</a>
             </td>

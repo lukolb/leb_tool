@@ -185,11 +185,7 @@ if (is_file($introAbs)) {
 render_admin_header('Admin – Settings');
 ?>
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">← Admin</a>
-    <a class="btn secondary" href="<?=h(url('admin/users.php'))?>">Nutzer</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
+    <h1>Einstellungen</h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
@@ -265,7 +261,7 @@ render_admin_header('Admin – Settings');
             <input id="primaryHex" name="brand_primary" value="<?=h((string)$primary)?>" required placeholder="#0b57d0">
           </div>
         </div>
-        <div class="muted">Picker oder Hex. (Live-Preview oben)</div>
+        <div class="muted">Live-Preview oben</div>
       </div>
 
       <div>
@@ -278,15 +274,13 @@ render_admin_header('Admin – Settings');
             <input id="secondaryHex" name="brand_secondary" value="<?=h((string)$secondary)?>" required placeholder="#111111">
           </div>
         </div>
-        <div class="muted">Picker oder Hex. (Live-Preview oben)</div>
+        <div class="muted">Live-Preview oben</div>
       </div>
     </div>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
     </div>
-
-    <p class="muted">Gespeichert wird in <code>config.php</code>. Live-Preview ändert nur die Ansicht im Browser.</p>
   </form>
 </div>
 
@@ -312,10 +306,6 @@ render_admin_header('Admin – Settings');
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
     </div>
-
-    <p class="muted">
-      Hinweis: Damit Mails zuverlässig ankommen, sollte deine Domain korrekt SPF/DKIM/DMARC setzen (später).
-    </p>
   </form>
 </div>
 
@@ -356,8 +346,6 @@ render_admin_header('Admin – Settings');
     <div class="actions" style="margin-top:12px;">
       <button class="btn primary" type="submit">Intro speichern</button>
     </div>
-
-    <p class="muted">Gespeichert wird als <code>uploads/child_intro.html</code> (intern als HTML, aber du bearbeitest es visuell).</p>
   </form>
 
   <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
