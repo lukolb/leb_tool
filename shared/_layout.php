@@ -15,6 +15,7 @@ function nav_items_for_role(string $role): array {
       ['Templates', 'admin/templates.php', ['templates.php']],
       ['Options-Listen', 'admin/icon_library.php', ['icon_library.php']],
       ['Export', 'admin/export.php', ['export.php']],
+      ['Textbausteine', 'admin/text_snippets.php', ['text_snippets.php']],
       ['Nutzer', 'admin/users.php', ['users.php']],
       ['Einstellungen', 'admin/settings.php', ['settings.php']],
       ['Abmelden', 'logout.php', ['logout.php']],

@@ -157,7 +157,37 @@ render_teacher_header('Eingaben');
   </div>
 </div>
 
+<div class="card" id="snippetBar" style="display:none;">
+  <div class="row" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:240px;">
+      <label class="label">Textbaustein-Titel</label>
+      <input class="input" id="snippetTitle" type="text" placeholder="z.B. Schülerziel" style="width:100%;">
+    </div>
+    <div style="flex:1; min-width:200px;">
+      <label class="label">Kategorie</label>
+      <input class="input" id="snippetCategory" list="snippetCategoryList" type="text" placeholder="optional" style="width:100%;">
+      <datalist id="snippetCategoryList"></datalist>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <button class="btn" type="button" id="btnSnippetSave" disabled>Textbaustein speichern</button>
+      <button class="btn secondary" type="button" id="btnSnippetToggle">Bausteine anzeigen</button>
+    </div>
+  </div>
+  <div class="muted" id="snippetSelection" style="margin-top:8px;">Kein Text markiert. Markiere einen Text in einem Eingabefeld oder nutze die rechte Maustaste.</div>
+</div>
+
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
+
+<div class="card" id="snippetDrawer" style="display:none;">
+  <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+    <div>
+      <h2 style="margin:0;">Textbausteine</h2>
+      <div class="muted">Rechtsklick auf ein Textfeld öffnet ein Einfüge-Menü. Auswahl hier kopiert in das zuletzt fokussierte Feld.</div>
+    </div>
+    <button class="btn secondary" type="button" id="btnSnippetClose">Schließen</button>
+  </div>
+  <div id="snippetList" style="margin-top:10px; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px;"></div>
+</div>
 
 <?php if ($delegatedMode): ?>
 <div id="dlgDelegationDone" class="modal" style="display:none;">
@@ -406,6 +436,14 @@ render_teacher_header('Eingaben');
   .del-row .l .t{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .del-row .l .s{ color:var(--muted); font-size:12px; margin-top:2px; }
   .badge-del{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid rgba(11,87,208,0.22); background: rgba(11,87,208,0.08); font-size:12px; color: rgba(11,87,208,0.9); }
+  .snippet-card{ border:1px solid var(--border); border-radius:12px; padding:10px; background:#fff; display:flex; flex-direction:column; gap:6px; }
+  .snippet-card .h{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .snippet-card .c{ color:var(--muted); font-size:12px; }
+  .snippet-card .txt{ white-space:pre-wrap; }
+  .snippet-menu{ position:fixed; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:340px; max-height:60vh; overflow:auto; }
+  .snippet-menu h4{ margin:4px 0; font-size:14px; }
+  .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
+  .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
 </style>
 
 <script>
@@ -482,10 +520,22 @@ render_teacher_header('Eingaben');
   const itemHead = document.getElementById('itemHead');
   const itemBody = document.getElementById('itemBody');
 
+  const snippetBar = document.getElementById('snippetBar');
+  const snippetDrawer = document.getElementById('snippetDrawer');
+  const snippetList = document.getElementById('snippetList');
+  const snippetSelection = document.getElementById('snippetSelection');
+  const snippetTitle = document.getElementById('snippetTitle');
+  const snippetCategory = document.getElementById('snippetCategory');
+  const btnSnippetSave = document.getElementById('btnSnippetSave');
+  const btnSnippetToggle = document.getElementById('btnSnippetToggle');
+  const btnSnippetClose = document.getElementById('btnSnippetClose');
+  const snippetCategoryList = document.getElementById('snippetCategoryList');
+
   let state = {
     class_id: 0,
     template: null,
     groups: [],
+    text_snippets: [],
     delegation_users: [],
     delegations: [],
     period_label: 'Standard',
@@ -511,6 +561,14 @@ render_teacher_header('Eingaben');
     saveTimers: new Map(),
     saveInFlight: 0,
   };
+
+  const snippetMenu = document.createElement('div');
+  snippetMenu.className = 'snippet-menu';
+  snippetMenu.style.display = 'none';
+  document.body.appendChild(snippetMenu);
+
+  let lastSnippetTarget = null;
+  let lastSnippetSelection = '';
 
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
@@ -1035,8 +1093,174 @@ render_teacher_header('Eingaben');
         const wrap = inp.closest('.field');
         if (wrap) wrap.scrollIntoView({block:'nearest'});
       });
+
+      if (eligibleForSnippetInput(inp)) {
+        ['select','mouseup','keyup','focus'].forEach(ev => {
+          inp.addEventListener(ev, () => rememberSelection(inp));
+        });
+        inp.addEventListener('contextmenu', (ev) => {
+          if (!eligibleForSnippetInput(inp)) return;
+          ev.preventDefault();
+          rememberSelection(inp);
+          openSnippetMenu(ev.clientX, ev.clientY, inp);
+        });
+      }
     });
   }
+
+  function eligibleForSnippetInput(inp){
+    if (!inp || inp.disabled) return false;
+    if (inp.dataset && inp.dataset.combo === '1') return false; // option combos
+    const tag = (inp.tagName || '').toLowerCase();
+    if (tag === 'textarea') return true;
+    const t = (inp.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'search'].includes(t);
+  }
+
+  function updateSnippetSelectionUI(){
+    if (!snippetSelection) return;
+    const current = lastSnippetSelection || '';
+    const trimmed = current.trim();
+    const preview = trimmed.length > 120 ? trimmed.slice(0, 120) + '…' : trimmed;
+    if (preview) {
+      snippetSelection.textContent = `Auswahl: "${preview}"`;
+    } else if (lastSnippetTarget) {
+      snippetSelection.textContent = 'Kein Text markiert – aktuelles Feld wird genutzt.';
+    } else {
+      snippetSelection.textContent = 'Kein Text markiert.';
+    }
+    if (btnSnippetSave) {
+      const fallbackText = lastSnippetTarget ? String(lastSnippetTarget.value || '').trim() : '';
+      btnSnippetSave.disabled = (!trimmed && !fallbackText);
+    }
+  }
+
+  function rememberSelection(inp){
+    lastSnippetTarget = inp || lastSnippetTarget;
+    if (!inp) { updateSnippetSelectionUI(); return; }
+    if (typeof inp.selectionStart === 'number' && typeof inp.selectionEnd === 'number') {
+      if (inp.selectionEnd > inp.selectionStart) {
+        lastSnippetSelection = inp.value.slice(inp.selectionStart, inp.selectionEnd);
+      } else {
+        lastSnippetSelection = '';
+      }
+    }
+    updateSnippetSelectionUI();
+  }
+
+  function refreshSnippetCategoryList(){
+    if (!snippetCategoryList) return;
+    const cats = new Set();
+    (state.text_snippets || []).forEach(s => { if (s.category) cats.add(String(s.category)); });
+    snippetCategoryList.innerHTML = '';
+    cats.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      snippetCategoryList.appendChild(opt);
+    });
+  }
+
+  function insertSnippetText(target, text){
+    const el = target || lastSnippetTarget;
+    if (!el) { alert('Kein Ziel-Feld gewählt.'); return; }
+    const snippet = String(text ?? '');
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    const val = String(el.value || '');
+    el.value = val.slice(0, start) + snippet + val.slice(end);
+    const pos = start + snippet.length;
+    if (typeof el.setSelectionRange === 'function') {
+      el.setSelectionRange(pos, pos);
+    }
+    el.focus();
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    lastSnippetTarget = el;
+  }
+
+  function renderSnippetList(){
+    if (!snippetList) return;
+    const list = state.text_snippets || [];
+    snippetList.innerHTML = '';
+    if (!list.length) {
+      snippetList.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
+      return;
+    }
+    const grouped = {};
+    list.forEach(s => {
+      const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : 'Allgemein';
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(s);
+    });
+
+    Object.entries(grouped).forEach(([cat, items]) => {
+      items.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'snippet-card';
+        card.innerHTML = `
+          <div class="h">
+            <div style="font-weight:800;">${esc(s.title || '(ohne Titel)')}</div>
+            <span class="pill-mini">${esc(cat)}</span>
+          </div>
+          <div class="txt">${esc(s.content || '')}</div>
+          <div class="c">${esc(s.created_by_name || '')}${s.is_generated ? ' · automatisch' : ''}</div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn secondary" type="button">In aktuelles Feld einfügen</button>
+          </div>
+        `;
+        card.querySelector('button')?.addEventListener('click', () => {
+          insertSnippetText(lastSnippetTarget, s.content || '');
+        });
+        snippetList.appendChild(card);
+      });
+    });
+  }
+
+  function openSnippetDrawer(show=true){
+    if (!snippetDrawer) return;
+    snippetDrawer.style.display = show ? 'block' : 'none';
+  }
+
+  function hideSnippetMenu(){
+    snippetMenu.style.display = 'none';
+  }
+
+  function openSnippetMenu(x, y, target){
+    const list = state.text_snippets || [];
+    snippetMenu.innerHTML = '';
+    if (!list.length) {
+      snippetMenu.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
+    } else {
+      const grouped = {};
+      list.forEach(s => {
+        const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : 'Allgemein';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(s);
+      });
+      Object.entries(grouped).forEach(([cat, items]) => {
+        const h = document.createElement('h4');
+        h.textContent = cat;
+        snippetMenu.appendChild(h);
+        items.forEach(s => {
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<div style="font-weight:800;">${esc(s.title || '(ohne Titel)')}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
+          div.addEventListener('click', () => {
+            insertSnippetText(target, s.content || '');
+            hideSnippetMenu();
+          });
+          snippetMenu.appendChild(div);
+        });
+      });
+    }
+    snippetMenu.style.display = 'block';
+    snippetMenu.style.left = `${x}px`;
+    snippetMenu.style.top = `${y}px`;
+  }
+
+  document.addEventListener('click', (ev) => {
+    if (ev.target && snippetMenu.contains(ev.target)) return;
+    hideSnippetMenu();
+  });
 
   // --- rendering helpers
 
@@ -1562,7 +1786,8 @@ render_teacher_header('Eingaben');
     state.class_report_instance_id = j.class_report_instance_id || 0;
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
-    
+    state.text_snippets = j.text_snippets || [];
+
     // In delegated mode: class fields should not be visible/editable here
     if (DELEGATED_MODE) {
       state.class_fields = null;
@@ -1585,6 +1810,11 @@ render_teacher_header('Eingaben');
     (state.students||[]).forEach(recomputeStudentProgress);
     recomputeFormsSummary();
     dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
+
+    if (snippetBar) snippetBar.style.display = 'block';
+    renderSnippetList();
+    refreshSnippetCategoryList();
+    updateSnippetSelectionUI();
 
     ui.activeStudentIndex = 0;
     groupSelect.innerHTML = '';
@@ -1809,6 +2039,37 @@ if (dlgSave) {
     openDelegations();
   });
 }
+
+  if (btnSnippetToggle) {
+    btnSnippetToggle.addEventListener('click', () => {
+      const show = !snippetDrawer || snippetDrawer.style.display === 'none';
+      openSnippetDrawer(show);
+    });
+  }
+
+  if (btnSnippetClose) {
+    btnSnippetClose.addEventListener('click', () => openSnippetDrawer(false));
+  }
+
+  if (btnSnippetSave) {
+    btnSnippetSave.addEventListener('click', async () => {
+      const rawText = (lastSnippetSelection && lastSnippetSelection.trim()) || (lastSnippetTarget ? String(lastSnippetTarget.value || '').trim() : '');
+      if (!rawText) { alert('Kein Text markiert.'); return; }
+      const titleTyped = snippetTitle ? String(snippetTitle.value || '').trim() : '';
+      const cat = snippetCategory ? String(snippetCategory.value || '').trim() : '';
+      const derivedTitle = titleTyped !== '' ? titleTyped : (rawText.length > 40 ? rawText.slice(0, 40) + '…' : rawText);
+      try {
+        const j = await api('snippet_save', { title: derivedTitle, category: cat, content: rawText });
+        if (j.snippet) state.text_snippets.push(j.snippet);
+        renderSnippetList();
+        refreshSnippetCategoryList();
+        if (snippetTitle) snippetTitle.value = '';
+        updateSnippetSelectionUI();
+      } catch (e) {
+        showErr(e.message || String(e));
+      }
+    });
+  }
 
   classSelect.addEventListener('change', () => {
     const cid = Number(classSelect.value || '0');
