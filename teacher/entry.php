@@ -537,6 +537,8 @@ render_teacher_header('Eingaben');
   const btnSnippetClose = document.getElementById('btnSnippetClose');
   const snippetCategoryList = document.getElementById('snippetCategoryList');
 
+  const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
+
   let state = {
     class_id: 0,
     template: null,
@@ -568,6 +570,31 @@ render_teacher_header('Eingaben');
     saveInFlight: 0,
     mergeDecisions: new Map(),
   };
+
+  function mergeDecisionKey(reportId, fieldId){
+    const cid = Number(state.class_id || 0);
+    return `${cid}:${reportId}:${fieldId}`;
+  }
+
+  function readMergeMemory(){
+    try {
+      const raw = localStorage.getItem(MERGE_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) {
+      console.warn('merge memory read failed', e);
+      return {};
+    }
+  }
+
+  function writeMergeMemory(mem){
+    try {
+      localStorage.setItem(MERGE_STORAGE_KEY, JSON.stringify(mem));
+    } catch (e) {
+      console.warn('merge memory write failed', e);
+    }
+  }
 
   const snippetMenu = document.createElement('div');
   snippetMenu.className = 'snippet-menu';
@@ -629,8 +656,14 @@ render_teacher_header('Eingaben');
     const childRaw = childVal(reportId, f.child.id);
     if (!childRaw) return String(nextValue ?? '');
 
-    const key = `${reportId}:${fieldId}`;
-    let decision = ui.mergeDecisions.get(key);
+    const key = mergeDecisionKey(reportId, fieldId);
+    const entry = ui.mergeDecisions.get(key);
+
+    if (entry && entry.settled) {
+      return String(nextValue ?? '');
+    }
+
+    let decision = entry?.decision;
 
     if (!decision) {
       const msg = [
@@ -641,8 +674,13 @@ render_teacher_header('Eingaben');
         'Sollen beide Werte kombiniert werden (OK) oder der Schüler:innen-Wert überschrieben werden (Abbrechen)?'
       ].join('\n');
       decision = window.confirm(msg) ? 'combine' : 'overwrite';
-      ui.mergeDecisions.set(key, decision);
     }
+
+    const finalEntry = { decision, settled: true };
+    ui.mergeDecisions.set(key, finalEntry);
+    const mem = readMergeMemory();
+    mem[key] = finalEntry;
+    writeMergeMemory(mem);
 
     if (decision === 'combine') {
       const own = String(nextValue ?? '').trim();
@@ -1887,6 +1925,13 @@ render_teacher_header('Eingaben');
     state.progress_summary = j.progress_summary || null;
     state.text_snippets = j.text_snippets || [];
     ui.mergeDecisions = new Map();
+    const savedDecisions = readMergeMemory();
+    Object.entries(savedDecisions).forEach(([k, v]) => {
+      if (!v || typeof v !== 'object') return;
+      const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
+      const settled = v.settled === true;
+      if (decision) ui.mergeDecisions.set(k, { decision, settled });
+    });
 
     // In delegated mode: class fields should not be visible/editable here
     if (DELEGATED_MODE) {
