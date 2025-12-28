@@ -80,9 +80,11 @@ try {
 
     $pdo->beginTransaction();
 
+    $nameCheck = $pdo->prepare('SELECT id FROM template_fields WHERE template_id=? AND field_name=? AND id<>? LIMIT 1');
     $upd = $pdo->prepare("
       UPDATE template_fields
-      SET field_type=?,
+      SET field_name=?,
+          field_type=?,
           label=?,
           label_en=?,
           help_text=?,
@@ -102,6 +104,11 @@ try {
       if (!is_array($u)) continue;
       $id = (int)($u['id'] ?? 0);
       if ($id <= 0) continue;
+
+      $name = trim((string)($u['name'] ?? ''));
+      if ($name === '') throw new RuntimeException('Feldname fehlt.');
+      $nameCheck->execute([$templateId, $name, $id]);
+      if ($nameCheck->fetch()) throw new RuntimeException('Feldname bereits vergeben: '.$name);
 
       $type = (string)($u['type'] ?? 'radio');
       if (!in_array($type, $allowedTypes, true)) throw new RuntimeException('Ungültiger Feldtyp: '.$type);
@@ -136,7 +143,7 @@ try {
         $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE);
       }
 
-      $upd->execute([$type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      $upd->execute([$name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
       $count++;
     }
 
@@ -165,6 +172,7 @@ try {
     foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
       $u = [
         'id' => (int)$r['id'],
+        'name' => (string)$r['field_name'],
         'type' => (string)$r['field_type'],
         'label' => (string)($r['label'] ?? ''),
         'help_text' => (string)($r['help_text'] ?? ''),
@@ -211,12 +219,15 @@ try {
     $pdo->beginTransaction();
     $upd = $pdo->prepare("
       UPDATE template_fields
-      SET field_type=?, label=?, label_en=?, help_text=?, is_multiline=?, is_required=?,
+      SET field_name=?, field_type=?, label=?, label_en=?, help_text=?, is_multiline=?, is_required=?,
           can_child_edit=?, can_teacher_edit=?, options_json=?, meta_json=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND template_id=?
     ");
     $count = 0;
     foreach ($updates as $u) {
+      $name = trim((string)($u['name'] ?? ''));
+      if ($name === '') $name = (string)$u['id'];
+
       $type = (string)$u['type'];
       $label = trim((string)$u['label']); if ($label === '') $label = ' ';
       $help = trim((string)($u['help_text'] ?? '')); if ($help === '') $help = null;
@@ -232,13 +243,35 @@ try {
       $metaJson = (is_array($u['meta'] ?? null) && ($u['meta'] ?? null))
         ? json_encode($u['meta'], JSON_UNESCAPED_UNICODE) : null;
 
-      $upd->execute([$type, $label, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, (int)$u['id'], $templateId]);
+      $upd->execute([$name, $type, $label, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, (int)$u['id'], $templateId]);
       $count++;
     }
     $pdo->commit();
 
     audit('template_fields_bulk_patch', (int)current_user()['id'], ['template_id'=>$templateId,'count'=>$count]);
     echo json_encode(['ok'=>true,'patched'=>$count], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  // --- delete_by_names
+  if ($action === 'delete_by_names') {
+    $names = $data['names'] ?? null;
+    if (!is_array($names) || !$names) throw new RuntimeException('names fehlt/ungültig.');
+
+    $names = array_values(array_unique(array_filter(array_map(fn($n)=>trim((string)$n), $names))));
+    if (!$names) throw new RuntimeException('Keine gültigen Namen angegeben.');
+
+    $in = implode(',', array_fill(0, count($names), '?'));
+    $params = array_merge([$templateId], $names);
+
+    $pdo->beginTransaction();
+    $del = $pdo->prepare("DELETE FROM template_fields WHERE template_id=? AND field_name IN ($in)");
+    $del->execute($params);
+    $deleted = $del->rowCount();
+    $pdo->commit();
+
+    audit('template_fields_delete', (int)current_user()['id'], ['template_id'=>$templateId,'deleted'=>$deleted]);
+    echo json_encode(['ok'=>true,'deleted'=>$deleted], JSON_UNESCAPED_UNICODE);
     exit;
   }
 

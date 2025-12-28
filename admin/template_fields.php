@@ -356,10 +356,29 @@ render_admin_header('Feld-Editor');
     </div>
     <div class="actions" style="justify-content:flex-start;">
       <button class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</button>
+      <button class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</button>
     </div>
     <div class="muted2" id="replacePdfStatus"></div>
   </div>
 </div>
+
+<dialog id="mapPdfFieldsDialog">
+  <div class="dlg-head">
+    <h3 class="dlg-title" style="margin:0;">Neue PDF-Felder zuordnen</h3>
+    <div class="muted2">Neue PDF-Felder können bestehenden (fehlenden) Feldern zugeordnet werden, damit Daten erhalten bleiben.</div>
+  </div>
+  <div class="dlg-body">
+    <div class="muted2" id="mapPdfSummary"></div>
+    <div id="mapPdfFieldsList" class="grid" style="grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;"></div>
+    <div class="muted2" id="mapPdfError" style="color:#b00020; display:none;"></div>
+  </div>
+  <form method="dialog">
+    <div class="dlg-foot">
+      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
+      <button class="btn primary" value="ok" type="submit">Zuordnung übernehmen</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- TOP GROUPS OVERVIEW -->
 <div class="card panel">
@@ -601,6 +620,12 @@ const previewCard = document.getElementById('previewCard');
 const replacePdfInput = document.getElementById('replacePdfFile');
 const btnReplacePdf = document.getElementById('btnReplacePdf');
 const replacePdfStatus = document.getElementById('replacePdfStatus');
+const btnDeleteMissing = document.getElementById('btnDeleteMissing');
+
+const mapPdfFieldsDialog = document.getElementById('mapPdfFieldsDialog');
+const mapPdfFieldsList = document.getElementById('mapPdfFieldsList');
+const mapPdfSummary = document.getElementById('mapPdfSummary');
+const mapPdfError = document.getElementById('mapPdfError');
 
 const colResizer = document.getElementById('colResizer');
 
@@ -630,6 +655,7 @@ let collapsedGroupHeaders = new Set();
 let selected = new Set();
 let dirty = new Set();
 let lastFoundRowId = null;
+let lastMissingNames = [];
 
 let isRowDragging = false;
 let dragScrollRaf = 0;
@@ -874,6 +900,103 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
   return data.imported || 0;
 }
 
+function updateMissingDeleteButton(names){
+  lastMissingNames = Array.isArray(names) ? names : [];
+  if (!btnDeleteMissing) return;
+  if (lastMissingNames.length) {
+    btnDeleteMissing.style.display = '';
+    btnDeleteMissing.textContent = `Fehlende Felder löschen (${lastMissingNames.length})…`;
+  } else {
+    btnDeleteMissing.style.display = 'none';
+  }
+}
+
+async function deleteFieldsByName(names){
+  if (!Array.isArray(names) || !names.length) return 0;
+
+  const payload = { action:'delete_by_names', template_id: templateId, names, csrf_token: csrf };
+  const resp = await fetch(apiUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(payload)
+  });
+  const data = await resp.json().catch(()=>({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || `Löschen fehlgeschlagen (HTTP ${resp.status})`);
+  return data.deleted || 0;
+}
+
+function buildMappingDialog(missing, newcomers){
+  mapPdfFieldsList.innerHTML = '';
+  mapPdfError.style.display = 'none';
+  mapPdfError.textContent = '';
+  mapPdfSummary.textContent = `Fehlende Felder: ${missing.length} · Neue PDF-Felder: ${newcomers.length}`;
+
+  const options = [{ value:'', label:'— nicht zuordnen —' }, ...newcomers.map(n=>({ value:n, label:n }))];
+
+  for (const m of missing){
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '6px';
+
+    const label = document.createElement('label');
+    label.textContent = `Bestehendes Feld: ${m}`;
+    const select = document.createElement('select');
+    select.dataset.missingName = m;
+    for (const opt of options){
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      select.appendChild(o);
+    }
+
+    wrap.append(label, select);
+    mapPdfFieldsList.appendChild(wrap);
+  }
+}
+
+function collectMappingFromDialog(){
+  const selects = mapPdfFieldsList.querySelectorAll('select[data-missing-name]');
+  const mapping = {};
+  const chosenTargets = new Set();
+
+  for (const sel of selects){
+    const missingName = sel.dataset.missingName;
+    const target = sel.value.trim();
+    if (!target) continue;
+    if (chosenTargets.has(target)) {
+      mapPdfError.textContent = `„${target}“ wurde mehrfach ausgewählt. Bitte jede neue PDF-Feld nur einmal zuordnen.`;
+      mapPdfError.style.display = 'block';
+      return null;
+    }
+    chosenTargets.add(target);
+    mapping[missingName] = target;
+  }
+
+  mapPdfError.style.display = 'none';
+  mapPdfError.textContent = '';
+  return mapping;
+}
+
+async function promptPdfFieldMapping(missing, newcomers){
+  if (!missing?.length || !newcomers?.length) return {};
+
+  buildMappingDialog(missing, newcomers);
+  mapPdfFieldsDialog.returnValue = '';
+  mapPdfFieldsDialog.showModal();
+
+  return await new Promise((resolve)=>{
+    const onClose = ()=>{
+      if (mapPdfFieldsDialog.returnValue !== 'ok') { mapPdfFieldsDialog.removeEventListener('close', onClose); resolve(null); return; }
+      const mapping = collectMappingFromDialog();
+      if (mapping === null) { mapPdfFieldsDialog.showModal(); return; }
+      mapPdfFieldsDialog.removeEventListener('close', onClose);
+      resolve(mapping);
+    };
+    mapPdfFieldsDialog.addEventListener('close', onClose);
+  });
+}
+
 async function assessNewPdfFile(file){
   const buf = await file.arrayBuffer();
 
@@ -898,14 +1021,39 @@ async function assessNewPdfFile(file){
   }
 }
 
-async function syncPdfPositionsWithFields(){
+async function syncPdfPositionsWithFields(opts={}){
+  const mapping = opts.mapping || {};
   const pdfInfo = await readPdfFieldInfo();
 
   const pdfNames = new Set(pdfInfo.fields.keys());
+  const renameApplied = [];
+  if (mapping && Object.keys(mapping).length) {
+    for (const [oldNameRaw, newNameRaw] of Object.entries(mapping)) {
+      const oldName = String(oldNameRaw || '').trim();
+      const newName = String(newNameRaw || '').trim();
+      if (!oldName || !newName) continue;
+      if (!pdfNames.has(newName)) continue;
+
+      const idx = fields.findIndex(f => String(f.name) === oldName);
+      if (idx < 0) continue;
+
+      const collision = fields.find(f => String(f.name) === newName && f.id !== fields[idx].id);
+      if (collision) continue;
+
+      const info = pdfInfo.fields.get(newName) || {};
+      const next = { ...fields[idx], name: newName };
+      next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+      fields[idx] = next;
+      markDirty(next.id);
+      renameApplied.push({ from: oldName, to: newName });
+    }
+  }
+
+  const pdfNamesAfter = new Set(pdfInfo.fields.keys());
   const existingNames = new Set(fields.map(f => String(f.name)));
 
-  const missing = [...existingNames].filter(n => !pdfNames.has(n));
-  const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
+  const missing = [...existingNames].filter(n => !pdfNamesAfter.has(n));
+  const newcomers = [...pdfNamesAfter].filter(n => !existingNames.has(n));
 
   let updated = 0;
   fields = fields.map(f => {
@@ -937,7 +1085,18 @@ async function syncPdfPositionsWithFields(){
     }
   }
 
-  return { updated, missing: missing.length, added: imported };
+  let deleted = 0;
+  updateMissingDeleteButton(missing);
+  if (missing.length && opts?.promptDeleteMissing !== false) {
+    const wantDelete = confirm(`Soll(en) ${missing.length} fehlende Feld(er) dauerhaft gelöscht werden? (${missing.join(', ')})`);
+    if (wantDelete) {
+      deleted = await deleteFieldsByName(missing);
+      await load();
+      updateMissingDeleteButton([]);
+    }
+  }
+
+  return { updated, missing: missing.length, missingNames: missing, added: imported, renamed: renameApplied.length, deleted };
 }
 
 function getGroupPath(f){
@@ -2020,6 +2179,7 @@ async function save(){
     .filter(f => dirty.has(f.id))
     .map(f => ({
       id: f.id,
+      name: f.name,
       type: f.type,
       label: f.label,
       label_en: (f.label_en ?? ''),
@@ -2235,10 +2395,17 @@ btnReplacePdf.addEventListener('click', async ()=>{
 
   try {
     const assessment = await assessNewPdfFile(file);
+    let plannedMapping = {};
     if (assessment?.missing?.length) {
       const msg = `Warnung: ${assessment.missing.length} vorhandene Felder fehlen in der neuen PDF (${assessment.missing.join(', ')}) und Daten könnten verloren gehen. PDF trotzdem ersetzen?`;
       const proceed = confirm(msg);
       if (!proceed) { replacePdfStatus.textContent = 'Abgebrochen: PDF wurde nicht ersetzt.'; return; }
+    }
+
+    if (assessment?.missing?.length && assessment?.newcomers?.length) {
+      const mapping = await promptPdfFieldMapping(assessment.missing, assessment.newcomers);
+      if (mapping === null) { replacePdfStatus.textContent = 'Abgebrochen: Zuordnung abgebrochen.'; return; }
+      plannedMapping = mapping || {};
     }
 
     replacePdfStatus.textContent = 'Lade PDF hoch…';
@@ -2256,13 +2423,34 @@ btnReplacePdf.addEventListener('click', async ()=>{
     replacePdfStatus.textContent = 'PDF gespeichert. Aktualisiere Vorschau und Felder…';
 
     await loadPdf();
-    const summary = await syncPdfPositionsWithFields();
-    replacePdfStatus.textContent = `Positionen aktualisiert (${summary.updated}), fehlend: ${summary.missing}, neu: ${summary.added}`;
+    const summary = await syncPdfPositionsWithFields({ mapping: plannedMapping });
+    const parts = [
+      `Positionen aktualisiert (${summary.updated})`,
+      `fehlend: ${summary.missing}`,
+      `neu: ${summary.added}`
+    ];
+    if (summary.renamed) parts.push(`zugeordnet: ${summary.renamed}`);
+    if (summary.deleted) parts.push(`gelöscht: ${summary.deleted}`);
+    replacePdfStatus.textContent = parts.join(', ');
   } catch (e) {
     replacePdfStatus.textContent = 'Fehler: ' + (e?.message || e);
-  } finally {
-    btnReplacePdf.disabled = false;
-    if (replacePdfInput) replacePdfInput.value = '';
+    } finally {
+      btnReplacePdf.disabled = false;
+      if (replacePdfInput) replacePdfInput.value = '';
+    }
+});
+
+btnDeleteMissing.addEventListener('click', async ()=>{
+  if (!lastMissingNames.length) { replacePdfStatus.textContent = 'Keine fehlenden Felder erkannt.'; return; }
+  const want = confirm(`Fehlende Felder jetzt löschen? (${lastMissingNames.join(', ')})`);
+  if (!want) return;
+  try {
+    const deleted = await deleteFieldsByName(lastMissingNames);
+    replacePdfStatus.textContent = `Fehlende Felder gelöscht (${deleted}).`;
+    updateMissingDeleteButton([]);
+    await load();
+  } catch (e) {
+    replacePdfStatus.textContent = 'Fehler beim Löschen: ' + (e?.message || e);
   }
 });
 
