@@ -20,7 +20,7 @@ render_admin_header('Feld-Editor');
 ?>
 
 <style>
-  .wiz-preview { position: sticky; top: 18px; align-self: start; }
+  .wiz-preview { position: sticky; top: 130px; align-self: start; }
 
   .layout2{
     display:grid;
@@ -132,7 +132,6 @@ render_admin_header('Feld-Editor');
     border-spacing: 0;
   }
   #fieldsTbl th, #fieldsTbl td{
-    vertical-align: top;
     border-bottom: 1px solid var(--border);
     padding: 10px;
     background: var(--card, #fff);
@@ -148,9 +147,13 @@ render_admin_header('Feld-Editor');
   }
 
   /* sticky reference columns (checkbox + field name) */
-  .sticky-col-0{ position: sticky; left: 0; z-index: 8; background: var(--card, #fff); }
-  .sticky-col-1{ position: sticky; left: 46px; z-index: 8; background: var(--card, #fff); }
-  #fieldsTbl thead .sticky-col-0, #fieldsTbl thead .sticky-col-1{ z-index: 10; }
+  .sticky-col-0{ position: sticky; left: 0; z-index: 100; background: var(--card, #fff); }
+  .sticky-col-1{ position: sticky; left: 45px; z-index: 100; background: var(--card, #fff); }
+  #fieldsTbl thead .sticky-col-0, #fieldsTbl thead .sticky-col-1{ z-index: 200; }
+  
+  td:has(> input[type='checkbox']) {
+      text-align: center;
+  }
 
   /* group header rows inside table */
   tr.group-row td{
@@ -176,7 +179,7 @@ render_admin_header('Feld-Editor');
   tr.group-row td .gmeta{ font-weight:400; color: var(--muted); font-size: 12px; }
 
   .toolbar{
-    display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;
+    display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start;
     padding:12px; border:1px dashed var(--border); border-radius:12px;
   }
   .toolbar .block{ min-width: 220px; }
@@ -232,11 +235,11 @@ render_admin_header('Feld-Editor');
 </style>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← Templates</a>
-    <a class="btn secondary" href="<?=h(url('admin/icon_library.php'))?>">Icon Library</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
+    <div class="row-actions" style="float: right;">
+        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← zurück zu den Templates</a>
+    </div>
+
+  <h1>Feld-Editor</h1>
 </div>
 
 <div id="dirtyWarning" class="alert danger" style="display:none">
@@ -262,11 +265,10 @@ render_admin_header('Feld-Editor');
 <div class="card" id="metaCard">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <h2 style="margin:0;">Feld-Editor</h2>
       <div class="muted" id="metaLine">Lade…</div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <button class="btn secondary" type="button" id="btnTogglePreview">Vorschau ausblenden</button>
+      <a class="btn secondary" type="button" id="btnTogglePreview">Vorschau ausblenden</a>
     </div>
   </div>
 </div>
@@ -350,12 +352,12 @@ render_admin_header('Feld-Editor');
 <div class="card panel">
   <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
     <div>
-      <h3 style="margin:0;">PDF-Vorlage ersetzen</h3>
+      <h2>PDF-Vorlage ersetzen</h2>
       <div class="muted2">Lädt eine neue PDF-Datei hoch, synchronisiert Feld-Positionen und informiert über fehlende Felder.</div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <button class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</button>
-      <button class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</button>
+      <a class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</a>
+      <a class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</a>
     </div>
   </div>
   <div style="margin-top:12px; display:grid; gap:6px;">
@@ -390,12 +392,12 @@ render_admin_header('Feld-Editor');
 <div class="card panel">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <h3 style="margin:0;">Gruppenübersicht</h3>
+      <h2>Gruppenübersicht</h2>
       <div class="muted2">Klick = filtern, Toggle = Gruppe in Tabelle ein/ausklappen. Alt-Klick = Gruppe ausblenden.</div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <button class="btn secondary" type="button" id="btnClearGroupFilter">Gruppenfilter löschen</button>
-      <button class="btn secondary" type="button" id="btnShowAllGroups">Alle Gruppen einblenden</button>
+      <a class="btn secondary" type="button" id="btnClearGroupFilter">Gruppenfilter löschen</a>
+      <a class="btn secondary" type="button" id="btnShowAllGroups">Alle Gruppen einblenden</a>
     </div>
   </div>
   <div class="groups-bar" id="groupsBar" style="margin-top:10px;"></div>
@@ -403,10 +405,10 @@ render_admin_header('Feld-Editor');
 
 <div class="layout2" id="layout2">
   <!-- TABLE -->
-  <div class="card" style="overflow:hidden;" id="tableCard">
+  <div class="card" style="overflow:hidden; margin: 0" id="tableCard">
     <div class="grid" style="grid-template-columns: 1fr 200px; gap:12px; align-items:end;">
       <div>
-        <label>Filter (Feldname/Label/Gruppe)</label>
+          <h3 style="margin-top: 0;">Filter (Feldname/Label/Gruppe)</h3>
         <input id="fieldFilter" placeholder="z.B. soc, work, eng, math …">
         <div style="margin-top:8px;">
           <label class="muted2" style="display:block; margin-bottom:4px;">Nicht enthält</label>
@@ -415,13 +417,14 @@ render_admin_header('Feld-Editor');
         <div class="muted2">Filter wirkt auf Bulk-Aktionen (sichtbare Zeilen) und Gruppenübersicht.</div>
       </div>
       <div class="actions" style="justify-content:flex-start;">
-        <button class="btn secondary" type="button" id="btnClearFilter">Filter löschen</button>
+        <a class="btn secondary" type="button" id="btnClearFilter">Filter löschen</a>
       </div>
     </div>
 
     <!-- BULK TOOLBAR -->
+    <div class="pill" style="float: right; margin-top: 19px"><strong>Auswahl:</strong> </div>
+    <h3 style="margin-bottom: 0;">Werte setzen</h3>
     <div class="toolbar" style="margin-top:12px;">
-      <div class="pill"><strong>Auswahl:</strong> <span id="selCount">0</span></div>
 
       <div class="block">
         <label>Gruppe setzen</label>
@@ -494,21 +497,22 @@ render_admin_header('Feld-Editor');
       </div>
 
       <div class="actions">
-        <button class="btn secondary" type="button" id="btnApplySelected">Auf Auswahl anwenden</button>
-        <button class="btn secondary" type="button" id="btnApplyVisible">Auf sichtbare anwenden</button>
-        <button class="btn primary" type="button" id="btnSave">Speichern</button>
+          <a class="btn secondary" type="button" id="btnApplySelected" style="gap: 0;">Auf Auswahl (<span id="selCount">0</span>) anwenden</a>
+        <a class="btn secondary" type="button" id="btnApplyVisible">Auf sichtbare anwenden</a>
       </div>
 
       <div class="block" style="min-width:280px;">
-        <label>Auto-Group</label>
+          <h3 style="margin-bottom: 0;">Auto-Group</h3>
+        <div class="muted" style="margin-bottom: 10px;">Prefix ignoriert alles nach <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
         <div style="display:flex; gap:8px;">
-          <button class="btn secondary" type="button" id="btnAutoGroupPrefix">Nach Prefix</button>
-          <button class="btn secondary" type="button" id="btnAutoGroupPage">Nach PDF-Seite</button>
+          <a class="btn secondary" type="button" id="btnAutoGroupPrefix">Nach Prefix</a>
+          <a class="btn secondary" type="button" id="btnAutoGroupPage">Nach PDF-Seite</a>
         </div>
-        <div class="muted2">Prefix ignoriert alles nach <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
       </div>
-
-      <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
+        <div class="block" style="min-width:100%; text-align: end;">
+            <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
+            <a class="btn primary" type="button" id="btnSave">Speichern</a>
+        </div>
     </div>
 
     <div class="table-scroll" id="tableScroll" style="margin-top:12px;">
@@ -516,7 +520,7 @@ render_admin_header('Feld-Editor');
         <thead>
           <tr>
             <th class="sticky-col-0" style="width:46px;">✓</th>
-            <th class="sticky-col-1" style="min-width:220px;">Feldname</th>
+            <th class="sticky-col-1">Feldname</th>
             <th style="min-width:220px;">Gruppe</th>
             <th style="min-width:220px;">Gruppentitel (EN)</th>
             <th style="min-width:160px;">Typ</th>
@@ -524,10 +528,10 @@ render_admin_header('Feld-Editor');
             <th style="min-width:260px;">Label (EN)</th>
             <th style="min-width:240px;">Stammfeld</th>
             <th style="min-width:420px;">Help</th>
-            <th style="min-width:120px;">Kind</th>
-            <th style="min-width:120px;">Lehrer</th>
-            <th style="min-width:140px;">Klassenfeld</th>
-            <th style="min-width:120px;">Req</th>
+            <th>Kind</th>
+            <th>Lehrer</th>
+            <th>Klassenfeld</th>
+            <th>Erforderlich</th>
             <th style="min-width:420px;">Extras</th>
           </tr>
         </thead>
@@ -549,7 +553,7 @@ render_admin_header('Feld-Editor');
 
   <!-- PDF Preview -->
   <div class="card wiz-preview" id="previewCard" style="margin:0;">
-    <h3 style="margin-top:0;">PDF Vorschau</h3>
+    <h2>PDF Vorschau</h2>
     <div class="muted" id="pdfHint">Klicke links ein Feld, um es im PDF zu markieren.</div>
 
     <div style="display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap;">
