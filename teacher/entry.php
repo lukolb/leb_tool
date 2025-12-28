@@ -444,7 +444,10 @@ render_teacher_header('Eingaben');
   .snippet-menu h4{ margin:4px 0; font-size:14px; }
   .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
   .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
-  .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; margin-bottom:10px; display:flex; flex-direction:column; gap:6px; }
+  .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; position: sticky;
+    top: 0;
+    background: #ffffff;
+    margin: 0px -5px 10px -5px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
 </style>
@@ -1244,7 +1247,7 @@ render_teacher_header('Eingaben');
         <div style="font-weight:800;">Textbaustein aus Auswahl speichern</div>
         <div class="muted" style="font-size:12px;">${esc(preview)}</div>
         <div class="row" style="align-items:center;">
-          <input class="input" type="text" placeholder="Titel" value="${esc(derivedTitle)}" style="flex:1; min-width:180px;">
+          <input class="input" type="text" placeholder="Titel" style="flex:1; min-width:180px;">
           <input class="input" type="text" placeholder="Kategorie (optional)" style="flex:1; min-width:160px;">
           <button class="btn" type="button">Speichern</button>
         </div>
@@ -1285,7 +1288,7 @@ render_teacher_header('Eingaben');
         items.forEach(s => {
           const div = document.createElement('div');
           div.className = 'item';
-          div.innerHTML = `<div style="font-weight:800;">${esc(s.title || '(ohne Titel)')}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
+          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${esc(s.title || '(ohne Titel)')}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
           div.addEventListener('click', () => {
             insertSnippetText(target, s.content || '');
             hideSnippetMenu();
