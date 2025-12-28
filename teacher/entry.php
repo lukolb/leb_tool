@@ -440,10 +440,13 @@ render_teacher_header('Eingaben');
   .snippet-card .h{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .snippet-card .c{ color:var(--muted); font-size:12px; }
   .snippet-card .txt{ white-space:pre-wrap; }
-  .snippet-menu{ position:fixed; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:340px; max-height:60vh; overflow:auto; }
+  .snippet-menu{ position:absolute; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:360px; max-height:60vh; overflow:auto; }
   .snippet-menu h4{ margin:4px 0; font-size:14px; }
   .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
   .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
+  .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; margin-bottom:10px; display:flex; flex-direction:column; gap:6px; }
+  .snippet-save textarea{ width:100%; min-height:80px; }
+  .snippet-save .row{ gap:6px; flex-wrap:wrap; }
 </style>
 
 <script>
@@ -1102,7 +1105,9 @@ render_teacher_header('Eingaben');
           if (!eligibleForSnippetInput(inp)) return;
           ev.preventDefault();
           rememberSelection(inp);
-          openSnippetMenu(ev.clientX, ev.clientY, inp);
+          const x = ev.pageX ?? (ev.clientX + window.scrollX);
+          const y = ev.pageY ?? (ev.clientY + window.scrollY);
+          openSnippetMenu(x, y, inp);
         });
       }
     });
@@ -1225,8 +1230,45 @@ render_teacher_header('Eingaben');
   }
 
   function openSnippetMenu(x, y, target){
+    lastSnippetTarget = target || lastSnippetTarget;
     const list = state.text_snippets || [];
     snippetMenu.innerHTML = '';
+
+    const trimmedSel = (lastSnippetSelection || '').trim();
+    if (trimmedSel) {
+      const saveBox = document.createElement('div');
+      saveBox.className = 'snippet-save';
+      const preview = trimmedSel.length > 240 ? trimmedSel.slice(0, 240) + '…' : trimmedSel;
+      const derivedTitle = preview.length > 60 ? preview.slice(0, 60) + '…' : preview;
+      saveBox.innerHTML = `
+        <div style="font-weight:800;">Textbaustein aus Auswahl speichern</div>
+        <div class="muted" style="font-size:12px;">${esc(preview)}</div>
+        <div class="row" style="align-items:center;">
+          <input class="input" type="text" placeholder="Titel" value="${esc(derivedTitle)}" style="flex:1; min-width:180px;">
+          <input class="input" type="text" placeholder="Kategorie (optional)" style="flex:1; min-width:160px;">
+          <button class="btn" type="button">Speichern</button>
+        </div>
+      `;
+      const titleInput = saveBox.querySelector('input');
+      const catInput = saveBox.querySelectorAll('input')[1] || null;
+      const saveBtn = saveBox.querySelector('button');
+      saveBtn?.addEventListener('click', async () => {
+        const title = titleInput ? String(titleInput.value || '').trim() : '';
+        const cat = catInput ? String(catInput.value || '').trim() : '';
+        const finalTitle = title || derivedTitle;
+        try {
+          const j = await api('snippet_save', { title: finalTitle, category: cat, content: trimmedSel });
+          if (j.snippet) state.text_snippets.push(j.snippet);
+          renderSnippetList();
+          refreshSnippetCategoryList();
+          hideSnippetMenu();
+        } catch (e) {
+          alert(e.message || String(e));
+        }
+      });
+      snippetMenu.appendChild(saveBox);
+    }
+
     if (!list.length) {
       snippetMenu.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
     } else {
@@ -1253,8 +1295,11 @@ render_teacher_header('Eingaben');
       });
     }
     snippetMenu.style.display = 'block';
-    snippetMenu.style.left = `${x}px`;
-    snippetMenu.style.top = `${y}px`;
+    // anchor to page coordinates so menu scrolls with content
+    const px = Number(x || 0);
+    const py = Number(y || 0);
+    snippetMenu.style.left = `${px}px`;
+    snippetMenu.style.top = `${py}px`;
   }
 
   document.addEventListener('click', (ev) => {
@@ -1811,7 +1856,6 @@ render_teacher_header('Eingaben');
     recomputeFormsSummary();
     dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
 
-    if (snippetBar) snippetBar.style.display = 'block';
     renderSnippetList();
     refreshSnippetCategoryList();
     updateSnippetSelectionUI();
