@@ -860,6 +860,10 @@ render_teacher_header('Eingaben');
     student.progress_teacher_done = tDone;
     student.progress_teacher_missing = Math.max(0, tTotal - tDone);
 
+    student.progress_child_total = cTotal;
+    student.progress_child_done = cDone;
+    student.progress_child_missing = Math.max(0, cTotal - cDone);
+
     student.progress_overall_total = overallTotal;
     student.progress_overall_done = overallDone;
     student.progress_overall_missing = overallMissing;
@@ -968,11 +972,13 @@ render_teacher_header('Eingaben');
     if (!s || !studentBadge) return;
     const tDone = Number(s.progress_teacher_done || 0);
     const tTotal = Number(s.progress_teacher_total || 0);
+    const cDone = Number(s.progress_child_done || 0);
+    const cTotal = Number(s.progress_child_total || 0);
     const oDone = Number(s.progress_overall_done || 0);
     const oTotal = Number(s.progress_overall_total || 0);
     const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
-    studentBadge.textContent = `${s.name} · Lehrer: ${tDone}/${tTotal} · Gesamt: ${oDone}/${oTotal} · offen: ${oMissing} ${chk}`.trim();
+    studentBadge.textContent = `${s.name} · Lehrer: ${tDone}/${tTotal} · Schüler: ${cDone}/${cTotal} · offen: ${oMissing} ${chk}`.trim();
   }
 
   function onTeacherValueChanged(reportId, fieldId){
