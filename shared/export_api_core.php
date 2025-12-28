@@ -94,7 +94,7 @@ function find_report_instance(PDO $pdo, int $templateId, int $studentId, string 
 
 function load_template_fields(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, is_required, meta_json
+    "SELECT id, field_name, field_type, label, is_required, meta_json, can_child_edit, can_teacher_edit
      FROM template_fields
      WHERE template_id=?
      ORDER BY sort_order ASC, id ASC"
@@ -106,21 +106,49 @@ function load_template_fields(PDO $pdo, int $templateId): array {
 function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   // Resolve option-list values by stable option_item_id (stored in value_json) so exports survive option value changes.
   $st = $pdo->prepare(
-    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json
+    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
      FROM field_values fv
      JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
      ORDER BY fv.updated_at ASC, fv.id ASC"
   );
   $st->execute([$reportInstanceId]);
+
+  $priority = ['child' => 1, 'system' => 2, 'teacher' => 3];
   $map = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $field = (string)($r['field_name'] ?? '');
+    if ($field === '') continue;
+
+    $src = (string)($r['source'] ?? 'teacher');
     $meta = meta_read_export($r['meta_json'] ?? null);
     $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : null;
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
-    $map[(string)$r['field_name']] = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
+    $resolved = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
+
+    $current = $map[$field] ?? null;
+    $currentScore = $current ? ($priority[$current['source']] ?? 0) : -1;
+    $newScore = $priority[$src] ?? 0;
+
+    $useNew = false;
+    if ($newScore > $currentScore) {
+      $useNew = true;
+    } elseif ($newScore === $currentScore && $current) {
+      $curTs = strtotime((string)($current['updated_at'] ?? '')) ?: 0;
+      $newTs = strtotime((string)($r['updated_at'] ?? '')) ?: 0;
+      if ($newTs >= $curTs) $useNew = true;
+    }
+
+    if ($useNew || !$current) {
+      $map[$field] = [
+        'value' => $resolved,
+        'source' => $src,
+        'updated_at' => (string)($r['updated_at'] ?? ''),
+      ];
+    }
   }
-  return $map;
+
+  return array_map(fn($row) => $row['value'], $map);
 }
 
 
@@ -192,9 +220,10 @@ function load_class_values(PDO $pdo, int $classReportInstanceId): array {
   return load_values_for_report($pdo, $classReportInstanceId);
 }
 
-function missing_fields_for_student(array $templateFields, array $values): array {
+function missing_fields_for_student(array $templateFields, array $values, array &$nonEditableOut = null): array {
   // IMPORTANT: warn on ALL fields (not only required)
   $missing = [];
+  $nonEditable = [];
   foreach ($templateFields as $f) {
     $name = (string)($f['field_name'] ?? '');
     if ($name === '') continue;
@@ -202,6 +231,22 @@ function missing_fields_for_student(array $templateFields, array $values): array
     $type = (string)($f['field_type'] ?? 'text');
     $label = (string)($f['label'] ?? $name);
     $required = (int)($f['is_required'] ?? 0) === 1;
+
+    $canChild = (int)($f['can_child_edit'] ?? 0) === 1;
+    $canTeacher = (int)($f['can_teacher_edit'] ?? 0) === 1;
+    if (!$canChild && !$canTeacher) {
+      // Track fields that cannot be filled by teacher or student so they can be
+      // displayed separately instead of being counted as missing.
+      if ($name !== '') {
+        $nonEditable[$name] = [
+          'field_name' => $name,
+          'label' => $label,
+          'field_type' => $type,
+          'is_required' => $required ? 1 : 0,
+        ];
+      }
+      continue;
+    }
 
     $val = $values[$name] ?? null;
 
@@ -221,6 +266,15 @@ function missing_fields_for_student(array $templateFields, array $values): array
         'is_required' => $required ? 1 : 0,
       ];
     }
+  }
+  if (is_array($nonEditableOut)) {
+    $existing = [];
+    foreach ($nonEditableOut as $row) {
+      $key = is_array($row) ? (string)($row['field_name'] ?? '') : '';
+      if ($key !== '') $existing[$key] = $row;
+    }
+    foreach ($nonEditable as $k => $v) $existing[$k] = $v;
+    $nonEditableOut = array_values($existing);
   }
   return $missing;
 }
@@ -307,6 +361,8 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   $studentsWithMissing = 0;
   $totalMissing = 0;
 
+  $nonEditableFields = [];
+
   foreach ($students as $s) {
     $sid = (int)$s['id'];
     $name = trim((string)($s['first_name'] ?? '') . ' ' . (string)($s['last_name'] ?? ''));
@@ -336,7 +392,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
     // If no report instance exists, we still warn (everything missing), but label it compactly:
     $missing = [];
     if ($includeValues) {
-      if ($ri) $missing = missing_fields_for_student($tf, $values);
+      if ($ri) $missing = missing_fields_for_student($tf, $values, $nonEditableFields);
       else {
         // show a single pseudo-entry instead of 200 fields
         $missing = [[
@@ -369,6 +425,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
       'students_with_missing' => $studentsWithMissing,
       'total_missing' => $totalMissing,
       'by_student' => $warnByStudent,
+      'non_editable_fields' => array_values($nonEditableFields),
     ],
   ];
 }

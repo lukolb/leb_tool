@@ -299,7 +299,7 @@ CREATE TABLE IF NOT EXISTS `field_values` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_field_values_instance_field` (`report_instance_id`,`template_field_id`),
+  UNIQUE KEY `uq_field_values_instance_field_source` (`report_instance_id`,`template_field_id`,`source`),
   KEY `idx_field_values_instance` (`report_instance_id`),
   KEY `idx_field_values_field` (`template_field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

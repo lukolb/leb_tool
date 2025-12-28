@@ -537,6 +537,8 @@ render_teacher_header('Eingaben');
   const btnSnippetClose = document.getElementById('btnSnippetClose');
   const snippetCategoryList = document.getElementById('snippetCategoryList');
 
+  const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
+
   let state = {
     class_id: 0,
     template: null,
@@ -566,7 +568,33 @@ render_teacher_header('Eingaben');
     gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows',
     saveTimers: new Map(),
     saveInFlight: 0,
+    mergeDecisions: new Map(),
   };
+
+  function mergeDecisionKey(reportId, fieldId){
+    const cid = Number(state.class_id || 0);
+    return `${cid}:${reportId}:${fieldId}`;
+  }
+
+  function readMergeMemory(){
+    try {
+      const raw = localStorage.getItem(MERGE_STORAGE_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) {
+      console.warn('merge memory read failed', e);
+      return {};
+    }
+  }
+
+  function writeMergeMemory(mem){
+    try {
+      localStorage.setItem(MERGE_STORAGE_KEY, JSON.stringify(mem));
+    } catch (e) {
+      console.warn('merge memory write failed', e);
+    }
+  }
 
   const snippetMenu = document.createElement('div');
   snippetMenu.className = 'snippet-menu';
@@ -619,6 +647,64 @@ render_teacher_header('Eingaben');
       return optionLabel(opts, v);
     }
     return v;
+  }
+
+  function resolveMergeWithChild(reportId, fieldId, nextValue){
+    const f = state.fieldMap[String(fieldId)];
+    if (!f || !f.child || !f.child.id) return String(nextValue ?? '');
+
+    const childRaw = childVal(reportId, f.child.id);
+    if (!childRaw) return String(nextValue ?? '');
+
+    const key = mergeDecisionKey(reportId, fieldId);
+    const entry = ui.mergeDecisions.get(key);
+
+    // If the current teacher value already contains the child text (e.g. from a
+    // prior merge on another device), consider it combined and remember it to
+    // avoid duplicate prompts and repeated concatenation.
+    const ownTrimmed = String(nextValue ?? '').trim();
+    const baseTrimmed = String(childRaw).trim();
+    if (!entry && ownTrimmed && baseTrimmed && ownTrimmed.includes(baseTrimmed)) {
+      const autoCombined = { decision: 'combine', settled: true };
+      ui.mergeDecisions.set(key, autoCombined);
+      const mem = readMergeMemory();
+      mem[key] = autoCombined;
+      writeMergeMemory(mem);
+      return ownTrimmed;
+    }
+
+    if (entry && entry.settled) {
+      return String(nextValue ?? '');
+    }
+
+    let decision = entry?.decision;
+
+    if (!decision) {
+      const msg = [
+        'Für dieses Feld gibt es bereits einen Schüler:innen-Wert:',
+        '',
+        childDisplay(f, childRaw) || childRaw,
+        '',
+        'Sollen beide Werte kombiniert werden (OK) oder der Schüler:innen-Wert überschrieben werden (Abbrechen)?'
+      ].join('\n');
+      decision = window.confirm(msg) ? 'combine' : 'overwrite';
+    }
+
+    const finalEntry = { decision, settled: true };
+    ui.mergeDecisions.set(key, finalEntry);
+    const mem = readMergeMemory();
+    mem[key] = finalEntry;
+    writeMergeMemory(mem);
+
+    if (decision === 'combine') {
+      const own = String(nextValue ?? '').trim();
+      const base = String(childRaw).trim();
+      if (!own) return base;
+      if (own === base) return base;
+      return `${base} · ${own}`;
+    }
+
+    return String(nextValue ?? '');
   }
 
   function ensureDatalistForField(fieldId){
@@ -1058,9 +1144,11 @@ render_teacher_header('Eingaben');
       }
 
       const isClass = isClassFieldId(fieldId);
-      const doSave = (val) => {
-        if (isClass) scheduleSaveClass(fieldId, val);
-        else scheduleSave(reportId, fieldId, val);
+      const saveMerged = (val) => {
+        const finalVal = resolveMergeWithChild(reportId, fieldId, val);
+        if (isClass) scheduleSaveClass(fieldId, finalVal);
+        else scheduleSave(reportId, fieldId, finalVal);
+        return finalVal;
       };
 
       if (inp.dataset.combo === '1') {
@@ -1082,9 +1170,9 @@ render_teacher_header('Eingaben');
           }
 
           inp.setCustomValidity('');
-          doSave(res.value);
-          inp.dataset.actual = res.value;
-          if (f) inp.value = teacherDisplay(f, res.value);
+          const merged = saveMerged(res.value);
+          inp.dataset.actual = merged;
+          if (f) inp.value = teacherDisplay(f, merged);
         };
 
         inp.addEventListener('change', commit);
@@ -1096,9 +1184,18 @@ render_teacher_header('Eingaben');
       }
 
       if (inp.type === 'checkbox') {
-        inp.addEventListener('change', () => doSave(inp.checked ? '1' : '0'));
+        inp.addEventListener('change', () => {
+          const merged = saveMerged(inp.checked ? '1' : '0');
+          inp.checked = (merged === '1');
+        });
       } else {
-        inp.addEventListener('input', () => doSave(inp.value));
+        inp.addEventListener('input', () => {
+          const merged = saveMerged(inp.value);
+          if (!inp.dataset.combo && f && String(f.field_type || '') !== 'checkbox') {
+            // keep UI in sync when Werte kombiniert werden
+            inp.value = merged;
+          }
+        });
       }
 
       inp.addEventListener('focus', () => {
@@ -1841,6 +1938,14 @@ render_teacher_header('Eingaben');
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
     state.text_snippets = j.text_snippets || [];
+    ui.mergeDecisions = new Map();
+    const savedDecisions = readMergeMemory();
+    Object.entries(savedDecisions).forEach(([k, v]) => {
+      if (!v || typeof v !== 'object') return;
+      const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
+      const settled = v.settled === true;
+      if (decision) ui.mergeDecisions.set(k, { decision, settled });
+    });
 
     // In delegated mode: class fields should not be visible/editable here
     if (DELEGATED_MODE) {
