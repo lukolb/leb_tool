@@ -241,6 +241,26 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_field_values_field ON field_values (template_field_id)");
     }
 
+    // --- text_snippets: helpers for reusable Bausteine
+    if (!db_has_table($pdo, 'text_snippets')) {
+      $pdo->exec(
+        "CREATE TABLE text_snippets (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  title VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  category VARCHAR(190) COLLATE utf8mb4_unicode_ci DEFAULT '',\n" .
+        "  content TEXT COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  created_by BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  is_generated TINYINT(1) NOT NULL DEFAULT '0',\n" .
+        "  is_deleted TINYINT(1) NOT NULL DEFAULT '0',\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  KEY idx_text_snippets_category (category),\n" .
+        "  KEY idx_text_snippets_created (created_at)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }
@@ -255,6 +275,12 @@ function db_has_column(PDO $pdo, string $table, string $column): bool {
 function db_has_index(PDO $pdo, string $table, string $index): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?");
   $stmt->execute([$table, $index]);
+  return (int)($stmt->fetch()['c'] ?? 0) > 0;
+}
+
+function db_has_table(PDO $pdo, string $table): bool {
+  $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?");
+  $stmt->execute([$table]);
   return (int)($stmt->fetch()['c'] ?? 0) > 0;
 }
 

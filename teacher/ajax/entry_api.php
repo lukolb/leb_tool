@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require __DIR__ . '/../../shared/text_snippets.php';
 require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -756,6 +757,7 @@ try {
       'delegation_users' => $delegationUsers,
       'delegations' => array_values($delegations),
       'period_label' => $periodLabel,
+      'text_snippets' => text_snippets_list($pdo),
       'values_teacher' => $valuesTeacher,
       'values_child' => $valuesChild,
       'progress_summary' => $progressSummary,
@@ -768,6 +770,18 @@ try {
         'value_by_name' => $classValueByName,
       ],
     ]);
+  }
+
+  if ($action === 'snippets_list') {
+    json_out(['ok' => true, 'snippets' => text_snippets_list($pdo)]);
+  }
+
+  if ($action === 'snippet_save') {
+    $title = (string)($data['title'] ?? '');
+    $category = (string)($data['category'] ?? '');
+    $content = (string)($data['content'] ?? '');
+    $row = text_snippet_save($pdo, $userId, $title, $category, $content);
+    json_out(['ok' => true, 'snippet' => $row]);
   }
 
   if ($action === 'delegations_save') {

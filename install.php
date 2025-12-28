@@ -430,6 +430,21 @@ CREATE TABLE IF NOT EXISTS `icon_library` (
   KEY `idx_icon_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS `text_snippets` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `title` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `category` varchar(190) COLLATE utf8mb4_unicode_ci DEFAULT '',
+  `content` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_by` bigint UNSIGNED DEFAULT NULL,
+  `is_generated` tinyint(1) NOT NULL DEFAULT '0',
+  `is_deleted` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_text_snippets_category` (`category`),
+  KEY `idx_text_snippets_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `classes` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
