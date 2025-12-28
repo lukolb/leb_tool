@@ -781,11 +781,11 @@ function rectContains(rect, x, y){
   return x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
 }
 
-async function readPdfFieldInfo(){
+async function readPdfFieldInfoFromDoc(doc){
   const out = new Map();
-  if (!pdfDoc || typeof pdfDoc.getFieldObjects !== 'function') return { fields: out, names: new Set() };
+  if (!doc || typeof doc.getFieldObjects !== 'function') return { fields: out, names: new Set() };
 
-  const fo = await pdfDoc.getFieldObjects();
+  const fo = await doc.getFieldObjects();
   if (!fo || typeof fo !== 'object') return { fields: out, names: new Set() };
 
   const tmp = [];
@@ -810,7 +810,7 @@ async function readPdfFieldInfo(){
     }
   }
 
-  const numPages = Number(pdfDoc?.numPages || 0);
+  const numPages = Number(doc?.numPages || 0);
 
   for (const t of tmp) {
     let page = t.pNum;
@@ -831,6 +831,10 @@ async function readPdfFieldInfo(){
   }
 
   return { fields: out, names: new Set(out.keys()) };
+}
+
+async function readPdfFieldInfo(){
+  return readPdfFieldInfoFromDoc(pdfDoc);
 }
 
 async function importNewFieldsFromPdf(newNames, pdfInfo){
@@ -868,6 +872,30 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
   if (!resp.ok || !data.ok) throw new Error(data.error || `Import fehlgeschlagen (HTTP ${resp.status})`);
 
   return data.imported || 0;
+}
+
+async function assessNewPdfFile(file){
+  const buf = await file.arrayBuffer();
+
+  let doc = null;
+  try {
+    doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  } catch (e) {
+    throw new Error('Neue PDF konnte nicht gelesen werden: ' + (e?.message || e));
+  }
+
+  try {
+    const info = await readPdfFieldInfoFromDoc(doc);
+    const pdfNames = new Set(info.fields.keys());
+    const existingNames = new Set(fields.map(f => String(f.name)));
+
+    const missing = [...existingNames].filter(n => !pdfNames.has(n));
+    const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
+
+    return { missing, newcomers };
+  } finally {
+    try { doc?.destroy?.(); } catch (e) {}
+  }
 }
 
 async function syncPdfPositionsWithFields(){
@@ -2203,9 +2231,18 @@ btnReplacePdf.addEventListener('click', async ()=>{
   if (!file) { replacePdfStatus.textContent = 'Bitte neue PDF auswählen.'; return; }
 
   btnReplacePdf.disabled = true;
-  replacePdfStatus.textContent = 'Lade PDF hoch…';
+  replacePdfStatus.textContent = 'Prüfe Felder in neuer PDF…';
 
   try {
+    const assessment = await assessNewPdfFile(file);
+    if (assessment?.missing?.length) {
+      const msg = `Warnung: ${assessment.missing.length} vorhandene Felder fehlen in der neuen PDF (${assessment.missing.join(', ')}) und Daten könnten verloren gehen. PDF trotzdem ersetzen?`;
+      const proceed = confirm(msg);
+      if (!proceed) { replacePdfStatus.textContent = 'Abgebrochen: PDF wurde nicht ersetzt.'; return; }
+    }
+
+    replacePdfStatus.textContent = 'Lade PDF hoch…';
+
     const fd = new FormData();
     fd.append('csrf_token', csrf);
     fd.append('template_id', String(templateId));
