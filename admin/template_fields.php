@@ -339,12 +339,27 @@ render_admin_header('Feld-Editor');
   </div>
 
   <form method="dialog">
-    <div class="dlg-foot">
-      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
-      <button class="btn primary" value="ok" type="submit">Übernehmen</button>
-    </div>
-  </form>
+  <div class="dlg-foot">
+    <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
+    <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+  </div>
+</form>
 </dialog>
+
+<!-- PDF REPLACE -->
+<div class="card panel">
+  <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="min-width:320px;">
+      <label>PDF-Vorlage ersetzen</label>
+      <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
+      <div class="muted2">Aktualisiert Datei und Feld-Positionen. Fehlende Felder werden gemeldet.</div>
+    </div>
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</button>
+    </div>
+    <div class="muted2" id="replacePdfStatus"></div>
+  </div>
+</div>
 
 <!-- TOP GROUPS OVERVIEW -->
 <div class="card panel">
@@ -534,6 +549,8 @@ const templateId = <?= (int)$templateId ?>;
 
 const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
+const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
+const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
 
 const metaLine = document.getElementById('metaLine');
 const tbody = document.querySelector('#fieldsTbl tbody');
@@ -580,6 +597,10 @@ const tableScroll = document.getElementById('tableScroll');
 const btnTogglePreview = document.getElementById('btnTogglePreview');
 const layout2 = document.getElementById('layout2');
 const previewCard = document.getElementById('previewCard');
+
+const replacePdfInput = document.getElementById('replacePdfFile');
+const btnReplacePdf = document.getElementById('btnReplacePdf');
+const replacePdfStatus = document.getElementById('replacePdfStatus');
 
 const colResizer = document.getElementById('colResizer');
 
@@ -697,7 +718,7 @@ function saveIgnoredSplit(){
 let ignoredSplit = loadIgnoredSplit(); // fieldId -> ignore split-hint
 
 // --- PDF preview state
-const pdfUrl = "<?=h($pdfUrl)?>";
+let pdfUrl = "<?=h($pdfUrl)?>";
 const pdfCanvas = document.getElementById('pdfCanvas');
 const pdfHint = document.getElementById('pdfHint');
 const pageInfo = document.getElementById('pageInfo');
@@ -737,6 +758,17 @@ function itemsToOptions(items){
   return { options: mapped };
 }
 
+function normalizePdfType(rawType, multilineFlag){
+  const t = String(rawType || '').trim().toUpperCase();
+  if (t === 'TX') return multilineFlag ? 'multiline' : 'text';
+  if (t === 'CH' || t === 'SELECT') return 'select';
+  if (t === 'SIG' || t === 'SIGNATURE') return 'signature';
+  if (t === 'BTN') return 'checkbox';
+  if (t === 'CHECKBOX') return 'checkbox';
+  if (t === 'RADIO') return 'radio';
+  return multilineFlag ? 'multiline' : 'radio';
+}
+
 function normRect(rect){
   if (!Array.isArray(rect) || rect.length < 4) return null;
   const x1 = Number(rect[0]), y1 = Number(rect[1]), x2 = Number(rect[2]), y2 = Number(rect[3]);
@@ -747,6 +779,137 @@ function rectContains(rect, x, y){
   const r = normRect(rect);
   if (!r) return false;
   return x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+}
+
+async function readPdfFieldInfo(){
+  const out = new Map();
+  if (!pdfDoc || typeof pdfDoc.getFieldObjects !== 'function') return { fields: out, names: new Set() };
+
+  const fo = await pdfDoc.getFieldObjects();
+  if (!fo || typeof fo !== 'object') return { fields: out, names: new Set() };
+
+  const tmp = [];
+  let hasZero = false;
+
+  for (const [name, arr] of Object.entries(fo)) {
+    if (!Array.isArray(arr)) continue;
+
+    for (const it of arr) {
+      let pRaw = it?.page;
+      if (pRaw === undefined || pRaw === null) pRaw = it?.pageIndex;
+      const pNum = Number(pRaw);
+      if (!Number.isFinite(pNum)) continue;
+      if (pNum === 0) hasZero = true;
+
+      const rect = (Array.isArray(it?.rect) && it.rect.length >= 4) ? it.rect.slice(0, 4) : null;
+      const rawType = it?.type || it?.fieldType || '';
+      const multiline = !!(it?.multiline || it?.multiLine);
+      const hint = (it?.alternativeText || it?.altText || it?.tooltip || it?.title || it?.fieldLabel || '')?.toString?.() || '';
+
+      tmp.push({ name, pNum, rect, rawType, multiline, hint });
+    }
+  }
+
+  const numPages = Number(pdfDoc?.numPages || 0);
+
+  for (const t of tmp) {
+    let page = t.pNum;
+    if (hasZero) page = page + 1;
+    if (page < 1) page = 1;
+    if (numPages && page > numPages) page = numPages;
+
+    if (!out.has(t.name)) {
+      out.set(t.name, {
+        page,
+        rect: t.rect,
+        rawType: t.rawType,
+        type: normalizePdfType(t.rawType, t.multiline),
+        multiline: !!t.multiline,
+        hint: t.hint
+      });
+    }
+  }
+
+  return { fields: out, names: new Set(out.keys()) };
+}
+
+async function importNewFieldsFromPdf(newNames, pdfInfo){
+  if (!Array.isArray(newNames) || !newNames.length) return 0;
+
+  const payload = newNames.map((name, idx) => {
+    const info = pdfInfo.fields.get(name) || {};
+    const meta = { ...info };
+    return {
+      name,
+      type: info.type || 'radio',
+      label: name,
+      help_text: info.hint || '',
+      multiline: info.type === 'multiline' ? true : !!info.multiline,
+      sort: fields.length + idx + 1,
+      meta
+    };
+  });
+
+  const params = new URLSearchParams();
+  params.set('csrf_token', csrf);
+  params.set('template_id', String(templateId));
+  params.set('fields', JSON.stringify(payload));
+
+  const resp = await fetch(importFieldsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-CSRF-Token': csrf
+    },
+    body: params.toString()
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || `Import fehlgeschlagen (HTTP ${resp.status})`);
+
+  return data.imported || 0;
+}
+
+async function syncPdfPositionsWithFields(){
+  const pdfInfo = await readPdfFieldInfo();
+
+  const pdfNames = new Set(pdfInfo.fields.keys());
+  const existingNames = new Set(fields.map(f => String(f.name)));
+
+  const missing = [...existingNames].filter(n => !pdfNames.has(n));
+  const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
+
+  let updated = 0;
+  fields = fields.map(f => {
+    const info = pdfInfo.fields.get(String(f.name));
+    if (!info) return f;
+
+    const next = { ...f };
+    next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+    markDirty(next.id);
+    updated++;
+    return next;
+  });
+
+  renderTable();
+  updateMeta();
+
+  if (missing.length) {
+    alert('Warnung: Diese Felder fehlen in der neuen PDF und könnten Daten verlieren: ' + missing.join(', '));
+  }
+
+  if (dirty.size) await save();
+
+  let imported = 0;
+  if (newcomers.length) {
+    const wantImport = confirm(`Neue Felder in PDF entdeckt (${newcomers.length}). Jetzt anlegen?`);
+    if (wantImport) {
+      imported = await importNewFieldsFromPdf(newcomers, pdfInfo);
+      await load();
+    }
+  }
+
+  return { updated, missing: missing.length, added: imported };
 }
 
 function getGroupPath(f){
@@ -2034,6 +2197,37 @@ btnAutoGroupPrefix.addEventListener('click', ()=>autoGroupPrefix(getSelectedIds(
 btnAutoGroupPage.addEventListener('click', ()=>autoGroupPage(getSelectedIds().length ? getSelectedIds() : getVisibleIds()));
 btnSave.addEventListener('click', save);
 btnSaveTop.addEventListener('click', save);
+
+btnReplacePdf.addEventListener('click', async ()=>{
+  const file = replacePdfInput?.files?.[0] ?? null;
+  if (!file) { replacePdfStatus.textContent = 'Bitte neue PDF auswählen.'; return; }
+
+  btnReplacePdf.disabled = true;
+  replacePdfStatus.textContent = 'Lade PDF hoch…';
+
+  try {
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('template_id', String(templateId));
+    fd.append('pdf', file);
+
+    const resp = await fetch(replacePdfUrl, { method:'POST', body: fd });
+    const data = await resp.json().catch(()=>({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || `Upload fehlgeschlagen (HTTP ${resp.status})`);
+
+    pdfUrl = String(data.pdf_url || pdfUrl) + '&cache=' + Date.now();
+    replacePdfStatus.textContent = 'PDF gespeichert. Aktualisiere Vorschau und Felder…';
+
+    await loadPdf();
+    const summary = await syncPdfPositionsWithFields();
+    replacePdfStatus.textContent = `Positionen aktualisiert (${summary.updated}), fehlend: ${summary.missing}, neu: ${summary.added}`;
+  } catch (e) {
+    replacePdfStatus.textContent = 'Fehler: ' + (e?.message || e);
+  } finally {
+    btnReplacePdf.disabled = false;
+    if (replacePdfInput) replacePdfInput.value = '';
+  }
+});
 
 btnShowAllGroups.addEventListener('click', ()=>{
   hiddenGroups = new Set();
