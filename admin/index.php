@@ -47,6 +47,10 @@ render_admin_header('Admin – Dashboard');
       <div class="nav-title">Optionen & Skalen</div>
       <p class="nav-desc">Antwortoptionen, Skalen und Auswahllisten verwalten.</p>
     </a>
+    <a class="nav-tile" href="<?=h(url('admin/text_snippets.php'))?>">
+      <div class="nav-title">Textbausteine</div>
+      <p class="nav-desc">Textbausteine für die Eingabe in freien Eingabefeldern der Lernentwicklungsberichte verwalten.</p>
+    </a>
     <a class="nav-tile" href="<?=h(url('admin/export.php'))?>">
       <div class="nav-title">PDF-Export</div>
       <p class="nav-desc">Reports als PDF bündeln und für den Versand herunterladen.</p>

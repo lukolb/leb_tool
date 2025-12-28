@@ -5,13 +5,26 @@ declare(strict_types=1);
 
 function text_snippet_base_templates(): array {
   return [
-    ['category' => 'Schülerziele', 'title' => 'Lesekompetenz stärken', 'content' => 'Das Kind erweitert seine Lesefertigkeit durch regelmäßiges Vorlesen und gemeinsame Leseübungen.'],
-    ['category' => 'Schülerziele', 'title' => 'Teamarbeit fördern', 'content' => 'Arbeitet konstruktiv in Gruppen mit, übernimmt abwechselnd Rollen und reflektiert die Zusammenarbeit.'],
-    ['category' => 'Lernwege', 'title' => 'Selbstorganisation', 'content' => 'Plant Arbeitsschritte eigenständig, nutzt Checklisten und hält vereinbarte Abgabefristen ein.'],
-    ['category' => 'Lernwege', 'title' => 'Feedback nutzen', 'content' => 'Nimmt Rückmeldungen an, setzt konkrete nächste Schritte fest und überprüft den eigenen Fortschritt.'],
-    ['category' => 'Engagement', 'title' => 'AG Teilnahme', 'content' => 'Hat an der Arbeitsgemeinschaft teilgenommen und zeigt kontinuierliches Interesse.'],
-    ['category' => 'Engagement', 'title' => 'Klassensprecher:in', 'content' => 'Wurde in diesem Schuljahr als Klassensprecher:in gewählt und vertritt die Klasse zuverlässig.'],
-    ['category' => 'Elternkommunikation', 'title' => 'Elterngespräch vereinbart', 'content' => 'Ein Gesprächstermin mit den Erziehungsberechtigten wurde vereinbart, um Lernfortschritte zu besprechen.'],
+    ['category' => 'Schülerziele', 'title' => 'Lesekompetenz stärken', 'content' => 'vertieft seine Lesefertigkeit durch regelmäßiges Vorlesen, Gesprächsrunden und gezielte Lesestrategien.'],
+    ['category' => 'Schülerziele', 'title' => 'Teamarbeit fördern', 'content' => 'arbeitet konstruktiv in Gruppen mit, übernimmt wechselnde Rollen und reflektiert die Zusammenarbeit.'],
+    ['category' => 'Schülerziele', 'title' => 'Arbeitsruhe einhalten', 'content' => 'hält vereinbarte Lautstärke ein, bleibt bei Aufgaben und achtet auf Materialordnung.'],
+    ['category' => 'Lernwege', 'title' => 'Selbstorganisation', 'content' => 'plant Arbeitsschritte eigenständig, nutzt Checklisten und hält vereinbarte Abgabefristen ein.'],
+    ['category' => 'Lernwege', 'title' => 'Feedback nutzen', 'content' => 'nimmt Rückmeldungen an, setzt konkrete nächste Schritte fest und überprüft den eigenen Fortschritt.'],
+    ['category' => 'Lernwege', 'title' => 'Hausaufgaben', 'content' => 'erledigt Hausaufgaben zuverlässig, bringt Materialien mit und fragt bei Unklarheiten nach.'],
+    ['category' => 'Engagement', 'title' => 'AG Teilnahme', 'content' => 'nimmt mit Interesse an der Arbeitsgemeinschaft teil und bringt eigene Ideen ein.'],
+    ['category' => 'Engagement', 'title' => 'Klassensprecher:in', 'content' => 'wurde zum Klassensprecher gewählt und vertritt die Klasse zuverlässig.'],
+    ['category' => 'Engagement', 'title' => 'Pausendienst', 'content' => 'übernimmt den Pausendienst zuverlässig und erinnert andere freundlich an die Regeln.'],
+    ['category' => 'Elternkommunikation', 'title' => 'Elterngespräch vereinbart', 'content' => 'hat einen Gesprächstermin mit den Erziehungsberechtigten, um Lernfortschritte zu besprechen.'],
+    ['category' => 'Sozialverhalten', 'title' => 'Konflikte lösen', 'content' => 'hört in Streitgesprächen zu, sucht nach gemeinsamen Lösungen und bezieht andere fair ein.'],
+    ['category' => 'Sozialverhalten', 'title' => 'Empathie zeigen', 'content' => 'bietet Hilfe an, bemerkt Bedürfnisse anderer und reagiert rücksichtsvoll.'],
+    ['category' => 'Motivation', 'title' => 'Interesse an Sachthemen', 'content' => 'zeigt Neugier an neuen Themen, stellt Nachfragen und teilt eigene Beispiele.'],
+    ['category' => 'Motivation', 'title' => 'Durchhaltevermögen', 'content' => 'bleibt auch bei anspruchsvollen Aufgaben dran und nutzt Strategien, um weiterzuarbeiten.'],
+    ['category' => 'Arbeitsverhalten', 'title' => 'Sorgfalt', 'content' => 'arbeitet sorgfältig, verbessert Fehler nach Rückmeldung und achtet auf eine ordentliche Darstellung.'],
+    ['category' => 'Arbeitsverhalten', 'title' => 'Tempo anpassen', 'content' => 'passt sein Arbeitstempo an, ohne die Qualität zu verlieren, und nutzt Zeit effizient.'],
+    ['category' => 'Selbstständigkeit', 'title' => 'Materialorganisation', 'content' => 'hält Materialien bereit, markiert Aufgabenübersichten und verwaltet eigene Unterlagen.'],
+    ['category' => 'Selbstständigkeit', 'title' => 'Nachfragen', 'content' => 'holt sich bei Unklarheiten Unterstützung, bevor Aufgaben abgegeben werden.'],
+    ['category' => 'Kommunikation', 'title' => 'Vortragen', 'content' => 'spricht vor der Gruppe deutlich, hält Blickkontakt und geht auf Rückfragen ein.'],
+    ['category' => 'Kommunikation', 'title' => 'Rückmeldungen geben', 'content' => 'formuliert Feedback wertschätzend und benennt konkrete Beobachtungen.'],
   ];
 }
 
@@ -63,12 +76,36 @@ function text_snippet_find(PDO $pdo, int $id): ?array {
   ];
 }
 
+function text_snippet_find_by_content(PDO $pdo, string $content, ?int $excludeId): ?array {
+  $content = trim($content);
+  if ($content === '') return null;
+
+  $sql = "SELECT id, category FROM text_snippets WHERE is_deleted=0 AND content=?";
+  $params = [$content];
+  if ($excludeId !== null) {
+    $sql .= " AND id<>?";
+    $params[] = $excludeId;
+  }
+
+  $st = $pdo->prepare($sql . " LIMIT 1");
+  $st->execute($params);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) return null;
+  return ['id' => (int)($row['id'] ?? 0), 'category' => (string)($row['category'] ?? '')];
+}
+
 function text_snippet_save(PDO $pdo, int $userId, string $title, string $category, string $content, bool $generated = false): array {
   $title = trim($title);
   $category = trim($category);
   $content = trim($content);
   if ($title === '') throw new RuntimeException('Titel fehlt.');
   if ($content === '') throw new RuntimeException('Text fehlt.');
+
+  $existing = text_snippet_find_by_content($pdo, $content, null);
+  if ($existing) {
+    $cat = $existing['category'] !== '' ? $existing['category'] : 'ohne Kategorie';
+    throw new RuntimeException('Textbaustein existiert bereits in Kategorie "' . $cat . '".');
+  }
 
   $st = $pdo->prepare(
     "INSERT INTO text_snippets (title, category, content, created_by, is_generated, created_at, updated_at)
@@ -84,6 +121,62 @@ function text_snippet_save(PDO $pdo, int $userId, string $title, string $categor
     'created_by' => $userId,
     'created_by_name' => '',
     'is_generated' => $generated,
+    'created_at' => '',
+    'updated_at' => '',
+  ];
+}
+
+function text_snippet_update(PDO $pdo, int $id, int $userId, string $title, string $category, string $content): array {
+  $id = (int)$id;
+  if ($id <= 0) throw new RuntimeException('id fehlt.');
+
+  $title = trim($title);
+  $category = trim($category);
+  $content = trim($content);
+  if ($title === '') throw new RuntimeException('Titel fehlt.');
+  if ($content === '') throw new RuntimeException('Text fehlt.');
+
+  $existing = text_snippet_find_by_content($pdo, $content, $id);
+  if ($existing) {
+    $cat = $existing['category'] !== '' ? $existing['category'] : 'ohne Kategorie';
+    throw new RuntimeException('Textbaustein existiert bereits in Kategorie "' . $cat . '".');
+  }
+
+  $st = $pdo->prepare(
+    "UPDATE text_snippets SET title=?, category=?, content=?, updated_at=NOW() WHERE id=? AND is_deleted=0"
+  );
+  $st->execute([$title, $category, $content, $id]);
+  if ($st->rowCount() === 0) throw new RuntimeException('Textbaustein nicht gefunden.');
+
+  return text_snippet_find($pdo, $id) ?? [
+    'id' => $id,
+    'title' => $title,
+    'category' => $category,
+    'content' => $content,
+    'created_by' => $userId,
+    'created_by_name' => '',
+    'is_generated' => false,
+    'created_at' => '',
+    'updated_at' => '',
+  ];
+}
+
+function text_snippet_move(PDO $pdo, int $id, string $category): array {
+  $id = (int)$id;
+  if ($id <= 0) throw new RuntimeException('id fehlt.');
+  $category = trim($category);
+
+  $st = $pdo->prepare("UPDATE text_snippets SET category=?, updated_at=NOW() WHERE id=? AND is_deleted=0");
+  $st->execute([$category, $id]);
+  if ($st->rowCount() === 0) throw new RuntimeException('Textbaustein nicht gefunden.');
+  return text_snippet_find($pdo, $id) ?? [
+    'id' => $id,
+    'title' => '',
+    'category' => $category,
+    'content' => '',
+    'created_by' => null,
+    'created_by_name' => '',
+    'is_generated' => false,
     'created_at' => '',
     'updated_at' => '',
   ];
@@ -108,8 +201,12 @@ function text_snippet_generate_base(PDO $pdo, int $userId): array {
     $st->execute([$title, $category]);
     if ($st->fetchColumn()) { $skipped++; continue; }
 
-    text_snippet_save($pdo, $userId, $title, $category, (string)($tpl['content'] ?? ''), true);
-    $inserted++;
+    try {
+      text_snippet_save($pdo, $userId, $title, $category, (string)($tpl['content'] ?? ''), true);
+      $inserted++;
+    } catch (Throwable $e) {
+      $skipped++;
+    }
   }
   return ['inserted' => $inserted, 'skipped' => $skipped];
 }

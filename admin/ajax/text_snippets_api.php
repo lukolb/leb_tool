@@ -45,6 +45,22 @@ try {
     json_out(['ok' => true, 'snippet' => $row]);
   }
 
+  if ($action === 'update') {
+    $id = (int)($data['id'] ?? 0);
+    $title = (string)($data['title'] ?? '');
+    $category = (string)($data['category'] ?? '');
+    $content = (string)($data['content'] ?? '');
+    $row = text_snippet_update($pdo, $id, $userId, $title, $category, $content);
+    json_out(['ok' => true, 'snippet' => $row]);
+  }
+
+  if ($action === 'move') {
+    $id = (int)($data['id'] ?? 0);
+    $category = (string)($data['category'] ?? '');
+    $row = text_snippet_move($pdo, $id, $category);
+    json_out(['ok' => true, 'snippet' => $row]);
+  }
+
   if ($action === 'delete') {
     $id = (int)($data['id'] ?? 0);
     if ($id <= 0) throw new RuntimeException('id fehlt.');
