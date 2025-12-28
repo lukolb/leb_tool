@@ -659,6 +659,20 @@ render_teacher_header('Eingaben');
     const key = mergeDecisionKey(reportId, fieldId);
     const entry = ui.mergeDecisions.get(key);
 
+    // If the current teacher value already contains the child text (e.g. from a
+    // prior merge on another device), consider it combined and remember it to
+    // avoid duplicate prompts and repeated concatenation.
+    const ownTrimmed = String(nextValue ?? '').trim();
+    const baseTrimmed = String(childRaw).trim();
+    if (!entry && ownTrimmed && baseTrimmed && ownTrimmed.includes(baseTrimmed)) {
+      const autoCombined = { decision: 'combine', settled: true };
+      ui.mergeDecisions.set(key, autoCombined);
+      const mem = readMergeMemory();
+      mem[key] = autoCombined;
+      writeMergeMemory(mem);
+      return ownTrimmed;
+    }
+
     if (entry && entry.settled) {
       return String(nextValue ?? '');
     }
