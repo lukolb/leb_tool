@@ -14,6 +14,7 @@ function nav_items_for_role(string $role): array {
       ['Schüler', 'admin/students.php', ['students.php']],
       ['Templates', 'admin/templates.php', ['templates.php']],
       ['Options-Listen', 'admin/icon_library.php', ['icon_library.php']],
+      ['Textbausteine', 'admin/text_snippets.php', ['text_snippets.php']],
       ['Export', 'admin/export.php', ['export.php']],
       ['Nutzer', 'admin/users.php', ['users.php']],
       ['Einstellungen', 'admin/settings.php', ['settings.php']],
