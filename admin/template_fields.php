@@ -422,7 +422,6 @@ render_admin_header('Feld-Editor');
     </div>
 
     <!-- BULK TOOLBAR -->
-    <div class="pill" style="float: right; margin-top: 19px"><strong>Auswahl:</strong> </div>
     <h3 style="margin-bottom: 0;">Werte setzen</h3>
     <div class="toolbar" style="margin-top:12px;">
 
