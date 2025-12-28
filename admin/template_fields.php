@@ -20,7 +20,7 @@ render_admin_header('Feld-Editor');
 ?>
 
 <style>
-  .wiz-preview { position: sticky; top: 18px; align-self: start; }
+  .wiz-preview { position: sticky; top: 130px; align-self: start; }
 
   .layout2{
     display:grid;
@@ -132,7 +132,6 @@ render_admin_header('Feld-Editor');
     border-spacing: 0;
   }
   #fieldsTbl th, #fieldsTbl td{
-    vertical-align: top;
     border-bottom: 1px solid var(--border);
     padding: 10px;
     background: var(--card, #fff);
@@ -148,9 +147,13 @@ render_admin_header('Feld-Editor');
   }
 
   /* sticky reference columns (checkbox + field name) */
-  .sticky-col-0{ position: sticky; left: 0; z-index: 8; background: var(--card, #fff); }
-  .sticky-col-1{ position: sticky; left: 46px; z-index: 8; background: var(--card, #fff); }
-  #fieldsTbl thead .sticky-col-0, #fieldsTbl thead .sticky-col-1{ z-index: 10; }
+  .sticky-col-0{ position: sticky; left: 0; z-index: 100; background: var(--card, #fff); }
+  .sticky-col-1{ position: sticky; left: 45px; z-index: 100; background: var(--card, #fff); }
+  #fieldsTbl thead .sticky-col-0, #fieldsTbl thead .sticky-col-1{ z-index: 200; }
+  
+  td:has(> input[type='checkbox']) {
+      text-align: center;
+  }
 
   /* group header rows inside table */
   tr.group-row td{
@@ -176,7 +179,7 @@ render_admin_header('Feld-Editor');
   tr.group-row td .gmeta{ font-weight:400; color: var(--muted); font-size: 12px; }
 
   .toolbar{
-    display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;
+    display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start;
     padding:12px; border:1px dashed var(--border); border-radius:12px;
   }
   .toolbar .block{ min-width: 220px; }
@@ -232,11 +235,11 @@ render_admin_header('Feld-Editor');
 </style>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← Templates</a>
-    <a class="btn secondary" href="<?=h(url('admin/icon_library.php'))?>">Icon Library</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
+    <div class="row-actions" style="float: right;">
+        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← zurück zu den Templates</a>
+    </div>
+
+  <h1>Feld-Editor</h1>
 </div>
 
 <div id="dirtyWarning" class="alert danger" style="display:none">
@@ -262,11 +265,10 @@ render_admin_header('Feld-Editor');
 <div class="card" id="metaCard">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <h2 style="margin:0;">Feld-Editor</h2>
       <div class="muted" id="metaLine">Lade…</div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <button class="btn secondary" type="button" id="btnTogglePreview">Vorschau ausblenden</button>
+      <a class="btn secondary" type="button" id="btnTogglePreview">Vorschau ausblenden</a>
     </div>
   </div>
 </div>
@@ -339,9 +341,49 @@ render_admin_header('Feld-Editor');
   </div>
 
   <form method="dialog">
+  <div class="dlg-foot">
+    <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
+    <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+  </div>
+</form>
+</dialog>
+
+<!-- PDF REPLACE -->
+<div class="card panel">
+  <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
+    <div>
+      <h2>PDF-Vorlage ersetzen</h2>
+      <div class="muted2">Lädt eine neue PDF-Datei hoch, synchronisiert Feld-Positionen und informiert über fehlende Felder.</div>
+    </div>
+    <div class="actions" style="justify-content:flex-start; gap:8px;">
+      <a class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</a>
+      <a class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</a>
+    </div>
+  </div>
+  <div style="margin-top:12px; display:grid; gap:6px;">
+    <div>
+      <label>Neue PDF auswählen</label>
+      <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
+    </div>
+    <div class="muted2">Empfohlen: gleiche Felder behalten oder neu zuordnen, damit bestehende Daten nicht verloren gehen.</div>
+  </div>
+  <div class="muted2" id="replacePdfStatus" style="margin-top:8px;"></div>
+</div>
+
+<dialog id="mapPdfFieldsDialog">
+  <div class="dlg-head">
+    <h3 class="dlg-title" style="margin:0;">Neue PDF-Felder zuordnen</h3>
+    <div class="muted2">Neue PDF-Felder können bestehenden (fehlenden) Feldern zugeordnet werden, damit Daten erhalten bleiben.</div>
+  </div>
+  <div class="dlg-body">
+    <div class="muted2" id="mapPdfSummary"></div>
+    <div id="mapPdfFieldsList" class="grid" style="grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;"></div>
+    <div class="muted2" id="mapPdfError" style="color:#b00020; display:none;"></div>
+  </div>
+  <form method="dialog">
     <div class="dlg-foot">
       <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
-      <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+      <button class="btn primary" value="ok" type="submit">Zuordnung übernehmen</button>
     </div>
   </form>
 </dialog>
@@ -350,12 +392,12 @@ render_admin_header('Feld-Editor');
 <div class="card panel">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <h3 style="margin:0;">Gruppenübersicht</h3>
+      <h2>Gruppenübersicht</h2>
       <div class="muted2">Klick = filtern, Toggle = Gruppe in Tabelle ein/ausklappen. Alt-Klick = Gruppe ausblenden.</div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <button class="btn secondary" type="button" id="btnClearGroupFilter">Gruppenfilter löschen</button>
-      <button class="btn secondary" type="button" id="btnShowAllGroups">Alle Gruppen einblenden</button>
+      <a class="btn secondary" type="button" id="btnClearGroupFilter">Gruppenfilter löschen</a>
+      <a class="btn secondary" type="button" id="btnShowAllGroups">Alle Gruppen einblenden</a>
     </div>
   </div>
   <div class="groups-bar" id="groupsBar" style="margin-top:10px;"></div>
@@ -363,10 +405,10 @@ render_admin_header('Feld-Editor');
 
 <div class="layout2" id="layout2">
   <!-- TABLE -->
-  <div class="card" style="overflow:hidden;" id="tableCard">
+  <div class="card" style="overflow:hidden; margin: 0" id="tableCard">
     <div class="grid" style="grid-template-columns: 1fr 200px; gap:12px; align-items:end;">
       <div>
-        <label>Filter (Feldname/Label/Gruppe)</label>
+          <h3 style="margin-top: 0;">Filter (Feldname/Label/Gruppe)</h3>
         <input id="fieldFilter" placeholder="z.B. soc, work, eng, math …">
         <div style="margin-top:8px;">
           <label class="muted2" style="display:block; margin-bottom:4px;">Nicht enthält</label>
@@ -375,13 +417,14 @@ render_admin_header('Feld-Editor');
         <div class="muted2">Filter wirkt auf Bulk-Aktionen (sichtbare Zeilen) und Gruppenübersicht.</div>
       </div>
       <div class="actions" style="justify-content:flex-start;">
-        <button class="btn secondary" type="button" id="btnClearFilter">Filter löschen</button>
+        <a class="btn secondary" type="button" id="btnClearFilter">Filter löschen</a>
       </div>
     </div>
 
     <!-- BULK TOOLBAR -->
+    <div class="pill" style="float: right; margin-top: 19px"><strong>Auswahl:</strong> </div>
+    <h3 style="margin-bottom: 0;">Werte setzen</h3>
     <div class="toolbar" style="margin-top:12px;">
-      <div class="pill"><strong>Auswahl:</strong> <span id="selCount">0</span></div>
 
       <div class="block">
         <label>Gruppe setzen</label>
@@ -454,21 +497,22 @@ render_admin_header('Feld-Editor');
       </div>
 
       <div class="actions">
-        <button class="btn secondary" type="button" id="btnApplySelected">Auf Auswahl anwenden</button>
-        <button class="btn secondary" type="button" id="btnApplyVisible">Auf sichtbare anwenden</button>
-        <button class="btn primary" type="button" id="btnSave">Speichern</button>
+          <a class="btn secondary" type="button" id="btnApplySelected" style="gap: 0;">Auf Auswahl (<span id="selCount">0</span>) anwenden</a>
+        <a class="btn secondary" type="button" id="btnApplyVisible">Auf sichtbare anwenden</a>
       </div>
 
       <div class="block" style="min-width:280px;">
-        <label>Auto-Group</label>
+          <h3 style="margin-bottom: 0;">Auto-Group</h3>
+        <div class="muted" style="margin-bottom: 10px;">Prefix ignoriert alles nach <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
         <div style="display:flex; gap:8px;">
-          <button class="btn secondary" type="button" id="btnAutoGroupPrefix">Nach Prefix</button>
-          <button class="btn secondary" type="button" id="btnAutoGroupPage">Nach PDF-Seite</button>
+          <a class="btn secondary" type="button" id="btnAutoGroupPrefix">Nach Prefix</a>
+          <a class="btn secondary" type="button" id="btnAutoGroupPage">Nach PDF-Seite</a>
         </div>
-        <div class="muted2">Prefix ignoriert alles nach <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
       </div>
-
-      <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
+        <div class="block" style="min-width:100%; text-align: end;">
+            <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
+            <a class="btn primary" type="button" id="btnSave">Speichern</a>
+        </div>
     </div>
 
     <div class="table-scroll" id="tableScroll" style="margin-top:12px;">
@@ -476,7 +520,7 @@ render_admin_header('Feld-Editor');
         <thead>
           <tr>
             <th class="sticky-col-0" style="width:46px;">✓</th>
-            <th class="sticky-col-1" style="min-width:220px;">Feldname</th>
+            <th class="sticky-col-1">Feldname</th>
             <th style="min-width:220px;">Gruppe</th>
             <th style="min-width:220px;">Gruppentitel (EN)</th>
             <th style="min-width:160px;">Typ</th>
@@ -484,10 +528,10 @@ render_admin_header('Feld-Editor');
             <th style="min-width:260px;">Label (EN)</th>
             <th style="min-width:240px;">Stammfeld</th>
             <th style="min-width:420px;">Help</th>
-            <th style="min-width:120px;">Kind</th>
-            <th style="min-width:120px;">Lehrer</th>
-            <th style="min-width:140px;">Klassenfeld</th>
-            <th style="min-width:120px;">Req</th>
+            <th>Kind</th>
+            <th>Lehrer</th>
+            <th>Klassenfeld</th>
+            <th>Erforderlich</th>
             <th style="min-width:420px;">Extras</th>
           </tr>
         </thead>
@@ -509,7 +553,7 @@ render_admin_header('Feld-Editor');
 
   <!-- PDF Preview -->
   <div class="card wiz-preview" id="previewCard" style="margin:0;">
-    <h3 style="margin-top:0;">PDF Vorschau</h3>
+    <h2>PDF Vorschau</h2>
     <div class="muted" id="pdfHint">Klicke links ein Feld, um es im PDF zu markieren.</div>
 
     <div style="display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap;">
@@ -534,6 +578,8 @@ const templateId = <?= (int)$templateId ?>;
 
 const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
+const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
+const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
 
 const metaLine = document.getElementById('metaLine');
 const tbody = document.querySelector('#fieldsTbl tbody');
@@ -581,6 +627,16 @@ const btnTogglePreview = document.getElementById('btnTogglePreview');
 const layout2 = document.getElementById('layout2');
 const previewCard = document.getElementById('previewCard');
 
+const replacePdfInput = document.getElementById('replacePdfFile');
+const btnReplacePdf = document.getElementById('btnReplacePdf');
+const replacePdfStatus = document.getElementById('replacePdfStatus');
+const btnDeleteMissing = document.getElementById('btnDeleteMissing');
+
+const mapPdfFieldsDialog = document.getElementById('mapPdfFieldsDialog');
+const mapPdfFieldsList = document.getElementById('mapPdfFieldsList');
+const mapPdfSummary = document.getElementById('mapPdfSummary');
+const mapPdfError = document.getElementById('mapPdfError');
+
 const colResizer = document.getElementById('colResizer');
 
 const optionsModal = document.getElementById('optionsModal');
@@ -609,6 +665,7 @@ let collapsedGroupHeaders = new Set();
 let selected = new Set();
 let dirty = new Set();
 let lastFoundRowId = null;
+let lastMissingNames = [];
 
 let isRowDragging = false;
 let dragScrollRaf = 0;
@@ -697,7 +754,7 @@ function saveIgnoredSplit(){
 let ignoredSplit = loadIgnoredSplit(); // fieldId -> ignore split-hint
 
 // --- PDF preview state
-const pdfUrl = "<?=h($pdfUrl)?>";
+let pdfUrl = "<?=h($pdfUrl)?>";
 const pdfCanvas = document.getElementById('pdfCanvas');
 const pdfHint = document.getElementById('pdfHint');
 const pageInfo = document.getElementById('pageInfo');
@@ -737,6 +794,17 @@ function itemsToOptions(items){
   return { options: mapped };
 }
 
+function normalizePdfType(rawType, multilineFlag){
+  const t = String(rawType || '').trim().toUpperCase();
+  if (t === 'TX') return multilineFlag ? 'multiline' : 'text';
+  if (t === 'CH' || t === 'SELECT') return 'select';
+  if (t === 'SIG' || t === 'SIGNATURE') return 'signature';
+  if (t === 'BTN') return 'checkbox';
+  if (t === 'CHECKBOX') return 'checkbox';
+  if (t === 'RADIO') return 'radio';
+  return multilineFlag ? 'multiline' : 'radio';
+}
+
 function normRect(rect){
   if (!Array.isArray(rect) || rect.length < 4) return null;
   const x1 = Number(rect[0]), y1 = Number(rect[1]), x2 = Number(rect[2]), y2 = Number(rect[3]);
@@ -747,6 +815,298 @@ function rectContains(rect, x, y){
   const r = normRect(rect);
   if (!r) return false;
   return x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+}
+
+async function readPdfFieldInfoFromDoc(doc){
+  const out = new Map();
+  if (!doc || typeof doc.getFieldObjects !== 'function') return { fields: out, names: new Set() };
+
+  const fo = await doc.getFieldObjects();
+  if (!fo || typeof fo !== 'object') return { fields: out, names: new Set() };
+
+  const tmp = [];
+  let hasZero = false;
+
+  for (const [name, arr] of Object.entries(fo)) {
+    if (!Array.isArray(arr)) continue;
+
+    for (const it of arr) {
+      let pRaw = it?.page;
+      if (pRaw === undefined || pRaw === null) pRaw = it?.pageIndex;
+      const pNum = Number(pRaw);
+      if (!Number.isFinite(pNum)) continue;
+      if (pNum === 0) hasZero = true;
+
+      const rect = (Array.isArray(it?.rect) && it.rect.length >= 4) ? it.rect.slice(0, 4) : null;
+      const rawType = it?.type || it?.fieldType || '';
+      const multiline = !!(it?.multiline || it?.multiLine);
+      const hint = (it?.alternativeText || it?.altText || it?.tooltip || it?.title || it?.fieldLabel || '')?.toString?.() || '';
+
+      tmp.push({ name, pNum, rect, rawType, multiline, hint });
+    }
+  }
+
+  const numPages = Number(doc?.numPages || 0);
+
+  for (const t of tmp) {
+    let page = t.pNum;
+    if (hasZero) page = page + 1;
+    if (page < 1) page = 1;
+    if (numPages && page > numPages) page = numPages;
+
+    if (!out.has(t.name)) {
+      out.set(t.name, {
+        page,
+        rect: t.rect,
+        rawType: t.rawType,
+        type: normalizePdfType(t.rawType, t.multiline),
+        multiline: !!t.multiline,
+        hint: t.hint
+      });
+    }
+  }
+
+  return { fields: out, names: new Set(out.keys()) };
+}
+
+async function readPdfFieldInfo(){
+  return readPdfFieldInfoFromDoc(pdfDoc);
+}
+
+async function importNewFieldsFromPdf(newNames, pdfInfo){
+  if (!Array.isArray(newNames) || !newNames.length) return 0;
+
+  const payload = newNames.map((name, idx) => {
+    const info = pdfInfo.fields.get(name) || {};
+    const meta = { ...info };
+    return {
+      name,
+      type: info.type || 'radio',
+      label: name,
+      help_text: info.hint || '',
+      multiline: info.type === 'multiline' ? true : !!info.multiline,
+      sort: fields.length + idx + 1,
+      meta
+    };
+  });
+
+  const params = new URLSearchParams();
+  params.set('csrf_token', csrf);
+  params.set('template_id', String(templateId));
+  params.set('fields', JSON.stringify(payload));
+
+  const resp = await fetch(importFieldsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-CSRF-Token': csrf
+    },
+    body: params.toString()
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || `Import fehlgeschlagen (HTTP ${resp.status})`);
+
+  return data.imported || 0;
+}
+
+function updateMissingDeleteButton(names){
+  lastMissingNames = Array.isArray(names) ? names : [];
+  if (!btnDeleteMissing) return;
+  if (lastMissingNames.length) {
+    btnDeleteMissing.style.display = '';
+    btnDeleteMissing.textContent = `Fehlende Felder löschen (${lastMissingNames.length})…`;
+  } else {
+    btnDeleteMissing.style.display = 'none';
+  }
+}
+
+async function deleteFieldsByName(names){
+  if (!Array.isArray(names) || !names.length) return 0;
+
+  const payload = { action:'delete_by_names', template_id: templateId, names, csrf_token: csrf };
+  const resp = await fetch(apiUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(payload)
+  });
+  const data = await resp.json().catch(()=>({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || `Löschen fehlgeschlagen (HTTP ${resp.status})`);
+  return data.deleted || 0;
+}
+
+function buildMappingDialog(missing, newcomers){
+  mapPdfFieldsList.innerHTML = '';
+  mapPdfError.style.display = 'none';
+  mapPdfError.textContent = '';
+  mapPdfSummary.textContent = `Fehlende Felder: ${missing.length} · Neue PDF-Felder: ${newcomers.length}`;
+
+  const options = [{ value:'', label:'— nicht zuordnen —' }, ...newcomers.map(n=>({ value:n, label:n }))];
+
+  for (const m of missing){
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '6px';
+
+    const label = document.createElement('label');
+    label.textContent = `Bestehendes Feld: ${m}`;
+    const select = document.createElement('select');
+    select.dataset.missingName = m;
+    for (const opt of options){
+      const o = document.createElement('option');
+      o.value = opt.value;
+      o.textContent = opt.label;
+      select.appendChild(o);
+    }
+
+    wrap.append(label, select);
+    mapPdfFieldsList.appendChild(wrap);
+  }
+}
+
+function collectMappingFromDialog(){
+  const selects = mapPdfFieldsList.querySelectorAll('select[data-missing-name]');
+  const mapping = {};
+  const chosenTargets = new Set();
+
+  for (const sel of selects){
+    const missingName = sel.dataset.missingName;
+    const target = sel.value.trim();
+    if (!target) continue;
+    if (chosenTargets.has(target)) {
+      mapPdfError.textContent = `„${target}“ wurde mehrfach ausgewählt. Bitte jede neue PDF-Feld nur einmal zuordnen.`;
+      mapPdfError.style.display = 'block';
+      return null;
+    }
+    chosenTargets.add(target);
+    mapping[missingName] = target;
+  }
+
+  mapPdfError.style.display = 'none';
+  mapPdfError.textContent = '';
+  return mapping;
+}
+
+async function promptPdfFieldMapping(missing, newcomers){
+  if (!missing?.length || !newcomers?.length) return {};
+
+  buildMappingDialog(missing, newcomers);
+  mapPdfFieldsDialog.returnValue = '';
+  mapPdfFieldsDialog.showModal();
+
+  return await new Promise((resolve)=>{
+    const onClose = ()=>{
+      if (mapPdfFieldsDialog.returnValue !== 'ok') { mapPdfFieldsDialog.removeEventListener('close', onClose); resolve(null); return; }
+      const mapping = collectMappingFromDialog();
+      if (mapping === null) { mapPdfFieldsDialog.showModal(); return; }
+      mapPdfFieldsDialog.removeEventListener('close', onClose);
+      resolve(mapping);
+    };
+    mapPdfFieldsDialog.addEventListener('close', onClose);
+  });
+}
+
+async function assessNewPdfFile(file){
+  const buf = await file.arrayBuffer();
+
+  let doc = null;
+  try {
+    doc = await pdfjsLib.getDocument({ data: buf }).promise;
+  } catch (e) {
+    throw new Error('Neue PDF konnte nicht gelesen werden: ' + (e?.message || e));
+  }
+
+  try {
+    const info = await readPdfFieldInfoFromDoc(doc);
+    const pdfNames = new Set(info.fields.keys());
+    const existingNames = new Set(fields.map(f => String(f.name)));
+
+    const missing = [...existingNames].filter(n => !pdfNames.has(n));
+    const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
+
+    return { missing, newcomers };
+  } finally {
+    try { doc?.destroy?.(); } catch (e) {}
+  }
+}
+
+async function syncPdfPositionsWithFields(opts={}){
+  const mapping = opts.mapping || {};
+  const pdfInfo = await readPdfFieldInfo();
+
+  const pdfNames = new Set(pdfInfo.fields.keys());
+  const renameApplied = [];
+  if (mapping && Object.keys(mapping).length) {
+    for (const [oldNameRaw, newNameRaw] of Object.entries(mapping)) {
+      const oldName = String(oldNameRaw || '').trim();
+      const newName = String(newNameRaw || '').trim();
+      if (!oldName || !newName) continue;
+      if (!pdfNames.has(newName)) continue;
+
+      const idx = fields.findIndex(f => String(f.name) === oldName);
+      if (idx < 0) continue;
+
+      const collision = fields.find(f => String(f.name) === newName && f.id !== fields[idx].id);
+      if (collision) continue;
+
+      const info = pdfInfo.fields.get(newName) || {};
+      const next = { ...fields[idx], name: newName };
+      next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+      fields[idx] = next;
+      markDirty(next.id);
+      renameApplied.push({ from: oldName, to: newName });
+    }
+  }
+
+  const pdfNamesAfter = new Set(pdfInfo.fields.keys());
+  const existingNames = new Set(fields.map(f => String(f.name)));
+
+  const missing = [...existingNames].filter(n => !pdfNamesAfter.has(n));
+  const newcomers = [...pdfNamesAfter].filter(n => !existingNames.has(n));
+
+  let updated = 0;
+  fields = fields.map(f => {
+    const info = pdfInfo.fields.get(String(f.name));
+    if (!info) return f;
+
+    const next = { ...f };
+    next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+    markDirty(next.id);
+    updated++;
+    return next;
+  });
+
+  renderTable();
+  updateMeta();
+
+  if (missing.length) {
+    alert('Warnung: Diese Felder fehlen in der neuen PDF und könnten Daten verlieren: ' + missing.join(', '));
+  }
+
+  if (dirty.size) await save();
+
+  let imported = 0;
+  if (newcomers.length) {
+    const wantImport = confirm(`Neue Felder in PDF entdeckt (${newcomers.length}). Jetzt anlegen?`);
+    if (wantImport) {
+      imported = await importNewFieldsFromPdf(newcomers, pdfInfo);
+      await load();
+    }
+  }
+
+  let deleted = 0;
+  updateMissingDeleteButton(missing);
+  if (missing.length && opts?.promptDeleteMissing !== false) {
+    const wantDelete = confirm(`Soll(en) ${missing.length} fehlende Feld(er) dauerhaft gelöscht werden? (${missing.join(', ')})`);
+    if (wantDelete) {
+      deleted = await deleteFieldsByName(missing);
+      await load();
+      updateMissingDeleteButton([]);
+    }
+  }
+
+  return { updated, missing: missing.length, missingNames: missing, added: imported, renamed: renameApplied.length, deleted };
 }
 
 function getGroupPath(f){
@@ -1829,6 +2189,7 @@ async function save(){
     .filter(f => dirty.has(f.id))
     .map(f => ({
       id: f.id,
+      name: f.name,
       type: f.type,
       label: f.label,
       label_en: (f.label_en ?? ''),
@@ -2034,6 +2395,74 @@ btnAutoGroupPrefix.addEventListener('click', ()=>autoGroupPrefix(getSelectedIds(
 btnAutoGroupPage.addEventListener('click', ()=>autoGroupPage(getSelectedIds().length ? getSelectedIds() : getVisibleIds()));
 btnSave.addEventListener('click', save);
 btnSaveTop.addEventListener('click', save);
+
+btnReplacePdf.addEventListener('click', async ()=>{
+  const file = replacePdfInput?.files?.[0] ?? null;
+  if (!file) { replacePdfStatus.textContent = 'Bitte neue PDF auswählen.'; return; }
+
+  btnReplacePdf.disabled = true;
+  replacePdfStatus.textContent = 'Prüfe Felder in neuer PDF…';
+
+  try {
+    const assessment = await assessNewPdfFile(file);
+    let plannedMapping = {};
+    if (assessment?.missing?.length) {
+      const msg = `Warnung: ${assessment.missing.length} vorhandene Felder fehlen in der neuen PDF (${assessment.missing.join(', ')}) und Daten könnten verloren gehen. PDF trotzdem ersetzen?`;
+      const proceed = confirm(msg);
+      if (!proceed) { replacePdfStatus.textContent = 'Abgebrochen: PDF wurde nicht ersetzt.'; return; }
+    }
+
+    if (assessment?.missing?.length && assessment?.newcomers?.length) {
+      const mapping = await promptPdfFieldMapping(assessment.missing, assessment.newcomers);
+      if (mapping === null) { replacePdfStatus.textContent = 'Abgebrochen: Zuordnung abgebrochen.'; return; }
+      plannedMapping = mapping || {};
+    }
+
+    replacePdfStatus.textContent = 'Lade PDF hoch…';
+
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('template_id', String(templateId));
+    fd.append('pdf', file);
+
+    const resp = await fetch(replacePdfUrl, { method:'POST', body: fd });
+    const data = await resp.json().catch(()=>({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || `Upload fehlgeschlagen (HTTP ${resp.status})`);
+
+    pdfUrl = String(data.pdf_url || pdfUrl) + '&cache=' + Date.now();
+    replacePdfStatus.textContent = 'PDF gespeichert. Aktualisiere Vorschau und Felder…';
+
+    await loadPdf();
+    const summary = await syncPdfPositionsWithFields({ mapping: plannedMapping });
+    const parts = [
+      `Positionen aktualisiert (${summary.updated})`,
+      `fehlend: ${summary.missing}`,
+      `neu: ${summary.added}`
+    ];
+    if (summary.renamed) parts.push(`zugeordnet: ${summary.renamed}`);
+    if (summary.deleted) parts.push(`gelöscht: ${summary.deleted}`);
+    replacePdfStatus.textContent = parts.join(', ');
+  } catch (e) {
+    replacePdfStatus.textContent = 'Fehler: ' + (e?.message || e);
+    } finally {
+      btnReplacePdf.disabled = false;
+      if (replacePdfInput) replacePdfInput.value = '';
+    }
+});
+
+btnDeleteMissing.addEventListener('click', async ()=>{
+  if (!lastMissingNames.length) { replacePdfStatus.textContent = 'Keine fehlenden Felder erkannt.'; return; }
+  const want = confirm(`Fehlende Felder jetzt löschen? (${lastMissingNames.join(', ')})`);
+  if (!want) return;
+  try {
+    const deleted = await deleteFieldsByName(lastMissingNames);
+    replacePdfStatus.textContent = `Fehlende Felder gelöscht (${deleted}).`;
+    updateMissingDeleteButton([]);
+    await load();
+  } catch (e) {
+    replacePdfStatus.textContent = 'Fehler beim Löschen: ' + (e?.message || e);
+  }
+});
 
 btnShowAllGroups.addEventListener('click', ()=>{
   hiddenGroups = new Set();
