@@ -106,21 +106,49 @@ function load_template_fields(PDO $pdo, int $templateId): array {
 function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   // Resolve option-list values by stable option_item_id (stored in value_json) so exports survive option value changes.
   $st = $pdo->prepare(
-    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json
+    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
      FROM field_values fv
      JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
      ORDER BY fv.updated_at ASC, fv.id ASC"
   );
   $st->execute([$reportInstanceId]);
+
+  $priority = ['child' => 1, 'system' => 2, 'teacher' => 3];
   $map = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $field = (string)($r['field_name'] ?? '');
+    if ($field === '') continue;
+
+    $src = (string)($r['source'] ?? 'teacher');
     $meta = meta_read_export($r['meta_json'] ?? null);
     $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : null;
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
-    $map[(string)$r['field_name']] = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
+    $resolved = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
+
+    $current = $map[$field] ?? null;
+    $currentScore = $current ? ($priority[$current['source']] ?? 0) : -1;
+    $newScore = $priority[$src] ?? 0;
+
+    $useNew = false;
+    if ($newScore > $currentScore) {
+      $useNew = true;
+    } elseif ($newScore === $currentScore && $current) {
+      $curTs = strtotime((string)($current['updated_at'] ?? '')) ?: 0;
+      $newTs = strtotime((string)($r['updated_at'] ?? '')) ?: 0;
+      if ($newTs >= $curTs) $useNew = true;
+    }
+
+    if ($useNew || !$current) {
+      $map[$field] = [
+        'value' => $resolved,
+        'source' => $src,
+        'updated_at' => (string)($r['updated_at'] ?? ''),
+      ];
+    }
   }
-  return $map;
+
+  return array_map(fn($row) => $row['value'], $map);
 }
 
 

@@ -228,11 +228,25 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_students_login_code ON students (login_code)");
     }
 
-    // --- field_values: ensure unique key for safe UPSERTs (system bindings, etc.)
-    // If this index is missing, INSERT ... ON DUPLICATE KEY UPDATE will NOT update,
-    // causing duplicate rows and unpredictable reads (e.g. only first_name appearing).
-    if (!db_has_index($pdo, 'field_values', 'uq_field_values_instance_field')) {
-      $pdo->exec("CREATE UNIQUE INDEX uq_field_values_instance_field ON field_values (report_instance_id, template_field_id)");
+    // --- field_values: ensure SOURCE-AWARE unique key so child + teacher values coexist safely
+    if (!db_has_index($pdo, 'field_values', 'uq_field_values_instance_field_source')) {
+      // drop legacy unique index if present (would block separate child/teacher rows)
+      if (db_has_index($pdo, 'field_values', 'uq_field_values_instance_field')) {
+        try {
+          $pdo->exec("ALTER TABLE field_values DROP INDEX uq_field_values_instance_field");
+        } catch (Throwable $e) {
+          // ignore (shared hosting without ALTER privilege)
+        }
+      }
+
+      try {
+        $pdo->exec(
+          "CREATE UNIQUE INDEX uq_field_values_instance_field_source " .
+          "ON field_values (report_instance_id, template_field_id, source)"
+        );
+      } catch (Throwable $e) {
+        // ignore silently; without this index, child+teacher cannot coexist but app keeps working
+      }
     }
     if (!db_has_index($pdo, 'field_values', 'idx_field_values_instance')) {
       $pdo->exec("CREATE INDEX idx_field_values_instance ON field_values (report_instance_id)");

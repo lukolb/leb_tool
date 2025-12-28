@@ -566,6 +566,7 @@ render_teacher_header('Eingaben');
     gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows',
     saveTimers: new Map(),
     saveInFlight: 0,
+    mergeDecisions: new Map(),
   };
 
   const snippetMenu = document.createElement('div');
@@ -619,6 +620,39 @@ render_teacher_header('Eingaben');
       return optionLabel(opts, v);
     }
     return v;
+  }
+
+  function resolveMergeWithChild(reportId, fieldId, nextValue){
+    const f = state.fieldMap[String(fieldId)];
+    if (!f || !f.child || !f.child.id) return String(nextValue ?? '');
+
+    const childRaw = childVal(reportId, f.child.id);
+    if (!childRaw) return String(nextValue ?? '');
+
+    const key = `${reportId}:${fieldId}`;
+    let decision = ui.mergeDecisions.get(key);
+
+    if (!decision) {
+      const msg = [
+        'Für dieses Feld gibt es bereits einen Schüler:innen-Wert:',
+        '',
+        childDisplay(f, childRaw) || childRaw,
+        '',
+        'Sollen beide Werte kombiniert werden (OK) oder der Schüler:innen-Wert überschrieben werden (Abbrechen)?'
+      ].join('\n');
+      decision = window.confirm(msg) ? 'combine' : 'overwrite';
+      ui.mergeDecisions.set(key, decision);
+    }
+
+    if (decision === 'combine') {
+      const own = String(nextValue ?? '').trim();
+      const base = String(childRaw).trim();
+      if (!own) return base;
+      if (own === base) return base;
+      return `${base} · ${own}`;
+    }
+
+    return String(nextValue ?? '');
   }
 
   function ensureDatalistForField(fieldId){
@@ -1058,9 +1092,11 @@ render_teacher_header('Eingaben');
       }
 
       const isClass = isClassFieldId(fieldId);
-      const doSave = (val) => {
-        if (isClass) scheduleSaveClass(fieldId, val);
-        else scheduleSave(reportId, fieldId, val);
+      const saveMerged = (val) => {
+        const finalVal = resolveMergeWithChild(reportId, fieldId, val);
+        if (isClass) scheduleSaveClass(fieldId, finalVal);
+        else scheduleSave(reportId, fieldId, finalVal);
+        return finalVal;
       };
 
       if (inp.dataset.combo === '1') {
@@ -1082,9 +1118,9 @@ render_teacher_header('Eingaben');
           }
 
           inp.setCustomValidity('');
-          doSave(res.value);
-          inp.dataset.actual = res.value;
-          if (f) inp.value = teacherDisplay(f, res.value);
+          const merged = saveMerged(res.value);
+          inp.dataset.actual = merged;
+          if (f) inp.value = teacherDisplay(f, merged);
         };
 
         inp.addEventListener('change', commit);
@@ -1096,9 +1132,18 @@ render_teacher_header('Eingaben');
       }
 
       if (inp.type === 'checkbox') {
-        inp.addEventListener('change', () => doSave(inp.checked ? '1' : '0'));
+        inp.addEventListener('change', () => {
+          const merged = saveMerged(inp.checked ? '1' : '0');
+          inp.checked = (merged === '1');
+        });
       } else {
-        inp.addEventListener('input', () => doSave(inp.value));
+        inp.addEventListener('input', () => {
+          const merged = saveMerged(inp.value);
+          if (!inp.dataset.combo && f && String(f.field_type || '') !== 'checkbox') {
+            // keep UI in sync when Werte kombiniert werden
+            inp.value = merged;
+          }
+        });
       }
 
       inp.addEventListener('focus', () => {
@@ -1841,6 +1886,7 @@ render_teacher_header('Eingaben');
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
     state.text_snippets = j.text_snippets || [];
+    ui.mergeDecisions = new Map();
 
     // In delegated mode: class fields should not be visible/editable here
     if (DELEGATED_MODE) {
