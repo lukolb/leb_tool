@@ -348,18 +348,24 @@ render_admin_header('Feld-Editor');
 
 <!-- PDF REPLACE -->
 <div class="card panel">
-  <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
-    <div style="min-width:320px;">
-      <label>PDF-Vorlage ersetzen</label>
-      <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
-      <div class="muted2">Aktualisiert Datei und Feld-Positionen. Fehlende Felder werden gemeldet.</div>
+  <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
+    <div>
+      <h3 style="margin:0;">PDF-Vorlage ersetzen</h3>
+      <div class="muted2">Lädt eine neue PDF-Datei hoch, synchronisiert Feld-Positionen und informiert über fehlende Felder.</div>
     </div>
-    <div class="actions" style="justify-content:flex-start;">
+    <div class="actions" style="justify-content:flex-start; gap:8px;">
       <button class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</button>
       <button class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</button>
     </div>
-    <div class="muted2" id="replacePdfStatus"></div>
   </div>
+  <div style="margin-top:12px; display:grid; gap:6px;">
+    <div>
+      <label>Neue PDF auswählen</label>
+      <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
+    </div>
+    <div class="muted2">Empfohlen: gleiche Felder behalten oder neu zuordnen, damit bestehende Daten nicht verloren gehen.</div>
+  </div>
+  <div class="muted2" id="replacePdfStatus" style="margin-top:8px;"></div>
 </div>
 
 <dialog id="mapPdfFieldsDialog">
