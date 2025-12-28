@@ -12,6 +12,11 @@ render_admin_header('Textbausteine');
 ?>
 
 <div class="card">
+    <h1>Textbausteine</h1>
+</div>
+
+<div class="card">
+    <h2>Neuer Textbaustein</h2>
   <div class="row" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
     <div style="flex:1; min-width:220px;">
       <label class="label">Titel</label>
@@ -25,9 +30,9 @@ render_admin_header('Textbausteine');
       <label class="label">Inhalt</label>
       <textarea class="input" id="tsContent" rows="3" placeholder="Textbaustein..." style="width:100%;"></textarea>
     </div>
-    <div style="display:flex; gap:8px; align-items:center;">
-      <button class="btn" type="button" id="tsSave">Speichern</button>
-      <button class="btn secondary" type="button" id="tsGenerate">Grundstock generieren</button>
+    <div style="display:flex; gap:8px; align-items:center; margin-top: 10px;">
+      <a class="btn" type="button" id="tsSave">Speichern</a>
+      <a class="btn secondary" type="button" id="tsGenerate">Grundstock generieren</a>
     </div>
   </div>
 </div>
@@ -35,15 +40,15 @@ render_admin_header('Textbausteine');
 <div class="card">
   <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
     <div>
-      <h2 style="margin:0;">Vorhandene Textbausteine</h2>
+      <h2>Vorhandene Textbausteine</h2>
       <div class="muted">Rechtsklick auf Eingabefelder in entry.php fügt diese Bausteine als Kontextmenü hinzu.</div>
+      <div class="muted" id="tsStatus" style="display:none;"></div>
     </div>
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
       <div style="display:flex; gap:6px; align-items:center;">
         <input class="input" id="tsNewGroup" type="text" placeholder="Neue Kategorie" style="width:190px;">
         <button class="btn secondary" type="button" id="tsAddGroup">Gruppe anlegen</button>
       </div>
-      <div class="pill-mini" id="tsStatus" style="display:none;"></div>
     </div>
   </div>
   <div id="tsList" style="margin-top:12px; display:flex; flex-direction:column; gap:12px;"></div>
