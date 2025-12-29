@@ -981,6 +981,7 @@ render_teacher_header('Eingaben');
           <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
           <div class="history-actions">
             <button class="btn tiny secondary" type="button"
+              style="padding:4px 8px; font-size:11px;"
               data-history-restore="1"
               data-report-id="${esc(reportId)}"
               data-field-id="${esc(fieldId)}"
@@ -992,7 +993,12 @@ render_teacher_header('Eingaben');
       `;
     }).join('');
 
-    return `<div class="history-box">${rows}</div>`;
+    return `
+      <details class="history-box">
+        <summary>↩︎ Verlauf & Wiederherstellung</summary>
+        <div class="history-rows">${rows}</div>
+      </details>
+    `;
   }
 
   function applyHistoryValue(reportId, fieldId, valueText, valueJson){
@@ -1814,6 +1820,7 @@ render_teacher_header('Eingaben');
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
             ${childInfo}
           </div>
         `;
