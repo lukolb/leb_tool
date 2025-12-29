@@ -565,6 +565,7 @@ render_teacher_header('Eingaben');
     students: [],
     values_teacher: {},
     values_child: {},
+    value_history: {},
     class_report_instance_id: 0,
     class_fields: null,
     progress_summary: null,
@@ -891,6 +892,16 @@ render_teacher_header('Eingaben');
     const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
     return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
   }
+  function formatDateTime(ts){
+    const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
+    return d.toLocaleString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
   function setSaveStatus(state, text){
     if (!elSaveStatus) return;
     elSaveStatus.textContent = text || '';
@@ -927,6 +938,50 @@ render_teacher_header('Eingaben');
     const r = state.values_child[String(reportId)] || {};
     const v = r[String(fieldId)];
     return (v === null || typeof v === 'undefined') ? '' : String(v);
+  }
+
+  function historyEntries(reportId, fieldId){
+    const rid = String(reportId ?? '');
+    const fid = String(fieldId ?? '');
+    const map = state.value_history || {};
+    const list = (map[rid] && Array.isArray(map[rid][fid])) ? map[rid][fid] : [];
+    return list;
+  }
+
+  function addHistoryEntry(reportId, fieldId, text, source){
+    const rid = String(reportId ?? '');
+    const fid = String(fieldId ?? '');
+    if (!state.value_history) state.value_history = {};
+    if (!state.value_history[rid]) state.value_history[rid] = {};
+    if (!state.value_history[rid][fid]) state.value_history[rid][fid] = [];
+
+    const list = state.value_history[rid][fid];
+    list.unshift({
+      text: text ?? '',
+      source: source || 'teacher',
+      created_at: new Date().toISOString(),
+    });
+
+    if (list.length > 5) list.length = 5;
+  }
+
+  function renderHistoryHtml(reportId, fieldId){
+    const entries = historyEntries(reportId, fieldId);
+    if (!entries.length) return '';
+
+    const rows = entries.map(e => {
+      const role = (e.source === 'child') ? 'Schüler:in' : 'Lehrkraft';
+      const ts = formatDateTime(e.created_at);
+      const val = String(e.text ?? '');
+      return `
+        <div class="history-row">
+          <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
+          <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `<div class="history-box">${rows}</div>`;
   }
 
   // --- progress helpers ---
@@ -1124,6 +1179,9 @@ render_teacher_header('Eingaben');
       setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
+        const fDef = state.fieldMap?.[String(fieldId)];
+        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
+        addHistoryEntry(reportId, fieldId, displayVal, 'teacher');
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1154,6 +1212,9 @@ render_teacher_header('Eingaben');
       setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
+        const fDef = state.fieldMap?.[String(fieldId)];
+        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
+        addHistoryEntry(rid, fieldId, displayVal, 'teacher');
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1579,6 +1640,7 @@ render_teacher_header('Eingaben');
           <div class="lbl" data-dyn="label">${esc(lbl)}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
           ${renderInputHtml(f, rid, v, locked)}
+          ${renderHistoryHtml(rid, fid)}
         </div>
       `;
     }).join('');
@@ -1788,14 +1850,15 @@ render_teacher_header('Eingaben');
           const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
           const shownChild = rawChild ? childDisplay(f, rawChild) : '';
 
-          const missingCls = (v === '') ? 'missing' : '';
-          td.innerHTML = `
-            <div class="cellWrap ${missingCls}">
-              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-              ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
-            </div>
-          `;
-          row.appendChild(td);
+        const missingCls = (v === '') ? 'missing' : '';
+        td.innerHTML = `
+          <div class="cellWrap ${missingCls}">
+            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
+            ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
+          </div>
+        `;
+        row.appendChild(td);
         });
 
         gradeBody.appendChild(row);
@@ -1933,6 +1996,7 @@ render_teacher_header('Eingaben');
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
@@ -1974,6 +2038,7 @@ render_teacher_header('Eingaben');
     state.students = j.students;
     state.values_teacher = j.values_teacher || {};
     state.values_child = j.values_child || {};
+    state.value_history = j.value_history || {};
     state.class_report_instance_id = j.class_report_instance_id || 0;
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;

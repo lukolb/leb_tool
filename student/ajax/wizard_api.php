@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require __DIR__ . '/../../shared/value_history.php';
 require_student();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -637,6 +638,8 @@ try {
          updated_at=NOW()"
     );
     $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
+
+    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', null, $studentId);
 
     json_out(['ok' => true]);
   }

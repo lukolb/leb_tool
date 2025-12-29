@@ -304,6 +304,21 @@ CREATE TABLE IF NOT EXISTS `field_values` (
   KEY `idx_field_values_field` (`template_field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `field_value_history` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `report_instance_id` bigint UNSIGNED NOT NULL,
+  `template_field_id` bigint UNSIGNED NOT NULL,
+  `value_text` mediumtext COLLATE utf8mb4_unicode_ci,
+  `value_json` $JSON COLLATE utf8mb4_unicode_ci,
+  `source` enum('child','teacher','system') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'teacher',
+  `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `updated_by_student_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_fvh_instance` (`report_instance_id`),
+  KEY `idx_fvh_field` (`template_field_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `report_collaborators` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `report_instance_id` bigint UNSIGNED NOT NULL,
