@@ -347,6 +347,9 @@ render_teacher_header($pageTitle);
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
           <input class="input" id="studentSearch" type="search" placeholder="Schüler suchen…" style="width:100%;">
+          <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
+            <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> nur offene
+          </label>
         </div>
         <div id="studentList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
       </div>
@@ -536,6 +539,7 @@ render_teacher_header($pageTitle);
   const studentBadge = document.getElementById('studentBadge');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
+  const studentMissingOnly = document.getElementById('studentMissingOnly');
 
   const groupSelect = document.getElementById('groupSelect');
   const itemSearch = document.getElementById('itemSearch');
@@ -580,6 +584,7 @@ render_teacher_header($pageTitle);
     showChild: false,
     activeStudentIndex: 0,
     studentFilter: '',
+    studentMissingOnly: false,
     groupKey: 'ALL',
     itemFilter: '',
     gradeGroupKey: 'ALL',
@@ -1646,8 +1651,14 @@ render_teacher_header($pageTitle);
 
   function currentStudents(){
     const f = normalize(ui.studentFilter);
-    if (!f) return state.students;
-    return state.students.filter(s => normalize(s.name).includes(f));
+    let list = state.students;
+
+    if (ui.studentMissingOnly) {
+      list = list.filter(s => Number(s.progress_teacher_missing || 0) > 0);
+    }
+
+    if (!f) return list;
+    return list.filter(s => normalize(s.name).includes(f));
   }
 
   function activeStudent(){
@@ -1770,6 +1781,10 @@ render_teacher_header($pageTitle);
   }
 
   function renderStudentView(){
+    if (studentMissingOnly.checked !== !!ui.studentMissingOnly) {
+      studentMissingOnly.checked = !!ui.studentMissingOnly;
+    }
+
     const list = currentStudents();
 
     studentList.innerHTML = '';
@@ -2441,6 +2456,12 @@ if (dlgSave) {
 
   studentSearch.addEventListener('input', () => {
     ui.studentFilter = studentSearch.value;
+    ui.activeStudentIndex = 0;
+    renderStudentView();
+  });
+
+  studentMissingOnly.addEventListener('change', () => {
+    ui.studentMissingOnly = !!studentMissingOnly.checked;
     ui.activeStudentIndex = 0;
     renderStudentView();
   });
