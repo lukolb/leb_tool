@@ -939,7 +939,7 @@ try {
 
     $fieldMetaById = [ (int)$fieldId => ['meta' => $fieldMeta] ];
     $history = load_value_history($pdo, [$reportId], [$fieldId], $fieldMetaById, 3);
-    $hist = $history[String($reportId)][$fieldId] ?? [];
+    $hist = $history[(string)$reportId][$fieldId] ?? [];
     $historyTexts = array_values(array_filter(array_map(fn($r)=>trim((string)($r['text'] ?? '')), $hist), fn($s)=>$s !== ''));
 
     $scaleSummary = $scaleFacts
