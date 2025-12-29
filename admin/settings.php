@@ -387,7 +387,19 @@ render_admin_header('Admin – Settings');
     <input type="hidden" name="action" value="save">
 
     <label>Bevorzugte Stimme (optional)</label>
-    <input name="tts_voice" value="<?=h($ttsVoicePref)?>" placeholder="z.B. Google Deutsch, Microsoft Katja"> 
+    <input name="tts_voice" list="ttsVoiceList" value="<?=h($ttsVoicePref)?>" placeholder="z.B. Google Deutsch, Microsoft Katja">
+    <datalist id="ttsVoiceList">
+      <option value="Google Deutsch"></option>
+      <option value="Google Deutsch (Deutschland)"></option>
+      <option value="Google Deutsch (Österreich)"></option>
+      <option value="Microsoft Katja Online (Natural) - German (Germany)"></option>
+      <option value="Microsoft Conrad Online (Natural) - German (Germany)"></option>
+      <option value="Microsoft Hedda Desktop - German (Germany)"></option>
+      <option value="Microsoft Jonas Desktop - German (Germany)"></option>
+      <option value="Google US English"></option>
+      <option value="Microsoft Aria Online (Natural) - English (United States)"></option>
+      <option value="Microsoft Guy Online (Natural) - English (United States)"></option>
+    </datalist>
     <p class="muted">Wir versuchen zuerst diese Stimme zu nutzen (Teiltreffer erlaubt). Fällt zurück auf die passende Sprache.</p>
 
     <label>Lesegeschwindigkeit</label>

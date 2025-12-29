@@ -307,7 +307,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
               <div class="tts-status" id="ttsStatus"><?=h(t('student.tts.ready', 'Bereit zum Vorlesen.'))?></div>
             </div>
             <div class="tts-actions">
-              <button class="btn secondary" type="button" id="ttsButton"><?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?></button>
+              <button class="btn secondary" type="button" id="ttsButton" aria-label="<?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?>">🔈</button>
             </div>
           </div>
 
@@ -400,10 +400,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let ttsUtterance = null;
 
   function setTtsHighlight(on){
-    [elBody, elTitle, elSub].forEach(el => {
-      if (!el) return;
-      el.classList.toggle('tts-reading', !!on);
-    });
+    if (!elBody) return;
+    elBody.classList.toggle('tts-reading', !!on);
   }
 
   function updateTtsUi(text){
@@ -424,9 +422,11 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     ttsBar.style.display = 'flex';
     if (ttsButton) {
       ttsButton.style.display = '';
-      ttsButton.textContent = speechSynthesis.speaking
+      const isSpeaking = speechSynthesis.speaking;
+      ttsButton.innerHTML = isSpeaking ? '⏹' : '🔈';
+      ttsButton.setAttribute('aria-label', isSpeaking
         ? t('student.tts.stop', 'Stopp')
-        : t('student.tts.start', 'Aktuellen Abschnitt vorlesen');
+        : t('student.tts.start', 'Aktuellen Abschnitt vorlesen'));
     }
     if (ttsStatus) {
       if (text) {
@@ -448,10 +448,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   }
 
   function currentStepTextForTts(){
-    const parts = [elTitle?.textContent || '', elSub?.textContent || '', elBody?.innerText || '']
-      .map(s => String(s || '').trim())
-      .filter(Boolean);
-    return parts.join('. ');
+    if (!elBody) return '';
+    return String(elBody.innerText || '').trim();
   }
 
   function pickVoice(lang, preferredName){
