@@ -86,6 +86,7 @@ $brandPrimary   = $_POST['brand_primary'] ?? '#0b57d0';
 $brandSecondary = $_POST['brand_secondary'] ?? '#111111';
 $defaultSchoolYear = $_POST['default_school_year'] ?? '';
 $aiKey = $_POST['ai_key'] ?? '';
+$aiOrg = $_POST['ai_org'] ?? '';
 $aiEnabled = ($_SERVER['REQUEST_METHOD'] === 'POST') ? (isset($_POST['ai_enabled']) ? 1 : 0) : 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -146,6 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
       $cfg['ai']['enabled'] = ($aiEnabled === 1);
       $cfg['ai']['api_key'] = trim((string)$aiKey);
+      $cfg['ai']['organization'] = trim((string)$aiOrg);
 
       // Logo Upload (optional)
       if (isset($_FILES['brand_logo']) && ($_FILES['brand_logo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
@@ -714,6 +716,10 @@ SQL;
           <label>API Key</label>
           <input name="ai_key" value="<?=h($aiKey)?>" placeholder="z.B. sk-...">
           <p class="muted">Tipp: In OpenAI unter <strong>API Keys</strong> einen Secret Key anlegen und unter <strong>Billing › Usage</strong> prüfen, ob Guthaben verfügbar ist.</p>
+
+          <label>Organisation / Team (optional)</label>
+          <input name="ai_org" value="<?=h($aiOrg)?>" placeholder="z.B. org_...">
+          <p class="muted">Nur bei Team-Keys relevant. Falls die Guthabenprüfung später mit HTTP 403 scheitert, hier die OpenAI-Organisation-ID eintragen.</p>
 
           <div class="actions" style="margin-top:16px;">
             <button class="btn primary" type="submit">Installieren</button>

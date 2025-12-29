@@ -56,40 +56,55 @@ function ai_credit_hint(array $aiCfg): array {
 
   $key = trim((string)($aiCfg['api_key'] ?? ''));
   $provider = strtolower((string)($aiCfg['provider'] ?? 'openai'));
+  $org = trim((string)($aiCfg['organization'] ?? ''));
   if ($key === '') return ['type' => 'info', 'msg' => 'Kein KI-API-Key hinterlegt.'];
   if ($provider !== 'openai') return ['type' => 'info', 'msg' => 'Bitte Guthaben im Dashboard deines KI-Providers prüfen.'];
 
   $base = rtrim((string)($aiCfg['base_url'] ?? 'https://api.openai.com'), '/');
-  $url = $base . '/dashboard/billing/credit_grants';
+  $headers = ['Authorization: Bearer ' . $key];
+  if ($org !== '') $headers[] = 'OpenAI-Organization: ' . $org;
 
-  $ch = curl_init($url);
-  curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_HTTPHEADER => [
-      'Authorization: Bearer ' . $key,
-    ],
-    CURLOPT_TIMEOUT => 6,
-  ]);
-  $resp = curl_exec($ch);
-  $code = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
-  if ($resp === false) {
-    $err = curl_error($ch);
+  $checkEndpoints = [
+    '/dashboard/billing/credit_grants',
+    '/v1/dashboard/billing/subscription',
+  ];
+
+  foreach ($checkEndpoints as $path) {
+    $url = $base . $path;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_HTTPHEADER => $headers,
+      CURLOPT_TIMEOUT => 8,
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
+    if ($resp === false) {
+      $err = curl_error($ch);
+      curl_close($ch);
+      return ['type' => 'warning', 'msg' => 'Guthabenprüfung nicht möglich: ' . $err];
+    }
     curl_close($ch);
-    return ['type' => 'warning', 'msg' => 'Guthabenprüfung nicht möglich: ' . $err];
-  }
-  curl_close($ch);
 
-  if ($code >= 400) {
-    return ['type' => 'warning', 'msg' => 'Provider-Rückmeldung bei Guthabenprüfung: HTTP ' . $code];
+    if ($code >= 400) {
+      // 403 is common when Organisation-Header fehlt oder Billing-API gesperrt ist
+      if ($code === 403) continue;
+      return ['type' => 'warning', 'msg' => 'Provider-Rückmeldung bei Guthabenprüfung: HTTP ' . $code];
+    }
+
+    $json = json_decode((string)$resp, true);
+    if ($path === '/dashboard/billing/credit_grants' && isset($json['total_available'])) {
+      $amt = (float)$json['total_available'];
+      return ['type' => 'success', 'msg' => 'Verfügbares KI-Guthaben laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD.'];
+    }
+    if ($path === '/v1/dashboard/billing/subscription' && isset($json['soft_limit_usd'])) {
+      $amt = (float)$json['soft_limit_usd'];
+      return ['type' => 'success', 'msg' => 'Abgerechnetes Kontingent laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD Limit.'];
+    }
   }
 
-  $json = json_decode((string)$resp, true);
-  if (isset($json['total_available'])) {
-    $amt = (float)$json['total_available'];
-    return ['type' => 'success', 'msg' => 'Verfügbares KI-Guthaben laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD.'];
-  }
-
-  return ['type' => 'info', 'msg' => 'KI-Key gespeichert. Details zum Guthaben bitte im Provider-Dashboard prüfen.'];
+  $orgNote = $org === '' ? ' Tipp: Bei OpenAI-Team-Keys ggf. die Organisation-ID hinterlegen.' : '';
+  return ['type' => 'info', 'msg' => 'KI-Key gespeichert. Details zum Guthaben bitte im Provider-Dashboard prüfen.' . $orgNote];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -130,12 +145,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ---- AI suggestions (key only) ----
     $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+    $aiOrg = trim((string)($_POST['ai_org'] ?? ($cfg['ai']['organization'] ?? '')));
     $aiEnabled = isset($_POST['ai_enabled'])
       ? (int)$_POST['ai_enabled']
       : (int)($cfg['ai']['enabled'] ?? 1);
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
     $cfg['ai']['enabled'] = ($aiEnabled === 1);
     $cfg['ai']['api_key'] = $aiKey;
+    $cfg['ai']['organization'] = $aiOrg;
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -227,6 +244,7 @@ $studentCfg = $cfg['student'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
+$aiOrg = $ai['organization'] ?? '';
 $aiEnabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
 $aiStatus = ai_credit_hint(is_array($ai) ? $ai : []);
 
@@ -388,6 +406,10 @@ render_admin_header('Admin – Settings');
     <label>API Key</label>
     <input name="ai_key" value="<?=h((string)$aiKey)?>" placeholder="z.B. sk-...">
     <p class="muted">Schlüsselbeschaffung: Im Provider-Dashboard (z.B. <strong>OpenAI &raquo; API Keys</strong>) einen Secret Key erstellen. Prüfe unter <strong>Billing &raquo; Usage</strong>, ob genügend Guthaben vorhanden ist.</p>
+
+    <label>Organisation / Team (optional)</label>
+    <input name="ai_org" value="<?=h((string)$aiOrg)?>" placeholder="z.B. org_...">
+    <p class="muted">Nur relevant für OpenAI-Team-Keys. Falls die Guthabenprüfung mit HTTP 403 scheitert, hier die Organisations-ID hinterlegen.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
