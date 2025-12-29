@@ -120,6 +120,19 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       max-width: 190px;
     }
 
+    .save-status{
+      margin-top:4px;
+      font-size:12px;
+      color: var(--muted);
+      display:flex;
+      align-items:center;
+      gap:6px;
+      min-height:18px;
+    }
+    .save-status[data-state="saving"]{ color: #0b57d0; font-weight:750; }
+    .save-status[data-state="ok"]{ color: #0b7a0b; font-weight:750; }
+    .save-status[data-state="error"]{ color: #b00020; font-weight:800; }
+
     .content h2{ margin-top:0; }
     .step-meta{ color:var(--muted); font-size:12px; margin: -4px 0 10px; }
 
@@ -258,6 +271,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
             <div>
               <div style="font-weight:800;">Dein Bericht</div>
               <div class="muted" id="metaLine">Lade…</div>
+              <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
 
               <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
                 <div class="progress-meta"><span id="overallProgressText">—</span><span id="overallProgressPct"></span></div>
@@ -314,6 +328,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const btnPrev = document.getElementById('btnPrev');
   const btnNext = document.getElementById('btnNext');
   const savePill = document.getElementById('savePill');
+  const saveStatus = document.getElementById('saveStatus');
 
   const elLockedOnly = document.getElementById('lockedOnly');
   const elWizShell = document.getElementById('wizShell');
@@ -334,6 +349,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   const pendingTimers = new Map();
   let saveInFlight = 0;
+  let lastSaveAt = null;
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -741,12 +757,33 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     savePill.style.display = on ? 'inline-flex' : 'none';
   }
 
+  function formatTime(ts){
+    const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
+    return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+  }
+
+  function setSaveStatus(state, text){
+    if (!saveStatus) return;
+    saveStatus.textContent = text || '';
+    saveStatus.dataset.state = state || 'idle';
+    saveStatus.style.display = text ? 'flex' : 'none';
+  }
+
   async function saveFieldValue(fieldId, valueText){
     if (isLocked()) return;
     saveInFlight++;
     setSaving(true);
+    setSaveStatus('saving', '⏳ speichert …');
     try {
       await api('save_value', { template_field_id: Number(fieldId), value_text: String(valueText ?? '') });
+      lastSaveAt = new Date();
+      setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
+      return true;
+    } catch(err){
+      const msg = String(err?.message || 'Fehler beim Speichern');
+      const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
+      setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
+      return false;
     } finally {
       saveInFlight--;
       if (saveInFlight <= 0) setSaving(false);
@@ -1179,6 +1216,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       const j = await api('bootstrap', {});
       state = j;
+      setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
 
       if (isLocked()) {
         const st = String(state.report_status || '');

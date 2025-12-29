@@ -153,6 +153,7 @@ render_teacher_header('Eingaben');
 
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
+      <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -395,6 +396,19 @@ render_teacher_header('Eingaben');
   .smeta .n{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .smeta .sub{ color:var(--muted); font-size:12px; }
 
+  .save-status{
+    margin-top:4px;
+    font-size:12px;
+    color: var(--muted);
+    display:flex;
+    align-items:center;
+    gap:6px;
+    min-height:18px;
+  }
+  .save-status[data-state="saving"]{ color: #0b57d0; font-weight:750; }
+  .save-status[data-state="ok"]{ color: #0b7a0b; font-weight:750; }
+  .save-status[data-state="error"]{ color: #b00020; font-weight:800; }
+
   .field{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; }
   .field .lbl{ font-weight:800; }
   .field .help{ color:var(--muted); font-size:12px; margin-top:6px; }
@@ -483,6 +497,7 @@ render_teacher_header('Eingaben');
   const classFieldsProgressPct = document.getElementById('classFieldsProgressPct');
 
   const elSavePill = document.getElementById('savePill');
+  const elSaveStatus = document.getElementById('saveStatus');
   const dlg = document.getElementById('dlgDelegations');
   const dlgGroup = document.getElementById('dlgGroup');
   const dlgUser = document.getElementById('dlgUser');
@@ -555,6 +570,8 @@ render_teacher_header('Eingaben');
     progress_summary: null,
     fieldMap: {},
   };
+
+  let lastSaveAt = null;
 
   let ui = {
     view: 'grades',
@@ -870,6 +887,16 @@ render_teacher_header('Eingaben');
     elErrBox.style.display = 'none';
     elErrMsg.textContent = '';
   }
+  function formatTime(ts){
+    const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
+    return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+  }
+  function setSaveStatus(state, text){
+    if (!elSaveStatus) return;
+    elSaveStatus.textContent = text || '';
+    elSaveStatus.dataset.state = state || 'idle';
+    elSaveStatus.style.display = text ? 'flex' : 'none';
+  }
   function setSaving(on){
     elSavePill.style.display = on ? 'inline-flex' : 'none';
   }
@@ -1094,10 +1121,16 @@ render_teacher_header('Eingaben');
       ui.saveTimers.delete(key);
       ui.saveInFlight++;
       setSaving(true);
+      setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
+        lastSaveAt = new Date();
+        setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
         showErr(e.message || String(e));
+        const msg = String(e?.message || 'Fehler beim Speichern');
+        const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
+        setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
       } finally {
         ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
         if (ui.saveInFlight === 0) setSaving(false);
@@ -1118,10 +1151,16 @@ render_teacher_header('Eingaben');
       ui.saveTimers.delete(key);
       ui.saveInFlight++;
       setSaving(true);
+      setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
+        lastSaveAt = new Date();
+        setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
         showErr(e.message || String(e));
+        const msg = String(e?.message || 'Fehler beim Speichern');
+        const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
+        setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
       } finally {
         ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
         if (ui.saveInFlight === 0) setSaving(false);
@@ -1909,6 +1948,7 @@ render_teacher_header('Eingaben');
   async function loadClass(classId){
     clearErr();
     elApp.style.display = 'none';
+    setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
     const j = await api('load', { class_id: classId });
 
     state.class_id = classId;
