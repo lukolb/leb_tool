@@ -40,10 +40,15 @@ $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
 
 $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
+$studentCfg = $cfg['student'] ?? [];
 $orgName = (string)($brand['org_name'] ?? 'LEB Tool');
 $logoPath = (string)($brand['logo_path'] ?? '');
 $primary = (string)($brand['primary'] ?? '#0b57d0');
 $secondary = (string)($brand['secondary'] ?? '#111111');
+$ttsRate = (float)($studentCfg['tts_rate'] ?? 0.95);
+if ($ttsRate <= 0) $ttsRate = 1.0;
+$ttsRate = max(0.5, min(1.5, $ttsRate));
+$ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 ?>
 <!doctype html>
 <html lang="<?=h(ui_lang())?>">
@@ -197,6 +202,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     .tts-bar{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border); border-radius:12px; margin-bottom:10px; background: rgba(0,0,0,0.02); }
     .tts-title{ font-weight:800; }
     .tts-status{ color: var(--muted); font-size:12px; }
+    .tts-reading{ background: #fff7c2; transition: background .15s ease; }
 
     .locked-overlay{ border:1px solid rgba(176,0,32,0.25); background: rgba(176,0,32,0.05); padding:12px; border-radius:14px; margin-bottom: 10px; }
     .locked-overlay strong{ color: rgba(176,0,32,0.95); }
@@ -331,6 +337,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
+  const TTS_RATE = Number(<?=json_encode($ttsRate)?>) || 1;
+  const TTS_VOICE_PREF = <?=json_encode($ttsVoicePref)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -391,6 +399,13 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   let ttsUtterance = null;
 
+  function setTtsHighlight(on){
+    [elBody, elTitle, elSub].forEach(el => {
+      if (!el) return;
+      el.classList.toggle('tts-reading', !!on);
+    });
+  }
+
   function updateTtsUi(text){
     if (!ttsBar) return;
     if (!TTS_ALLOWED) {
@@ -428,6 +443,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (!ttsSupported || !speechSynthesis) return;
     try { speechSynthesis.cancel(); } catch(e) {}
     ttsUtterance = null;
+    setTtsHighlight(false);
     updateTtsUi();
   }
 
@@ -438,10 +454,17 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     return parts.join('. ');
   }
 
-  function pickVoice(lang){
+  function pickVoice(lang, preferredName){
     if (!ttsSupported) return null;
     const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
     if (!voices || voices.length === 0) return null;
+    const pref = (preferredName || '').toLowerCase().trim();
+    if (pref !== '') {
+      const prefExact = voices.find(v => v?.name && v.name.toLowerCase() === pref && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
+      if (prefExact) return prefExact;
+      const prefLoose = voices.find(v => v?.name && v.name.toLowerCase().includes(pref));
+      if (prefLoose) return prefLoose;
+    }
     const exactLocal = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && v.localService);
     if (exactLocal) return exactLocal;
     const exact = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
@@ -456,14 +479,14 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     stopTts();
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.95;
+    utter.rate = TTS_RATE;
     utter.pitch = 1;
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
-    const voice = pickVoice(utter.lang);
+    const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
     if (voice) utter.voice = voice;
-    utter.onstart = () => updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
-    utter.onend = () => updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
-    utter.onerror = () => updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.'));
+    utter.onstart = () => { setTtsHighlight(true); updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
+    utter.onend = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
+    utter.onerror = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();
