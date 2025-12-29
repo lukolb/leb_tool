@@ -1006,7 +1006,7 @@ render_teacher_header('Eingaben');
               data-field-id="${esc(fieldId)}"
               data-value-text="${esc(e.value_text ?? '')}"
               data-value-json="${esc(e.value_json ?? '')}"
-            >↩︎ Wiederherstellen</button>
+            >↩︎</button>
           </div>
         </div>
       `;
