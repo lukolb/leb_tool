@@ -98,11 +98,15 @@ function ai_provider_config(): array {
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
 
   $provider = strtolower(trim((string)($ai['provider'] ?? 'openai')));
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
   $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
   $baseUrl = (string)($ai['base_url'] ?? 'https://api.openai.com');
   $model = (string)($ai['model'] ?? 'gpt-4o-mini');
   $timeout = (int)($ai['timeout_seconds'] ?? 20);
 
+  if (!$enabled) {
+    throw new RuntimeException('KI-Vorschläge sind deaktiviert.');
+  }
   if ($apiKey === '') {
     throw new RuntimeException('AI API Key nicht konfiguriert.');
   }
@@ -119,6 +123,8 @@ function ai_provider_config(): array {
 function ai_provider_enabled(): bool {
   $cfg = app_config();
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  if (!$enabled) return false;
   $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
   return trim($apiKey) !== '';
 }
@@ -968,6 +974,10 @@ try {
 
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+
+    if (!ai_provider_enabled()) {
+      throw new RuntimeException('KI-Vorschläge sind deaktiviert oder nicht konfiguriert.');
+    }
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');

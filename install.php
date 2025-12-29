@@ -86,6 +86,7 @@ $brandPrimary   = $_POST['brand_primary'] ?? '#0b57d0';
 $brandSecondary = $_POST['brand_secondary'] ?? '#111111';
 $defaultSchoolYear = $_POST['default_school_year'] ?? '';
 $aiKey = $_POST['ai_key'] ?? '';
+$aiEnabled = ($_SERVER['REQUEST_METHOD'] === 'POST') ? (isset($_POST['ai_enabled']) ? 1 : 0) : 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!file_exists($samplePath)) $errors[] = "config.sample.php fehlt.";
@@ -143,6 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['app']['brand']['org_name'] = $orgName;
 
       if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+      $cfg['ai']['enabled'] = ($aiEnabled === 1);
       $cfg['ai']['api_key'] = trim((string)$aiKey);
 
       // Logo Upload (optional)
@@ -705,6 +707,10 @@ SQL;
 
           <h2 style="margin-top:18px;">4) KI-Schlüssel (optional)</h2>
           <p class="muted">Für automatische Vorschläge wird ein externer KI-Provider (z.B. OpenAI-kompatible API) genutzt. Ohne Schlüssel wird der KI-Button später nicht angezeigt.</p>
+          <label class="chk">
+            <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> KI-Vorschläge für Lehrkräfte aktivieren
+          </label>
+          <p class="muted">Kann jederzeit in den Einstellungen deaktiviert werden, falls kein Guthaben verbraucht werden soll.</p>
           <label>API Key</label>
           <input name="ai_key" value="<?=h($aiKey)?>" placeholder="z.B. sk-...">
           <p class="muted">Tipp: In OpenAI unter <strong>API Keys</strong> einen Secret Key anlegen und unter <strong>Billing › Usage</strong> prüfen, ob Guthaben verfügbar ist.</p>

@@ -51,6 +51,9 @@ function known_intro_placeholders(): array {
 }
 
 function ai_credit_hint(array $aiCfg): array {
+  $enabled = array_key_exists('enabled', $aiCfg) ? (bool)$aiCfg['enabled'] : true;
+  if (!$enabled) return ['type' => 'info', 'msg' => 'KI-Vorschläge sind derzeit deaktiviert.'];
+
   $key = trim((string)($aiCfg['api_key'] ?? ''));
   $provider = strtolower((string)($aiCfg['provider'] ?? 'openai'));
   if ($key === '') return ['type' => 'info', 'msg' => 'Kein KI-API-Key hinterlegt.'];
@@ -127,7 +130,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ---- AI suggestions (key only) ----
     $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+    $aiEnabled = isset($_POST['ai_enabled'])
+      ? (int)$_POST['ai_enabled']
+      : (int)($cfg['ai']['enabled'] ?? 1);
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+    $cfg['ai']['enabled'] = ($aiEnabled === 1);
     $cfg['ai']['api_key'] = $aiKey;
 
     // ---- Student wizard settings ----
@@ -220,6 +227,7 @@ $studentCfg = $cfg['student'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
+$aiEnabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
 $aiStatus = ai_credit_hint(is_array($ai) ? $ai : []);
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
@@ -371,6 +379,11 @@ render_admin_header('Admin – Settings');
   <form method="post" autocomplete="off" id="aiForm">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
+
+    <label class="chk">
+      <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> KI-Vorschläge für Lehrkräfte aktivieren
+    </label>
+    <p class="muted">Wenn deaktiviert, wird der KI-Button ausgeblendet und es werden keine externen Tokens verbraucht.</p>
 
     <label>API Key</label>
     <input name="ai_key" value="<?=h((string)$aiKey)?>" placeholder="z.B. sk-...">

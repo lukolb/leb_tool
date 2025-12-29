@@ -38,6 +38,7 @@ return [
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über
     // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.
+    'enabled' => true,
     'api_key' => '',
     'provider' => 'openai',
     'base_url' => 'https://api.openai.com',
