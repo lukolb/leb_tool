@@ -28,6 +28,7 @@ function nav_items_for_role(string $role): array {
       ]],
 
       ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
+      ['label'=>t('nav.parent_requests'), 'href'=>'admin/parent_requests.php', 'files'=>['parent_requests.php']],
       ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
       ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php']],
       ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
@@ -38,6 +39,7 @@ function nav_items_for_role(string $role): array {
     ['label'=>t('nav.dashboard'), 'href'=>'teacher/index.php', 'files'=>['index.php']],
     ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php']],
     ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php']],
+    ['label'=>t('nav.parent_links'), 'href'=>'teacher/parents.php', 'files'=>['parents.php']],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
     ['label'=>t('nav.export'), 'href'=>'teacher/export.php', 'files'=>['export.php']],
     ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],

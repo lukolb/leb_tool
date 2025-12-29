@@ -387,6 +387,43 @@ CREATE TABLE IF NOT EXISTS `qr_tokens` (
   KEY `idx_qr_validity` (`expires_at`,`revoked_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `parent_portal_links` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `student_id` bigint UNSIGNED NOT NULL,
+  `report_instance_id` bigint UNSIGNED NOT NULL,
+  `token` varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('requested','approved','revoked','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'requested',
+  `requested_by_user_id` bigint UNSIGNED NOT NULL,
+  `approved_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
+  `published_at` datetime DEFAULT NULL,
+  `expires_at` datetime DEFAULT NULL,
+  `preferred_lang` varchar(8) COLLATE utf8mb4_unicode_ci DEFAULT 'de',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_parent_portal_token` (`token`),
+  KEY `idx_parent_portal_student` (`student_id`),
+  KEY `idx_parent_portal_report` (`report_instance_id`),
+  KEY `idx_parent_portal_status` (`status`,`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `parent_feedback` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `link_id` bigint UNSIGNED NOT NULL,
+  `feedback_type` enum('question','ack') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `message` text COLLATE utf8mb4_unicode_ci,
+  `language` varchar(8) COLLATE utf8mb4_unicode_ci DEFAULT 'de',
+  `auto_translated` tinyint(1) NOT NULL DEFAULT '0',
+  `is_reviewed` tinyint(1) NOT NULL DEFAULT '0',
+  `reviewed_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_parent_feedback_link` (`link_id`),
+  KEY `idx_parent_feedback_state` (`feedback_type`,`is_reviewed`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `audit_log` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `event_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,

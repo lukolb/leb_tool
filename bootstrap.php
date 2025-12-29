@@ -333,6 +333,53 @@ function ensure_schema(PDO $pdo): void {
       );
     }
 
+    // --- parent_portal_links: admin-approved, time-boxed Eltern-Zugänge
+    if (!db_has_table($pdo, 'parent_portal_links')) {
+      $pdo->exec(
+        "CREATE TABLE parent_portal_links (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  student_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  report_instance_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  token VARCHAR(120) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  status ENUM('requested','approved','revoked','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'requested',\n" .
+        "  requested_by_user_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  approved_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  approved_at DATETIME DEFAULT NULL,\n" .
+        "  published_at DATETIME DEFAULT NULL,\n" .
+        "  expires_at DATETIME DEFAULT NULL,\n" .
+        "  preferred_lang VARCHAR(8) COLLATE utf8mb4_unicode_ci DEFAULT 'de',\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_parent_portal_token (token),\n" .
+        "  KEY idx_parent_portal_student (student_id),\n" .
+        "  KEY idx_parent_portal_report (report_instance_id),\n" .
+        "  KEY idx_parent_portal_status (status, expires_at)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+    // --- parent_feedback: moderierte Rückmeldungen
+    if (!db_has_table($pdo, 'parent_feedback')) {
+      $pdo->exec(
+        "CREATE TABLE parent_feedback (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  link_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  feedback_type ENUM('question','ack') COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  message TEXT COLLATE utf8mb4_unicode_ci,\n" .
+        "  language VARCHAR(8) COLLATE utf8mb4_unicode_ci DEFAULT 'de',\n" .
+        "  auto_translated TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "  is_reviewed TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "  reviewed_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  reviewed_at DATETIME DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  KEY idx_parent_feedback_link (link_id),\n" .
+        "  KEY idx_parent_feedback_state (feedback_type, is_reviewed)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }
