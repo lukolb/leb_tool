@@ -120,6 +120,11 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
   background:var(--primary);
   border-color:var(--primary);
 }
+.btn.primary[disabled='']{
+    background: lightgray;
+    border-color: gray;
+    cursor: not-allowed;
+}
 .actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px}
 
 .nav-grid{
