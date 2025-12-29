@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
 require __DIR__ . '/../../shared/text_snippets.php';
+require __DIR__ . '/../../shared/value_history.php';
 require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -418,6 +419,59 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
   return $out;
 }
 
+function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $fieldMetaById, int $limit = 5): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
+  if (!$reportIds || !$fieldIds) return [];
+
+  $phR = implode(',', array_fill(0, count($reportIds), '?'));
+  $phF = implode(',', array_fill(0, count($fieldIds), '?'));
+
+  try {
+    $st = $pdo->prepare(
+      "SELECT report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_by_student_id, created_at
+       FROM field_value_history
+       WHERE report_instance_id IN ($phR) AND template_field_id IN ($phF)
+       ORDER BY created_at DESC, id DESC"
+    );
+    $st->execute(array_merge($reportIds, $fieldIds));
+  } catch (Throwable $e) {
+    return [];
+  }
+
+  $out = [];
+
+  while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+    $rid = (string)(int)$r['report_instance_id'];
+    $fid = (string)(int)$r['template_field_id'];
+
+    if (!isset($out[$rid])) $out[$rid] = [];
+    if (!isset($out[$rid][$fid])) $out[$rid][$fid] = [];
+
+    if (count($out[$rid][$fid]) >= $limit) continue;
+
+    $meta = $fieldMetaById[(int)$fid]['meta'] ?? [];
+    $resolved = resolve_option_value_text(
+      $pdo,
+      $meta,
+      $r['value_json'] !== null ? (string)$r['value_json'] : null,
+      $r['value_text'] !== null ? (string)$r['value_text'] : null
+    );
+
+    $out[$rid][$fid][] = [
+      'text' => $resolved['text'] !== null ? (string)$resolved['text'] : '',
+      'value_text' => $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      'value_json' => $r['value_json'] !== null ? (string)$r['value_json'] : null,
+      'source' => (string)($r['source'] ?? ''),
+      'created_at' => (string)($r['created_at'] ?? ''),
+      'updated_by_user_id' => $r['updated_by_user_id'] !== null ? (int)$r['updated_by_user_id'] : null,
+      'updated_by_student_id' => $r['updated_by_student_id'] !== null ? (int)$r['updated_by_student_id'] : null,
+    ];
+  }
+
+  return $out;
+}
+
 try {
   $data = read_json_body();
 
@@ -675,6 +729,21 @@ try {
       $childProgressIds[] = (int)$cf0['id'];
     }
 
+    $fieldMetaById = [];
+    foreach ($teacherFields as $f0) {
+      $fid = (int)($f0['id'] ?? 0);
+      if ($fid <= 0) continue;
+      $fieldMetaById[$fid] = ['meta' => meta_read($f0['meta_json'] ?? null)];
+    }
+    foreach ($childFieldsAll as $cf0) {
+      $fid = (int)($cf0['id'] ?? 0);
+      if ($fid <= 0 || isset($fieldMetaById[$fid])) continue;
+      $fieldMetaById[$fid] = ['meta' => meta_read($cf0['meta_json'] ?? null)];
+    }
+
+    $historyFieldIds = array_values(array_unique(array_merge($teacherFieldIds, $childProgressIds, $classFieldIdsEditable)));
+    $valueHistory = load_value_history($pdo, $reportIds, $historyFieldIds, $fieldMetaById, 5);
+
     $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child');
 
     $teacherTotal = count($teacherProgressIds);
@@ -760,6 +829,7 @@ try {
       'text_snippets' => text_snippets_list($pdo),
       'values_teacher' => $valuesTeacher,
       'values_child' => $valuesChild,
+      'value_history' => $valueHistory,
       'progress_summary' => $progressSummary,
       'class_report_instance_id' => $classReportInstanceId,
       'class_fields' => [
@@ -972,6 +1042,8 @@ try {
     );
     $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
 
+    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
+
     audit('teacher_class_value_save', $userId, ['class_id'=>$classId,'report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
     json_out(['ok' => true]);
   }
@@ -1065,6 +1137,8 @@ try {
          updated_at=NOW()"
     );
     $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+
+    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
     audit('teacher_value_save', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
     json_out(['ok' => true]);

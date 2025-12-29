@@ -565,6 +565,7 @@ render_teacher_header('Eingaben');
     students: [],
     values_teacher: {},
     values_child: {},
+    value_history: {},
     class_report_instance_id: 0,
     class_fields: null,
     progress_summary: null,
@@ -891,6 +892,16 @@ render_teacher_header('Eingaben');
     const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
     return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
   }
+  function formatDateTime(ts){
+    const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
+    return d.toLocaleString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
   function setSaveStatus(state, text){
     if (!elSaveStatus) return;
     elSaveStatus.textContent = text || '';
@@ -927,6 +938,115 @@ render_teacher_header('Eingaben');
     const r = state.values_child[String(reportId)] || {};
     const v = r[String(fieldId)];
     return (v === null || typeof v === 'undefined') ? '' : String(v);
+  }
+
+  function historyEntries(reportId, fieldId){
+    const rid = String(reportId ?? '');
+    const fid = String(fieldId ?? '');
+    const map = state.value_history || {};
+    const list = (map[rid] && Array.isArray(map[rid][fid])) ? map[rid][fid] : [];
+    return list;
+  }
+
+  function closeHistoryMenus(except){
+    document.querySelectorAll('[data-history-wrap="1"].open').forEach(w => {
+      if (except && w === except) return;
+      w.classList.remove('open');
+    });
+  }
+
+  function addHistoryEntry(reportId, fieldId, text, source, valueText = null, valueJson = null){
+    const rid = String(reportId ?? '');
+    const fid = String(fieldId ?? '');
+    if (!state.value_history) state.value_history = {};
+    if (!state.value_history[rid]) state.value_history[rid] = {};
+    if (!state.value_history[rid][fid]) state.value_history[rid][fid] = [];
+
+    const list = state.value_history[rid][fid];
+
+    const prev = list[0];
+    const sameVal = prev
+      && prev.value_text === valueText
+      && prev.value_json === valueJson;
+    if (sameVal) {
+      prev.text = text ?? '';
+      prev.source = source || 'teacher';
+      prev.created_at = new Date().toISOString();
+      return;
+    }
+
+    list.unshift({
+      text: text ?? '',
+      source: source || 'teacher',
+      created_at: new Date().toISOString(),
+      value_text: valueText,
+      value_json: valueJson,
+    });
+
+    if (list.length > 5) list.length = 5;
+  }
+
+  function renderHistoryHtml(reportId, fieldId){
+    const entries = historyEntries(reportId, fieldId);
+    if (!entries.length) return '';
+
+    const rows = entries.map(e => {
+      const role = (e.source === 'child') ? 'Schüler:in' : 'Lehrkraft';
+      const ts = formatDateTime(e.created_at);
+      const val = String(e.text ?? '');
+      return `
+        <div class="history-row">
+          <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
+          <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
+          <div class="history-actions">
+            <button class="btn tiny secondary" type="button"
+              style="padding:4px 8px; font-size:11px;"
+              data-history-restore="1"
+              data-report-id="${esc(reportId)}"
+              data-field-id="${esc(fieldId)}"
+              data-value-text="${esc(e.value_text ?? '')}"
+              data-value-json="${esc(e.value_json ?? '')}"
+            >↩︎</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="history-inline" data-history-wrap="1">
+        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen"
+          data-history-toggle="1" data-report-id="${esc(reportId)}" data-field-id="${esc(fieldId)}">🕒</button>
+        <div class="history-popover" data-history-menu="1">
+          <div class="history-rows">${rows}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function applyHistoryValue(reportId, fieldId, valueText, valueJson){
+    const rid = Number(reportId);
+    const fid = Number(fieldId);
+    const f = state.fieldMap?.[String(fid)];
+    const rawVal = valueText ?? '';
+
+    const inputs = document.querySelectorAll(`[data-teacher-input="1"][data-report-id="${CSS.escape(String(rid))}"][data-field-id="${CSS.escape(String(fid))}"]`);
+    if (!inputs.length) return;
+
+    inputs.forEach(inp => {
+      const merged = resolveMergeWithChild(rid, fid, rawVal);
+
+      if (inp.dataset.combo === '1') {
+        inp.dataset.actual = merged;
+        inp.value = f ? teacherDisplay(f, merged) : String(merged ?? '');
+      } else if (inp.type === 'checkbox') {
+        inp.checked = String(merged) === '1';
+      } else {
+        inp.value = String(merged ?? '');
+      }
+
+      if (isClassFieldId(fid)) scheduleSaveClass(fid, merged);
+      else scheduleSave(rid, fid, merged);
+    });
   }
 
   // --- progress helpers ---
@@ -1124,6 +1244,9 @@ render_teacher_header('Eingaben');
       setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
+        const fDef = state.fieldMap?.[String(fieldId)];
+        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
+        addHistoryEntry(reportId, fieldId, displayVal, 'teacher', value);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1154,6 +1277,9 @@ render_teacher_header('Eingaben');
       setSaveStatus('saving', '⏳ speichert …');
       try {
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
+        const fDef = state.fieldMap?.[String(fieldId)];
+        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
+        addHistoryEntry(rid, fieldId, displayVal, 'teacher', value);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1448,6 +1574,33 @@ render_teacher_header('Eingaben');
   }
 
   document.addEventListener('click', (ev) => {
+    const restoreBtn = ev.target && ev.target.closest('[data-history-restore="1"]');
+    if (restoreBtn) {
+      ev.preventDefault();
+      applyHistoryValue(
+        restoreBtn.getAttribute('data-report-id'),
+        restoreBtn.getAttribute('data-field-id'),
+        restoreBtn.getAttribute('data-value-text') ?? '',
+        restoreBtn.getAttribute('data-value-json') ?? ''
+      );
+      return;
+    }
+
+    const historyToggle = ev.target && ev.target.closest('[data-history-toggle="1"]');
+    if (historyToggle) {
+      ev.preventDefault();
+      const wrap = historyToggle.closest('[data-history-wrap="1"]');
+      if (wrap) {
+        const open = wrap.classList.contains('open');
+        closeHistoryMenus(open ? null : wrap);
+        wrap.classList.toggle('open', !open);
+      }
+      return;
+    }
+
+    if (ev.target && ev.target.closest('[data-history-menu="1"]')) return;
+    closeHistoryMenus();
+
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
   });
@@ -1579,6 +1732,7 @@ render_teacher_header('Eingaben');
           <div class="lbl" data-dyn="label">${esc(lbl)}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
           ${renderInputHtml(f, rid, v, locked)}
+          ${renderHistoryHtml(rid, fid)}
         </div>
       `;
     }).join('');
@@ -1703,6 +1857,7 @@ render_teacher_header('Eingaben');
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
             ${childInfo}
           </div>
         `;
@@ -1788,14 +1943,15 @@ render_teacher_header('Eingaben');
           const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
           const shownChild = rawChild ? childDisplay(f, rawChild) : '';
 
-          const missingCls = (v === '') ? 'missing' : '';
-          td.innerHTML = `
-            <div class="cellWrap ${missingCls}">
-              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-              ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
-            </div>
-          `;
-          row.appendChild(td);
+        const missingCls = (v === '') ? 'missing' : '';
+        td.innerHTML = `
+          <div class="cellWrap ${missingCls}">
+            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
+            ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
+          </div>
+        `;
+        row.appendChild(td);
         });
 
         gradeBody.appendChild(row);
@@ -1933,6 +2089,7 @@ render_teacher_header('Eingaben');
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderHistoryHtml(reportId, f.id)}
             ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
           </div>
         `;
@@ -1974,6 +2131,7 @@ render_teacher_header('Eingaben');
     state.students = j.students;
     state.values_teacher = j.values_teacher || {};
     state.values_child = j.values_child || {};
+    state.value_history = j.value_history || {};
     state.class_report_instance_id = j.class_report_instance_id || 0;
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
