@@ -9,27 +9,38 @@ function nav_is_active(array $files): bool {
 function nav_items_for_role(string $role): array {
   if ($role === 'admin') {
     return [
-      [t('nav.dashboard'), 'admin/index.php', ['index.php']],
-      [t('nav.classes'), 'admin/classes.php', ['classes.php']],
-      [t('nav.students'), 'admin/students.php', ['students.php']],
-      [t('nav.templates'), 'admin/templates.php', ['templates.php', 'template_fields.php', 'template_mappings.php']],
-      [t('nav.option_lists'), 'admin/icon_library.php', ['icon_library.php']],
-      [t('nav.student_fields'), 'admin/student_fields.php', ['student_fields.php']],
-      [t('nav.text_snippets'), 'admin/text_snippets.php', ['text_snippets.php']],
-      [t('nav.export'), 'admin/export.php', ['export.php']],
-      [t('nav.users'), 'admin/users.php', ['users.php']],
-      [t('nav.settings'), 'admin/settings.php', ['settings.php']],
-      [t('nav.logout'), 'logout.php', ['logout.php']],
+      ['label'=>t('nav.dashboard'), 'href'=>'admin/index.php', 'files'=>['index.php']],
+
+      // Stammdaten
+      ['label'=>t('nav.school'), 'href'=>'admin/classes.php', 'files'=>['classes.php','students.php'], 'children'=>[
+        ['label'=>t('nav.classes'),  'href'=>'admin/classes.php',  'files'=>['classes.php']],
+        ['label'=>t('nav.students'), 'href'=>'admin/students.php', 'files'=>['students.php']],
+      ]],
+
+      // Vorlagen & Inhalte
+      ['label'=>t('nav.reports'), 'href'=>'admin/templates.php', 'files'=>[
+        'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php'
+      ], 'children'=>[
+        ['label'=>t('nav.templates'),      'href'=>'admin/templates.php',      'files'=>['templates.php','template_fields.php','template_mappings.php']],
+        ['label'=>t('nav.option_lists'),   'href'=>'admin/icon_library.php',   'files'=>['icon_library.php']],
+        ['label'=>t('nav.student_fields'), 'href'=>'admin/student_fields.php', 'files'=>['student_fields.php']],
+        ['label'=>t('nav.text_snippets'),  'href'=>'admin/text_snippets.php',  'files'=>['text_snippets.php']],
+      ]],
+
+      ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
+      ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
+      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php']],
+      ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
     ];
   }
 
   return [
-    [t('nav.dashboard'), 'teacher/index.php', ['index.php']],
-    [t('nav.classes'), 'teacher/classes.php', ['classes.php', 'students.php']],
-    [t('nav.entries'), 'teacher/entry.php', ['entry.php']],
-    [t('nav.delegations'), 'teacher/delegations.php', ['delegations.php']],
-    [t('nav.export'), 'teacher/export.php', ['export.php']],
-    [t('nav.logout'), 'logout.php', ['logout.php']],
+    ['label'=>t('nav.dashboard'), 'href'=>'teacher/index.php', 'files'=>['index.php']],
+    ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php']],
+    ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php']],
+    ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
+    ['label'=>t('nav.export'), 'href'=>'teacher/export.php', 'files'=>['export.php']],
+    ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
   ];
 }
 
@@ -57,39 +68,75 @@ function render_role_header(string $title): void {
     <style>:root{<?= $vars ?>}</style>
   </head>
   <body class="page">
-      <div class="fixedHeader">
-    <div class="topbar">
-      <div class="brand">
-        <?php if ($logo): ?>
-          <img src="<?=h(url($logo))?>" alt="<?=h($org)?>">
-        <?php endif; ?>
-        <div>
-          <div class="brand-title"><?=h($org)?></div>
-          <div class="brand-subtitle"><?=h($title)?></div>
-        </div>
-
-        <?php if ($role !== 'admin'): ?>
-          <?php $lang = ui_lang(); ?>
-          <div class="lang-switch" aria-label="Sprache wechseln">
-            <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
-            <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+    <div class="fixedHeader">
+      <div class="topbar">
+        <div class="brand">
+          <?php if ($logo): ?>
+            <img src="<?=h(url($logo))?>" alt="<?=h($org)?>">
+          <?php endif; ?>
+          <div>
+            <div class="brand-title"><?=h($org)?></div>
+            <div class="brand-subtitle"><?=h($title)?></div>
           </div>
-        <?php endif; ?>
+
+          <?php if ($role !== 'admin'): ?>
+            <?php $lang = ui_lang(); ?>
+            <div class="lang-switch" aria-label="Sprache wechseln">
+              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
+              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+            </div>
+          <?php endif; ?>
+        </div>
+      </div>
+
+      <div class="menu-bar">
+        <div class="nav-shell">
+          <nav class="nav-menu" aria-label="<?=h($aria)?>">
+            <?php foreach ($navItems as $item):
+              $label = (string)($item['label'] ?? '');
+              $href  = (string)($item['href'] ?? '');
+              $files = (array)($item['files'] ?? []);
+              $children = $item['children'] ?? null;
+
+              $isActive = nav_is_active($files);
+              if (is_array($children)) {
+                foreach ($children as $ch) {
+                  if (nav_is_active((array)($ch['files'] ?? []))) { $isActive = true; break; }
+                }
+              }
+
+              $activeClass = $isActive ? 'active' : '';
+              $hasChildren = is_array($children) && count($children) > 0;
+            ?>
+              <?php if ($hasChildren): ?>
+                <div class="nav-item has-children <?=$activeClass?>">
+                  <a class="nav-link <?=$activeClass?>" href="<?=h(url($href))?>">
+                    <?=h($label)?> <span class="nav-caret" aria-hidden="true">▾</span>
+                  </a>
+
+                  <div class="nav-dropdown" role="menu">
+                    <?php foreach ($children as $ch):
+                      $chLabel = (string)($ch['label'] ?? '');
+                      $chHref  = (string)($ch['href'] ?? '');
+                      $chFiles = (array)($ch['files'] ?? []);
+                      $chActive = nav_is_active($chFiles) ? 'active' : '';
+                    ?>
+                      <a class="nav-dd-link <?=$chActive?>" role="menuitem" href="<?=h(url($chHref))?>">
+                        <?=h($chLabel)?>
+                      </a>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php else: ?>
+                <a class="nav-link <?=$activeClass?>" href="<?=h(url($href))?>"><?=h($label)?></a>
+              <?php endif; ?>
+            <?php endforeach; ?>
+          </nav>
+        </div>
       </div>
     </div>
-    <div class="menu-bar">
-      <div class="nav-shell">
-        <nav class="nav-menu" aria-label="<?=h($aria)?>">
-          <?php foreach ($navItems as [$label, $href, $files]):
-            $active = nav_is_active($files) ? 'active' : '';
-          ?>
-            <a class="nav-link <?=$active?>" href="<?=h(url($href))?>"><?=h($label)?></a>
-          <?php endforeach; ?>
-        </nav>
-      </div>
-    </div>
-      </div>
-          <div class="container">
+
+    <div class="container">
   <?php
 }
 

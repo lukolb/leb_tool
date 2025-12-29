@@ -252,7 +252,7 @@ function export_class_display(array $c): string {
       <div class="muted" id="missingModalSummary" style="margin-top:4px;"></div>
 
       <div class="row" style="gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;">
-        <input id="missingSearch" class="input" style="flex:1; min-width:260px;" placeholder="<?=h($tx['missing_search'])?>">
+        <input id="missingSearch" class="input" style="flex:1; min-width:260px; margin-bottom: 10px;" placeholder="<?=h($tx['missing_search'])?>">
         <button class="btn secondary" id="btnExpandAll" type="button"><?=h($tx['expand_all'])?></button>
         <button class="btn secondary" id="btnCollapseAll" type="button"><?=h($tx['collapse_all'])?></button>
       </div>

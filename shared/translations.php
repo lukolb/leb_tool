@@ -13,8 +13,10 @@ function translations_catalog(): array {
     'de' => [
       // Navigation / layout
       'nav.dashboard' => 'Dashboard',
+      'nav.school' => 'Schule',
       'nav.classes' => 'Klassen',
       'nav.students' => 'Schüler',
+      'nav.reports' => 'Template-Vorbereitung',
       'nav.templates' => 'Templates',
       'nav.option_lists' => 'Options-Listen',
       'nav.student_fields' => 'Schüler-Felder',
@@ -325,10 +327,13 @@ function translations_catalog(): array {
     'en' => [
       // Navigation / layout
       'nav.dashboard' => 'Dashboard',
+      'nav.school' => 'School',
       'nav.classes' => 'Classes',
       'nav.students' => 'Students',
+      'nav.reports' => 'Template setup',
       'nav.templates' => 'Templates',
       'nav.option_lists' => 'Option lists',
+      'nav.student_fields' => 'Student fields',
       'nav.text_snippets' => 'Text snippets',
       'nav.export' => 'Export',
       'nav.users' => 'Users',
