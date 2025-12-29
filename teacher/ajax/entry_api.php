@@ -130,10 +130,6 @@ function ai_provider_enabled(): bool {
 }
 
 function ai_chat_completion(array $messages, array $aiCfg): string {
-  if (($aiCfg['provider'] ?? '') !== 'openai') {
-    throw new RuntimeException('Unbekannter AI-Provider.');
-  }
-
   $url = $aiCfg['base_url'] . '/v1/chat/completions';
   $payload = [
     'model' => $aiCfg['model'],

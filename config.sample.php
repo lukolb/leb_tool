@@ -40,9 +40,7 @@ return [
     // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.
     'enabled' => true,
     'api_key' => '',
-    // Optional: Für OpenAI-Teams kann hier eine Organisations-ID hinterlegt werden,
-    // damit Billing-Abfragen nicht mit 403 abgelehnt werden.
-    'organization' => '',
+    // Provider & Modell können in den Einstellungen gewählt werden.
     'provider' => 'openai',
     'base_url' => 'https://api.openai.com',
     'model' => 'gpt-4o-mini',

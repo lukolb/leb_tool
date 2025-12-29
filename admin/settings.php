@@ -50,63 +50,6 @@ function known_intro_placeholders(): array {
   ];
 }
 
-function ai_credit_hint(array $aiCfg): array {
-  $enabled = array_key_exists('enabled', $aiCfg) ? (bool)$aiCfg['enabled'] : true;
-  if (!$enabled) return ['type' => 'info', 'msg' => 'KI-Vorschläge sind derzeit deaktiviert.'];
-
-  $key = trim((string)($aiCfg['api_key'] ?? ''));
-  $provider = strtolower((string)($aiCfg['provider'] ?? 'openai'));
-  $org = trim((string)($aiCfg['organization'] ?? ''));
-  if ($key === '') return ['type' => 'info', 'msg' => 'Kein KI-API-Key hinterlegt.'];
-  if ($provider !== 'openai') return ['type' => 'info', 'msg' => 'Bitte Guthaben im Dashboard deines KI-Providers prüfen.'];
-
-  $base = rtrim((string)($aiCfg['base_url'] ?? 'https://api.openai.com'), '/');
-  $headers = ['Authorization: Bearer ' . $key];
-  if ($org !== '') $headers[] = 'OpenAI-Organization: ' . $org;
-
-  $checkEndpoints = [
-    '/dashboard/billing/credit_grants',
-    '/v1/dashboard/billing/subscription',
-  ];
-
-  foreach ($checkEndpoints as $path) {
-    $url = $base . $path;
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-      CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_HTTPHEADER => $headers,
-      CURLOPT_TIMEOUT => 8,
-    ]);
-    $resp = curl_exec($ch);
-    $code = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
-    if ($resp === false) {
-      $err = curl_error($ch);
-      curl_close($ch);
-      return ['type' => 'warning', 'msg' => 'Guthabenprüfung nicht möglich: ' . $err];
-    }
-    curl_close($ch);
-
-    if ($code >= 400) {
-      // 403 is common when Organisation-Header fehlt oder Billing-API gesperrt ist
-      if ($code === 403) continue;
-      return ['type' => 'warning', 'msg' => 'Provider-Rückmeldung bei Guthabenprüfung: HTTP ' . $code];
-    }
-
-    $json = json_decode((string)$resp, true);
-    if ($path === '/dashboard/billing/credit_grants' && isset($json['total_available'])) {
-      $amt = (float)$json['total_available'];
-      return ['type' => 'success', 'msg' => 'Verfügbares KI-Guthaben laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD.'];
-    }
-    if ($path === '/v1/dashboard/billing/subscription' && isset($json['soft_limit_usd'])) {
-      $amt = (float)$json['soft_limit_usd'];
-      return ['type' => 'success', 'msg' => 'Abgerechnetes Kontingent laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD Limit.'];
-    }
-  }
-
-  $orgNote = $org === '' ? ' Tipp: Bei OpenAI-Team-Keys ggf. die Organisation-ID hinterlegen.' : '';
-  return ['type' => 'info', 'msg' => 'KI-Key gespeichert. Details zum Guthaben bitte im Provider-Dashboard prüfen.' . $orgNote];
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -145,14 +88,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ---- AI suggestions (key only) ----
     $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
-    $aiOrg = trim((string)($_POST['ai_org'] ?? ($cfg['ai']['organization'] ?? '')));
+    $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
+    $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
+    $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
     $aiEnabled = isset($_POST['ai_enabled'])
       ? (int)$_POST['ai_enabled']
       : (int)($cfg['ai']['enabled'] ?? 1);
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
     $cfg['ai']['enabled'] = ($aiEnabled === 1);
     $cfg['ai']['api_key'] = $aiKey;
-    $cfg['ai']['organization'] = $aiOrg;
+    $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
+    $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
+    $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -222,7 +169,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
     $cfg = app_config(true);
-    $aiStatus = ai_credit_hint($cfg['ai'] ?? []);
 
   } catch (Throwable $e) {
     $err = 'Fehler: ' . $e->getMessage();
@@ -244,9 +190,10 @@ $studentCfg = $cfg['student'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
-$aiOrg = $ai['organization'] ?? '';
 $aiEnabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
-$aiStatus = ai_credit_hint(is_array($ai) ? $ai : []);
+$aiProvider = $ai['provider'] ?? 'openai';
+$aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
+$aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -388,12 +335,6 @@ render_admin_header('Admin – Settings');
   <h2>KI-Vorschläge</h2>
   <p class="muted">Hinterlege hier den API-Key deines KI-Providers (z.B. OpenAI-kompatibel), damit Lehrkräfte Vorschläge für Stärken, Ziele und Schritte abrufen können.</p>
 
-  <?php if (!empty($aiStatus['msg'])): ?>
-    <div class="alert <?= $aiStatus['type']==='success' ? 'success' : ($aiStatus['type']==='warning' ? 'info' : '') ?>">
-      <strong><?=h($aiStatus['msg'])?></strong>
-    </div>
-  <?php endif; ?>
-
   <form method="post" autocomplete="off" id="aiForm">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
@@ -403,13 +344,23 @@ render_admin_header('Admin – Settings');
     </label>
     <p class="muted">Wenn deaktiviert, wird der KI-Button ausgeblendet und es werden keine externen Tokens verbraucht.</p>
 
+    <label>Provider</label>
+    <select name="ai_provider">
+      <option value="openai" <?=$aiProvider==='openai' ? 'selected' : ''?>>OpenAI</option>
+      <option value="compatible" <?=$aiProvider==='compatible' ? 'selected' : ''?>>OpenAI-kompatibel</option>
+    </select>
+
+    <label>Basis-URL</label>
+    <input name="ai_base_url" value="<?=h((string)$aiBaseUrl)?>" placeholder="https://api.openai.com">
+    <p class="muted">Nur ändern, wenn eine eigene oder kompatible API genutzt wird.</p>
+
     <label>API Key</label>
     <input name="ai_key" value="<?=h((string)$aiKey)?>" placeholder="z.B. sk-...">
-    <p class="muted">Schlüsselbeschaffung: Im Provider-Dashboard (z.B. <strong>OpenAI &raquo; API Keys</strong>) einen Secret Key erstellen. Prüfe unter <strong>Billing &raquo; Usage</strong>, ob genügend Guthaben vorhanden ist.</p>
+    <p class="muted">Schlüsselbeschaffung: Im Provider-Dashboard (z.B. <strong>OpenAI &raquo; API Keys</strong>) einen Secret Key erstellen.</p>
 
-    <label>Organisation / Team (optional)</label>
-    <input name="ai_org" value="<?=h((string)$aiOrg)?>" placeholder="z.B. org_...">
-    <p class="muted">Nur relevant für OpenAI-Team-Keys. Falls die Guthabenprüfung mit HTTP 403 scheitert, hier die Organisations-ID hinterlegen.</p>
+    <label>Modell</label>
+    <input name="ai_model" value="<?=h((string)$aiModel)?>" placeholder="z.B. gpt-4o-mini">
+    <p class="muted">Bezeichnung muss zu deinem Provider passen.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>

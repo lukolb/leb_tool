@@ -108,9 +108,9 @@ Nach erfolgreicher Installation kann `install.php` aus Sicherheitsgründen gelö
 ### KI-Vorschläge aktivieren
 
 - In `config.php` den Abschnitt `ai` ergänzen und einen API-Schlüssel hinterlegen (z. B. für OpenAI/ChatGPT). Alternativ kann die Umgebungsvariable `OPENAI_API_KEY` genutzt werden.
-- Optional Modell/Base-URL/Timeout anpassen, falls ein kompatibler Endpoint genutzt wird.
+- Provider/Modell/Base-URL/Timeout können angepasst werden, falls ein kompatibler Endpoint genutzt wird.
 - Der KI-Button erscheint nur, wenn die Funktion aktiviert ist und ein Schlüssel hinterlegt wurde (sonst ausgeblendet).
-- Admins können die KI-Funktion samt API-Key bei der Installation oder später unter „Einstellungen“ ein- bzw. ausschalten.
+- Admins können die KI-Funktion samt API-Key, Provider und Modell bei der Installation oder später unter „Einstellungen“ ein- bzw. ausschalten.
 
 ---
 
