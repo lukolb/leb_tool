@@ -199,12 +199,12 @@ render_teacher_header($pageTitle);
           <h3 style="margin:0;">KI-Vorschläge</h3>
           <div class="muted" id="aiMeta">Vorschläge werden geladen…</div>
         </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="btn secondary ai-btn" type="button" id="btnAiRefresh" style="display:none;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top: 10px;">
+          <a class="btn secondary ai-btn" type="button" id="btnAiRefresh" style="display:none;">
             <svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>
             Neu generieren
-          </button>
-          <button class="btn secondary" type="button" id="btnAiClose">Schließen</button>
+          </a>
+          <a class="btn secondary" type="button" id="btnAiClose">Schließen</a>
         </div>
       </div>
       <div id="aiStatus" class="alert" style="margin-top:10px; display:none;"></div>
@@ -507,6 +507,12 @@ render_teacher_header($pageTitle);
   .ai-card{ border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; display:flex; flex-direction:column; gap:8px; }
   .ai-card .h{ display:flex; justify-content:space-between; gap:8px; align-items:center; font-weight:700; }
   .ai-card .c{ white-space:pre-wrap; }
+  .ai-card .pill {
+    cursor: pointer;
+    margin-bottom: 10px;
+    padding: 5px 10px;
+    border-radius: 15px;
+  }
   .ai-banner{ border:1px dashed var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; background: rgba(11,87,208,0.03); }
   .ai-banner .t{ font-weight:700; }
   .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: currentColor; }
@@ -1648,9 +1654,36 @@ render_teacher_header($pageTitle);
       aiStatus.className = 'alert success';
       aiStatus.style.display = 'block';
     } catch (e) {
-      aiStatus.textContent = 'Konnte nicht kopieren. Bitte manuell markieren (Strg+C).';
-      aiStatus.className = 'alert danger';
-      aiStatus.style.display = 'block';
+        const ok = copyHttp(text);
+        if(ok) {
+            aiStatus.textContent = 'In Zwischenablage kopiert.';
+            aiStatus.className = 'alert success';
+            aiStatus.style.display = 'block';
+        } else {
+            aiStatus.textContent = 'Konnte nicht kopieren. Bitte manuell markieren (Strg+C).' + e;
+            aiStatus.className = 'alert danger';
+            aiStatus.style.display = 'block';
+        }
+    }
+  }
+  
+  function copyHttp(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+
+    ta.focus();
+    ta.select();
+
+    try {
+      document.execCommand('copy');
+      return true;
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(ta);
     }
   }
 
@@ -2069,8 +2102,8 @@ render_teacher_header($pageTitle);
         ? `Bitte zuerst alle Options-Felder ausfüllen (${missingOpt}/${optionStatus.total} offen), dann KI starten.`
         : 'Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).';
       const aiButton = missingOpt > 0
-        ? `<button class="btn secondary ai-btn" type="button" disabled title="Bitte alle Options-Felder ausfüllen">${AI_ICON} KI öffnen</button>`
-        : `<button class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</button>`;
+        ? `<a class="btn secondary ai-btn" type="button" disabled title="Bitte alle Options-Felder ausfüllen">${AI_ICON} KI öffnen</a>`
+        : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</a>`;
       html += `
         <div class="ai-banner">
           <div>

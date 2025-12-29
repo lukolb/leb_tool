@@ -17,6 +17,7 @@ function translations_catalog(): array {
       'nav.students' => 'Schüler',
       'nav.templates' => 'Templates',
       'nav.option_lists' => 'Options-Listen',
+      'nav.student_fields' => 'Schüler-Felder',
       'nav.text_snippets' => 'Textbausteine',
       'nav.export' => 'Export',
       'nav.users' => 'Nutzer',
