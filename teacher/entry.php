@@ -191,17 +191,23 @@ render_teacher_header($pageTitle);
   <div id="snippetList" style="margin-top:10px; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px;"></div>
 </div>
 
-<div id="dlgAi" class="modal" style="display:none;">
-  <div class="modal-backdrop" data-close="1"></div>
-  <div class="modal-card">
-    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
-      <div>
-        <h3 style="margin:0;">KI-Vorschläge</h3>
-        <div class="muted" id="aiMeta">Vorschläge werden geladen…</div>
+  <div id="dlgAi" class="modal" style="display:none;">
+    <div class="modal-backdrop" data-close="1"></div>
+    <div class="modal-card">
+      <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+        <div>
+          <h3 style="margin:0;">KI-Vorschläge</h3>
+          <div class="muted" id="aiMeta">Vorschläge werden geladen…</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn secondary ai-btn" type="button" id="btnAiRefresh" style="display:none;">
+            <svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>
+            Neu generieren
+          </button>
+          <button class="btn secondary" type="button" id="btnAiClose">Schließen</button>
+        </div>
       </div>
-      <button class="btn secondary" type="button" id="btnAiClose">Schließen</button>
-    </div>
-    <div id="aiStatus" class="alert" style="margin-top:10px; display:none;"></div>
+      <div id="aiStatus" class="alert" style="margin-top:10px; display:none;"></div>
     <div class="ai-grid" style="margin-top:10px;">
       <div class="ai-card">
         <div class="h">Stärken</div>
@@ -503,6 +509,8 @@ render_teacher_header($pageTitle);
   .ai-card .c{ white-space:pre-wrap; }
   .ai-banner{ border:1px dashed var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; background: rgba(11,87,208,0.03); }
   .ai-banner .t{ font-weight:700; }
+  .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: currentColor; }
+  .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
 </style>
@@ -602,6 +610,7 @@ render_teacher_header($pageTitle);
   const aiStrengths = document.getElementById('aiStrengths');
   const aiGoals = document.getElementById('aiGoals');
   const aiSteps = document.getElementById('aiSteps');
+  const btnAiRefresh = document.getElementById('btnAiRefresh');
 
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
 
@@ -675,6 +684,11 @@ render_teacher_header($pageTitle);
 
   let lastSnippetTarget = null;
   let lastSnippetSelection = '';
+  let aiCache = new Map();
+  let aiCurrentStudent = null;
+  let aiLoading = false;
+
+  const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
 
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
@@ -1593,6 +1607,7 @@ render_teacher_header($pageTitle);
     if (aiStrengths) aiStrengths.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
     if (aiGoals) aiGoals.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
     if (aiSteps) aiSteps.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
+    if (btnAiRefresh) btnAiRefresh.disabled = false;
   }
 
   function closeAiDialog(){
@@ -1603,6 +1618,7 @@ render_teacher_header($pageTitle);
     resetAiDialog();
     aiMeta.textContent = meta || '';
     dlgAi.style.display = 'block';
+    if (btnAiRefresh) btnAiRefresh.style.display = 'inline-flex';
   }
 
   async function copyToClipboard(text){
@@ -1639,18 +1655,37 @@ render_teacher_header($pageTitle);
 
   async function requestAiSuggestionsForStudent(student){
     if (!student || !student.report_instance_id) return;
+    aiCurrentStudent = student;
+    const reportId = student.report_instance_id;
     const gradeInfo = state.class_grade_level ? `Klassenstufe ${state.class_grade_level}` : 'Klasse';
     openAiDialog(`Vorschläge für ${student.name} · ${gradeInfo}`);
+
+    const cached = aiCache.get(reportId);
+    if (cached && !aiLoading) {
+      renderAiList(aiStrengths, cached.strengths || []);
+      renderAiList(aiGoals, cached.goals || []);
+      renderAiList(aiSteps, cached.steps || []);
+      if (aiStatus) {
+        aiStatus.textContent = 'Vorschläge aus dem Zwischenspeicher. „Neu generieren“ lädt frische Ideen.';
+        aiStatus.className = 'alert info';
+        aiStatus.style.display = 'block';
+      }
+      return;
+    }
+
     if (aiStatus) {
       aiStatus.textContent = 'KI lädt…';
       aiStatus.style.display = 'block';
       aiStatus.className = 'alert';
     }
+    aiLoading = true;
+    if (btnAiRefresh) btnAiRefresh.disabled = true;
     try {
       const j = await api('ai_suggestions', {
         class_id: state.class_id,
         report_instance_id: student.report_instance_id,
       });
+      aiCache.set(reportId, j.suggestions || {});
       renderAiList(aiStrengths, j.suggestions?.strengths || []);
       renderAiList(aiGoals, j.suggestions?.goals || []);
       renderAiList(aiSteps, j.suggestions?.steps || []);
@@ -1665,6 +1700,9 @@ render_teacher_header($pageTitle);
         aiStatus.className = 'alert danger';
         aiStatus.style.display = 'block';
       }
+    } finally {
+      aiLoading = false;
+      if (btnAiRefresh) btnAiRefresh.disabled = false;
     }
   }
 
@@ -1999,10 +2037,10 @@ render_teacher_header($pageTitle);
       html += `
         <div class="ai-banner">
           <div>
-            <div class="t">🤖 KI-Vorschläge für ${esc(s.name)}</div>
+            <div class="t">${AI_ICON} KI-Vorschläge für ${esc(s.name)}</div>
             <div class="muted">Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).</div>
           </div>
-          <button class="btn secondary" type="button" data-ai-student="${esc(reportId)}">KI öffnen</button>
+          <button class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</button>
         </div>
       `;
     }
@@ -2352,6 +2390,8 @@ render_teacher_header($pageTitle);
     state.text_snippets = j.text_snippets || [];
     state.ai_enabled = !!j.ai_enabled;
     state.class_grade_level = j.class_grade_level || null;
+    aiCache = new Map();
+    aiCurrentStudent = null;
     ui.mergeDecisions = new Map();
     const savedDecisions = readMergeMemory();
     Object.entries(savedDecisions).forEach(([k, v]) => {
@@ -2628,6 +2668,11 @@ if (dlgSave) {
   }
   if (aiBackdrop) {
     aiBackdrop.addEventListener('click', closeAiDialog);
+  }
+  if (btnAiRefresh) {
+    btnAiRefresh.addEventListener('click', () => {
+      if (aiCurrentStudent) requestAiSuggestionsForStudent(aiCurrentStudent, true);
+    });
   }
 
   if (btnSnippetSave) {
