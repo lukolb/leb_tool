@@ -142,6 +142,7 @@ Der Login ist:
 - Versionshistorie von Berichten
 - Zusammenarbeit mehrerer Lehrkräfte pro Klasse
 - Optionale Kommentarfunktion
+- Automatische KI-Textvorschläge für Ziele u.Ä., basierend auf Skalenwerten und vorherigen Feldern; Lehrkräfte können Vorschläge übernehmen, anpassen oder löschen (manuelle Kontrolle, Zeitersparnis)
 
 ---
 

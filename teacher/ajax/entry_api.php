@@ -854,6 +854,139 @@ try {
     json_out(['ok' => true, 'snippet' => $row]);
   }
 
+  if ($action === 'ai_suggestions') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    $fieldId = (int)($data['template_field_id'] ?? 0);
+
+    if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+    if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $stInfo = $pdo->prepare(
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id
+       FROM report_instances ri
+       JOIN students s ON s.id=ri.student_id
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $stInfo->execute([$reportId]);
+    $info = $stInfo->fetch(PDO::FETCH_ASSOC);
+    if (!$info) throw new RuntimeException('Bericht nicht gefunden.');
+    if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
+
+    $templateId = (int)$info['template_id'];
+    $studentName = trim((string)$info['first_name'] . ' ' . (string)$info['last_name']);
+
+    $stField = $pdo->prepare(
+      "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.help_text, tf.is_multiline,
+              tf.options_json, tf.meta_json, tf.can_teacher_edit
+       FROM template_fields tf
+       WHERE tf.id=? AND tf.template_id=?
+       LIMIT 1"
+    );
+    $stField->execute([$fieldId, $templateId]);
+    $field = $stField->fetch(PDO::FETCH_ASSOC);
+    if (!$field) throw new RuntimeException('Feld nicht gefunden.');
+    if ((int)$field['can_teacher_edit'] !== 1) throw new RuntimeException('Feld ist nicht editierbar.');
+
+    $fieldMeta = meta_read($field['meta_json'] ?? null);
+
+    // Gather values for current student to build a simple suggestion context.
+    $stCtx = $pdo->prepare(
+      "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.meta_json, tf.options_json,
+              t.value_text AS teacher_value, c.value_text AS child_value
+       FROM template_fields tf
+       LEFT JOIN field_values t ON t.template_field_id=tf.id AND t.report_instance_id=? AND t.source='teacher'
+       LEFT JOIN field_values c ON c.template_field_id=tf.id AND c.report_instance_id=? AND c.source='child'
+       WHERE tf.template_id=? AND tf.can_teacher_edit=1"
+    );
+    $stCtx->execute([$reportId, $reportId, $templateId]);
+    $ctxFields = $stCtx->fetchAll(PDO::FETCH_ASSOC);
+
+    $scaleFacts = [];
+    $numericScale = [];
+    $currentTeacherValue = '';
+    $currentChildValue = '';
+
+    foreach ($ctxFields as $cf) {
+      $val = trim((string)($cf['teacher_value'] ?? ''));
+      $childVal = trim((string)($cf['child_value'] ?? ''));
+      $label = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
+      $entry = [
+        'label' => $label,
+        'value' => $val,
+      ];
+
+      if ((int)$cf['id'] === $fieldId) {
+        $currentTeacherValue = $val;
+        $currentChildValue = $childVal;
+      }
+
+      $type = (string)($cf['field_type'] ?? '');
+      if (in_array($type, ['grade','radio','select'], true) && $val !== '') {
+        $scaleFacts[] = $entry;
+        $num = is_numeric(str_replace(',', '.', $val)) ? (float)str_replace(',', '.', $val) : null;
+        if ($num !== null) {
+          $numericScale[] = ['label' => $label, 'value' => $num];
+        }
+      }
+    }
+
+    $fieldMetaById = [ (int)$fieldId => ['meta' => $fieldMeta] ];
+    $history = load_value_history($pdo, [$reportId], [$fieldId], $fieldMetaById, 3);
+    $hist = $history[String($reportId)][$fieldId] ?? [];
+    $historyTexts = array_values(array_filter(array_map(fn($r)=>trim((string)($r['text'] ?? '')), $hist), fn($s)=>$s !== ''));
+
+    $scaleSummary = $scaleFacts
+      ? ('Skalenwerte: ' . implode(', ', array_map(fn($r)=>($r['label'] . ': ' . $r['value']), $scaleFacts)) . '.')
+      : '';
+    $childSummary = $currentChildValue !== ''
+      ? ('Rückmeldung Schüler: "' . $currentChildValue . '".')
+      : '';
+    $prevSummary = $historyTexts
+      ? ('Frühere Formulierungen: ' . implode(' | ', array_slice($historyTexts, 0, 2)) . '.')
+      : '';
+
+    $focus = null;
+    if ($numericScale) {
+      usort($numericScale, fn($a, $b) => $a['value'] <=> $b['value']);
+      $focus = $numericScale[0]['label'] ?? null;
+    } elseif ($scaleFacts) {
+      $focus = $scaleFacts[0]['label'] ?? null;
+    }
+
+    $label = label_for_lang($field['label'] ?? null, $field['label_en'] ?? null, $lang);
+    $baseLine = trim(implode(' ', array_filter([$scaleSummary, $childSummary, $prevSummary])));
+
+    $suggestions = [];
+    $suggestions[] = trim(
+      $studentName . ': ' . $label . '. ' .
+      ($baseLine !== '' ? ($baseLine . ' ') : '') .
+      ($focus ? ("Fokus: {$focus} mit einem konkreten, messbaren nächsten Schritt.") : 'Formuliere ein kurzes, klares Ziel mit messbarem Schritt.')
+    );
+
+    $suggestions[] = trim(
+      "Lob + Ziel: " .
+      ($focus ? ($studentName . " zeigt bei {$focus} Fortschritte. Nutze ein positives Feedback und ergänze eine nächste Aufgabe.") : 'Starte mit einem positiven Feedback und ergänze eine konkrete Anschlussaufgabe.') . ' ' .
+      ($currentChildValue ? ("Die Schülersicht (\"{$currentChildValue}\") kann dabei als Ausgangspunkt dienen.") : '')
+    );
+
+    $prevBase = $currentTeacherValue !== '' ? $currentTeacherValue : ($historyTexts[0] ?? '');
+    $suggestions[] = trim(
+      ($prevBase !== '' ? ('Variante auf Basis der letzten Notiz: ' . $prevBase . ' ') : 'Auf Basis der bisherigen Eingaben eine Variante schreiben, die ein beobachtbares Verhalten und einen Zeitrahmen enthält. ') .
+      ($focus ? ("Nenne einen nächsten Schritt zu {$focus} und eine Rückmeldung, wann es gelungen ist.") : 'Füge einen nächsten Schritt und ein Feedback-Kriterium hinzu.')
+    );
+
+    $suggestions = array_values(array_filter(array_unique(array_map('trim', $suggestions)), fn($s)=>$s!==''));
+
+    json_out(['ok' => true, 'suggestions' => $suggestions]);
+  }
+
   if ($action === 'delegations_save') {
     $classId = (int)($data['class_id'] ?? 0);
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');

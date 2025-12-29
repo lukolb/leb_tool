@@ -468,6 +468,8 @@ render_teacher_header($pageTitle);
     top: 0;
     background: #ffffff;
     margin: 0px -5px 10px -5px; }
+  .ai-tools{ margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .ai-tools .ai-status{ color: var(--muted); font-size:12px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
 </style>
@@ -627,8 +629,14 @@ render_teacher_header($pageTitle);
   snippetMenu.style.display = 'none';
   document.body.appendChild(snippetMenu);
 
+  const aiMenu = document.createElement('div');
+  aiMenu.className = 'snippet-menu';
+  aiMenu.style.display = 'none';
+  document.body.appendChild(aiMenu);
+
   let lastSnippetTarget = null;
   let lastSnippetSelection = '';
+  let lastAiAnchor = null;
 
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
@@ -1639,7 +1647,88 @@ render_teacher_header($pageTitle);
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
+
+    if (ev.target && aiMenu.contains(ev.target)) return;
+    hideAiMenu();
   });
+
+  function hideAiMenu(){
+    aiMenu.style.display = 'none';
+    lastAiAnchor = null;
+  }
+
+  function setAiStatus(reportId, fieldId, text){
+    const key = `${reportId}:${fieldId}`;
+    const el = document.querySelector(`[data-ai-status="${CSS.escape(key)}"]`);
+    if (!el) return;
+    el.textContent = text || '';
+    el.style.display = text ? 'inline' : 'none';
+  }
+
+  function showAiMenu(anchor, suggestions, reportId, fieldId){
+    aiMenu.innerHTML = '';
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      aiMenu.textContent = 'Keine Vorschläge gefunden.';
+    } else {
+      const h = document.createElement('h4');
+      h.textContent = 'Vorschläge';
+      aiMenu.appendChild(h);
+      suggestions.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.textContent = s;
+        div.addEventListener('click', () => {
+          applyAiSuggestion(reportId, fieldId, s);
+          hideAiMenu();
+        });
+        aiMenu.appendChild(div);
+      });
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    aiMenu.style.display = 'block';
+    aiMenu.style.left = `${window.scrollX + rect.left}px`;
+    aiMenu.style.top = `${window.scrollY + rect.bottom + 6}px`;
+    lastAiAnchor = anchor;
+  }
+
+  function applyAiSuggestion(reportId, fieldId, text){
+    const sel = `[data-teacher-input="1"][data-report-id="${CSS.escape(String(reportId))}"][data-field-id="${CSS.escape(String(fieldId))}"]`;
+    const inp = document.querySelector(sel);
+    if (!inp) return;
+
+    if (inp.dataset.combo === '1') {
+      inp.value = text;
+      inp.dataset.actual = text;
+    } else if (inp.type === 'checkbox') {
+      inp.checked = String(text) === '1';
+    } else {
+      inp.value = text;
+    }
+
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function requestAiSuggestions(btn){
+    const reportId = Number(btn.getAttribute('data-report-id') || 0);
+    const fieldId = Number(btn.getAttribute('data-field-id') || 0);
+    if (!reportId || !fieldId) return;
+    hideAiMenu();
+    setAiStatus(reportId, fieldId, 'KI lädt…');
+    try {
+      const j = await api('ai_suggestions', {
+        class_id: state.class_id,
+        report_instance_id: reportId,
+        template_field_id: fieldId,
+      });
+      const suggestions = j.suggestions || [];
+      setAiStatus(reportId, fieldId, suggestions.length ? `${suggestions.length} Vorschlag/Vorschläge geladen` : 'Keine Vorschläge gefunden.');
+      showAiMenu(btn, suggestions, reportId, fieldId);
+    } catch (e) {
+      setAiStatus(reportId, fieldId, e?.message || 'Fehler bei KI-Vorschlag');
+    }
+  }
 
   // --- rendering helpers
 
@@ -1813,6 +1902,8 @@ render_teacher_header($pageTitle);
   function renderStudentView(){
     const list = currentStudents();
 
+    hideAiMenu();
+
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
       const div = document.createElement('div');
@@ -1900,12 +1991,25 @@ render_teacher_header($pageTitle);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
+        const canSuggest = (
+          !locked &&
+          canEditGroup &&
+          (
+            String(f.field_type) === 'multiline' ||
+            Number(f.is_multiline || 0) === 1 ||
+            String(f.field_type || '') === 'text'
+          )
+        );
+        const aiTools = canSuggest
+          ? `<div class="ai-tools"><button class="btn secondary" type="button" data-ai-btn="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}">KI-Vorschlag</button><span class="ai-status" data-ai-status="${esc(reportId)}:${esc(f.id)}" style="display:none;"></span></div>`
+          : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${renderHistoryHtml(reportId, f.id)}
+            ${aiTools}
             ${childInfo}
           </div>
         `;
@@ -1928,6 +2032,13 @@ render_teacher_header($pageTitle);
     });
 
     wireTeacherInputs(studentForm);
+
+    studentForm.querySelectorAll('[data-ai-btn="1"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        requestAiSuggestions(btn);
+      });
+    });
   }
 
   function renderGradesView(){
