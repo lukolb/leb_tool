@@ -108,28 +108,29 @@ if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pd
   exit;
 }
 
-render_teacher_header('Eingaben');
+$pageTitle = t('teacher.entry.title', 'Eingaben');
+render_teacher_header($pageTitle);
 ?>
 
 <div class="card">
   <div class="row-actions" style="float: right;">
     <?php if (!$delegatedMode): ?>
-        <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+        <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action', 'Delegieren…'))?></button>
       <?php else: ?>
-        <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
+        <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation', 'Delegation abschließen…'))?></button>
       <?php endif; ?>
   </div>
-  <h1><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+  <h1><?=h($delegatedMode ? t('teacher.entry.heading_delegated', 'Delegation bearbeiten') : t('teacher.entry.heading_fill', 'Eingaben ausfüllen'))?></h1>
 </div>
 
 <div class="card">
 
   <?php if ($delegatedMode): ?>
-    <div class="alert" style="margin-top:10px;"><strong>Delegation:</strong> Du siehst hier nur die an dich delegierten Fachbereiche. Andere Bereiche sind schreibgeschützt.</div>
+    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation', 'Delegation:'))?></strong> <?=h(t('teacher.entry.delegation_notice', 'Du siehst hier nur die an dich delegierten Fachbereiche. Andere Bereiche sind schreibgeschützt.'))?></div>
   <?php endif; ?>
   <p class="muted" style="margin-top:-6px;">
-    Tipps: <strong>Tab</strong> zum schnellen Springen · <strong>Shift+Tab</strong> zurück ·
-    <strong>Alt+S</strong> Schülereingaben ein/aus · <strong>Alt+M</strong> Ansicht wechseln
+    <?=h(t('teacher.entry.tips', 'Tipps:'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next', 'zum schnellen Springen'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev', 'zurück'))?> ·
+    <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child', 'Schülereingaben ein/aus'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view', 'Ansicht wechseln'))?>
   </p>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">

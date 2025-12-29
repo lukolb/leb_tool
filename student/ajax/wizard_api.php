@@ -581,6 +581,8 @@ try {
       'ui' => [
         'display_mode' => student_wizard_display_mode_from_class($studentRow),
       ],
+      'ui_lang' => $lang,
+      'translations' => ui_translations(),
     ]);
   }
 

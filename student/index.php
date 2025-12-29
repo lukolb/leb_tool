@@ -45,11 +45,11 @@ $primary = (string)($brand['primary'] ?? '#0b57d0');
 $secondary = (string)($brand['secondary'] ?? '#111111');
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?=h($orgName)?> – Schülerbereich</title>
+  <title><?=h($orgName)?> – <?=h(t('student.html_title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
@@ -228,22 +228,24 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           <?php endif; ?>
           <div class="brand-text">
             <div class="brand-title"><?=h($orgName)?></div>
-            <div class="brand-sub">Schülerbereich – Lernentwicklungsbericht</div>
+            <div class="brand-sub" id="brandSubtitle" data-i18n="student.subtitle">
+              <?=h(t('student.subtitle'))?>
+            </div>
           </div>
         </div>
 
         <div class="brand-left" style="justify-content:flex-end; flex:1;">
           <div class="student-chip">
-            <div class="n"><?=h($studentName ?: 'Schüler')?></div>
-            <div class="c">Klasse <?=h($classDisp)?><?= $schoolYear ? ' · ' . h($schoolYear) : '' ?></div>
+            <div class="n"><?=h($studentName ?: t('student.fallback_name'))?></div>
+            <div class="c"><span id="classLabelText" data-i18n="student.class_label"><?=h(t('student.class_label'))?></span> <?=h($classDisp)?><?= $schoolYear ? ' · ' . h($schoolYear) : '' ?></div>
           </div>
           <div class="actions" style="justify-content:flex-end;">
             <?php $lang = ui_lang(); ?>
-            <div class="lang-switch" aria-label="Sprache wechseln" style="margin-right:8px;">
-              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
-              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
-            </div>
-            <a class="btn secondary" href="<?=h(url('student/logout.php'))?>">Logout</a>
+            <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria', 'Sprache wechseln'))?>" style="margin-right:8px;">
+              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
+              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇬🇧</a>
+              </div>
+            <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
           </div>
         </div>
       </div>
@@ -252,12 +254,12 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     <!-- Locked-only container -->
     <div id="lockedOnly" class="card" style="display:<?= $hasTemplate ? 'none' : 'block' ?>;">
       <div class="locked-only">
-        <h2 id="lockedTitle"><?= $hasTemplate ? 'Eingabe noch nicht freigegeben' : 'Keine Vorlage zugeordnet' ?></h2>
+        <h2 id="lockedTitle"><?= $hasTemplate ? h(t('student.locked.pending_title')) : h(t('student.locked.none_title')) ?></h2>
         <p class="muted" id="lockedText">
           <?php if ($hasTemplate): ?>
-            Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.
+            <?=h(t('student.locked.pending_text'))?>
           <?php else: ?>
-            Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.
+            <?=h(t('student.locked.none_text'))?>
           <?php endif; ?>
         </p>
       </div>
@@ -269,7 +271,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         <div class="card">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
             <div>
-              <div style="font-weight:800;">Dein Bericht</div>
+              <div style="font-weight:800;"><?=h(t('student.sidebar.report'))?></div>
               <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
 
               <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
@@ -277,7 +279,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
                 <div class="progress"><div id="overallProgressBar" class="progress-bar"></div></div>
               </div>
             </div>
-            <div class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</div>
+            <div class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('student.sidebar.saving'))?></div>
           </div>
 
           <div style="margin-top:10px;" class="nav" id="nav"></div>
@@ -295,21 +297,22 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
           <div class="wiz-actions">
             <div class="left">
-              <button class="btn secondary" type="button" id="btnPrev">Zurück</button>
-              <button class="btn primary" type="button" id="btnNext">Weiter</button>
+              <button class="btn secondary" type="button" id="btnPrev"><?=h(t('student.buttons.prev'))?></button>
+              <button class="btn primary" type="button" id="btnNext"><?=h(t('student.buttons.next'))?></button>
             </div>
             <div class="pill-mini" id="reqHint"></div>
           </div>
         </div>
       </div>
     </div>
-        
-    <div class="muted" id="metaLine" style="text-align: center;">Lade…</div>
+
+    <div class="muted" id="metaLine" style="text-align: center;"><?=h(t('student.meta.loading'))?></div>
   </div>
 
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
+  const ORG_NAME = <?= json_encode($orgName) ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
@@ -351,6 +354,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const pendingTimers = new Map();
   let saveInFlight = 0;
   let lastSaveAt = null;
+
+  let T = <?= json_encode(ui_translations(), JSON_UNESCAPED_UNICODE) ?>;
+  const t = (key, fallback = '') => (T && Object.prototype.hasOwnProperty.call(T, key)) ? T[key] : (fallback ?? key);
+  const tfmt = (key, fallback = '', repl = {}) => {
+    let s = t(key, fallback);
+    Object.entries(repl || {}).forEach(([k, v]) => {
+      s = s.replace(new RegExp('{' + k + '}', 'g'), String(v));
+    });
+    return s;
+  };
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
@@ -406,6 +419,47 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }catch(e){}
   }
 
+  function applyBootstrapResponse(j){
+    state = j;
+
+    if (j && j.translations) {
+      T = j.translations;
+    }
+
+    if (j && j.ui_lang) {
+      currentLang = j.ui_lang;
+      document.documentElement.lang = currentLang;
+    }
+
+    refreshStaticLabels();
+  }
+
+  function refreshStaticLabels(){
+    const elSub = document.getElementById('brandSubtitle');
+    if (elSub) elSub.textContent = t('student.subtitle');
+
+    const elClassLabel = document.getElementById('classLabelText');
+    if (elClassLabel) elClassLabel.textContent = t('student.class_label');
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.textContent = t('student.logout', 'Logout');
+
+    const langSwitch = document.querySelector('.lang-switch');
+    if (langSwitch) langSwitch.setAttribute('aria-label', t('student.lang_switch_aria', 'Sprache wechseln'));
+
+    document.querySelectorAll('.lang[data-lang="de"]').forEach(el => el.setAttribute('title', t('student.lang_de', 'Deutsch')));
+    document.querySelectorAll('.lang[data-lang="en"]').forEach(el => el.setAttribute('title', t('student.lang_en', 'English')));
+
+    document.title = `${ORG_NAME} – ${t('student.html_title')}`;
+
+    if (!HAS_TEMPLATE) {
+      const lockedTitle = document.getElementById('lockedTitle');
+      const lockedText = document.getElementById('lockedText');
+      if (lockedTitle) lockedTitle.textContent = t('student.locked.none_title');
+      if (lockedText) lockedText.textContent = t('student.locked.none_text');
+    }
+  }
+
   async function switchLangNoReload(href, nextLang){
     const scrollY = window.scrollY;
     const focusInfo = rememberFocus();
@@ -414,7 +468,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     await fetch(href, { method:'GET', credentials:'same-origin', cache:'no-store' });
 
     const j = await api('bootstrap', {});
-    state = j;
+    applyBootstrapResponse(j);
 
     buildFlatSteps();
     activeStep = Math.max(0, Math.min(keepStep, flatSteps.length - 1));
@@ -633,7 +687,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     const locked = isLocked();
     if (locked) {
       lockBanner.style.display = 'block';
-      lockBanner.innerHTML = '<strong>Gerade gesperrt.</strong> Deine Lehrkraft hat die Eingabe im Moment gesperrt oder du hast bereits abgegeben.';
+      lockBanner.innerHTML = `<strong>${esc(t('student.js.locked_title', 'Eingabe gesperrt'))}</strong> ${esc(t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.'))}`;
     } else {
       lockBanner.style.display = 'none';
       lockBanner.textContent = '';
@@ -649,8 +703,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     html.push(`<div class="group" data-kind="intro">
       <div class="group-h" data-jump="0">
         <div class="left">
-          <div class="title">Start</div>
-          <div class="sub">Info</div>
+          <div class="title">${esc(t('student.js.nav_start_title', 'Start'))}</div>
+          <div class="sub">${esc(t('student.js.nav_start_sub', 'Info'))}</div>
         </div>
         <span class="badge-mini ok">✓</span>
       </div>
@@ -664,8 +718,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }
 
     for (const g of groups) {
-      const gKey = String(g.key || g.title || 'Abschnitt');
-      const gTitle = String(g.title || g.key || 'Abschnitt');
+      const gKey = String(g.key || g.title || t('student.js.section', 'Abschnitt'));
+      const gTitle = String(g.title || g.key || t('student.js.section', 'Abschnitt'));
       const fields = Array.isArray(g.fields) ? g.fields : [];
       const st = groupStats(fields);
       const badgeCls = (st.missing === 0) ? 'ok' : 'miss';
@@ -698,11 +752,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
               const missing = fieldIsMissing(f);
               const stepIdx = flatSteps.findIndex(s => s.kind==='field' && String(s.group)===String(gKey) && String(s.field?.id)===String(f.id));
               const active = stepIdx === activeStep;
-              const fullLbl = String(f.label || f.name || ('Frage ' + (i+1)));
+              const fullLbl = String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }));
               return `<a class="item ${missing?'missing':'ok'} ${active?'active':''}" data-jump="${stepIdx}" title="${esc(fullLbl)}">
                 <div class="txt">
                   <span class="dot" aria-hidden="true"></span>
-                  <span class="lbl">${esc('Frage ' + (i+1))}</span>
+                  <span class="lbl">${esc(tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }))}</span>
                 </div>
                 <span class="badge-mini ${missing?'miss':'ok'}">${missing?'!':'✓'}</span>
               </a>`;
@@ -712,16 +766,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       }
     }
 
-    const submitIdx = flatSteps.findIndex(s => s.kind==='submit');
-    html.push(`<div class="group" data-kind="submit">
-      <div class="group-h" data-jump="${submitIdx}">
-        <div class="left">
-          <div class="title">Fertig</div>
-          <div class="sub">Abgeben</div>
+      const submitIdx = flatSteps.findIndex(s => s.kind==='submit');
+      html.push(`<div class="group" data-kind="submit">
+        <div class="group-h" data-jump="${submitIdx}">
+          <div class="left">
+            <div class="title">${esc(t('student.js.submit_title', 'Fertig'))}</div>
+            <div class="sub">${esc(t('student.js.submit_sub', 'Abgeben'))}</div>
+          </div>
+          <span class="badge-mini">→</span>
         </div>
-        <span class="badge-mini">→</span>
-      </div>
-    </div>`);
+      </div>`);
 
     elNav.innerHTML = html.join('');
 
@@ -760,7 +814,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   function formatTime(ts){
     const d = ts instanceof Date ? ts : new Date(ts ?? Date.now());
-    return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+    const locale = (currentLang === 'en') ? 'en-GB' : 'de-DE';
+    return d.toLocaleTimeString(locale, { hour:'2-digit', minute:'2-digit' });
   }
 
   function setSaveStatus(state, text){
@@ -774,16 +829,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (isLocked()) return;
     saveInFlight++;
     setSaving(true);
-    setSaveStatus('saving', '⏳ speichert …');
+    setSaveStatus('saving', t('student.js.save_working', '⏳ speichert …'));
     try {
       await api('save_value', { template_field_id: Number(fieldId), value_text: String(valueText ?? '') });
       lastSaveAt = new Date();
-      setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
+      setSaveStatus('ok', tfmt('student.js.save_ok', '✔ gespeichert um {time}', { time: formatTime(lastSaveAt) }));
       return true;
     } catch(err){
-      const msg = String(err?.message || 'Fehler beim Speichern');
+      const msg = String(err?.message || t('student.js.save_error_generic', 'Fehler beim Speichern'));
       const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-      setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
+      setSaveStatus('error', offline ? t('student.js.save_error_offline', '❌ Fehler (offline)') : tfmt('student.js.save_error', '❌ Fehler: {message}', { message: msg }));
       return false;
     } finally {
       saveInFlight--;
@@ -806,7 +861,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   // ===== CHANGED: option labels now support bilingual labels from option_list_items (label / label_en) =====
   function optionLabel(o){
-    if (!o) return 'Option';
+    if (!o) return t('student.js.option_placeholder', 'Option');
 
     // Preferred: language-specific label if present
     if (currentLang === 'en') {
@@ -826,7 +881,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     const id = (typeof o.id !== 'undefined') ? String(o.id ?? '').trim() : '';
     if (id) return id;
 
-    return 'Option';
+    return t('student.js.option_placeholder', 'Option');
   }
 
   function optionValue(o){
@@ -982,22 +1037,28 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (!cur) { elReqHint.textContent = ''; return; }
 
     if (cur.kind === 'intro') {
-      elReqHint.textContent = 'Klicke „Los geht\'s“, um zu starten.';
+      elReqHint.textContent = t('student.js.req_hint_intro', 'Klicke „Los geht\'s“, um zu starten.');
       return;
     }
     if (cur.kind === 'group_intro') {
       const st = groupStats(cur.fields || []);
-      elReqHint.textContent = (st.missing === 0) ? 'Abschnitt ist schon komplett ✓' : `${st.missing} fehlen in diesem Abschnitt (du kannst starten).`;
+      elReqHint.textContent = (st.missing === 0)
+        ? t('student.js.req_hint_group_done', 'Abschnitt ist schon komplett ✓')
+        : tfmt('student.js.req_hint_group_missing', '{count} fehlen in diesem Abschnitt (du kannst starten).', { count: st.missing });
       return;
     }
     if (cur.kind === 'submit') {
       const allMissing = totalMissingCount();
-      elReqHint.textContent = allMissing === 0 ? 'Alles erledigt – du kannst abgeben.' : `${allMissing} Felder fehlen noch.`;
+      elReqHint.textContent = allMissing === 0
+        ? t('student.js.req_hint_submit_ok', 'Alles erledigt – du kannst abgeben.')
+        : tfmt('student.js.req_hint_submit_missing', '{count} Felder fehlen noch.', { count: allMissing });
       return;
     }
 
     const miss = currentStepMissingCount();
-    elReqHint.textContent = (miss === 0) ? 'Alles ausgefüllt ✓' : `${miss} fehlen noch (du kannst trotzdem weiter).`;
+    elReqHint.textContent = (miss === 0)
+      ? t('student.js.req_hint_step_ok', 'Alles ausgefüllt ✓')
+      : tfmt('student.js.req_hint_step_missing', '{count} fehlen noch (du kannst trotzdem weiter).', { count: miss });
   }
 
   function totalMissingCount(){
@@ -1029,8 +1090,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     elOverallWrap.style.display = (total > 0) ? '' : 'none';
     if (elOverallText) elOverallText.textContent = (total > 0)
-      ? `Fortschritt: ${done}/${total} (offen: ${missing})`
-      : '—';
+      ? tfmt('student.js.progress_text', 'Fortschritt: {done}/{total} (offen: {missing})', { done, total, missing })
+      : t('student.js.progress_empty', '—');
     if (elOverallPct) elOverallPct.textContent = (total > 0) ? (pct + '%') : '';
 
     elOverallBar.style.width = (total > 0) ? (pct + '%') : '0%';
@@ -1047,11 +1108,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     const missing = totalMissingCount();
     if (missing > 0) {
-      alert('Es fehlen noch ' + missing + ' Felder. Bitte fülle alles aus.');
+      alert(tfmt('student.js.submit_missing_alert', 'Es fehlen noch {count} Felder. Bitte fülle alles aus.', { count: missing }));
       return;
     }
 
-    if (!confirm('Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.')) return;
+    if (!confirm(t('student.js.submit_confirm', 'Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.'))) return;
 
     try {
       btnNext.disabled = true;
@@ -1059,7 +1120,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       setSaving(true);
       await api('submit', {});
       const j = await api('bootstrap', {});
-      state = j;
+      applyBootstrapResponse(j);
 
       if (isLocked()) {
         showLockedOnly();
@@ -1070,9 +1131,9 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       activeStep = flatSteps.findIndex(s => s.kind==='submit');
       if (activeStep < 0) activeStep = flatSteps.length - 1;
       render();
-      alert('Danke! Du hast abgegeben.');
+      alert(t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
     } catch(e){
-      alert(e?.message || 'Fehler beim Abgeben.');
+      alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
     } finally {
       setSaving(false);
       btnPrev.disabled = false;
@@ -1084,11 +1145,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (isLocked()) {
       const st = String(state.report_status || '');
       if (st === 'submitted') {
-        showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+        showLockedOnly(t('student.js.already_submitted', 'Bereits abgegeben'), t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.'));
       } else if (st === 'locked') {
-        showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+        showLockedOnly(t('student.js.locked_title', 'Eingabe gesperrt'), t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.'));
       } else {
-        showLockedOnly('Eingabe noch nicht freigegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
+        showLockedOnly(t('student.js.not_ready_title', 'Eingabe noch nicht freigegeben'), t('student.js.not_ready_text', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.'));
       }
       return;
     }
@@ -1097,7 +1158,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     const tplName = state.template ? String(state.template.name || '') : '';
     const ver = state.template ? String(state.template.version || '') : '';
-    elMeta.textContent = tplName ? (tplName + (ver ? (' · v' + ver) : '')) : 'Formular';
+    elMeta.textContent = tplName ? (tplName + (ver ? (' · v' + ver) : '')) : t('student.js.form_label', 'Formular');
 
     setLockedUi();
     renderNav();
@@ -1108,11 +1169,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     btnPrev.style.visibility = (activeStep <= 0) ? 'hidden' : 'visible';
 
     if (cur.kind === 'intro') {
-      elTitle.textContent = 'Start';
-      elSub.textContent = 'Bitte lies die Infos. Danach geht es los.';
+      elTitle.textContent = t('student.js.start_title', 'Start');
+      elSub.textContent = t('student.js.start_sub', 'Bitte lies die Infos. Danach geht es los.');
       const html = (cur.intro_html || '').trim();
-      elBody.innerHTML = `<div class="intro-box">${html ? html : '<p class="muted">Keine Intro-Infos hinterlegt.</p>'}</div>`;
-      btnNext.textContent = 'Los geht’s';
+      elBody.innerHTML = `<div class="intro-box">${html ? html : `<p class="muted">${esc(t('student.js.no_intro', 'Keine Intro-Infos hinterlegt.'))}</p>`}</div>`;
+      btnNext.textContent = t('student.js.cta_start', 'Los geht’s');
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
@@ -1120,24 +1181,24 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     else if (cur.kind === 'group') {
       elTitle.textContent = cur.title;
-      elSub.textContent = 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.';
-      elBody.innerHTML = ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || '<p class="muted">Keine Felder.</p>');
+      elSub.textContent = t('student.js.group_sub', 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.');
+      elBody.innerHTML = ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || `<p class="muted">${esc(t('student.js.no_fields', 'Keine Felder.'))}</p>`);
       attachFieldHandlers(elBody);
-      btnNext.textContent = 'Weiter';
+      btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
     }
 
     else if (cur.kind === 'group_intro') {
       const fields = Array.isArray(cur.fields) ? cur.fields : [];
-      elTitle.textContent = cur.groupTitle || cur.title || 'Abschnitt';
-      elSub.textContent = 'Bevor es losgeht: kurze Übersicht.';
+      elTitle.textContent = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
+      elSub.textContent = t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
       elBody.innerHTML = `
         <div class="group-intro">
-          <p class="kicker">Neuer Abschnitt</p>
-          <h3>${esc(cur.groupTitle || cur.title || 'Abschnitt')}</h3>
-          <div class="muted">Hier kommen ${esc(String(fields.length))} Fragen. Du kannst jederzeit im Menü springen.</div>
-          <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">Starten</button></div>
+          <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
+          <h3>${esc(cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt'))}</h3>
+          <div class="muted">${esc(tfmt('student.js.group_intro_hint', 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.', { count: fields.length }))}</div>
+          <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
         </div>
       `;
       const b = document.getElementById('btnStartGroup');
@@ -1148,7 +1209,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
       }
-      btnNext.textContent = 'Weiter';
+      btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
     }
@@ -1156,24 +1217,24 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     else if (cur.kind === 'field') {
       const f = cur.field;
       elTitle.textContent = cur.groupTitle;
-      elSub.textContent = 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.';
+      elSub.textContent = t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
       elBody.innerHTML = renderFieldBlock(f);
       attachFieldHandlers(elBody);
-      btnNext.textContent = 'Weiter';
+      btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
     }
 
     else { // submit
-      elTitle.textContent = 'Fertig';
+      elTitle.textContent = t('student.js.finish_title', 'Fertig');
       const missing = totalMissingCount();
-      elSub.textContent = missing === 0 ? 'Alles ist ausgefüllt.' : 'Es fehlen noch Felder.';
+      elSub.textContent = missing === 0 ? t('student.js.finish_all', 'Alles ist ausgefüllt.') : t('student.js.finish_missing', 'Es fehlen noch Felder.');
       elBody.innerHTML = `
         <div class="submit-box">
-          <p style="margin-top:0;">Wenn alles ausgefüllt ist, kannst du abgeben.</p>
-          <p class="muted">Fehlende Felder: <strong>${missing}</strong></p>
+          <p style="margin-top:0;">${esc(t('student.js.finish_text', 'Wenn alles ausgefüllt ist, kannst du abgeben.'))}</p>
+          <p class="muted">${esc(tfmt('student.js.finish_missing_label', 'Fehlende Felder: {count}', { count: missing }))}</p>
           <div class="actions" style="justify-content:flex-start;">
-            <button class="btn primary" type="button" id="btnSubmit" ${missing>0 ? 'disabled' : ''}>Abgeben</button>
+            <button class="btn primary" type="button" id="btnSubmit" ${missing>0 ? 'disabled' : ''}>${esc(t('student.js.submit_btn', 'Abgeben'))}</button>
           </div>
         </div>
       `;
@@ -1216,17 +1277,17 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (!HAS_TEMPLATE) return;
 
       const j = await api('bootstrap', {});
-      state = j;
-      setSaveStatus('idle', 'Automatisches Speichern ist aktiv.');
+      applyBootstrapResponse(j);
+      setSaveStatus('idle', t('student.js.auto_save', 'Automatisches Speichern ist aktiv.'));
 
       if (isLocked()) {
         const st = String(state.report_status || '');
         if (st === 'submitted') {
-          showLockedOnly('Bereits abgegeben', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+          showLockedOnly(t('student.js.already_submitted', 'Bereits abgegeben'), t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.'));
         } else if (st === 'locked') {
-          showLockedOnly('Eingabe gesperrt', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+          showLockedOnly(t('student.js.locked_title', 'Eingabe gesperrt'), t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.'));
         } else {
-          showLockedOnly('Eingabe noch nicht freigegeben oder bereits abgegeben', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben oder du hast deine Eingabe bereits abgegeben. Bitte versuche es später noch einmal.');
+          showLockedOnly(t('student.js.not_ready_title', 'Eingabe noch nicht freigegeben oder bereits abgegeben'), t('student.js.not_ready_text', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben oder du hast deine Eingabe bereits abgegeben. Bitte versuche es später noch einmal.'));
         }
         return;
       }
@@ -1235,12 +1296,12 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       activeStep = 0;
       render();
     } catch (e) {
-      const msg = String(e?.message || 'Fehler');
+      const msg = String(e?.message || t('student.js.load_error', 'Fehler'));
       if (msg.toLowerCase().includes('keine vorlage') || msg.toLowerCase().includes('vorlage zugeordnet')) {
-        showLockedOnly('Keine Vorlage zugeordnet', 'Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
+        showLockedOnly(t('student.js.no_template_title', 'Keine Vorlage zugeordnet'), t('student.js.no_template_text', 'Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.'));
         return;
       }
-      elMeta.textContent = 'Fehler beim Laden.';
+      elMeta.textContent = t('student.js.load_error', 'Fehler beim Laden.');
       elBody.innerHTML = `<div class="alert danger"><strong>${esc(msg)}</strong></div>`;
       btnPrev.disabled = true;
       btnNext.disabled = true;

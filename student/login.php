@@ -20,7 +20,7 @@ if ($token !== '') {
     $st = $pdo->prepare("SELECT id FROM students WHERE qr_token=? AND is_active=1 LIMIT 1");
     $st->execute([$token]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row) throw new RuntimeException('Ungültiger QR-Code.');
+    if (!$row) throw new RuntimeException(t('student.login.error.invalid_qr', 'Ungültiger QR-Code.'));
     student_session_set((int)$row['id']);
     redirect('student/index.php');
   } catch (Throwable $e) {
@@ -33,12 +33,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $code = strtoupper(trim((string)($_POST['login_code'] ?? '')));
     $code = preg_replace('/\s+/', '', $code);
-    if ($code === '') throw new RuntimeException('Code fehlt.');
+    if ($code === '') throw new RuntimeException(t('student.login.error.missing_code', 'Code fehlt.'));
 
     $st = $pdo->prepare("SELECT id FROM students WHERE login_code=? AND is_active=1 LIMIT 1");
     $st->execute([$code]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row) throw new RuntimeException('Code nicht gefunden.');
+    if (!$row) throw new RuntimeException(t('student.login.error.not_found', 'Code nicht gefunden.'));
 
     student_session_set((int)$row['id']);
     redirect('student/index.php');
@@ -53,11 +53,11 @@ $logo = (string)($b['logo_path'] ?? '');
 
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?=h($org)?> – Schüler Login</title>
+  <title><?=h($org)?> – <?=h(t('student.login.html_title', 'Schüler Login'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
@@ -182,27 +182,27 @@ $logo = (string)($b['logo_path'] ?? '');
       <?php if ($logo): ?><img src="<?=h(url($logo))?>" alt="<?=h($org)?>"><?php endif; ?>
       <div>
         <div class="brand-title"><?=h($org)?></div>
-        <div class="brand-subtitle">Schüler Login</div>
+        <div class="brand-subtitle"><?=h(t('student.login.brand_subtitle', 'Schüler Login'))?></div>
       </div>
     </div>
   </div>
 
   <div class="container">
     <div class="card">
-      <h1>Einloggen</h1>
+      <h1><?=h(t('student.login.heading', 'Einloggen'))?></h1>
 
       <?php if ($err): ?>
         <div class="alert danger"><strong><?=h($err)?></strong></div>
       <?php endif; ?>
 
       <p class="muted">
-        Login per QR-Code führt direkt hierher. Wenn dein Gerät keine Kamera hat, kannst du den Login-Code eingeben.
+        <?=h(t('student.login.info', 'Login per QR-Code führt direkt hierher. Wenn dein Gerät keine Kamera hat, kannst du den Login-Code eingeben.'))?>
       </p>
 
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
 
-        <label for="login_code_mask">Login-Code</label>
+        <label for="login_code_mask"><?=h(t('student.login.label_code', 'Login-Code'))?></label>
 
         <div class="code-wrap" id="code_wrap">
           <div id="login_code_overlay" class="code-overlay" aria-hidden="true"></div>
@@ -216,7 +216,7 @@ $logo = (string)($b['logo_path'] ?? '');
             autocomplete="off"
             inputmode="text"
             maxlength="9"
-            aria-label="Login-Code im Format ABCD-1234"
+            aria-label="<?=h(t('student.login.aria_code', 'Login-Code im Format ABCD-1234'))?>"
             autofocus
           >
         </div>
@@ -229,12 +229,12 @@ $logo = (string)($b['logo_path'] ?? '');
         >
 
         <div class="actions">
-          <button class="btn primary" type="submit">Einloggen</button>
+          <button class="btn primary" type="submit"><?=h(t('student.login.submit', 'Einloggen'))?></button>
         </div>
 
         <!-- Dezent, damit Schüler nicht aus Versehen drauf klicken -->
         <div class="alt-login">
-          <a href="<?=h(url('login.php'))?>">Lehrkraft/Admin</a>
+          <a href="<?=h(url('login.php'))?>"><?=h(t('student.login.alt', 'Lehrkraft/Admin'))?></a>
         </div>
       </form>
 
