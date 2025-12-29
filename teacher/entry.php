@@ -963,6 +963,18 @@ render_teacher_header('Eingaben');
     if (!state.value_history[rid][fid]) state.value_history[rid][fid] = [];
 
     const list = state.value_history[rid][fid];
+
+    const prev = list[0];
+    const sameVal = prev
+      && prev.value_text === valueText
+      && prev.value_json === valueJson;
+    if (sameVal) {
+      prev.text = text ?? '';
+      prev.source = source || 'teacher';
+      prev.created_at = new Date().toISOString();
+      return;
+    }
+
     list.unshift({
       text: text ?? '',
       source: source || 'teacher',
