@@ -183,7 +183,6 @@ render_admin_header('Schüler');
       </select>
     </div>
     <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
-      <span class="muted">Filter werden automatisch angewendet.</span>
       <a class="btn secondary" href="<?=h(url('admin/students.php'))?>">Reset</a>
     </div>
   </form>
@@ -221,6 +220,11 @@ render_admin_header('Schüler');
       const el = form.querySelector(`[name="${name}"]`);
       if (el && typeof el.focus === 'function') {
         el.focus({ preventScroll: true });
+        
+        if (typeof el.setSelectionRange === 'function') {
+            const len = el.value?.length ?? 0;
+            el.setSelectionRange(len, len);
+          }
       }
     };
 
