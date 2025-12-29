@@ -302,6 +302,11 @@ render_teacher_header($pageTitle);
         <input type="checkbox" id="toggleChild" style="margin-right:8px;"> Schülereingaben anzeigen
       </label>
   <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+    <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
+      <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> nur offene
+    </label>
+  </div>
 
   <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
     <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
@@ -536,6 +541,7 @@ render_teacher_header($pageTitle);
   const studentBadge = document.getElementById('studentBadge');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
+  const studentMissingOnly = document.getElementById('studentMissingOnly');
 
   const groupSelect = document.getElementById('groupSelect');
   const itemSearch = document.getElementById('itemSearch');
@@ -580,6 +586,7 @@ render_teacher_header($pageTitle);
     showChild: false,
     activeStudentIndex: 0,
     studentFilter: '',
+    studentMissingOnly: false,
     groupKey: 'ALL',
     itemFilter: '',
     gradeGroupKey: 'ALL',
@@ -627,6 +634,23 @@ render_teacher_header($pageTitle);
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
+
+  function studentHasTeacherMissing(student){
+    return Number(student?.progress_teacher_missing || 0) > 0;
+  }
+
+  function filterStudentsForMissing(list){
+    const base = Array.isArray(list) ? list : [];
+    return ui.studentMissingOnly ? base.filter(studentHasTeacherMissing) : base;
+  }
+
+  function isTeacherFieldMissing(reportId, fieldId){
+    return String(teacherVal(reportId, fieldId) ?? '').trim() === '';
+  }
+
+  function fieldMissingForAnyStudent(field, students){
+    return (students || []).some(s => isTeacherFieldMissing(s.report_instance_id, field.id));
+  }
 
   function optionLabel(options, value){
     const v = String(value ?? '');
@@ -1050,6 +1074,14 @@ render_teacher_header($pageTitle);
     });
   }
 
+  function syncMissingClass(inp, value){
+    if (!inp) return;
+    const wrap = inp.closest('.cellWrap') || inp.closest('.field');
+    if (!wrap) return;
+    const missing = String(value ?? '').trim() === '';
+    wrap.classList.toggle('missing', missing);
+  }
+
   // --- progress helpers ---
   function teacherProgressFieldIds(){
     const ids = [];
@@ -1339,6 +1371,7 @@ render_teacher_header($pageTitle);
           const merged = saveMerged(res.value);
           inp.dataset.actual = merged;
           if (f) inp.value = teacherDisplay(f, merged);
+          syncMissingClass(inp, merged);
         };
 
         inp.addEventListener('change', commit);
@@ -1353,6 +1386,7 @@ render_teacher_header($pageTitle);
         inp.addEventListener('change', () => {
           const merged = saveMerged(inp.checked ? '1' : '0');
           inp.checked = (merged === '1');
+          syncMissingClass(inp, merged);
         });
       } else {
         inp.addEventListener('input', () => {
@@ -1361,6 +1395,7 @@ render_teacher_header($pageTitle);
             // keep UI in sync when Werte kombiniert werden
             inp.value = merged;
           }
+          syncMissingClass(inp, merged);
         });
       }
 
@@ -1646,8 +1681,10 @@ render_teacher_header($pageTitle);
 
   function currentStudents(){
     const f = normalize(ui.studentFilter);
-    if (!f) return state.students;
-    return state.students.filter(s => normalize(s.name).includes(f));
+    let list = filterStudentsForMissing(state.students);
+
+    if (!f) return list;
+    return list.filter(s => normalize(s.name).includes(f));
   }
 
   function activeStudent(){
@@ -1761,6 +1798,10 @@ render_teacher_header($pageTitle);
     viewItem.style.display = (ui.view === 'item') ? 'block' : 'none';
     showStudentEntries.style.display = (ui.view === 'student' || ui.view === 'item') ? 'block' : 'none';
 
+    if (studentMissingOnly && studentMissingOnly.checked !== !!ui.studentMissingOnly) {
+      studentMissingOnly.checked = !!ui.studentMissingOnly;
+    }
+
     if (ui.showChild) elApp.classList.add('show-child');
     else elApp.classList.remove('show-child');
 
@@ -1823,9 +1864,15 @@ render_teacher_header($pageTitle);
     }
 
     state.groups.forEach(g => {
-      const _gtTotal = (g.fields||[]).length;
+      const fields = ui.studentMissingOnly
+        ? (g.fields || []).filter(f => isTeacherFieldMissing(reportId, f.id))
+        : (g.fields || []);
+
+      if (!fields.length) return;
+
+      const _gtTotal = fields.length;
       let _gtDone = 0;
-      (g.fields||[]).forEach(_f => { const _v = teacherVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
+      fields.forEach(_f => { const _v = teacherVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
@@ -1845,7 +1892,7 @@ render_teacher_header($pageTitle);
           </div>
         `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
-      g.fields.forEach(f => {
+      fields.forEach(f => {
         const v = teacherVal(reportId, f.id);
         const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
         const shownChild = rawChild ? childDisplay(f, rawChild) : '';
@@ -1865,7 +1912,7 @@ render_teacher_header($pageTitle);
       });
     });
 
-    studentForm.innerHTML = html;
+    studentForm.innerHTML = html || '<div class="alert">Keine offenen Felder gefunden.</div>';
     
     studentForm.querySelectorAll('[data-open-deleg]').forEach(b => {
         b.addEventListener('click', (ev) => {
@@ -1897,15 +1944,19 @@ render_teacher_header($pageTitle);
     if (ui.gradeGroupKey !== 'ALL') fields = fields.filter(f => f._group_key === ui.gradeGroupKey);
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
-    if (fields.length === 0) {
+    const sCols = filterStudentsForMissing(state.students);
+
+    if (ui.studentMissingOnly) {
+      fields = fields.filter(f => fieldMissingForAnyStudent(f, sCols));
+    }
+
+    if (fields.length === 0 || sCols.length === 0) {
       gradeHead.innerHTML = '<tr><th class="sticky">—</th><th>Keine Notenfelder gefunden</th></tr>';
       gradeBody.innerHTML = '';
       return;
     }
 
     if (ui.gradeOrientation === 'students_cols') {
-      const sCols = state.students;
-
       gradeHead.innerHTML = '';
       const tr = document.createElement('tr');
       const th0 = document.createElement('th');
@@ -1961,8 +2012,6 @@ render_teacher_header($pageTitle);
       wireTeacherInputs(gradeBody);
       return;
     }
-
-    const sCols = state.students;
 
     gradeHead.innerHTML = '';
     const tr1 = document.createElement('tr');
@@ -2050,7 +2099,17 @@ render_teacher_header($pageTitle);
 
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
-    const sCols = state.students;
+    const sCols = filterStudentsForMissing(state.students);
+
+    if (ui.studentMissingOnly) {
+      fields = fields.filter(f => fieldMissingForAnyStudent(f, sCols));
+    }
+
+    if (fields.length === 0 || sCols.length === 0) {
+      itemHead.innerHTML = '<tr><th class="sticky">—</th><th>Keine Items gefunden</th></tr>';
+      itemBody.innerHTML = '';
+      return;
+    }
 
     itemHead.innerHTML = '';
     const tr = document.createElement('tr');
@@ -2443,6 +2502,12 @@ if (dlgSave) {
     ui.studentFilter = studentSearch.value;
     ui.activeStudentIndex = 0;
     renderStudentView();
+  });
+
+  studentMissingOnly.addEventListener('change', () => {
+    ui.studentMissingOnly = !!studentMissingOnly.checked;
+    ui.activeStudentIndex = 0;
+    render();
   });
 
   btnPrevStudent.addEventListener('click', () => {
