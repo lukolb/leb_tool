@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
     $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
     $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
-    $aiEnabled = isset($_POST['ai_enabled'])
+    $aiEnabled = (isset($_POST['ai_enabled']) || $_POST['ai_key'])
       ? (int)$_POST['ai_enabled']
       : (int)($cfg['ai']['enabled'] ?? 1);
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
