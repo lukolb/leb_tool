@@ -2,6 +2,8 @@
 // bootstrap.php
 declare(strict_types=1);
 
+require_once __DIR__ . '/shared/translations.php';
+
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
 define('APP_CONFIG_PATH', $configPath);
 if (!file_exists(APP_CONFIG_PATH)) {

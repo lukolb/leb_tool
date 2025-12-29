@@ -19,6 +19,40 @@ if (!isset($exportApiUrl, $backUrl, $pageTitle, $classId, $classes, $csrf, $debu
   throw new RuntimeException('shared/export_page.php missing required variables.');
 }
 
+$tx = [
+  'no_classes' => t('teacher.export.no_classes', 'Keine Klassen gefunden.'),
+  'no_classes_hint' => t('teacher.export.no_classes_hint', 'Für Lehrkräfte heißt das meistens: Es sind noch keine Klassen zugeordnet (<code>user_class_assignments</code>).'),
+  'class_label' => t('teacher.export.class_label', 'Klasse'),
+  'class_hint' => t('teacher.export.class_hint', 'Exportiert die der Klasse zugeordnete Vorlage.'),
+  'mode_label' => t('teacher.export.mode_label', 'Export-Variante'),
+  'mode.zip' => t('teacher.export.mode.zip', 'ZIP-Export'),
+  'mode.zip_sub' => t('teacher.export.mode.zip_sub', 'eine PDF pro Schüler:in'),
+  'mode.merged' => t('teacher.export.mode.merged', 'Gesamt-PDF'),
+  'mode.merged_sub' => t('teacher.export.mode.merged_sub', 'alle Schüler:innen in einer Datei'),
+  'mode.single' => t('teacher.export.mode.single', 'Einzel-Export'),
+  'mode.single_sub' => t('teacher.export.mode.single_sub', 'nur eine ausgewählte Person'),
+  'filter_label' => t('teacher.export.filter_label', 'Filter'),
+  'filter_only_submitted' => t('teacher.export.filter_only_submitted', 'Nur abgegebene (submitted)'),
+  'student_label' => t('teacher.export.student_label', 'Schüler:in'),
+  'check' => t('teacher.export.check', 'Prüfen'),
+  'start' => t('teacher.export.start', 'Export starten'),
+  'warn_note' => t('teacher.export.warn_note', 'Warnungen blockieren den Export nicht.'),
+  'status' => t('teacher.export.status', 'Status'),
+  'ready' => t('teacher.export.ready', 'Bereit.'),
+  'info_label' => t('teacher.export.info_label', 'Hinweis:'),
+  'warn_label' => t('teacher.export.warn_label', 'Achtung:'),
+  'warn_hint' => t('teacher.export.warn_hint', 'Beim Export kannst du die Warnung ignorieren oder abbrechen.'),
+  'details' => t('teacher.export.details', 'Details'),
+  'speed_hint' => t('teacher.export.speed_hint', 'Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern'),
+  'debug_active' => t('teacher.export.debug_active', 'Debug aktiv (debug_pdf=1) – siehe Browser-Konsole'),
+  'missing_title' => t('teacher.export.missing_title', 'Fehlende Einträge gefunden'),
+  'missing_search' => t('teacher.export.missing_search', 'Suchen (Schüler:in oder Feld) …'),
+  'expand_all' => t('teacher.export.expand_all', 'Alle ausklappen'),
+  'collapse_all' => t('teacher.export.collapse_all', 'Alle einklappen'),
+  'cancel' => t('teacher.export.cancel', 'Abbrechen'),
+  'ignore' => t('teacher.export.ignore', 'Ignorieren & exportieren'),
+];
+
 function export_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -98,17 +132,15 @@ function export_class_display(array $c): string {
 
   <?php if (!is_array($classes) || count($classes) === 0): ?>
     <div class="card" style="border:1px solid #ffe08a; background:#fff7db; margin-bottom:14px;">
-      <strong>Keine Klassen gefunden.</strong>
-      <div class="muted" style="margin-top:6px;">
-        Für Lehrkräfte heißt das meistens: Es sind noch keine Klassen zugeordnet (<code>user_class_assignments</code>).
-      </div>
+      <strong><?=h($tx['no_classes'])?></strong>
+      <div class="muted" style="margin-top:6px;"><?=$tx['no_classes_hint']?></div>
     </div>
   <?php else: ?>
 
   <div class="card" style="margin-bottom:14px;">
     <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:260px;">
-          <label for="classId" class="export-title">Klasse</label>
+          <label for="classId" class="export-title"><?=h($tx['class_label'])?></label>
         <select id="classId" class="input" style="width:100%;">
           <?php foreach ($classes as $c): ?>
             <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
@@ -116,53 +148,53 @@ function export_class_display(array $c): string {
             </option>
           <?php endforeach; ?>
         </select>
-        <div class="muted" style="margin-top:4px;">Exportiert die der Klasse zugeordnete Vorlage.</div>
+        <div class="muted" style="margin-top:4px;"><?=h($tx['class_hint'])?></div>
       </div>
 
       <div class="export-mode">
-        <label class="export-title">Export-Variante</label>
+        <label class="export-title"><?=h($tx['mode_label'])?></label>
 
         <div class="export-list">
           <label class="export-row">
             <input type="radio" name="mode" value="zip" checked>
-            <span class="export-main">ZIP-Export</span>
-            <span class="export-sub">eine PDF pro Schüler:in</span>
+            <span class="export-main"><?=h($tx['mode.zip'])?></span>
+            <span class="export-sub"><?=h($tx['mode.zip_sub'])?></span>
           </label>
 
           <label class="export-row">
             <input type="radio" name="mode" value="merged">
-            <span class="export-main">Gesamt-PDF</span>
-            <span class="export-sub">alle Schüler:innen in einer Datei</span>
+            <span class="export-main"><?=h($tx['mode.merged'])?></span>
+            <span class="export-sub"><?=h($tx['mode.merged_sub'])?></span>
           </label>
 
           <label class="export-row">
             <input type="radio" name="mode" value="single">
-            <span class="export-main">Einzel-Export</span>
-            <span class="export-sub">nur eine ausgewählte Person</span>
+            <span class="export-main"><?=h($tx['mode.single'])?></span>
+            <span class="export-sub"><?=h($tx['mode.single_sub'])?></span>
           </label>
         </div>
       </div>
 
       <div style="min-width:220px;">
-        <label class="export-title">Filter</label>
+        <label class="export-title"><?=h($tx['filter_label'])?></label>
         <label class="row" style="gap:8px; margin-top:6px;">
           <input type="checkbox" id="onlySubmitted">
-          Nur abgegebene (submitted)
+          <?=h($tx['filter_only_submitted'])?>
         </label>
       </div>
 
       <div id="singleStudentWrap" style="min-width:260px; display:none;">
-        <label class="export-title" for="studentId">Schüler:in</label>
+        <label class="export-title" for="studentId"><?=h($tx['student_label'])?></label>
         <select id="studentId" class="input" style="width:100%;"></select>
       </div>
 
       <div style="flex:1; min-width:240px;">
         <label><strong>&nbsp;</strong></label>
         <div class="row" style="gap:10px; justify-content:flex-end;">
-          <a class="btn secondary" id="btnCheck" type="button">Prüfen</a>
-          <a class="btn primary" id="btnExport" type="button" style="margin-left: 10px;">Export starten</a>
+          <a class="btn secondary" id="btnCheck" type="button"><?=h($tx['check'])?></a>
+          <a class="btn primary" id="btnExport" type="button" style="margin-left: 10px;"><?=h($tx['start'])?></a>
         </div>
-        <div class="muted" style="margin-top:4px; text-align:right;">Warnungen blockieren den Export nicht.</div>
+        <div class="muted" style="margin-top:4px; text-align:right;"><?=h($tx['warn_note'])?></div>
       </div>
     </div>
   </div>
@@ -170,8 +202,8 @@ function export_class_display(array $c): string {
   <div class="card" style="margin-bottom:14px;">
     <div class="row" style="justify-content:space-between; align-items:center;">
       <div>
-        <strong>Status</strong>
-        <div class="muted" id="statusLine" style="padding-top: 10px">Bereit.</div>
+        <strong><?=h($tx['status'])?></strong>
+        <div class="muted" id="statusLine" style="padding-top: 10px"><?=h($tx['ready'])?></div>
       </div>
     </div>
 
@@ -181,31 +213,31 @@ function export_class_display(array $c): string {
     </div>
 
     <div id="infoBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #b9dbff; background:#eaf4ff;">
-      <strong>Hinweis:</strong>
+      <strong><?=h($tx['info_label'])?></strong>
       <span id="infoText"></span>
     </div>
 
     <div id="warnBox" class="alert info">
       <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
           <div style="float: left;">
-          <strong>Achtung:</strong>
+          <strong><?=h($tx['warn_label'])?></strong>
           <span id="warnText"></span>
-          <div class="muted" style="margin-top:6px;">Beim Export kannst du die Warnung ignorieren oder abbrechen.</div>
+          <div class="muted" style="margin-top:6px;"><?=h($tx['warn_hint'])?></div>
         </div>
         <div style="white-space:nowrap; text-align: end">
-          <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;">Details</button>
+          <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;"><?=h($tx['details'])?></button>
         </div>
       </div>
     </div>
       <div class="muted" style="max-width:520px; padding-top: 10px">
-        Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern
+        <?=h($tx['speed_hint'])?>
       </div>
   </div>
 
   <div class="muted" style="font-size:13px;">
     <?php if ($debugPdf): ?>
       <span style="margin-left:10px; padding:2px 8px; border-radius:999px; background:#fff7d6; border:1px solid #ffe59a;">
-        Debug aktiv (debug_pdf=1) – siehe Browser-Konsole
+        <?=h($tx['debug_active'])?>
       </span>
     <?php endif; ?>
   </div>
@@ -216,13 +248,13 @@ function export_class_display(array $c): string {
 <div id="missingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:9999;">
   <div style="max-width:920px; margin:6vh auto; background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden;">
     <div style="padding:16px 18px; border-bottom:1px solid #eee;">
-      <div style="font-size:18px; font-weight:700;">Fehlende Einträge gefunden</div>
+      <div style="font-size:18px; font-weight:700;"><?=h($tx['missing_title'])?></div>
       <div class="muted" id="missingModalSummary" style="margin-top:4px;"></div>
 
       <div class="row" style="gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;">
-        <input id="missingSearch" class="input" style="flex:1; min-width:260px;" placeholder="Suchen (Schüler:in oder Feld) …">
-        <button class="btn secondary" id="btnExpandAll" type="button">Alle ausklappen</button>
-        <button class="btn secondary" id="btnCollapseAll" type="button">Alle einklappen</button>
+        <input id="missingSearch" class="input" style="flex:1; min-width:260px;" placeholder="<?=h($tx['missing_search'])?>">
+        <button class="btn secondary" id="btnExpandAll" type="button"><?=h($tx['expand_all'])?></button>
+        <button class="btn secondary" id="btnCollapseAll" type="button"><?=h($tx['collapse_all'])?></button>
       </div>
     </div>
 
@@ -231,8 +263,8 @@ function export_class_display(array $c): string {
     </div>
 
     <div style="padding:14px 18px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end;">
-      <button class="btn secondary" id="btnMissingCancel" type="button">Abbrechen</button>
-      <button class="btn" id="btnMissingIgnore" type="button">Ignorieren & exportieren</button>
+      <button class="btn secondary" id="btnMissingCancel" type="button"><?=h($tx['cancel'])?></button>
+      <button class="btn" id="btnMissingIgnore" type="button"><?=h($tx['ignore'])?></button>
     </div>
   </div>
 </div>

@@ -34,60 +34,60 @@ if (($u['role'] ?? '') === 'admin') {
   $classes = $st->fetchAll();
 }
 
-render_teacher_header('Lehrkraft – Übersicht');
+render_teacher_header(t('teacher.title'));
 ?>
 
 <div class="card">
-    <h1>Dashboard</h1>
+    <h1><?=h(t('teacher.dashboard'))?></h1>
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
   </div>
 </div>
 
 <div class="card">
-  <h2>Verwaltung</h2>
-  <p class="muted">Hier findest du alle wichtigen Wege rund um Klassen, Delegationen und Eingaben auf einen Blick.</p>
+  <h2><?=h(t('teacher.management'))?></h2>
+  <p class="muted"><?=h(t('teacher.management_hint'))?></p>
 
   <div class="nav-grid">
     <a class="nav-tile primary" href="<?=h(url('teacher/classes.php'))?>">
-      <div class="nav-title">Meine Klassen</div>
-      <p class="nav-desc">Zugeordnete Klassen ansehen, Schülerinnen und Schüler verwalten.</p>
+      <div class="nav-title"><?=h(t('teacher.my_classes'))?></div>
+      <p class="nav-desc"><?=h(t('teacher.my_classes_desc'))?></p>
     </a>
     <a class="nav-tile primary" href="<?=h(url('teacher/entry.php'))?>">
-      <div class="nav-title">Eingaben ausfüllen</div>
-      <p class="nav-desc">Berichte vorbereiten und direkt im Browser bearbeiten.</p>
+      <div class="nav-title"><?=h(t('teacher.fill_entries'))?></div>
+      <p class="nav-desc"><?=h(t('teacher.fill_entries_desc'))?></p>
     </a>
     <a class="nav-tile" href="<?=h(url('teacher/delegations.php'))?>">
-      <div class="nav-title">Delegationen</div>
-      <p class="nav-desc">Geteilte Klassen und Aufgaben im Blick behalten.</p>
+      <div class="nav-title"><?=h(t('teacher.delegations'))?></div>
+      <p class="nav-desc"><?=h(t('teacher.delegations_desc'))?></p>
       <div class="nav-meta">
         <?php if ($delegationCount>0): ?>
           <span class="badge"><?=h((string)$delegationCount)?></span>
-          <span class="small">offene Delegationen</span>
+          <span class="small"><?=h(t('teacher.delegations_open'))?></span>
         <?php else: ?>
-          <span class="small muted">Keine offenen Delegationen</span>
+          <span class="small muted"><?=h(t('teacher.delegations_none'))?></span>
         <?php endif; ?>
       </div>
     </a>
     <a class="nav-tile" href="<?=h(url('teacher/export.php'))?>">
-      <div class="nav-title">PDF-Export</div>
-      <p class="nav-desc">Berichte herunterladen oder weitergeben.</p>
+      <div class="nav-title"><?=h(t('teacher.pdf_export'))?></div>
+      <p class="nav-desc"><?=h(t('teacher.pdf_export_desc'))?></p>
     </a>
   </div>
 </div>
 
 <div class="card">
-  <h2>Deine Klassen</h2>
+  <h2><?=h(t('teacher.class_list'))?></h2>
 
   <?php if (!$classes): ?>
-    <div class="alert">Noch keine Klassen zugeordnet. Bitte wende dich an den Admin, damit dir Klassen zugeordnet werden.</div>
+    <div class="alert"><?=h(t('teacher.class_none'))?></div>
   <?php else: ?>
     <table class="table">
       <thead>
         <tr>
-          <th>Schuljahr</th>
-          <th>Klasse</th>
-          <th>Aktionen</th>
+          <th><?=h(t('teacher.table.school_year'))?></th>
+          <th><?=h(t('teacher.table.class'))?></th>
+          <th><?=h(t('teacher.table.actions'))?></th>
         </tr>
       </thead>
       <tbody>
@@ -101,7 +101,7 @@ render_teacher_header('Lehrkraft – Übersicht');
           <td><?=h((string)$c['school_year'])?></td>
           <td><?=h($display)?></td>
           <td>
-            <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler</a>
+            <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.table.students'))?></a>
           </td>
         </tr>
       <?php endforeach; ?>

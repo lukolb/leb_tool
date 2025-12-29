@@ -9,26 +9,26 @@ function nav_is_active(array $files): bool {
 function nav_items_for_role(string $role): array {
   if ($role === 'admin') {
     return [
-      ['Dashboard', 'admin/index.php', ['index.php']],
-      ['Klassen', 'admin/classes.php', ['classes.php']],
-      ['Schüler', 'admin/students.php', ['students.php']],
-      ['Templates', 'admin/templates.php', ['templates.php', 'template_fields.php']],
-      ['Options-Listen', 'admin/icon_library.php', ['icon_library.php']],
-      ['Textbausteine', 'admin/text_snippets.php', ['text_snippets.php']],
-      ['Export', 'admin/export.php', ['export.php']],
-      ['Nutzer', 'admin/users.php', ['users.php']],
-      ['Einstellungen', 'admin/settings.php', ['settings.php']],
-      ['Abmelden', 'logout.php', ['logout.php']],
+      [t('nav.dashboard'), 'admin/index.php', ['index.php']],
+      [t('nav.classes'), 'admin/classes.php', ['classes.php']],
+      [t('nav.students'), 'admin/students.php', ['students.php']],
+      [t('nav.templates'), 'admin/templates.php', ['templates.php', 'template_fields.php']],
+      [t('nav.option_lists'), 'admin/icon_library.php', ['icon_library.php']],
+      [t('nav.text_snippets'), 'admin/text_snippets.php', ['text_snippets.php']],
+      [t('nav.export'), 'admin/export.php', ['export.php']],
+      [t('nav.users'), 'admin/users.php', ['users.php']],
+      [t('nav.settings'), 'admin/settings.php', ['settings.php']],
+      [t('nav.logout'), 'logout.php', ['logout.php']],
     ];
   }
 
   return [
-    ['Dashboard', 'teacher/index.php', ['index.php']],
-    ['Klassen', 'teacher/classes.php', ['classes.php', 'students.php']],
-    ['Eingaben', 'teacher/entry.php', ['entry.php']],
-    ['Delegationen', 'teacher/delegations.php', ['delegations.php']],
-    ['Export', 'teacher/export.php', ['export.php']],
-    ['Abmelden', 'logout.php', ['logout.php']],
+    [t('nav.dashboard'), 'teacher/index.php', ['index.php']],
+    [t('nav.classes'), 'teacher/classes.php', ['classes.php', 'students.php']],
+    [t('nav.entries'), 'teacher/entry.php', ['entry.php']],
+    [t('nav.delegations'), 'teacher/delegations.php', ['delegations.php']],
+    [t('nav.export'), 'teacher/export.php', ['export.php']],
+    [t('nav.logout'), 'logout.php', ['logout.php']],
   ];
 }
 
@@ -42,11 +42,11 @@ function render_role_header(string $title): void {
   $secondary = (string)($b['secondary'] ?? '#111111');
 
   $vars = "--primary:" . h($primary) . ";--secondary:" . h($secondary) . ";";
-  $aria = $role === 'admin' ? 'Admin Navigation' : 'Lehrkraft Navigation';
+  $aria = $role === 'admin' ? t('aria.admin_nav') : t('aria.teacher_nav');
   $navItems = nav_items_for_role($role);
   ?>
   <!doctype html>
-  <html lang="de">
+  <html lang="<?=h(ui_lang())?>">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ->execute([$new, $new, $classId]);
 
       audit('teacher_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
-      $ok = $new ? 'Klasse aktiviert.' : 'Klasse inaktiv gesetzt.';
+      $ok = $new ? t('teacher.classes.alert_ok_active', 'Klasse aktiviert.') : t('teacher.classes.alert_ok_inactive', 'Klasse inaktiv gesetzt.');
     }
 
     // NEW: teacher/admin can set per-class wizard display
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'student_wizard_display'=>$mode
       ]);
 
-      $ok = 'Wizard-Anzeige wurde gespeichert.';
+      $ok = t('teacher.classes.alert_ok_wizard', 'Wizard-Anzeige wurde gespeichert.');
     }
 
   } catch (Throwable $e) {
@@ -113,11 +113,11 @@ foreach ($classes as $c) {
   $grouped[$y][] = $c;
 }
 
-render_teacher_header('Klassen');
+render_teacher_header(t('teacher.classes.title', 'Klassen'));
 ?>
 
 <div class="card">
-    <h1>Klassen</h1>
+    <h1><?=h(t('teacher.classes.card_title', 'Klassen'))?></h1>
 
 </div>
   <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
@@ -126,14 +126,14 @@ render_teacher_header('Klassen');
 <div class="card">
   <div class="actions" style="justify-content:flex-start;">
     <?php if ($showInactive): ?>
-      <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>">Inaktive ausblenden</a>
+      <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>"><?=h(t('teacher.classes.hide_inactive', 'Inaktive ausblenden'))?></a>
     <?php else: ?>
-      <a class="btn secondary" href="<?=h(url('teacher/classes.php?show_inactive=1'))?>">Inaktive anzeigen</a>
+      <a class="btn secondary" href="<?=h(url('teacher/classes.php?show_inactive=1'))?>"><?=h(t('teacher.classes.show_inactive', 'Inaktive anzeigen'))?></a>
     <?php endif; ?>
   </div>
 
   <?php if (!$grouped): ?>
-    <div class="alert">Keine Klassen zugeordnet.</div>
+    <div class="alert"><?=h(t('teacher.classes.none', 'Keine Klassen zugeordnet.'))?></div>
   <?php else: ?>
     <?php foreach ($grouped as $year => $items): ?>
       <details open style="margin-top:10px;">
@@ -141,17 +141,17 @@ render_teacher_header('Klassen');
         <table class="table">
           <thead>
             <tr>
-              <th>Klasse</th>
-              <th>Status</th>
-              <th>Wizard</th>
-              <th>Aktion</th>
+              <th><?=h(t('teacher.classes.table.class', 'Klasse'))?></th>
+              <th><?=h(t('teacher.classes.table.status', 'Status'))?></th>
+              <th><?=h(t('teacher.classes.table.wizard', 'Wizard'))?></th>
+              <th><?=h(t('teacher.classes.table.actions', 'Aktion'))?></th>
             </tr>
           </thead>
           <tbody>
           <?php foreach ($items as $c): ?>
             <tr>
               <td><?=h(class_display($c))?></td>
-              <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
+              <td><?=((int)$c['is_active']===1) ? '<span class="badge">' . h(t('teacher.classes.status.active', 'aktiv')) . '</span>' : '<span class="badge">' . h(t('teacher.classes.status.inactive', 'inaktiv')) . '</span>'?></td>
 
               <td>
                 <?php $cur = normalize_wizard_display((string)($c['student_wizard_display'] ?? 'groups')); ?>
@@ -160,21 +160,21 @@ render_teacher_header('Klassen');
                   <input type="hidden" name="action" value="set_wizard_display">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
                   <select name="student_wizard_display" style="min-width:160px;">
-                    <option value="groups" <?=$cur==='groups'?'selected':''?>>Gruppen</option>
-                    <option value="items" <?=$cur==='items'?'selected':''?>>Items</option>
+                    <option value="groups" <?=$cur==='groups'?'selected':''?>><?=h(t('teacher.classes.wizard.groups', 'Gruppen'))?></option>
+                    <option value="items" <?=$cur==='items'?'selected':''?>><?=h(t('teacher.classes.wizard.items', 'Items'))?></option>
                   </select>
-                  <button class="btn secondary" type="submit">Speichern</button>
+                  <button class="btn secondary" type="submit"><?=h(t('teacher.classes.wizard.save', 'Speichern'))?></button>
                 </form>
               </td>
 
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>">Schüler verwalten</a>
-                <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>">Eingaben</a>
+                <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.students', 'Schüler verwalten'))?></a>
+                <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.entries', 'Eingaben'))?></a>
                 <form id="classActiveForm" method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
+                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
                 </form>
               </td>
             </tr>

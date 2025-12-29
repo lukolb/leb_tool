@@ -6,22 +6,41 @@ require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_teacher();
 
-render_teacher_header('Delegationen');
+$pageTitle = t('teacher.delegations.title', 'Delegationen');
+$pageIntro = t('teacher.delegations.intro', 'Hier siehst du alle Delegationen in Klassen, auf die du Zugriff hast – sowohl <strong>an dich</strong> als auch <strong>an andere</strong>. Du kannst Delegationen hier auch <strong>neu zuweisen</strong> oder <strong>aufheben</strong>.');
+$pageSearchLabel = t('teacher.delegations.search', 'Suche');
+$pageSearchPlaceholder = t('teacher.delegations.search_placeholder', 'Klasse / Gruppe / Kolleg:in…');
+$pageSearchHint = t('teacher.delegations.search_hint', '„Bearbeiten…“ öffnet den Dialog zum Zuweisen/Status/Kommentar.');
+$statusOpen = t('teacher.delegations.status.open', 'offen');
+$statusDone = t('teacher.delegations.status.done', 'fertig');
+$modalTitle = t('teacher.delegations.modal.title', 'Delegation bearbeiten');
+$modalDelegatedTo = t('teacher.delegations.modal.delegated_to', 'Delegiert an');
+$modalClearNote = t('teacher.delegations.modal.clear_note', '„— aufheben —“ entfernt die Delegation komplett.');
+$modalStatus = t('teacher.delegations.modal.status', 'Status');
+$modalComment = t('teacher.delegations.modal.comment', 'Kommentar');
+$modalCommentPlaceholder = t('teacher.delegations.modal.comment_placeholder', 'z.B. bitte prüfen…');
+$modalClose = t('teacher.delegations.modal.close', 'Schließen');
+$modalSave = t('teacher.delegations.modal.save', 'Speichern');
+$emptyText = t('teacher.delegations.empty', 'Keine Delegationen vorhanden.');
+$badgeAssigned = t('teacher.delegations.badge.assigned', '{who}');
+$badgeRemoved = t('teacher.delegations.badge.removed', 'aufgehoben');
+$statusLabel = t('teacher.delegations.status_label', 'Status:');
+$delegatedLabel = t('teacher.delegations.delegated_label', 'Delegiert an:');
+$clearShort = t('teacher.delegations.modal.clear_short', 'aufheben');
+
+render_teacher_header($pageTitle);
 ?>
 
 <div class="card">
-  <h1>Delegationen</h1>
-  <p class="muted" style="margin-top:-6px;">
-    Hier siehst du alle Delegationen in Klassen, auf die du Zugriff hast – sowohl <strong>an dich</strong> als auch <strong>an andere</strong>.
-    Du kannst Delegationen hier auch <strong>neu zuweisen</strong> oder <strong>aufheben</strong>.
-  </p>
+  <h1><?=h($pageTitle)?></h1>
+  <p class="muted" style="margin-top:-6px;"><?=$pageIntro?></p>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; display: none;">
     <div style="min-width:260px;">
-      <label class="label">Suche</label>
-      <input class="input" id="q" type="search" placeholder="Klasse / Gruppe / Kolleg:in…" style="width:100%;">
+      <label class="label"><?=h($pageSearchLabel)?></label>
+      <input class="input" id="q" type="search" placeholder="<?=h($pageSearchPlaceholder)?>" style="width:100%;">
     </div>
-    <div class="muted" style="padding-bottom:10px;">„Bearbeiten…“ öffnet den Dialog zum Zuweisen/Status/Kommentar.</div>
+    <div class="muted" style="padding-bottom:10px;"><?=h($pageSearchHint)?></div>
   </div>
 </div>
 
@@ -35,34 +54,34 @@ render_teacher_header('Delegationen');
   <div class="modal-backdrop" data-close="1"></div>
   <div class="modal-card" style="width:min(860px, calc(100vw - 24px));">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
-      <h3 style="margin:0;">Delegation bearbeiten</h3>
+      <h3 style="margin:0;"><?=h($modalTitle)?></h3>
     </div>
 
     <div class="muted" style="margin-top:6px;" id="dlgMeta">—</div>
 
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:280px;">
-        <label class="label">Delegiert an</label>
+        <label class="label"><?=h($modalDelegatedTo)?></label>
         <select class="input" id="dlgUser" style="width:100%;"></select>
-        <div class="muted" style="font-size:12px; margin-top:4px;">„— aufheben —“ entfernt die Delegation komplett.</div>
+        <div class="muted" style="font-size:12px; margin-top:4px;"><?=h($modalClearNote)?></div>
       </div>
 
       <div style="min-width:160px;">
-        <label class="label">Status</label>
+        <label class="label"><?=h($modalStatus)?></label>
         <select class="input" id="dlgSt" style="width:100%;">
-          <option value="open">offen</option>
-          <option value="done">fertig</option>
+          <option value="open"><?=h($statusOpen)?></option>
+          <option value="done"><?=h($statusDone)?></option>
         </select>
       </div>
 
       <div style="flex:1; min-width:240px;">
-        <label class="label">Kommentar</label>
-        <input class="input" id="dlgNote" type="text" placeholder="z.B. bitte prüfen…" style="width:100%;">
+        <label class="label"><?=h($modalComment)?></label>
+        <input class="input" id="dlgNote" type="text" placeholder="<?=h($modalCommentPlaceholder)?>" style="width:100%;">
       </div>
 
       <div style="display:flex; gap:8px; margin-top: 10px;">
-        <button class="btn secondary" type="button" data-close="1">Schließen</button>
-        <button class="btn" type="button" id="dlgSave">Speichern</button>
+        <button class="btn secondary" type="button" data-close="1"><?=h($modalClose)?></button>
+        <button class="btn" type="button" id="dlgSave"><?=h($modalSave)?></button>
       </div>
     </div>
   </div>
@@ -89,6 +108,14 @@ render_teacher_header('Delegationen');
   const apiUrl = <?=json_encode(url('teacher/ajax/delegations_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
+  const emptyText = <?=json_encode($emptyText)?>;
+  const statusOpen = <?=json_encode($statusOpen)?>;
+  const statusDone = <?=json_encode($statusDone)?>;
+  const badgeAssigned = <?=json_encode($badgeAssigned)?>;
+  const badgeRemoved = <?=json_encode($badgeRemoved)?>;
+  const statusLabel = <?=json_encode($statusLabel)?>;
+  const delegatedLabel = <?=json_encode($delegatedLabel)?>;
+  const clearShort = <?=json_encode($clearShort)?>;
 
   const errBox = document.getElementById('errBox');
   const errMsg = document.getElementById('errMsg');
@@ -126,7 +153,7 @@ render_teacher_header('Delegationen');
     dlgUser.innerHTML = '';
     const optNone = document.createElement('option');
     optNone.value = '0';
-    optNone.textContent = '— aufheben —';
+    optNone.textContent = '— ' + clearShort + ' —';
     dlgUser.appendChild(optNone);
 
     users.forEach(u => {
@@ -180,7 +207,7 @@ render_teacher_header('Delegationen');
 
     if (!filtered.length) {
       listCard.style.display = 'block';
-      listEl.innerHTML = '<div class="muted">Keine Delegationen vorhanden.</div>';
+      listEl.innerHTML = '<div class="muted">'+esc(emptyText)+'</div>';
       return;
     }
 
@@ -190,7 +217,7 @@ render_teacher_header('Delegationen');
         const note = String(g.note||'').trim();
         const who = String(g.user_name||'').trim();
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
-        const badgeTxt = st==='done' ? 'fertig' : 'offen';
+        const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
 
         return `
@@ -199,12 +226,12 @@ render_teacher_header('Delegationen');
               <div class="t">${esc(g.group_title || g.group_key)}</div>
               <div class="s">
                 <span class="${badgeCls}">${esc(badgeTxt)}</span>
-                <span class="badge-who">→ ${esc(who || ('#'+String(g.user_id||'')))}</span>
+                <span class="badge-who">→ ${who ? esc(badgeAssigned.replace('{who}', who)) : '—'}</span>
                 ${note ? ('<span>· ' + esc(note) + '</span>') : ''}
               </div>
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
-              ${g.is_mine ? `<a class="btn secondary" href="${openUrl}">Öffnen</a>` : ``}
+              ${g.is_mine ? `<a class="btn secondary" href="${openUrl}"><?=h(t('teacher.delegations.open', 'Öffnen'))?></a>` : ``}
               <a class="btn primary" type="button"
                 data-edit="1"
                 data-class-id="${esc(c.class_id)}"
@@ -216,7 +243,7 @@ render_teacher_header('Delegationen');
                 data-user-name="${esc(g.user_name||'')}"
                 data-status="${esc(st)}"
                 data-note="${esc(note)}"
-              >Bearbeiten…</a>
+              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>
             </div>
           </div>
         `;
