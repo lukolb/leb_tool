@@ -241,10 +241,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           </div>
           <div class="actions" style="justify-content:flex-end;">
             <?php $lang = ui_lang(); ?>
-            <div class="lang-switch" aria-label="Sprache wechseln" style="margin-right:8px;">
-              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
-              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
-            </div>
+            <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria', 'Sprache wechseln'))?>" style="margin-right:8px;">
+              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
+              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇬🇧</a>
+              </div>
             <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
           </div>
         </div>
@@ -443,6 +443,12 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.textContent = t('student.logout', 'Logout');
+
+    const langSwitch = document.querySelector('.lang-switch');
+    if (langSwitch) langSwitch.setAttribute('aria-label', t('student.lang_switch_aria', 'Sprache wechseln'));
+
+    document.querySelectorAll('.lang[data-lang="de"]').forEach(el => el.setAttribute('title', t('student.lang_de', 'Deutsch')));
+    document.querySelectorAll('.lang[data-lang="en"]').forEach(el => el.setAttribute('title', t('student.lang_en', 'English')));
 
     document.title = `${ORG_NAME} – ${t('student.html_title')}`;
 
@@ -1031,22 +1037,28 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     if (!cur) { elReqHint.textContent = ''; return; }
 
     if (cur.kind === 'intro') {
-      elReqHint.textContent = 'Klicke „Los geht\'s“, um zu starten.';
+      elReqHint.textContent = t('student.js.req_hint_intro', 'Klicke „Los geht\'s“, um zu starten.');
       return;
     }
     if (cur.kind === 'group_intro') {
       const st = groupStats(cur.fields || []);
-      elReqHint.textContent = (st.missing === 0) ? 'Abschnitt ist schon komplett ✓' : `${st.missing} fehlen in diesem Abschnitt (du kannst starten).`;
+      elReqHint.textContent = (st.missing === 0)
+        ? t('student.js.req_hint_group_done', 'Abschnitt ist schon komplett ✓')
+        : tfmt('student.js.req_hint_group_missing', '{count} fehlen in diesem Abschnitt (du kannst starten).', { count: st.missing });
       return;
     }
     if (cur.kind === 'submit') {
       const allMissing = totalMissingCount();
-      elReqHint.textContent = allMissing === 0 ? 'Alles erledigt – du kannst abgeben.' : `${allMissing} Felder fehlen noch.`;
+      elReqHint.textContent = allMissing === 0
+        ? t('student.js.req_hint_submit_ok', 'Alles erledigt – du kannst abgeben.')
+        : tfmt('student.js.req_hint_submit_missing', '{count} Felder fehlen noch.', { count: allMissing });
       return;
     }
 
     const miss = currentStepMissingCount();
-    elReqHint.textContent = (miss === 0) ? 'Alles ausgefüllt ✓' : `${miss} fehlen noch (du kannst trotzdem weiter).`;
+    elReqHint.textContent = (miss === 0)
+      ? t('student.js.req_hint_step_ok', 'Alles ausgefüllt ✓')
+      : tfmt('student.js.req_hint_step_missing', '{count} fehlen noch (du kannst trotzdem weiter).', { count: miss });
   }
 
   function totalMissingCount(){
@@ -1078,8 +1090,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     elOverallWrap.style.display = (total > 0) ? '' : 'none';
     if (elOverallText) elOverallText.textContent = (total > 0)
-      ? `Fortschritt: ${done}/${total} (offen: ${missing})`
-      : '—';
+      ? tfmt('student.js.progress_text', 'Fortschritt: {done}/{total} (offen: {missing})', { done, total, missing })
+      : t('student.js.progress_empty', '—');
     if (elOverallPct) elOverallPct.textContent = (total > 0) ? (pct + '%') : '';
 
     elOverallBar.style.width = (total > 0) ? (pct + '%') : '0%';
@@ -1096,11 +1108,11 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
     const missing = totalMissingCount();
     if (missing > 0) {
-      alert('Es fehlen noch ' + missing + ' Felder. Bitte fülle alles aus.');
+      alert(tfmt('student.js.submit_missing_alert', 'Es fehlen noch {count} Felder. Bitte fülle alles aus.', { count: missing }));
       return;
     }
 
-    if (!confirm('Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.')) return;
+    if (!confirm(t('student.js.submit_confirm', 'Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.'))) return;
 
     try {
       btnNext.disabled = true;
@@ -1119,9 +1131,9 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       activeStep = flatSteps.findIndex(s => s.kind==='submit');
       if (activeStep < 0) activeStep = flatSteps.length - 1;
       render();
-      alert('Danke! Du hast abgegeben.');
+      alert(t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
     } catch(e){
-      alert(e?.message || 'Fehler beim Abgeben.');
+      alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
     } finally {
       setSaving(false);
       btnPrev.disabled = false;
