@@ -270,7 +270,6 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
             <div>
               <div style="font-weight:800;">Dein Bericht</div>
-              <div class="muted" id="metaLine">Lade…</div>
               <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
 
               <div id="overallProgressWrap" class="progress-wrap" style="margin-top:10px;">
@@ -304,6 +303,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         </div>
       </div>
     </div>
+        
+    <div class="muted" id="metaLine" style="text-align: center;">Lade…</div>
   </div>
 
 <script>
@@ -1216,7 +1217,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
       const j = await api('bootstrap', {});
       state = j;
-      setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
+      setSaveStatus('idle', 'Automatisches Speichern ist aktiv.');
 
       if (isLocked()) {
         const st = String(state.report_status || '');
