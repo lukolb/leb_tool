@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
-    $cfg = app_config();
+    $cfg = app_config(true);
 
   } catch (Throwable $e) {
     $err = 'Fehler: ' . $e->getMessage();
