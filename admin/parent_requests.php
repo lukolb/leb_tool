@@ -10,6 +10,9 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
+$classes = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")
+  ->fetchAll(PDO::FETCH_ASSOC);
+
 function parent_admin_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -24,6 +27,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
+
+    if ($action === 'approve_all') {
+      $targetClassId = (int)($_POST['class_id'] ?? 0);
+      $days = (int)($_POST['valid_days'] ?? 14);
+      if ($days < 1) $days = 1;
+      if ($days > 120) $days = 120;
+      $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $sql = "UPDATE parent_portal_links ppl\n"
+        . "JOIN students s ON s.id=ppl.student_id\n"
+        . "SET ppl.status='approved', ppl.approved_by_user_id=?, ppl.approved_at=NOW(), ppl.published_at=NOW(), ppl.expires_at=?, ppl.updated_at=NOW()\n"
+        . "WHERE ppl.status='requested'";
+      $params = [$userId, $expiresAt];
+      if ($targetClassId > 0) {
+        $sql .= " AND s.class_id=?";
+        $params[] = $targetClassId;
+      }
+      $upd = $pdo->prepare($sql);
+      $upd->execute($params);
+      $alerts[] = 'Sammelfreigabe durchgeführt: ' . $upd->rowCount() . ' Links aktiviert.';
+      goto done_post;
+    }
     $linkId = (int)($_POST['link_id'] ?? 0);
     if ($linkId <= 0) throw new RuntimeException('Link-ID fehlt.');
 
@@ -76,18 +100,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $alerts[] = 'Gültigkeit wurde verlängert.';
     }
 
+    done_post:
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
   }
 }
 
 $statusFilter = (string)($_GET['status'] ?? 'open');
-$where = '';
+$filterClassId = (int)($_GET['class_id'] ?? 0);
+$whereParts = [];
 if ($statusFilter === 'open') {
-  $where = "WHERE ppl.status='requested'";
+  $whereParts[] = "ppl.status='requested'";
 } elseif ($statusFilter === 'approved') {
-  $where = "WHERE ppl.status='approved'";
+  $whereParts[] = "ppl.status='approved'";
 }
+if ($filterClassId > 0) {
+  $whereParts[] = 'c.id=' . (int)$filterClassId;
+}
+$where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
 $sql =
   "SELECT ppl.*, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name,\n" .
@@ -116,6 +146,17 @@ render_admin_header($pageTitle);
     <a class="btn <?= $statusFilter==='open'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=open'))?>"><?=h(t('admin.parent_requests.filter_open', 'Ausstehend'))?></a>
     <a class="btn <?= $statusFilter==='approved'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=approved'))?>"><?=h(t('admin.parent_requests.filter_approved', 'Aktiv'))?></a>
     <a class="btn <?= $statusFilter==='all'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=all'))?>"><?=h(t('admin.parent_requests.filter_all', 'Alle'))?></a>
+    <form method="get" style="display:flex; gap:8px; align-items:center;">
+      <input type="hidden" name="status" value="<?=h($statusFilter)?>">
+      <label class="muted" style="font-size:12px;">Klasse</label>
+      <select name="class_id" class="input">
+        <option value="0">Alle</option>
+        <?php foreach ($classes as $c): ?>
+          <option value="<?= (int)$c['id'] ?>" <?= $filterClassId===(int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
+        <?php endforeach; ?>
+      </select>
+      <button class="btn secondary" type="submit">Filtern</button>
+    </form>
   </div>
 </div>
 
@@ -125,6 +166,21 @@ render_admin_header($pageTitle);
 <?php if ($alerts): ?>
   <div class="card"><div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div></div>
 <?php endif; ?>
+
+<div class="card" style="margin-bottom:12px;">
+  <form method="post" class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="approve_all">
+    <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
+    <div>
+      <label class="muted" style="font-size:12px;">Gültig für (Tage)</label>
+      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;">
+    </div>
+    <div>
+      <button class="btn primary" type="submit">Alle angezeigten Anfragen freigeben</button>
+    </div>
+  </form>
+</div>
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.parent_requests.table_title', 'Übersicht'))?></h2>

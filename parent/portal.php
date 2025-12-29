@@ -5,17 +5,8 @@ require __DIR__ . '/../bootstrap.php';
 
 $pdo = db();
 $token = (string)($_GET['token'] ?? '');
-$autoTranslate = ((int)($_POST['auto_translate'] ?? $_GET['auto_translate'] ?? 0) === 1);
 $alerts = [];
 $errors = [];
-
-function parent_label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback = ''): string {
-  $labelDe = trim((string)($labelDe ?? ''));
-  $labelEn = trim((string)($labelEn ?? ''));
-  if ($lang === 'en' && $labelEn !== '') return $labelEn;
-  if ($labelDe !== '') return $labelDe;
-  return $fallback;
-}
 
 function parent_meta_read(?string $json): array {
   if (!$json) return [];
@@ -73,7 +64,7 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
     if ($key === '') continue;
     $src = (string)($row['source'] ?? 'teacher');
     $meta = parent_meta_read($row['meta_json'] ?? null);
-    $label = parent_label_for_lang($row['label'] ?? null, $row['label_en'] ?? null, $lang, $key);
+    $label = (string)($row['label'] ?? $key);
     $resolved = parent_resolve_option_value($pdo, $meta, $row['value_json'] ?? null, $row['value_text'] ?? '');
 
     $existing = $map[$key] ?? null;
@@ -88,13 +79,9 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
     }
   }
 
-  $autoNote = $autoTranslate && $lang !== 'de' ? ' (' . t('parent.portal.auto_note', 'Automatische Übersetzung · mögliche Fehlübersetzungen') . ')' : '';
-  return array_map(function($row) use ($autoNote) {
+  return array_map(function($row) {
     $val = (string)($row['value'] ?? '');
     if ($val === '') $val = t('parent.portal.empty', '–');
-    if ($autoNote !== '' && $val !== t('parent.portal.empty', '–')) {
-      $val .= $autoNote;
-    }
     return [
       'label' => (string)($row['label'] ?? ''),
       'value' => $val,
@@ -128,10 +115,7 @@ if (!$link) {
   exit;
 }
 
-if (!empty($link['preferred_lang'])) {
-  ui_lang_set((string)$link['preferred_lang']);
-}
-$lang = ui_lang();
+$lang = 'de';
 
 $expiresAt = $link['expires_at'] ?? null;
 $isExpired = false;
@@ -145,7 +129,7 @@ if ($expiresAt) {
 
 $status = (string)($link['status'] ?? '');
 $allowResponses = ($status === 'approved' && !$isExpired);
-$canPreview = $allowResponses;
+$canPreview = ($status === 'approved');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   try {
@@ -153,15 +137,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = (string)$_POST['action'];
     if (!$allowResponses) throw new RuntimeException('Rückmeldungen sind aktuell nicht möglich.');
 
-    if ($action === 'send_ack' || $action === 'send_question') {
+    if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
-      if ($action === 'send_question' && $message === '') throw new RuntimeException('Bitte eine Rückfrage eingeben.');
-      $type = $action === 'send_ack' ? 'ack' : 'question';
+      if ($message === '') throw new RuntimeException('Bitte eine Rückmeldung eingeben.');
+      $type = (string)($_POST['feedback_type'] ?? 'question');
+      if (!in_array($type, ['question', 'ack'], true)) $type = 'question';
       $ins = $pdo->prepare(
         "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
-        "VALUES (?, ?, ?, ?, ?, NOW())"
+        "VALUES (?, ?, ?, ?, 0, NOW())"
       );
-      $ins->execute([(int)$link['id'], $type, $message !== '' ? $message : null, $lang, $autoTranslate ? 1 : 0]);
+      $ins->execute([(int)$link['id'], $type, $message, 'de']);
       $alerts[] = $type === 'ack' ? t('parent.portal.ack_ok', 'Danke für die Bestätigung. Wir prüfen die Meldung zeitnah.') : t('parent.portal.question_ok', 'Rückfrage gesendet. Sie wird moderiert.');
     }
   } catch (Throwable $e) {
@@ -169,7 +154,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   }
 }
 
-$fields = $canPreview ? parent_collect_preview_fields($pdo, (int)$link['report_instance_id'], $lang, $autoTranslate) : [];
+$fields = $canPreview ? parent_collect_preview_fields($pdo, (int)$link['report_instance_id'], $lang, false) : [];
+$previewPayload = [];
+if ($canPreview) {
+  $previewPayload = [
+    'template_url' => url('parent/template_file.php?token=' . urlencode($token)),
+    'student' => [
+      'id' => (int)$link['student_id'],
+      'values' => [],
+    ],
+  ];
+
+  $stVals = $pdo->prepare(
+    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at\n" .
+    "FROM field_values fv\n" .
+    "JOIN template_fields tf ON tf.id=fv.template_field_id\n" .
+    "WHERE fv.report_instance_id=?\n" .
+    "ORDER BY fv.updated_at ASC, fv.id ASC"
+  );
+  $stVals->execute([(int)$link['report_instance_id']]);
+  $priority = ['child' => 1, 'system' => 2, 'teacher' => 3];
+  $values = [];
+  foreach ($stVals->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $field = (string)($r['field_name'] ?? '');
+    if ($field === '') continue;
+    $cur = $values[$field] ?? null;
+    $curScore = $cur ? ($priority[$cur['source']] ?? 0) : -1;
+    $newScore = $priority[(string)($r['source'] ?? '')] ?? 0;
+    if ($newScore < $curScore) continue;
+
+    $meta = parent_meta_read($r['meta_json'] ?? null);
+    $resolved = parent_resolve_option_value($pdo, $meta, $r['value_json'] ?? null, $r['value_text'] ?? '');
+    $values[$field] = ['value' => $resolved, 'source' => (string)($r['source'] ?? '')];
+  }
+  $previewPayload['student']['values'] = array_map(static fn($row) => (string)($row['value'] ?? ''), $values);
+}
 $b = brand();
 $org = $b['org_name'] ?? 'LEG Tool';
 $logo = $b['logo_path'] ?? '';
@@ -193,10 +212,6 @@ $secondary = $b['secondary'] ?? '#111111';
       <div>
         <div class="brand-title"><?=h($org)?></div>
         <div class="brand-subtitle"><?=h(t('parent.portal.subtitle', 'Elternmodus – nur Lesen'))?></div>
-      </div>
-      <div class="lang-switch" aria-label="Sprache wechseln">
-        <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>">🇩🇪</a>
-        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>">🇬🇧</a>
       </div>
     </div>
   </div>
@@ -226,33 +241,11 @@ $secondary = $b['secondary'] ?? '#111111';
     <div class="card">
       <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
         <h2 style="margin:0;"><?=h(t('parent.portal.preview_title', 'PDF-Vorschau (Nur lesen)'))?></h2>
-        <form method="get" style="margin:0; display:flex; gap:8px; align-items:center;">
-          <input type="hidden" name="token" value="<?=h($token)?>">
-          <label class="chk" style="margin:0;">
-            <input type="checkbox" name="auto_translate" value="1" <?=$autoTranslate?'checked':''?>>
-            <?=h(t('parent.portal.auto_translate', 'Automatische Übersetzung anzeigen'))?>
-          </label>
-          <button class="btn secondary" type="submit">OK</button>
-        </form>
       </div>
-      <p class="muted" style="margin-top:6px;">
-        <?=h(t('parent.portal.auto_hint', 'Maschinelle Übersetzungen können ungenau sein. Originaltext bleibt maßgeblich.'))?>
-      </p>
       <?php if (!$canPreview): ?>
         <p class="muted"><?=h(t('parent.portal.preview_blocked', 'Die Freigabe ist noch nicht aktiv oder bereits beendet.'))?></p>
-      <?php elseif (!$fields): ?>
-        <p class="muted"><?=h(t('parent.portal.no_fields', 'Noch keine Inhalte erfasst.'))?></p>
       <?php else: ?>
-        <div class="card" style="background:#f8f9fb; border:1px solid var(--border);">
-          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
-            <?php foreach ($fields as $f): ?>
-              <div style="padding:10px; background:#fff; border:1px solid var(--border); border-radius:10px;">
-                <div style="font-weight:600; margin-bottom:4px;"><?=h($f['label'])?></div>
-                <div style="white-space:pre-wrap;"><?=h($f['value'])?></div>
-              </div>
-            <?php endforeach; ?>
-          </div>
-        </div>
+        <div id="pdfPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;"></div>
       <?php endif; ?>
     </div>
 
@@ -270,34 +263,107 @@ $secondary = $b['secondary'] ?? '#111111';
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
       <?php else: ?>
-        <div class="grid" style="grid-template-columns:1fr; gap:14px;">
-          <form method="post" style="margin:0;">
-            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-            <input type="hidden" name="action" value="send_question">
-            <input type="hidden" name="auto_translate" value="<?= $autoTranslate ? '1' : '0' ?>">
-            <label><?=h(t('parent.portal.question_label', 'Rückfrage stellen'))?></label>
-            <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.question_placeholder', 'Ihre Frage ...'))?>"></textarea>
-            <div class="muted" style="font-size:12px; margin-top:4px;">
-              <?=h(t('parent.portal.question_hint', 'Die Schule prüft Rückfragen, bevor sie angezeigt werden.'))?>
-            </div>
-            <div class="actions" style="margin-top:8px;">
-              <button class="btn primary" type="submit"><?=h(t('parent.portal.question_send', 'Rückfrage senden'))?></button>
-            </div>
-          </form>
-
-          <form method="post" style="margin:0;">
-            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-            <input type="hidden" name="action" value="send_ack">
-            <input type="hidden" name="auto_translate" value="<?= $autoTranslate ? '1' : '0' ?>">
-            <label><?=h(t('parent.portal.ack_label', 'Bestätigung (gelesen)'))?></label>
-            <textarea name="message" rows="2" placeholder="<?=h(t('parent.portal.ack_placeholder', 'Optionaler Kommentar'))?>"></textarea>
-            <div class="actions" style="margin-top:8px;">
-              <button class="btn secondary" type="submit"><?=h(t('parent.portal.ack_send', 'Als gelesen bestätigen'))?></button>
-            </div>
-          </form>
-        </div>
+        <form method="post" style="margin:0; display:flex; flex-direction:column; gap:8px;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="action" value="send_feedback">
+          <label><?=h(t('parent.portal.feedback_label', 'Rückfrage oder Kommentar'))?></label>
+          <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
+          <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap;">
+            <label class="chk" style="margin:0; display:flex; gap:6px; align-items:center;">
+              <input type="radio" name="feedback_type" value="question" checked>
+              <?=h(t('parent.portal.type_question', 'Rückfrage'))?>
+            </label>
+            <label class="chk" style="margin:0; display:flex; gap:6px; align-items:center;">
+              <input type="radio" name="feedback_type" value="ack">
+              <?=h(t('parent.portal.type_ack', 'Bestätigung (gelesen)'))?>
+            </label>
+          </div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn primary" type="submit"><?=h(t('parent.portal.feedback_send', 'Rückmeldung senden'))?></button>
+          </div>
+        </form>
       <?php endif; ?>
     </div>
   </div>
+  <?php if ($canPreview): ?>
+  <script type="module">
+    import * as pdfjsLib from "<?=h(url('assets/pdfjs/pdf.min.mjs'))?>";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "<?=h(url('assets/pdfjs/pdf.worker.min.mjs'))?>";
+
+    const payload = <?= json_encode($previewPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    const preview = document.getElementById('pdfPreview');
+
+    function showError(msg){
+      if (!preview) return;
+      preview.innerHTML = `<div class="alert danger">${msg}</div>`;
+    }
+
+    async function ensurePdfLib(){
+      if (window.PDFLib) return;
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('PDF-Bibliothek konnte nicht geladen werden.'));
+        document.head.appendChild(s);
+      });
+    }
+
+    function renderPages(bytes){
+      if (!preview) return;
+      preview.innerHTML = '';
+      const loadingTask = pdfjsLib.getDocument({ data: bytes });
+      loadingTask.promise.then(async (doc) => {
+        for (let p = 1; p <= doc.numPages; p++){
+          const page = await doc.getPage(p);
+          const viewport = page.getViewport({ scale: 1.2 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.display = 'block';
+          canvas.style.marginBottom = '12px';
+          preview.appendChild(canvas);
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        }
+      }).catch(e => showError(e?.message || String(e)));
+    }
+
+    async function loadTemplate(){
+      const resp = await fetch(payload.template_url, { credentials:'same-origin' });
+      if (!resp.ok) throw new Error('PDF-Vorlage konnte nicht geladen werden.');
+      return new Uint8Array(await resp.arrayBuffer());
+    }
+
+    async function fillPdf(){
+      await ensurePdfLib();
+      const tpl = await loadTemplate();
+      const PDFLib = window.PDFLib;
+      const { PDFDocument } = PDFLib;
+      const pdfDoc = await PDFDocument.load(tpl);
+      const form = pdfDoc.getForm();
+      const values = payload.student?.values || {};
+      const norm = (s) => (s ?? '').toString();
+      Object.entries(values).forEach(([name, val]) => {
+        try {
+          const field = form.getField(name);
+          if (!field) return;
+          if (typeof field.setText === 'function') field.setText(norm(val));
+          else if (typeof field.check === 'function') {
+            const v = norm(val).toLowerCase();
+            if (['1','ja','yes','true','x'].includes(v)) field.check();
+          } else if (typeof field.select === 'function') {
+            field.select(norm(val));
+          }
+        } catch (e) {}
+      });
+      form.updateFieldAppearances();
+      const bytes = await pdfDoc.save();
+      renderPages(bytes);
+    }
+
+    fillPdf().catch(e => showError(e?.message || String(e)));
+  </script>
+  <?php endif; ?>
 </body>
 </html>

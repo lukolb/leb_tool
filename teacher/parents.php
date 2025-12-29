@@ -61,42 +61,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
-    $studentId = (int)($_POST['student_id'] ?? 0);
 
-    if ($studentId <= 0) {
-      throw new RuntimeException('Schüler:in fehlt.');
-    }
-
-    $stStudent = $pdo->prepare("SELECT id, class_id, first_name, last_name FROM students WHERE id=? LIMIT 1");
-    $stStudent->execute([$studentId]);
-    $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
-    if (!$studentRow) {
-      throw new RuntimeException('Schüler:in nicht gefunden.');
-    }
-
-    $studentClassId = (int)($studentRow['class_id'] ?? 0);
-    if ($role !== 'admin' && ($studentClassId <= 0 || !user_can_access_class($pdo, $userId, $studentClassId))) {
-      throw new RuntimeException('Keine Berechtigung.');
-    }
-
-    if ($action === 'request_link') {
-      $report = latest_report_for_student($pdo, $studentId);
-      if (!$report) throw new RuntimeException('Es gibt noch keinen Berichtseintrag für diese Person.');
+    if ($action === 'request_all') {
+      $targetClassId = (int)($_POST['class_id'] ?? 0);
+      if ($targetClassId <= 0) throw new RuntimeException('Klasse fehlt.');
+      if ($role !== 'admin' && !user_can_access_class($pdo, $userId, $targetClassId)) throw new RuntimeException('Keine Berechtigung.');
 
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
       if ($days > 90) $days = 90;
       $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
 
-      $token = bin2hex(random_bytes(32));
-      $prefLang = substr((string)($_POST['preferred_lang'] ?? ui_lang()), 0, 8) ?: 'de';
-
+      $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name ASC, first_name ASC");
+      $stStudents->execute([$targetClassId]);
+      $created = 0; $skippedReport = 0; $skippedActive = 0;
+      $stLatestLink = $pdo->prepare("SELECT status, expires_at FROM parent_portal_links WHERE student_id=? ORDER BY updated_at DESC, id DESC LIMIT 1");
       $ins = $pdo->prepare(
         "INSERT INTO parent_portal_links (student_id, report_instance_id, token, status, requested_by_user_id, preferred_lang, expires_at, published_at, approved_by_user_id, approved_at)\n" .
-        "VALUES (?, ?, ?, 'requested', ?, ?, ?, NULL, NULL, NULL)"
+        "VALUES (?, ?, ?, 'requested', ?, 'de', ?, NULL, NULL, NULL)"
       );
-      $ins->execute([$studentId, (int)$report['id'], $token, $userId, $prefLang, $expiresAt]);
-      $alerts[] = 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
+      foreach ($stStudents->fetchAll(PDO::FETCH_ASSOC) as $stuRow) {
+        $sid = (int)$stuRow['id'];
+        $stLatestLink->execute([$sid]);
+        $existing = $stLatestLink->fetch(PDO::FETCH_ASSOC);
+        if ($existing) {
+          $exStatus = (string)($existing['status'] ?? '');
+          $exExpires = $existing['expires_at'] ?? null;
+          $stillActive = ($exStatus === 'approved' && $exExpires && strtotime((string)$exExpires) > time());
+          if ($stillActive) { $skippedActive++; continue; }
+        }
+
+        $report = latest_report_for_student($pdo, $sid);
+        if (!$report) { $skippedReport++; continue; }
+
+        $token = bin2hex(random_bytes(32));
+        $ins->execute([$sid, (int)$report['id'], $token, $userId, $expiresAt]);
+        $created++;
+      }
+      $alerts[] = 'Sammelanfrage erstellt: ' . $created . ' neu, ' . $skippedActive . ' bereits aktiv, ' . $skippedReport . ' ohne Bericht.';
+    } else {
+      $studentId = (int)($_POST['student_id'] ?? 0);
+
+      if ($studentId <= 0) {
+        throw new RuntimeException('Schüler:in fehlt.');
+      }
+
+      $stStudent = $pdo->prepare("SELECT id, class_id, first_name, last_name FROM students WHERE id=? LIMIT 1");
+      $stStudent->execute([$studentId]);
+      $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
+      if (!$studentRow) {
+        throw new RuntimeException('Schüler:in nicht gefunden.');
+      }
+
+      $studentClassId = (int)($studentRow['class_id'] ?? 0);
+      if ($role !== 'admin' && ($studentClassId <= 0 || !user_can_access_class($pdo, $userId, $studentClassId))) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+
+      if ($action === 'request_link') {
+        $report = latest_report_for_student($pdo, $studentId);
+        if (!$report) throw new RuntimeException('Es gibt noch keinen Berichtseintrag für diese Person.');
+
+        $days = (int)($_POST['valid_days'] ?? 14);
+        if ($days < 1) $days = 1;
+        if ($days > 90) $days = 90;
+        $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+
+        $token = bin2hex(random_bytes(32));
+
+        $ins = $pdo->prepare(
+          "INSERT INTO parent_portal_links (student_id, report_instance_id, token, status, requested_by_user_id, preferred_lang, expires_at, published_at, approved_by_user_id, approved_at)\n" .
+          "VALUES (?, ?, ?, 'requested', ?, 'de', ?, NULL, NULL, NULL)"
+        );
+        $ins->execute([$studentId, (int)$report['id'], $token, $userId, $expiresAt]);
+        $alerts[] = 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
+      }
+
     }
 
     if ($action === 'revoke_link') {
@@ -205,7 +245,7 @@ render_teacher_header($pageTitle);
   </div>
   <h1><?=h($pageTitle)?></h1>
   <p class="muted" style="max-width:760px;">
-    <?=h(t('teacher.parents.intro', 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen nur eine schreibgeschützte PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'))?>
+    <?=h(t('teacher.parents.intro', 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'))?>
   </p>
 </div>
 
@@ -233,6 +273,23 @@ render_teacher_header($pageTitle);
     </div>
   </form>
 </div>
+
+<?php if ($classId > 0 && $students): ?>
+<div class="card" style="margin-bottom:14px;">
+  <form method="post" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="request_all">
+    <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+    <div>
+      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days', 'Freischalten für (Tage)'))?></label>
+      <input type="number" name="valid_days" value="14" min="1" max="90" style="width:90px;">
+    </div>
+    <div>
+      <button class="btn primary" type="submit"><?=h(t('teacher.parents.bulk_request', 'Alle Zugänge dieser Klasse anfragen'))?></button>
+    </div>
+  </form>
+</div>
+<?php endif; ?>
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
