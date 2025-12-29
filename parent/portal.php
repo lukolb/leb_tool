@@ -140,14 +140,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
       if ($message === '') throw new RuntimeException('Bitte eine Rückmeldung eingeben.');
-      $type = (string)($_POST['feedback_type'] ?? 'question');
-      if (!in_array($type, ['question', 'ack'], true)) $type = 'question';
+      $type = 'question';
       $ins = $pdo->prepare(
         "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
         "VALUES (?, ?, ?, ?, 0, NOW())"
       );
       $ins->execute([(int)$link['id'], $type, $message, 'de']);
-      $alerts[] = $type === 'ack' ? t('parent.portal.ack_ok', 'Danke für die Bestätigung. Wir prüfen die Meldung zeitnah.') : t('parent.portal.question_ok', 'Rückfrage gesendet. Sie wird moderiert.');
+      $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung. Sie wird moderiert.');
     }
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
@@ -245,13 +244,13 @@ $secondary = $b['secondary'] ?? '#111111';
       <?php if (!$canPreview): ?>
         <p class="muted"><?=h(t('parent.portal.preview_blocked', 'Die Freigabe ist noch nicht aktiv oder bereits beendet.'))?></p>
       <?php else: ?>
-        <div id="pdfPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;"></div>
+        <div id="pdfPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none;" oncontextmenu="return false;"></div>
       <?php endif; ?>
     </div>
 
     <div class="card">
       <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
-      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Sie können eine Rückfrage stellen oder bestätigen, dass Sie die Inhalte gelesen haben. Alle Rückmeldungen werden moderiert.'))?></p>
+      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Sie können hier eine Rückmeldung hinterlassen. Alle Rückmeldungen werden moderiert.'))?></p>
 
       <?php if ($errors): ?>
         <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
@@ -266,18 +265,8 @@ $secondary = $b['secondary'] ?? '#111111';
         <form method="post" style="margin:0; display:flex; flex-direction:column; gap:8px;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="send_feedback">
-          <label><?=h(t('parent.portal.feedback_label', 'Rückfrage oder Kommentar'))?></label>
+          <label><?=h(t('parent.portal.feedback_label', 'Rückmeldung oder Rückfrage'))?></label>
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
-          <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap;">
-            <label class="chk" style="margin:0; display:flex; gap:6px; align-items:center;">
-              <input type="radio" name="feedback_type" value="question" checked>
-              <?=h(t('parent.portal.type_question', 'Rückfrage'))?>
-            </label>
-            <label class="chk" style="margin:0; display:flex; gap:6px; align-items:center;">
-              <input type="radio" name="feedback_type" value="ack">
-              <?=h(t('parent.portal.type_ack', 'Bestätigung (gelesen)'))?>
-            </label>
-          </div>
           <div class="actions" style="margin-top:8px;">
             <button class="btn primary" type="submit"><?=h(t('parent.portal.feedback_send', 'Rückmeldung senden'))?></button>
           </div>
@@ -292,6 +281,10 @@ $secondary = $b['secondary'] ?? '#111111';
 
     const payload = <?= json_encode($previewPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
     const preview = document.getElementById('pdfPreview');
+    if (preview) {
+      preview.addEventListener('contextmenu', (e) => e.preventDefault());
+      preview.addEventListener('dragstart', (e) => e.preventDefault());
+    }
 
     function showError(msg){
       if (!preview) return;
@@ -316,15 +309,21 @@ $secondary = $b['secondary'] ?? '#111111';
       loadingTask.promise.then(async (doc) => {
         for (let p = 1; p <= doc.numPages; p++){
           const page = await doc.getPage(p);
-          const viewport = page.getViewport({ scale: 1.2 });
+          const viewport = page.getViewport({ scale: 1.6 });
+          const ratio = window.devicePixelRatio || 1;
           const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
+          canvas.width = viewport.width * ratio;
+          canvas.height = viewport.height * ratio;
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
           canvas.style.display = 'block';
           canvas.style.marginBottom = '12px';
+          canvas.draggable = false;
+          canvas.oncontextmenu = (e) => e.preventDefault();
           preview.appendChild(canvas);
           const ctx = canvas.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          const renderCtx = { canvasContext: ctx, viewport, transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined };
+          await page.render(renderCtx).promise;
         }
       }).catch(e => showError(e?.message || String(e)));
     }

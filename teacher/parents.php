@@ -376,7 +376,7 @@ render_teacher_header($pageTitle);
 
 <div class="card" style="margin-top:14px;">
   <h2 style="margin-top:0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Reaktionen (moderiert)'))?></h2>
-  <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückfragen und Lesebestätigungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
+  <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
   <?php if (!$feedbackList): ?>
     <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
   <?php else: ?>
@@ -385,7 +385,6 @@ render_teacher_header($pageTitle);
         <thead>
           <tr>
             <th><?=h(t('teacher.parents.feedback_student', 'Schüler:in'))?></th>
-            <th><?=h(t('teacher.parents.feedback_type', 'Typ'))?></th>
             <th><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
             <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
             <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
@@ -395,7 +394,6 @@ render_teacher_header($pageTitle);
           <?php foreach ($feedbackList as $fb): ?>
             <tr>
               <td><strong><?=h((string)$fb['first_name'] . ' ' . (string)$fb['last_name'])?></strong></td>
-              <td><?=h($fb['feedback_type'] === 'ack' ? t('teacher.parents.feedback.type_ack', 'Bestätigung') : t('teacher.parents.feedback.type_question', 'Rückfrage'))?></td>
               <td>
                 <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
                   <span class="muted">–</span>
