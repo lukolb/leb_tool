@@ -18,6 +18,8 @@ if ($classId <= 0) {
   exit;
 }
 
+$customFields = list_student_custom_fields($pdo);
+
 if (!user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
   echo "403 Forbidden";
@@ -157,6 +159,17 @@ function ensure_master_id(PDO $pdo, int $studentId): int {
   // Set self as master
   $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$studentId, $studentId]);
   return $studentId;
+}
+
+function read_custom_field_input(array $fields, array $src): array {
+  $out = [];
+  foreach ($fields as $f) {
+    $key = (string)($f['field_key'] ?? '');
+    if ($key === '') continue;
+    if (!array_key_exists($key, $src)) continue;
+    $out[$key] = trim((string)$src[$key]);
+  }
+  return $out;
 }
 
 function random_student_token(): string {
@@ -338,6 +351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $first = normalize_name((string)($_POST['first_name'] ?? ''));
       $last  = normalize_name((string)($_POST['last_name'] ?? ''));
       $dob   = normalize_date($_POST['date_of_birth'] ?? null);
+      $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException('Vorname und Nachname sind erforderlich.');
 
@@ -349,6 +363,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $newId = (int)$pdo->lastInsertId();
       // master_student_id defaults to NULL; set to itself
       $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$newId, $newId]);
+
+      save_student_custom_values($pdo, $newId, $customInput, true);
 
       audit('teacher_student_add', $userId, ['class_id'=>$classId,'student_id'=>$newId]);
       $ok = 'Schüler wurde angelegt.';
@@ -411,6 +427,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newId = (int)$pdo->lastInsertId();
         if (!$master) {
           $setSelfMaster->execute([$newId, $newId]);
+        }
+        if ($master) {
+          $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
+          if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
+        } else {
+          save_student_custom_values($pdo, $newId, [], true);
         }
         $created++;
       }
@@ -530,6 +552,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($q->fetch()) continue;
 
         $ins->execute([$master, $classId, $s['first_name'], $s['last_name'], $s['date_of_birth']]);
+        $newId = (int)$pdo->lastInsertId();
+        $copiedCustom = copy_student_custom_values($pdo, $sid, $newId);
+        if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
         $copied++;
       }
       $pdo->commit();
@@ -732,6 +757,18 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <label>Geburtsdatum</label>
       <input name="date_of_birth" type="text" placeholder="YYYY-MM-DD oder DD.MM.YYYY">
     </div>
+    <?php if ($customFields): ?>
+      <div style="grid-column: 1 / span 3; margin-top:6px;">
+        <h3 style="margin:0 0 8px 0;">Zusätzliche Felder</h3>
+      </div>
+      <?php foreach ($customFields as $cf): ?>
+        <div>
+          <?php $labEn = trim((string)($cf['label_en'] ?? '')); ?>
+          <label><?=h((string)$cf['label'])?><?php if ($labEn !== ''): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
+          <input name="custom[<?=h((string)$cf['field_key'])?>]" type="text" value="<?=h((string)($cf['default_value'] ?? ''))?>">
+        </div>
+      <?php endforeach; ?>
+    <?php endif; ?>
     <div class="actions" style="justify-content:flex-start;">
       <button class="btn primary" type="submit">Anlegen</button>
     </div>

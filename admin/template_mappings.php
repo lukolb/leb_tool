@@ -7,6 +7,7 @@ require __DIR__ . '/_layout.php';
 require_admin();
 
 $pdo = db();
+$customStudentFields = list_student_custom_fields($pdo);
 
 $templateId = (int)($_GET['template_id'] ?? ($_POST['template_id'] ?? 0));
 $previewStudentId = (int)($_GET['preview_student_id'] ?? 0);
@@ -24,6 +25,11 @@ $SYSTEM_KEYS = [
   'class.label'           => 'Klasse: Bezeichnung (a/b/...)',
   'class.display'         => 'Klasse: Anzeige (z.B. 1a)',
 ];
+foreach ($customStudentFields as $cf) {
+  $key = trim((string)($cf['field_key'] ?? ''));
+  if ($key === '') continue;
+  $SYSTEM_KEYS['student.custom.' . $key] = 'Schüler: ' . trim((string)($cf['label'] ?? $key));
+}
 
 function meta_read_map(?string $json): array {
   if (!$json) return [];
@@ -94,10 +100,19 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
-  return $row ?: null;
+  if (!$row) return null;
+  $row['custom_values'] = student_custom_value_map($pdo, $studentId);
+  return $row;
 }
 
 function preview_value_map(string $systemKey, array $row): string {
+  if (strpos($systemKey, 'student.custom.') === 0) {
+    $k = substr($systemKey, strlen('student.custom.'));
+    if ($k === '') return '';
+    $custom = $row['custom_values'] ?? [];
+    return (string)($custom[$k] ?? '');
+  }
+
   switch ($systemKey) {
     case 'student.first_name': return (string)($row['first_name'] ?? '');
     case 'student.last_name': return (string)($row['last_name'] ?? '');
