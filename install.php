@@ -506,6 +506,7 @@ CREATE TABLE IF NOT EXISTS `classes` (
   `label` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `template_id` bigint UNSIGNED DEFAULT NULL,
+  `tts_enabled` tinyint(1) NOT NULL DEFAULT '0',
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `inactive_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,

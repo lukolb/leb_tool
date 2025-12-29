@@ -52,6 +52,7 @@ function translations_catalog(): array {
       'teacher.classes.table.class' => 'Klasse',
       'teacher.classes.table.status' => 'Status',
       'teacher.classes.table.wizard' => 'Wizard',
+      'teacher.classes.table.tts' => 'Vorlesen',
       'teacher.classes.table.actions' => 'Aktion',
       'teacher.classes.status.active' => 'aktiv',
       'teacher.classes.status.inactive' => 'inaktiv',
@@ -64,6 +65,12 @@ function translations_catalog(): array {
       'teacher.classes.action.toggle_active' => 'Aktivieren',
       'teacher.classes.alert_ok_active' => 'Klasse aktiviert.',
       'teacher.classes.alert_ok_inactive' => 'Klasse inaktiv gesetzt.',
+      'teacher.classes.alert_ok_tts_on' => 'Vorlesefunktion aktiviert.',
+      'teacher.classes.alert_ok_tts_off' => 'Vorlesefunktion deaktiviert.',
+      'teacher.classes.tts.enable' => 'Vorlesen aktivieren',
+      'teacher.classes.tts.disable' => 'Vorlesen deaktivieren',
+      'teacher.classes.tts.status_on' => 'Aktiv',
+      'teacher.classes.tts.status_off' => 'Deaktiviert',
       'teacher.classes.alert_ok_wizard' => 'Wizard-Anzeige wurde gespeichert.',
 
       // Teacher entry
@@ -267,6 +274,15 @@ function translations_catalog(): array {
       'student.buttons.prev' => 'Zurück',
       'student.buttons.next' => 'Weiter',
       'student.meta.loading' => 'Lade…',
+      'student.tts.title' => 'Vorlesen',
+      'student.tts.start' => 'Aktuellen Abschnitt vorlesen',
+      'student.tts.stop' => 'Stopp',
+      'student.tts.ready' => 'Bereit zum Vorlesen.',
+      'student.tts.reading' => 'Liest gerade …',
+      'student.tts.nothing' => 'Nichts zum Vorlesen gefunden.',
+      'student.tts.disabled' => 'Vorlesen wurde von deiner Lehrkraft deaktiviert.',
+      'student.tts.unsupported' => 'Vorlesen wird von diesem Gerät nicht unterstützt.',
+      'student.tts.error' => 'Vorlesen konnte nicht gestartet werden.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',
@@ -366,6 +382,7 @@ function translations_catalog(): array {
       'teacher.classes.table.class' => 'Class',
       'teacher.classes.table.status' => 'Status',
       'teacher.classes.table.wizard' => 'Wizard',
+      'teacher.classes.table.tts' => 'Read aloud',
       'teacher.classes.table.actions' => 'Actions',
       'teacher.classes.status.active' => 'active',
       'teacher.classes.status.inactive' => 'inactive',
@@ -379,6 +396,12 @@ function translations_catalog(): array {
       'teacher.classes.alert_ok_active' => 'Class activated.',
       'teacher.classes.alert_ok_inactive' => 'Class set to inactive.',
       'teacher.classes.alert_ok_wizard' => 'Wizard display saved.',
+      'teacher.classes.alert_ok_tts_on' => 'Read-aloud enabled.',
+      'teacher.classes.alert_ok_tts_off' => 'Read-aloud disabled.',
+      'teacher.classes.tts.enable' => 'Enable read aloud',
+      'teacher.classes.tts.disable' => 'Disable read aloud',
+      'teacher.classes.tts.status_on' => 'Active',
+      'teacher.classes.tts.status_off' => 'Disabled',
 
       // Teacher entry
       'teacher.entry.title' => 'Entries',
@@ -581,6 +604,15 @@ function translations_catalog(): array {
       'student.buttons.prev' => 'Back',
       'student.buttons.next' => 'Next',
       'student.meta.loading' => 'Loading…',
+      'student.tts.title' => 'Read aloud',
+      'student.tts.start' => 'Read this section',
+      'student.tts.stop' => 'Stop',
+      'student.tts.ready' => 'Ready to read.',
+      'student.tts.reading' => 'Reading …',
+      'student.tts.nothing' => 'Nothing to read here.',
+      'student.tts.disabled' => 'Read aloud was disabled by your teacher.',
+      'student.tts.unsupported' => 'Read aloud is not supported on this device.',
+      'student.tts.error' => 'Could not start read aloud.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',

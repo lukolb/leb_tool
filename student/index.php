@@ -10,7 +10,7 @@ $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.first_name, s.last_name, s.class_id,
-          c.school_year, c.grade_level, c.label, c.name AS class_name, c.template_id
+          c.school_year, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
    WHERE s.id=? LIMIT 1"
@@ -36,6 +36,7 @@ $schoolYear = (string)($me['school_year'] ?? '');
 
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
+$ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
 
 $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
@@ -193,6 +194,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
     @keyframes s{ to{ transform: rotate(360deg); } }
 
+    .tts-bar{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border); border-radius:12px; margin-bottom:10px; background: rgba(0,0,0,0.02); }
+    .tts-title{ font-weight:800; }
+    .tts-status{ color: var(--muted); font-size:12px; }
+
     .locked-overlay{ border:1px solid rgba(176,0,32,0.25); background: rgba(176,0,32,0.05); padding:12px; border-radius:14px; margin-bottom: 10px; }
     .locked-overlay strong{ color: rgba(176,0,32,0.95); }
 
@@ -290,6 +295,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
         <div class="card">
           <div id="lockBanner" style="display:none;" class="locked-overlay"></div>
 
+          <div id="ttsBar" class="tts-bar" style="display:none;">
+            <div>
+              <div class="tts-title" data-i18n="student.tts.title"><?=h(t('student.tts.title', 'Vorlesen'))?></div>
+              <div class="tts-status" id="ttsStatus"><?=h(t('student.tts.ready', 'Bereit zum Vorlesen.'))?></div>
+            </div>
+            <div class="tts-actions">
+              <button class="btn secondary" type="button" id="ttsButton"><?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?></button>
+            </div>
+          </div>
+
           <h2 id="stepTitle">…</h2>
           <div class="step-meta" id="stepSub"></div>
 
@@ -315,6 +330,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   const ORG_NAME = <?= json_encode($orgName) ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
+  const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -336,6 +352,10 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   const elLockedOnly = document.getElementById('lockedOnly');
   const elWizShell = document.getElementById('wizShell');
+
+  const ttsBar = document.getElementById('ttsBar');
+  const ttsButton = document.getElementById('ttsButton');
+  const ttsStatus = document.getElementById('ttsStatus');
 
   let state = {
     ok: false,
@@ -366,6 +386,100 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   };
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  // -------- Vorlese-Funktion (Web Speech API) --------
+  const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  let ttsUtterance = null;
+
+  function updateTtsUi(text){
+    if (!ttsBar) return;
+    if (!TTS_ALLOWED) {
+      ttsBar.style.display = 'flex';
+      if (ttsButton) ttsButton.style.display = 'none';
+      if (ttsStatus) ttsStatus.textContent = t('student.tts.disabled', 'Vorlesen wurde von deiner Lehrkraft deaktiviert.');
+      return;
+    }
+    if (!ttsSupported) {
+      ttsBar.style.display = 'flex';
+      if (ttsButton) ttsButton.style.display = 'none';
+      if (ttsStatus) ttsStatus.textContent = t('student.tts.unsupported', 'Vorlesen wird von diesem Gerät nicht unterstützt.');
+      return;
+    }
+
+    ttsBar.style.display = 'flex';
+    if (ttsButton) {
+      ttsButton.style.display = '';
+      ttsButton.textContent = speechSynthesis.speaking
+        ? t('student.tts.stop', 'Stopp')
+        : t('student.tts.start', 'Aktuellen Abschnitt vorlesen');
+    }
+    if (ttsStatus) {
+      if (text) {
+        ttsStatus.textContent = text;
+      } else {
+        ttsStatus.textContent = speechSynthesis.speaking
+          ? t('student.tts.reading', 'Liest gerade …')
+          : t('student.tts.ready', 'Bereit zum Vorlesen.');
+      }
+    }
+  }
+
+  function stopTts(){
+    if (!ttsSupported || !speechSynthesis) return;
+    try { speechSynthesis.cancel(); } catch(e) {}
+    ttsUtterance = null;
+    updateTtsUi();
+  }
+
+  function currentStepTextForTts(){
+    const parts = [elTitle?.textContent || '', elSub?.textContent || '', elBody?.innerText || '']
+      .map(s => String(s || '').trim())
+      .filter(Boolean);
+    return parts.join('. ');
+  }
+
+  function pickVoice(lang){
+    if (!ttsSupported) return null;
+    const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
+    if (!voices || voices.length === 0) return null;
+    const exactLocal = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && v.localService);
+    if (exactLocal) return exactLocal;
+    const exact = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
+    if (exact) return exact;
+    return voices[0] || null;
+  }
+
+  function speakCurrentStep(){
+    if (!ttsSupported) return;
+    const text = currentStepTextForTts();
+    if (!text) { updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.')); return; }
+
+    stopTts();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.95;
+    utter.pitch = 1;
+    utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
+    const voice = pickVoice(utter.lang);
+    if (voice) utter.voice = voice;
+    utter.onstart = () => updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+    utter.onend = () => updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
+    utter.onerror = () => updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.'));
+    ttsUtterance = utter;
+    speechSynthesis.speak(utter);
+    updateTtsUi();
+  }
+
+  function initTts(){
+    updateTtsUi();
+    if (!ttsSupported || !ttsButton) return;
+    ttsButton.addEventListener('click', () => {
+      if (speechSynthesis.speaking) { stopTts(); }
+      else { speakCurrentStep(); }
+    });
+    if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
+      speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
+    }
+  }
 
   async function api(action, payload){
     const res = await fetch(apiUrl, {
@@ -1142,6 +1256,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   }
 
   function render(){
+    if (ttsSupported && TTS_ALLOWED) stopTts();
     if (isLocked()) {
       const st = String(state.report_status || '');
       if (st === 'submitted') {
@@ -1274,6 +1389,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 
   (async function init(){
     try {
+      initTts();
       if (!HAS_TEMPLATE) return;
 
       const j = await api('bootstrap', {});

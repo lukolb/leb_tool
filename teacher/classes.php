@@ -53,6 +53,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = $new ? t('teacher.classes.alert_ok_active', 'Klasse aktiviert.') : t('teacher.classes.alert_ok_inactive', 'Klasse inaktiv gesetzt.');
     }
 
+    elseif ($action === 'toggle_tts') {
+      $classId = (int)($_POST['class_id'] ?? 0);
+      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+
+      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+
+      $new = (int)($_POST['tts_enabled'] ?? 0) === 1 ? 1 : 0;
+      $pdo->prepare("UPDATE classes SET tts_enabled=? WHERE id=?")
+          ->execute([$new, $classId]);
+
+      audit('class_toggle_tts', $userId, [
+        'class_id' => $classId,
+        'tts_enabled' => $new,
+      ]);
+
+      $ok = $new
+        ? t('teacher.classes.alert_ok_tts_on', 'Vorlesefunktion aktiviert.')
+        : t('teacher.classes.alert_ok_tts_off', 'Vorlesefunktion deaktiviert.');
+    }
+
     // NEW: teacher/admin can set per-class wizard display
     elseif ($action === 'set_wizard_display') {
       $classId = (int)($_POST['class_id'] ?? 0);
@@ -144,6 +166,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
               <th><?=h(t('teacher.classes.table.class', 'Klasse'))?></th>
               <th><?=h(t('teacher.classes.table.status', 'Status'))?></th>
               <th><?=h(t('teacher.classes.table.wizard', 'Wizard'))?></th>
+              <th><?=h(t('teacher.classes.table.tts', 'Vorlesen'))?></th>
               <th><?=h(t('teacher.classes.table.actions', 'Aktion'))?></th>
             </tr>
           </thead>
@@ -164,6 +187,20 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                     <option value="items" <?=$cur==='items'?'selected':''?>><?=h(t('teacher.classes.wizard.items', 'Items'))?></option>
                   </select>
                   <button class="btn secondary" type="submit"><?=h(t('teacher.classes.wizard.save', 'Speichern'))?></button>
+                </form>
+              </td>
+
+              <td>
+                <?php $ttsEnabled = (int)($c['tts_enabled'] ?? 0) === 1; ?>
+                <form method="post" style="display:flex; gap:8px; align-items:center; margin:0;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="toggle_tts">
+                  <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                  <input type="hidden" name="tts_enabled" value="<?= $ttsEnabled ? '0' : '1' ?>">
+                  <button class="btn secondary" type="submit"><?= $ttsEnabled ? h(t('teacher.classes.tts.disable', 'Vorlesen deaktivieren')) : h(t('teacher.classes.tts.enable', 'Vorlesen aktivieren')) ?></button>
+                  <span class="muted" style="font-size:12px;">
+                    <?= $ttsEnabled ? h(t('teacher.classes.tts.status_on', 'Aktiv')) : h(t('teacher.classes.tts.status_off', 'Deaktiviert')) ?>
+                  </span>
                 </form>
               </td>
 
