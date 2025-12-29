@@ -460,6 +460,8 @@ function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $
 
     $out[$rid][$fid][] = [
       'text' => $resolved['text'] !== null ? (string)$resolved['text'] : '',
+      'value_text' => $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      'value_json' => $r['value_json'] !== null ? (string)$r['value_json'] : null,
       'source' => (string)($r['source'] ?? ''),
       'created_at' => (string)($r['created_at'] ?? ''),
       'updated_by_user_id' => $r['updated_by_user_id'] !== null ? (int)$r['updated_by_user_id'] : null,

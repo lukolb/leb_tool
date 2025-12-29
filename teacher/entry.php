@@ -948,7 +948,7 @@ render_teacher_header('Eingaben');
     return list;
   }
 
-  function addHistoryEntry(reportId, fieldId, text, source){
+  function addHistoryEntry(reportId, fieldId, text, source, valueText = null, valueJson = null){
     const rid = String(reportId ?? '');
     const fid = String(fieldId ?? '');
     if (!state.value_history) state.value_history = {};
@@ -960,6 +960,8 @@ render_teacher_header('Eingaben');
       text: text ?? '',
       source: source || 'teacher',
       created_at: new Date().toISOString(),
+      value_text: valueText,
+      value_json: valueJson,
     });
 
     if (list.length > 5) list.length = 5;
@@ -977,11 +979,46 @@ render_teacher_header('Eingaben');
         <div class="history-row">
           <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
           <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
+          <div class="history-actions">
+            <button class="btn tiny secondary" type="button"
+              data-history-restore="1"
+              data-report-id="${esc(reportId)}"
+              data-field-id="${esc(fieldId)}"
+              data-value-text="${esc(e.value_text ?? '')}"
+              data-value-json="${esc(e.value_json ?? '')}"
+            >↩︎ Wiederherstellen</button>
+          </div>
         </div>
       `;
     }).join('');
 
     return `<div class="history-box">${rows}</div>`;
+  }
+
+  function applyHistoryValue(reportId, fieldId, valueText, valueJson){
+    const rid = Number(reportId);
+    const fid = Number(fieldId);
+    const f = state.fieldMap?.[String(fid)];
+    const rawVal = valueText ?? '';
+
+    const inputs = document.querySelectorAll(`[data-teacher-input="1"][data-report-id="${CSS.escape(String(rid))}"][data-field-id="${CSS.escape(String(fid))}"]`);
+    if (!inputs.length) return;
+
+    inputs.forEach(inp => {
+      const merged = resolveMergeWithChild(rid, fid, rawVal);
+
+      if (inp.dataset.combo === '1') {
+        inp.dataset.actual = merged;
+        inp.value = f ? teacherDisplay(f, merged) : String(merged ?? '');
+      } else if (inp.type === 'checkbox') {
+        inp.checked = String(merged) === '1';
+      } else {
+        inp.value = String(merged ?? '');
+      }
+
+      if (isClassFieldId(fid)) scheduleSaveClass(fid, merged);
+      else scheduleSave(rid, fid, merged);
+    });
   }
 
   // --- progress helpers ---
@@ -1181,7 +1218,7 @@ render_teacher_header('Eingaben');
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
         const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
-        addHistoryEntry(reportId, fieldId, displayVal, 'teacher');
+        addHistoryEntry(reportId, fieldId, displayVal, 'teacher', value);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1214,7 +1251,7 @@ render_teacher_header('Eingaben');
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
         const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
-        addHistoryEntry(rid, fieldId, displayVal, 'teacher');
+        addHistoryEntry(rid, fieldId, displayVal, 'teacher', value);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1509,6 +1546,18 @@ render_teacher_header('Eingaben');
   }
 
   document.addEventListener('click', (ev) => {
+    const restoreBtn = ev.target && ev.target.closest('[data-history-restore="1"]');
+    if (restoreBtn) {
+      ev.preventDefault();
+      applyHistoryValue(
+        restoreBtn.getAttribute('data-report-id'),
+        restoreBtn.getAttribute('data-field-id'),
+        restoreBtn.getAttribute('data-value-text') ?? '',
+        restoreBtn.getAttribute('data-value-json') ?? ''
+      );
+      return;
+    }
+
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
   });
