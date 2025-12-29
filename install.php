@@ -85,6 +85,7 @@ $orgName    = $_POST['org_name'] ?? 'LEG Tool';
 $brandPrimary   = $_POST['brand_primary'] ?? '#0b57d0';
 $brandSecondary = $_POST['brand_secondary'] ?? '#111111';
 $defaultSchoolYear = $_POST['default_school_year'] ?? '';
+$aiKey = $_POST['ai_key'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!file_exists($samplePath)) $errors[] = "config.sample.php fehlt.";
@@ -140,6 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['app']['brand']['primary'] = $brandPrimary;
       $cfg['app']['brand']['secondary'] = $brandSecondary;
       $cfg['app']['brand']['org_name'] = $orgName;
+
+      if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+      $cfg['ai']['api_key'] = trim((string)$aiKey);
 
       // Logo Upload (optional)
       if (isset($_FILES['brand_logo']) && ($_FILES['brand_logo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
@@ -698,6 +702,12 @@ SQL;
 
           <label>Logo (optional, PNG/JPG/WEBP)</label>
           <input id="brandLogoInput" type="file" name="brand_logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+
+          <h2 style="margin-top:18px;">4) KI-Schlüssel (optional)</h2>
+          <p class="muted">Für automatische Vorschläge wird ein externer KI-Provider (z.B. OpenAI-kompatible API) genutzt. Ohne Schlüssel wird der KI-Button später nicht angezeigt.</p>
+          <label>API Key</label>
+          <input name="ai_key" value="<?=h($aiKey)?>" placeholder="z.B. sk-...">
+          <p class="muted">Tipp: In OpenAI unter <strong>API Keys</strong> einen Secret Key anlegen und unter <strong>Billing › Usage</strong> prüfen, ob Guthaben verfügbar ist.</p>
 
           <div class="actions" style="margin-top:16px;">
             <button class="btn primary" type="submit">Installieren</button>

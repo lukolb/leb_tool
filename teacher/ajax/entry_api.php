@@ -116,6 +116,13 @@ function ai_provider_config(): array {
   ];
 }
 
+function ai_provider_enabled(): bool {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  return trim($apiKey) !== '';
+}
+
 function ai_chat_completion(array $messages, array $aiCfg): string {
   if (($aiCfg['provider'] ?? '') !== 'openai') {
     throw new RuntimeException('Unbekannter AI-Provider.');
@@ -908,6 +915,11 @@ try {
       'class_fields_missing' => max(0, $classTotal - $classDone),
     ];
 
+    $classGradeLevel = null;
+    $stClass = $pdo->prepare("SELECT grade_level FROM classes WHERE id=? LIMIT 1");
+    $stClass->execute([$classId]);
+    $classGradeLevel = $stClass->fetchColumn();
+
     json_out([
       'ok' => true,
       'template' => [
@@ -933,6 +945,8 @@ try {
         'values' => $classValuesById,
         'value_by_name' => $classValueByName,
       ],
+      'ai_enabled' => ai_provider_enabled(),
+      'class_grade_level' => $classGradeLevel !== false ? $classGradeLevel : null,
     ]);
   }
 
@@ -951,20 +965,19 @@ try {
   if ($action === 'ai_suggestions') {
     $classId = (int)($data['class_id'] ?? 0);
     $reportId = (int)($data['report_instance_id'] ?? 0);
-    $fieldId = (int)($data['template_field_id'] ?? 0);
 
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
-    if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
     $stInfo = $pdo->prepare(
-      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id, c.grade_level
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
+       JOIN classes c ON c.id=s.class_id
        WHERE ri.id=?
        LIMIT 1"
     );
@@ -975,22 +988,8 @@ try {
 
     $templateId = (int)$info['template_id'];
     $studentName = trim((string)$info['first_name'] . ' ' . (string)$info['last_name']);
+    $gradeLevel = $info['grade_level'] !== null ? (int)$info['grade_level'] : null;
 
-    $stField = $pdo->prepare(
-      "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.help_text, tf.is_multiline,
-              tf.options_json, tf.meta_json, tf.can_teacher_edit
-       FROM template_fields tf
-       WHERE tf.id=? AND tf.template_id=?
-       LIMIT 1"
-    );
-    $stField->execute([$fieldId, $templateId]);
-    $field = $stField->fetch(PDO::FETCH_ASSOC);
-    if (!$field) throw new RuntimeException('Feld nicht gefunden.');
-    if ((int)$field['can_teacher_edit'] !== 1) throw new RuntimeException('Feld ist nicht editierbar.');
-
-    $fieldMeta = meta_read($field['meta_json'] ?? null);
-
-    // Gather values for current student to build a simple suggestion context.
     $stCtx = $pdo->prepare(
       "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.meta_json, tf.options_json,
               t.value_text AS teacher_value, c.value_text AS child_value,
@@ -1005,8 +1004,7 @@ try {
 
     $optionFacts = [];
     $gradeFacts = [];
-    $currentTeacherValue = '';
-    $currentChildValue = '';
+    $childInputs = [];
 
     foreach ($ctxFields as $cf) {
       $meta = meta_read($cf['meta_json'] ?? null);
@@ -1016,85 +1014,60 @@ try {
       $val = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
       $childVal = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
       $label = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
-      $entry = [
-        'label' => $label,
-        'value' => $val,
-      ];
-
-      if ((int)$cf['id'] === $fieldId) {
-        $currentTeacherValue = $val;
-        $currentChildValue = $childVal;
-      }
 
       $type = (string)($cf['field_type'] ?? '');
       $hasOptionList = option_list_id_from_meta($meta) > 0;
       if (in_array($type, ['radio','select'], true) && $hasOptionList && $val !== '') {
-        $optionFacts[] = $entry;
+        $optionFacts[] = ($label ? ($label . ': ') : '') . $val;
       } elseif ($type === 'grade' && $val !== '') {
-        $gradeFacts[] = $entry;
+        $gradeFacts[] = ($label ? ($label . ': ') : '') . $val;
+      }
+
+      if ($childVal !== '' && ($type === 'multiline' || $type === 'text' || (int)($meta['is_child_text'] ?? 0) === 1)) {
+        $childInputs[] = ($label ? ($label . ': ') : '') . $childVal;
       }
     }
 
-    $fieldMetaById = [ (int)$fieldId => ['meta' => $fieldMeta] ];
-    $history = load_value_history($pdo, [$reportId], [$fieldId], $fieldMetaById, 3);
-    $hist = $history[(string)$reportId][$fieldId] ?? [];
-    $historyTexts = array_values(array_filter(array_map(fn($r)=>trim((string)($r['text'] ?? '')), $hist), fn($s)=>$s !== ''));
-
-    $childSummary = $currentChildValue !== ''
-      ? ('Rückmeldung Schüler: "' . $currentChildValue . '".')
-      : '';
-    $prevSummary = $historyTexts
-      ? ('Frühere Formulierungen: ' . implode(' | ', array_slice($historyTexts, 0, 2)) . '.')
-      : '';
-
-    $focus = null;
-    if ($optionFacts) {
-      $focus = $optionFacts[0]['label'] ?? null;
-    } elseif ($gradeFacts) {
-      $focus = $gradeFacts[0]['label'] ?? null;
-    }
-
-    $label = label_for_lang($field['label'] ?? null, $field['label_en'] ?? null, $lang);
-    $baseLine = trim(implode(' ', array_filter([$childSummary, $prevSummary])));
-
-    $suggestions = [];
     $aiCfg = ai_provider_config();
-
-    $focusFacts = [];
-    if ($optionFacts) {
-      foreach (array_slice($optionFacts, 0, 3) as $f) {
-        $focusFacts[] = ($f['label'] ?? '') . ': ' . ($f['value'] ?? '');
-      }
-    } elseif ($gradeFacts) {
-      foreach (array_slice($gradeFacts, 0, 2) as $f) {
-        $focusFacts[] = ($f['label'] ?? '') . ': ' . ($f['value'] ?? '');
-      }
-    }
 
     $ctxParts = [];
     $ctxParts[] = 'Schüler: ' . $studentName;
-    $ctxParts[] = 'Feld: ' . $label;
-    if ($focusFacts) $ctxParts[] = 'Relevante Auswahlwerte: ' . implode('; ', $focusFacts);
-    if ($currentChildValue !== '') $ctxParts[] = 'Schülerrückmeldung: ' . $currentChildValue;
-    if ($historyTexts) $ctxParts[] = 'Frühere Formulierungen: ' . implode(' | ', array_slice($historyTexts, 0, 2));
+    if ($gradeLevel !== null) $ctxParts[] = 'Klassenstufe: ' . $gradeLevel;
+    if ($optionFacts) $ctxParts[] = 'Wichtige Beobachtungen (Optionen): ' . implode('; ', array_slice($optionFacts, 0, 6));
+    if ($gradeFacts) $ctxParts[] = 'Noten (zweitrangig): ' . implode('; ', array_slice($gradeFacts, 0, 3));
+    if ($childInputs) $ctxParts[] = 'Rückmeldungen der Schüler: ' . implode(' | ', array_slice($childInputs, 0, 2));
 
     $userPrompt = trim(implode("\n", array_filter($ctxParts)));
 
     $messages = [
       [
         'role' => 'system',
-        'content' => 'Du verfasst kurze, präzise Lernziele und Feedbacks für Lehrer. Nutze die übergebenen Auswahlwerte als wichtigste Grundlage und halte den Text schlank, ohne die Datengrundlage aufzulisten.',
+        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Nutze vor allem die übergebenen Options-Bewertungen als Grundlage. Kein Intro, keine Nummerierung.',
       ],
       [
         'role' => 'user',
-        'content' => $userPrompt . "\n\nErstelle 3 unterschiedliche Vorschläge (max. 2 Sätze), jeweils mit klarer Rückmeldung und einem nächsten Schritt. Wenn möglich, beziehe dich auf die Schülerrückmeldung. Schreibe die Vorschläge als einzelne Zeilen ohne Nummerierung.",
+        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 3 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen, Ziele beschreiben den nächsten Lernschritt und Schritte zeigen konkrete Möglichkeiten, das Ziel zu erreichen.",
       ],
     ];
 
     $aiText = ai_chat_completion($messages, $aiCfg);
-    $suggestions = normalize_ai_suggestions($aiText);
 
-    json_out(['ok' => true, 'suggestions' => $suggestions]);
+    $parsed = ['strengths' => [], 'goals' => [], 'steps' => []];
+    $json = json_decode($aiText, true);
+    if (is_array($json)) {
+      foreach (['strengths','goals','steps'] as $k) {
+        if (isset($json[$k]) && is_array($json[$k])) {
+          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!==''));
+        }
+      }
+    }
+
+    if (!$parsed['strengths'] && !$parsed['goals'] && !$parsed['steps']) {
+      $flat = normalize_ai_suggestions($aiText);
+      $parsed['goals'] = $flat;
+    }
+
+    json_out(['ok' => true, 'suggestions' => $parsed]);
   }
 
   if ($action === 'delegations_save') {

@@ -191,6 +191,35 @@ render_teacher_header($pageTitle);
   <div id="snippetList" style="margin-top:10px; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px;"></div>
 </div>
 
+<div id="dlgAi" class="modal" style="display:none;">
+  <div class="modal-backdrop" data-close="1"></div>
+  <div class="modal-card">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <div>
+        <h3 style="margin:0;">KI-Vorschläge</h3>
+        <div class="muted" id="aiMeta">Vorschläge werden geladen…</div>
+      </div>
+      <button class="btn secondary" type="button" id="btnAiClose">Schließen</button>
+    </div>
+    <div id="aiStatus" class="alert" style="margin-top:10px; display:none;"></div>
+    <div class="ai-grid" style="margin-top:10px;">
+      <div class="ai-card">
+        <div class="h">Stärken</div>
+        <div id="aiStrengths" class="c">-</div>
+      </div>
+      <div class="ai-card">
+        <div class="h">Ziele</div>
+        <div id="aiGoals" class="c">-</div>
+      </div>
+      <div class="ai-card">
+        <div class="h">Schritte</div>
+        <div id="aiSteps" class="c">-</div>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:10px;">Tipp: Einzelne Vorschläge anklicken, um sie in die Zwischenablage zu kopieren und anschließend in ein Feld einzufügen.</p>
+  </div>
+</div>
+
 <?php if ($delegatedMode): ?>
 <div id="dlgDelegationDone" class="modal" style="display:none;">
   <div class="modal-backdrop" data-close="1"></div>
@@ -468,8 +497,12 @@ render_teacher_header($pageTitle);
     top: 0;
     background: #ffffff;
     margin: 0px -5px 10px -5px; }
-  .ai-tools{ margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .ai-tools .ai-status{ color: var(--muted); font-size:12px; }
+  .ai-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:12px; }
+  .ai-card{ border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; display:flex; flex-direction:column; gap:8px; }
+  .ai-card .h{ display:flex; justify-content:space-between; gap:8px; align-items:center; font-weight:700; }
+  .ai-card .c{ white-space:pre-wrap; }
+  .ai-banner{ border:1px dashed var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; background: rgba(11,87,208,0.03); }
+  .ai-banner .t{ font-weight:700; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
 </style>
@@ -561,6 +594,15 @@ render_teacher_header($pageTitle);
   const btnSnippetClose = document.getElementById('btnSnippetClose');
   const snippetCategoryList = document.getElementById('snippetCategoryList');
 
+  const dlgAi = document.getElementById('dlgAi');
+  const aiBackdrop = document.querySelector('#dlgAi .modal-backdrop');
+  const btnAiClose = document.getElementById('btnAiClose');
+  const aiMeta = document.getElementById('aiMeta');
+  const aiStatus = document.getElementById('aiStatus');
+  const aiStrengths = document.getElementById('aiStrengths');
+  const aiGoals = document.getElementById('aiGoals');
+  const aiSteps = document.getElementById('aiSteps');
+
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
 
   let state = {
@@ -578,6 +620,8 @@ render_teacher_header($pageTitle);
     class_report_instance_id: 0,
     class_fields: null,
     progress_summary: null,
+    ai_enabled: false,
+    class_grade_level: null,
     fieldMap: {},
   };
 
@@ -629,14 +673,8 @@ render_teacher_header($pageTitle);
   snippetMenu.style.display = 'none';
   document.body.appendChild(snippetMenu);
 
-  const aiMenu = document.createElement('div');
-  aiMenu.className = 'snippet-menu';
-  aiMenu.style.display = 'none';
-  document.body.appendChild(aiMenu);
-
   let lastSnippetTarget = null;
   let lastSnippetSelection = '';
-  let lastAiAnchor = null;
 
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
@@ -1542,6 +1580,92 @@ render_teacher_header($pageTitle);
 
   function hideSnippetMenu(){
     snippetMenu.style.display = 'none';
+    lastSnippetTarget = null;
+    lastSnippetSelection = '';
+  }
+
+  function resetAiDialog(){
+    if (aiStatus) {
+      aiStatus.style.display = 'none';
+      aiStatus.className = 'alert';
+      aiStatus.textContent = '';
+    }
+    if (aiStrengths) aiStrengths.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
+    if (aiGoals) aiGoals.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
+    if (aiSteps) aiSteps.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
+  }
+
+  function closeAiDialog(){
+    dlgAi.style.display = 'none';
+  }
+
+  function openAiDialog(meta){
+    resetAiDialog();
+    aiMeta.textContent = meta || '';
+    dlgAi.style.display = 'block';
+  }
+
+  async function copyToClipboard(text){
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      aiStatus.textContent = 'In Zwischenablage kopiert.';
+      aiStatus.className = 'alert success';
+      aiStatus.style.display = 'block';
+    } catch (e) {
+      aiStatus.textContent = 'Konnte nicht kopieren. Bitte manuell markieren (Strg+C).';
+      aiStatus.className = 'alert danger';
+      aiStatus.style.display = 'block';
+    }
+  }
+
+  function renderAiList(el, list){
+    if (!el) return;
+    el.innerHTML = '';
+    const items = Array.isArray(list) ? list.filter(x => String(x).trim() !== '') : [];
+    if (!items.length) {
+      el.innerHTML = '<span class="muted">Keine Vorschläge.</span>';
+      return;
+    }
+    items.forEach(txt => {
+      const div = document.createElement('div');
+      div.className = 'pill';
+      div.style.cursor = 'pointer';
+      div.textContent = txt;
+      div.addEventListener('click', () => copyToClipboard(txt));
+      el.appendChild(div);
+    });
+  }
+
+  async function requestAiSuggestionsForStudent(student){
+    if (!student || !student.report_instance_id) return;
+    const gradeInfo = state.class_grade_level ? `Klassenstufe ${state.class_grade_level}` : 'Klasse';
+    openAiDialog(`Vorschläge für ${student.name} · ${gradeInfo}`);
+    if (aiStatus) {
+      aiStatus.textContent = 'KI lädt…';
+      aiStatus.style.display = 'block';
+      aiStatus.className = 'alert';
+    }
+    try {
+      const j = await api('ai_suggestions', {
+        class_id: state.class_id,
+        report_instance_id: student.report_instance_id,
+      });
+      renderAiList(aiStrengths, j.suggestions?.strengths || []);
+      renderAiList(aiGoals, j.suggestions?.goals || []);
+      renderAiList(aiSteps, j.suggestions?.steps || []);
+      if (aiStatus) {
+        aiStatus.textContent = 'Vorschläge geladen. Klicke, um zu kopieren.';
+        aiStatus.className = 'alert success';
+        aiStatus.style.display = 'block';
+      }
+    } catch (e) {
+      if (aiStatus) {
+        aiStatus.textContent = e?.message || 'Fehler bei KI-Vorschlag';
+        aiStatus.className = 'alert danger';
+        aiStatus.style.display = 'block';
+      }
+    }
   }
 
   function openSnippetMenu(x, y, target){
@@ -1647,88 +1771,7 @@ render_teacher_header($pageTitle);
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
-
-    if (ev.target && aiMenu.contains(ev.target)) return;
-    hideAiMenu();
   });
-
-  function hideAiMenu(){
-    aiMenu.style.display = 'none';
-    lastAiAnchor = null;
-  }
-
-  function setAiStatus(reportId, fieldId, text){
-    const key = `${reportId}:${fieldId}`;
-    const el = document.querySelector(`[data-ai-status="${CSS.escape(key)}"]`);
-    if (!el) return;
-    el.textContent = text || '';
-    el.style.display = text ? 'inline' : 'none';
-  }
-
-  function showAiMenu(anchor, suggestions, reportId, fieldId){
-    aiMenu.innerHTML = '';
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      aiMenu.textContent = 'Keine Vorschläge gefunden.';
-    } else {
-      const h = document.createElement('h4');
-      h.textContent = 'Vorschläge';
-      aiMenu.appendChild(h);
-      suggestions.forEach(s => {
-        const div = document.createElement('div');
-        div.className = 'item';
-        div.textContent = s;
-        div.addEventListener('click', () => {
-          applyAiSuggestion(reportId, fieldId, s);
-          hideAiMenu();
-        });
-        aiMenu.appendChild(div);
-      });
-    }
-
-    const rect = anchor.getBoundingClientRect();
-    aiMenu.style.display = 'block';
-    aiMenu.style.left = `${window.scrollX + rect.left}px`;
-    aiMenu.style.top = `${window.scrollY + rect.bottom + 6}px`;
-    lastAiAnchor = anchor;
-  }
-
-  function applyAiSuggestion(reportId, fieldId, text){
-    const sel = `[data-teacher-input="1"][data-report-id="${CSS.escape(String(reportId))}"][data-field-id="${CSS.escape(String(fieldId))}"]`;
-    const inp = document.querySelector(sel);
-    if (!inp) return;
-
-    if (inp.dataset.combo === '1') {
-      inp.value = text;
-      inp.dataset.actual = text;
-    } else if (inp.type === 'checkbox') {
-      inp.checked = String(text) === '1';
-    } else {
-      inp.value = text;
-    }
-
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-    inp.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  async function requestAiSuggestions(btn){
-    const reportId = Number(btn.getAttribute('data-report-id') || 0);
-    const fieldId = Number(btn.getAttribute('data-field-id') || 0);
-    if (!reportId || !fieldId) return;
-    hideAiMenu();
-    setAiStatus(reportId, fieldId, 'KI lädt…');
-    try {
-      const j = await api('ai_suggestions', {
-        class_id: state.class_id,
-        report_instance_id: reportId,
-        template_field_id: fieldId,
-      });
-      const suggestions = j.suggestions || [];
-      setAiStatus(reportId, fieldId, suggestions.length ? `${suggestions.length} Vorschlag/Vorschläge geladen` : 'Keine Vorschläge gefunden.');
-      showAiMenu(btn, suggestions, reportId, fieldId);
-    } catch (e) {
-      setAiStatus(reportId, fieldId, e?.message || 'Fehler bei KI-Vorschlag');
-    }
-  }
 
   // --- rendering helpers
 
@@ -1902,8 +1945,6 @@ render_teacher_header($pageTitle);
   function renderStudentView(){
     const list = currentStudents();
 
-    hideAiMenu();
-
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
       const div = document.createElement('div');
@@ -1954,6 +1995,18 @@ render_teacher_header($pageTitle);
       html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
     }
 
+    if (state.ai_enabled) {
+      html += `
+        <div class="ai-banner">
+          <div>
+            <div class="t">🤖 KI-Vorschläge für ${esc(s.name)}</div>
+            <div class="muted">Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).</div>
+          </div>
+          <button class="btn secondary" type="button" data-ai-student="${esc(reportId)}">KI öffnen</button>
+        </div>
+      `;
+    }
+
     state.groups.forEach(g => {
       const fields = ui.studentMissingOnly
         ? (g.fields || []).filter(f => isTeacherFieldMissing(reportId, f.id))
@@ -1991,25 +2044,12 @@ render_teacher_header($pageTitle);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
-        const canSuggest = (
-          !locked &&
-          canEditGroup &&
-          (
-            String(f.field_type) === 'multiline' ||
-            Number(f.is_multiline || 0) === 1 ||
-            String(f.field_type || '') === 'text'
-          )
-        );
-        const aiTools = canSuggest
-          ? `<div class="ai-tools"><button class="btn secondary" type="button" data-ai-btn="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}">KI-Vorschlag</button><span class="ai-status" data-ai-status="${esc(reportId)}:${esc(f.id)}" style="display:none;"></span></div>`
-          : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${renderHistoryHtml(reportId, f.id)}
-            ${aiTools}
             ${childInfo}
           </div>
         `;
@@ -2031,14 +2071,17 @@ render_teacher_header($pageTitle);
       else el.classList.remove('show-child');
     });
 
-    wireTeacherInputs(studentForm);
-
-    studentForm.querySelectorAll('[data-ai-btn="1"]').forEach(btn => {
+    studentForm.querySelectorAll('[data-ai-student]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.preventDefault();
-        requestAiSuggestions(btn);
+        const rid = Number(btn.getAttribute('data-ai-student') || 0);
+        const stu = (state.students || []).find(x => Number(x.report_instance_id || 0) === rid);
+        if (stu) requestAiSuggestionsForStudent(stu);
       });
     });
+
+    wireTeacherInputs(studentForm);
+
   }
 
   function renderGradesView(){
@@ -2307,6 +2350,8 @@ render_teacher_header($pageTitle);
     state.class_fields = j.class_fields || null;
     state.progress_summary = j.progress_summary || null;
     state.text_snippets = j.text_snippets || [];
+    state.ai_enabled = !!j.ai_enabled;
+    state.class_grade_level = j.class_grade_level || null;
     ui.mergeDecisions = new Map();
     const savedDecisions = readMergeMemory();
     Object.entries(savedDecisions).forEach(([k, v]) => {
@@ -2576,6 +2621,13 @@ if (dlgSave) {
 
   if (btnSnippetClose) {
     btnSnippetClose.addEventListener('click', () => openSnippetDrawer(false));
+  }
+
+  if (btnAiClose) {
+    btnAiClose.addEventListener('click', closeAiDialog);
+  }
+  if (aiBackdrop) {
+    aiBackdrop.addEventListener('click', closeAiDialog);
   }
 
   if (btnSnippetSave) {

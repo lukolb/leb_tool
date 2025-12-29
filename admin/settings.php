@@ -50,6 +50,45 @@ function known_intro_placeholders(): array {
   ];
 }
 
+function ai_credit_hint(array $aiCfg): array {
+  $key = trim((string)($aiCfg['api_key'] ?? ''));
+  $provider = strtolower((string)($aiCfg['provider'] ?? 'openai'));
+  if ($key === '') return ['type' => 'info', 'msg' => 'Kein KI-API-Key hinterlegt.'];
+  if ($provider !== 'openai') return ['type' => 'info', 'msg' => 'Bitte Guthaben im Dashboard deines KI-Providers prüfen.'];
+
+  $base = rtrim((string)($aiCfg['base_url'] ?? 'https://api.openai.com'), '/');
+  $url = $base . '/dashboard/billing/credit_grants';
+
+  $ch = curl_init($url);
+  curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+      'Authorization: Bearer ' . $key,
+    ],
+    CURLOPT_TIMEOUT => 6,
+  ]);
+  $resp = curl_exec($ch);
+  $code = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
+  if ($resp === false) {
+    $err = curl_error($ch);
+    curl_close($ch);
+    return ['type' => 'warning', 'msg' => 'Guthabenprüfung nicht möglich: ' . $err];
+  }
+  curl_close($ch);
+
+  if ($code >= 400) {
+    return ['type' => 'warning', 'msg' => 'Provider-Rückmeldung bei Guthabenprüfung: HTTP ' . $code];
+  }
+
+  $json = json_decode((string)$resp, true);
+  if (isset($json['total_available'])) {
+    $amt = (float)$json['total_available'];
+    return ['type' => 'success', 'msg' => 'Verfügbares KI-Guthaben laut Provider: ca. ' . number_format($amt, 2, ',', '.') . ' USD.'];
+  }
+
+  return ['type' => 'info', 'msg' => 'KI-Key gespeichert. Details zum Guthaben bitte im Provider-Dashboard prüfen.'];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -85,6 +124,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($cfg['mail']) || !is_array($cfg['mail'])) $cfg['mail'] = [];
     $cfg['mail']['from_email'] = $fromEmail === '' ? 'no-reply@example.org' : $fromEmail;
     $cfg['mail']['from_name']  = $fromName;
+
+    // ---- AI suggestions (key only) ----
+    $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+    if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+    $cfg['ai']['api_key'] = $aiKey;
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -154,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
     $cfg = app_config(true);
+    $aiStatus = ai_credit_hint($cfg['ai'] ?? []);
 
   } catch (Throwable $e) {
     $err = 'Fehler: ' . $e->getMessage();
@@ -172,6 +217,10 @@ $fromEmail = $mail['from_email'] ?? 'no-reply@example.org';
 $fromName  = $mail['from_name'] ?? ($org ?: 'LEB Tool');
 
 $studentCfg = $cfg['student'] ?? [];
+
+$ai = $cfg['ai'] ?? [];
+$aiKey = $ai['api_key'] ?? '';
+$aiStatus = ai_credit_hint(is_array($ai) ? $ai : []);
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -302,6 +351,30 @@ render_admin_header('Admin – Settings');
         <input id="fromName" name="from_name" value="<?=h((string)$fromName)?>" required placeholder="<?=h((string)$org)?>">
       </div>
     </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Speichern</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>KI-Vorschläge</h2>
+  <p class="muted">Hinterlege hier den API-Key deines KI-Providers (z.B. OpenAI-kompatibel), damit Lehrkräfte Vorschläge für Stärken, Ziele und Schritte abrufen können.</p>
+
+  <?php if (!empty($aiStatus['msg'])): ?>
+    <div class="alert <?= $aiStatus['type']==='success' ? 'success' : ($aiStatus['type']==='warning' ? 'info' : '') ?>">
+      <strong><?=h($aiStatus['msg'])?></strong>
+    </div>
+  <?php endif; ?>
+
+  <form method="post" autocomplete="off" id="aiForm">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+
+    <label>API Key</label>
+    <input name="ai_key" value="<?=h((string)$aiKey)?>" placeholder="z.B. sk-...">
+    <p class="muted">Schlüsselbeschaffung: Im Provider-Dashboard (z.B. <strong>OpenAI &raquo; API Keys</strong>) einen Secret Key erstellen. Prüfe unter <strong>Billing &raquo; Usage</strong>, ob genügend Guthaben vorhanden ist.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
