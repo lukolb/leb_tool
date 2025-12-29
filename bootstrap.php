@@ -13,6 +13,20 @@ if (!file_exists(APP_CONFIG_PATH)) {
 }
 $config = require APP_CONFIG_PATH;
 
+// Harden session cookie: secure, HTTP-only, and scoped to the app base path.
+$https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+$cookiePath = (string)($config['app']['base_path'] ?? '/');
+$cookiePath = '/' . ltrim($cookiePath, '/');
+$cookiePath = rtrim($cookiePath, '/') ?: '/';
+session_set_cookie_params([
+  'lifetime' => 0,
+  'path' => $cookiePath,
+  'domain' => '',
+  'secure' => $https,
+  'httponly' => true,
+  'samesite' => 'Lax',
+]);
+
 session_name($config['app']['session_name'] ?? 'legtool_sess');
 session_start();
 
@@ -154,6 +168,7 @@ function db(): PDO {
     $pdo = new PDO('sqlite:' . $dbPath, null, null, [
       PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
       PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+      PDO::ATTR_EMULATE_PREPARES => false,
     ]);
   } else {
     $port = $db['port'] ?? 3306;
@@ -163,6 +178,7 @@ function db(): PDO {
     $pdo = new PDO($dsn, $db['user'], $db['pass'], [
       PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
       PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+      PDO::ATTR_EMULATE_PREPARES => false,
     ]);
 
     // Lightweight, additive schema migrations (shared-hosting friendly).
