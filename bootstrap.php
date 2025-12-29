@@ -95,9 +95,9 @@ $basePath = rtrim($basePath, '/');
 if ($basePath === '/') $basePath = '';
 define('APP_BASE_URL', $basePath);
 
-function app_config(): array {
+function app_config(bool $forceReload = false): array {
   static $cfg = null;
-  if ($cfg !== null) return $cfg;
+  if ($cfg !== null && !$forceReload) return $cfg;
   $cfg = require APP_CONFIG_PATH;
   return $cfg;
 }
