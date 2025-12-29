@@ -416,7 +416,6 @@ render_admin_header('Admin – Settings');
 
     <div class="actions">
       <button class="btn primary" type="submit">Logo hochladen</button>
-      <button class="btn secondary" type="button" id="logoPreviewReset">Vorschau zurücksetzen</button>
     </div>
 
     <p class="muted">Die Vorschau zeigt dein gewähltes Bild sofort. Hochgeladen wird erst beim Klick auf „Logo hochladen“.</p>
@@ -437,7 +436,6 @@ render_admin_header('Admin – Settings');
 
   const previewLogo = document.getElementById('previewLogo');
   const logoInput = document.getElementById('brandLogoInput');
-  const logoResetBtn = document.getElementById('logoPreviewReset');
 
   const fromEmailInput = document.getElementById('fromEmail');
   const fromNameInput  = document.getElementById('fromName');
@@ -501,18 +499,6 @@ render_admin_header('Admin – Settings');
 
       previewLogo.src = objectUrl;
       previewLogo.style.display = 'block';
-    });
-  }
-
-  if (logoResetBtn) {
-    logoResetBtn.addEventListener('click', () => {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-        objectUrl = null;
-      }
-      previewLogo.src = initialLogoSrc;
-      previewLogo.style.display = initialLogoSrc ? 'block' : initialLogoDisplay;
-      if (logoInput) logoInput.value = '';
     });
   }
 
