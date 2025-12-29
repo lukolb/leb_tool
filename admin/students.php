@@ -196,7 +196,38 @@ render_admin_header('Schüler');
     const form = document.getElementById('student-filter-form');
     if (!form) return;
 
+    const focusStorageKey = 'student_filter_focus';
+    const saveFocus = () => {
+      const active = document.activeElement;
+      if (!active) return;
+      const name = active.getAttribute('name');
+      if (!name) return;
+      try {
+        sessionStorage.setItem(focusStorageKey, name);
+      } catch (e) {
+        // ignore storage issues
+      }
+    };
+
+    const restoreFocus = () => {
+      let name;
+      try {
+        name = sessionStorage.getItem(focusStorageKey);
+        sessionStorage.removeItem(focusStorageKey);
+      } catch (e) {
+        return;
+      }
+      if (!name) return;
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el && typeof el.focus === 'function') {
+        el.focus({ preventScroll: true });
+      }
+    };
+
+    restoreFocus();
+
     const submitForm = () => {
+      saveFocus();
       if (typeof form.requestSubmit === 'function') {
         form.requestSubmit();
       } else {
