@@ -93,6 +93,100 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
+function ai_provider_config(): array {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+
+  $provider = strtolower(trim((string)($ai['provider'] ?? 'openai')));
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  $baseUrl = (string)($ai['base_url'] ?? 'https://api.openai.com');
+  $model = (string)($ai['model'] ?? 'gpt-4o-mini');
+  $timeout = (int)($ai['timeout_seconds'] ?? 20);
+
+  if ($apiKey === '') {
+    throw new RuntimeException('AI API Key nicht konfiguriert.');
+  }
+
+  return [
+    'provider' => $provider ?: 'openai',
+    'api_key' => $apiKey,
+    'base_url' => rtrim($baseUrl !== '' ? $baseUrl : 'https://api.openai.com', '/'),
+    'model' => $model !== '' ? $model : 'gpt-4o-mini',
+    'timeout' => $timeout > 0 ? $timeout : 20,
+  ];
+}
+
+function ai_chat_completion(array $messages, array $aiCfg): string {
+  if (($aiCfg['provider'] ?? '') !== 'openai') {
+    throw new RuntimeException('Unbekannter AI-Provider.');
+  }
+
+  $url = $aiCfg['base_url'] . '/v1/chat/completions';
+  $payload = [
+    'model' => $aiCfg['model'],
+    'messages' => $messages,
+    'temperature' => 0.7,
+    'max_tokens' => 320,
+  ];
+
+  $ch = curl_init($url);
+  curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+      'Content-Type: application/json',
+      'Authorization: Bearer ' . $aiCfg['api_key'],
+    ],
+    CURLOPT_TIMEOUT => $aiCfg['timeout'],
+    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+  ]);
+
+  $resp = curl_exec($ch);
+  $httpCode = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
+  if ($resp === false) {
+    $err = curl_error($ch);
+    curl_close($ch);
+    throw new RuntimeException('AI Request fehlgeschlagen: ' . $err);
+  }
+  curl_close($ch);
+
+  $json = json_decode((string)$resp, true);
+  if (!is_array($json)) {
+    throw new RuntimeException('AI Antwort unverständlich.');
+  }
+  if ($httpCode >= 400) {
+    $msg = (string)($json['error']['message'] ?? 'Fehler beim AI-Provider.');
+    throw new RuntimeException('AI Fehler: ' . $msg);
+  }
+
+  $choices = $json['choices'] ?? [];
+  $content = '';
+  if (is_array($choices) && isset($choices[0]['message']['content'])) {
+    $content = (string)$choices[0]['message']['content'];
+  }
+  $content = trim($content);
+  if ($content === '') {
+    throw new RuntimeException('AI hat keine Antwort geliefert.');
+  }
+
+  return $content;
+}
+
+function normalize_ai_suggestions(string $text): array {
+  $lines = preg_split('/\r?\n+/', trim($text));
+  if (!is_array($lines)) return [];
+
+  $out = [];
+  foreach ($lines as $ln) {
+    $s = trim((string)$ln);
+    $s = preg_replace('/^[-*•\d\.\s]+/', '', $s);
+    $s = trim((string)$s);
+    if ($s !== '') $out[] = $s;
+  }
+
+  return array_values(array_filter(array_unique($out), fn($s)=>$s!==''));
+}
+
 function is_class_field(array $meta): bool {
   $scope = isset($meta['scope']) ? strtolower(trim((string)$meta['scope'])) : '';
   if ($scope === 'class') return true;
@@ -964,25 +1058,41 @@ try {
     $baseLine = trim(implode(' ', array_filter([$childSummary, $prevSummary])));
 
     $suggestions = [];
-    $suggestions[] = trim(
-      $studentName . ': ' . $label . '. ' .
-      ($baseLine !== '' ? ($baseLine . ' ') : '') .
-      ($focus ? ("Schwerpunkt {$focus}: Formuliere ein kurzes, klares Ziel mit einem messbaren nächsten Schritt.") : 'Formuliere ein kurzes, klares Ziel mit messbarem Schritt.')
-    );
+    $aiCfg = ai_provider_config();
 
-    $suggestions[] = trim(
-      "Lob + Ziel: " .
-      ($focus ? ($studentName . " zeigt bei {$focus} Fortschritte. Nutze ein positives Feedback und ergänze eine nächste Aufgabe.") : 'Starte mit einem positiven Feedback und ergänze eine konkrete Anschlussaufgabe.') . ' ' .
-      ($currentChildValue ? ("Die Schülersicht (\"{$currentChildValue}\") kann dabei als Ausgangspunkt dienen.") : '')
-    );
+    $focusFacts = [];
+    if ($optionFacts) {
+      foreach (array_slice($optionFacts, 0, 3) as $f) {
+        $focusFacts[] = ($f['label'] ?? '') . ': ' . ($f['value'] ?? '');
+      }
+    } elseif ($gradeFacts) {
+      foreach (array_slice($gradeFacts, 0, 2) as $f) {
+        $focusFacts[] = ($f['label'] ?? '') . ': ' . ($f['value'] ?? '');
+      }
+    }
 
-    $prevBase = $currentTeacherValue !== '' ? $currentTeacherValue : ($historyTexts[0] ?? '');
-    $suggestions[] = trim(
-      ($prevBase !== '' ? ('Variante auf Basis der letzten Notiz: ' . $prevBase . ' ') : 'Auf Basis der bisherigen Eingaben eine Variante schreiben, die ein beobachtbares Verhalten und einen Zeitrahmen enthält. ') .
-      ($focus ? ("Beziehe dich auf den Schwerpunkt {$focus} und nenne einen nächsten Schritt sowie ein Feedback-Kriterium.") : 'Füge einen nächsten Schritt und ein Feedback-Kriterium hinzu.')
-    );
+    $ctxParts = [];
+    $ctxParts[] = 'Schüler: ' . $studentName;
+    $ctxParts[] = 'Feld: ' . $label;
+    if ($focusFacts) $ctxParts[] = 'Relevante Auswahlwerte: ' . implode('; ', $focusFacts);
+    if ($currentChildValue !== '') $ctxParts[] = 'Schülerrückmeldung: ' . $currentChildValue;
+    if ($historyTexts) $ctxParts[] = 'Frühere Formulierungen: ' . implode(' | ', array_slice($historyTexts, 0, 2));
 
-    $suggestions = array_values(array_filter(array_unique(array_map('trim', $suggestions)), fn($s)=>$s!==''));
+    $userPrompt = trim(implode("\n", array_filter($ctxParts)));
+
+    $messages = [
+      [
+        'role' => 'system',
+        'content' => 'Du verfasst kurze, präzise Lernziele und Feedbacks für Lehrer. Nutze die übergebenen Auswahlwerte als wichtigste Grundlage und halte den Text schlank, ohne die Datengrundlage aufzulisten.',
+      ],
+      [
+        'role' => 'user',
+        'content' => $userPrompt . "\n\nErstelle 3 unterschiedliche Vorschläge (max. 2 Sätze), jeweils mit klarer Rückmeldung und einem nächsten Schritt. Wenn möglich, beziehe dich auf die Schülerrückmeldung. Schreibe die Vorschläge als einzelne Zeilen ohne Nummerierung.",
+      ],
+    ];
+
+    $aiText = ai_chat_completion($messages, $aiCfg);
+    $suggestions = normalize_ai_suggestions($aiText);
 
     json_out(['ok' => true, 'suggestions' => $suggestions]);
   }

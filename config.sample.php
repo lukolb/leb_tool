@@ -35,6 +35,15 @@ return [
     // Uploads
     'uploads_dir' => 'uploads',
   ],
+  'ai' => [
+    // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über
+    // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.
+    'api_key' => '',
+    'provider' => 'openai',
+    'base_url' => 'https://api.openai.com',
+    'model' => 'gpt-4o-mini',
+    'timeout_seconds' => 20,
+  ],
   'mail' => [
     // Wenn leer -> PHP mail()
     // Optional: Später erweiterbar auf SMTP ohne externe Libraries (über fsockopen),

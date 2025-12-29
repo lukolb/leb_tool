@@ -105,6 +105,12 @@ Nach erfolgreicher Installation kann `install.php` aus Sicherheitsgründen gelö
 
 > Getestet auf klassischem Webhosting (z. B. Strato, ohne Shell-Zugriff)
 
+### KI-Vorschläge aktivieren
+
+- In `config.php` den Abschnitt `ai` ergänzen und einen API-Schlüssel hinterlegen (z. B. für OpenAI/ChatGPT). Alternativ kann die Umgebungsvariable `OPENAI_API_KEY` genutzt werden.
+- Optional Modell/Base-URL/Timeout anpassen, falls ein kompatibler Endpoint genutzt wird.
+- Ohne hinterlegten Schlüssel liefert der Button „KI-Vorschlag“ eine Fehlermeldung.
+
 ---
 
 ## 🎒 Schüler-Login
