@@ -899,7 +899,8 @@ try {
     // Gather values for current student to build a simple suggestion context.
     $stCtx = $pdo->prepare(
       "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.meta_json, tf.options_json,
-              t.value_text AS teacher_value, c.value_text AS child_value
+              t.value_text AS teacher_value, c.value_text AS child_value,
+              t.value_json AS teacher_value_json, c.value_json AS child_value_json
        FROM template_fields tf
        LEFT JOIN field_values t ON t.template_field_id=tf.id AND t.report_instance_id=? AND t.source='teacher'
        LEFT JOIN field_values c ON c.template_field_id=tf.id AND c.report_instance_id=? AND c.source='child'
@@ -908,14 +909,18 @@ try {
     $stCtx->execute([$reportId, $reportId, $templateId]);
     $ctxFields = $stCtx->fetchAll(PDO::FETCH_ASSOC);
 
-    $scaleFacts = [];
-    $numericScale = [];
+    $optionFacts = [];
+    $gradeFacts = [];
     $currentTeacherValue = '';
     $currentChildValue = '';
 
     foreach ($ctxFields as $cf) {
-      $val = trim((string)($cf['teacher_value'] ?? ''));
-      $childVal = trim((string)($cf['child_value'] ?? ''));
+      $meta = meta_read($cf['meta_json'] ?? null);
+      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
+      $resolvedChild = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '');
+
+      $val = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
+      $childVal = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
       $label = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
       $entry = [
         'label' => $label,
@@ -928,12 +933,11 @@ try {
       }
 
       $type = (string)($cf['field_type'] ?? '');
-      if (in_array($type, ['grade','radio','select'], true) && $val !== '') {
-        $scaleFacts[] = $entry;
-        $num = is_numeric(str_replace(',', '.', $val)) ? (float)str_replace(',', '.', $val) : null;
-        if ($num !== null) {
-          $numericScale[] = ['label' => $label, 'value' => $num];
-        }
+      $hasOptionList = option_list_id_from_meta($meta) > 0;
+      if (in_array($type, ['radio','select'], true) && $hasOptionList && $val !== '') {
+        $optionFacts[] = $entry;
+      } elseif ($type === 'grade' && $val !== '') {
+        $gradeFacts[] = $entry;
       }
     }
 
@@ -942,9 +946,6 @@ try {
     $hist = $history[(string)$reportId][$fieldId] ?? [];
     $historyTexts = array_values(array_filter(array_map(fn($r)=>trim((string)($r['text'] ?? '')), $hist), fn($s)=>$s !== ''));
 
-    $scaleSummary = $scaleFacts
-      ? ('Skalenwerte: ' . implode(', ', array_map(fn($r)=>($r['label'] . ': ' . $r['value']), $scaleFacts)) . '.')
-      : '';
     $childSummary = $currentChildValue !== ''
       ? ('Rückmeldung Schüler: "' . $currentChildValue . '".')
       : '';
@@ -953,21 +954,20 @@ try {
       : '';
 
     $focus = null;
-    if ($numericScale) {
-      usort($numericScale, fn($a, $b) => $a['value'] <=> $b['value']);
-      $focus = $numericScale[0]['label'] ?? null;
-    } elseif ($scaleFacts) {
-      $focus = $scaleFacts[0]['label'] ?? null;
+    if ($optionFacts) {
+      $focus = $optionFacts[0]['label'] ?? null;
+    } elseif ($gradeFacts) {
+      $focus = $gradeFacts[0]['label'] ?? null;
     }
 
     $label = label_for_lang($field['label'] ?? null, $field['label_en'] ?? null, $lang);
-    $baseLine = trim(implode(' ', array_filter([$scaleSummary, $childSummary, $prevSummary])));
+    $baseLine = trim(implode(' ', array_filter([$childSummary, $prevSummary])));
 
     $suggestions = [];
     $suggestions[] = trim(
       $studentName . ': ' . $label . '. ' .
       ($baseLine !== '' ? ($baseLine . ' ') : '') .
-      ($focus ? ("Fokus: {$focus} mit einem konkreten, messbaren nächsten Schritt.") : 'Formuliere ein kurzes, klares Ziel mit messbarem Schritt.')
+      ($focus ? ("Schwerpunkt {$focus}: Formuliere ein kurzes, klares Ziel mit einem messbaren nächsten Schritt.") : 'Formuliere ein kurzes, klares Ziel mit messbarem Schritt.')
     );
 
     $suggestions[] = trim(
@@ -979,7 +979,7 @@ try {
     $prevBase = $currentTeacherValue !== '' ? $currentTeacherValue : ($historyTexts[0] ?? '');
     $suggestions[] = trim(
       ($prevBase !== '' ? ('Variante auf Basis der letzten Notiz: ' . $prevBase . ' ') : 'Auf Basis der bisherigen Eingaben eine Variante schreiben, die ein beobachtbares Verhalten und einen Zeitrahmen enthält. ') .
-      ($focus ? ("Nenne einen nächsten Schritt zu {$focus} und eine Rückmeldung, wann es gelungen ist.") : 'Füge einen nächsten Schritt und ein Feedback-Kriterium hinzu.')
+      ($focus ? ("Beziehe dich auf den Schwerpunkt {$focus} und nenne einen nächsten Schritt sowie ein Feedback-Kriterium.") : 'Füge einen nächsten Schritt und ein Feedback-Kriterium hinzu.')
     );
 
     $suggestions = array_values(array_filter(array_unique(array_map('trim', $suggestions)), fn($s)=>$s!==''));
