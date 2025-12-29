@@ -228,14 +228,16 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
           <?php endif; ?>
           <div class="brand-text">
             <div class="brand-title"><?=h($orgName)?></div>
-            <div class="brand-sub"><?=h(t('student.subtitle'))?></div>
+            <div class="brand-sub" id="brandSubtitle" data-i18n="student.subtitle">
+              <?=h(t('student.subtitle'))?>
+            </div>
           </div>
         </div>
 
         <div class="brand-left" style="justify-content:flex-end; flex:1;">
           <div class="student-chip">
             <div class="n"><?=h($studentName ?: t('student.fallback_name'))?></div>
-            <div class="c"><?=h(t('student.class_label'))?> <?=h($classDisp)?><?= $schoolYear ? ' · ' . h($schoolYear) : '' ?></div>
+            <div class="c"><span id="classLabelText" data-i18n="student.class_label"><?=h(t('student.class_label'))?></span> <?=h($classDisp)?><?= $schoolYear ? ' · ' . h($schoolYear) : '' ?></div>
           </div>
           <div class="actions" style="justify-content:flex-end;">
             <?php $lang = ui_lang(); ?>
@@ -243,7 +245,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
               <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
               <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
             </div>
-            <a class="btn secondary" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
+            <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
           </div>
         </div>
       </div>
@@ -310,6 +312,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
+  const ORG_NAME = <?= json_encode($orgName) ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
@@ -352,7 +355,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
   let saveInFlight = 0;
   let lastSaveAt = null;
 
-  const T = <?= json_encode(ui_translations(), JSON_UNESCAPED_UNICODE) ?>;
+  let T = <?= json_encode(ui_translations(), JSON_UNESCAPED_UNICODE) ?>;
   const t = (key, fallback = '') => (T && Object.prototype.hasOwnProperty.call(T, key)) ? T[key] : (fallback ?? key);
   const tfmt = (key, fallback = '', repl = {}) => {
     let s = t(key, fallback);
@@ -416,6 +419,41 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     }catch(e){}
   }
 
+  function applyBootstrapResponse(j){
+    state = j;
+
+    if (j && j.translations) {
+      T = j.translations;
+    }
+
+    if (j && j.ui_lang) {
+      currentLang = j.ui_lang;
+      document.documentElement.lang = currentLang;
+    }
+
+    refreshStaticLabels();
+  }
+
+  function refreshStaticLabels(){
+    const elSub = document.getElementById('brandSubtitle');
+    if (elSub) elSub.textContent = t('student.subtitle');
+
+    const elClassLabel = document.getElementById('classLabelText');
+    if (elClassLabel) elClassLabel.textContent = t('student.class_label');
+
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) logoutBtn.textContent = t('student.logout', 'Logout');
+
+    document.title = `${ORG_NAME} – ${t('student.html_title')}`;
+
+    if (!HAS_TEMPLATE) {
+      const lockedTitle = document.getElementById('lockedTitle');
+      const lockedText = document.getElementById('lockedText');
+      if (lockedTitle) lockedTitle.textContent = t('student.locked.none_title');
+      if (lockedText) lockedText.textContent = t('student.locked.none_text');
+    }
+  }
+
   async function switchLangNoReload(href, nextLang){
     const scrollY = window.scrollY;
     const focusInfo = rememberFocus();
@@ -424,7 +462,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
     await fetch(href, { method:'GET', credentials:'same-origin', cache:'no-store' });
 
     const j = await api('bootstrap', {});
-    state = j;
+    applyBootstrapResponse(j);
 
     buildFlatSteps();
     activeStep = Math.max(0, Math.min(keepStep, flatSteps.length - 1));
@@ -1070,7 +1108,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       setSaving(true);
       await api('submit', {});
       const j = await api('bootstrap', {});
-      state = j;
+      applyBootstrapResponse(j);
 
       if (isLocked()) {
         showLockedOnly();
@@ -1227,7 +1265,7 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
       if (!HAS_TEMPLATE) return;
 
       const j = await api('bootstrap', {});
-      state = j;
+      applyBootstrapResponse(j);
       setSaveStatus('idle', t('student.js.auto_save', 'Automatisches Speichern ist aktiv.'));
 
       if (isLocked()) {
