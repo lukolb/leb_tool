@@ -716,11 +716,8 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     <div class="row-actions" style="float: right;">
     <a class="btn secondary" href="<?=h(url($toClassesUrl))?>"><?=h(t('teacher.students.back_to_classes', '← zurück zu den Klassen'))?></a>
   </div>
-
-  <h1><?=h(strtr(t('teacher.students.class_heading', 'Klasse {class} ({year})'), [
-    '{class}' => class_display($class),
-    '{year}' => (string)$class['school_year'],
-  ]))?></h1>
+    
+    <h1><?=h(t('teacher.students.class_heading', 'Klasse'))?> <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
@@ -838,10 +835,8 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 <?= child_status_badge($childStatusMap[$sid] ?? null) ?>
               <?php endif; ?>
             </td>
-            <td>
-              <button class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;">
-                <?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?>
-              </button>
+            <td style="display: flex; gap: 5px;">
+              <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
               <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
@@ -868,7 +863,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
       <div class="modal-header">
         <h3 id="editModalTitle" style="margin:0;"><?=h(t('teacher.students.edit_modal_title', 'Schüler bearbeiten'))?></h3>
-        <button type="button" class="btn secondary" onclick="closeEditModal()"><?=h(t('teacher.students.edit_modal_close', 'Schließen'))?></button>
       </div>
       <form method="post" id="editForm" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end; margin-top:10px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -891,13 +885,13 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
         <?php if ($customFields): ?>
           <div style="grid-column: 1 / -1; margin-top:6px;">
-            <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
+            <h3 style="margin:10px 0 0 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
           </div>
           <?php foreach ($customFields as $cf): ?>
             <?php $key = (string)($cf['field_key'] ?? ''); if ($key === '') continue; ?>
-            <?php $labEn = trim((string)($cf['label_en'] ?? '')); $label = student_custom_field_label($cf); ?>
+            <?php $label = student_custom_field_label($cf); ?>
             <div>
-              <label><?=h($label)?><?php if ($labEn !== '' && ui_lang() !== 'en'): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
+              <label><?=h($label)?></label>
               <input name="custom[<?=h($key)?>]" data-custom-key="<?=h($key)?>" type="text">
             </div>
           <?php endforeach; ?>
@@ -979,12 +973,12 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     </div>
     <?php if ($customFields): ?>
       <div style="grid-column: 1 / span 3; margin-top:6px;">
-        <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
+        <h3 style="margin:10px 0 0 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
       </div>
       <?php foreach ($customFields as $cf): ?>
         <div>
-          <?php $labEn = trim((string)($cf['label_en'] ?? '')); $label = student_custom_field_label($cf); ?>
-          <label><?=h($label)?><?php if ($labEn !== '' && ui_lang() !== 'en'): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
+          <?php $label = student_custom_field_label($cf); ?>
+          <label><?=h($label)?></label>
           <input name="custom[<?=h((string)$cf['field_key'])?>]" type="text" value="<?=h((string)($cf['default_value'] ?? ''))?>">
         </div>
       <?php endforeach; ?>

@@ -236,24 +236,17 @@ render_admin_header('Stammdaten-Mapping');
 ?>
 
 <div class="card">
-  <div class="row-actions">
-    <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">&larr; Templates</a>
-    <a class="btn secondary" href="<?=h(url('admin/index.php'))?>">Dashboard</a>
-    <a class="btn secondary" href="<?=h(url('logout.php'))?>">Logout</a>
-  </div>
-
-  <h1 style="margin-top:10px;">Stammdaten-Mapping</h1>
+    <div class="row-actions" style="float: right;">
+        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← zurück zu den Templates</a>
+    </div>
+  <h1>Stammdaten-Mapping</h1>
   <p class="muted">
     Hier legst du fest, wie Stammdaten (z.B. Vor- und Nachname, Klasse) automatisch in PDF-Felder übernommen werden.
     Pro PDF-Feld kannst du einen Text mit Platzhaltern definieren. Platzhalter werden als <code>{{student.first_name}}</code> geschrieben.
   </p>
+</div>
 
-  <?php if ($err): ?>
-    <div class="alert error"><?=h($err)?></div>
-  <?php elseif ($ok): ?>
-    <div class="alert success"><?=h($ok)?></div>
-  <?php endif; ?>
-
+<div class="card">
   <form method="get" class="row-actions" style="align-items:flex-end;">
     <div style="min-width:340px;">
       <label for="template_id" class="muted" style="display:block;margin-bottom:6px;">Template</label>
@@ -278,6 +271,12 @@ render_admin_header('Stammdaten-Mapping');
     </div>
   </form>
 </div>
+
+  <?php if ($err): ?>
+    <div class="alert error"><?=h($err)?></div>
+  <?php elseif ($ok): ?>
+    <div class="alert success"><?=h($ok)?></div>
+  <?php endif; ?>
 
 <?php if ($template): ?>
   <div class="card">
