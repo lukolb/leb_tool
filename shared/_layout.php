@@ -12,7 +12,7 @@ function nav_items_for_role(string $role): array {
       [t('nav.dashboard'), 'admin/index.php', ['index.php']],
       [t('nav.classes'), 'admin/classes.php', ['classes.php']],
       [t('nav.students'), 'admin/students.php', ['students.php']],
-      [t('nav.templates'), 'admin/templates.php', ['templates.php', 'template_fields.php']],
+      [t('nav.templates'), 'admin/templates.php', ['templates.php', 'template_fields.php', 'template_mappings.php']],
       [t('nav.option_lists'), 'admin/icon_library.php', ['icon_library.php']],
       [t('nav.text_snippets'), 'admin/text_snippets.php', ['text_snippets.php']],
       [t('nav.export'), 'admin/export.php', ['export.php']],

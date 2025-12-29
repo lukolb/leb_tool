@@ -29,6 +29,10 @@ render_admin_header('Admin – Dashboard');
       <div class="nav-title">Schüler</div>
       <p class="nav-desc">Schüler importieren oder erfassen und Klassen zuordnen.</p>
     </a>
+    <a class="nav-tile" href="<?=h(url('admin/student_fields.php'))?>">
+      <div class="nav-title">Schüler-Felder</div>
+      <p class="nav-desc">Zusätzliche Felder anlegen, Labels pflegen und Standardwerte definieren.</p>
+    </a>
     <a class="nav-tile" href="<?=h(url('admin/settings.php'))?>">
       <div class="nav-title">Branding & Einstellungen</div>
       <p class="nav-desc">Logo, Farben, Sprache und weitere Grundeinstellungen anpassen.</p>

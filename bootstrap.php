@@ -273,6 +273,43 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_field_values_field ON field_values (template_field_id)");
     }
 
+    // --- student_fields: configurable metadata for students (labels, defaults, bilingual)
+    if (!db_has_table($pdo, 'student_fields')) {
+      $pdo->exec(
+        "CREATE TABLE student_fields (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  field_key VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  label VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  label_en VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT '',\n" .
+        "  default_value TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n" .
+        "  sort_order INT NOT NULL DEFAULT 0,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_student_fields_key (field_key),\n" .
+        "  KEY idx_student_fields_sort (sort_order, id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+    // --- student_field_values: per-student values for custom fields
+    if (!db_has_table($pdo, 'student_field_values')) {
+      $pdo->exec(
+        "CREATE TABLE student_field_values (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  student_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  field_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  value_text TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_student_field_values (student_id, field_id),\n" .
+        "  KEY idx_student_field_values_student (student_id),\n" .
+        "  KEY idx_student_field_values_field (field_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
     // --- text_snippets: helpers for reusable Bausteine
     if (!db_has_table($pdo, 'text_snippets')) {
       $pdo->exec(
@@ -439,6 +476,103 @@ function audit(string $event, ?int $userId = null, array $details = []): void {
 }
 
 // --------------------
+// Student custom fields
+// --------------------
+
+function list_student_custom_fields(PDO $pdo): array {
+  if (!db_has_table($pdo, 'student_fields')) return [];
+  return $pdo->query(
+    "SELECT id, field_key, label, label_en, default_value, sort_order\n" .
+    "FROM student_fields\n" .
+    "ORDER BY sort_order ASC, id ASC"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function student_custom_value_map(PDO $pdo, int $studentId): array {
+  if ($studentId <= 0) return [];
+  if (!db_has_table($pdo, 'student_fields')) return [];
+
+  $sql =
+    "SELECT sf.field_key, sf.default_value, v.value_text\n" .
+    "FROM student_fields sf\n" .
+    "LEFT JOIN student_field_values v ON v.field_id = sf.id AND v.student_id = ?\n" .
+    "ORDER BY sf.sort_order ASC, sf.id ASC";
+
+  $st = $pdo->prepare($sql);
+  $st->execute([$studentId]);
+
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $key = trim((string)($row['field_key'] ?? ''));
+    if ($key === '') continue;
+    $val = $row['value_text'] ?? $row['default_value'] ?? '';
+    $out[$key] = (string)$val;
+  }
+  return $out;
+}
+
+function save_student_custom_values(PDO $pdo, int $studentId, array $values, bool $fillDefaults = false): void {
+  if ($studentId <= 0) return;
+  $fields = list_student_custom_fields($pdo);
+  if (!$fields) return;
+
+  $ins = $pdo->prepare(
+    "INSERT INTO student_field_values (student_id, field_id, value_text)\n" .
+    "VALUES (?, ?, ?)\n" .
+    "ON DUPLICATE KEY UPDATE value_text = VALUES(value_text), updated_at = CURRENT_TIMESTAMP"
+  );
+
+  $map = [];
+  foreach ($fields as $f) {
+    $key = (string)($f['field_key'] ?? '');
+    if ($key === '') continue;
+    $map[$key] = [
+      'id' => (int)$f['id'],
+      'default' => (string)($f['default_value'] ?? ''),
+    ];
+  }
+
+  foreach ($map as $key => $meta) {
+    $hasInput = array_key_exists($key, $values);
+    $val = $hasInput ? trim((string)$values[$key]) : null;
+
+    if ($val === null && $fillDefaults) {
+      $val = $meta['default'];
+    }
+
+    if ($val === null) continue;
+    $ins->execute([$studentId, (int)$meta['id'], $val]);
+  }
+}
+
+function copy_student_custom_values(PDO $pdo, int $sourceStudentId, int $targetStudentId): bool {
+  if ($sourceStudentId <= 0 || $targetStudentId <= 0) return false;
+  if (!db_has_table($pdo, 'student_field_values')) return false;
+
+  $sel = $pdo->prepare(
+    "SELECT field_id, value_text FROM student_field_values WHERE student_id = ?"
+  );
+  $sel->execute([$sourceStudentId]);
+  $rows = $sel->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) return false;
+
+  $ins = $pdo->prepare(
+    "INSERT INTO student_field_values (student_id, field_id, value_text)\n" .
+    "VALUES (?, ?, ?)\n" .
+    "ON DUPLICATE KEY UPDATE value_text = VALUES(value_text), updated_at = CURRENT_TIMESTAMP"
+  );
+
+  $copied = false;
+  foreach ($rows as $r) {
+    $fid = (int)($r['field_id'] ?? 0);
+    if ($fid <= 0) continue;
+    $ins->execute([$targetStudentId, $fid, (string)($r['value_text'] ?? '')]);
+    $copied = true;
+  }
+  return $copied;
+}
+
+// --------------------
 // System bindings (master data -> template fields)
 // --------------------
 
@@ -447,6 +581,16 @@ function audit(string $event, ?int $userId = null, array $details = []): void {
  * Binding keys are stored in template_fields.meta_json.system_binding.
  */
 function resolve_system_binding_value(string $binding, array $student, array $class): ?string {
+  if (strpos($binding, 'student.custom.') === 0) {
+    $key = substr($binding, strlen('student.custom.'));
+    if ($key === '') return null;
+    $custom = $student['custom_fields'] ?? [];
+    if (array_key_exists($key, $custom)) {
+      return (string)$custom[$key];
+    }
+    return '';
+  }
+
   switch ($binding) {
     case 'student.first_name':
       return (string)($student['first_name'] ?? '');
@@ -586,6 +730,7 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     'first_name' => $row['first_name'] ?? '',
     'last_name' => $row['last_name'] ?? '',
     'date_of_birth' => $row['date_of_birth'] ?? '',
+    'custom_fields' => student_custom_value_map($pdo, (int)$row['student_id']),
   ];
 
   $tf = $pdo->prepare(
