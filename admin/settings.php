@@ -110,6 +110,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!is_array($titles)) $titles = [];
     $cfg['student']['group_titles'] = parse_group_title_overrides_from_post($keys, $titles);
 
+    $ttsVoice = trim((string)($_POST['tts_voice'] ?? ($cfg['student']['tts_voice'] ?? '')));
+    $ttsRate = (float)($_POST['tts_rate'] ?? ($cfg['student']['tts_rate'] ?? 1.0));
+    if ($ttsRate <= 0) $ttsRate = 1.0;
+    $cfg['student']['tts_voice'] = $ttsVoice;
+    $cfg['student']['tts_rate'] = max(0.5, min(1.5, $ttsRate));
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -197,6 +203,10 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
+$ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
+$ttsRate = (float)($studentCfg['tts_rate'] ?? 1.0);
+if ($ttsRate <= 0) $ttsRate = 1.0;
+$ttsRate = max(0.5, min(1.5, $ttsRate));
 
 $introAbs = child_intro_file_abs();
 $introHtml = '';
@@ -366,6 +376,55 @@ render_admin_header('Admin – Settings');
       <button class="btn primary" type="submit">Speichern</button>
     </div>
   </form>
+</div>
+
+<div class="card">
+  <h2>Vorlesen (Text-to-Speech)</h2>
+  <p class="muted">Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler:innen. Browser können je nach Gerät unterschiedliche Stimmen bereitstellen.</p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+
+    <label>Bevorzugte Stimme (optional)</label>
+    <input name="tts_voice" list="ttsVoiceList" value="<?=h($ttsVoicePref)?>" placeholder="z.B. Google Deutsch, Microsoft Katja">
+    <datalist id="ttsVoiceList">
+      <option value="Google Deutsch"></option>
+      <option value="Google Deutsch (Deutschland)"></option>
+      <option value="Google Deutsch (Österreich)"></option>
+      <option value="Microsoft Katja Online (Natural) - German (Germany)"></option>
+      <option value="Microsoft Conrad Online (Natural) - German (Germany)"></option>
+      <option value="Microsoft Hedda Desktop - German (Germany)"></option>
+      <option value="Microsoft Jonas Desktop - German (Germany)"></option>
+      <option value="Google US English"></option>
+      <option value="Microsoft Aria Online (Natural) - English (United States)"></option>
+      <option value="Microsoft Guy Online (Natural) - English (United States)"></option>
+    </datalist>
+    <p class="muted">Wir versuchen zuerst diese Stimme zu nutzen (Teiltreffer erlaubt). Fällt zurück auf die passende Sprache.</p>
+
+    <label>Lesegeschwindigkeit</label>
+    <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
+      <input id="ttsRateInput" type="range" name="tts_rate" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRate)?>">
+      <span id="ttsRateLabel" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRate, 2))?></span>
+    </div>
+    <p class="muted">0,5 = langsam, 1,0 = normal, 1,5 = schnell.</p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Speichern</button>
+    </div>
+  </form>
+
+  <script>
+    (function(){
+      const input = document.getElementById('ttsRateInput');
+      const label = document.getElementById('ttsRateLabel');
+      if (input && label) {
+        const render = () => { const v = Number(input.value || 1); label.textContent = '×' + v.toFixed(2); };
+        input.addEventListener('input', render);
+        render();
+      }
+    })();
+  </script>
 </div>
 
 <div class="card">

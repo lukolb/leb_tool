@@ -35,6 +35,11 @@ return [
     // Uploads
     'uploads_dir' => 'uploads',
   ],
+  'student' => [
+    // Standard-Einstellungen für Vorlesen (TTS)
+    'tts_voice' => '', // z.B. "Google Deutsch", leer = Auto
+    'tts_rate' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
+  ],
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über
     // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.

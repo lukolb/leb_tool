@@ -225,6 +225,9 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_column($pdo, 'classes', 'is_active')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER name");
     }
+    if (!db_has_column($pdo, 'classes', 'tts_enabled')) {
+      $pdo->exec("ALTER TABLE classes ADD COLUMN tts_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER template_id");
+    }
     if (!db_has_column($pdo, 'classes', 'inactive_at')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN inactive_at DATETIME NULL AFTER is_active");
     }
