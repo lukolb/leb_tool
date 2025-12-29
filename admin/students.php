@@ -148,7 +148,7 @@ render_admin_header('Schüler');
 </div>
 
 <div class="card">
-  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;">
+  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
     <div>
       <label>Suche</label>
       <input name="q" type="text" value="<?=h($q)?>" placeholder="Name oder ID">
@@ -182,14 +182,77 @@ render_admin_header('Schüler');
         <option value="created" <?=($sort==='created')?'selected':''?>>Neueste</option>
       </select>
     </div>
-    <div class="actions" style="justify-content:flex-start;">
-      <button class="btn primary" type="submit">Filtern</button>
+    <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
       <a class="btn secondary" href="<?=h(url('admin/students.php'))?>">Reset</a>
     </div>
   </form>
 
   <div class="muted" style="margin-top:10px;">Maximal 500 Treffer (Performance).</div>
 </div>
+
+<script>
+  (function() {
+    const form = document.getElementById('student-filter-form');
+    if (!form) return;
+
+    const focusStorageKey = 'student_filter_focus';
+    const saveFocus = () => {
+      const active = document.activeElement;
+      if (!active) return;
+      const name = active.getAttribute('name');
+      if (!name) return;
+      try {
+        sessionStorage.setItem(focusStorageKey, name);
+      } catch (e) {
+        // ignore storage issues
+      }
+    };
+
+    const restoreFocus = () => {
+      let name;
+      try {
+        name = sessionStorage.getItem(focusStorageKey);
+        sessionStorage.removeItem(focusStorageKey);
+      } catch (e) {
+        return;
+      }
+      if (!name) return;
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el && typeof el.focus === 'function') {
+        el.focus({ preventScroll: true });
+        
+        if (typeof el.setSelectionRange === 'function') {
+            const len = el.value?.length ?? 0;
+            el.setSelectionRange(len, len);
+          }
+      }
+    };
+
+    restoreFocus();
+
+    const submitForm = () => {
+      saveFocus();
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    };
+
+    let debounceTimer;
+    const qInput = form.querySelector('input[name="q"]');
+    if (qInput) {
+      qInput.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(submitForm, 300);
+      });
+    }
+
+    form.querySelectorAll('select').forEach((sel) => {
+      sel.addEventListener('change', submitForm);
+    });
+  })();
+</script>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
