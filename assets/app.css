@@ -8,6 +8,7 @@
   --secondary:#111111;
   --bg:#f6f7fb;
   --card:#ffffff;
+  --surface:#ffffff;
   --text:#12131a;
   --muted:#667085;
   --border:#e5e7eb;
@@ -56,11 +57,72 @@ textarea {
 .brand-subtitle{color:var(--muted); font-size:12px}
 
 .menu-bar{background:#fff; border-bottom:1px solid var(--border); box-shadow:0 1px 6px rgba(16,24,40,.05);}
-.nav-shell{max-width:1200px; margin:0 auto; padding:0 16px; overflow-x:auto;}
+.nav-shell{max-width:1200px; margin:0 auto; padding:0 16px;}
 .nav-menu{display:flex; gap:10px; align-items:center; padding:10px 6px; margin:0; list-style:none;}
-.nav-link{padding:8px 12px; border-radius:10px; color:var(--secondary); text-decoration:none; font-weight:600; border:1px solid transparent; white-space:nowrap;}
+.nav-link{
+  padding:8px 12px;
+  border-radius:10px;
+  color:var(--secondary);
+  text-decoration:none;
+  font-weight:600;
+  border:1px solid transparent;
+  white-space:nowrap;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
 .nav-link:hover{background:rgba(0,0,0,0.04);}
 .nav-link.active{background:rgba(11,87,208,0.1); color:var(--primary); border-color:rgba(11,87,208,0.3);}
+
+/* ===== Dropdown (mehrstufiges Menü) ===== */
+.nav-item{ position:relative; display:flex; align-items:center; }
+.nav-item.has-children .nav-link{ position:relative; }
+.nav-caret{ font-size:16px; opacity:.9; }
+
+.nav-dropdown{
+  position:absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  padding: 8px;
+  display:none;
+  z-index: 1000;
+}
+
+.nav-item.has-children:hover .nav-dropdown,
+.nav-item.has-children:focus-within .nav-dropdown{
+  display:block;
+}
+
+/* Hover-Lücke „abdichten“, damit Dropdown nicht sofort schließt */
+.nav-item.has-children::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:100%;
+  height:10px;
+}
+
+.nav-dd-link{
+  display:block;
+  padding:10px 10px;
+  border-radius:10px;
+  text-decoration:none;
+  color: inherit;
+  white-space:nowrap;
+}
+.nav-dd-link:hover{ background: rgba(0,0,0,.05); }
+.nav-dd-link.active{
+  background: rgba(11,87,208,0.10);
+  color: var(--primary);
+  font-weight: 700;
+}
+/* ===== Ende Dropdown ===== */
 
 h1{margin:18px 0 12px}
 h2{margin:0 0 12px}
@@ -120,28 +182,31 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
   background:var(--primary);
   border-color:var(--primary);
 }
-.btn.primary[disabled='']{
+.btn:hover {
+    background:var(--secondary);
+}
+.btn.primary[disabled=''], .btn.secondary[disabled='']{
     background: lightgray;
     border-color: gray;
     cursor: not-allowed;
 }
 .actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px}
 
-    /* Admin/Lehrkraft-Link dezent */
-    .alt-login{
-      margin-top: 10px;
-      text-align: right;
-      font-size: 12px;
-      opacity: .75;
-    }
-    .alt-login a{
-      color: inherit;
-      text-decoration: underline;
-      text-decoration-thickness: 1px;
-      text-underline-offset: 2px;
-    }
-    .alt-login a:hover{ opacity: 1; }
-    
+/* Admin/Lehrkraft-Link dezent */
+.alt-login{
+  margin-top: 10px;
+  text-align: right;
+  font-size: 12px;
+  opacity: .75;
+}
+.alt-login a{
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.alt-login a:hover{ opacity: 1; }
+
 .nav-grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
@@ -202,7 +267,6 @@ th{color:#111; font-size:13px}
 .row-actions{display:flex; flex-wrap:wrap; gap:8px}
 .small{font-size:12px}
 
-
 /* progress */
 .progress{ height:10px; background: rgba(0,0,0,0.08); border-radius:999px; overflow:hidden; }
 .progress.sm{ height:6px; }
@@ -219,11 +283,10 @@ th{color:#111; font-size:13px}
 .history-rows{ display:grid; gap:8px; }
 .history-row{ border-bottom: solid lightgray 1px; padding-bottom: 5px; }
 .history-meta{ display:flex; justify-content:space-between; gap:10px; color:#666; font-weight:700; font-size: x-small; }
-.history-val{ white-space:pre-wrap; line-height:1.4;     font-size: small; }
+.history-val{ white-space:pre-wrap; line-height:1.4; font-size: small; }
 .history-actions{ display:flex; justify-content:flex-end; }
 
 .badge.ok{ background: rgba(0,128,0,0.12); border-color: rgba(0,128,0,0.35); color: rgba(0,128,0,0.95); }
-
 
 /* Language switch (teacher/student) */
 .lang-switch{ margin-left:auto; display:flex; gap:8px; align-items:center; }

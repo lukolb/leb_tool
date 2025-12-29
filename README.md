@@ -105,6 +105,13 @@ Nach erfolgreicher Installation kann `install.php` aus Sicherheitsgründen gelö
 
 > Getestet auf klassischem Webhosting (z. B. Strato, ohne Shell-Zugriff)
 
+### KI-Vorschläge aktivieren
+
+- In `config.php` den Abschnitt `ai` ergänzen und einen API-Schlüssel hinterlegen (z. B. für OpenAI/ChatGPT). Alternativ kann die Umgebungsvariable `OPENAI_API_KEY` genutzt werden.
+- Provider/Modell/Base-URL/Timeout können angepasst werden, falls ein kompatibler Endpoint genutzt wird.
+- Der KI-Button erscheint nur, wenn die Funktion aktiviert ist und ein Schlüssel hinterlegt wurde (sonst ausgeblendet).
+- Admins können die KI-Funktion samt API-Key, Provider und Modell bei der Installation oder später unter „Einstellungen“ ein- bzw. ausschalten.
+
 ---
 
 ## 🎒 Schüler-Login
@@ -142,6 +149,7 @@ Der Login ist:
 - Versionshistorie von Berichten
 - Zusammenarbeit mehrerer Lehrkräfte pro Klasse
 - Optionale Kommentarfunktion
+- Automatische KI-Textvorschläge für Ziele u.Ä., basierend auf Skalenwerten und vorherigen Feldern; Lehrkräfte können Vorschläge übernehmen, anpassen oder löschen (manuelle Kontrolle, Zeitersparnis)
 
 ---
 

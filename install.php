@@ -85,6 +85,11 @@ $orgName    = $_POST['org_name'] ?? 'LEG Tool';
 $brandPrimary   = $_POST['brand_primary'] ?? '#0b57d0';
 $brandSecondary = $_POST['brand_secondary'] ?? '#111111';
 $defaultSchoolYear = $_POST['default_school_year'] ?? '';
+$aiKey = $_POST['ai_key'] ?? '';
+$aiProvider = $_POST['ai_provider'] ?? 'openai';
+$aiBaseUrl = $_POST['ai_base_url'] ?? 'https://api.openai.com';
+$aiModel = $_POST['ai_model'] ?? 'gpt-4o-mini';
+$aiEnabled = ($_SERVER['REQUEST_METHOD'] === 'POST') ? (isset($_POST['ai_enabled']) ? 1 : 0) : 1;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!file_exists($samplePath)) $errors[] = "config.sample.php fehlt.";
@@ -140,6 +145,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['app']['brand']['primary'] = $brandPrimary;
       $cfg['app']['brand']['secondary'] = $brandSecondary;
       $cfg['app']['brand']['org_name'] = $orgName;
+
+      if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+      $cfg['ai']['enabled'] = ($aiEnabled === 1);
+      $cfg['ai']['api_key'] = trim((string)$aiKey);
+      $cfg['ai']['provider'] = trim((string)$aiProvider) ?: 'openai';
+      $cfg['ai']['base_url'] = rtrim(trim((string)$aiBaseUrl) ?: 'https://api.openai.com', '/');
+      $cfg['ai']['model'] = trim((string)$aiModel) ?: 'gpt-4o-mini';
 
       // Logo Upload (optional)
       if (isset($_FILES['brand_logo']) && ($_FILES['brand_logo']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
@@ -698,6 +710,31 @@ SQL;
 
           <label>Logo (optional, PNG/JPG/WEBP)</label>
           <input id="brandLogoInput" type="file" name="brand_logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+
+          <h2 style="margin-top:18px;">4) KI-Schlüssel (optional)</h2>
+          <p class="muted">Für automatische Vorschläge wird ein externer KI-Provider (z.B. OpenAI-kompatible API) genutzt. Ohne Schlüssel wird der KI-Button später nicht angezeigt.</p>
+          <label class="chk">
+            <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> KI-Vorschläge für Lehrkräfte aktivieren
+          </label>
+          <p class="muted">Kann jederzeit in den Einstellungen deaktiviert werden, falls kein Guthaben verbraucht werden soll.</p>
+
+          <label>Provider</label>
+          <select name="ai_provider">
+            <option value="openai" <?=$aiProvider==='openai' ? 'selected' : ''?>>OpenAI</option>
+            <option value="compatible" <?=$aiProvider==='compatible' ? 'selected' : ''?>>OpenAI-kompatibel</option>
+          </select>
+
+          <label>Basis-URL</label>
+          <input name="ai_base_url" value="<?=h($aiBaseUrl)?>" placeholder="https://api.openai.com">
+          <p class="muted">Nur ändern, wenn eine eigene oder kompatible API genutzt wird.</p>
+
+          <label>API Key</label>
+          <input name="ai_key" value="<?=h($aiKey)?>" placeholder="z.B. sk-...">
+          <p class="muted">Tipp: In OpenAI unter <strong>API Keys</strong> einen Secret Key anlegen.</p>
+
+          <label>Modell</label>
+          <input name="ai_model" value="<?=h($aiModel)?>" placeholder="z.B. gpt-4o-mini">
+          <p class="muted">Bezeichnung muss zum gewählten Provider passen.</p>
 
           <div class="actions" style="margin-top:16px;">
             <button class="btn primary" type="submit">Installieren</button>

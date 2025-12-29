@@ -93,6 +93,109 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
+function ai_provider_config(): array {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+
+  $provider = strtolower(trim((string)($ai['provider'] ?? 'openai')));
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  $baseUrl = (string)($ai['base_url'] ?? 'https://api.openai.com');
+  $model = (string)($ai['model'] ?? 'gpt-4o-mini');
+  $timeout = (int)($ai['timeout_seconds'] ?? 20);
+
+  if (!$enabled) {
+    throw new RuntimeException('KI-Vorschläge sind deaktiviert.');
+  }
+  if ($apiKey === '') {
+    throw new RuntimeException('AI API Key nicht konfiguriert.');
+  }
+
+  return [
+    'provider' => $provider ?: 'openai',
+    'api_key' => $apiKey,
+    'base_url' => rtrim($baseUrl !== '' ? $baseUrl : 'https://api.openai.com', '/'),
+    'model' => $model !== '' ? $model : 'gpt-4o-mini',
+    'timeout' => $timeout > 0 ? $timeout : 20,
+  ];
+}
+
+function ai_provider_enabled(): bool {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  if (!$enabled) return false;
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  return trim($apiKey) !== '';
+}
+
+function ai_chat_completion(array $messages, array $aiCfg): string {
+  $url = $aiCfg['base_url'] . '/v1/chat/completions';
+  $payload = [
+    'model' => $aiCfg['model'],
+    'messages' => $messages,
+    'temperature' => 0.7,
+    'max_tokens' => 320,
+  ];
+
+  $ch = curl_init($url);
+  curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_HTTPHEADER => [
+      'Content-Type: application/json',
+      'Authorization: Bearer ' . $aiCfg['api_key'],
+    ],
+    CURLOPT_TIMEOUT => $aiCfg['timeout'],
+    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+  ]);
+
+  $resp = curl_exec($ch);
+  $httpCode = (int)(curl_getinfo($ch, CURLINFO_HTTP_CODE) ?: 0);
+  if ($resp === false) {
+    $err = curl_error($ch);
+    curl_close($ch);
+    throw new RuntimeException('AI Request fehlgeschlagen: ' . $err);
+  }
+  curl_close($ch);
+
+  $json = json_decode((string)$resp, true);
+  if (!is_array($json)) {
+    throw new RuntimeException('AI Antwort unverständlich.');
+  }
+  if ($httpCode >= 400) {
+    $msg = (string)($json['error']['message'] ?? 'Fehler beim AI-Provider.');
+    throw new RuntimeException('AI Fehler: ' . $msg);
+  }
+
+  $choices = $json['choices'] ?? [];
+  $content = '';
+  if (is_array($choices) && isset($choices[0]['message']['content'])) {
+    $content = (string)$choices[0]['message']['content'];
+  }
+  $content = trim($content);
+  if ($content === '') {
+    throw new RuntimeException('AI hat keine Antwort geliefert.');
+  }
+
+  return $content;
+}
+
+function normalize_ai_suggestions(string $text): array {
+  $lines = preg_split('/\r?\n+/', trim($text));
+  if (!is_array($lines)) return [];
+
+  $out = [];
+  foreach ($lines as $ln) {
+    $s = trim((string)$ln);
+    $s = preg_replace('/^[-*•\d\.\s]+/', '', $s);
+    $s = trim((string)$s);
+    if ($s !== '') $out[] = $s;
+  }
+
+  return array_values(array_filter(array_unique($out), fn($s)=>$s!==''));
+}
+
 function is_class_field(array $meta): bool {
   $scope = isset($meta['scope']) ? strtolower(trim((string)$meta['scope'])) : '';
   if ($scope === 'class') return true;
@@ -814,6 +917,11 @@ try {
       'class_fields_missing' => max(0, $classTotal - $classDone),
     ];
 
+    $classGradeLevel = null;
+    $stClass = $pdo->prepare("SELECT grade_level FROM classes WHERE id=? LIMIT 1");
+    $stClass->execute([$classId]);
+    $classGradeLevel = $stClass->fetchColumn();
+
     json_out([
       'ok' => true,
       'template' => [
@@ -839,6 +947,8 @@ try {
         'values' => $classValuesById,
         'value_by_name' => $classValueByName,
       ],
+      'ai_enabled' => ai_provider_enabled(),
+      'class_grade_level' => $classGradeLevel !== false ? $classGradeLevel : null,
     ]);
   }
 
@@ -852,6 +962,138 @@ try {
     $content = (string)($data['content'] ?? '');
     $row = text_snippet_save($pdo, $userId, $title, $category, $content);
     json_out(['ok' => true, 'snippet' => $row]);
+  }
+
+  if ($action === 'ai_suggestions') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+
+    if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+
+    if (!ai_provider_enabled()) {
+      throw new RuntimeException('KI-Vorschläge sind deaktiviert oder nicht konfiguriert.');
+    }
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $stInfo = $pdo->prepare(
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id, c.grade_level
+       FROM report_instances ri
+       JOIN students s ON s.id=ri.student_id
+       JOIN classes c ON c.id=s.class_id
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $stInfo->execute([$reportId]);
+    $info = $stInfo->fetch(PDO::FETCH_ASSOC);
+    if (!$info) throw new RuntimeException('Bericht nicht gefunden.');
+    if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
+
+    $templateId = (int)$info['template_id'];
+    $studentName = trim((string)$info['first_name'] . ' ' . (string)$info['last_name']);
+    $gradeLevel = $info['grade_level'] !== null ? (int)$info['grade_level'] : null;
+
+    $stCtx = $pdo->prepare(
+      "SELECT tf.id, tf.field_name, tf.field_type, tf.label, tf.label_en, tf.meta_json, tf.options_json,
+              t.value_text AS teacher_value, c.value_text AS child_value,
+              t.value_json AS teacher_value_json, c.value_json AS child_value_json
+       FROM template_fields tf
+       LEFT JOIN field_values t ON t.template_field_id=tf.id AND t.report_instance_id=? AND t.source='teacher'
+       LEFT JOIN field_values c ON c.template_field_id=tf.id AND c.report_instance_id=? AND c.source='child'
+       WHERE tf.template_id=? AND tf.can_teacher_edit=1"
+    );
+    $stCtx->execute([$reportId, $reportId, $templateId]);
+    $ctxFields = $stCtx->fetchAll(PDO::FETCH_ASSOC);
+
+    $optionFacts = [];
+    $gradeFacts = [];
+    $childInputs = [];
+    $comparisons = [];
+
+    $missingOptionFields = [];
+    foreach ($ctxFields as $cf) {
+      $meta = meta_read($cf['meta_json'] ?? null);
+      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
+      $resolvedChild = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '');
+
+      $val = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
+      $childVal = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
+      $label = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
+
+      $type = (string)($cf['field_type'] ?? '');
+      $hasOptionList = option_list_id_from_meta($meta) > 0;
+      if (in_array($type, ['radio','select','grade'], true) && $hasOptionList && $val === '') {
+        $missingOptionFields[] = $label !== '' ? $label : (string)($cf['field_name'] ?? '');
+      }
+      if (in_array($type, ['radio','select'], true) && $hasOptionList && $val !== '') {
+        $optionFacts[] = ($label ? ($label . ': ') : '') . $val;
+      } elseif ($type === 'grade' && $val !== '') {
+        $gradeFacts[] = ($label ? ($label . ': ') : '') . $val;
+      }
+
+      if ($childVal !== '' && ($type === 'multiline' || $type === 'text' || (int)($meta['is_child_text'] ?? 0) === 1)) {
+        $childInputs[] = ($label ? ($label . ': ') : '') . $childVal;
+      }
+
+      if ($val !== '' && $childVal !== '') {
+        if (strcasecmp($val, $childVal) === 0) {
+          $comparisons[] = ($label ? ($label . ': ') : '') . 'Übereinstimmung (Lehrer & Schüler): ' . $val;
+        } else {
+          $comparisons[] = ($label ? ($label . ': ') : '') . 'Lehrer: ' . $val . ' · Schüler: ' . $childVal;
+        }
+      }
+    }
+
+    if ($missingOptionFields) {
+      $msg = 'Bitte zuerst alle Options-Felder ausfüllen. Offen: ' . implode(', ', array_slice($missingOptionFields, 0, 5));
+      if (count($missingOptionFields) > 5) $msg .= ' …';
+      throw new RuntimeException($msg);
+    }
+
+    $aiCfg = ai_provider_config();
+
+    $ctxParts = [];
+    $ctxParts[] = 'Schüler: ' . $studentName;
+    if ($gradeLevel !== null) $ctxParts[] = 'Klassenstufe: ' . $gradeLevel;
+    if ($optionFacts) $ctxParts[] = 'Wichtige Beobachtungen (Optionen): ' . implode('; ', array_slice($optionFacts, 0, 6));
+    if ($gradeFacts) $ctxParts[] = 'Noten (zweitrangig): ' . implode('; ', array_slice($gradeFacts, 0, 3));
+    if ($childInputs) $ctxParts[] = 'Rückmeldungen der Schüler: ' . implode(' | ', array_slice($childInputs, 0, 2));
+    if ($comparisons) $ctxParts[] = 'Abgleich Lehrer/Schüler: ' . implode(' | ', array_slice($comparisons, 0, 4));
+
+    $userPrompt = trim(implode("\n", array_filter($ctxParts)));
+
+    $messages = [
+      [
+        'role' => 'system',
+        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Nutze vor allem die übergebenen Options-Bewertungen als Grundlage und beziehe Übereinstimmungen bzw. Unterschiede zwischen Lehrer- und Schülerangaben mit ein. Kein Intro, keine Nummerierung.',
+      ],
+      [
+        'role' => 'user',
+        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 3 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen, Ziele beschreiben den nächsten Lernschritt und Schritte zeigen konkrete Möglichkeiten, das Ziel zu erreichen.",
+      ],
+    ];
+
+    $aiText = ai_chat_completion($messages, $aiCfg);
+
+    $parsed = ['strengths' => [], 'goals' => [], 'steps' => []];
+    $json = json_decode($aiText, true);
+    if (is_array($json)) {
+      foreach (['strengths','goals','steps'] as $k) {
+        if (isset($json[$k]) && is_array($json[$k])) {
+          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!==''));
+        }
+      }
+    }
+
+    if (!$parsed['strengths'] && !$parsed['goals'] && !$parsed['steps']) {
+      $flat = normalize_ai_suggestions($aiText);
+      $parsed['goals'] = $flat;
+    }
+
+    json_out(['ok' => true, 'suggestions' => $parsed]);
   }
 
   if ($action === 'delegations_save') {

@@ -86,6 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['mail']['from_email'] = $fromEmail === '' ? 'no-reply@example.org' : $fromEmail;
     $cfg['mail']['from_name']  = $fromName;
 
+    // ---- AI suggestions (key only) ----
+    $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+    $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
+    $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
+    $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
+    $aiEnabled = isset($_POST['ai_enabled'])
+      ? (int)$_POST['ai_enabled']
+      : (int)($cfg['ai']['enabled'] ?? 1);
+    if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+    $cfg['ai']['enabled'] = ($aiEnabled === 1);
+    $cfg['ai']['api_key'] = $aiKey;
+    $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
+    $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
+    $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
 
@@ -172,6 +187,13 @@ $fromEmail = $mail['from_email'] ?? 'no-reply@example.org';
 $fromName  = $mail['from_name'] ?? ($org ?: 'LEB Tool');
 
 $studentCfg = $cfg['student'] ?? [];
+
+$ai = $cfg['ai'] ?? [];
+$aiKey = $ai['api_key'] ?? '';
+$aiEnabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+$aiProvider = $ai['provider'] ?? 'openai';
+$aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
+$aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -302,6 +324,43 @@ render_admin_header('Admin – Settings');
         <input id="fromName" name="from_name" value="<?=h((string)$fromName)?>" required placeholder="<?=h((string)$org)?>">
       </div>
     </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Speichern</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>KI-Vorschläge</h2>
+  <p class="muted">Hinterlege hier den API-Key deines KI-Providers (z.B. OpenAI-kompatibel), damit Lehrkräfte Vorschläge für Stärken, Ziele und Schritte abrufen können.</p>
+
+  <form method="post" autocomplete="off" id="aiForm">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+
+    <label class="chk">
+      <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> KI-Vorschläge für Lehrkräfte aktivieren
+    </label>
+    <p class="muted">Wenn deaktiviert, wird der KI-Button ausgeblendet und es werden keine externen Tokens verbraucht.</p>
+
+    <label>Provider</label>
+    <select name="ai_provider">
+      <option value="openai" <?=$aiProvider==='openai' ? 'selected' : ''?>>OpenAI</option>
+      <option value="compatible" <?=$aiProvider==='compatible' ? 'selected' : ''?>>OpenAI-kompatibel</option>
+    </select>
+
+    <label>Basis-URL</label>
+    <input name="ai_base_url" value="<?=h((string)$aiBaseUrl)?>" placeholder="https://api.openai.com">
+    <p class="muted">Nur ändern, wenn eine eigene oder kompatible API genutzt wird.</p>
+
+    <label>API Key</label>
+    <input name="ai_key" value="<?=h((string)$aiKey)?>" placeholder="z.B. sk-...">
+    <p class="muted">Schlüsselbeschaffung: Im Provider-Dashboard (z.B. <strong>OpenAI &raquo; API Keys</strong>) einen Secret Key erstellen.</p>
+
+    <label>Modell</label>
+    <input name="ai_model" value="<?=h((string)$aiModel)?>" placeholder="z.B. gpt-4o-mini">
+    <p class="muted">Bezeichnung muss zu deinem Provider passen.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
