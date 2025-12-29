@@ -948,6 +948,13 @@ render_teacher_header('Eingaben');
     return list;
   }
 
+  function closeHistoryMenus(except){
+    document.querySelectorAll('[data-history-wrap="1"].open').forEach(w => {
+      if (except && w === except) return;
+      w.classList.remove('open');
+    });
+  }
+
   function addHistoryEntry(reportId, fieldId, text, source, valueText = null, valueJson = null){
     const rid = String(reportId ?? '');
     const fid = String(fieldId ?? '');
@@ -994,10 +1001,13 @@ render_teacher_header('Eingaben');
     }).join('');
 
     return `
-      <details class="history-box">
-        <summary>↩︎ Verlauf & Wiederherstellung</summary>
-        <div class="history-rows">${rows}</div>
-      </details>
+      <div class="history-inline" data-history-wrap="1">
+        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen"
+          data-history-toggle="1" data-report-id="${esc(reportId)}" data-field-id="${esc(fieldId)}">🕒</button>
+        <div class="history-popover" data-history-menu="1">
+          <div class="history-rows">${rows}</div>
+        </div>
+      </div>
     `;
   }
 
@@ -1563,6 +1573,21 @@ render_teacher_header('Eingaben');
       );
       return;
     }
+
+    const historyToggle = ev.target && ev.target.closest('[data-history-toggle="1"]');
+    if (historyToggle) {
+      ev.preventDefault();
+      const wrap = historyToggle.closest('[data-history-wrap="1"]');
+      if (wrap) {
+        const open = wrap.classList.contains('open');
+        closeHistoryMenus(open ? null : wrap);
+        wrap.classList.toggle('open', !open);
+      }
+      return;
+    }
+
+    if (ev.target && ev.target.closest('[data-history-menu="1"]')) return;
+    closeHistoryMenus();
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
