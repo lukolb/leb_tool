@@ -124,6 +124,34 @@ function read_csv_assoc(string $path): array {
   return $rows;
 }
 
+function map_custom_headers(array $header, array $customFields): array {
+  $map = [];
+  $normalizedFields = [];
+  foreach ($customFields as $cf) {
+    $key = strtolower(trim((string)($cf['field_key'] ?? '')));
+    if ($key === '') continue;
+    $labDe = strtolower(trim((string)($cf['label'] ?? '')));
+    $labEn = strtolower(trim((string)($cf['label_en'] ?? '')));
+    $normalizedFields[] = [$key, $labDe, $labEn];
+  }
+
+  foreach ($header as $hRaw) {
+    $h = strtolower(trim((string)$hRaw));
+    $hNormalized = preg_replace('/^custom[:\s-]+/i', '', $h);
+    foreach ($normalizedFields as [$key, $labDe, $labEn]) {
+      if ($h === $key || ($labDe !== '' && $h === $labDe) || ($labEn !== '' && $h === $labEn)) {
+        $map[$hRaw] = $key;
+        break;
+      }
+      if ($hNormalized !== $h && ($hNormalized === $key || ($labDe !== '' && $hNormalized === $labDe) || ($labEn !== '' && $hNormalized === $labEn))) {
+        $map[$hRaw] = $key;
+        break;
+      }
+    }
+  }
+  return $map;
+}
+
 function find_master_student_id(PDO $pdo, string $first, string $last, ?string $dob): ?int {
   $first = trim($first);
   $last  = trim($last);
@@ -407,6 +435,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $rows = read_csv_assoc($tmpPath);
       if (!$rows) throw new RuntimeException(t('teacher.students.error_empty_csv', 'CSV ist leer oder konnte nicht gelesen werden.'));
 
+      $header = array_keys(reset($rows));
+      $customHeaderMap = $customFields ? map_custom_headers($header, $customFields) : [];
+
       $created = 0;
       $skipped = 0;
 
@@ -426,6 +457,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
         $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
 
+        $customInput = [];
+        foreach ($customHeaderMap as $col => $fieldKey) {
+          $customInput[$fieldKey] = trim((string)($r[$col] ?? ''));
+        }
+
         if ($first === '' && $last === '') continue;
         if ($first === '' || $last === '') { $skipped++; continue; }
 
@@ -440,9 +476,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($master) {
           $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
-          if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
+          if ($customInput) {
+            save_student_custom_values($pdo, $newId, $customInput, false);
+          } elseif (!$copiedCustom) {
+            save_student_custom_values($pdo, $newId, [], true);
+          }
         } else {
-          save_student_custom_values($pdo, $newId, [], true);
+          save_student_custom_values($pdo, $newId, $customInput, true);
         }
         $created++;
       }
@@ -628,6 +668,18 @@ if ($customFields && $students) {
     $students[$idx]['custom_values'] = $studentCustomValues[$sid];
   }
 }
+$studentsForJs = [];
+foreach ($students as $s) {
+  $sid = (int)($s['id'] ?? 0);
+  if ($sid <= 0) continue;
+  $studentsForJs[$sid] = [
+    'id' => $sid,
+    'first_name' => (string)($s['first_name'] ?? ''),
+    'last_name' => (string)($s['last_name'] ?? ''),
+    'date_of_birth' => (string)($s['date_of_birth'] ?? ''),
+    'custom' => $studentCustomValues[$sid] ?? [],
+  ];
+}
 
 // Source classes for copy
 if (($u['role'] ?? '') === 'admin') {
@@ -769,7 +821,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <th><?=h(t('teacher.students.col_dob', 'Geburtsdatum'))?></th>
           <th><?=h(t('teacher.students.col_status', 'Status'))?></th>
           <th><?=h(t('teacher.students.col_child_status', 'Kinder-Status'))?></th>
-          <th style="width:220px;"><?=h(t('teacher.students.col_actions', 'Aktion'))?></th>
+          <th style="width:260px;"><?=h(t('teacher.students.col_actions', 'Aktion'))?></th>
         </tr>
       </thead>
       <tbody>
@@ -787,6 +839,9 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
               <?php endif; ?>
             </td>
             <td>
+              <button class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;">
+                <?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?>
+              </button>
               <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
@@ -809,57 +864,98 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 </div>
 
 <?php if ($students): ?>
-  <div class="card">
-    <h2><?=h(t('teacher.students.edit_title', 'Schüler bearbeiten'))?></h2>
-    <p class="muted" style="margin-top:0;"><?=h(t('teacher.students.edit_hint', 'Passe Namen, Geburtsdatum und zusätzliche Felder an.'))?></p>
+  <div id="editModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+      <div class="modal-header">
+        <h3 id="editModalTitle" style="margin:0;"><?=h(t('teacher.students.edit_modal_title', 'Schüler bearbeiten'))?></h3>
+        <button type="button" class="btn secondary" onclick="closeEditModal()"><?=h(t('teacher.students.edit_modal_close', 'Schließen'))?></button>
+      </div>
+      <form method="post" id="editForm" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end; margin-top:10px;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="update">
+        <input type="hidden" name="student_id" id="edit_student_id" value="">
 
-    <?php foreach ($students as $s): ?>
-      <?php $sid = (int)($s['id'] ?? 0); $cvals = $studentCustomValues[$sid] ?? []; ?>
-      <details class="panel" style="margin-bottom:10px;">
-        <summary style="cursor:pointer; display:flex; align-items:center; gap:8px;">
-          <span><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></span>
-          <?php if ((int)$s['is_active'] !== 1): ?><span class="badge" style="margin-left:6px;"><?=h(t('teacher.students.status_inactive', 'inaktiv'))?></span><?php endif; ?>
-        </summary>
-        <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; align-items:end; margin-top:10px;">
-          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-          <input type="hidden" name="action" value="update">
-          <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
+        <div>
+          <label><?=h(t('teacher.students.label_first_name', 'Vorname'))?></label>
+          <input name="first_name" id="edit_first_name" type="text" required>
+        </div>
+        <div>
+          <label><?=h(t('teacher.students.label_last_name', 'Nachname'))?></label>
+          <input name="last_name" id="edit_last_name" type="text" required>
+        </div>
+        <div>
+          <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
+          <input name="date_of_birth" id="edit_date_of_birth" type="date">
+        </div>
 
-          <div>
-            <label><?=h(t('teacher.students.label_first_name', 'Vorname'))?></label>
-            <input name="first_name" type="text" value="<?=h((string)$s['first_name'])?>" required>
+        <?php if ($customFields): ?>
+          <div style="grid-column: 1 / -1; margin-top:6px;">
+            <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
           </div>
-          <div>
-            <label><?=h(t('teacher.students.label_last_name', 'Nachname'))?></label>
-            <input name="last_name" type="text" value="<?=h((string)$s['last_name'])?>" required>
-          </div>
-          <div>
-            <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
-            <input name="date_of_birth" type="text" value="<?=h((string)($s['date_of_birth'] ?? ''))?>" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
-          </div>
-
-          <?php if ($customFields): ?>
-            <div style="grid-column: 1 / -1; margin-top:6px;">
-              <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
+          <?php foreach ($customFields as $cf): ?>
+            <?php $key = (string)($cf['field_key'] ?? ''); if ($key === '') continue; ?>
+            <?php $labEn = trim((string)($cf['label_en'] ?? '')); $label = student_custom_field_label($cf); ?>
+            <div>
+              <label><?=h($label)?><?php if ($labEn !== '' && ui_lang() !== 'en'): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
+              <input name="custom[<?=h($key)?>]" data-custom-key="<?=h($key)?>" type="text">
             </div>
-            <?php foreach ($customFields as $cf): ?>
-              <?php $key = (string)($cf['field_key'] ?? ''); if ($key === '') continue; ?>
-              <?php $label = student_custom_field_label($cf); ?>
-              <div>
-                <label><?=h($label)?></label>
-                <input name="custom[<?=h($key)?>]" type="text" value="<?=h((string)($cvals[$key] ?? ($cf['default_value'] ?? '')))?>">
-              </div>
-            <?php endforeach; ?>
-          <?php endif; ?>
+          <?php endforeach; ?>
+        <?php endif; ?>
 
-          <div class="actions" style="justify-content:flex-start;">
-            <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save', 'Speichern'))?></button>
-          </div>
-        </form>
-      </details>
-    <?php endforeach; ?>
+        <div class="actions" style="justify-content:flex-start; grid-column: 1 / -1; gap:8px;">
+          <button class="btn secondary" type="button" onclick="closeEditModal()"><?=h(t('teacher.students.edit_modal_cancel', 'Abbrechen'))?></button>
+          <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save', 'Speichern'))?></button>
+        </div>
+      </form>
+    </div>
   </div>
+  <style>
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
+    .modal-overlay.is-open { display: flex; }
+    .modal { background: #fff; color: inherit; border-radius: 8px; padding: 16px; width: min(720px, 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid var(--border); max-height: 90vh; overflow:auto; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  </style>
+  <script>
+    const studentData = <?=json_encode($studentsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
+    const customFieldKeys = <?=json_encode(array_values(array_map(fn($cf)=>(string)($cf['field_key'] ?? ''), $customFields ?? [])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
+    const editModal = document.getElementById('editModal');
+    const editForm = document.getElementById('editForm');
+
+    function openEditModal(id) {
+      if (!editModal || !editForm) return;
+      const s = studentData[String(id)] || studentData[id];
+      if (!s) return;
+      document.getElementById('edit_student_id').value = s.id || '';
+      document.getElementById('edit_first_name').value = s.first_name || '';
+      document.getElementById('edit_last_name').value = s.last_name || '';
+      document.getElementById('edit_date_of_birth').value = s.date_of_birth || '';
+      customFieldKeys.forEach(key => {
+        if (!key) return;
+        const input = editForm.querySelector('[data-custom-key="' + key + '"]');
+        if (input) input.value = (s.custom && s.custom[key]) ? s.custom[key] : '';
+      });
+      editModal.classList.add('is-open');
+      editModal.setAttribute('aria-hidden', 'false');
+      const first = document.getElementById('edit_first_name');
+      if (first) first.focus();
+    }
+
+    function closeEditModal() {
+      if (!editModal) return;
+      editModal.classList.remove('is-open');
+      editModal.setAttribute('aria-hidden', 'true');
+    }
+
+    if (editModal) {
+      editModal.addEventListener('click', function(ev){
+        if (ev.target === editModal) closeEditModal();
+      });
+    }
+    document.addEventListener('keydown', function(ev){
+      if (ev.key === 'Escape') closeEditModal();
+    });
+  </script>
 <?php endif; ?>
 
 <div class="card">
@@ -879,7 +975,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     </div>
     <div>
       <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
-      <input name="date_of_birth" type="text" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
+      <input name="date_of_birth" type="date" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
     </div>
     <?php if ($customFields): ?>
       <div style="grid-column: 1 / span 3; margin-top:6px;">
@@ -901,7 +997,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
 <div class="card">
   <h2><?=h(t('teacher.students.import_title', 'Schüler per Blackbaud-CSV importieren'))?></h2>
-  <p class="muted"><?=t('teacher.students.import_hint', 'CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.')?></p>
+  <p class="muted"><?=t('teacher.students.import_hint', 'CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>. Zusätzliche Felder werden per Spaltenname (Feld-Schlüssel oder Beschriftung, optional mit Präfix „Custom:“) zugeordnet.')?></p>
 
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
