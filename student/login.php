@@ -159,21 +159,6 @@ $logo = (string)($b['logo_path'] ?? '');
       animation: none;
       opacity: 0;
     }
-
-    /* Admin/Lehrkraft-Link dezent */
-    .alt-login{
-      margin-top: 10px;
-      text-align: right;
-      font-size: 12px;
-      opacity: .75;
-    }
-    .alt-login a{
-      color: inherit;
-      text-decoration: underline;
-      text-decoration-thickness: 1px;
-      text-underline-offset: 2px;
-    }
-    .alt-login a:hover{ opacity: 1; }
   </style>
 </head>
 <body class="page">
@@ -229,7 +214,7 @@ $logo = (string)($b['logo_path'] ?? '');
         >
 
         <div class="actions">
-          <button class="btn primary" type="submit"><?=h(t('student.login.submit', 'Einloggen'))?></button>
+          <a class="btn primary" type="submit"onclick="this.parentNode.parentNode.submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
         </div>
 
         <!-- Dezent, damit Schüler nicht aus Versehen drauf klicken -->

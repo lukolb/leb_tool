@@ -89,6 +89,9 @@ $logo = $b['logo_path'] ?? '';
             <a class="btn primary" type="submit" onclick="document.getElementById('loginForm').submit(); return false;">Anmelden</a>
           <a class="btn secondary" href="<?=h(url('forgot_password.php'))?>">Passwort vergessen?</a>
         </div>
+        <div class="alt-login">
+          <a href="<?=h(url('student/login.php'))?>">Schüler-Login</a>
+        </div>
       </form>
     </div>
 
