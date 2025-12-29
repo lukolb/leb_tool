@@ -708,6 +708,25 @@ render_teacher_header($pageTitle);
     return String(teacherVal(reportId, fieldId) ?? '').trim() === '';
   }
 
+  function optionCompletionForStudent(reportId){
+    let total = 0;
+    let missing = 0;
+
+    (state.groups || []).forEach(g => {
+      (g.fields || []).forEach(f => {
+        const type = String(f.field_type || '');
+        const hasOptions = Array.isArray(f.options) && f.options.length > 0;
+        if (!hasOptions) return;
+        if (!(type === 'radio' || type === 'select' || type === 'grade')) return;
+
+        total++;
+        if (isTeacherFieldMissing(reportId, f.id)) missing++;
+      });
+    });
+
+    return { total, missing };
+  }
+
   function fieldMissingForAnyStudent(field, students){
     return (students || []).some(s => isTeacherFieldMissing(s.report_instance_id, field.id));
   }
@@ -1660,6 +1679,16 @@ render_teacher_header($pageTitle);
     const gradeInfo = state.class_grade_level ? `Klassenstufe ${state.class_grade_level}` : 'Klasse';
     openAiDialog(`Vorschläge für ${student.name} · ${gradeInfo}`);
 
+    const optionStatus = optionCompletionForStudent(reportId);
+    if (optionStatus.missing > 0) {
+      if (aiStatus) {
+        aiStatus.textContent = `Bitte zuerst alle Options-Felder ausfüllen (${optionStatus.missing}/${optionStatus.total} offen).`;
+        aiStatus.style.display = 'block';
+        aiStatus.className = 'alert danger';
+      }
+      return;
+    }
+
     const cached = aiCache.get(reportId);
     if (cached && !aiLoading) {
       renderAiList(aiStrengths, cached.strengths || []);
@@ -2033,14 +2062,22 @@ render_teacher_header($pageTitle);
       html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
     }
 
+    const optionStatus = optionCompletionForStudent(reportId);
     if (state.ai_enabled) {
+      const missingOpt = optionStatus.total > 0 ? optionStatus.missing : 0;
+      const aiSubtitle = missingOpt > 0
+        ? `Bitte zuerst alle Options-Felder ausfüllen (${missingOpt}/${optionStatus.total} offen), dann KI starten.`
+        : 'Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).';
+      const aiButton = missingOpt > 0
+        ? `<button class="btn secondary ai-btn" type="button" disabled title="Bitte alle Options-Felder ausfüllen">${AI_ICON} KI öffnen</button>`
+        : `<button class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</button>`;
       html += `
         <div class="ai-banner">
           <div>
             <div class="t">${AI_ICON} KI-Vorschläge für ${esc(s.name)}</div>
-            <div class="muted">Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).</div>
+            <div class="muted">${aiSubtitle}</div>
           </div>
-          <button class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</button>
+          ${aiButton}
         </div>
       `;
     }

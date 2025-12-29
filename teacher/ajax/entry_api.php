@@ -1005,7 +1005,9 @@ try {
     $optionFacts = [];
     $gradeFacts = [];
     $childInputs = [];
+    $comparisons = [];
 
+    $missingOptionFields = [];
     foreach ($ctxFields as $cf) {
       $meta = meta_read($cf['meta_json'] ?? null);
       $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
@@ -1017,6 +1019,9 @@ try {
 
       $type = (string)($cf['field_type'] ?? '');
       $hasOptionList = option_list_id_from_meta($meta) > 0;
+      if (in_array($type, ['radio','select','grade'], true) && $hasOptionList && $val === '') {
+        $missingOptionFields[] = $label !== '' ? $label : (string)($cf['field_name'] ?? '');
+      }
       if (in_array($type, ['radio','select'], true) && $hasOptionList && $val !== '') {
         $optionFacts[] = ($label ? ($label . ': ') : '') . $val;
       } elseif ($type === 'grade' && $val !== '') {
@@ -1026,6 +1031,20 @@ try {
       if ($childVal !== '' && ($type === 'multiline' || $type === 'text' || (int)($meta['is_child_text'] ?? 0) === 1)) {
         $childInputs[] = ($label ? ($label . ': ') : '') . $childVal;
       }
+
+      if ($val !== '' && $childVal !== '') {
+        if (strcasecmp($val, $childVal) === 0) {
+          $comparisons[] = ($label ? ($label . ': ') : '') . 'Übereinstimmung (Lehrer & Schüler): ' . $val;
+        } else {
+          $comparisons[] = ($label ? ($label . ': ') : '') . 'Lehrer: ' . $val . ' · Schüler: ' . $childVal;
+        }
+      }
+    }
+
+    if ($missingOptionFields) {
+      $msg = 'Bitte zuerst alle Options-Felder ausfüllen. Offen: ' . implode(', ', array_slice($missingOptionFields, 0, 5));
+      if (count($missingOptionFields) > 5) $msg .= ' …';
+      throw new RuntimeException($msg);
     }
 
     $aiCfg = ai_provider_config();
@@ -1036,13 +1055,14 @@ try {
     if ($optionFacts) $ctxParts[] = 'Wichtige Beobachtungen (Optionen): ' . implode('; ', array_slice($optionFacts, 0, 6));
     if ($gradeFacts) $ctxParts[] = 'Noten (zweitrangig): ' . implode('; ', array_slice($gradeFacts, 0, 3));
     if ($childInputs) $ctxParts[] = 'Rückmeldungen der Schüler: ' . implode(' | ', array_slice($childInputs, 0, 2));
+    if ($comparisons) $ctxParts[] = 'Abgleich Lehrer/Schüler: ' . implode(' | ', array_slice($comparisons, 0, 4));
 
     $userPrompt = trim(implode("\n", array_filter($ctxParts)));
 
     $messages = [
       [
         'role' => 'system',
-        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Nutze vor allem die übergebenen Options-Bewertungen als Grundlage. Kein Intro, keine Nummerierung.',
+        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Nutze vor allem die übergebenen Options-Bewertungen als Grundlage und beziehe Übereinstimmungen bzw. Unterschiede zwischen Lehrer- und Schülerangaben mit ein. Kein Intro, keine Nummerierung.',
       ],
       [
         'role' => 'user',
