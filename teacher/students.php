@@ -10,10 +10,16 @@ $userId = (int)($u['id'] ?? 0);
 
 $toClassesUrl = get_role() == "admin" ? 'admin/classes.php' : 'teacher/classes.php';
 
+function student_custom_field_label(array $field): string {
+  $labelEn = trim((string)($field['label_en'] ?? ''));
+  if (ui_lang() === 'en' && $labelEn !== '') return $labelEn;
+  return (string)($field['label'] ?? '');
+}
+
 $classId = (int)($_GET['class_id'] ?? ($_POST['class_id'] ?? 0));
 if ($classId <= 0) {
-  render_teacher_header('Schüler');
-  echo '<div class="card"><h2>Schüler-Zugangscodes</h2><div class="alert danger"><strong>class_id fehlt.</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">← Zurück zu den Klassen</a></div>';
+  render_teacher_header(t('teacher.students.title', 'Schüler'));
+  echo '<div class="card"><h2>'.h(t('teacher.students.card_access_codes', 'Schüler-Zugangscodes')).'</h2><div class="alert danger"><strong>'.h(t('teacher.students.error_missing_class_id', 'class_id fehlt.')).'</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">'.h(t('teacher.students.back_to_classes', '← zurück zu den Klassen')).'</a></div>';
   render_teacher_footer();
   exit;
 }
@@ -30,8 +36,8 @@ $clsSt = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM cl
 $clsSt->execute([$classId]);
 $class = $clsSt->fetch();
 if (!$class) {
-  render_teacher_header('Schüler');
-  echo '<div class="card"><h2>Schüler-Zugangscodes</h2><div class="alert danger"><strong>Klasse nicht gefunden.</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">← Zurück zu den Klassen</a></div>';
+  render_teacher_header(t('teacher.students.title', 'Schüler'));
+  echo '<div class="card"><h2>'.h(t('teacher.students.card_access_codes', 'Schüler-Zugangscodes')).'</h2><div class="alert danger"><strong>'.h(t('teacher.students.error_class_not_found', 'Klasse nicht gefunden.')).'</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">'.h(t('teacher.students.back_to_classes', '← zurück zu den Klassen')).'</a></div>';
   render_teacher_footer();
   exit;
 }
@@ -56,7 +62,7 @@ function normalize_date(?string $s): ?string {
     $mo = str_pad($m[2], 2, '0', STR_PAD_LEFT);
     return $m[3] . '-' . $mo . '-' . $d;
   }
-  throw new RuntimeException('Geburtsdatum Format: YYYY-MM-DD oder DD.MM.YYYY');
+  throw new RuntimeException(t('teacher.students.error_dob_format', 'Geburtsdatum Format: YYYY-MM-DD oder DD.MM.YYYY'));
 }
 
 function parse_blackbaud_date(?string $s): ?string {
@@ -77,7 +83,7 @@ function parse_blackbaud_date(?string $s): ?string {
 
 function read_csv_assoc(string $path): array {
   $fh = fopen($path, 'rb');
-  if (!$fh) throw new RuntimeException('CSV konnte nicht geöffnet werden.');
+  if (!$fh) throw new RuntimeException(t('teacher.students.error_csv_open', 'CSV konnte nicht geöffnet werden.'));
 
   // Read header line (handle UTF-8 BOM)
   $rawHeader = fgets($fh);
@@ -324,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // class-wide child input lock/unlock
     if ($action === 'child_lock_class' || $action === 'child_unlock_class') {
       $tpl = get_active_template($pdo);
-      if (!$tpl) throw new RuntimeException('Kein aktives Template gefunden.');
+        if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
 
       $templateId = (int)$tpl['id'];
       $schoolYear = (string)($class['school_year'] ?? '');
@@ -342,9 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'changed'=>$changed
       ]);
 
-      $ok = ($mode === 'lock')
-        ? "Kinder-Eingabe gesperrt ({$changed} Reports)."
-        : "Kinder-Eingabe freigegeben ({$changed} Reports).";
+        if ($mode === 'lock') {
+          $ok = strtr(t('teacher.students.ok_child_locked', 'Kinder-Eingabe gesperrt ({count} Reports).'), ['{count}' => (string)$changed]);
+        } else {
+          $ok = strtr(t('teacher.students.ok_child_unlocked', 'Kinder-Eingabe freigegeben ({count} Reports).'), ['{count}' => (string)$changed]);
+        }
     }
 
     elseif ($action === 'add') {
@@ -353,7 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $dob   = normalize_date($_POST['date_of_birth'] ?? null);
       $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
 
-      if ($first === '' || $last === '') throw new RuntimeException('Vorname und Nachname sind erforderlich.');
+      if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
 
       $ins = $pdo->prepare(
         "INSERT INTO students (class_id, first_name, last_name, date_of_birth, is_active)
@@ -366,36 +374,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       save_student_custom_values($pdo, $newId, $customInput, true);
 
-      audit('teacher_student_add', $userId, ['class_id'=>$classId,'student_id'=>$newId]);
-      $ok = 'Schüler wurde angelegt.';
+        audit('teacher_student_add', $userId, ['class_id'=>$classId,'student_id'=>$newId]);
+        $ok = t('teacher.students.ok_added', 'Schüler wurde angelegt.');
     }
 
     elseif ($action === 'toggle_active') {
       $studentId = (int)($_POST['student_id'] ?? 0);
-      if ($studentId <= 0) throw new RuntimeException('Ungültige student_id.');
+      if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
 
       $q = $pdo->prepare("SELECT is_active FROM students WHERE id=? AND class_id=? LIMIT 1");
       $q->execute([$studentId, $classId]);
       $row = $q->fetch();
-      if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
+      if (!$row) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
       $new = ((int)$row['is_active'] === 1) ? 0 : 1;
       $pdo->prepare("UPDATE students SET is_active=? WHERE id=?")->execute([$new, $studentId]);
       audit('teacher_student_toggle_active', $userId, ['class_id'=>$classId,'student_id'=>$studentId,'is_active'=>$new]);
-      $ok = $new ? 'Schüler wurde reaktiviert.' : 'Schüler wurde deaktiviert.';
+        $ok = $new
+          ? t('teacher.students.ok_reactivated', 'Schüler wurde reaktiviert.')
+          : t('teacher.students.ok_deactivated', 'Schüler wurde deaktiviert.');
     }
 
     elseif ($action === 'import_csv') {
       if (empty($_FILES['csv_file']) || !isset($_FILES['csv_file']['tmp_name'])) {
-        throw new RuntimeException('Bitte CSV-Datei auswählen.');
+        throw new RuntimeException(t('teacher.students.error_no_csv', 'Bitte CSV-Datei auswählen.'));
       }
       $tmpPath = (string)$_FILES['csv_file']['tmp_name'];
       if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
-        throw new RuntimeException('Upload fehlgeschlagen.');
+        throw new RuntimeException(t('teacher.students.error_upload_failed', 'Upload fehlgeschlagen.'));
       }
 
       $rows = read_csv_assoc($tmpPath);
-      if (!$rows) throw new RuntimeException('CSV ist leer oder konnte nicht gelesen werden.');
+      if (!$rows) throw new RuntimeException(t('teacher.students.error_empty_csv', 'CSV ist leer oder konnte nicht gelesen werden.'));
 
       $created = 0;
       $skipped = 0;
@@ -439,8 +449,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->commit();
 
-      audit('teacher_students_import_csv', $userId, ['class_id'=>$classId,'created'=>$created,'skipped'=>$skipped]);
-      $ok = "CSV-Import: angelegt {$created}, übersprungen {$skipped}.";
+        audit('teacher_students_import_csv', $userId, ['class_id'=>$classId,'created'=>$created,'skipped'=>$skipped]);
+        $ok = strtr(t('teacher.students.ok_import', 'CSV-Import: angelegt {created}, übersprungen {skipped}.'), [
+          '{created}' => (string)$created,
+          '{skipped}' => (string)$skipped,
+        ]);
     }
 
     elseif ($action === 'generate_login') {
@@ -453,10 +466,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          ORDER BY last_name ASC, first_name ASC"
       );
       $st->execute([$classId]);
-      $students = $st->fetchAll(PDO::FETCH_ASSOC);
-      if (!$students) {
-        $ok = 'Keine aktiven Schüler in dieser Klasse.';
-      } else {
+        $students = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!$students) {
+          $ok = t('teacher.students.ok_no_active_students', 'Keine aktiven Schüler in dieser Klasse.');
+        } else {
         $pdo->beginTransaction();
 
         $upd = $pdo->prepare("UPDATE students SET qr_token=?, login_code=? WHERE id=?");
@@ -482,7 +495,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $chkToken->execute([$cand]);
             if (!$chkToken->fetch()) { $token = $cand; break; }
           }
-          if ($token === '') throw new RuntimeException('Konnte keinen eindeutigen QR-Token erzeugen.');
+            if ($token === '') throw new RuntimeException(t('teacher.students.error_token_generation', 'Konnte keinen eindeutigen QR-Token erzeugen.'));
 
           $code = '';
           for ($i=0; $i<40; $i++) {
@@ -490,7 +503,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $chkCode->execute([$cand]);
             if (!$chkCode->fetch()) { $code = $cand; break; }
           }
-          if ($code === '') throw new RuntimeException('Konnte keinen eindeutigen Login-Code erzeugen.');
+            if ($code === '') throw new RuntimeException(t('teacher.students.error_code_generation', 'Konnte keinen eindeutigen Login-Code erzeugen.'));
 
           $upd->execute([$token, $code, $sid]);
           $generated++;
@@ -505,20 +518,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'skipped' => $skipped,
         ]);
 
-        $ok = $regen
-          ? "Login-Codes/QR neu generiert: {$generated} (unverändert: {$skipped})."
-          : "Login-Codes/QR erstellt: {$generated} (bereits vorhanden: {$skipped}).";
+          $ok = $regen
+            ? strtr(t('teacher.students.ok_regenerated', 'Login-Codes/QR neu generiert: {generated} (unverändert: {skipped}).'), [
+                '{generated}' => (string)$generated,
+                '{skipped}' => (string)$skipped,
+              ])
+            : strtr(t('teacher.students.ok_generated', 'Login-Codes/QR erstellt: {generated} (bereits vorhanden: {skipped}).'), [
+                '{generated}' => (string)$generated,
+                '{skipped}' => (string)$skipped,
+              ]);
+        }
       }
-    }
 
     elseif ($action === 'copy_from') {
       $sourceClassId = (int)($_POST['source_class_id'] ?? 0);
       $exclude = $_POST['exclude_ids'] ?? [];
-      if ($sourceClassId <= 0) throw new RuntimeException('Quelle fehlt.');
+      if ($sourceClassId <= 0) throw new RuntimeException(t('teacher.students.error_missing_source', 'Quelle fehlt.'));
       if (!is_array($exclude)) $exclude = [];
 
       if (!user_can_access_class($pdo, $userId, $sourceClassId)) {
-        throw new RuntimeException('Keine Berechtigung für die Quellklasse.');
+        throw new RuntimeException(t('teacher.students.error_source_forbidden', 'Keine Berechtigung für die Quellklasse.'));
       }
 
       $st = $pdo->prepare(
@@ -560,7 +579,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->commit();
 
       audit('teacher_students_copy', $userId, ['from_class_id'=>$sourceClassId,'to_class_id'=>$classId,'copied'=>$copied,'exclude_ids'=>$excludeIds]);
-      $ok = "Schüler übernommen: {$copied}";
+      $ok = strtr(t('teacher.students.ok_copied', 'Schüler übernommen: {count}'), ['{count}' => (string)$copied]);
+
+    } elseif ($action === 'update') {
+      $studentId = (int)($_POST['student_id'] ?? 0);
+      if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
+
+      $q = $pdo->prepare("SELECT id FROM students WHERE id=? AND class_id=? LIMIT 1");
+      $q->execute([$studentId, $classId]);
+      if (!$q->fetch()) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
+
+      $first = normalize_name((string)($_POST['first_name'] ?? ''));
+      $last  = normalize_name((string)($_POST['last_name'] ?? ''));
+      $dob   = normalize_date($_POST['date_of_birth'] ?? null);
+      $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
+
+      if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
+
+      $upd = $pdo->prepare("UPDATE students SET first_name=?, last_name=?, date_of_birth=? WHERE id=?");
+      $upd->execute([$first, $last, $dob, $studentId]);
+      save_student_custom_values($pdo, $studentId, $customInput, false);
+
+      audit('teacher_student_update', $userId, ['class_id'=>$classId,'student_id'=>$studentId]);
+      $ok = t('teacher.students.ok_updated', 'Schüler wurde aktualisiert.');
     }
 
   } catch (Throwable $e) {
@@ -578,6 +619,15 @@ $st = $pdo->prepare(
 );
 $st->execute([$classId]);
 $students = $st->fetchAll();
+$studentCustomValues = [];
+if ($customFields && $students) {
+  foreach ($students as $idx => $s) {
+    $sid = (int)($s['id'] ?? 0);
+    if ($sid <= 0) continue;
+    $studentCustomValues[$sid] = student_custom_value_map($pdo, $sid);
+    $students[$idx]['custom_values'] = $studentCustomValues[$sid];
+  }
+}
 
 // Source classes for copy
 if (($u['role'] ?? '') === 'admin') {
@@ -607,30 +657,35 @@ $counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
 $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
 
-render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' . class_display($class));
+render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (string)$class['school_year'] . ' · ' . class_display($class));
 ?>
 
 <div class="card">
     <div class="row-actions" style="float: right;">
-    <a class="btn secondary" href="<?=h(url($toClassesUrl))?>">← zurück zu den Klassen</a>
+    <a class="btn secondary" href="<?=h(url($toClassesUrl))?>"><?=h(t('teacher.students.back_to_classes', '← zurück zu den Klassen'))?></a>
   </div>
 
-  <h1>Klasse <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
+  <h1><?=h(strtr(t('teacher.students.class_heading', 'Klasse {class} ({year})'), [
+    '{class}' => class_display($class),
+    '{year}' => (string)$class['school_year'],
+  ]))?></h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
-    <h2>Schüler-Zugangscodes</h2>
+    <h2><?=h(t('teacher.students.card_access_codes', 'Schüler-Zugangscodes'))?></h2>
   <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
-    <a class="btn primary" href="<?=h(url('teacher/qr_print.php?class_id='.(int)$classId))?>" target="_blank">QR-Codes drucken</a>
+    <a class="btn primary" href="<?=h(url('teacher/qr_print.php?class_id='.(int)$classId))?>" target="_blank"><?=h(t('teacher.students.print_qr', 'QR-Codes drucken'))?></a>
 
     <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
-      <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">Login-Codes/QR erstellen</a>
+      <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">
+        <?=h(t('teacher.students.generate_logins', 'Login-Codes/QR erstellen'))?>
+      </a>
     </form>
 
     <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
@@ -638,21 +693,31 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
       <input type="hidden" name="regen" value="1">
-      <a class="btn secondary" type="submit" onclick="if(confirm('Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.')) { this.parentNode.submit(); return false; }">Neu generieren</a>
+      <a class="btn secondary" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_regenerate', 'Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.'))?>')) { this.parentNode.submit(); return false; }">
+        <?=h(t('teacher.students.regenerate_logins', 'Neu generieren'))?>
+      </a>
     </form>
   </div>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Kinder-Eingabe (Klasse)</h2>
+  <h2 style="margin-top:0;"><?=h(t('teacher.students.child_entry_card', 'Kinder-Eingabe (Klasse)'))?></h2>
 
   <?php if (!$activeTpl): ?>
-    <div class="alert">Kein aktives Template – Kinder-Eingabe kann nicht gesteuert werden.</div>
+    <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kinder-Eingabe kann nicht gesteuert werden.'))?></div>
   <?php else: ?>
     <p class="muted" style="margin:0 0 10px 0;">
-      Status (<?=h($schoolYearUi)?>): Entwurf: <strong><?= (int)$counts['draft'] ?></strong>,
-      Gesperrt: <strong><?= (int)$counts['locked'] ?></strong>,
-      Abgegeben: <strong><?= (int)$counts['submitted'] ?></strong>
+      <?php
+        echo h(strtr(
+          t('teacher.students.child_status_intro', 'Status ({year}): Entwurf: {draft}, Gesperrt: {locked}, Abgegeben: {submitted}'),
+          [
+            '{year}' => $schoolYearUi,
+            '{draft}' => (string)(int)$counts['draft'],
+            '{locked}' => (string)(int)$counts['locked'],
+            '{submitted}' => (string)(int)$counts['submitted'],
+          ]
+        ));
+      ?>
     </p>
 
     <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
@@ -660,14 +725,18 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_unlock_class">
-        <a class="btn primary" type="submit"onclick="if(confirm('Kinder-Eingabe wirklich freigeben?')) { this.parentNode.submit(); return false; }">Für Kinder freigeben</a>
+        <a class="btn primary" type="submit"onclick="if(confirm('<?=h(t('teacher.students.confirm_child_unlock', 'Kinder-Eingabe wirklich freigeben?'))?>')) { this.parentNode.submit(); return false; }">
+          <?=h(t('teacher.students.child_unlock', 'Für Kinder freigeben'))?>
+        </a>
       </form>
 
       <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_lock_class">
-        <a class="btn danger" type="submit" onclick="if(confirm('Kinder-Eingabe wirklich sperren?')) { this.parentNode.submit(); return false; }">Für Kinder sperren</a>
+        <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.parentNode.submit(); return false; }">
+          <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
+        </a>
       </form>
     </div>
   <?php endif; ?>
@@ -675,32 +744,32 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 
 
 <div class="card">
-  <h2 style="margin-top:0;">PDF-Export</h2>
+  <h2 style="margin-top:0;"><?=h(t('teacher.students.pdf_export', 'PDF-Export'))?></h2>
   <p class="muted" style="margin:0 0 10px 0;">
-    Exportiert die ausgefüllten Daten in die der Klasse zugeordnete PDF-Vorlage. Die PDFs werden <strong>nicht</strong> dauerhaft auf dem Server gespeichert.
+    <?=t('teacher.students.pdf_export_hint', 'Exportiert die ausgefüllten Daten in die der Klasse zugeordnete PDF-Vorlage. Die PDFs werden <strong>nicht</strong> dauerhaft auf dem Server gespeichert.')?>
   </p>
   <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
-    <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId))?>">Export öffnen</a>
-    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip'))?>">ZIP (alle)</a>
-    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=merged'))?>">Eine PDF (alle)</a>
-    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip&only_submitted=1'))?>">ZIP (nur abgegebene)</a>
+    <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId))?>"><?=h(t('teacher.students.export_open', 'Export öffnen'))?></a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip'))?>"><?=h(t('teacher.students.export_zip_all', 'ZIP (alle)'))?></a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=merged'))?>"><?=h(t('teacher.students.export_one_pdf', 'Eine PDF (alle)'))?></a>
+    <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip&only_submitted=1'))?>"><?=h(t('teacher.students.export_zip_submitted', 'ZIP (nur abgegebene)'))?></a>
   </div>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Schüler</h2>
+  <h2 style="margin-top:0;"><?=h(t('teacher.students.list_title', 'Schüler'))?></h2>
 
   <?php if (!$students): ?>
-    <p class="muted">Noch keine Schüler in dieser Klasse.</p>
+    <p class="muted"><?=h(t('teacher.students.none', 'Noch keine Schüler in dieser Klasse.'))?></p>
   <?php else: ?>
     <table class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Geburtsdatum</th>
-          <th>Status</th>
-          <th>Kinder-Status</th>
-          <th style="width:220px;">Aktion</th>
+          <th><?=h(t('teacher.students.col_name', 'Name'))?></th>
+          <th><?=h(t('teacher.students.col_dob', 'Geburtsdatum'))?></th>
+          <th><?=h(t('teacher.students.col_status', 'Status'))?></th>
+          <th><?=h(t('teacher.students.col_child_status', 'Kinder-Status'))?></th>
+          <th style="width:220px;"><?=h(t('teacher.students.col_actions', 'Aktion'))?></th>
         </tr>
       </thead>
       <tbody>
@@ -709,7 +778,7 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
-            <td><?=((int)$s['is_active']===1)?'<span class="badge success">aktiv</span>':'<span class="badge">inaktiv</span>'?></td>
+            <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
                 <span class="muted">—</span>
@@ -723,9 +792,10 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
                 <input type="hidden" name="action" value="toggle_active">
                 <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
-                <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$s['is_active']===1)?'Deaktivieren':'Aktivieren'?></a>
+                <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">
+                  <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
               </form>
-              <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>">PDF</a>
+              <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -733,51 +803,105 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
     </table>
 
     <div class="muted" style="margin-top:8px;">
-      „Nicht angelegt“ heißt: Es gibt noch keinen passenden Eintrag in <code>report_instances</code> (für aktives Template / Schuljahr / Standard).
+      <?=t('teacher.students.child_status_hint', '„Nicht angelegt“ heißt: Es gibt noch keinen passenden Eintrag in <code>report_instances</code> (für aktives Template / Schuljahr / Standard).')?>
     </div>
   <?php endif; ?>
 </div>
 
+<?php if ($students): ?>
+  <div class="card">
+    <h2><?=h(t('teacher.students.edit_title', 'Schüler bearbeiten'))?></h2>
+    <p class="muted" style="margin-top:0;"><?=h(t('teacher.students.edit_hint', 'Passe Namen, Geburtsdatum und zusätzliche Felder an.'))?></p>
+
+    <?php foreach ($students as $s): ?>
+      <?php $sid = (int)($s['id'] ?? 0); $cvals = $studentCustomValues[$sid] ?? []; ?>
+      <details class="panel" style="margin-bottom:10px;">
+        <summary style="cursor:pointer; display:flex; align-items:center; gap:8px;">
+          <span><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></span>
+          <?php if ((int)$s['is_active'] !== 1): ?><span class="badge" style="margin-left:6px;"><?=h(t('teacher.students.status_inactive', 'inaktiv'))?></span><?php endif; ?>
+        </summary>
+        <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; align-items:end; margin-top:10px;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
+
+          <div>
+            <label><?=h(t('teacher.students.label_first_name', 'Vorname'))?></label>
+            <input name="first_name" type="text" value="<?=h((string)$s['first_name'])?>" required>
+          </div>
+          <div>
+            <label><?=h(t('teacher.students.label_last_name', 'Nachname'))?></label>
+            <input name="last_name" type="text" value="<?=h((string)$s['last_name'])?>" required>
+          </div>
+          <div>
+            <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
+            <input name="date_of_birth" type="text" value="<?=h((string)($s['date_of_birth'] ?? ''))?>" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
+          </div>
+
+          <?php if ($customFields): ?>
+            <div style="grid-column: 1 / -1; margin-top:6px;">
+              <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
+            </div>
+            <?php foreach ($customFields as $cf): ?>
+              <?php $key = (string)($cf['field_key'] ?? ''); if ($key === '') continue; ?>
+              <?php $label = student_custom_field_label($cf); ?>
+              <div>
+                <label><?=h($label)?></label>
+                <input name="custom[<?=h($key)?>]" type="text" value="<?=h((string)($cvals[$key] ?? ($cf['default_value'] ?? '')))?>">
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
+
+          <div class="actions" style="justify-content:flex-start;">
+            <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save', 'Speichern'))?></button>
+          </div>
+        </form>
+      </details>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
+
 <div class="card">
-  <h2>Schüler manuell anlegen</h2>
+  <h2><?=h(t('teacher.students.add_manual', 'Schüler manuell anlegen'))?></h2>
   <form method="post" class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="add">
     <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
 
     <div>
-      <label>Vorname</label>
+      <label><?=h(t('teacher.students.label_first_name', 'Vorname'))?></label>
       <input name="first_name" type="text" required>
     </div>
     <div>
-      <label>Nachname</label>
+      <label><?=h(t('teacher.students.label_last_name', 'Nachname'))?></label>
       <input name="last_name" type="text" required>
     </div>
     <div>
-      <label>Geburtsdatum</label>
-      <input name="date_of_birth" type="text" placeholder="YYYY-MM-DD oder DD.MM.YYYY">
+      <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
+      <input name="date_of_birth" type="text" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
     </div>
     <?php if ($customFields): ?>
       <div style="grid-column: 1 / span 3; margin-top:6px;">
-        <h3 style="margin:0 0 8px 0;">Zusätzliche Felder</h3>
+        <h3 style="margin:0 0 8px 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
       </div>
       <?php foreach ($customFields as $cf): ?>
         <div>
-          <?php $labEn = trim((string)($cf['label_en'] ?? '')); ?>
-          <label><?=h((string)$cf['label'])?><?php if ($labEn !== ''): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
+          <?php $labEn = trim((string)($cf['label_en'] ?? '')); $label = student_custom_field_label($cf); ?>
+          <label><?=h($label)?><?php if ($labEn !== '' && ui_lang() !== 'en'): ?> <span class="muted">(EN: <?=h($labEn)?>)</span><?php endif; ?></label>
           <input name="custom[<?=h((string)$cf['field_key'])?>]" type="text" value="<?=h((string)($cf['default_value'] ?? ''))?>">
         </div>
       <?php endforeach; ?>
     <?php endif; ?>
     <div class="actions" style="justify-content:flex-start;">
-      <button class="btn primary" type="submit">Anlegen</button>
+      <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_add', 'Anlegen'))?></button>
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2>Schüler per Blackbaud-CSV importieren</h2>
-  <p class="muted">CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.</p>
+  <h2><?=h(t('teacher.students.import_title', 'Schüler per Blackbaud-CSV importieren'))?></h2>
+  <p class="muted"><?=t('teacher.students.import_hint', 'CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.')?></p>
 
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -785,21 +909,23 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
     <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
 
     <div>
-      <label>CSV-Datei</label>
+      <label><?=h(t('teacher.students.import_label', 'CSV-Datei'))?></label>
       <input type="file" name="csv_file" accept=".csv,text/csv" required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Importieren</a>
+      <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">
+        <?=h(t('teacher.students.btn_import', 'Importieren'))?>
+      </a>
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2>Schüler aus Vorjahr übernehmen</h2>
-  <p class="muted">Kopiert aktive Schüler aus einer anderen Klasse in diese Klasse. Du kannst einzelne Schüler ausschließen.</p>
+  <h2><?=h(t('teacher.students.copy_title', 'Schüler aus Vorjahr übernehmen'))?></h2>
+  <p class="muted"><?=h(t('teacher.students.copy_hint', 'Kopiert aktive Schüler aus einer anderen Klasse in diese Klasse. Du kannst einzelne Schüler ausschließen.'))?></p>
 
   <?php if (!$sourceClasses): ?>
-    <div class="alert">Keine Quellklassen verfügbar (dir sind keine weiteren Klassen zugeordnet).</div>
+    <div class="alert"><?=h(t('teacher.students.copy_none', 'Keine Quellklassen verfügbar (dir sind keine weiteren Klassen zugeordnet).'))?></div>
   <?php else: ?>
     <form method="post" id="copyForm">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -808,9 +934,9 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
 
       <div class="grid" style="grid-template-columns: 320px auto; gap:12px; align-items:start;">
         <div>
-          <label>Quelle</label>
+          <label><?=h(t('teacher.students.copy_source', 'Quelle'))?></label>
           <select name="source_class_id" id="sourceClass" required>
-            <option value="">— wählen —</option>
+            <option value=""><?=h(t('teacher.students.copy_choose', '— wählen —'))?></option>
             <?php foreach ($sourceClasses as $c): ?>
               <option value="<?=h((string)$c['id'])?>"><?=h((string)$c['school_year'])?> · <?=h(class_display($c))?></option>
             <?php endforeach; ?>
@@ -818,17 +944,19 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
         </div>
 
         <div>
-          <label>Schüler ausschließen</label>
+          <label><?=h(t('teacher.students.copy_exclude', 'Schüler ausschließen'))?></label>
           <div class="panel" style="max-height: 260px; overflow:auto;" id="excludeBox">
-            <div class="muted">Wähle zuerst eine Quelle.</div>
+            <div class="muted"><?=h(t('teacher.students.copy_choose_first', 'Wähle zuerst eine Quelle.'))?></div>
           </div>
         </div>
       </div>
 
       <div class="actions" style="justify-content:flex-start; margin-top:12px;">
-        <a class="btn secondary" type="button" id="btnSelectNone">Keinen ausschließen</a>
-        <a class="btn secondary" type="button" id="btnSelectAll">Alle ausschließen</a>
-        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Übernehmen</a>
+        <a class="btn secondary" type="button" id="btnSelectNone"><?=h(t('teacher.students.copy_select_none', 'Keinen ausschließen'))?></a>
+        <a class="btn secondary" type="button" id="btnSelectAll"><?=h(t('teacher.students.copy_select_all', 'Alle ausschließen'))?></a>
+        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">
+          <?=h(t('teacher.students.copy_submit', 'Übernehmen'))?>
+        </a>
       </div>
     </form>
 
@@ -846,17 +974,17 @@ render_teacher_header('Schüler – ' . (string)$class['school_year'] . ' · ' .
       btnAll.addEventListener('click', ()=>setAllChecked(true));
 
       async function loadSourceStudents(classId){
-        excludeBox.innerHTML = '<div class="muted">Lade…</div>';
+        excludeBox.innerHTML = '<div class="muted"><?=h(t('teacher.students.copy_loading', 'Lade…'))?></div>';
         const url = <?=json_encode(url('teacher/students_source_api.php'))?> + '?source_class_id=' + encodeURIComponent(classId);
         const res = await fetch(url, { headers: { 'X-CSRF-Token': csrfToken } });
         const data = await res.json();
         if (!data.ok) {
-          excludeBox.innerHTML = '<div class="alert danger"><strong>' + (data.error || 'Fehler') + '</strong></div>';
+          excludeBox.innerHTML = '<div class="alert danger"><strong>' + (data.error || <?=json_encode(t('teacher.students.copy_error_fallback', 'Fehler'))?>) + '</strong></div>';
           return;
         }
         const items = data.students || [];
         if (!items.length) {
-          excludeBox.innerHTML = '<div class="muted">Keine aktiven Schüler in der Quelle.</div>';
+          excludeBox.innerHTML = '<div class="muted"><?=h(t('teacher.students.copy_no_students', 'Keine aktiven Schüler in der Quelle.'))?></div>';
           return;
         }
         excludeBox.innerHTML = '';
