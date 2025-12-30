@@ -142,11 +142,22 @@ render_admin_header($pageTitle);
   <p class="muted" style="max-width:820px;">
     <?=h(t('admin.parent_requests.intro', 'Lehrkräfte beantragen hier einen Elternmodus. Nach deiner Bestätigung erhalten Eltern einen reinen Lesezugang zur PDF-Vorschau und können nur moderierte Reaktionen hinterlassen.'))?>
   </p>
+</div>
+
+<?php if ($errors): ?>
+  <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
+<?php endif; ?>
+<?php if ($alerts): ?>
+  <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
+<?php endif; ?>
+
+<div class="card">
+    <h2>Filtern</h2>
   <div class="row" style="gap:10px;">
     <a class="btn <?= $statusFilter==='open'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=open'))?>"><?=h(t('admin.parent_requests.filter_open', 'Ausstehend'))?></a>
     <a class="btn <?= $statusFilter==='approved'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=approved'))?>"><?=h(t('admin.parent_requests.filter_approved', 'Aktiv'))?></a>
     <a class="btn <?= $statusFilter==='all'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=all'))?>"><?=h(t('admin.parent_requests.filter_all', 'Alle'))?></a>
-    <form method="get" style="display:flex; gap:8px; align-items:center;">
+    <form method="get" style="display:flex; gap:8px; align-items:center;margin-top: 20px;">
       <input type="hidden" name="status" value="<?=h($statusFilter)?>">
       <label class="muted" style="font-size:12px;">Klasse</label>
       <select name="class_id" class="input">
@@ -160,30 +171,24 @@ render_admin_header($pageTitle);
   </div>
 </div>
 
-<?php if ($errors): ?>
-  <div class="card"><div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div></div>
-<?php endif; ?>
-<?php if ($alerts): ?>
-  <div class="card"><div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div></div>
-<?php endif; ?>
-
-<div class="card" style="margin-bottom:12px;">
+<div class="card">
+    <h2>Freischaltung</h2>
   <form method="post" class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="approve_all">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
     <div>
-      <label class="muted" style="font-size:12px;">Gültig für (Tage)</label>
-      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;">
+      <label class="muted" style="font-size:12px;">Gültig für</label>
     </div>
     <div>
+      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
       <button class="btn primary" type="submit">Alle angezeigten Anfragen freigeben</button>
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;"><?=h(t('admin.parent_requests.table_title', 'Übersicht'))?></h2>
+  <h2><?=h(t('admin.parent_requests.table_title', 'Übersicht'))?></h2>
   <?php if (!$requests): ?>
     <p class="muted"><?=h(t('admin.parent_requests.none', 'Keine Einträge gefunden.'))?></p>
   <?php else: ?>
@@ -208,29 +213,34 @@ render_admin_header($pageTitle);
             if ($status === 'approved') $statusLabel = t('admin.parent_requests.status.approved', 'Freigeschaltet');
             if ($status === 'revoked') $statusLabel = t('admin.parent_requests.status.revoked', 'Beendet');
             if ($status === 'expired') $statusLabel = t('admin.parent_requests.status.expired', 'Abgelaufen');
+            $statusColor = $status;
+            if ($status === 'requested') $statusColor = 'blue';
+            if ($status === 'approved') $statusColor = 'green';
+            if ($status === 'revoked') $statusColor = 'red';
+            if ($status === 'expired') $statusColor = 'red';
             $pendingFb = (int)($r['pending_feedback'] ?? 0);
           ?>
           <tr>
             <td><strong><?=h((string)$r['first_name'] . ' ' . (string)$r['last_name'])?></strong></td>
             <td><?=h((string)$r['school_year'])?> · <?=h(parent_admin_class_display($r))?></td>
-            <td><?=h($statusLabel)?></td>
-            <td><?=h($r['expires_at'] ?? '–')?></td>
+            <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
+            <td><?=h(date_format(date_create($r['expires_at']),"d.m.Y H:i") ?? '–')?></td>
             <td><?=h($r['requested_by_name'] ?? t('admin.parent_requests.unknown', 'unbekannt'))?></td>
             <td>
               <?php if ($pendingFb > 0): ?>
-                <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h($pendingFb)?> <?=h(t('admin.parent_requests.pending_fb', 'offen'))?></span>
+                <span class="pill yellow"><?=$pendingFb?> <?=h(t('admin.parent_requests.pending_fb', 'offen'))?></span>
               <?php else: ?>
                 <span class="muted">–</span>
               <?php endif; ?>
             </td>
             <td>
-              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <div style="display:flex; gap:6px; flex-wrap:wrap;width: min-content;">
                 <?php if ($status === 'requested'): ?>
                   <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="approve">
                     <input type="hidden" name="link_id" value="<?= (int)$r['id'] ?>">
-                    <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;">
+                    <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
                     <button class="btn primary" type="submit"><?=h(t('admin.parent_requests.approve', 'Freigeben'))?></button>
                   </form>
                 <?php endif; ?>
@@ -239,7 +249,7 @@ render_admin_header($pageTitle);
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="extend">
                     <input type="hidden" name="link_id" value="<?= (int)$r['id'] ?>">
-                    <input type="number" name="extend_days" value="7" min="1" max="120" style="width:80px;">
+                    <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
                     <button class="btn secondary" type="submit"><?=h(t('admin.parent_requests.extend', 'Verlängern'))?></button>
                   </form>
                   <form method="post" style="margin:0;">

@@ -139,14 +139,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
-      if ($message === '') throw new RuntimeException('Bitte eine Rückmeldung eingeben.');
       $type = 'question';
       $ins = $pdo->prepare(
         "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
         "VALUES (?, ?, ?, ?, 0, NOW())"
       );
       $ins->execute([(int)$link['id'], $type, $message, 'de']);
-      $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung. Sie wird moderiert.');
+      $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.');
     }
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
@@ -203,6 +202,53 @@ $secondary = $b['secondary'] ?? '#111111';
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>:root{--primary:<?=h($primary)?>;--secondary:<?=h($secondary)?>;}</style>
+  <style>
+    #pdfPreview {
+        position: relative;
+      }
+
+      /* Loader Overlay */
+      #pdfPreview .pdf-loader {
+          margin: 30px;
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        gap: 10px;
+        background: rgba(248,249,251,.85);
+        backdrop-filter: blur(2px);
+        border-radius: inherit;
+        z-index: 5;
+        pointer-events: none;
+
+        opacity: 1;
+        transition: opacity .15s ease;
+      }
+
+      /* 🔥 MAGIC: sobald ein Canvas vorhanden ist → Loader aus */
+      #pdfPreview:has(canvas) .pdf-loader {
+        opacity: 0;
+      }
+
+      /* Spinner */
+      #pdfPreview .spinner {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid rgba(0,0,0,.15);
+        border-top-color: rgba(0,0,0,.55);
+        animation: spin .9s linear infinite;
+      }
+
+      #pdfPreview .txt {
+        font-size: 13px;
+        color: rgba(0,0,0,.65);
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+  </style>
 </head>
 <body class="page">
   <div class="topbar">
@@ -217,16 +263,16 @@ $secondary = $b['secondary'] ?? '#111111';
 
   <div class="container" style="max-width:960px;">
     <div class="card">
-      <h1 style="margin-top:0;"><?=h(t('parent.portal.heading', 'Vorschau des Lernentwicklungsberichts'))?></h1>
+      <h1><?=h(t('parent.portal.heading', 'Lernentwicklungsbericht'))?></h1>
       <p class="muted" style="max-width:820px;">
-        <?=h(t('parent.portal.readonly_hint', 'Sie sehen eine schreibgeschützte Vorschau. Download ist deaktiviert. Rückmeldungen werden moderiert und sind zeitlich begrenzt.'))?>
+        <?=h(t('parent.portal.readonly_hint', 'Der Abruf ist zeitlich begrenzt.'))?>
       </p>
       <div class="pill"><?=h((string)$link['first_name'] . ' ' . (string)$link['last_name'])?></div>
       <div class="muted" style="margin-top:4px;">
         <?=h(t('parent.portal.class', 'Klasse'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
       </div>
-      <div class="muted" style="margin-top:4px;">
-        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?=h($expiresAt ? $expiresAt : t('parent.portal.no_expiry', 'ohne Enddatum'))?>
+      <div class="muted" style="margin-top:12px;">
+        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : t('parent.portal.no_expiry', 'ohne Enddatum'))?>
       </div>
       <?php if ($status === 'requested'): ?>
         <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.waiting', 'Freigabe wird noch durch die Schule bestätigt.'))?></div>
@@ -237,20 +283,10 @@ $secondary = $b['secondary'] ?? '#111111';
       <?php endif; ?>
     </div>
 
-    <div class="card">
-      <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
-        <h2 style="margin:0;"><?=h(t('parent.portal.preview_title', 'PDF-Vorschau (Nur lesen)'))?></h2>
-      </div>
       <?php if (!$canPreview): ?>
-        <p class="muted"><?=h(t('parent.portal.preview_blocked', 'Die Freigabe ist noch nicht aktiv oder bereits beendet.'))?></p>
+        <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.preview_blocked', 'Die Freigabe ist noch nicht aktiv oder bereits beendet.'))?>
+        </div>
       <?php else: ?>
-        <div id="pdfPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none;" oncontextmenu="return false;"></div>
-      <?php endif; ?>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
-      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Sie können hier eine Rückmeldung hinterlassen. Alle Rückmeldungen werden moderiert.'))?></p>
 
       <?php if ($errors): ?>
         <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
@@ -258,6 +294,20 @@ $secondary = $b['secondary'] ?? '#111111';
       <?php if ($alerts): ?>
         <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
       <?php endif; ?>
+          <div id="pdfPreview" class="card"
+     style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;" oncontextmenu="return false;">
+
+            <div class="pdf-loader" aria-label="Lädt…" role="status">
+              <span class="spinner"></span>
+              <span class="txt">PDF wird geladen…</span>
+            </div>
+
+          </div>
+      <?php endif; ?>
+
+    <div class="card">
+      <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
+      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Bitte bestätigen Sie den Empfang des Dokuments. Sie können zusätzlich eine Rückmeldung / Frage hinterlassen.'))?></p>
 
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
@@ -265,10 +315,9 @@ $secondary = $b['secondary'] ?? '#111111';
         <form method="post" style="margin:0; display:flex; flex-direction:column; gap:8px;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="send_feedback">
-          <label><?=h(t('parent.portal.feedback_label', 'Rückmeldung oder Rückfrage'))?></label>
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
           <div class="actions" style="margin-top:8px;">
-            <button class="btn primary" type="submit"><?=h(t('parent.portal.feedback_send', 'Rückmeldung senden'))?></button>
+              <a class="btn primary" type="submit" onclick="this.closest('form').submit();"><?=h(t('parent.portal.feedback_send', 'Empfang bestätigen'))?></a>
           </div>
         </form>
       <?php endif; ?>
@@ -314,8 +363,7 @@ $secondary = $b['secondary'] ?? '#111111';
           const canvas = document.createElement('canvas');
           canvas.width = viewport.width * ratio;
           canvas.height = viewport.height * ratio;
-          canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
+          canvas.style.width = `100%`;
           canvas.style.display = 'block';
           canvas.style.marginBottom = '12px';
           canvas.draggable = false;

@@ -460,7 +460,7 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Anlegen</a>
         </div>
       </form>
     </div>
@@ -525,7 +525,7 @@ render_admin_header('Klassen');
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Bulk anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Bulk anlegen</a>
         </div>
       </form>
     </div>
@@ -601,7 +601,7 @@ render_admin_header('Klassen');
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
+                  <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
                 </form>
               </td>
             </tr>
@@ -684,7 +684,7 @@ render_admin_header('Klassen');
 
       <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
         <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Abbrechen</a>
-        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">Speichern</a>
+        <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Speichern</a>
       </div>
     </form>
 

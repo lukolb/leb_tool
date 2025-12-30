@@ -211,7 +211,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
+                  <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
                 </form>
               </td>
             </tr>

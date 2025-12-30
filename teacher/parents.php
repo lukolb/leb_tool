@@ -229,7 +229,7 @@ if ($classId > 0) {
     "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
     "JOIN students s ON s.id=ppl.student_id\n" .
     "WHERE s.class_id=?\n" .
-    "ORDER BY pf.created_at DESC\n" .
+    "ORDER BY pf.is_reviewed ASC, pf.created_at DESC\n" .
     "LIMIT 40"
   );
   $stFb->execute([$classId]);
@@ -240,9 +240,6 @@ $pageTitle = t('teacher.parents.title', 'Elternmodus');
 render_teacher_header($pageTitle);
 ?>
 <div class="card">
-  <div class="row-actions" style="float:right;">
-    <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId))?>">&larr; <?=h(t('teacher.parents.back_to_entries', 'Zurück zu den Eingaben'))?></a>
-  </div>
   <h1><?=h($pageTitle)?></h1>
   <p class="muted" style="max-width:760px;">
     <?=h(t('teacher.parents.intro', 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'))?>
@@ -250,17 +247,17 @@ render_teacher_header($pageTitle);
 </div>
 
 <?php if ($errors): ?>
-  <div class="card"><div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div></div>
+  <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
 <?php endif; ?>
 <?php if ($alerts): ?>
-  <div class="card"><div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div></div>
+  <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
 <?php endif; ?>
 
 <div class="card" style="margin-bottom:14px;">
-  <form method="get" class="row" style="gap:12px; align-items:flex-end;">
+  <h2><?=h(t('teacher.parents.class_label', 'Klasse'))?></h2>
+  <form method="get" class="row">
     <div>
-      <label><?=h(t('teacher.parents.class_label', 'Klasse'))?></label>
-      <select name="class_id" class="input">
+      <select name="class_id" class="input" onchange="this.closest('form').submit();">
         <?php foreach ($classes as $c): ?>
           <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
             <?=h((string)$c['school_year'])?> · <?=h(parent_class_display($c))?>
@@ -268,23 +265,21 @@ render_teacher_header($pageTitle);
         <?php endforeach; ?>
       </select>
     </div>
-    <div style="align-self:flex-end;">
-      <button class="btn" type="submit"><?=h(t('teacher.parents.change_class', 'Klasse wechseln'))?></button>
-    </div>
   </form>
 </div>
 
 <?php if ($classId > 0 && $students): ?>
 <div class="card" style="margin-bottom:14px;">
+    <h2>Klassen-Freischaltung</h2>
   <form method="post" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="request_all">
     <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
     <div>
-      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days', 'Freischalten für (Tage)'))?></label>
-      <input type="number" name="valid_days" value="14" min="1" max="90" style="width:90px;">
+      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days', 'Freischalten für'))?></label>
     </div>
     <div>
+      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
       <button class="btn primary" type="submit"><?=h(t('teacher.parents.bulk_request', 'Alle Zugänge dieser Klasse anfragen'))?></button>
     </div>
   </form>
@@ -292,7 +287,7 @@ render_teacher_header($pageTitle);
 <?php endif; ?>
 
 <div class="card">
-  <h2 style="margin-top:0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
+  <h2><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
   <?php if (!$students): ?>
     <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schüler:innendaten gefunden.'))?></p>
   <?php else: ?>
@@ -311,12 +306,17 @@ render_teacher_header($pageTitle);
         <?php foreach ($students as $s):
           $linkId = (int)($s['parent_link_id'] ?? 0);
           $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
-          $status = $link['status'] ?? 'off';
+          $status = $link['status'] ?? '-';
           $statusLabel = $status;
-          if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt (wartet auf Admin)');
+          if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
           if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
           if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
           if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
+            $statusColor = $status;
+            if ($status === 'requested') $statusColor = 'blue';
+            if ($status === 'approved') $statusColor = 'green';
+            if ($status === 'revoked') $statusColor = 'red';
+            if ($status === 'expired') $statusColor = 'red';
           $expiresAt = $link['expires_at'] ?? null;
           $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending'] : 0;
           $totalFb = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total'] : 0;
@@ -324,8 +324,8 @@ render_teacher_header($pageTitle);
         ?>
           <tr>
             <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
-            <td><?=h($statusLabel)?></td>
-            <td><?=h($expiresAt ? $expiresAt : '–')?></td>
+            <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
+            <td><?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : '–')?></td>
             <td>
               <?php if ($totalFb > 0): ?>
                 <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
@@ -339,7 +339,7 @@ render_teacher_header($pageTitle);
               <?php if ($status === 'approved' && $shareUrl): ?>
                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                   <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
-                  <button class="btn secondary" type="button" onclick="navigator.clipboard.writeText('<?=h($shareUrl)?>').catch(()=>{});">Copy</button>
+                  <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
                   <form method="post" style="margin:0;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="revoke_link">
@@ -354,15 +354,17 @@ render_teacher_header($pageTitle);
               <?php elseif ($status === 'requested'): ?>
                 <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
               <?php else: ?>
-                <form method="post" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                <form method="post" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="request_link">
                   <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                  <label style="display:flex; flex-direction:column; gap:4px;">
-                    <span class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für (Tage)'))?></span>
-                    <input type="number" name="valid_days" value="14" min="1" max="90" style="width:90px;">
-                  </label>
-                  <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
+                  <div>
+                    <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
+                  </div>
+                  <div>
+                    <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
+                    <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
+                  </div>
                 </form>
               <?php endif; ?>
             </td>
@@ -375,7 +377,7 @@ render_teacher_header($pageTitle);
 </div>
 
 <div class="card" style="margin-top:14px;">
-  <h2 style="margin-top:0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Reaktionen (moderiert)'))?></h2>
+  <h2><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></h2>
   <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
   <?php if (!$feedbackList): ?>
     <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
@@ -385,7 +387,8 @@ render_teacher_header($pageTitle);
         <thead>
           <tr>
             <th><?=h(t('teacher.parents.feedback_student', 'Schüler:in'))?></th>
-            <th><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
+            <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
+            <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
             <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
             <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
           </tr>
@@ -399,14 +402,14 @@ render_teacher_header($pageTitle);
                   <span class="muted">–</span>
                 <?php else: ?>
                   <?= nl2br(h((string)$fb['message'])) ?>
-                  <div class="muted" style="font-size:12px; margin-top:4px;">Lang: <?=h((string)($fb['language'] ?? ''))?></div>
                 <?php endif; ?>
               </td>
+              <td><?=h(date_format(date_create((string)$fb['created_at']),"d.m.Y H:i"))?></td>
               <td>
                 <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
-                  <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
+                  <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
                 <?php else: ?>
-                  <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
+                  <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
                 <?php endif; ?>
               </td>
               <td>
@@ -429,5 +432,40 @@ render_teacher_header($pageTitle);
     </div>
   <?php endif; ?>
 </div>
+  
+  <script>
+
+  async function copyToClipboard(text){
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+        const ok = copyHttp(text);
+        if(ok) {
+        } else {
+        }
+    }
+  }
+  
+  function copyHttp(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+
+    ta.focus();
+    ta.select();
+
+    try {
+      document.execCommand('copy');
+      return true;
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(ta);
+    }
+  }
+  </script>
 
 <?php render_teacher_footer(); ?>

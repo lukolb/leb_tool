@@ -214,7 +214,7 @@ $logo = (string)($b['logo_path'] ?? '');
         >
 
         <div class="actions">
-          <a class="btn primary" type="submit"onclick="this.parentNode.parentNode.submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
+          <a class="btn primary" type="submit"onclick="this.closest('form').submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
         </div>
 
         <!-- Dezent, damit Schüler nicht aus Versehen drauf klicken -->
