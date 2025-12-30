@@ -62,187 +62,136 @@ function export_class_display(array $c): string {
 ?>
 
 <style>
-    .export-mode {
-  min-width: 320px;
-}
-
-.export-title {
-  font-weight: 600;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.export-list {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.export-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-
-.export-row + .export-row {
-  border-top: 1px solid #eee;
-}
-
-/* Radio-Buttons komplett ausblenden */
-.export-row input {
-  display: none;
-}
-
-/* Hover */
-.export-row:hover {
-  background: #f7f7f7;
-}
-
-/* Aktiv */
-.export-row:has(input:checked) {
-  background: #eef4ff;
-}
-
-/* feiner Indikator links */
-.export-row:has(input:checked)::before {
-  content: '';
-  width: 3px;
-  height: 100%;
-  background: #3b82f6;
-  margin-right: 6px;
-  border-radius: 2px;
-}
-
-.export-main {
-  font-weight: 500;
-}
-
-.export-sub {
-  font-size: 0.85em;
-  color: #666;
-}
+.export-mode { min-width: 320px; }
+.export-title { font-weight: 600; display: block; margin-bottom: 6px; }
+.export-list { border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+.export-row { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; cursor: pointer; transition: background 0.12s ease; }
+.export-row + .export-row { border-top: 1px solid #eee; }
+.export-row input { display: none; }
+.export-row:hover { background: #f7f7f7; }
+.export-row:has(input:checked) { background: #eef4ff; }
+.export-row:has(input:checked)::before { content: ''; width: 3px; height: 100%; background: #3b82f6; margin-right: 6px; border-radius: 2px; }
+.export-main { font-weight: 500; }
+.export-sub { font-size: 0.85em; color: #666; }
 </style>
 
-  <div class="card">
-    <h1><?=h($pageTitle)?></h1>
+<div class="card">
+  <h1><?=h($pageTitle)?></h1>
+</div>
+
+<?php if (!is_array($classes) || count($classes) === 0): ?>
+  <div class="card" style="border:1px solid #ffe08a; background:#fff7db; margin-bottom:14px;">
+    <strong><?=h($tx['no_classes'])?></strong>
+    <div class="muted" style="margin-top:6px;"><?=$tx['no_classes_hint']?></div>
   </div>
+<?php else: ?>
 
-  <?php if (!is_array($classes) || count($classes) === 0): ?>
-    <div class="card" style="border:1px solid #ffe08a; background:#fff7db; margin-bottom:14px;">
-      <strong><?=h($tx['no_classes'])?></strong>
-      <div class="muted" style="margin-top:6px;"><?=$tx['no_classes_hint']?></div>
+<div class="card" style="margin-bottom:14px;">
+  <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="min-width:260px;">
+      <label for="classId" class="export-title"><?=h($tx['class_label'])?></label>
+      <select id="classId" class="input" style="width:100%;">
+        <?php foreach ($classes as $c): ?>
+          <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
+            <?=h((string)$c['school_year'])?> · <?=h(export_class_display($c))?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+      <div class="muted" style="margin-top:4px;"><?=h($tx['class_hint'])?></div>
     </div>
-  <?php else: ?>
 
-  <div class="card" style="margin-bottom:14px;">
-    <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
-      <div style="min-width:260px;">
-          <label for="classId" class="export-title"><?=h($tx['class_label'])?></label>
-        <select id="classId" class="input" style="width:100%;">
-          <?php foreach ($classes as $c): ?>
-            <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
-              <?=h((string)$c['school_year'])?> · <?=h(export_class_display($c))?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-        <div class="muted" style="margin-top:4px;"><?=h($tx['class_hint'])?></div>
-      </div>
+    <div class="export-mode">
+      <label class="export-title"><?=h($tx['mode_label'])?></label>
 
-      <div class="export-mode">
-        <label class="export-title"><?=h($tx['mode_label'])?></label>
+      <div class="export-list">
+        <label class="export-row">
+          <input type="radio" name="mode" value="zip" checked>
+          <span class="export-main"><?=h($tx['mode.zip'])?></span>
+          <span class="export-sub"><?=h($tx['mode.zip_sub'])?></span>
+        </label>
 
-        <div class="export-list">
-          <label class="export-row">
-            <input type="radio" name="mode" value="zip" checked>
-            <span class="export-main"><?=h($tx['mode.zip'])?></span>
-            <span class="export-sub"><?=h($tx['mode.zip_sub'])?></span>
-          </label>
+        <label class="export-row">
+          <input type="radio" name="mode" value="merged">
+          <span class="export-main"><?=h($tx['mode.merged'])?></span>
+          <span class="export-sub"><?=h($tx['mode.merged_sub'])?></span>
+        </label>
 
-          <label class="export-row">
-            <input type="radio" name="mode" value="merged">
-            <span class="export-main"><?=h($tx['mode.merged'])?></span>
-            <span class="export-sub"><?=h($tx['mode.merged_sub'])?></span>
-          </label>
-
-          <label class="export-row">
-            <input type="radio" name="mode" value="single">
-            <span class="export-main"><?=h($tx['mode.single'])?></span>
-            <span class="export-sub"><?=h($tx['mode.single_sub'])?></span>
-          </label>
-        </div>
-      </div>
-
-      <div style="min-width:220px;">
-        <label class="export-title"><?=h($tx['filter_label'])?></label>
-        <label class="row" style="gap:8px; margin-top:6px;">
-          <input type="checkbox" id="onlySubmitted">
-          <?=h($tx['filter_only_submitted'])?>
+        <label class="export-row">
+          <input type="radio" name="mode" value="single">
+          <span class="export-main"><?=h($tx['mode.single'])?></span>
+          <span class="export-sub"><?=h($tx['mode.single_sub'])?></span>
         </label>
       </div>
+    </div>
 
-      <div id="singleStudentWrap" style="min-width:260px; display:none;">
-        <label class="export-title" for="studentId"><?=h($tx['student_label'])?></label>
-        <select id="studentId" class="input" style="width:100%;"></select>
-      </div>
+    <div style="min-width:220px;">
+      <label class="export-title"><?=h($tx['filter_label'])?></label>
+      <label class="row" style="gap:8px; margin-top:6px;">
+        <input type="checkbox" id="onlySubmitted">
+        <?=h($tx['filter_only_submitted'])?>
+      </label>
+    </div>
 
-      <div style="flex:1; min-width:240px;">
-        <label><strong>&nbsp;</strong></label>
-        <div class="row" style="gap:10px; justify-content:flex-end;">
-          <a class="btn secondary" id="btnCheck" type="button"><?=h($tx['check'])?></a>
-          <a class="btn primary" id="btnExport" type="button" style="margin-left: 10px;"><?=h($tx['start'])?></a>
-        </div>
-        <div class="muted" style="margin-top:4px; text-align:right;"><?=h($tx['warn_note'])?></div>
+    <div id="singleStudentWrap" style="min-width:260px; display:none;">
+      <label class="export-title" for="studentId"><?=h($tx['student_label'])?></label>
+      <select id="studentId" class="input" style="width:100%;"></select>
+    </div>
+
+    <div style="flex:1; min-width:240px;">
+      <label><strong>&nbsp;</strong></label>
+      <div class="row" style="gap:10px; justify-content:flex-end;">
+        <a class="btn secondary" id="btnCheck" type="button"><?=h($tx['check'])?></a>
+        <a class="btn primary" id="btnExport" type="button" style="margin-left: 10px;"><?=h($tx['start'])?></a>
       </div>
+      <div class="muted" style="margin-top:4px; text-align:right;"><?=h($tx['warn_note'])?></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div class="row" style="justify-content:space-between; align-items:center;">
+    <div>
+      <strong><?=h($tx['status'])?></strong>
+      <div class="muted" id="statusLine" style="padding-top: 10px"><?=h($tx['ready'])?></div>
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:14px;">
-    <div class="row" style="justify-content:space-between; align-items:center;">
-      <div>
-        <strong><?=h($tx['status'])?></strong>
-        <div class="muted" id="statusLine" style="padding-top: 10px"><?=h($tx['ready'])?></div>
-      </div>
-    </div>
-
-    <div id="exportProgressWrap" class="progress-wrap" style="display:none; margin-top:10px;">
-      <div class="progress-meta"><span id="exportProgressText">—</span><span id="exportProgressPct"></span></div>
-      <div class="progress"><div id="exportProgressBar" class="progress-bar"></div></div>
-    </div>
-
-    <div id="infoBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #b9dbff; background:#eaf4ff;">
-      <strong><?=h($tx['info_label'])?></strong>
-      <span id="infoText"></span>
-    </div>
-
-    <div id="warnBox" class="alert info">
-      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
-          <div style="float: left;">
-          <strong><?=h($tx['warn_label'])?></strong>
-          <span id="warnText"></span>
-          <div class="muted" style="margin-top:6px;"><?=h($tx['warn_hint'])?></div>
-        </div>
-        <div style="white-space:nowrap; text-align: end">
-          <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;"><?=h($tx['details'])?></button>
-        </div>
-      </div>
-    </div>
-      <div class="muted" style="max-width:520px; padding-top: 10px">
-        <?=h($tx['speed_hint'])?>
-      </div>
+  <div id="exportProgressWrap" class="progress-wrap" style="display:none; margin-top:10px;">
+    <div class="progress-meta"><span id="exportProgressText">—</span><span id="exportProgressPct"></span></div>
+    <div class="progress"><div id="exportProgressBar" class="progress-bar"></div></div>
   </div>
 
-  <div class="muted" style="font-size:13px;">
-    <?php if ($debugPdf): ?>
-      <span style="margin-left:10px; padding:2px 8px; border-radius:999px; background:#fff7d6; border:1px solid #ffe59a;">
-        <?=h($tx['debug_active'])?>
-      </span>
-    <?php endif; ?>
+  <div id="infoBox" style="display:none; margin-top:10px; padding:10px; border-radius:10px; border:1px solid #b9dbff; background:#eaf4ff;">
+    <strong><?=h($tx['info_label'])?></strong>
+    <span id="infoText"></span>
   </div>
 
+  <div id="warnBox" class="alert info">
+    <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+      <div style="float: left;">
+        <strong><?=h($tx['warn_label'])?></strong>
+        <span id="warnText"></span>
+        <div class="muted" style="margin-top:6px;"><?=h($tx['warn_hint'])?></div>
+      </div>
+      <div style="white-space:nowrap; text-align: end">
+        <button class="btn secondary" id="btnWarnDetails" type="button" style="display:none;"><?=h($tx['details'])?></button>
+      </div>
+    </div>
+  </div>
+  <div class="muted" style="max-width:520px; padding-top: 10px">
+    <?=h($tx['speed_hint'])?>
+  </div>
+</div>
+
+<div class="muted" style="font-size:13px;">
+  <?php if ($debugPdf): ?>
+    <span style="margin-left:10px; padding:2px 8px; border-radius:999px; background:#fff7d6; border:1px solid #ffe59a;">
+      <?=h($tx['debug_active'])?>
+    </span>
   <?php endif; ?>
+</div>
+
+<?php endif; ?>
 
 <!-- modal -->
 <div id="missingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:9999;">
@@ -309,6 +258,9 @@ let __missingRenderSource = null;
 
 // ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
 let __fullStudentList = [];
+
+// ✅ NEW: field_meta map from API (field_name => {field_type, date_format?})
+let __fieldMetaMap = {};
 
 function setStatus(msg){ if (elStatus) elStatus.textContent = msg; }
 
@@ -495,6 +447,9 @@ async function check(){
     // ✅ cache complete list
     __fullStudentList = Array.isArray(full.students) ? full.students : [];
 
+    // ✅ cache field meta (date formats etc.)
+    __fieldMetaMap = (full.field_meta && typeof full.field_meta === 'object') ? full.field_meta : {};
+
     fillStudentSelect(__fullStudentList, keepStudentId);
 
     // 2) Single: warnings_summary für ausgewählten Schüler nachziehen, ohne Liste zu zerstören
@@ -526,6 +481,7 @@ async function check(){
     if (isNonFatalBusinessError(msg)) {
       lastPreview = null;
       __fullStudentList = [];
+      __fieldMetaMap = {};
       if (elStudent) elStudent.innerHTML = '';
       if (warnBox) warnBox.style.display = 'none';
       if (btnWarnDetails) btnWarnDetails.style.display = 'none';
@@ -677,16 +633,226 @@ if (btnCollapseAll) {
   });
 }
 
+// --------- ✅ Date normalization helpers (supports MMM/MMMM like "30. Dezember 2025") ----------
+
+function escapeRegex(s){ return (s||'').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+const MONTHS_DE = [
+  'januar','februar','märz','maerz','april','mai','juni','juli','august','september','oktober','november','dezember'
+];
+const MONTHS_DE_SHORT = [
+  'jan','feb','mär','mae','mrz','apr','mai','jun','jul','aug','sep','okt','nov','dez'
+];
+const MONTHS_EN = [
+  'january','february','march','april','may','june','july','august','september','october','november','december'
+];
+const MONTHS_EN_SHORT = [
+  'jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'
+];
+
+function monthNameToNumber(nameRaw){
+  const s0 = (nameRaw ?? '').toString().trim().toLowerCase()
+    .replace(/\.+$/,'')
+    .replace('ä','ae').replace('ö','oe').replace('ü','ue').replace('ß','ss');
+
+  const deFull = MONTHS_DE.map(x => x.replace('ä','ae'));
+  const deShort = MONTHS_DE_SHORT.map(x => x.replace('ä','ae'));
+  const enFull = MONTHS_EN;
+  const enShort = MONTHS_EN_SHORT;
+
+  let idx = deFull.indexOf(s0);
+  if (idx >= 0) return idx+1;
+  idx = deShort.indexOf(s0);
+  if (idx >= 0) return idx+1;
+  idx = enFull.indexOf(s0);
+  if (idx >= 0) return idx+1;
+  idx = enShort.indexOf(s0);
+  if (idx >= 0) return idx+1;
+
+  return 0;
+}
+
+function numberToMonthName(m, lang, style){
+  const mm = Number(m);
+  if (!(mm>=1 && mm<=12)) return '';
+  const useDe = (lang || 'de').toLowerCase().startsWith('de');
+
+  const fullDe = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  const shortDe = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+
+  const fullEn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const shortEn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const arr = useDe
+    ? (style === 'short' ? shortDe : fullDe)
+    : (style === 'short' ? shortEn : fullEn);
+
+  return arr[mm-1];
+}
+
+function buildRegexForFormat(fmt){
+  let f = (fmt||'').trim();
+  if (!f) return null;
+
+  // normalize common lowercase variants
+  f = f.replaceAll('yyyy','YYYY').replaceAll('yy','YY').replaceAll('dd','DD').replaceAll('d','D').replaceAll('mm','MM');
+
+  const tokenMap = {
+    'YYYY': '(\\d{4})',
+    'YY': '(\\d{2})',
+    'DD': '(\\d{2})',
+    'D': '(\\d{1,2})',
+    'MMMM': '([A-Za-zÄÖÜäöüß\\.]+)',
+    'MMM': '([A-Za-zÄÖÜäöüß\\.]+)',
+    'MM': '(\\d{2})',
+    'M': '(\\d{1,2})'
+  };
+
+  const tokens = ['YYYY','YY','MMMM','MMM','DD','D','MM','M']; // longest first
+  let re = '';
+  for (let i=0; i<f.length; ){
+    let matched = null;
+    for (const t of tokens){
+      if (f.slice(i, i+t.length) === t){ matched = t; break; }
+    }
+    if (matched){
+      re += tokenMap[matched];
+      i += matched.length;
+    } else {
+      re += escapeRegex(f[i]);
+      i++;
+    }
+  }
+  return new RegExp('^' + re + '$', 'i');
+}
+
+function matchesFormat(value, expectedFmt){
+  const v = (value ?? '').toString().trim();
+  const fmt = (expectedFmt ?? '').toString().trim();
+  if (!v || !fmt) return false;
+  const re = buildRegexForFormat(fmt);
+  if (!re) return false;
+  return re.test(v);
+}
+
+function parseFlexibleDate(raw){
+  const s = (raw ?? '').toString().trim();
+  if (!s) return null;
+
+  // ISO date/datetime
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+  if (iso){
+    const y = Number(iso[1]), m = Number(iso[2]), d = Number(iso[3]);
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  // German numeric: DD.MM.YYYY
+  const de = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+  if (de){
+    let d = Number(de[1]), m = Number(de[2]), y = Number(de[3]);
+    if (y < 100) y = (y >= 70 ? 1900 + y : 2000 + y);
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  // German with month name: "30. Dezember 2025"
+  const named = s.match(/^(\d{1,2})\.\s*([A-Za-zÄÖÜäöüß\.]+)\s+(\d{2}|\d{4})$/);
+  if (named){
+    let d = Number(named[1]);
+    const m = monthNameToNumber(named[2]);
+    let y = Number(named[3]);
+    if (y < 100) y = (y >= 70 ? 1900 + y : 2000 + y);
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  // US: MM/DD/YYYY
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (us){
+    let m = Number(us[1]), d = Number(us[2]), y = Number(us[3]);
+    if (y < 100) y = (y >= 70 ? 1900 + y : 2000 + y);
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  // Hyphen: DD-MM-YYYY
+  const hy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);
+  if (hy){
+    let d = Number(hy[1]), m = Number(hy[2]), y = Number(hy[3]);
+    if (y < 100) y = (y >= 70 ? 1900 + y : 2000 + y);
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  // last resort: Date.parse
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)){
+    const dt = new Date(t);
+    const y = dt.getFullYear();
+    const m = dt.getMonth()+1;
+    const d = dt.getDate();
+    if (y>=1000 && m>=1 && m<=12 && d>=1 && d<=31) return { y, m, d };
+  }
+
+  return null;
+}
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+function formatDate(parts, expectedFmt){
+  const fmt0 = (expectedFmt ?? '').toString().trim();
+  if (!fmt0) return null;
+
+  // normalize common lowercase variants
+  const fmt = fmt0.replaceAll('yyyy','YYYY').replaceAll('yy','YY').replaceAll('dd','DD').replaceAll('d','D').replaceAll('mm','MM');
+
+  const y = parts.y, m = parts.m, d = parts.d;
+  const yy = String(y).slice(-2);
+
+  // Export UI is German; if you later make it language-aware, swap this.
+  const lang = 'de';
+
+  return fmt
+    .replaceAll('YYYY', String(y))
+    .replaceAll('YY', yy)
+    .replaceAll('DD', pad2(d))
+    .replaceAll('D', String(d))
+    .replaceAll('MMMM', numberToMonthName(m, lang, 'full'))
+    .replaceAll('MMM', numberToMonthName(m, lang, 'short'))
+    .replaceAll('MM', pad2(m))
+    .replaceAll('M', String(m));
+}
+
+/**
+ * Main rule:
+ * - If value already matches expected format => keep
+ * - else attempt parse + format
+ * - if not parseable => keep original
+ */
+function normalizeDateIfNeeded(rawValue, expectedFmt){
+  const raw = (rawValue ?? '').toString().trim();
+  const fmt = (expectedFmt ?? '').toString().trim();
+  if (!raw || !fmt) return raw;
+
+  if (matchesFormat(raw, fmt)) return raw;
+
+  const parsed = parseFlexibleDate(raw);
+  if (!parsed) return raw;
+
+  const out = formatDate(parsed, fmt);
+  return out || raw;
+}
+
 // --------- PDF fill: keep form editable + render X via viewer (NeedAppearances) ----------
 let __didDump = false;
 
-async function fillPdfForStudent(templateBytes, student){
+/**
+ * ✅ NEW: pass fieldMetaMap so we can normalize dates before filling
+ */
+async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   const PDFLib = window.PDFLib;
   const { PDFDocument, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, PDFName, PDFBool } = PDFLib;
 
   const pdfDoc = await PDFDocument.load(templateBytes);
   const form = pdfDoc.getForm();
   const values = student.values || {};
+  const metaMap = (fieldMetaMap && typeof fieldMetaMap === 'object') ? fieldMetaMap : {};
 
   const norm = (s) => (s ?? '').toString().trim();
   const normLoose = (s) => norm(s).toLowerCase().replace(/\s+/g,'');
@@ -798,21 +964,34 @@ async function fillPdfForStudent(templateBytes, student){
           options: (typeof f?.getOptions === 'function') ? (f.getOptions?.() || null) : null
         };
       }));
+      console.log('[PDF DEBUG] field_meta keys:', Object.keys(metaMap || {}).slice(0, 20));
     } catch(e) {}
   }
 
   for (const [key, raw] of Object.entries(values)){
-    const v = norm(raw);
     const list = getFieldList(key);
     if (!list.length) continue;
 
     const checkboxes = list.filter(isCheckBox);
     if (checkboxes.length) {
+      const v = norm(raw);
       setCheckGroupByOnValue(checkboxes, v);
       continue;
     }
 
     const f = list[0];
+
+    // ✅ NEW: normalize dates only if necessary
+    const meta = metaMap[key] || null;
+    const fieldType = (meta?.field_type || '').toString().toLowerCase();
+    const expectedFmt = (meta?.date_format || '').toString().trim();
+
+    let v = norm(raw);
+    if (v && (fieldType === 'date' || expectedFmt)) {
+      const normed = normalizeDateIfNeeded(v, expectedFmt);
+      v = norm(normed);
+    }
+
     if (isRadioGroup(f)) setSelect(f, v);
     else if (isDropdown(f) || isOptionList(f)) setSelect(f, v);
     else if (typeof f.setText === 'function') setText(f, v);
@@ -855,6 +1034,9 @@ async function exportNow(){
     throw e;
   }
 
+  // ✅ keep field meta current
+  __fieldMetaMap = (data.field_meta && typeof data.field_meta === 'object') ? data.field_meta : (__fieldMetaMap || {});
+
   // ✅ FIX: Dropdown nicht mit single-response überschreiben
   if (mode === 'single') {
     fillStudentSelect(__fullStudentList, selectedStudentId);
@@ -887,7 +1069,7 @@ async function exportNow(){
     const zip = new window.JSZip();
     let done = 0;
     for (const s of students){
-      const bytes = await fillPdfForStudent(templateBytes, s);
+      const bytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
       const fn = safeFilename(s.name) || ('Schueler-' + s.id);
       zip.file(fn + '.pdf', bytes);
       done++;
@@ -910,7 +1092,7 @@ async function exportNow(){
     const merged = await PDFDocument.create();
     let done = 0;
     for (const s of students){
-      const filledBytes = await fillPdfForStudent(templateBytes, s);
+      const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
       const src = await PDFDocument.load(filledBytes);
       const pages = await merged.copyPages(src, src.getPageIndices());
       pages.forEach(p => merged.addPage(p));
@@ -933,7 +1115,7 @@ async function exportNow(){
     const found = students.find(x => String(x.id) === String(chosenId));
     if (found) s = found;
   }
-  const out = await fillPdfForStudent(templateBytes, s);
+  const out = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
   const fn = safeFilename(s.name) || ('Schueler-' + s.id);
   downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
   setStatus('Fertig. PDF wurde heruntergeladen.');
