@@ -37,6 +37,10 @@ render_admin_header('Admin – Dashboard');
       <div class="nav-title">Branding & Einstellungen</div>
       <p class="nav-desc">Logo, Farben, Sprache und weitere Grundeinstellungen anpassen.</p>
     </a>
+    <a class="nav-tile" href="<?=h(url('admin/log.php'))?>">
+      <div class="nav-title">Audit-Log</div>
+      <p class="nav-desc">Protokoll aller Datenbank-Änderungen.</p>
+    </a>
   </div>
 </div>
 
