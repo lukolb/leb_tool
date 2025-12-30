@@ -45,6 +45,15 @@ if (!$class) {
 $err = '';
 $ok = '';
 
+function ai_provider_enabled(): bool {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  if (!$enabled) return false;
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  return trim($apiKey) !== '';
+}
+
 function normalize_name(string $s): string {
   $s = trim($s);
   $s = preg_replace('/\s+/', ' ', $s);
@@ -738,6 +747,8 @@ $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $school
 
 $reportMap = $tplIdForUi ? load_report_instance_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
 
+$ai_enabled = ai_provider_enabled();
+
 render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (string)$class['school_year'] . ' · ' . class_display($class));
 ?>
 
@@ -867,9 +878,10 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             <td style="display: flex; gap: 5px;">
               <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
               
+              <?php if ($ai_enabled) : ?>
               <a class="btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;' style="margin-right:6px;"><?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
               
-              
+              <?php endif; ?>
               
               <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
