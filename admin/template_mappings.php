@@ -250,7 +250,7 @@ render_admin_header('Stammdaten-Mapping');
   <form method="get" class="row-actions" style="align-items:flex-end;">
     <div style="min-width:340px;">
       <label for="template_id" class="muted" style="display:block;margin-bottom:6px;">Template</label>
-      <select name="template_id" id="template_id" onchange="this.form.submit()">
+      <select name="template_id" id="template_id" onchange="this.closest('form').submit()">
         <option value="0">— Template auswählen —</option>
         <?php foreach ($templates as $t):
           $tid = (int)$t['id'];
@@ -388,7 +388,7 @@ render_admin_header('Stammdaten-Mapping');
       <input type="hidden" name="template_id" value="<?=h((string)$templateId)?>">
       <div style="min-width:340px;">
         <label class="muted" style="display:block;margin-bottom:6px;">Schüler</label>
-        <select name="preview_student_id" onchange="this.form.submit()">
+        <select name="preview_student_id" onchange="this.closest('form').submit()">
           <option value="0">— Vorschau-Schüler auswählen —</option>
           <?php foreach ($studentsForPreview as $s):
             $sid = (int)$s['id'];

@@ -103,6 +103,90 @@ function load_template_fields(PDO $pdo, int $templateId): array {
   return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+function meta_read_export(?string $json): array {
+  if (!$json) return [];
+  $a = json_decode($json, true);
+  return is_array($a) ? $a : [];
+}
+
+/**
+ * ✅ NEW: Extract expected date format string from meta_json.
+ * We respect the same logic the rest of the system uses:
+ * - if mode=custom => date_format_custom
+ * - else => date_format_preset
+ * Returns '' if none is set.
+ */
+function extract_date_format_from_meta_export(array $meta): string {
+  $mode = isset($meta['date_format_mode']) ? (string)$meta['date_format_mode'] : '';
+  $mode = strtolower(trim($mode));
+
+  $preset = isset($meta['date_format_preset']) ? trim((string)$meta['date_format_preset']) : '';
+  $custom = isset($meta['date_format_custom']) ? trim((string)$meta['date_format_custom']) : '';
+
+  if ($mode === 'custom') return $custom;
+  return $preset;
+}
+
+/**
+ * ✅ NEW: Provide field meta to frontend so it can normalize date values before filling PDF.
+ * Output map:
+ *   field_name => ['field_type' => 'date', 'date_format' => 'DD.MM.YYYY']
+ */
+function build_field_meta_map_export(array $templateFields): array {
+  $out = [];
+  foreach ($templateFields as $f) {
+    $name = (string)($f['field_name'] ?? '');
+    if ($name === '') continue;
+
+    $type = (string)($f['field_type'] ?? 'text');
+    $meta = meta_read_export($f['meta_json'] ?? null);
+
+    $row = ['field_type' => $type];
+
+    // include expected date format if present (even if type isn't strictly 'date', meta may force date formatting)
+    $df = extract_date_format_from_meta_export($meta);
+    if (trim($df) !== '') $row['date_format'] = $df;
+
+    // only include if it helps: always include field_type, optional date_format
+    $out[$name] = $row;
+  }
+  return $out;
+}
+
+function option_list_id_from_meta_export(array $meta): int {
+  $tid = $meta['option_list_template_id'] ?? null;
+  if ($tid === null || $tid === '') return 0;
+  return (int)$tid;
+}
+
+function resolve_option_value_text_export(PDO $pdo, array $meta, ?string $valueJson, ?string $valueText): string {
+  $listId = option_list_id_from_meta_export($meta);
+  if ($listId <= 0) return (string)($valueText ?? '');
+
+  $optId = 0;
+  if ($valueJson) {
+    $j = json_decode($valueJson, true);
+    if (is_array($j) && isset($j['option_item_id'])) $optId = (int)$j['option_item_id'];
+  }
+  if ($optId > 0) {
+    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
+    $st->execute([$optId, $listId]);
+    $v = $st->fetchColumn();
+    if ($v !== false && $v !== null) return (string)$v;
+  }
+
+  // fallback: by old value_text
+  $vt = trim((string)($valueText ?? ''));
+  if ($vt !== '') {
+    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+    $st->execute([$listId, $vt]);
+    $v = $st->fetchColumn();
+    if ($v !== false && $v !== null) return (string)$v;
+  }
+
+  return (string)($valueText ?? '');
+}
+
 function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   // Resolve option-list values by stable option_item_id (stored in value_json) so exports survive option value changes.
   $st = $pdo->prepare(
@@ -149,47 +233,6 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   }
 
   return array_map(fn($row) => $row['value'], $map);
-}
-
-
-function meta_read_export(?string $json): array {
-  if (!$json) return [];
-  $a = json_decode($json, true);
-  return is_array($a) ? $a : [];
-}
-
-function option_list_id_from_meta_export(array $meta): int {
-  $tid = $meta['option_list_template_id'] ?? null;
-  if ($tid === null || $tid === '') return 0;
-  return (int)$tid;
-}
-
-function resolve_option_value_text_export(PDO $pdo, array $meta, ?string $valueJson, ?string $valueText): string {
-  $listId = option_list_id_from_meta_export($meta);
-  if ($listId <= 0) return (string)($valueText ?? '');
-
-  $optId = 0;
-  if ($valueJson) {
-    $j = json_decode($valueJson, true);
-    if (is_array($j) && isset($j['option_item_id'])) $optId = (int)$j['option_item_id'];
-  }
-  if ($optId > 0) {
-    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
-    $st->execute([$optId, $listId]);
-    $v = $st->fetchColumn();
-    if ($v !== false && $v !== null) return (string)$v;
-  }
-
-  // fallback: by old value_text
-  $vt = trim((string)($valueText ?? ''));
-  if ($vt !== '') {
-    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
-    $st->execute([$listId, $vt]);
-    $v = $st->fetchColumn();
-    if ($v !== false && $v !== null) return (string)$v;
-  }
-
-  return (string)($valueText ?? '');
 }
 
 function is_class_field_export(array $meta): bool {
@@ -337,6 +380,9 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   $students = load_students_for_export($pdo, $classId, $templateId, $schoolYear, $onlyStudentId, $onlySubmitted);
   $tf = load_template_fields($pdo, $templateId);
 
+  // ✅ NEW: Provide field meta to frontend (date formats etc.)
+  $fieldMeta = build_field_meta_map_export($tf);
+
   // Determine which fields are class-wide
   $classFieldNames = [];
   foreach ($tf as $f) {
@@ -421,6 +467,10 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
     'pdf_url' => url('template_file.php?class_id=' . (int)$classId),
     'students' => $outStudents,
     'only_submitted' => $onlySubmitted,
+
+    // ✅ NEW
+    'field_meta' => $fieldMeta,
+
     'warnings_summary' => [
       'students_with_missing' => $studentsWithMissing,
       'total_missing' => $totalMissing,

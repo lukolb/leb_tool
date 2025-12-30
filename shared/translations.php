@@ -21,7 +21,10 @@ function translations_catalog(): array {
       'nav.option_lists' => 'Options-Listen',
       'nav.student_fields' => 'Schüler-Felder',
       'nav.text_snippets' => 'Textbausteine',
+      'nav.final_reports' => 'Berichte',
       'nav.export' => 'Export',
+      'nav.parent_links' => 'Elternmodus',
+      'nav.parent_requests' => 'Elternfreigaben',
       'nav.users' => 'Nutzer',
       'nav.settings' => 'Einstellungen',
       'nav.logout' => 'Abmelden',
@@ -29,6 +32,8 @@ function translations_catalog(): array {
       'nav.delegations' => 'Delegationen',
       'aria.admin_nav' => 'Admin Navigation',
       'aria.teacher_nav' => 'Lehrkraft Navigation',
+        
+      'admin.parent_requests.pending_fb' => 'offen',
 
       // Student login
       'student.login.html_title' => 'Schüler Login',
@@ -351,7 +356,10 @@ function translations_catalog(): array {
       'nav.option_lists' => 'Option lists',
       'nav.student_fields' => 'Student fields',
       'nav.text_snippets' => 'Text snippets',
+      'nav.final_reports' => 'Reports',
       'nav.export' => 'Export',
+      'nav.parent_links' => 'Parent mode',
+      'nav.parent_requests' => 'Parent approvals',
       'nav.users' => 'Users',
       'nav.settings' => 'Settings',
       'nav.logout' => 'Log out',
@@ -359,6 +367,8 @@ function translations_catalog(): array {
       'nav.delegations' => 'Delegations',
       'aria.admin_nav' => 'Admin navigation',
       'aria.teacher_nav' => 'Teacher navigation',
+        
+      'admin.parent_requests.pending_fb' => 'open',
 
       // Student login
       'student.login.html_title' => 'Student login',

@@ -732,7 +732,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
-      <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">
+      <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
         <?=h(t('teacher.students.generate_logins', 'Login-Codes/QR erstellen'))?>
       </a>
     </form>
@@ -742,7 +742,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="action" value="generate_login">
       <input type="hidden" name="regen" value="1">
-      <a class="btn secondary" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_regenerate', 'Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.'))?>')) { this.parentNode.submit(); return false; }">
+      <a class="btn secondary" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_regenerate', 'Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.'))?>')) { this.closest('form').submit(); return false; }">
         <?=h(t('teacher.students.regenerate_logins', 'Neu generieren'))?>
       </a>
     </form>
@@ -774,7 +774,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_unlock_class">
-        <a class="btn primary" type="submit"onclick="if(confirm('<?=h(t('teacher.students.confirm_child_unlock', 'Kinder-Eingabe wirklich freigeben?'))?>')) { this.parentNode.submit(); return false; }">
+        <a class="btn primary" type="submit"onclick="if(confirm('<?=h(t('teacher.students.confirm_child_unlock', 'Kinder-Eingabe wirklich freigeben?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_unlock', 'Für Kinder freigeben'))?>
         </a>
       </form>
@@ -783,7 +783,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_lock_class">
-        <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.parentNode.submit(); return false; }">
+        <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
         </a>
       </form>
@@ -842,7 +842,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
                 <input type="hidden" name="action" value="toggle_active">
                 <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
-                <a class="btn secondary" type="submit" onclick="this.parentNode.submit(); return false;">
+                <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
                   <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
               </form>
               <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
@@ -1003,7 +1003,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       <input type="file" name="csv_file" accept=".csv,text/csv" required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">
+      <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">
         <?=h(t('teacher.students.btn_import', 'Importieren'))?>
       </a>
     </div>
@@ -1044,7 +1044,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       <div class="actions" style="justify-content:flex-start; margin-top:12px;">
         <a class="btn secondary" type="button" id="btnSelectNone"><?=h(t('teacher.students.copy_select_none', 'Keinen ausschließen'))?></a>
         <a class="btn secondary" type="button" id="btnSelectAll"><?=h(t('teacher.students.copy_select_all', 'Alle ausschließen'))?></a>
-        <a class="btn primary" type="submit" onclick="this.parentNode.parentNode.submit(); return false;">
+        <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">
           <?=h(t('teacher.students.copy_submit', 'Übernehmen'))?>
         </a>
       </div>

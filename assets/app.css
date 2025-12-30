@@ -264,6 +264,22 @@ th{color:#111; font-size:13px}
   color:#1f2937;
   background:#fff;
 }
+.pill.green {
+    background:#e6f4ea;
+    border-color:#9aedb1;
+}
+.pill.red {
+    background:#ffecec;
+    border-color:#ffb3b3;
+}
+.pill.yellow {
+    background:#fff3cd;
+    border-color:#ffe08a;
+}
+.pill.blue {
+    background:#d8e5ff;
+    border-color:#72a1ff;
+}
 .row-actions{display:flex; flex-wrap:wrap; gap:8px}
 .small{font-size:12px}
 
