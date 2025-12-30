@@ -1,166 +1,297 @@
-# LEB Tool – Lernentwicklungsberichte digital erstellen
+# LEB Tool – Digitale Lernentwicklungsberichte
 
-Das **LEB Tool** ist eine webbasierte Anwendung zur **strukturierten, datenschutzkonformen Erstellung von Lernentwicklungsberichten (LEB)** für die Grundschule.  
-Es richtet sich an **Lehrkräfte, Schüler:innen und Administratoren** und vereinfacht den gesamten Prozess von der Datenerfassung bis zum ausgefüllten PDF.
+Das **LEB Tool** ist eine webbasierte Anwendung zur **strukturierten, datenschutzkonformen Erstellung von Lernentwicklungsberichten (LEB)** im Grundschulkontext.
 
----
+Es deckt den **gesamten Workflow** ab – von der Datenerfassung über Zusammenarbeit mehrerer Lehrkräfte bis hin zu PDF-Exporten, KI-Unterstützung und revisionssicherer Nachvollziehbarkeit.
 
-## ✨ Ziel des Projekts
-
-Ziel des LEB Tools ist es,
-
-- Lernentwicklungsberichte **einheitlich, zeitsparend und fehlerfrei** zu erstellen
-- die **Schülerbeteiligung** (Selbsteinschätzung) sinnvoll einzubinden
-- **PDF-Formulare automatisiert** und reproduzierbar zu befüllen
-- den administrativen Aufwand für Schulen deutlich zu reduzieren
-
-Das Tool wurde speziell für den **Grundschulkontext** entwickelt (Klassen, Fächer, Kompetenzraster, Textbausteine).
+Das Tool ist explizit für **klassisches Shared-Webhosting ohne Shell-Zugriff** (z. B. Strato) konzipiert.
 
 ---
 
-## 🧩 Zentrale Funktionen
+## Zielsetzung
 
-### 👩‍🏫 Lehrkräfte
-- Klassen anlegen und verwalten
-- Schüler:innen Klassen zuordnen
-- Lernstands- und Kompetenzdaten erfassen
-- Textbausteine und Freitexte kombinieren
-- Vorschau der Berichte direkt im Browser
-- Automatische Befüllung von PDF-Vorlagen
+- Einheitliche und nachvollziehbare Lernentwicklungsberichte
+- Reduktion von Copy-&-Paste und manuellen Fehlern
+- Klare Rollen- und Rechteverteilung
+- Zusammenarbeit mehrerer Lehrkräfte (Delegationen)
+- Transparenz durch Audit-Logging
+- DSGVO-konforme Datenhaltung
+- Hohe Anpassbarkeit an schulinterne Vorgaben
 
-### 👧 Schüler:innen
-- Login per **QR-Code** (ohne Passwort)
-- Ausfüllen von Selbsteinschätzungen
-- Kindgerechte, reduzierte Oberfläche
+---
+
+## Rollen & Funktionsumfang
+
+### 🛠 Administrator (`/admin`)
+
+Der Administrator hat **vollständigen Systemzugriff**.
+
+**Funktionen:**
+- Verwaltung von Lehrkräften
+- Klassenverwaltung (aktiv / archiviert)
+- Schülerverwaltung
+- Zuordnung von Schülern zu Klassen
+- Verwaltung von **Templates (Berichtsvorlagen)**
+- Verwaltung von **Template-Feldern**
+  - Feldtypen (Text, Option, Datum, Systembindung usw.)
+  - Optionslisten & Optionslisten-Vorlagen
+  - Gruppen & Filterbarkeit
+- Globale Einstellungen & Feature-Flags
+- **Audit-Log**:
+  - Filter (User, Event, Zeitraum)
+  - Pagination & Sortierung
+  - Strukturierte JSON-Details
+  - Auflösung technischer IDs in lesbare Namen
+  - IP-Adresse optional einblendbar
+- Vollständiges Löschen personenbezogener Daten (DSGVO)
+
+**Besonderheiten:**
+- Admin kann **alle Klassen und Delegationen** sehen und ändern
+- Admin-Aktionen werden vollständig im Audit-Log erfasst
+
+---
+
+### 👩‍🏫 Lehrkräfte (`/teacher`)
+
+Lehrkräfte arbeiten **klassenbezogen**.
+
+**Funktionen:**
+- Übersicht über eigene Klassen
+- Schülerdaten verwalten (innerhalb der Klasse)
+- Erfassung von Lernentwicklungsdaten:
+  - strukturierte Felder
+  - Optionsfelder
+  - Freitexte
+- Live-Vorschau der Berichte
+- PDF-Export:
+  - einzelner Schüler
+  - Klassenexport (konfigurationsabhängig)
+- **Delegationen**:
+  - Fachbereiche an andere Lehrkräfte delegieren
+  - Status einsehen (offen / in Bearbeitung / abgeschlossen)
+  - Delegationen ändern oder zurücknehmen
+- Filter & Suche innerhalb von Klassen
+- Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
+
+**Besonderheiten:**
+- Lehrkräfte sehen nur **eigene Klassen und delegierte Inhalte**
+- Delegierte Inhalte sind klar von eigenen Klassen getrennt
+- Keine Änderung von System-Templates möglich
+
+---
+
+### 🧒 Schüler:innen (`/student`)
+
+Der Schülerbereich ist **passwortlos** und **stark reduziert**.
+
+**Funktionen:**
+- Login per **QR-Code**
+- Selbsteinschätzung ausfüllen
+- Nur explizit freigegebene Felder sichtbar
+- Automatisches Speichern
 - Kein Zugriff auf fremde Daten
 
-### 🛠️ Administration
-- Verwaltung von:
-  - Klassen
-  - Schüler:innen
-  - Lehrkräften
-  - Templates (PDF-Formulare)
-- Mapping von Stammdaten & Formularfeldern
-- Platzhalter-System für flexible Textfelder
-- Ein Platzhalter kann mehrere PDF-Felder befüllen
-- Filter- und sortierbare Übersichten
-- Vollständiges Löschen von Schülerdaten (DSGVO)
+**Technik:**
+- Tokenbasierter Login
+- Kein Benutzername / Passwort
+- Ideal für Tablets im Klassenzimmer
 
 ---
 
-## 📄 PDF-Template-System
+### 👨‍👩‍👧 Eltern (`/parent`)
 
-- Unterstützung von **ausfüllbaren PDF-Formularen**
-- Feld-Mapping über Platzhalter (z. B. `{{VORNAME}}`, `{{NACHNAME}}`, `{{KLASSE}}`)
-- Freie Kombination von Text + Platzhaltern
-- Ein Platzhalter → mehrere Formularfelder möglich
-- Live-Vorschau mit hervorgehobenen PDF-Feldern
+Der Parent-Bereich ist **optional** und klar vom System getrennt.
+
+**Aktueller Stand:**
+- Eltern-Feedback-Formular
+- CSRF-geschützt
+- Eigenes Routing
+- Keine Einsicht in Verwaltungs- oder Schülerdaten
+
+**In Arbeit:**
+- Eigene Elternansicht der Berichte
+- separates **Unterschriftenfeld mit Lehrkraftname (nur Elternansicht)**
 
 ---
 
-## 🔐 Datenschutz & Sicherheit
+## PDF- & Export-System
 
-- Rollenbasiertes Zugriffssystem (Admin / Lehrkraft / Schüler)
+- Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
+- Platzhalter-System, z. B.:
+{{student.firstname}}
+{{student.lastname}}
+{{class.label}}
+- Systemfelder:
+- formatierbar (z. B. Datum)
+- mehrfach verwendbar
+- Einheitliche Export-API (`/shared/export_*`)
+- Rollenabhängige Zugriffskontrolle:
+- Lehrkräfte: nur eigene Klassen
+- Admin: alle Daten
+
+---
+
+## KI-Unterstützung (bereits implementiert, optional)
+
+Das LEB Tool enthält eine **optionale KI-Unterstützung zur Texterstellung**.
+
+**Funktionen:**
+- Generierung von Textvorschlägen für Lernentwicklungsberichte
+- Kontextsensitiv (Schülerdaten, Feldkontext, vorhandene Inhalte)
+- Ergebnisse werden **nicht automatisch gespeichert**
+- Lehrkräfte entscheiden aktiv über Übernahme
+
+**Technik:**
+- Serverseitige API-Anbindung
+- Aktivierung über Konfiguration / Feature-Flag
+- KI-Buttons erscheinen nur bei aktiver Konfiguration
+
+---
+
+## Fortschritts- & Vollständigkeitslogik
+
+Das System berechnet automatisch den Bearbeitungsstand:
+
+- fehlende Pflichtfelder
+- vollständig ausgefüllte Berichte
+- Fortschritt pro Schüler und Klasse
+
+**Berücksichtigung:**
+- Schülerfelder
+- Lehrerfelder
+- systemgebundene Felder werden korrekt ignoriert
+
+Diese Logik wird genutzt für:
+- Klassenübersichten
+- Lehrer-UI
+- Exporte
+
+---
+
+## Delegationen & Zusammenarbeit
+
+Delegationen ermöglichen die Zusammenarbeit mehrerer Lehrkräfte an einer Klasse.
+
+**Features:**
+- Delegation pro **Klasse × Fachbereich**
+- Status-Tracking
+- Delegationen änder- und widerrufbar
+- Anzeige delegierter *und* delegierender Klassen
+- Admin kann jederzeit eingreifen
+
+---
+
+## Audit-Log (Nachvollziehbarkeit)
+
+Alle relevanten Änderungen werden revisionssicher protokolliert.
+
+**Erfasst werden:**
+- Benutzer
+- Aktion / Event
+- Zeitstempel
+- betroffene Entität
+- strukturierte JSON-Details
+
+**Funktionen:**
+- Filter & Suche
+- Pagination
+- Sortierung
+- Auflösung technischer IDs
+- IP-Adresse optional einblendbar
+
+---
+
+## Mehrsprachigkeit (teilweise implementiert)
+
+- Mehrsprachige Feldbezeichnungen
+- UI-Übersetzungsfunktionen
+- Sprachumschaltung ohne vollständigen Reload
+- Fallback-Logik
+
+---
+
+## Aktuelle Entwicklung / Offene Themen (Issues)
+
+Die folgenden Punkte befinden sich **aktuell aktiv in Arbeit** und sind im GitHub-Issue-Tracker dokumentiert:
+
+- **Unterschriftenfeld mit Lehrkraftname nur für Elternansicht**
+- **Übersicht über alle Berichte eines Schülers** (über alle Schuljahre, nur lesend)
+- **Template-Testlauf** (Berichte ohne produktive Speicherung testen)
+- **Schuljahres-Wechsel-Assistent**
+- **Dashboard mit Gesamtbearbeitungsstand**:
+- fertige Schülereingaben
+- fertige Lehrereingaben
+- geschätzte Restbearbeitungszeit
+- neue Rückmeldungen aus Delegationen
+- **Warnhinweis**, wenn Lehrkräfte Daten eingeben möchten, obwohl
+- noch Schülerfelder fehlen
+- diese übersichtlich aufgelistet werden
+- **KI-Förderempfehlungs-Generator** (Ziel- und Förderungsvorschläge)
+- **Verbesserte Tastaturnavigation** für Lehrkräfte bei der Dateneingabe
+- **Sicherheitsüberprüfung und Schließen potenzieller Sicherheitslücken**
+
+Diese Liste bildet den **tatsächlichen aktuellen Entwicklungsstand** ab und ersetzt eine abstrakte Roadmap.
+
+---
+
+## Datenschutz & Sicherheit
+
+- Rollenbasierte Zugriffskontrolle
 - CSRF-Schutz für alle schreibenden Aktionen
-- QR-Token statt Klartext-Passwörter für Schüler
-- Möglichkeit zur **vollständigen Datenlöschung**
-- Trennung von Stammdaten und Berichtsinhalt
+- QR-Token statt Passwörter (Schüler)
+- Trennung von Stammdaten und Berichtsdaten
+- Audit-Log für Nachvollziehbarkeit
+- DSGVO-konforme Löschfunktionen
+
+**Empfehlungen:**
+- HTTPS erzwingen
+- `install.php` nach Installation löschen
+- Regelmäßige Backups
 
 ---
 
-## 🧱 Technischer Aufbau
+## Technik
 
-### Backend
+**Backend**
 - PHP (strict types)
 - PDO (MySQL / MariaDB)
-- Serverseitige PDF-Verarbeitung
+- Modularer Aufbau (`/shared`)
 
-### Frontend
+**Frontend**
 - Server-rendered HTML
-- JavaScript (AJAX für Admin- & Vorschau-Funktionen)
-- Fokus auf einfache, robuste Bedienung
+- JavaScript für Komfortfunktionen
+- Keine Framework-Abhängigkeit
 
-### Projektstruktur (Auszug)
-/admin
-/ajax
-/templates
-/student
-/teacher
-/templates
+---
+
+## Projektstruktur (vereinfacht)
+
+/admin Administration & Systemverwaltung
+/teacher Lehrkräftebereich
+/student Schülerbereich (QR-Login)
+/parent Elternbereich
+/shared Gemeinsame Logik (Export, Helper, APIs)
+/assets CSS / JS / Icons
 /bootstrap.php
+/config.sample.php
 /install.php
 
-
 ---
 
-## 🚀 Installation
+## Installation
 
-1. Repository auf den Webserver kopieren
-2. Browser öffnen und `install.php` aufrufen
-3. Datenbankzugang eintragen
+1. Dateien auf den Webserver kopieren
+2. `install.php` im Browser aufrufen
+3. Datenbank konfigurieren
 4. Admin-Account anlegen
 5. Installation abschließen
+6. `install.php` löschen oder umbenennen
 
-Nach erfolgreicher Installation kann `install.php` aus Sicherheitsgründen gelöscht oder umbenannt werden.
-
-> Getestet auf klassischem Webhosting (z. B. Strato, ohne Shell-Zugriff)
-
-### KI-Vorschläge aktivieren
-
-- In `config.php` den Abschnitt `ai` ergänzen und einen API-Schlüssel hinterlegen (z. B. für OpenAI/ChatGPT). Alternativ kann die Umgebungsvariable `OPENAI_API_KEY` genutzt werden.
-- Provider/Modell/Base-URL/Timeout können angepasst werden, falls ein kompatibler Endpoint genutzt wird.
-- Der KI-Button erscheint nur, wenn die Funktion aktiviert ist und ein Schlüssel hinterlegt wurde (sonst ausgeblendet).
-- Admins können die KI-Funktion samt API-Key, Provider und Modell bei der Installation oder später unter „Einstellungen“ ein- bzw. ausschalten.
+Ausgelegt für klassisches Shared-Hosting (z. B. Strato).
 
 ---
 
-## 🎒 Schüler-Login
+## Lizenz
 
-Schüler:innen loggen sich **ohne Benutzername oder Passwort** ein.
-
-**Ablauf:**
-1. Lehrkraft oder Admin erstellt für eine Klasse die Schüler-QR-Codes
-2. Jeder QR-Code enthält einen individuellen Login-Token
-3. Der QR-Code wird mit einem Tablet oder Smartphone gescannt
-4. Der Link führt direkt zur Schüleroberfläche (`/student/login.php`)
-5. Nach dem Scan ist der/die Schüler:in automatisch eingeloggt
-
-Der Login ist:
-- zeitlich unbegrenzt gültig (konfigurierbar)
-- an einen einzelnen Schüler gebunden
-- nicht erratbar (Token-basiert)
-
----
-
-## 🧠 Pädagogisches Konzept
-
-- Klare Kompetenzbereiche statt Notenfokus
-- Trennung von Beobachtung und Bewertung
-- Transparenz für Schüler:innen
-- Wiederverwendbarkeit von Textbausteinen
-- Anpassbar an schulinterne LEB-Vorgaben
-
----
-
-## 🛣️ Roadmap (Ausblick)
-
-- Mehrsprachige Lernentwicklungsberichte
-- Export kompletter Klassen
-- Versionshistorie von Berichten
-- Zusammenarbeit mehrerer Lehrkräfte pro Klasse
-- Optionale Kommentarfunktion
-- Automatische KI-Textvorschläge für Ziele u.Ä., basierend auf Skalenwerten und vorherigen Feldern; Lehrkräfte können Vorschläge übernehmen, anpassen oder löschen (manuelle Kontrolle, Zeitersparnis)
-
----
-
-## 📜 Lizenz
-
-Dieses Projekt wird aktuell **schulintern / privat** entwickelt.  
-Eine Open-Source-Lizenz kann bei Bedarf ergänzt werden.
-
----
-
-## 🙌 Motivation
-
-Das LEB Tool ist aus der **praktischen Arbeit im Schulalltag** entstanden –  
-mit dem Ziel, Lehrkräften Zeit zu sparen und gleichzeitig qualitativ hochwertige, individuelle Lernentwicklungsberichte zu ermöglichen.
+Derzeit schulintern / privat genutzt.  
+Eine formale Lizenz kann bei Bedarf ergänzt werden.
