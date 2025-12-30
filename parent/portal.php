@@ -336,6 +336,39 @@ if ($canPreview) {
     }
   }
 
+
+  // ✅ NEW: If template contains signature fields, prefill them with the requesting teacher's name (read-only default).
+  // Teacher is determined via parent_portal_links.requested_by_user_id -> users.display_name
+  if ($templateId > 0) {
+    $sigSt = $pdo->prepare("SELECT field_name FROM template_fields WHERE template_id=? AND field_type='signature'");
+    $sigSt->execute([$templateId]);
+    $sigFields = $sigSt->fetchAll(PDO::FETCH_COLUMN);
+
+    if ($sigFields) {
+      $teacherName = '';
+      $tst = $pdo->prepare("SELECT display_name FROM users WHERE id=? LIMIT 1");
+      $tst->execute([(int)($link['requested_by_user_id'] ?? 0)]);
+      $teacherName = trim((string)$tst->fetchColumn());
+
+      if ($teacherName !== '') {
+        // Vorname abkürzen: "Max Mustermann" → "M. Mustermann"
+        $parts = preg_split('/\s+/', $teacherName, 2);
+
+        if (count($parts) === 2) {
+          $firstInitial = mb_substr($parts[0], 0, 1, 'UTF-8');
+          $teacherName  = $firstInitial . '. ' . $parts[1];
+        }
+        foreach ($sigFields as $sf) {
+          $sf = (string)$sf;
+          if ($sf === '') continue;
+          if (!isset($values[$sf]) || trim((string)$values[$sf]) === '') {
+            $values[$sf] = $teacherName;
+          }
+        }
+      }
+    }
+  }
+
   $previewPayload['student']['values'] = $values;
 }
 
