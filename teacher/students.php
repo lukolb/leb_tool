@@ -341,6 +341,33 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
   return $map;
 }
 
+
+/**
+ * NEW: report_instance_id map per student (for active template / school year / Standard)
+ */
+function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  if (!$studentIds) return [];
+
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $sql =
+    "SELECT student_id, id AS report_instance_id, status
+     FROM report_instances
+     WHERE template_id=? AND school_year=? AND period_label='Standard'
+       AND student_id IN ($in)";
+  $q = $pdo->prepare($sql);
+  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+
+  $map = [];
+  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $map[(int)$r['student_id']] = [
+      'report_instance_id' => (int)$r['report_instance_id'],
+      'status' => (string)$r['status'],
+    ];
+  }
+  return $map;
+}
+
 function child_status_badge(?string $status): string {
   $status = (string)$status;
   if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
@@ -709,6 +736,8 @@ $counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
 $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
 
+$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
+
 render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (string)$class['school_year'] . ' · ' . class_display($class));
 ?>
 
@@ -823,7 +852,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       </thead>
       <tbody>
         <?php foreach ($students as $s): ?>
-          <?php $sid = (int)($s['id'] ?? 0); ?>
+          <?php $sid = (int)($s['id'] ?? 0); $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0); ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
@@ -837,6 +866,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             </td>
             <td style="display: flex; gap: 5px;">
               <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
+              
+              <a class="btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;' style="margin-right:6px;"><?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
+              
+              
+              
               <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                 <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
@@ -904,7 +938,31 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       </form>
     </div>
   </div>
-  <style>
+  
+  <div id="aiSupportModal" class="modal-overlay" aria-hidden="true" style="display:none;">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="aiSupportModalTitle" style="max-width:980px;">
+      <div class="modal-header" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <div>
+          <h3 id="aiSupportModalTitle" style="margin:0;"><?=h(t('teacher.students.support_modal_title', 'Fördermöglichkeiten'))?></h3>
+          <div class="muted" id="aiSupportModalSub" style="margin-top:4px;"></div>
+        </div>
+        <button class="btn secondary" type="button" onclick="closeAiSupportModal(); return false;"><?=h(t('teacher.students.btn_close', 'Schließen'))?></button>
+      </div>
+
+      <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+        <button class="btn" type="button" id="btnAiSupportRefresh"><?=h(t('teacher.students.btn_support_refresh', 'Neu generieren'))?></button>
+        <span class="muted" id="aiSupportMeta"></span>
+      </div>
+
+      <div id="aiSupportStatus" class="alert" style="display:none; margin-top:10px;"></div>
+
+      <div id="aiSupportContent" style="margin-top:12px;">
+        <div class="muted"><?=h(t('teacher.students.support_hint', 'Fächerübergreifende Förderideen auf Basis aller bisherigen Eingaben.'))?></div>
+      </div>
+    </div>
+  </div>
+
+<style>
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
     .modal-overlay.is-open { display: flex; }
     .modal { background: #fff; color: inherit; border-radius: 8px; padding: 16px; width: min(720px, 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid var(--border); max-height: 90vh; overflow:auto; }
@@ -948,6 +1006,173 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     }
     document.addEventListener('keydown', function(ev){
       if (ev.key === 'Escape') closeEditModal();
+  });
+
+
+    // ===== KI: Fördermöglichkeiten (Popup + Cache) =====
+    const aiApiUrl = <?=json_encode(url('teacher/ajax/student_ai_api.php'))?>;
+    const classIdForAi = Number(<?= (int)$classId ?>);
+
+    const aiSupportModal = document.getElementById('aiSupportModal');
+    const aiSupportSub = document.getElementById('aiSupportModalSub');
+    const aiSupportContent = document.getElementById('aiSupportContent');
+    const aiSupportStatus = document.getElementById('aiSupportStatus');
+    const aiSupportMeta = document.getElementById('aiSupportMeta');
+    const btnAiSupportRefresh = document.getElementById('btnAiSupportRefresh');
+
+    let aiSupport = { studentId: 0, studentName: '' };
+    let aiSupportLoading = false;
+
+    function escapeHtml(s){
+      return String(s ?? '').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    function showAiSupportStatus(msg, kind){
+      if (!aiSupportStatus) return;
+      aiSupportStatus.style.display = 'block';
+      aiSupportStatus.className = 'alert ' + (kind || '');
+      aiSupportStatus.textContent = msg || '';
+    }
+
+    function clearAiSupportStatus(){
+      if (!aiSupportStatus) return;
+      aiSupportStatus.style.display = 'none';
+      aiSupportStatus.className = 'alert';
+      aiSupportStatus.textContent = '';
+    }
+
+    function renderSupportPlan(plan){
+      if (!aiSupportContent) return;
+
+      const section = (title, arr)=>{
+        const items = Array.isArray(arr) ? arr.filter(x=>String(x||'').trim()!=='') : [];
+        if (!items.length) return '';
+        return `
+          <div class="card" style="margin-top:10px; background:#f8f9fb;">
+            <h4 style="margin:0 0 8px 0;">${escapeHtml(title)}</h4>
+            <ul style="margin:0; padding-left:18px;">
+              ${items.map(it=>`<li style="margin:6px 0;">${escapeHtml(it)}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      };
+
+      const kurzprofil = (plan && plan.kurzprofil) ? String(plan.kurzprofil) : '';
+      let html = '';
+      if (kurzprofil.trim() !== '') {
+        html += `
+          <div class="card" style="margin-top:10px; background:#f8f9fb;">
+            <h4 style="margin:0 0 8px 0;"><?=h(t('teacher.students.support_short_profile', 'Kurzprofil'))?></h4>
+            <div>${escapeHtml(kurzprofil)}</div>
+          </div>
+        `;
+      }
+
+      html += section('<?=h(t('teacher.students.support_cross', 'Übergreifend'))?>', plan?.foerder_uebergreifend);
+      html += section('<?=h(t('teacher.students.support_deutsch', 'Deutsch'))?>', plan?.deutsch);
+      html += section('<?=h(t('teacher.students.support_mathe', 'Mathe'))?>', plan?.mathe);
+      html += section('<?=h(t('teacher.students.support_sachkunde', 'Sachkunde'))?>', plan?.sachkunde);
+      html += section('<?=h(t('teacher.students.support_organization', 'Lernorganisation'))?>', plan?.lernorganisation);
+      html += section('<?=h(t('teacher.students.support_social', 'Sozial/Emotional'))?>', plan?.sozial_emotional);
+      html += section('<?=h(t('teacher.students.support_home', 'Zu Hause'))?>', plan?.zu_hause);
+      html += section('<?=h(t('teacher.students.support_next', 'Diagnostik & nächste Schritte'))?>', plan?.diagnostik_naechste_schritte);
+
+      if (html.trim() === '') {
+        html = '<div class="muted"><?=h(t('teacher.students.support_no_data', 'Keine verwertbaren Vorschläge erhalten.'))?></div>';
+      }
+
+      aiSupportContent.innerHTML = html;
+    }
+
+    async function loadAiSupportPlan(force){
+      if (aiSupportLoading) return;
+aiSupportLoading = true;
+      if (btnAiSupportRefresh) btnAiSupportRefresh.disabled = true;
+
+      clearAiSupportStatus();
+      aiSupportMeta.textContent = '<?=h(t('teacher.students.support_loading', 'Lädt…'))?>';
+      aiSupportContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.support_loading2', 'KI erstellt Vorschläge…'))?></div>';
+
+      try {
+        const res = await fetch(aiApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({
+            action: 'ai_student_support_plan',
+            class_id: classIdForAi,
+            student_id: aiSupport.studentId,
+            force: force ? 1 : 0
+          })
+        });
+
+        const json = await res.json();
+        if (!res.ok || !json || json.ok !== true) {
+          throw new Error((json && (json.error || json.message)) ? (json.error || json.message) : ('HTTP ' + res.status));
+        }
+
+        const plan = json.support_plan || {};
+        renderSupportPlan(plan);
+
+        const meta = json.meta || {};
+        const cached = meta.cached === true;
+        const age = (typeof meta.cache_age_seconds === 'number') ? meta.cache_age_seconds : null;
+        const filled = (typeof meta.filled_fields === 'number') ? meta.filled_fields : null;
+
+        let metaTxt = '';
+        if (cached) {
+          metaTxt = '<?=h(t('teacher.students.support_cached', 'Cache:'))?> ' + (age !== null ? (Math.round(age/60) + ' min') : '<?=h(t('teacher.students.support_cached_yes', 'ja'))?>');
+        } else if (filled !== null) {
+          metaTxt = '<?=h(t('teacher.students.support_meta', 'Berücksichtigte Felder:'))?> ' + filled;
+        }
+        aiSupportMeta.textContent = metaTxt;
+
+      } catch (e) {
+        showAiSupportStatus('<?=h(t('teacher.students.support_error', 'Konnte Fördermöglichkeiten nicht laden:'))?> ' + (e && e.message ? e.message : String(e)), 'danger');
+        aiSupportMeta.textContent = '';
+        aiSupportContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.support_try_again', 'Bitte erneut versuchen.'))?></div>';
+      } finally {
+        aiSupportLoading = false;
+        if (btnAiSupportRefresh) btnAiSupportRefresh.disabled = false;
+      }
+    }
+
+    function openAiSupportModal(studentId, studentName){
+      aiSupport = { studentId: Number(studentId||0), studentName: String(studentName||'') };
+
+      if (aiSupportSub) {
+        aiSupportSub.textContent = aiSupport.studentName ? aiSupport.studentName : ('#' + aiSupport.studentId);
+      }
+
+      if (aiSupportModal) {
+        aiSupportModal.style.display = 'flex';
+        aiSupportModal.setAttribute('aria-hidden', 'false');
+      }
+      clearAiSupportStatus();
+      aiSupportMeta.textContent = '';
+      aiSupportContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.support_loading2', 'KI erstellt Vorschläge…'))?></div>';
+
+      // Autoload (uses cache)
+      loadAiSupportPlan(false);
+    }
+
+    function closeAiSupportModal(){
+      if (!aiSupportModal) return;
+      aiSupportModal.style.display = 'none';
+      aiSupportModal.setAttribute('aria-hidden', 'true');
+      aiSupport = { studentId: 0, studentName: '' };
+      aiSupportLoading = false;
+    }
+
+    if (aiSupportModal) {
+      aiSupportModal.addEventListener('click', (ev)=>{
+        if (ev.target === aiSupportModal) closeAiSupportModal();
+      });
+    }
+    if (btnAiSupportRefresh) btnAiSupportRefresh.addEventListener('click', ()=>{
+      loadAiSupportPlan(true); // force refresh, bypass cache
     });
   </script>
 <?php endif; ?>

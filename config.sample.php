@@ -49,7 +49,7 @@ return [
     'provider' => 'openai',
     'base_url' => 'https://api.openai.com',
     'model' => 'gpt-4o-mini',
-    'timeout_seconds' => 20,
+    'timeout_seconds' => 60,
   ],
   'mail' => [
     // Wenn leer -> PHP mail()

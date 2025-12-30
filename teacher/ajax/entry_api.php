@@ -196,6 +196,62 @@ function normalize_ai_suggestions(string $text): array {
   return array_values(array_filter(array_unique($out), fn($s)=>$s!==''));
 }
 
+
+/**
+ * AI cache helpers (file-based).
+ * Stores JSON payloads in a writable directory (default: system temp).
+ * TTL configurable via app_config()['ai']['support_plan_cache_ttl_seconds'] (default 86400).
+ */
+function ai_cache_dir(): string {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $dir = trim((string)($ai['cache_dir'] ?? ''));
+  if ($dir === '') {
+    $dir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'leb_tool_ai_cache';
+  }
+  if (!is_dir($dir)) {
+    @mkdir($dir, 0775, true);
+  }
+  return $dir;
+}
+
+function ai_cache_ttl_seconds(): int {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $ttl = (int)($ai['support_plan_cache_ttl_seconds'] ?? 86400);
+  if ($ttl < 60) $ttl = 60;
+  return $ttl;
+}
+
+function ai_cache_file(string $key): string {
+  $dir = ai_cache_dir();
+  $hash = sha1($key);
+  return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $hash . '.json';
+}
+
+function ai_cache_get(string $key, int $ttlSeconds): ?array {
+  $file = ai_cache_file($key);
+  if (!is_file($file)) return null;
+  $raw = @file_get_contents($file);
+  if (!$raw) return null;
+  $j = json_decode($raw, true);
+  if (!is_array($j)) return null;
+  $ts = (int)($j['created_at'] ?? 0);
+  if ($ts <= 0) return null;
+  $age = time() - $ts;
+  if ($age > $ttlSeconds) return null;
+  return $j;
+}
+
+function ai_cache_set(string $key, array $payload): void {
+  $file = ai_cache_file($key);
+  $wrap = [
+    'created_at' => time(),
+    'payload' => $payload,
+  ];
+  @file_put_contents($file, json_encode($wrap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
 function is_class_field(array $meta): bool {
   $scope = isset($meta['scope']) ? strtolower(trim((string)$meta['scope'])) : '';
   if ($scope === 'class') return true;
@@ -1072,7 +1128,7 @@ try {
       ],
       [
         'role' => 'user',
-        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 3 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen, Ziele beschreiben den nächsten Lernschritt und Schritte zeigen konkrete Möglichkeiten, das Ziel zu erreichen.",
+        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 4 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen, Ziele beschreiben den nächsten Lernschritt für das kommende Halbjahr und beziehen sich dabei auf konkrete Fähigkeiten oder Sozial-/Lernverhalten und Schritte zeigen konkrete Möglichkeiten, diese Ziele zu erreichen. Alle drei sollen in der ich-Perspektive formuliert sein.",
       ],
     ];
 
@@ -1096,7 +1152,179 @@ try {
     json_out(['ok' => true, 'suggestions' => $parsed]);
   }
 
-  if ($action === 'delegations_save') {
+  
+  if ($action === 'ai_support_plan') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    $force = (int)($data['force'] ?? 0) === 1;
+
+    if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+
+    if (!ai_provider_enabled()) {
+      throw new RuntimeException('KI-Vorschläge sind deaktiviert oder nicht konfiguriert.');
+    }
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    // Cache (per report + language)
+    $ttl = ai_cache_ttl_seconds();
+    $cacheKey = 'support_plan:v1:' . $reportId . ':' . ui_lang();
+    if (!$force) {
+      $cached = ai_cache_get($cacheKey, $ttl);
+      if (is_array($cached) && isset($cached['payload']) && is_array($cached['payload'])) {
+        $age = time() - (int)($cached['created_at'] ?? time());
+        json_out([
+          'ok' => true,
+          'support_plan' => $cached['payload'],
+          'meta' => [
+            'cached' => true,
+            'cache_age_seconds' => max(0, (int)$age),
+          ],
+        ]);
+      }
+    }
+
+    // Load report instance & student meta (ensure report belongs to class)
+    $stInfo = $pdo->prepare(
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id, c.grade_level
+       FROM report_instances ri
+       JOIN students s ON s.id=ri.student_id
+       JOIN classes c ON c.id=s.class_id
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $stInfo->execute([$reportId]);
+    $info = $stInfo->fetch(PDO::FETCH_ASSOC);
+    if (!$info) throw new RuntimeException('Bericht nicht gefunden.');
+    if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
+
+    $templateId = (int)$info['template_id'];
+    $schoolYear = (string)($info['school_year'] ?? '');
+    $gradeLevel = (int)($info['grade_level'] ?? 0);
+    $studentName = trim((string)($info['first_name'] ?? '') . ' ' . (string)($info['last_name'] ?? ''));
+
+    // Load all template fields with values for this report instance (teacher + child)
+    $stFields = $pdo->prepare(
+      "SELECT tf.id AS template_field_id, tf.field_type, tf.label, tf.label_en, tf.group_label, tf.group_label_en,
+              tf.meta_json,
+              rf.teacher_value, rf.teacher_value_json,
+              rf.child_value, rf.child_value_json
+       FROM template_fields tf
+       LEFT JOIN report_fields rf
+         ON rf.report_instance_id=? AND rf.template_field_id=tf.id
+       WHERE tf.template_id=?
+       ORDER BY tf.sort_order ASC, tf.id ASC"
+    );
+    $stFields->execute([$reportId, $templateId]);
+    $ctxFields = $stFields->fetchAll(PDO::FETCH_ASSOC);
+
+    // Build compact context from filled fields, resolving option lists to readable text
+    $ctxParts = [];
+    $comparisons = [];
+    $filledCount = 0;
+    $lang = ui_lang();
+
+    foreach ($ctxFields as $cf) {
+      $meta = meta_read($cf['meta_json'] ?? null);
+
+      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
+      $resolvedChild   = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '');
+
+      $teacherText = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
+      $childText   = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
+
+      if ($teacherText === '' && $childText === '') continue;
+
+      $filledCount++;
+
+      $label = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
+      $group = label_for_lang($cf['group_label'] ?? null, $cf['group_label_en'] ?? null, $lang);
+      $prefix = $group !== '' ? ($group . ' – ') : '';
+
+      if ($teacherText !== '' && $childText !== '' && $teacherText !== $childText) {
+        $comparisons[] = $prefix . $label . ': Lehrer=' . $teacherText . ' | Schüler=' . $childText;
+      } else {
+        $one = $teacherText !== '' ? $teacherText : $childText;
+        $ctxParts[] = $prefix . $label . ': ' . $one;
+      }
+    }
+
+    if ($comparisons) {
+      $ctxParts[] = 'Abweichungen Lehrer/Schüler: ' . implode(' | ', array_slice($comparisons, 0, 6));
+    }
+
+    $context = trim(implode("\n", array_filter($ctxParts)));
+    if ($context === '') {
+      $context = '(Noch keine inhaltlichen Eingaben vorhanden. Bitte arbeite mit allgemeinen, aber praxisnahen Förderideen.)';
+    }
+
+    $aiCfg = ai_provider_config();
+    $messages = [
+      [
+        'role' => 'system',
+        'content' =>
+          'Du bist eine erfahrene Lehrkraft (Grundschule) und erstellst sehr konkrete, umsetzbare Fördermöglichkeiten. ' .
+          'Nutze nur die gelieferten Angaben und formuliere keine Diagnosen. ' .
+          'Wenn Informationen fehlen, formuliere Optionen („Wenn … dann …“) und kurze Beobachtungspunkte. ' .
+          'Keine Einleitung, keine Floskeln.'
+      ],
+      [
+        'role' => 'user',
+        'content' =>
+          "Schüler: {$studentName}\nKlasse/Jahrgang: {$gradeLevel}\nSchuljahr: {$schoolYear}\n\n" .
+          "Eingaben (Lehrer + Schüler):\n{$context}\n\n" .
+          "Erstelle umfangreiche, fächerübergreifende Fördermöglichkeiten. Gib ausschließlich JSON zurück im Format:\n" .
+          "{\"kurzprofil\":\"...\",\"foerder_uebergreifend\":[...],\"deutsch\":[...],\"mathe\":[...],\"sachkunde\":[...],\"lernorganisation\":[...],\"sozial_emotional\":[...],\"zu_hause\":[...],\"diagnostik_naechste_schritte\":[...] }\n" .
+          "Regeln: Alle Listen-Elemente als kurze, konkrete Maßnahmen (max. 1–2 Sätze), möglichst mit Material/Beispiel. " .
+          "Mindestens 6 Punkte bei foerder_uebergreifend, jeweils mindestens 4 bei deutsch/mathe. Keine Nummerierung, kein Markdown."
+      ],
+    ];
+
+    $aiText = ai_chat_completion($messages, $aiCfg);
+
+    $parsed = [
+      'kurzprofil' => '',
+      'foerder_uebergreifend' => [],
+      'deutsch' => [],
+      'mathe' => [],
+      'sachkunde' => [],
+      'lernorganisation' => [],
+      'sozial_emotional' => [],
+      'zu_hause' => [],
+      'diagnostik_naechste_schritte' => [],
+    ];
+
+    $json = json_decode((string)$aiText, true);
+    if (is_array($json)) {
+      if (isset($json['kurzprofil'])) $parsed['kurzprofil'] = trim((string)$json['kurzprofil']);
+      foreach (['foerder_uebergreifend','deutsch','mathe','sachkunde','lernorganisation','sozial_emotional','zu_hause','diagnostik_naechste_schritte'] as $k) {
+        if (isset($json[$k]) && is_array($json[$k])) {
+          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!==''));
+        }
+      }
+    } else {
+      // Fallback: treat as bullet list
+      $parsed['foerder_uebergreifend'] = array_slice(normalize_ai_suggestions((string)$aiText), 0, 12);
+    }
+
+    // Save cache
+    ai_cache_set($cacheKey, $parsed);
+
+    json_out([
+      'ok' => true,
+      'support_plan' => $parsed,
+      'meta' => [
+        'cached' => false,
+        'filled_fields' => $filledCount,
+        'cache_ttl_seconds' => $ttl,
+      ],
+    ]);
+  }
+
+if ($action === 'delegations_save') {
     $classId = (int)($data['class_id'] ?? 0);
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
