@@ -202,7 +202,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     .tts-bar{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border); border-radius:12px; margin-bottom:10px; background: rgba(0,0,0,0.02); }
     .tts-title{ font-weight:800; }
     .tts-status{ color: var(--muted); font-size:12px; }
-    .tts-reading{ background: #fff7c2; transition: background .15s ease; }
+    .tts-word{ transition: background .08s ease; }
+    .tts-word-active{ background: #fff59f; border-radius:4px; box-shadow: 0 0 0 2px #fff59f; }
 
     .locked-overlay{ border:1px solid rgba(176,0,32,0.25); background: rgba(176,0,32,0.05); padding:12px; border-radius:14px; margin-bottom: 10px; }
     .locked-overlay strong{ color: rgba(176,0,32,0.95); }
@@ -398,10 +399,103 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   // -------- Vorlese-Funktion (Web Speech API) --------
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   let ttsUtterance = null;
+  let ttsWordSpans = [];
+  let ttsWordOffsets = [];
+  let ttsWordTexts = [];
+  let ttsActiveWord = -1;
 
-  function setTtsHighlight(on){
-    if (!elBody) return;
-    elBody.classList.toggle('tts-reading', !!on);
+  function teardownTtsHighlighting(){
+    if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
+      ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
+    }
+    ttsActiveWord = -1;
+    if (ttsWordSpans.length === 0) return;
+    ttsWordSpans.forEach(span => {
+      if (!span || !span.parentNode) return;
+      span.classList.remove('tts-word-active');
+      const textNode = document.createTextNode(span.textContent);
+      span.parentNode.replaceChild(textNode, span);
+    });
+    ttsWordSpans = [];
+    ttsWordOffsets = [];
+    ttsWordTexts = [];
+  }
+
+  function prepareTtsHighlighting(){
+    teardownTtsHighlighting();
+    if (!elBody) return { text: '', words: [] };
+    const spans = [];
+    const words = [];
+    const walker = document.createTreeWalker(elBody, NodeFilter.SHOW_TEXT, {
+      acceptNode(node){
+        if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
+        const tag = (node.parentElement.tagName || '').toUpperCase();
+        if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+        if (!node.textContent || node.textContent.trim() === '') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+
+    const replacements = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const parts = node.textContent.split(/(\s+)/);
+      const frag = document.createDocumentFragment();
+      parts.forEach(part => {
+        if (part === '') return;
+        if (/^\s+$/.test(part)) {
+          frag.appendChild(document.createTextNode(part));
+        } else {
+          const span = document.createElement('span');
+          span.textContent = part;
+          span.dataset.ttsWord = '1';
+          span.classList.add('tts-word');
+          spans.push(span);
+          words.push(part);
+          frag.appendChild(span);
+        }
+      });
+      replacements.push({ node, frag });
+    }
+    replacements.forEach(({ node, frag }) => node.parentNode?.replaceChild(frag, node));
+
+    const offsets = [];
+    let idx = 0;
+    words.forEach(w => {
+      offsets.push(idx);
+      idx += w.length + 1; // include a space between words
+    });
+
+    ttsWordSpans = spans;
+    ttsWordOffsets = offsets;
+    ttsWordTexts = words;
+
+    return { text: words.join(' '), words };
+  }
+
+  function highlightWordByIndex(idx){
+    if (!ttsWordSpans.length) return;
+    if (idx === ttsActiveWord) return;
+    if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
+      ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
+    }
+    ttsActiveWord = idx;
+    const span = ttsWordSpans[idx];
+    if (!span) return;
+    span.classList.add('tts-word-active');
+    try {
+      span.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    } catch(e){}
+  }
+
+  function wordIndexFromChar(charIndex){
+    if (typeof charIndex !== 'number' || charIndex < 0 || !ttsWordOffsets.length) return -1;
+    for (let i = 0; i < ttsWordOffsets.length; i++) {
+      const start = ttsWordOffsets[i];
+      const end = start + (ttsWordTexts[i]?.length || 0);
+      if (charIndex >= start && charIndex < end) return i;
+    }
+    return -1;
   }
 
   function updateTtsUi(text){
@@ -443,7 +537,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (!ttsSupported || !speechSynthesis) return;
     try { speechSynthesis.cancel(); } catch(e) {}
     ttsUtterance = null;
-    setTtsHighlight(false);
+    teardownTtsHighlighting();
     updateTtsUi();
   }
 
@@ -457,12 +551,19 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
     if (!voices || voices.length === 0) return null;
     const pref = (preferredName || '').toLowerCase().trim();
+    const isMatch = (voice, needle) => voice?.name && voice.name.toLowerCase().includes(needle);
+
     if (pref !== '') {
       const prefExact = voices.find(v => v?.name && v.name.toLowerCase() === pref && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
       if (prefExact) return prefExact;
-      const prefLoose = voices.find(v => v?.name && v.name.toLowerCase().includes(pref));
+      const prefLoose = voices.find(v => isMatch(v, pref));
       if (prefLoose) return prefLoose;
     }
+
+    const premiumVendors = ['google', 'microsoft', 'natural', 'neural'];
+    const premiumVoice = voices.find(v => v?.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && premiumVendors.some(p => isMatch(v, p)));
+    if (premiumVoice) return premiumVoice;
+
     const exactLocal = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && v.localService);
     if (exactLocal) return exactLocal;
     const exact = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
@@ -472,19 +573,25 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
   function speakCurrentStep(){
     if (!ttsSupported) return;
-    const text = currentStepTextForTts();
+    stopTts();
+    const prep = prepareTtsHighlighting();
+    const text = (prep?.text || currentStepTextForTts()).trim();
     if (!text) { updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.')); return; }
 
-    stopTts();
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = TTS_RATE;
     utter.pitch = 1;
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
     const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
     if (voice) utter.voice = voice;
-    utter.onstart = () => { setTtsHighlight(true); updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
-    utter.onend = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
-    utter.onerror = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
+    utter.onstart = () => { highlightWordByIndex(0); updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
+    utter.onboundary = (ev) => {
+      if (ev?.name && ev.name !== 'word') return;
+      const idx = wordIndexFromChar(ev.charIndex);
+      if (idx >= 0) highlightWordByIndex(idx);
+    };
+    utter.onend = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
+    utter.onerror = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();
