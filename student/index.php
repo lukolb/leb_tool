@@ -202,8 +202,6 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     .tts-bar{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border); border-radius:12px; margin-bottom:10px; background: rgba(0,0,0,0.02); }
     .tts-title{ font-weight:800; }
     .tts-status{ color: var(--muted); font-size:12px; }
-    .tts-reading{ background: #fff7c2; transition: background .15s ease; }
-
     .locked-overlay{ border:1px solid rgba(176,0,32,0.25); background: rgba(176,0,32,0.05); padding:12px; border-radius:14px; margin-bottom: 10px; }
     .locked-overlay strong{ color: rgba(176,0,32,0.95); }
 
@@ -399,11 +397,6 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   let ttsUtterance = null;
 
-  function setTtsHighlight(on){
-    if (!elBody) return;
-    elBody.classList.toggle('tts-reading', !!on);
-  }
-
   function updateTtsUi(text){
     if (!ttsBar) return;
     if (!TTS_ALLOWED) {
@@ -443,7 +436,6 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (!ttsSupported || !speechSynthesis) return;
     try { speechSynthesis.cancel(); } catch(e) {}
     ttsUtterance = null;
-    setTtsHighlight(false);
     updateTtsUi();
   }
 
@@ -457,12 +449,19 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const voices = speechSynthesis.getVoices ? speechSynthesis.getVoices() : [];
     if (!voices || voices.length === 0) return null;
     const pref = (preferredName || '').toLowerCase().trim();
+    const isMatch = (voice, needle) => voice?.name && voice.name.toLowerCase().includes(needle);
+
     if (pref !== '') {
       const prefExact = voices.find(v => v?.name && v.name.toLowerCase() === pref && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
       if (prefExact) return prefExact;
-      const prefLoose = voices.find(v => v?.name && v.name.toLowerCase().includes(pref));
+      const prefLoose = voices.find(v => isMatch(v, pref));
       if (prefLoose) return prefLoose;
     }
+
+    const premiumVendors = ['google', 'microsoft', 'natural', 'neural'];
+    const premiumVoice = voices.find(v => v?.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && premiumVendors.some(p => isMatch(v, p)));
+    if (premiumVoice) return premiumVoice;
+
     const exactLocal = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()) && v.localService);
     if (exactLocal) return exactLocal;
     const exact = voices.find(v => v && v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()));
@@ -472,19 +471,23 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
   function speakCurrentStep(){
     if (!ttsSupported) return;
-    const text = currentStepTextForTts();
-    if (!text) { updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.')); return; }
-
     stopTts();
-    const utter = new SpeechSynthesisUtterance(text);
+    const text = currentStepTextForTts();
+    const normalizedText = typeof text === 'string' ? text : '';
+    if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
+      updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
+      return;
+    }
+
+    const utter = new SpeechSynthesisUtterance(normalizedText);
     utter.rate = TTS_RATE;
     utter.pitch = 1;
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
     const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
     if (voice) utter.voice = voice;
-    utter.onstart = () => { setTtsHighlight(true); updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
-    utter.onend = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
-    utter.onerror = () => { setTtsHighlight(false); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
+    utter.onstart = () => { updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
+    utter.onend = () => { updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
+    utter.onerror = () => { updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();
