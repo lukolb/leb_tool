@@ -329,24 +329,19 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, status
+    "SELECT student_id, status, created_at, id
      FROM report_instances
      WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)";
+       AND student_id IN ($in)
+     ORDER BY created_at DESC, id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
 
   $map = [];
-  $priority = ['submitted' => 3, 'locked' => 2, 'draft' => 1];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $sid = (int)$r['student_id'];
-    $status = (string)$r['status'];
-
-    $newRank = $priority[$status] ?? 0;
-    $curRank = isset($map[$sid]) ? ($priority[$map[$sid]] ?? 0) : -1;
-    if ($newRank >= $curRank) {
-      $map[$sid] = $status;
-    }
+    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
+    $map[$sid] = (string)$r['status'];
   }
   return $map;
 }
@@ -361,16 +356,19 @@ function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear,
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, id AS report_instance_id, status
+    "SELECT student_id, id AS report_instance_id, status, created_at
      FROM report_instances
      WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)";
+       AND student_id IN ($in)
+     ORDER BY created_at DESC, id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $map[(int)$r['student_id']] = [
+    $sid = (int)$r['student_id'];
+    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
+    $map[$sid] = [
       'report_instance_id' => (int)$r['report_instance_id'],
       'status' => (string)$r['status'],
     ];
