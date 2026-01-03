@@ -1,0 +1,220 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{graphicx}
+% --- Optional title icon (avoid compile errors if asset is missing) ---
+\newcommand{\LEBTitleIcon}{%
+  \IfFileExists{../assets/icons/lebtool-icon-512x512.png}{%
+    \includegraphics[width=4cm]{../assets/icons/lebtool-icon-512x512.png}%
+  }{%
+    \fbox{\parbox[c][4cm][c]{4cm}{\centering\textbf{LEB Tool}}}%
+  }%
+}
+
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{csquotes}
+
+\geometry{margin=2.5cm}
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+
+\definecolor{primary}{HTML}{0B57D0}
+\definecolor{secondary}{HTML}{111111}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  urlcolor=primary,
+  citecolor=primary
+}
+
+\begin{document}
+
+% Titelblatt
+\pagenumbering{gobble}
+\begin{center}
+  \LEBTitleIcon\\[1cm]
+  {\Huge \textbf{LEB Tool Benutzerhandbuch}}\\[0.2cm]
+  {\Large Lernentwicklungsberichte digital verwalten}\\[1cm]
+  {\large Stand: \today}\\[1.5cm]
+\end{center}
+
+\vfill
+\begin{center}
+  \textcolor{secondary}{\small Dieses Dokument beschreibt Funktionen und Bedienung des LEB Tools für Admins, Lehrkräfte, Schüler:innen und Elternzugänge.}
+\end{center}
+\clearpage
+
+\pagenumbering{arabic}
+\tableofcontents
+\clearpage
+
+\section{Überblick}
+Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von Lernentwicklungsberichten:
+\begin{itemize}
+  \item Admin-Bereich zur Verwaltung von Nutzer:innen, Klassen, Templates, Feldern und Einstellungen.
+  \item Lehrer-Bereich zur Bearbeitung von Berichten pro Klasse, inklusive Delegationen (Fachbereiche).
+  \item Schüler-Bereich zur Selbsteinschätzung (sofern aktiviert), optional mit Vorlesefunktion (TTS).
+  \item Eltern-Portal-Link zum Lesen des fertigen Berichts (und ggf. Feedback).
+\end{itemize}
+
+\section{Rollen und Zugänge}
+\subsection{Admin}
+Admins verwalten das System: Nutzer:innen, Klassen, Templates, Felder, Einstellungen, Audit-Log und Exporte.
+
+\subsection{Lehrkraft}
+Lehrkräfte bearbeiten Berichte für ihre Klassen. Zusätzlich können Fachbereiche an Kolleg:innen delegiert werden.
+
+\subsection{Schüler:in}
+Schüler:innen füllen (je nach Konfiguration) Teile des Berichts selbst aus. Optional steht eine Vorlesefunktion zur Verfügung.
+
+\subsection{Eltern}
+Eltern erhalten einen Link zum Elternportal, um den Bericht einzusehen. Optional kann ein Feedback-Formular verfügbar sein.
+
+\section{Navigation und Layout}
+Die Oberfläche nutzt ein einheitliches Layout mit Karten (\texttt{card}), Buttons (\texttt{btn}) und Tabellenstilen. Menüs können Untermenüs enthalten.
+
+\section{Admin-Bereich}
+\subsection{Dashboard}
+Das Dashboard zeigt Systemstatus, ggf. Bearbeitungsstand und Quicklinks.
+
+\subsection{Nutzerverwaltung}
+Admins können Lehrkräfte und Admins anlegen, deaktivieren und Passwörter zurücksetzen.
+
+\subsection{Klassenverwaltung}
+Klassen enthalten u.\,a. Schuljahr, Stufe, Bezeichnung, Name, Template-Zuordnung und Aktiv-Status.
+
+\subsection{Templates und Felder}
+Templates definieren die Struktur eines Berichts. Felder besitzen u.\,a.:
+\begin{itemize}
+  \item Feldtyp (z.\,B. Text, Auswahl, Skala, Unterschrift)
+  \item Pflichtfeld-Flag
+  \item Reihenfolge/Sortierung
+  \item Sprachlabels (mehrsprachig, falls aktiviert)
+\end{itemize}
+
+\subsection{Einstellungen}
+Systemweite Einstellungen steuern Features wie:
+\begin{itemize}
+  \item Sichtbarkeit/Verfügbarkeit von Sprachen
+  \item Aktivierung von KI-Funktionen (sofern vorhanden)
+  \item Elternportal-Optionen (Feedback anzeigen, Unterschriftenfeld, etc.)
+  \item Export-Regeln und Rollenrechte
+\end{itemize}
+
+\subsection{Audit-Log}
+Das Audit-Log protokolliert wichtige Aktionen. Filter, Sortierung und optionale Anzeige von IP-Adressen helfen bei der Analyse.
+
+\section{Lehrer-Bereich}
+\subsection{Klassenübersicht}
+Lehrkräfte sehen ihre aktiven Klassen und können Klassen archivieren (deaktivieren). Pro Klasse wird ggf. ein Bearbeitungsstand angezeigt.
+
+\subsection{Bericht bearbeiten}
+In der Eingabemaske werden Felder gemäß Template angezeigt:
+\begin{itemize}
+  \item Pflichtfelder sind markiert.
+  \item Fortschritt zeigt fehlende Felder.
+  \item Tages-/Abschnittsstruktur nach Template.
+\end{itemize}
+
+\subsection{Delegationen}
+Fachbereiche können an andere Lehrkräfte delegiert werden. Delegierte sehen diese in ihrer Delegations-Inbox.
+\begin{itemize}
+  \item Delegationsstatus kann angepasst werden.
+  \item Delegationen können neu zugewiesen oder entfernt werden.
+  \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen (zurücksetzbar)
+\end{itemize}
+
+\section{Schüler-Bereich}
+\subsection{Login}
+Schüler:innen loggen sich je nach Setup ein (z.\,B. über QR-Code oder Zugangsdaten).
+
+\subsection{Eingabe}
+Schüler:innen füllen zugewiesene Felder aus. Pflichtfelder können erzwungen werden.
+
+\subsection{Vorlesefunktion (TTS)}
+Falls aktiviert, kann Text vorgelesen werden. Für eine gute Nutzererfahrung sind passende Stimmen und Browser-Kompatibilität wichtig.
+
+\section{Elternportal}
+\subsection{Zugriff}
+Eltern erhalten einen Link (z.\,B. per E-Mail). Der Link führt zu einer Ansicht des Berichts (PDF oder HTML) und optional zu einem Feedback-Formular.
+
+\subsection{Unterschriftenfeld}
+Falls das Template ein Unterschriftenfeld enthält, kann der Name der anfragenden Lehrkraft automatisch eingetragen werden.
+
+\section{Export}
+\subsection{Export-API}
+Exporte werden über eine gemeinsame API-Schicht umgesetzt. Zugriffsrechte hängen von Rolle und Klassenberechtigung ab.
+
+\subsection{PDF-Export}
+Beim PDF-Export wird auf korrekte Datumsformatierung geachtet (z.\,B. \texttt{01.12.2026}), ebenso auf Zeichencodierung und Layout.
+
+\section{Fehlerbehebung}
+\subsection{Typische Probleme}
+\begin{itemize}
+  \item \textbf{Compile-Fehler bei Bildern:} Pfade prüfen oder \texttt{\textbackslash IfFileExists} verwenden.
+  \item \textbf{Sonderzeichen/Encoding:} UTF-8 sicherstellen, \texttt{inputenc} und \texttt{fontenc} verwenden.
+  \item \textbf{Mathe-Kommandos im Text:} z.\,B. \texttt{\textbackslash rightarrow} nur in Mathemodus \(\rightarrow\) nutzen.
+\end{itemize}
+
+\subsection{Support-Infos}
+Für Support hilfreich:
+\begin{itemize}
+  \item verwendeter Commit/Version
+  \item Rolle (Admin/Teacher/Student/Parent)
+  \item genaue URL/Seite
+  \item Fehlermeldung (Screenshot/Log)
+\end{itemize}
+
+\appendix
+\section{Platzhalter-Screenshots}
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Admin-Dashboard (Platzhalter)}}
+  \caption{Admin-Dashboard Übersicht}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Lehrer-Eingabemaske (Platzhalter)}}
+  \caption{Lehrer: Bericht bearbeiten}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Delegations-Inbox (Platzhalter)}}
+  \caption{Delegations-Inbox}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Schüler-QR-Login und TTS-Bar (Platzhalter)}}
+  \caption{Schülerzugang mit Vorlesefunktion}
+\end{figure}
+
+\clearpage
+\appendix
+\section{Schnellanleitung für Lehrkräfte}
+\textbf{Ziel:} Innerhalb weniger Minuten Berichte pro Klasse pflegen.
+
+\begin{enumerate}
+  \item Einloggen unter \url{.../teacher}.
+  \item Klasse oder delegierten Fachbereich öffnen.
+  \item Schüler auswählen \(\rightarrow\) Pflichtfelder und Freitextfelder ausfüllen.
+  \item Fortschritt prüfen (Anzeige fehlender Felder beachten).
+  \item Bei Bedarf delegieren: Fachbereiche an Kolleg:innen abgeben.
+  \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren oder zurückholen.
+\end{enumerate}
+
+\vspace{1cm}
+{\small Stand: automatisch aus aktuellem Code abgeleitet. Bitte Anpassungen nach Software-Updates prüfen.}
+
+\end{document}
