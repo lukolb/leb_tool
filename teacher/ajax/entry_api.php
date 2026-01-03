@@ -1626,6 +1626,47 @@ if ($action === 'delegations_save') {
     json_out(['ok' => true]);
   }
 
+  if ($action === 'unlock_child_entry') {
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+
+    $st = $pdo->prepare(
+      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
+       FROM report_instances ri
+       INNER JOIN students s ON s.id=ri.student_id
+       INNER JOIN classes c ON c.id=s.class_id
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $st->execute([$reportId]);
+    $ri = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$ri) throw new RuntimeException('Report nicht gefunden.');
+
+    $classId = (int)($ri['class_id'] ?? 0);
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $status = (string)($ri['status'] ?? 'draft');
+    if ($status === 'draft') {
+      json_out(['ok' => true, 'status' => 'draft', 'changed' => false]);
+    }
+
+    $riTemplateId = (int)($ri['template_id'] ?? 0);
+    $classTemplateId = (int)($ri['class_template_id'] ?? 0);
+    if ($classTemplateId <= 0) throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+    if ($riTemplateId !== $classTemplateId) throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
+
+    $pdo->prepare(
+      "UPDATE report_instances
+       SET status='draft', locked_by_user_id=NULL, locked_at=NULL
+       WHERE id=?"
+    )->execute([$reportId]);
+
+    audit('teacher_child_unlock', $userId, ['report_instance_id'=>$reportId, 'class_id'=>$classId]);
+    json_out(['ok' => true, 'status' => 'draft', 'changed' => true]);
+  }
+
   throw new RuntimeException('Unbekannte action.');
 
 } catch (Throwable $e) {
