@@ -533,7 +533,7 @@ function load_teacher_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, options_json, meta_json
+    "SELECT id, field_name, field_type, label, label_en, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -879,6 +879,7 @@ try {
     }
 
     $childProgressIds = [];
+    $childProgressLabels = [];
     // load ALL child-editable fields for progress counting (not only paired)
     $childFieldsAll = load_child_fields_for_pairing($pdo, $templateId);
     foreach ($childFieldsAll as $cf0) {
@@ -886,6 +887,9 @@ try {
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
       $childProgressIds[] = (int)$cf0['id'];
+      $labelC = label_for_lang($cf0['label'] ?? null, $cf0['label_en'] ?? null, $lang);
+      $fnameC = (string)($cf0['field_name'] ?? '');
+      $childProgressLabels[(int)$cf0['id']] = $labelC !== '' ? $labelC : $fnameC;
     }
 
     $fieldMetaById = [];
@@ -923,10 +927,17 @@ try {
       }
 
       $cDone = 0;
+      $missingChildLabels = [];
       if ($childTotal > 0) {
         foreach ($childProgressIds as $fid) {
           $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
-          if (trim((string)$v) !== '') $cDone++;
+          $trimmed = trim((string)$v);
+          if ($trimmed !== '') {
+            $cDone++;
+          } else {
+            $lbl = $childProgressLabels[$fid] ?? '';
+            if ($lbl !== '') $missingChildLabels[] = $lbl;
+          }
         }
       }
 
@@ -942,6 +953,7 @@ try {
       $srow['progress_child_total'] = $childTotal;
       $srow['progress_child_done'] = $cDone;
       $srow['progress_child_missing'] = max(0, $childTotal - $cDone);
+      $srow['child_missing_fields'] = $missingChildLabels;
 
       $srow['progress_overall_total'] = $overallTotal;
       $srow['progress_overall_done'] = $oDone;

@@ -2087,12 +2087,17 @@ render_teacher_header($pageTitle);
     const reportId = s.report_instance_id;
     const status = String(s.status || 'draft');
     const locked = (status === 'locked');
+    const childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
 
     let html = '';
     if (locked) {
       html += `<div class="alert danger"><strong>Dieser Bericht ist gesperrt.</strong> Eingaben können nicht mehr geändert werden.</div>`;
     } else if (status === 'submitted') {
       html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
+    } else if (childMissingFields.length > 0) {
+      const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
+      const more = childMissingFields.length > 8 ? ` … (${childMissingFields.length - 8} weitere)` : '';
+      html += `<div class="alert warning"><strong>Schülereingabe fehlt noch.</strong> Offene Felder: ${missingList}${more}</div>`;
     }
 
     const optionStatus = optionCompletionForStudent(reportId);
