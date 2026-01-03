@@ -346,7 +346,8 @@ try {
       $valMap[$fid][$src] = $v;
     }
 
-    $lines = [];
+    $teacherLines = [];
+    $selfAssessmentLines = [];
     $diffs = [];
 
     foreach ($fields as $f) {
@@ -378,16 +379,30 @@ try {
       if ($teacherText === '' && $childText === '') continue;
       $filledCount++;
 
+      if ($teacherText !== '') {
+        $teacherLines[] = $label . ': ' . $teacherText;
+      }
+
+      if ($childText !== '') {
+        $selfAssessmentLines[] = $label . ': ' . $childText;
+      }
+
       if ($teacherText !== '' && $childText !== '' && $teacherText !== $childText) {
         $diffs[] = $label . ': Lehrer=' . $teacherText . ' | Schüler=' . $childText;
-      } else {
-        $one = $teacherText !== '' ? $teacherText : $childText;
-        $lines[] = $label . ': ' . $one;
       }
     }
 
-    if ($diffs) $lines[] = 'Abweichungen Lehrer/Schüler: ' . implode(' | ', array_slice($diffs, 0, 10));
-    if ($lines) $contextParts[] = implode("\n", array_slice($lines, 0, 220));
+    if ($teacherLines) {
+      $contextParts[] = "Lehrkraft-Einträge (maßgeblich):\n" . implode("\n", array_slice($teacherLines, 0, 220));
+    }
+
+    if ($selfAssessmentLines) {
+      $contextParts[] = "Selbsteinschätzung des Schülers (nur zum Abgleich):\n" . implode("\n", array_slice($selfAssessmentLines, 0, 120));
+    }
+
+    if ($diffs) {
+      $contextParts[] = 'Abweichungen Lehrer/Schüler: ' . implode(' | ', array_slice($diffs, 0, 10));
+    }
   }
 
   $context = trim(implode("\n\n", $contextParts));
@@ -397,7 +412,7 @@ try {
           . "kurzprofil (string), foerder_uebergreifend (array), deutsch (array), mathe (array), sachkunde (array), lernorganisation (array), sozial_emotional (array), zu_hause (array), diagnostik_naechste_schritte (array).\n"
           . "Keine weiteren Keys. Keine Markdown-Umrahmung.";
 
-  $userPrompt = "Erstelle umfangreiche, spezifische Fördermöglichkeiten fächerübergreifend auf Basis aller vorhandenen Daten. Du erhältst zu verschiedenen Punkten die Selbsteinschätzung des Schülers und die Beurteilung der Lehrkraft. Ausschlaggebend ist insbesondere die Einschätzung der Lehrkraft aber auch der Vergleich zwischen beiden. Wenn es viele oder große Abweichungen zwischen beiden Angaben gibt, weise darauf hin. Gib dazu auch immer eine Erklärung und Begründung für deine Empfehlung in der du dich auch auf die entsprechenden Eingaben beziehst. Wenn dir nicht ausreichend Daten für eine begründete Empfehlung vorliegen, schreibe die in den entsprechenden Array. Achte sehr genau darauf nichts zu erfinden und mache lieber keine Aussage, wenn dir nicht ausreichend Daten zur Verfügung stehen.\n\nKONTEXT:\n" . $context;
+  $userPrompt = "Erstelle umfangreiche, spezifische Fördermöglichkeiten fächerübergreifend auf Basis aller vorhandenen Daten. Für die Kompetenzbeurteilung nutzt du ausschließlich die Einträge der Lehrkraft. Die Angaben des Schülers nutzt du nur zur Beurteilung seines Selbsteinschätzungsvermögens (z. B. große Abweichungen zwischen Lehrer- und Schülerangaben). Weisen die Angaben stark voneinander ab, benenne das ausdrücklich. Gib dazu immer eine Erklärung und Begründung für deine Empfehlung, bezogen auf die jeweiligen Eingaben. Wenn dir nicht ausreichend Daten für eine begründete Empfehlung vorliegen, schreibe diese Information in den entsprechenden Array. Achte sehr genau darauf, nichts zu erfinden, und mache lieber keine Aussage, wenn dir nicht ausreichend Daten zur Verfügung stehen.\n\nKONTEXT:\n" . $context;
 
   $messages = [
     ['role' => 'system', 'content' => $system],
