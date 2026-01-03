@@ -1048,7 +1048,7 @@ try {
     }
 
     $stInfo = $pdo->prepare(
-      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id, c.grade_level
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, s.class_id, c.grade_level
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
        JOIN classes c ON c.id=s.class_id
@@ -1061,7 +1061,12 @@ try {
     if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
 
     $templateId = (int)$info['template_id'];
-    $studentName = trim((string)$info['first_name'] . ' ' . (string)$info['last_name']);
+    $studentName = trim((string)$info['first_name']);
+    $birthYear = '';
+    if (!empty($info['date_of_birth'])) {
+      $ts = strtotime((string)$info['date_of_birth']);
+      if ($ts !== false) $birthYear = date('Y', $ts);
+    }
     $gradeLevel = $info['grade_level'] !== null ? (int)$info['grade_level'] : null;
 
     $stCtx = $pdo->prepare(
@@ -1124,7 +1129,7 @@ try {
     $aiCfg = ai_provider_config();
 
     $ctxParts = [];
-    $ctxParts[] = 'Schüler: ' . $studentName;
+    $ctxParts[] = 'Schüler (anonymisiert): ' . $studentName . ($birthYear !== '' ? (' (Geburtsjahr: ' . $birthYear . ')') : '');
     if ($gradeLevel !== null) $ctxParts[] = 'Klassenstufe: ' . $gradeLevel;
     if ($optionFacts) $ctxParts[] = 'Wichtige Beobachtungen (Optionen): ' . implode('; ', array_slice($optionFacts, 0, 6));
     if ($gradeFacts) $ctxParts[] = 'Noten (zweitrangig): ' . implode('; ', array_slice($gradeFacts, 0, 3));
@@ -1201,7 +1206,7 @@ try {
 
     // Load report instance & student meta (ensure report belongs to class)
     $stInfo = $pdo->prepare(
-      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.class_id, c.grade_level
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, s.class_id, c.grade_level
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
        JOIN classes c ON c.id=s.class_id
@@ -1216,7 +1221,12 @@ try {
     $templateId = (int)$info['template_id'];
     $schoolYear = (string)($info['school_year'] ?? '');
     $gradeLevel = (int)($info['grade_level'] ?? 0);
-    $studentName = trim((string)($info['first_name'] ?? '') . ' ' . (string)($info['last_name'] ?? ''));
+    $studentName = trim((string)($info['first_name'] ?? ''));
+    $birthYear = '';
+    if (!empty($info['date_of_birth'])) {
+      $ts = strtotime((string)$info['date_of_birth']);
+      if ($ts !== false) $birthYear = date('Y', $ts);
+    }
 
     // Load all template fields with values for this report instance (teacher + child)
     $stFields = $pdo->prepare(
@@ -1286,7 +1296,8 @@ try {
       [
         'role' => 'user',
         'content' =>
-          "Schüler: {$studentName}\nKlasse/Jahrgang: {$gradeLevel}\nSchuljahr: {$schoolYear}\n\n" .
+          "Schüler (anonymisiert): {$studentName}" . ($birthYear !== '' ? " (Geburtsjahr: {$birthYear})" : '') . "\n" .
+          "Klassenstufe: {$gradeLevel}\nSchuljahr: {$schoolYear}\n\n" .
           "Eingaben (Lehrer + Schüler):\n{$context}\n\n" .
           "Erstelle umfangreiche, fächerübergreifende Fördermöglichkeiten. Gib ausschließlich JSON zurück im Format:\n" .
           "{\"kurzprofil\":\"...\",\"foerder_uebergreifend\":[...],\"deutsch\":[...],\"mathe\":[...],\"sachkunde\":[...],\"lernorganisation\":[...],\"sozial_emotional\":[...],\"zu_hause\":[...],\"diagnostik_naechste_schritte\":[...] }\n" .

@@ -218,7 +218,13 @@ try {
     throw new RuntimeException('Keine Berechtigung.');
   }
 
-  $stStu = $pdo->prepare("SELECT id, class_id, first_name, last_name, date_of_birth FROM students WHERE id=? LIMIT 1");
+  $stStu = $pdo->prepare(
+    "SELECT s.id, s.class_id, s.first_name, s.date_of_birth, c.grade_level
+     FROM students s
+     LEFT JOIN classes c ON c.id=s.class_id
+     WHERE s.id=?
+     LIMIT 1"
+  );
   $stStu->execute([$studentId]);
   $stu = $stStu->fetch(PDO::FETCH_ASSOC);
   if (!$stu) throw new RuntimeException('Schüler nicht gefunden.');
@@ -283,9 +289,17 @@ try {
   $instances = $stRI->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
   $contextParts = [];
-  $stuName = trim((string)($stu['first_name'] ?? '') . ' ' . (string)($stu['last_name'] ?? ''));
+  $stuName = trim((string)($stu['first_name'] ?? ''));
   $dob = trim((string)($stu['date_of_birth'] ?? ''));
-  $contextParts[] = 'Schüler: ' . ($stuName !== '' ? $stuName : ('#'.$studentId)) . ($dob !== '' ? (' (DOB: '.$dob.')') : '');
+  $birthYear = '';
+  if ($dob !== '') {
+    $ts = strtotime($dob);
+    if ($ts !== false) $birthYear = date('Y', $ts);
+  }
+  $gradeLevel = isset($stu['grade_level']) ? (int)$stu['grade_level'] : null;
+  $contextParts[] = 'Schüler (anonymisiert): ' . ($stuName !== '' ? $stuName : ('#'.$studentId))
+    . ($birthYear !== '' ? (' (Geburtsjahr: ' . $birthYear . ')') : '')
+    . ($gradeLevel !== null ? (' · Klassenstufe: ' . $gradeLevel) : '');
 
   if ($extraLines) {
     $contextParts[] = "Zusatzinfos:\n" . implode("\n", array_slice($extraLines, 0, 120));
