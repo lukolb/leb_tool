@@ -403,25 +403,12 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let ttsWordOffsets = [];
   let ttsWordTexts = [];
   let ttsActiveWord = -1;
-  let ttsBoundaryWordGuess = 0;
-  let ttsFallbackTimer = null;
-  let ttsLastBoundaryAt = 0;
-
-  function clearTtsFallbackTimer(){
-    if (ttsFallbackTimer) {
-      clearTimeout(ttsFallbackTimer);
-      ttsFallbackTimer = null;
-    }
-  }
 
   function teardownTtsHighlighting(){
-    clearTtsFallbackTimer();
     if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
       ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
     }
     ttsActiveWord = -1;
-    ttsBoundaryWordGuess = 0;
-    ttsLastBoundaryAt = 0;
     if (ttsWordSpans.length === 0) return;
     ttsWordSpans.forEach(span => {
       if (!span || !span.parentNode) return;
@@ -438,12 +425,11 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     teardownTtsHighlighting();
     if (!elBody) return { text: '', words: [] };
 
-    const WORD_RE = /\S+/g;
     const spans = [];
     const offsets = [];
     const words = [];
-    let speechText = '';
     let globalOffset = 0;
+    const speechParts = [];
 
     const walker = document.createTreeWalker(elBody, NodeFilter.SHOW_TEXT, {
       acceptNode(node){
@@ -455,50 +441,48 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       }
     });
 
-    const replacements = [];
     let node;
     while ((node = walker.nextNode())) {
       const text = node.textContent || '';
-      if (text === '') continue;
+      if (!text) continue;
+      const tokens = text.match(/\S+|\s+/g);
+      if (!tokens || !tokens.length) continue;
+
       const frag = document.createDocumentFragment();
-      let last = 0;
-      let match;
-      while ((match = WORD_RE.exec(text)) !== null) {
-        const start = match.index;
-        const word = match[0];
-        if (start > last) {
-          frag.appendChild(document.createTextNode(text.slice(last, start)));
+      tokens.forEach(tok => {
+        if (/^\s+$/.test(tok)) {
+          frag.appendChild(document.createTextNode(tok));
+          speechParts.push(tok);
+          globalOffset += tok.length;
+          return;
         }
+
         const span = document.createElement('span');
-        span.textContent = word;
-        span.dataset.ttsWord = '1';
+        span.textContent = tok;
         span.classList.add('tts-word');
-        spans.push(span);
-        words.push(word);
-        offsets.push(globalOffset + start);
         frag.appendChild(span);
-        last = start + word.length;
+        spans.push(span);
+        offsets.push(globalOffset);
+        words.push(tok);
+        speechParts.push(tok);
+        globalOffset += tok.length;
+      });
+
+      if (node.parentNode) {
+        node.parentNode.replaceChild(frag, node);
       }
-      if (last < text.length) {
-        frag.appendChild(document.createTextNode(text.slice(last)));
-      }
-      replacements.push({ node, frag });
-      speechText += text;
-      globalOffset += text.length;
     }
-    replacements.forEach(({ node, frag }) => node.parentNode?.replaceChild(frag, node));
 
     ttsWordSpans = spans;
     ttsWordOffsets = offsets;
     ttsWordTexts = words;
-    ttsBoundaryWordGuess = 0;
-    ttsLastBoundaryAt = 0;
 
-    return { text: speechText, words };
+    return { text: speechParts.join(''), words };
   }
 
   function highlightWordByIndex(idx){
     if (!ttsWordSpans.length) return;
+    if (typeof idx !== 'number' || idx < 0 || idx >= ttsWordSpans.length) return;
     if (idx === ttsActiveWord) return;
     if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
       ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
@@ -601,7 +585,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const prep = prepareTtsHighlighting();
     const text = prep?.text ?? currentStepTextForTts();
     const normalizedText = typeof text === 'string' ? text : '';
-    if (!normalizedText.trim()) { updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.')); return; }
+    if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
+      updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
+      return;
+    }
 
     const utter = new SpeechSynthesisUtterance(normalizedText);
     utter.rate = TTS_RATE;
@@ -610,64 +597,19 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
     if (voice) utter.voice = voice;
     utter.onstart = () => {
-      ttsBoundaryWordGuess = 0;
-      ttsLastBoundaryAt = performance.now();
       highlightWordByIndex(0);
-      startTtsFallbackWatch(utter);
       updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     };
     utter.onboundary = (ev) => {
       if (ev?.name && ev.name !== 'word') return;
-      ttsLastBoundaryAt = performance.now();
-      let idx = wordIndexFromChar(ev.charIndex);
-      if (idx < 0) {
-        ttsBoundaryWordGuess = Math.min(
-          (ttsActiveWord >= 0 ? ttsActiveWord + 1 : ttsBoundaryWordGuess + 1),
-          Math.max(0, ttsWordSpans.length - 1)
-        );
-        idx = ttsBoundaryWordGuess;
-      } else {
-        ttsBoundaryWordGuess = idx;
-      }
-      if (idx >= 0) {
-        highlightWordByIndex(idx);
-        startTtsFallbackWatch(utter);
-      }
+      const idx = wordIndexFromChar(ev?.charIndex ?? -1);
+      if (idx >= 0) highlightWordByIndex(idx);
     };
     utter.onend = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
     utter.onerror = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();
-  }
-
-  function startTtsFallbackWatch(utter){
-    clearTtsFallbackTimer();
-    if (!ttsWordTexts.length) return;
-    const estWordMs = (() => {
-      const baseWpm = 180;
-      const rate = Math.max(0.1, Number(utter?.rate || TTS_RATE) || 1);
-      return (60000 / baseWpm) / rate;
-    })();
-    const windowMs = Math.max(140, Math.min(720, estWordMs * 1.25));
-    const stallMs = Math.max(180, Math.min(900, estWordMs * 1.75));
-    ttsFallbackTimer = setTimeout(function tick(){
-      if (!speechSynthesis.speaking) return;
-      const now = performance.now();
-      const since = now - ttsLastBoundaryAt;
-      if (since < stallMs) {
-        ttsFallbackTimer = setTimeout(tick, windowMs);
-        return;
-      }
-      const nextIdx = Math.min(
-        (ttsActiveWord >= 0 ? ttsActiveWord + 1 : ttsBoundaryWordGuess + 1),
-        Math.max(0, ttsWordSpans.length - 1)
-      );
-      ttsBoundaryWordGuess = nextIdx;
-      highlightWordByIndex(nextIdx);
-      ttsLastBoundaryAt = now;
-      ttsFallbackTimer = setTimeout(tick, windowMs);
-    }, windowMs);
   }
 
   function initTts(){
