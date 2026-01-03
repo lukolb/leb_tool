@@ -4,6 +4,60 @@ require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_admin();
 
+$pdo = db();
+$progress = [
+  'submitted' => 0,
+  'locked' => 0,
+  'total' => 0,
+  'avg_minutes' => null,
+  'recent_delegations' => 0,
+];
+
+function format_minutes_admin(?float $minutes): string {
+  if ($minutes === null) return '–';
+  $m = (int)round($minutes);
+  if ($m <= 0) return '<1 min';
+  $h = intdiv($m, 60);
+  $r = $m % 60;
+  if ($h > 0) {
+    return $h . 'h' . ($r > 0 ? ' ' . $r . 'min' : '');
+  }
+  return $m . ' min';
+}
+
+try {
+  $st = $pdo->query(
+    "SELECT status, COUNT(*) AS c
+       FROM report_instances
+      WHERE period_label='Standard'
+      GROUP BY status"
+  );
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $status = (string)($r['status'] ?? '');
+    $count = (int)($r['c'] ?? 0);
+    if ($status === 'submitted') $progress['submitted'] = $count;
+    if ($status === 'locked') $progress['locked'] = $count;
+    $progress['total'] += $count;
+  }
+
+  $avg = $pdo->query(
+    "SELECT AVG(TIMESTAMPDIFF(MINUTE, created_at, updated_at)) AS avg_minutes
+       FROM report_instances
+      WHERE period_label='Standard'"
+  );
+  $avgVal = $avg->fetchColumn();
+  $progress['avg_minutes'] = ($avgVal !== false) ? (float)$avgVal : null;
+
+  $del = $pdo->query(
+    "SELECT COUNT(*)
+       FROM class_group_delegations
+      WHERE updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+  );
+  $progress['recent_delegations'] = (int)($del->fetchColumn() ?: 0);
+} catch (Throwable $e) {
+  // ignore
+}
+
 $u = current_user();
 render_admin_header('Admin – Dashboard');
 ?>
@@ -12,6 +66,34 @@ render_admin_header('Admin – Dashboard');
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
   </div>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.progress.headline', 'Gesamt-Bearbeitungsstand'))?></h2>
+  <p class="muted"><?=h(t('admin.progress.description', 'Überblick über alle Berichte und Delegationen.'))?></p>
+
+  <?php if ($progress['total'] === 0): ?>
+    <div class="alert"><?=h(t('admin.progress.empty', 'Keine Daten verfügbar.'))?></div>
+  <?php else: ?>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['submitted'])?></div>
+        <div class="stat-label"><?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['locked'])?></div>
+        <div class="stat-label"><?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h(format_minutes_admin($progress['avg_minutes']))?></div>
+        <div class="stat-label"><?=h(t('admin.progress.avg_time', 'Ø Bearbeitungszeit'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['recent_delegations'])?></div>
+        <div class="stat-label"><?=h(t('admin.progress.delegation_feedback', 'neue Delegations-Rückmeldungen'))?></div>
+      </div>
+    </div>
+  <?php endif; ?>
 </div>
 
 <div class="card">

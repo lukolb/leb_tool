@@ -136,6 +136,37 @@ h2{margin:0 0 12px}
   margin:16px 0;
 }
 
+.stats-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;
+  margin-top:10px;
+}
+
+.stat-box{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px 14px;
+  background:#f8fafc;
+}
+
+.stat-value{
+  font-size:24px;
+  font-weight:800;
+  margin-bottom:4px;
+}
+
+.stat-label{
+  color:var(--muted);
+  font-size:12px;
+}
+
+.stat-hint{
+  color:var(--muted);
+  font-size:12px;
+  margin-top:6px;
+}
+
 label{display:block; margin:10px 0 6px; color:#111}
 input, select{
   width:100%;

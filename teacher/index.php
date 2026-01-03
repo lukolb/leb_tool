@@ -8,6 +8,18 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
+function format_minutes_short(?float $minutes): string {
+  if ($minutes === null) return (string)t('teacher.progress.time_unknown', '–');
+  $m = (int)round($minutes);
+  if ($m <= 0) return '<1 min';
+  $h = intdiv($m, 60);
+  $r = $m % 60;
+  if ($h > 0) {
+    return $h . 'h' . ($r > 0 ? ' ' . $r . 'min' : '');
+  }
+  return $m . ' min';
+}
+
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
@@ -17,6 +29,14 @@ try {
 } catch (Throwable $e) {
   // ignore
 }
+
+$progress = [
+  'submitted' => 0,
+  'locked' => 0,
+  'total' => 0,
+  'avg_minutes' => null,
+  'recent_delegations' => 0,
+];
 
 // Load classes assigned to teacher (admins see all)
 if (($u['role'] ?? '') === 'admin') {
@@ -34,6 +54,56 @@ if (($u['role'] ?? '') === 'admin') {
   $classes = $st->fetchAll();
 }
 
+if ($classes) {
+  $classIds = array_map(fn($c) => (int)($c['id'] ?? 0), $classes);
+  $in = implode(',', array_fill(0, count($classIds), '?'));
+
+  try {
+    $st = $pdo->prepare(
+      "SELECT ri.status, COUNT(*) AS c
+         FROM report_instances ri
+         JOIN students s ON s.id=ri.student_id
+        WHERE s.class_id IN ($in)
+          AND ri.period_label='Standard'
+        GROUP BY ri.status"
+    );
+    $st->execute($classIds);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $status = (string)($r['status'] ?? '');
+      $count = (int)($r['c'] ?? 0);
+      if ($status === 'submitted') $progress['submitted'] = $count;
+      if ($status === 'locked') $progress['locked'] = $count;
+      $progress['total'] += $count;
+    }
+
+    $avg = $pdo->prepare(
+      "SELECT AVG(TIMESTAMPDIFF(MINUTE, ri.created_at, ri.updated_at)) AS avg_minutes
+         FROM report_instances ri
+         JOIN students s ON s.id=ri.student_id
+        WHERE s.class_id IN ($in)
+          AND ri.period_label='Standard'"
+    );
+    $avg->execute($classIds);
+    $avgVal = $avg->fetchColumn();
+    $progress['avg_minutes'] = ($avgVal !== false) ? (float)$avgVal : null;
+  } catch (Throwable $e) {
+    // ignore
+  }
+
+  try {
+    $d = $pdo->prepare(
+      "SELECT COUNT(*)
+         FROM class_group_delegations
+        WHERE user_id=?
+          AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+    );
+    $d->execute([$userId]);
+    $progress['recent_delegations'] = (int)($d->fetchColumn() ?: 0);
+  } catch (Throwable $e) {
+    // ignore
+  }
+}
+
 render_teacher_header(t('teacher.title'));
 ?>
 
@@ -42,6 +112,34 @@ render_teacher_header(t('teacher.title'));
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
   </div>
+</div>
+
+<div class="card">
+  <h2><?=h(t('teacher.progress.headline', 'Aktueller Bearbeitungsstand'))?></h2>
+  <p class="muted"><?=h(t('teacher.progress.description', 'Statusüberblick für deine Klassen.'))?></p>
+
+  <?php if ($progress['total'] === 0): ?>
+    <div class="alert"><?=h(t('teacher.progress.empty', 'Keine Daten verfügbar.'))?></div>
+  <?php else: ?>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['submitted'])?></div>
+        <div class="stat-label"><?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['locked'])?></div>
+        <div class="stat-label"><?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h(format_minutes_short($progress['avg_minutes']))?></div>
+        <div class="stat-label"><?=h(t('teacher.progress.avg_time', 'Ø Bearbeitungszeit'))?></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value"><?=h((string)$progress['recent_delegations'])?></div>
+        <div class="stat-label"><?=h(t('teacher.progress.delegation_feedback', 'neue Rückmeldungen zu Delegationen'))?></div>
+      </div>
+    </div>
+  <?php endif; ?>
 </div>
 
 <div class="card">
