@@ -155,7 +155,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \begin{itemize}
   \item Zugriff auf alle Klassen und Delegationen
   \item Vollständige Protokollierung aller Admin-Aktionen
-  \item Export-API zugänglich (PDF mit Platzhaltern wie \texttt{{\{\}student.firstname\}})
+  \item Export-API zugänglich (PDF mit Platzhaltern wie \texttt{\{\}student.firstname})
 \end{itemize}
 
 \textbf{Wichtige Bereiche}
@@ -254,7 +254,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \section{PDF- und Exportfunktionen}
 \begin{itemize}
   \item Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
-  \item Platzhalter wie \texttt{{\{\}student.firstname\}}, \texttt{{\{\}class.label\}}, \texttt{{\{\}teacher.fullname\}} und formatierbare Systemfelder (Datum/Zeit)
+  \item Platzhalter wie \texttt{\{\}student.firstname}, \texttt{\{\}class.label}, \texttt{\{\}teacher.fullname} und formatierbare Systemfelder (Datum/Zeit)
   \item Einheitliche Export-API unter \texttt{/shared/export\_*} (z.\,B. \texttt{export\_class.php}, \texttt{export\_student.php})
   \item Zugriffskontrolle: Lehrkräfte nur auf eigene Klassen, Admin auf alle Daten; Delegationen werden berücksichtigt
   \item Klassen- oder Einzel-Exports je nach Einstellung; Dateiablage in \texttt{uploads/} (konfigurierbar)
