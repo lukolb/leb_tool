@@ -325,7 +325,7 @@ th{color:#111; font-size:13px}
     background:#e6f4ea;
     border-color:#9aedb1;
 }
-.pill.red, .badge.red, .badge.warn {
+.pill.red, .badge.red, .badge.warn, .badge.danger {
     background:#ffecec;
     border-color:#ffb3b3;
 }

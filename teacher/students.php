@@ -309,7 +309,7 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
   $total = count($studentIds);
   if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
-  $statusMap = load_child_status_map($pdo, $templateId, $schoolYear, $studentIds);
+  $statusMap = load_child_status_map($pdo, $studentIds);
 
   $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
   foreach ($statusMap as $status) {
@@ -378,7 +378,7 @@ function child_status_badge(?string $status): string {
   $status = (string)$status;
   if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
   if ($status === 'locked') return '<span class="badge danger">Gesperrt</span>';
-  if ($status === 'draft') return '<span class="badge">Entwurf</span>';
+  if ($status === 'draft') return '<span class="badge blue">Entwurf</span>';
   return '<span class="badge">Nicht angelegt</span>';
 }
 
@@ -863,7 +863,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <?php $sid = (int)($s['id'] ?? 0); $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0); ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
-            <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
+            <td><?=h((string)((new DateTime($s['date_of_birth']))->format('d.m.Y') ?? ''))?></td>
             <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge warn">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
