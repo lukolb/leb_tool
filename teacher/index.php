@@ -98,6 +98,7 @@ function build_progress(PDO $pdo, array $classes): array {
   $classIds = array_map(fn($c) => (int)($c['id'] ?? 0), $classes);
   $tplIds = array_values(array_unique(array_filter(array_map(fn($c) => (int)($c['template_id'] ?? 0), $classes), fn($x)=>$x>0)));
   $fieldSets = load_completion_field_sets($pdo, $tplIds);
+  $inClass = implode(',', array_fill(0, count($classIds), '?'));
 
   $progress = [];
   foreach ($classes as $c) {
@@ -115,7 +116,19 @@ function build_progress(PDO $pdo, array $classes): array {
     ];
   }
 
-  $inClass = implode(',', array_fill(0, count($classIds), '?'));
+  // total forms per class equals active students in class
+  $stStudents = $pdo->prepare(
+    "SELECT class_id, COUNT(*) AS c
+       FROM students
+      WHERE class_id IN ($inClass)
+        AND is_active=1
+      GROUP BY class_id"
+  );
+  $stStudents->execute($classIds);
+  foreach ($stStudents->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $cid = (int)$r['class_id'];
+    if (isset($progress[$cid])) $progress[$cid]['forms_total'] = (int)$r['c'];
+  }
   $stReports = $pdo->prepare(
     "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, s.class_id
        FROM report_instances ri
@@ -142,8 +155,6 @@ function build_progress(PDO $pdo, array $classes): array {
       'child_filled' => 0,
       'teacher_filled' => 0,
     ];
-    $progress[$cid]['forms_total']++;
-
     $minutes = strtotime((string)$r['updated_at']) - strtotime((string)$r['created_at']);
     if ($minutes > 0) {
       $progress[$cid]['avg_minutes_sum'] += ((float)$minutes) / 60.0;
@@ -275,8 +286,8 @@ foreach ($progressByClass as $p) {
   $overall['delegations_total'] += (int)$p['delegations_total'];
   $overall['delegations_done'] += (int)$p['delegations_done'];
   $overall['recent_delegations'] += (int)$p['recent_delegations'];
-  $overall['avg_minutes_sum'] += (float)($p['avg_minutes'] ?? 0) * (int)($p['forms_total'] ?? 0);
-  $overall['avg_minutes_count'] += (int)$p['forms_total'];
+  $overall['avg_minutes_sum'] += (float)($p['avg_minutes_sum'] ?? 0.0);
+  $overall['avg_minutes_count'] += (int)($p['avg_minutes_count'] ?? 0);
 }
 $overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : null;
 $overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : null;
