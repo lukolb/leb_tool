@@ -372,6 +372,16 @@ Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben
 
 \HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
+\section{Elternzugang (optional)}
+Falls freigeschaltet, können Eltern fertige Berichte lesen und ggf. Feedback geben.
+\begin{itemize}
+  \item Eltern erhalten einen Link oder Zugangscode, der nur Lesezugriff auf den Bericht ermöglicht; Schreibrechte bestehen nicht.
+  \item Optionales Feedback-Feld kann aktiviert werden; Rückmeldungen sind für Lehrkräfte sichtbar. \textbf{TODO: Schulinterne Regelung zur Nutzung des Feedbacks ergänzen.}
+  \item Datenschutz beachten: Links nicht öffentlich teilen; idealerweise mit Ablaufdatum oder Schutzmechanismus ausliefern.
+\end{itemize}
+
+\PlaceholderFigure{Abb. 16 – Elternansicht (Platzhalter)}{Platzhalter: Ansicht mit fertigem Bericht und optionalem Feedback-Feld. Aufnahme: Elternzugang nach Freischaltung.}
+
 \section{PDF-Export \& Archivierung}\index{Export}
 Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führend.
 
@@ -388,7 +398,7 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
   \item Klassenexport durchführen und PDF stichprobenartig kontrollieren.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 16 – Export im Lehrerbereich}{Platzhalter: Exportbereich mit Einzel- und Klassenexport. Aufnahme: Lehrerbereich → Export.}
+\PlaceholderFigure{Abb. 17 – Export im Lehrerbereich}{Platzhalter: Exportbereich mit Einzel- und Klassenexport. Aufnahme: Lehrerbereich → Export.}
 
 \subsection{Export durch Admin (alle Klassen)}
 \begin{enumerate}
@@ -397,7 +407,7 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
   \item Gesamtexport starten.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 17 – Export im Adminbereich}{Platzhalter: Admin-Export mit Filtern (Schuljahr/Klasse) und Start-Button. Aufnahme: Adminbereich → Export.}
+\PlaceholderFigure{Abb. 18 – Export im Adminbereich}{Platzhalter: Admin-Export mit Filtern (Schuljahr/Klasse) und Start-Button. Aufnahme: Adminbereich → Export.}
 
 \section{Rollenabgrenzung im Betrieb (Admin vs. Lehrkraft)}
 \begin{itemize}
@@ -448,6 +458,51 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
 \HintBox{Checkliste vor dem Zeugnisdruck: Klassenfelder vollständig, zwei Schülerberichte stichprobenartig geprüft, Schüler-Freigabe geschlossen, PDF-Export (ein Schüler + Klasse) getestet, Ablage-/Archivordner vorbereitet.}
 
 \appendix
+\section{Screenshot-Checkliste}
+Dieser Anhang hilft beim Ersetzen der Platzhalter-Abbildungen. Empfehlung: Browser auf 100\% Zoom, neutrale Testdaten und konsistente Fenstergröße nutzen.
+
+\begin{tabularx}{\textwidth}{|c|X|X|}
+\hline
+\textbf{Abb.} & \textbf{Titel} & \textbf{Ort (wo aufnehmen)}\\
+\hline
+1 & Login / Rollen-Einstieg & Startseite / Login\\
+\hline
+2 & Installationsmaske & \texttt{install.php}\\
+\hline
+3 & Template-Upload & Admin \(\rightarrow\) Templates\\
+\hline
+4 & Feldliste nach Extraktion & Admin \(\rightarrow\) Template \(\rightarrow\) Felder extrahieren\\
+\hline
+5 & Gruppierung \& Filter & Admin \(\rightarrow\) Template-Felder\\
+\hline
+6 & Optionslisten-Editor & Admin \(\rightarrow\) Optionslisten\\
+\hline
+7 & Zuordnung Optionsliste \(\rightarrow\) Feld & Admin \(\rightarrow\) Template-Felder \(\rightarrow\) Feld bearbeiten\\
+\hline
+8 & Klasse anlegen & Admin \(\rightarrow\) Klassen\\
+\hline
+9 & Benutzer \& Zuordnungen & Admin \(\rightarrow\) Benutzer / Klasse \(\rightarrow\) Zuordnungen\\
+\hline
+10 & Lehrerbereich \textendash{} Übersicht & Lehrerbereich nach Login\\
+\hline
+11 & Lehrerbereich \textendash{} Klassenfelder & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Klassenfelder\\
+\hline
+12 & Lehrerbereich \textendash{} Schülerbericht & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Schüler\\
+\hline
+13 & Lehrerbereich \textendash{} Freigabe & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Freigabe\\
+\hline
+14 & Schülerbereich \textendash{} gesperrt & Schülerbereich ohne Freigabe\\
+\hline
+15 & Schülerbereich \textendash{} freigegeben & Schülerbereich mit Freigabe\\
+\hline
+16 & Elternansicht (optional) & Elternzugang nach Freischaltung\\
+\hline
+17 & Export im Lehrerbereich & Lehrerbereich \(\rightarrow\) Export\\
+\hline
+18 & Export im Adminbereich & Adminbereich \(\rightarrow\) Export\\
+\hline
+\end{tabularx}
+
 \section{Platzhalter-Screenshots}
 \PlaceholderFigure{Admin-Dashboard Übersicht}{Admin-Dashboard (Platzhalter)}
 
