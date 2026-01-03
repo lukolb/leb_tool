@@ -23,6 +23,7 @@
 \usepackage{tabularx}
 \usepackage{csquotes}
 \usepackage{fancyhdr} % Kopf- und Fußzeilen
+\usepackage{makeidx}  % Indexerstellung
 
 \geometry{margin=2.5cm}
 \setlength{\parskip}{6pt}
@@ -81,6 +82,8 @@
 \setlist[enumerate]{noitemsep, topsep=2pt}
 \setcounter{tocdepth}{2}
 
+\makeindex
+
 \begin{document}
 
 % Titelblatt
@@ -125,13 +128,13 @@ Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von
 
 \textbf{Kernobjekte und Prinzipien}
 \begin{itemize}
-  \item \textbf{Template (PDF):} definiert Feldnamen, Seiten und Struktur. Änderungen wirken auf alle zugeordneten Klassen.
-  \item \textbf{Felder:} besitzen Typ (Text/Option), Gruppe, Reihenfolge, Seiteninfo und optional eine Optionsliste. Feldnamen können mehrfach vorkommen.
-  \item \textbf{Optionslisten:} bestehen aus stabilen Values und änderbaren Labels; bei größeren Änderungen wird eine neue Liste versioniert.
-  \item \textbf{Klasse:} Schuljahr, Stufe, Bezeichnung, Template, zugeordnete Lehrkräfte und Schüler:innen bilden den primären Arbeitskontext.
+  \item \textbf{Template (PDF):}\index{Template} definiert Feldnamen, Seiten und Struktur. Änderungen wirken auf alle zugeordneten Klassen.
+  \item \textbf{Felder:} besitzen Typ (Text/Option), Gruppe, Reihenfolge, Seiteninfo und optional eine Optionsliste. Feldnamen können mehrfach vorkommen.\index{Feldextraktion|see{Felder}}
+  \item \textbf{Optionslisten:}\index{Optionsliste} bestehen aus stabilen Values und änderbaren Labels; bei größeren Änderungen wird eine neue Liste versioniert.
+  \item \textbf{Klasse:} Schuljahr, Stufe, Bezeichnung, Template, zugeordnete Lehrkräfte und Schüler:innen bilden den primären Arbeitskontext.\index{Klasse}
   \item \textbf{Elternansicht (optional):} Lesender Zugriff auf fertige Berichte kann bereitgestellt werden, ohne Schreibrechte zu vergeben.
-  \item \textbf{Freigabeprinzip:} Schüler-Eingabe ist standardmäßig gesperrt und wird nur zeitlich begrenzt geöffnet.
-  \item \textbf{Exportlogik:} Berichte werden stets aus Template + gespeicherten Daten erzeugt; die PDF ist führend.
+  \item \textbf{Freigabeprinzip:}\index{Freigabe} Schüler-Eingabe ist standardmäßig gesperrt und wird nur zeitlich begrenzt geöffnet.
+  \item \textbf{Exportlogik:}\index{Export} Berichte werden stets aus Template + gespeicherten Daten erzeugt; die PDF ist führend.
 \end{itemize}
 
 \HintBox{Best Practices: Klassenbezug immer zuerst prüfen, keine Values in bestehenden Optionslisten ändern, Freigaben bewusst setzen und wieder schließen.}
@@ -209,7 +212,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \PlaceholderFigure{Abb. 3 – Template-Upload}{Platzhalter: Upload-Maske mit Dateiauswahl, Namensfeld und Speichern/Aktivieren-Buttons. Aufnahme: Admin → Templates.}
 
-\subsection{Felder extrahieren (Formularfelder auslesen)}
+\subsection{Felder extrahieren (Formularfelder auslesen)}\index{Feldextraktion}
 \begin{enumerate}
   \item Aktion \enquote{Felder extrahieren} starten.
   \item Anzahl prüfen: passt sie zur Vorlage?
@@ -233,7 +236,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \PlaceholderFigure{Abb. 5 – Gruppierung \& Filter}{Platzhalter: Gruppenliste mit Batch-Zuordnung, Filtern und Vorschau. Aufnahme: Admin → Template-Felder.}
 
-\subsection{Optionslisten erstellen (Noten/Skalen)}
+\subsection{Optionslisten erstellen (Noten/Skalen)}\index{Optionsliste}
 \begin{enumerate}
   \item Admin \(\rightarrow\) Optionslisten \(\rightarrow\) Neue Liste.
   \item Name eindeutig wählen (z.\,B. \enquote{Skala 1--5}).
@@ -245,7 +248,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \PlaceholderFigure{Abb. 6 – Optionslisten-Editor}{Platzhalter: Editor mit Namensfeld und Tabelle der Values/Labels. Aufnahme: Admin → Optionslisten.}
 
-\subsection{Optionslisten den Feldern zuordnen}
+\subsection{Optionslisten den Feldern zuordnen}\index{Optionsliste}
 \begin{enumerate}
   \item Feld öffnen und Feldtyp Option/Note/Skala setzen.
   \item Passende Optionsliste auswählen.
@@ -316,7 +319,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   \item Delegationen berücksichtigen: abgeschlossene Delegationen prüfen und zurückholen, falls Änderungen nötig sind.
 \end{itemize}
 
-\subsection{Klassenweite Felder (einmal \textendash{} für alle)}
+\subsection{Klassenweite Felder (einmal \textendash{} für alle)}\index{Klassenfeld}
 \begin{enumerate}
   \item Bereich \enquote{Klassenfelder} öffnen.
   \item Felder vollständig ausfüllen und speichern.
@@ -344,7 +347,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   \item Delegationen sind klassen- und gruppenbezogen, nicht schülerbezogen; sie entlasten beim arbeitsteiligen Schreiben.
 \end{itemize}
 
-\subsection{Schüler-Eingabe freigeben (kontrolliert)}
+\subsection{Schüler-Eingabe freigeben (kontrolliert)}\index{Freigabe}
 \begin{enumerate}
   \item Freigabe aktivieren und Zeitfenster festlegen.
   \item Hinweistext für Schüler:innen hinterlegen (kurz, klar).
@@ -369,7 +372,7 @@ Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben
 
 \HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
-\section{PDF-Export \& Archivierung}
+\section{PDF-Export \& Archivierung}\index{Export}
 Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führend.
 
 \begin{itemize}
@@ -473,7 +476,7 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
 {\small Stand: automatisch aus aktuellem Code abgeleitet. Bitte Anpassungen nach Software-Updates prüfen.}
 
 \clearpage
-\section*{Anhang B: Mini-Glossar}
+\section{Mini-Glossar}
 \begin{tabularx}{\textwidth}{|l|X|}
 \hline
 \textbf{Begriff} & \textbf{Kurzdefinition}\\
@@ -491,5 +494,10 @@ Freigabe & Zeitlich begrenzte Schreibfreigabe für Schüler:innen, gesteuert dur
 Export & Erzeugung druckfertiger PDFs auf Basis von Template und gespeicherten Eingaben.\\
 \hline
 \end{tabularx}
+
+\clearpage
+\phantomsection
+\addcontentsline{toc}{section}{Index}
+\printindex
 
 \end{document}
