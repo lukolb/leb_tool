@@ -329,11 +329,11 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, status, created_at, id
+    "SELECT student_id, status, created_at, updated_at, id
      FROM report_instances
      WHERE template_id=? AND school_year=? AND period_label='Standard'
        AND student_id IN ($in)
-     ORDER BY created_at DESC, id DESC";
+     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
 
@@ -356,11 +356,11 @@ function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear,
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, id AS report_instance_id, status, created_at
+    "SELECT student_id, id AS report_instance_id, status, created_at, updated_at
      FROM report_instances
      WHERE template_id=? AND school_year=? AND period_label='Standard'
        AND student_id IN ($in)
-     ORDER BY created_at DESC, id DESC";
+     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
 
