@@ -66,9 +66,18 @@ Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von
   \item Eltern-Portal-Link zum Lesen des fertigen Berichts (und ggf. Feedback).
 \end{itemize}
 
+Die \textbf{führende Instanz} ist immer die PDF-Vorlage. Alle Felder, Gruppen und Exporte leiten sich daraus ab.\newline
+\textbf{Zentraler Arbeitskontext} ist die Klasse: Nutzer:innen greifen immer über eine Klasse auf Berichte zu, nicht direkt über einzelne Personen.
+
 \section{Rollen und Zugänge}
 \subsection{Admin}
 Admins verwalten das System: Nutzer:innen, Klassen, Templates, Felder, Einstellungen, Audit-Log und Exporte.
+\begin{itemize}
+  \item Installation/Initialkonfiguration inkl. Template-Upload.
+  \item Verwaltung der fachlich zwingenden Einrichtungsreihenfolge (siehe Abschnitt \ref{sec:setup-sequenz}).
+  \item Pflege stabiler Optionslisten-Values (keine nachträglichen Änderungen bestehender Werte).
+  \item Klassen- und Nutzerzuordnung steuert, wer welche Berichte sieht.
+\end{itemize}
 
 \subsection{Lehrkraft}
 Lehrkräfte bearbeiten Berichte für ihre Klassen. Zusätzlich können Fachbereiche an Kolleg:innen delegiert werden.
@@ -81,8 +90,26 @@ Eltern erhalten einen Link zum Elternportal, um den Bericht einzusehen. Optional
 
 \section{Navigation und Layout}
 Die Oberfläche nutzt ein einheitliches Layout mit Karten (\texttt{card}), Buttons (\texttt{btn}) und Tabellenstilen. Menüs können Untermenüs enthalten.
+\begin{itemize}
+  \item Pflichtfelder sind farblich oder mit Symbol gekennzeichnet.
+  \item Fortschrittsanzeigen geben Rückmeldung zur Vollständigkeit pro Klasse/Schüler:in.
+  \item Formularfelder sind nach Gruppen (Fächer/Verhaltensbereiche) gegliedert, analog zur Template-Struktur.
+\end{itemize}
 
 \section{Admin-Bereich}
+\subsection{Einrichtungsreihenfolge}\label{sec:setup-sequenz}
+Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängigen Daten korrekt verknüpft sind:
+\begin{enumerate}
+  \item PDF-Template hochladen.
+  \item Formularfelder extrahieren (automatisch aus der PDF-Vorlage).
+  \item Felder gruppieren und sortieren (z.\,B. Deutsch, Mathematik, Sozialverhalten).
+  \item Optionslisten erstellen (Values sind stabil, Labels rein visuell).
+  \item Optionslisten den Feldern zuordnen (Dropdowns erhalten damit Werte).
+  \item Klassen anlegen und Templates zuweisen (Klasse ist zentraler Kontext).
+  \item Lehrkräfte und Schüler:innen anlegen und den Klassen zuordnen.
+\end{enumerate}
+Diese Schritte dürfen nicht ausgelassen oder umsortiert werden, da sonst Felder oder Exporte unvollständig bleiben.
+
 \subsection{Dashboard}
 Das Dashboard zeigt Systemstatus, ggf. Bearbeitungsstand und Quicklinks.
 
@@ -91,6 +118,11 @@ Admins können Lehrkräfte und Admins anlegen, deaktivieren und Passwörter zur�
 
 \subsection{Klassenverwaltung}
 Klassen enthalten u.\,a. Schuljahr, Stufe, Bezeichnung, Name, Template-Zuordnung und Aktiv-Status.
+\begin{itemize}
+  \item Mehrere Lehrkräfte können einer Klasse zugeordnet sein.
+  \item Schüler:innen werden der Klasse zugeordnet und erhalten nur dadurch Zugriff auf eigene Felder.
+  \item Archivierung deaktiviert die Bearbeitung, Exporte bleiben i.\,d.\,R. möglich (prüfen Sie lokale Rechte-Settings).
+\end{itemize}
 
 \subsection{Templates und Felder}
 Templates definieren die Struktur eines Berichts. Felder besitzen u.\,a.:
@@ -99,6 +131,14 @@ Templates definieren die Struktur eines Berichts. Felder besitzen u.\,a.:
   \item Pflichtfeld-Flag
   \item Reihenfolge/Sortierung
   \item Sprachlabels (mehrsprachig, falls aktiviert)
+  \item Seitenzuordnung laut PDF
+  \item Optionale Optionsliste (für Dropdown-Felder)
+\end{itemize}
+Hinweise:
+\begin{itemize}
+  \item Feldnamen können mehrfach vorkommen (z.\,B. identische Felder auf mehreren Seiten).
+  \item Gruppen steuern die UI-Gliederung und Exportstruktur.
+  \item Änderungen am Template wirken auf alle zugeordneten Klassen; prüfen Sie Auswirkungen vor dem Speichern.
 \end{itemize}
 
 \subsection{Einstellungen}
@@ -113,6 +153,14 @@ Systemweite Einstellungen steuern Features wie:
 \subsection{Audit-Log}
 Das Audit-Log protokolliert wichtige Aktionen. Filter, Sortierung und optionale Anzeige von IP-Adressen helfen bei der Analyse.
 
+\subsection{Optionslisten}
+Optionslisten stellen Dropdown-Werte bereit:
+\begin{itemize}
+  \item Jeder Eintrag besteht aus technischem \emph{Value} (stabil, unveränderbar) und sichtbarem \emph{Label} (änderbar).
+  \item Werden Werte inhaltlich geändert, muss eine neue Optionsliste erstellt oder versioniert werden.
+  \item Leere Dropdowns deuten oft auf fehlende oder falsch zugeordnete Optionslisten hin.
+\end{itemize}
+
 \section{Lehrer-Bereich}
 \subsection{Klassenübersicht}
 Lehrkräfte sehen ihre aktiven Klassen und können Klassen archivieren (deaktivieren). Pro Klasse wird ggf. ein Bearbeitungsstand angezeigt.
@@ -123,7 +171,15 @@ In der Eingabemaske werden Felder gemäß Template angezeigt:
   \item Pflichtfelder sind markiert.
   \item Fortschritt zeigt fehlende Felder.
   \item Tages-/Abschnittsstruktur nach Template.
+  \item Gruppierte Ansicht (z.\,B. Fächer/Verhalten) erleichtert Fach-zu-Fach-Bearbeitung.
 \end{itemize}
+Empfohlener Ablauf:
+\begin{enumerate}
+  \item Klasse öffnen und klassenweite Felder zuerst ausfüllen.
+  \item Pro Fach/Gruppe arbeiten, nicht Kind für Kind.
+  \item Zwischenspeichern und offenen Pflichtfelder-Status prüfen.
+  \item Bei Bedarf Delegation nutzen (siehe unten) oder Schülerfreigabe aktivieren.
+\end{enumerate}
 
 \subsection{Delegationen}
 Fachbereiche können an andere Lehrkräfte delegiert werden. Delegierte sehen diese in ihrer Delegations-Inbox.
@@ -131,6 +187,14 @@ Fachbereiche können an andere Lehrkräfte delegiert werden. Delegierte sehen di
   \item Delegationsstatus kann angepasst werden.
   \item Delegationen können neu zugewiesen oder entfernt werden.
   \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen (zurücksetzbar)
+\end{itemize}
+
+\subsection{Schülerfreigabe}
+\begin{itemize}
+  \item Standard: Schüler-Eingabe ist gesperrt.
+  \item Freigabe wird aktiv gesetzt und gilt nur im definierten Zeitfenster.
+  \item Lehrkräfte können Freigaben jederzeit schließen; danach ist kein Schüler-Schreibzugriff mehr möglich.
+  \item Schüler:innen sehen nur eigene Daten und nur freigegebene Felder.
 \end{itemize}
 
 \section{Schüler-Bereich}
@@ -156,6 +220,11 @@ Exporte werden über eine gemeinsame API-Schicht umgesetzt. Zugriffsrechte häng
 
 \subsection{PDF-Export}
 Beim PDF-Export wird auf korrekte Datumsformatierung geachtet (z.\,B. \texttt{01.12.2026}), ebenso auf Zeichencodierung und Layout.
+\begin{itemize}
+  \item Lehrkräfte: Einzel-Schüler-Export (Test) oder Klassenexport.
+  \item Admin: Klassenübergreifender Export (Filter nach Schuljahr oder Klasse).
+  \item Export basiert immer auf Template + gespeicherten Daten; die PDF ist führend.
+\end{itemize}
 
 \section{Fehlerbehebung}
 \subsection{Typische Probleme}
@@ -163,6 +232,11 @@ Beim PDF-Export wird auf korrekte Datumsformatierung geachtet (z.\,B. \texttt{01
   \item \textbf{Compile-Fehler bei Bildern:} Pfade prüfen oder \texttt{\textbackslash IfFileExists} verwenden.
   \item \textbf{Sonderzeichen/Encoding:} UTF-8 sicherstellen, \texttt{inputenc} und \texttt{fontenc} verwenden.
   \item \textbf{Mathe-Kommandos im Text:} z.\,B. \texttt{\textbackslash rightarrow} nur in Mathemodus \(\rightarrow\) nutzen.
+  \item \textbf{Leere Dropdowns:} Optionsliste fehlt oder wurde nicht zugeordnet; prüfen Sie Schrittfolge unter Abschnitt \ref{sec:setup-sequenz}.
+  \item \textbf{Schüler sehen keine Felder:} Freigabe wurde nicht gesetzt oder bereits geschlossen.
+  \item \textbf{Falsche Seitenzuordnung:} Feldextraktion aus PDF prüfen und ggf. neu ausführen.
+  \item \textbf{Optionslisten-Value verändert:} Bestehende Values nicht ändern; stattdessen neue Optionsliste anlegen.
+  \item \textbf{Klassenexport leer:} Prüfen, ob Klasse ein Template hat und Nutzerrechte korrekt gesetzt sind.
 \end{itemize}
 
 \subsection{Support-Infos}
@@ -201,17 +275,18 @@ Für Support hilfreich:
 \end{figure}
 
 \clearpage
-\appendix
 \section{Schnellanleitung für Lehrkräfte}
 \textbf{Ziel:} Innerhalb weniger Minuten Berichte pro Klasse pflegen.
 
 \begin{enumerate}
-  \item Einloggen unter \url{.../teacher}.
+  \item Einloggen unter \url{\textbf{TODO: Lehrer-URL einfügen}}.
   \item Klasse oder delegierten Fachbereich öffnen.
   \item Schüler auswählen \(\rightarrow\) Pflichtfelder und Freitextfelder ausfüllen.
   \item Fortschritt prüfen (Anzeige fehlender Felder beachten).
   \item Bei Bedarf delegieren: Fachbereiche an Kolleg:innen abgeben.
   \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren oder zurückholen.
+  \item Optional Schülerfreigabe setzen und nach Ablauf wieder schließen.
+  \item Export je Schüler oder gesamte Klasse durchführen (PDF prüfen).
 \end{enumerate}
 
 \vspace{1cm}
