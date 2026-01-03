@@ -1081,9 +1081,8 @@ try {
     $stCtx->execute([$reportId, $reportId, $templateId]);
     $ctxFields = $stCtx->fetchAll(PDO::FETCH_ASSOC);
 
-    $optionFacts = [];
-    $gradeFacts = [];
-    $childInputs = [];
+    $teacherEntries = [];
+    $selfAssessments = [];
     $comparisons = [];
 
     $missingOptionFields = [];
@@ -1101,22 +1100,16 @@ try {
       if (in_array($type, ['radio','select','grade'], true) && $hasOptionList && $val === '') {
         $missingOptionFields[] = $label !== '' ? $label : (string)($cf['field_name'] ?? '');
       }
-      if (in_array($type, ['radio','select'], true) && $hasOptionList && $val !== '') {
-        $optionFacts[] = ($label ? ($label . ': ') : '') . $val;
-      } elseif ($type === 'grade' && $val !== '') {
-        $gradeFacts[] = ($label ? ($label . ': ') : '') . $val;
+      if ($val !== '') {
+        $teacherEntries[] = ($label ? ($label . ': ') : '') . $val;
       }
 
-      if ($childVal !== '' && ($type === 'multiline' || $type === 'text' || (int)($meta['is_child_text'] ?? 0) === 1)) {
-        $childInputs[] = ($label ? ($label . ': ') : '') . $childVal;
+      if ($childVal !== '') {
+        $selfAssessments[] = ($label ? ($label . ': ') : '') . $childVal;
       }
 
-      if ($val !== '' && $childVal !== '') {
-        if (strcasecmp($val, $childVal) === 0) {
-          $comparisons[] = ($label ? ($label . ': ') : '') . 'Übereinstimmung (Lehrer & Schüler): ' . $val;
-        } else {
-          $comparisons[] = ($label ? ($label . ': ') : '') . 'Lehrer: ' . $val . ' · Schüler: ' . $childVal;
-        }
+      if ($val !== '' && $childVal !== '' && strcasecmp($val, $childVal) !== 0) {
+        $comparisons[] = ($label ? ($label . ': ') : '') . 'Lehrer=' . $val . ' | Schüler=' . $childVal;
       }
     }
 
@@ -1131,21 +1124,24 @@ try {
     $ctxParts = [];
     $ctxParts[] = 'Schüler (anonymisiert): ' . $studentName . ($birthYear !== '' ? (' (Geburtsjahr: ' . $birthYear . ')') : '');
     if ($gradeLevel !== null) $ctxParts[] = 'Klassenstufe: ' . $gradeLevel;
-    if ($optionFacts) $ctxParts[] = 'Wichtige Beobachtungen (Optionen): ' . implode('; ', array_slice($optionFacts, 0, 6));
-    if ($gradeFacts) $ctxParts[] = 'Noten (zweitrangig): ' . implode('; ', array_slice($gradeFacts, 0, 3));
-    if ($childInputs) $ctxParts[] = 'Rückmeldungen der Schüler: ' . implode(' | ', array_slice($childInputs, 0, 2));
-    if ($comparisons) $ctxParts[] = 'Abgleich Lehrer/Schüler: ' . implode(' | ', array_slice($comparisons, 0, 4));
+    if ($teacherEntries) {
+      $ctxParts[] = "Lehrkraft-Einträge (maßgeblich):\n" . implode("\n", array_slice($teacherEntries, 0, 20));
+    }
+    if ($selfAssessments) {
+      $ctxParts[] = "Selbsteinschätzung des Schülers (nur zur Einordnung):\n" . implode("\n", array_slice($selfAssessments, 0, 10));
+    }
+    if ($comparisons) $ctxParts[] = 'Abweichungen Lehrer/Schüler: ' . implode(' | ', array_slice($comparisons, 0, 6));
 
     $userPrompt = trim(implode("\n", array_filter($ctxParts)));
 
     $messages = [
       [
         'role' => 'system',
-        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Nutze vor allem die übergebenen Options-Bewertungen als Grundlage und beziehe Übereinstimmungen bzw. Unterschiede zwischen Lehrer- und Schülerangaben mit ein. Kein Intro, keine Nummerierung.',
+        'content' => 'Du bist eine Lehrhilfe und erstellst kurze deutsche Vorschläge mit Fokus auf Stärken, konkrete Ziele und praktikable Schritte. Schreibe altersgerechte Formulierungen, orientiert an der Klassenstufe. Für Kompetenzbewertung und Zielvorschläge nutzt du ausschließlich die Einträge der Lehrkraft. Schülerangaben nutzt du nur, um das Selbsteinschätzungsvermögen zu bewerten und Abweichungen ggf. zu benennen. Kein Intro, keine Nummerierung.',
       ],
       [
         'role' => 'user',
-        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 4 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen, Ziele beschreiben den nächsten Lernschritt für das kommende Halbjahr und beziehen sich dabei auf konkrete Fähigkeiten oder Sozial-/Lernverhalten und Schritte zeigen konkrete Möglichkeiten, diese Ziele zu erreichen. Alle drei sollen in der ich-Perspektive formuliert sein.",
+        'content' => $userPrompt . "\n\nGib JSON im Format {\"strengths\":[],\"goals\":[],\"steps\":[]} zurück, jeweils mit 4 kurzen Einträgen (max. 2 Sätze). Stärken sind wertschätzende Beobachtungen auf Basis der Lehrkraft-Einträge. Ziele beschreiben den nächsten Lernschritt für das kommende Halbjahr und beziehen sich auf konkrete Fähigkeiten oder Sozial-/Lernverhalten; Schritte zeigen konkrete Möglichkeiten, diese Ziele zu erreichen. Alle drei sollen in der ich-Perspektive formuliert sein. Wenn Schülerangaben stark von den Lehrkraft-Einträgen abweichen, erwähne kurz die Abweichung zur Selbsteinschätzung.",
       ],
     ];
 
