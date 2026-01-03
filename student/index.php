@@ -405,6 +405,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let ttsActiveWord = -1;
   let ttsBoundaryWordGuess = 0;
   let ttsFallbackTimer = null;
+  let ttsLastBoundaryAt = 0;
 
   function clearTtsFallbackTimer(){
     if (ttsFallbackTimer) {
@@ -420,6 +421,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     }
     ttsActiveWord = -1;
     ttsBoundaryWordGuess = 0;
+    ttsLastBoundaryAt = 0;
     if (ttsWordSpans.length === 0) return;
     ttsWordSpans.forEach(span => {
       if (!span || !span.parentNode) return;
@@ -481,6 +483,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     ttsWordOffsets = offsets;
     ttsWordTexts = words;
     ttsBoundaryWordGuess = 0;
+    ttsLastBoundaryAt = 0;
 
     return { text: words.join(' '), words };
   }
@@ -598,12 +601,14 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (voice) utter.voice = voice;
     utter.onstart = () => {
       ttsBoundaryWordGuess = 0;
+      ttsLastBoundaryAt = performance.now();
       highlightWordByIndex(0);
-      scheduleTtsFallback(1);
+      startTtsFallbackWatch();
       updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     };
     utter.onboundary = (ev) => {
       if (ev?.name && ev.name !== 'word') return;
+      ttsLastBoundaryAt = performance.now();
       let idx = wordIndexFromChar(ev.charIndex);
       if (idx < 0) {
         ttsBoundaryWordGuess = Math.min(
@@ -616,7 +621,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       }
       if (idx >= 0) {
         highlightWordByIndex(idx);
-        scheduleTtsFallback(idx + 1);
+        startTtsFallbackWatch();
       }
     };
     utter.onend = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
@@ -626,21 +631,28 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     updateTtsUi();
   }
 
-  function scheduleTtsFallback(nextIndex){
+  function startTtsFallbackWatch(){
     clearTtsFallbackTimer();
     if (!ttsWordTexts.length) return;
-    const idx = Math.max(0, Math.min(nextIndex, ttsWordTexts.length - 1));
-    const word = ttsWordTexts[idx] || '';
-    const base = 320;
-    const perChar = 22;
-    const delay = Math.max(120, (base + perChar * Math.max(1, word.length)) / Math.max(0.5, TTS_RATE));
-    ttsFallbackTimer = setTimeout(() => {
+    const windowMs = 950;
+    const stallMs = 650;
+    ttsFallbackTimer = setTimeout(function tick(){
       if (!speechSynthesis.speaking) return;
-      highlightWordByIndex(idx);
-      if (idx + 1 < ttsWordTexts.length) {
-        scheduleTtsFallback(idx + 1);
+      const now = performance.now();
+      const since = now - ttsLastBoundaryAt;
+      if (since < stallMs) {
+        ttsFallbackTimer = setTimeout(tick, windowMs);
+        return;
       }
-    }, delay);
+      const nextIdx = Math.min(
+        (ttsActiveWord >= 0 ? ttsActiveWord + 1 : ttsBoundaryWordGuess + 1),
+        Math.max(0, ttsWordSpans.length - 1)
+      );
+      ttsBoundaryWordGuess = nextIdx;
+      highlightWordByIndex(nextIdx);
+      ttsLastBoundaryAt = now;
+      ttsFallbackTimer = setTimeout(tick, windowMs);
+    }, windowMs);
   }
 
   function initTts(){
