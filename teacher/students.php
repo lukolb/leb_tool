@@ -309,43 +309,38 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
   $total = count($studentIds);
   if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
-  $in = implode(',', array_fill(0, $total, '?'));
+  $statusMap = load_child_status_map($pdo, $studentIds);
 
-  $q = $pdo->prepare(
-    "SELECT status, COUNT(*) AS c
-     FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)
-     GROUP BY status"
-  );
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
-  $m = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
-  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $stt = (string)$r['status'];
-    $m[$stt] = (int)$r['c'];
+  $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
+  foreach ($statusMap as $status) {
+    if (!isset($counts[$status])) continue;
+    $counts[$status]++;
   }
-  return $m;
+
+  return $counts;
 }
 
 /**
  * NEW: per-student child status map + badge rendering
  */
-function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+function load_child_status_map(PDO $pdo, array $studentIds): array {
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, status
+    "SELECT student_id, status, created_at, updated_at, id
      FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)";
+     WHERE student_id IN ($in)
+     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+  $q->execute($studentIds);
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $map[(int)$r['student_id']] = (string)$r['status'];
+    $sid = (int)$r['student_id'];
+    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
+    $map[$sid] = (string)$r['status'];
   }
   return $map;
 }
@@ -354,22 +349,24 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
 /**
  * NEW: report_instance_id map per student (for active template / school year / Standard)
  */
-function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+function load_report_instance_map(PDO $pdo, array $studentIds): array {
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, id AS report_instance_id, status
+    "SELECT student_id, id AS report_instance_id, status, created_at, updated_at
      FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)";
+     WHERE student_id IN ($in)
+     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+  $q->execute($studentIds);
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $map[(int)$r['student_id']] = [
+    $sid = (int)$r['student_id'];
+    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
+    $map[$sid] = [
       'report_instance_id' => (int)$r['report_instance_id'],
       'status' => (string)$r['status'],
     ];
@@ -381,7 +378,7 @@ function child_status_badge(?string $status): string {
   $status = (string)$status;
   if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
   if ($status === 'locked') return '<span class="badge danger">Gesperrt</span>';
-  if ($status === 'draft') return '<span class="badge">Entwurf</span>';
+  if ($status === 'draft') return '<span class="badge blue">Entwurf</span>';
   return '<span class="badge">Nicht angelegt</span>';
 }
 
@@ -743,9 +740,9 @@ if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_
 $counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
-$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
+$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds) : [];
 
-$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
+$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds) : [];
 
 $ai_enabled = ai_provider_enabled();
 
@@ -866,7 +863,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <?php $sid = (int)($s['id'] ?? 0); $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0); ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
-            <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
+            <td><?=h((string)((new DateTime($s['date_of_birth']))->format('d.m.Y') ?? ''))?></td>
             <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge warn">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
