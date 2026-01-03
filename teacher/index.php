@@ -53,7 +53,7 @@ try {
 
 // Load classes assigned to teacher (admins see all)
 if (($u['role'] ?? '') === 'admin') {
-  $st = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $st = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll();
 } else {
   $st = $pdo->prepare(
@@ -331,14 +331,14 @@ render_teacher_header(t('teacher.title'));
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['students_done'] ?? 0))?>
+          <?=h((string)($scope['students_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
           <span class="muted small">(<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?></div>
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['teachers_done'] ?? 0))?>
+          <?=h((string)($scope['teachers_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
           <span class="muted small">(<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>

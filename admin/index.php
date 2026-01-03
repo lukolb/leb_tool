@@ -231,7 +231,7 @@ function build_progress(PDO $pdo, array $classes): array {
   return $progress;
 }
 
-$classesStmt = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+$classesStmt = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
 $classes = $classesStmt->fetchAll();
 
 $progressByClass = build_progress($pdo, $classes);
@@ -308,14 +308,14 @@ render_admin_header('Admin – Dashboard');
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['students_done'] ?? 0))?>
+          <?=h((string)($scope['students_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
           <span class="muted small">(<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?></div>
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['teachers_done'] ?? 0))?>
+          <?=h((string)($scope['teachers_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
           <span class="muted small">(<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
