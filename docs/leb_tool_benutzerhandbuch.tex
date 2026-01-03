@@ -41,7 +41,8 @@
   {\large Für Administrator:innen, Lehrkräfte, Schüler:innen und Eltern}\par
   \vspace*{1.5cm}
 \end{titlepage}
-
+\clearpage
+\pagenumbering{Roman}
 \tableofcontents
 \clearpage
 \pagenumbering{arabic}
@@ -96,9 +97,9 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item \textbf{Dateien kopieren:} Alle Projektdateien auf den Webserver hochladen.
   \item \textbf{Installationsassistent starten:} \texttt{install.php} im Browser aufrufen.
   \item \textbf{Datenbank konfigurieren:} Verbindungsdaten angeben (Host, Port, Name, Benutzer, Passwort, Zeichensatz). Vorgeschlagenes Charset ist \texttt{utf8mb4} (siehe \texttt{config.sample.php}).
-  \item \textbf{Applikationspfade setzen:} \texttt{base\_path} (relativer Pfad zur Installation) und \texttt{public\_base\_url} (vollständige URL) prüfen; bei Subfolder-Installationen \texttt{base\_path} entsprechend setzen.
+  \item \textbf{Applikationspfade setzen:} \verb|base_path| (relativer Pfad zur Installation) und \verb|public_base_url| (vollständige URL) prüfen; bei Subfolder-Installationen \verb|base_path| entsprechend setzen.
   \item \textbf{Branding festlegen:} Primärfarbe, Sekundärfarbe und Logo-Pfad definieren (optional bereits im Installer verfügbar). Das mitgelieferte Icon befindet sich unter \texttt{assets/icons/lebtool-icon-512x512.png}.
-  \item \textbf{Admin-Account anlegen:} Zugangsdaten im Installer vergeben (Name, E-Mail, Passwort); die Session-Kennung kann bei Bedarf in \texttt{app.session\_name} geändert werden.
+  \item \textbf{Admin-Account anlegen:} Zugangsdaten im Installer vergeben (Name, E-Mail, Passwort); die Session-Kennung kann bei Bedarf in \verb|app.session_name| geändert werden.
   \item \textbf{Abschluss und Absicherung:} Installation abschließen und \texttt{install.php} anschließend löschen oder umbenennen; \texttt{bootstrap.php} bleibt als zentraler Einstieg bestehen.
   \item \textbf{Konfigurationsdatei prüfen:} \texttt{config.sample.php} nach \texttt{config.php} kopieren und anpassen (z.\,B. KI-Provider, Mail-Absender, Upload-Verzeichnis, Standard-Schuljahr, Elternsicht-Flag, PDF-Pfade, TTS-Stimme).
 \end{enumerate}
@@ -114,12 +115,12 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \section{Erstkonfiguration}
 \subsection{Systemparameter}
 \begin{itemize}
-  \item \textbf{Branding:} Farben und Logo für Schulauftritt setzen (\texttt{app.brand}).
-  \item \textbf{Uploads:} Verzeichnis \texttt{uploads} mit Schreibrechten bereitstellen.
-  \item \textbf{Mail:} Absenderadresse in \texttt{mail.from\_email} und \texttt{mail.from\_name} festlegen.
-  \item \textbf{KI-Integration:} In \texttt{ai} API-Key und Modell konfigurieren (optional). Buttons erscheinen nur bei aktiver Konfiguration.
-  \item \textbf{Vorleseoptionen (Schülerbereich):} Standard-Stimme und Geschwindigkeit in \texttt{student.tts\_voice} und \texttt{student.tts\_rate} anpassen.
-  \item \textbf{Schuljahr-Voreinstellung:} \texttt{app.default\_school\_year} für CSV-Importe ohne Jahresangabe.
+  \item \textbf{Branding:} Farben und Logo für Schulauftritt setzen (\verb|app.brand|).
+  \item \textbf{Uploads:} Verzeichnis \verb|uploads| mit Schreibrechten bereitstellen.
+  \item \textbf{Mail:} Absenderadresse in \verb|mail.from_email| und \verb|mail.from_name| festlegen.
+  \item \textbf{KI-Integration:} In \verb|ai| API-Key und Modell konfigurieren (optional). Buttons erscheinen nur bei aktiver Konfiguration.
+  \item \textbf{Vorleseoptionen (Schülerbereich):} Standard-Stimme und Geschwindigkeit in \verb|student.tts_voice| und \verb|student.tts_rate| anpassen.
+  \item \textbf{Schuljahr-Voreinstellung:} \verb|app.default_school_year| für CSV-Importe ohne Jahresangabe.
 \end{itemize}
 
 \subsection{Benutzer und Klassen anlegen}
@@ -133,8 +134,8 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 
 \subsection{Benutzerkonten und Passwörter}
 \begin{itemize}
-  \item Passwortrücksetzung über \texttt{forgot\_password.php}; neue Passwörter werden nach Bestätigung gesetzt.
-  \item Passwortänderung im eingeloggten Zustand über \texttt{changepassword.php}.
+  \item Passwortrücksetzung über \verb|forgot_password.php|; neue Passwörter werden nach Bestätigung gesetzt.
+  \item Passwortänderung im eingeloggten Zustand über \verb|changepassword.php|.
   \item Admins können Konten neu setzen oder deaktivieren; Protokollierung erfolgt im Audit-Log.
 \end{itemize}
 
@@ -156,7 +157,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \begin{itemize}
   \item Zugriff auf alle Klassen und Delegationen
   \item Vollständige Protokollierung aller Admin-Aktionen
-  \item Export-API zugänglich (PDF mit Platzhaltern wie \texttt{\{\}student.firstname})
+  \item Export-API zugänglich (PDF mit Platzhaltern wie \verb|{}student.firstname|)
 \end{itemize}
 
 \textbf{Wichtige Bereiche}
@@ -233,7 +234,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item Nur freigegebene Felder sichtbar
   \item Automatisches Speichern mit Statusanzeige (Speichern/OK/Fehler); Fortschritt pro Schritt und Gesamtreport
   \item Tokenbasierter Login verhindert Fremdzugriff; Lehrer können Tokens neu generieren
-  \item TTS-Bar mit Play-/Stop-Button; Stimme und Geschwindigkeit konfigurierbar (\texttt{student.tts\_voice}, \texttt{student.tts\_rate})
+  \item TTS-Bar mit Play-/Stop-Button; Stimme und Geschwindigkeit konfigurierbar (\verb|student.tts_voice|, \verb|student.tts_rate|)
 \end{itemize}
 
 \subsection{Eltern}
@@ -255,8 +256,8 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \section{PDF- und Exportfunktionen}
 \begin{itemize}
   \item Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
-  \item Platzhalter wie \texttt{\{\}student.firstname}, \texttt{\{\}class.label}, \texttt{\{\}teacher.fullname} und formatierbare Systemfelder (Datum/Zeit)
-  \item Einheitliche Export-API unter \texttt{/shared/export\_*} (z.\,B. \texttt{export\_class.php}, \texttt{export\_student.php})
+  \item Platzhalter wie \verb|{}student.firstname|, \verb|{}class.label|, \verb|{}teacher.fullname| und formatierbare Systemfelder (Datum/Zeit)
+  \item Einheitliche Export-API unter \verb|/shared/export_*| (z.\,B. \verb|export_class.php|, \verb|export_student.php|)
   \item Zugriffskontrolle: Lehrkräfte nur auf eigene Klassen, Admin auf alle Daten; Delegationen werden berücksichtigt
   \item Klassen- oder Einzel-Exports je nach Einstellung; Dateiablage in \texttt{uploads/} (konfigurierbar)
   \item Export-Historie sichtbar über Browser-Downloads; Dateinamen enthalten Klasse, Schüler und Zeitstempel
@@ -307,7 +308,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 
 \subsection{KI-Unterstützung}
 \begin{itemize}
-  \item Aktivierung über \texttt{ai.enabled}; Modell und API-Key in \texttt{ai.model} und \texttt{ai.api\_key} hinterlegen.
+  \item Aktivierung über \verb|ai.enabled|; Modell und API-Key in \verb|ai.model| und \verb|ai.api_key| hinterlegen.
   \item Schaltflächen erscheinen nur für Felder, die Textvorschläge unterstützen; Ergebnis muss manuell übernommen werden.
   \item Timeout und maximale Tokens in der Konfiguration anpassbar; keine automatischen externen Aufrufe ohne Opt-in.
   \item Generierte Texte werden nicht gespeichert, bevor die Lehrkraft sie explizit bestätigt.
@@ -315,12 +316,12 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 
 \section{Fehlerbehebung und Tipps}
 \begin{itemize}
-  \item \textbf{Login-Probleme:} Cookies und Session-Namen prüfen (\texttt{app.session\_name}).
+  \item \textbf{Login-Probleme:} Cookies und Session-Namen prüfen (\verb|app.session_name|).
   \item \textbf{PDF-Export fehlschlägt:} Stellen Sie sicher, dass Template-Platzhalter vorhanden und Felder vollständig sind.
-  \item \textbf{KI-Vorschläge erscheinen nicht:} \texttt{ai.enabled} und API-Key prüfen.
-  \item \textbf{Uploads schlagen fehl:} Schreibrechte für \texttt{uploads}-Verzeichnis setzen.
+  \item \textbf{KI-Vorschläge erscheinen nicht:} \verb|ai.enabled| und API-Key prüfen.
+  \item \textbf{Uploads schlagen fehl:} Schreibrechte für \verb|uploads|-Verzeichnis setzen.
   \item \textbf{QR-Code ungültig:} Token im Admin- oder Lehrkräftebereich neu generieren und erneut verteilen.
-  \item \textbf{Langsame Antwortzeiten:} PHP-Timeout und KI-Timeout (\texttt{ai.timeout\_seconds}) kontrollieren.
+  \item \textbf{Langsame Antwortzeiten:} PHP-Timeout und KI-Timeout (\verb|ai.timeout_seconds|) kontrollieren.
 \end{itemize}
 
 \section{Screenshots (Platzhalter)}
