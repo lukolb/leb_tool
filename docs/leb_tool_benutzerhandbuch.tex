@@ -26,6 +26,7 @@
 \begin{document}
 
 % Titelblatt
+\pagenumbering{gobble}
 \begin{titlepage}
   \centering
   \vspace*{1cm}
@@ -42,6 +43,7 @@
 
 \tableofcontents
 \newpage
+\pagenumbering{arabic}
 
 \section{Einleitung}
 Das LEB Tool ist eine webbasierte Anwendung für die strukturierte und datenschutzkonforme Erstellung von Lernentwicklungsberichten im Grundschulkontext. Dieses Handbuch beschreibt Installation, Einrichtung und Nutzung der unterschiedlichen Rollen (Admin, Lehrkraft, Schüler:in, Eltern) und basiert auf den aktuell im Code verfügbaren Funktionen.
@@ -49,12 +51,13 @@ Das LEB Tool ist eine webbasierte Anwendung für die strukturierte und datenschu
 \subsection{Leistungsmerkmale im Überblick}
 \begin{itemize}
   \item Rollenbasiertes System mit getrennten Oberflächen und Rechten
-  \item Delegationen für Teamarbeit nach Klasse \(\times\) Fachbereich
-  \item Fortschrittslogik zur Vollständigkeitsprüfung
+  \item Delegationen für Teamarbeit nach Klasse\,\(\times\,\)Fachbereich
+  \item Fortschrittslogik zur Vollständigkeitsprüfung in UI und Exporten
   \item Ausfüllbare PDF-Formulare mit Platzhaltersystem
   \item Audit-Log für revisionssichere Nachvollziehbarkeit
-  \item Optionale KI-Unterstützung für Textvorschläge
+  \item Optionale KI-Unterstützung für Textvorschläge (konfigurierbar)
   \item QR-basierter, passwortloser Schülerzugang mit Vorlesefunktion (TTS)
+  \item Eltern-Feedback mit eigenem Routing und CSRF-Schutz
 \end{itemize}
 
 \section{Systemüberblick}
@@ -83,19 +86,20 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \begin{itemize}
   \item PHP 8.1+ mit PDO-MySQL-Erweiterung
   \item MySQL/MariaDB-Datenbank (Zeichensatz \texttt{utf8mb4})
-  \item HTTPS-fähiges Hosting (empfohlen)
+  \item HTTPS-fähiges Hosting (empfohlen) mit Session-Unterstützung
   \item Schreibrechte für \texttt{uploads/} und temporäre Dateien
+  \item Mailversand (SMTP oder serverseitig), falls Passwort-Reset per E-Mail genutzt wird
 \end{itemize}
 
 \begin{enumerate}
   \item \textbf{Dateien kopieren:} Alle Projektdateien auf den Webserver hochladen.
   \item \textbf{Installationsassistent starten:} \texttt{install.php} im Browser aufrufen.
   \item \textbf{Datenbank konfigurieren:} Verbindungsdaten angeben (Host, Port, Name, Benutzer, Passwort, Zeichensatz). Vorgeschlagenes Charset ist \texttt{utf8mb4} (siehe \texttt{config.sample.php}).
-  \item \textbf{Applikationspfade setzen:} \texttt{base\_path} (relativer Pfad zur Installation) und \texttt{public\_base\_url} (vollständige URL) prüfen.
+  \item \textbf{Applikationspfade setzen:} \texttt{base\_path} (relativer Pfad zur Installation) und \texttt{public\_base\_url} (vollständige URL) prüfen; bei Subfolder-Installationen \texttt{base\_path} entsprechend setzen.
   \item \textbf{Branding festlegen:} Primärfarbe, Sekundärfarbe und Logo-Pfad definieren (optional bereits im Installer verfügbar). Das mitgelieferte Icon befindet sich unter \texttt{assets/icons/lebtool-icon-512x512.png}.
-  \item \textbf{Admin-Account anlegen:} Zugangsdaten im Installer vergeben.
-  \item \textbf{Abschluss und Absicherung:} Installation abschließen und \texttt{install.php} anschließend löschen oder umbenennen.
-  \item \textbf{Konfigurationsdatei prüfen:} Bei Bedarf \texttt{config.sample.php} kopieren und anpassen (z.\,B. KI-Provider, Mail-Absender, Upload-Verzeichnis, Standard-Schuljahr).
+  \item \textbf{Admin-Account anlegen:} Zugangsdaten im Installer vergeben (Name, E-Mail, Passwort); die Session-Kennung kann bei Bedarf in \texttt{app.session\_name} geändert werden.
+  \item \textbf{Abschluss und Absicherung:} Installation abschließen und \texttt{install.php} anschließend löschen oder umbenennen; \texttt{bootstrap.php} bleibt als zentraler Einstieg bestehen.
+  \item \textbf{Konfigurationsdatei prüfen:} \texttt{config.sample.php} nach \texttt{config.php} kopieren und anpassen (z.\,B. KI-Provider, Mail-Absender, Upload-Verzeichnis, Standard-Schuljahr, Elternsicht-Flag, PDF-Pfade, TTS-Stimme).
 \end{enumerate}
 
 \subsection{Update-Hinweise}
@@ -139,12 +143,12 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 
 \textbf{Zentrale Funktionen}
 \begin{itemize}
-  \item Lehrkräfte- und Klassenverwaltung (inkl. Archivierung)
-  \item Schülerverwaltung und Zuordnung zu Klassen
-  \item Template-Management (Vorlagen, Felder, Optionslisten, Gruppen, Filterbarkeit)
-  \item Globale Einstellungen und Feature-Flags (z.\,B. KI, Elternsicht)
+  \item Lehrkräfte- und Klassenverwaltung (aktiv/archiviert) mit Suche, Sortierung und CSV-Import von Schülern
+  \item Schülerverwaltung und Zuordnung zu Klassen, inkl. QR-Tokens neu generieren
+  \item Template-Management (Vorlagen, Felder, Optionslisten, Gruppen, Filterbarkeit, Pflichtstatus)
+  \item Globale Einstellungen und Feature-Flags (z.\,B. KI, Elternsicht, Klassenexport, Branding)
   \item Audit-Log mit Filtern (User, Event, Zeitraum), Pagination, Sortierung und optionaler IP-Anzeige
-  \item DSGVO-konformes Löschen personenbezogener Daten
+  \item DSGVO-konformes Löschen personenbezogener Daten (Hard-Delete) mit Log-Eintrag
 \end{itemize}
 
 \textbf{Besonderheiten}
@@ -153,6 +157,16 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item Vollständige Protokollierung aller Admin-Aktionen
   \item Export-API zugänglich (PDF mit Platzhaltern wie \texttt{{\{\}student.firstname\}})
 \end{itemize}
+
+\textbf{Wichtige Bereiche}
+\begin{description}[leftmargin=1.6cm]
+  \item[Lehrkräfte] Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Passwort-Reset, Suchfeld nach Name/E-Mail.
+  \item[Klassen] Erstellen/Archivieren mit Schuljahr und Stufe, Template-Zuordnung, QR-Reissue, TTS-Freigabe, Delegationssicht.
+  \item[Schüler:innen] Stammdaten, Klassenwechsel, QR-Token-Reset, Delegationsprüfung, Fortschrittsanzeige pro Klasse.
+  \item[Templates] Gruppenreihenfolge, Feldtypen (Text/Option/Datum/System), Pflicht- und Filter-Flags, Optionslisten inkl. Vorlagen.
+  \item[Einstellungen] Basis-URLs, Branding, Upload-Pfade, KI-Provider/Modell, Elternsicht-Flag, Klassenexport-Flag, Session-Name.
+  \item[Audit-Log] Detailansicht mit JSON-Daten; Filter auf Benutzer, Event, Zeitraum; ID-Auflösung zu Klartext; Export via Browser-Druck.
+\end{description}
 
 \textbf{Arbeitsbereiche im Detail}
 \begin{description}[leftmargin=1.6cm]
@@ -175,13 +189,14 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren, Status einsehen oder ändern.
   \item Live-Vorschau nutzen und PDF-Exporte erstellen (einzelner Schüler oder, je nach Konfiguration, Klassenexport).
   \item Fortschrittsanzeigen beachten (fehlende Felder, Vollständigkeit) und offene Schüler- oder Lehrerfelder abschließen.
+  \item KI-Vorschläge anstoßen, Text prüfen und gezielt übernehmen; Speicherung erfolgt erst nach manueller Bestätigung.
 \end{enumerate}
 
 \textbf{Werkzeuge}
 \begin{itemize}
   \item Filter und Suche innerhalb von Klassen
   \item Fortschrittslogik für Berichte (Pflichtfelder, offene Abschnitte)
-  \item KI-Textvorschläge (falls aktiviert) ohne automatische Speicherung
+  \item KI-Textvorschläge (falls aktiviert) ohne automatische Speicherung, Timeout konfigurierbar
   \item Delegationsübersicht (eigene Klassen, delegierte Klassen, delegierte Fächer)
   \item PDF-Export mit Platzhalterauflösung; Auswahl einzelner Schüler oder gesamter Klasse (abhängig von Einstellung)
   \item Klassen- und Schülerlisten mit Sortierung/Filterung
@@ -204,8 +219,8 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 
 \textbf{Speicher- und Vorschauflogik}
 \begin{itemize}
-  \item Änderungen werden serverseitig gespeichert; Statusanzeigen zeigen \enquote{Speichern}, \enquote{Gespeichert} oder Fehler an.
-  \item Live-Vorschau nutzt aktuelle Eingaben und Template-Placeholders.
+  \item Änderungen werden serverseitig gespeichert; Statusanzeigen zeigen \enquote{Speichern}, \enquote{Gespeichert} oder Fehler an; fehlende Pflichtfelder werden markiert.
+  \item Live-Vorschau nutzt aktuelle Eingaben und Template-Placeholders; Export ist identisch mit der Vorschau gerendert.
 \end{itemize}
 
 \subsection{Schüler:in}
@@ -215,10 +230,9 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \begin{itemize}
   \item Login per QR-Code; kein Benutzername/Passwort notwendig
   \item Nur freigegebene Felder sichtbar
-  \item Automatisches Speichern mit Statusanzeige (Speichern/OK/Fehler)
+  \item Automatisches Speichern mit Statusanzeige (Speichern/OK/Fehler); Fortschritt pro Schritt und Gesamtreport
   \item Tokenbasierter Login verhindert Fremdzugriff; Lehrer können Tokens neu generieren
-  \item Fortschrittsanzeige pro Schritt und Gesamtreport
-  \item TTS-Bar mit Play-/Stop-Button; Stimme und Geschwindigkeit konfigurierbar
+  \item TTS-Bar mit Play-/Stop-Button; Stimme und Geschwindigkeit konfigurierbar (\texttt{student.tts\_voice}, \texttt{student.tts\_rate})
 \end{itemize}
 
 \subsection{Eltern}
@@ -228,7 +242,7 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \begin{itemize}
   \item Eltern-Feedback-Formular mit CSRF-Schutz
   \item Eigenes Routing, keine Einsicht in Verwaltungs- oder Schülerdaten
-  \item Bestätigte Abgabe wird im Audit-Log vermerkt
+  \item Bestätigte Abgabe wird im Audit-Log vermerkt; Rückmeldungen werden getrennt gespeichert
 \end{itemize}
 
 \textbf{Geplante Erweiterungen (bereits vorbereitet)}
@@ -240,10 +254,12 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
 \section{PDF- und Exportfunktionen}
 \begin{itemize}
   \item Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
-  \item Platzhalter wie \texttt{{\{\}student.firstname\}}, \texttt{{\{\}class.label\}} und formatierbare Systemfelder
-  \item Einheitliche Export-API unter \texttt{/shared/export\_*}
-  \item Zugriffskontrolle: Lehrkräfte nur auf eigene Klassen, Admin auf alle Daten
+  \item Platzhalter wie \texttt{{\{\}student.firstname\}}, \texttt{{\{\}class.label\}}, \texttt{{\{\}teacher.fullname\}} und formatierbare Systemfelder (Datum/Zeit)
+  \item Einheitliche Export-API unter \texttt{/shared/export\_*} (z.\,B. \texttt{export\_class.php}, \texttt{export\_student.php})
+  \item Zugriffskontrolle: Lehrkräfte nur auf eigene Klassen, Admin auf alle Daten; Delegationen werden berücksichtigt
   \item Klassen- oder Einzel-Exports je nach Einstellung; Dateiablage in \texttt{uploads/} (konfigurierbar)
+  \item Export-Historie sichtbar über Browser-Downloads; Dateinamen enthalten Klasse, Schüler und Zeitstempel
+  \item Template-Abhängigkeiten: Pflichtfelder und Optionslisten fließen automatisch ein
 \end{itemize}
 
 \section{Delegationen und Zusammenarbeit}
@@ -253,6 +269,13 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item Delegationen können geändert oder widerrufen werden
   \item Darstellung delegierter sowie delegierender Klassen
   \item Admin kann jederzeit eingreifen
+\end{itemize}
+
+\paragraph{Best Practices}
+\begin{itemize}
+  \item Delegationen früh setzen, damit Fortschrittslogik pro Fachbereich greift.
+  \item Bei Rücknahme einer Delegation den Status auf \enquote{offen} setzen, um offene Pflichtfelder sichtbar zu machen.
+  \item QR-Tokens nach Delegationswechsel neu ausstellen, falls Schülerfelder betroffen sind.
 \end{itemize}
 
 \section{Fortschritts- und Vollständigkeitslogik}
@@ -271,6 +294,22 @@ Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. 
   \item Trennung von Stammdaten und Berichtsdaten
   \item Audit-Log für Nachvollziehbarkeit
   \item Empfohlen: HTTPS erzwingen, regelmäßige Backups, Entfernung von \texttt{install.php} nach Setup
+\end{itemize}
+
+\subsection{Audit-Log im Detail}
+\begin{itemize}
+  \item Speichert Benutzer, Aktion, Zeitstempel, Entitäts-IDs und strukturierte JSON-Daten.
+  \item Filterbar nach Benutzer, Ereignistyp und Zeitraum; sortierbar und paginiert.
+  \item Optional einblendbare IP-Adresse zur Nachvollziehbarkeit (konfigurierbar).
+  \item Aktionen wie Login, Passwortänderung, Delegationswechsel, Export und Löschung werden protokolliert.
+\end{itemize}
+
+\subsection{KI-Unterstützung}
+\begin{itemize}
+  \item Aktivierung über \texttt{ai.enabled}; Modell und API-Key in \texttt{ai.model} und \texttt{ai.api\_key} hinterlegen.
+  \item Schaltflächen erscheinen nur für Felder, die Textvorschläge unterstützen; Ergebnis muss manuell übernommen werden.
+  \item Timeout und maximale Tokens in der Konfiguration anpassbar; keine automatischen externen Aufrufe ohne Opt-in.
+  \item Generierte Texte werden nicht gespeichert, bevor die Lehrkraft sie explizit bestätigt.
 \end{itemize}
 
 \section{Fehlerbehebung und Tipps}
@@ -301,6 +340,18 @@ Fügen Sie hier aktuelle Screenshots ein, sobald verfügbar.
   \centering
   \fbox{\parbox[c][5cm][c]{12cm}{\centering PDF-Vorschau und Export (Platzhalter)}}
   \caption{PDF-Export aus einer Lernentwicklungsansicht}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Admin-Einstellungen (Platzhalter)}}
+  \caption{Globale Einstellungen mit Branding und KI-Konfiguration}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Schüler-QR-Login und TTS-Bar (Platzhalter)}}
+  \caption{Schülerzugang mit Vorlesefunktion}
 \end{figure}
 
 \clearpage
