@@ -533,7 +533,7 @@ function load_teacher_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, options_json, meta_json
+    "SELECT id, field_name, field_type, label, label_en, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -879,6 +879,7 @@ try {
     }
 
     $childProgressIds = [];
+    $childProgressLabels = [];
     // load ALL child-editable fields for progress counting (not only paired)
     $childFieldsAll = load_child_fields_for_pairing($pdo, $templateId);
     foreach ($childFieldsAll as $cf0) {
@@ -886,6 +887,9 @@ try {
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
       $childProgressIds[] = (int)$cf0['id'];
+      $labelC = label_for_lang($cf0['label'] ?? null, $cf0['label_en'] ?? null, $lang);
+      $fnameC = (string)($cf0['field_name'] ?? '');
+      $childProgressLabels[(int)$cf0['id']] = $labelC !== '' ? $labelC : $fnameC;
     }
 
     $fieldMetaById = [];
@@ -923,10 +927,17 @@ try {
       }
 
       $cDone = 0;
+      $missingChildLabels = [];
       if ($childTotal > 0) {
         foreach ($childProgressIds as $fid) {
           $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
-          if (trim((string)$v) !== '') $cDone++;
+          $trimmed = trim((string)$v);
+          if ($trimmed !== '') {
+            $cDone++;
+          } else {
+            $lbl = $childProgressLabels[$fid] ?? '';
+            if ($lbl !== '') $missingChildLabels[] = $lbl;
+          }
         }
       }
 
@@ -942,6 +953,7 @@ try {
       $srow['progress_child_total'] = $childTotal;
       $srow['progress_child_done'] = $cDone;
       $srow['progress_child_missing'] = max(0, $childTotal - $cDone);
+      $srow['child_missing_fields'] = $missingChildLabels;
 
       $srow['progress_overall_total'] = $overallTotal;
       $srow['progress_overall_done'] = $oDone;
@@ -1612,6 +1624,47 @@ if ($action === 'delegations_save') {
 
     audit('teacher_value_save', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
     json_out(['ok' => true]);
+  }
+
+  if ($action === 'unlock_child_entry') {
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+
+    $st = $pdo->prepare(
+      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
+       FROM report_instances ri
+       INNER JOIN students s ON s.id=ri.student_id
+       INNER JOIN classes c ON c.id=s.class_id
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $st->execute([$reportId]);
+    $ri = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$ri) throw new RuntimeException('Report nicht gefunden.');
+
+    $classId = (int)($ri['class_id'] ?? 0);
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $status = (string)($ri['status'] ?? 'draft');
+    if ($status === 'draft') {
+      json_out(['ok' => true, 'status' => 'draft', 'changed' => false]);
+    }
+
+    $riTemplateId = (int)($ri['template_id'] ?? 0);
+    $classTemplateId = (int)($ri['class_template_id'] ?? 0);
+    if ($classTemplateId <= 0) throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+    if ($riTemplateId !== $classTemplateId) throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
+
+    $pdo->prepare(
+      "UPDATE report_instances
+       SET status='draft', locked_by_user_id=NULL, locked_at=NULL
+       WHERE id=?"
+    )->execute([$reportId]);
+
+    audit('teacher_child_unlock', $userId, ['report_instance_id'=>$reportId, 'class_id'=>$classId]);
+    json_out(['ok' => true, 'status' => 'draft', 'changed' => true]);
   }
 
   throw new RuntimeException('Unbekannte action.');

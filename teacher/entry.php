@@ -781,6 +781,11 @@ render_teacher_header($pageTitle);
     const f = state.fieldMap[String(fieldId)];
     if (!f || !f.child || !f.child.id) return String(nextValue ?? '');
 
+    const type = String(f.field_type || '');
+    if (type !== 'multiline' && type !== 'text' && Number(f.is_multiline || 0) !== 1) {
+      return String(nextValue ?? '');
+    }
+
     const childRaw = childVal(reportId, f.child.id);
     if (!childRaw) return String(nextValue ?? '');
 
@@ -1020,6 +1025,25 @@ render_teacher_header($pageTitle);
   }
   function setSaving(on){
     elSavePill.style.display = on ? 'inline-flex' : 'none';
+  }
+
+  async function unlockChildEntry(reportId){
+    if (!reportId) return;
+
+    try {
+      setSaveStatus('saving', '⏳ Schülereingabe wird freigeschaltet …');
+      const res = await api('unlock_child_entry', { report_instance_id: reportId });
+      if (res && res.status) {
+        const hit = (state.students || []).find(s => Number(s.report_instance_id || 0) === Number(reportId));
+        if (hit) hit.status = String(res.status);
+        renderStudentView();
+      }
+      setSaveStatus('ok', '✔ Schülereingabe freigegeben');
+    } catch (e) {
+      console.error(e);
+      showErr(e?.message || 'Fehler beim Freischalten.');
+      setSaveStatus('error', '❌ Konnte nicht freigeschaltet werden');
+    }
   }
 
   function isClassFieldId(fieldId){
@@ -2087,12 +2111,18 @@ render_teacher_header($pageTitle);
     const reportId = s.report_instance_id;
     const status = String(s.status || 'draft');
     const locked = (status === 'locked');
+    const childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
+    const unlockBtn = `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
 
     let html = '';
     if (locked) {
-      html += `<div class="alert danger"><strong>Dieser Bericht ist gesperrt.</strong> Eingaben können nicht mehr geändert werden.</div>`;
+      html += `<div class="alert danger"><strong>Dieser Bericht ist gesperrt.</strong> Eingaben können nicht mehr geändert werden.${unlockBtn}</div>`;
     } else if (status === 'submitted') {
-      html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.</div>`;
+      html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.${unlockBtn}</div>`;
+    } else if (childMissingFields.length > 0) {
+      const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
+      const more = childMissingFields.length > 8 ? ` … (${childMissingFields.length - 8} weitere)` : '';
+      html += `<div class="alert warning"><strong>Schülereingabe fehlt noch.</strong> Offene Felder: ${missingList}${more}</div>`;
     }
 
     const optionStatus = optionCompletionForStudent(reportId);
@@ -2185,6 +2215,14 @@ render_teacher_header($pageTitle);
         const rid = Number(btn.getAttribute('data-ai-student') || 0);
         const stu = (state.students || []).find(x => Number(x.report_instance_id || 0) === rid);
         if (stu) requestAiSuggestionsForStudent(stu);
+      });
+    });
+
+    studentForm.querySelectorAll('[data-unlock-child]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-unlock-child') || 0);
+        if (rid > 0) await unlockChildEntry(rid);
       });
     });
 
