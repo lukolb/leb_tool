@@ -323,7 +323,7 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
 /**
  * NEW: per-student child status map + badge rendering
  */
-function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+function load_child_status_map(PDO $pdo, array $studentIds): array {
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
@@ -331,11 +331,10 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
   $sql =
     "SELECT student_id, status, created_at, updated_at, id
      FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)
+     WHERE student_id IN ($in)
      ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+  $q->execute($studentIds);
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -350,7 +349,7 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
 /**
  * NEW: report_instance_id map per student (for active template / school year / Standard)
  */
-function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear, array $studentIds): array {
+function load_report_instance_map(PDO $pdo, array $studentIds): array {
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
@@ -358,11 +357,10 @@ function load_report_instance_map(PDO $pdo, int $templateId, string $schoolYear,
   $sql =
     "SELECT student_id, id AS report_instance_id, status, created_at, updated_at
      FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)
+     WHERE student_id IN ($in)
      ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
+  $q->execute($studentIds);
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -742,9 +740,9 @@ if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_
 $counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
-$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
+$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds) : [];
 
-$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $tplIdForUi, $schoolYearUi, $studentIds) : [];
+$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds) : [];
 
 $ai_enabled = ai_provider_enabled();
 
