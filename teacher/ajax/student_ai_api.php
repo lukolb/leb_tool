@@ -76,14 +76,21 @@ function resolve_value_for_ai(PDO $pdo, array $fieldRow, ?string $valueText, $va
   $itemId = null;
   $fallback = '';
 
-  if (is_array($valueJson)) {
-    if (isset($valueJson['option_item_id'])) {
-      $itemId = (int)$valueJson['option_item_id'];
+  $valueJsonArray = is_array($valueJson) ? $valueJson : null;
+  if ($valueJsonArray === null && $listId > 0 && $valueJson === null && is_string($valueText)) {
+    // Some option selections might only be persisted as JSON inside value_text.
+    $tmp = json_decode($valueText, true);
+    if (is_array($tmp)) $valueJsonArray = $tmp;
+  }
+
+  if (is_array($valueJsonArray)) {
+    if (isset($valueJsonArray['option_item_id'])) {
+      $itemId = (int)$valueJsonArray['option_item_id'];
       $fallback = (string)($valueText ?? '');
     } else {
       // arrays (multi-select): map each element
       $parts = [];
-      foreach ($valueJson as $v) {
+      foreach ($valueJsonArray as $v) {
         if (is_array($v) && isset($v['option_item_id'])) {
           $lbl = option_label($pdo, $listId, (int)$v['option_item_id'], null, $lang);
           $parts[] = $lbl ?? (string)$v['option_item_id'];
