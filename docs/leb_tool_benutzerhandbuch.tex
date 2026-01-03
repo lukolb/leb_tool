@@ -110,6 +110,16 @@
 \tableofcontents
 \clearpage
 
+\section{Geltungsbereich \& Versionierung}
+Dieses Handbuch richtet sich an Admins, Lehrkräfte und (wo vorgesehen) Schüler:innen der Grundschule. Es beschreibt Bedienung und Abläufe des LEB Tools für die Erstellung von Lernentwicklungsberichten.
+\begin{itemize}
+  \item \textbf{Zweck:} Schritt-für-Schritt-Anleitung für Einrichtung, Nutzung und Export der Berichte.
+  \item \textbf{Gültig für:} aktuelle Produktivversion zum Stand \HandbuchStand{}; Anpassungen nach Software-Updates sind einzuarbeiten.
+  \item \textbf{Abdeckung:} Rollen, Einrichtungsreihenfolge, Freigaben, Export, typische Fehler, Screenshots als Platzhalter.
+  \item \textbf{Nicht enthalten:} Quellcode-Details, juristische Datenschutzvorgaben, individuelle Schul-IT-Spezifika.
+  \item \textbf{Versionierung:} Änderungen am Handbuch sollten mit Datum und Autor dokumentiert werden; ältere Fassungen archivieren.
+\end{itemize}
+
 \section{Überblick: Was ist das LEB Tool?}
 Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von Lernentwicklungsberichten (LEB). Kernidee: Eine PDF-Vorlage mit Formularfeldern ist die führende Instanz. Das Tool extrahiert diese Felder, strukturiert sie in Gruppen, verknüpft sie bei Bedarf mit Optionslisten und erzeugt wieder eine ausgefüllte, druckfertige PDF. \textbf{Zentraler Arbeitskontext} ist die Klasse: Zugriffe erfolgen stets über die Klasse, nicht direkt über einzelne Personen.
 
@@ -142,6 +152,16 @@ Schüler:in & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 \end{tabularx}
 
 \HintBox{Schüler:innen haben niemals dauerhaften Schreibzugriff. Die Freigabe ist immer zeitlich begrenzt und wird bewusst von der Lehrkraft gesteuert.}
+
+\section{Datenschutz \& Verantwortlichkeiten}
+Kurzer Leitfaden (nicht rechtsverbindlich):
+\begin{itemize}
+  \item \textbf{Rollenbasierter Zugriff:} Admins verwalten Templates, Klassen und Nutzer; Lehrkräfte sehen nur ihre Klassen; Schüler:innen sehen ausschließlich eigene, freigegebene Felder.
+  \item \textbf{Schüler-Logins:} Ausgabe der Zugangsdaten geschützt verwahren; bei Verlust Passwörter zurücksetzen. \WarnBox{Zugangsdaten nicht per unsichere Kanäle teilen.}
+  \item \textbf{Transport-Sicherheit:} Zugriff nach Möglichkeit per HTTPS; Testdaten vor Produktivstart nutzen, um echte Schülerdaten zu schützen.
+  \item \textbf{Verantwortlichkeiten:} Schulen regeln intern, wer Datenschutzanfragen beantwortet (z.\,B. Admin, IT, Datenschutzbeauftragte:r). \textbf{TODO: Interne Ansprechperson und Kontaktweg ergänzen.}
+  \item \textbf{Datenminimierung:} Nur notwendige Felder aktivieren; Exportablage an einem berechtigten Speicherort aufbewahren.
+\end{itemize}
 
 \section{Installation \& Erstinbetriebnahme (Admin)}
 Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung mit Vorlage, Feldern, Optionslisten und Klassen.
@@ -234,6 +254,14 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \PlaceholderFigure{Abb. 7 – Zuordnung Optionsliste → Feld}{Platzhalter: Feldbearbeitung mit Optionslisten-Auswahl und Speichern-Button. Aufnahme: Admin → Template-Felder → Feld bearbeiten.}
 
+\subsection*{Änderungen im laufenden Zeugnisprozess \textendash{} Warnhinweise}
+\WarnBox{Nach Beginn der Eingaben sollten Sie keine Template-Wechsel, erneute Feldextraktionen oder Value-Änderungen in Optionslisten vornehmen. Dies kann zu Zuordnungsverlusten oder fehlerhaften Exporten führen.}
+\begin{itemize}
+  \item Template oder Feldreihenfolge nur vor Start des Schreibens anpassen; bei zwingenden Änderungen zuerst Testklasse nutzen und Export prüfen.
+  \item Optionslisten bei inhaltlichen Änderungen versionieren statt bestehende Values umzuschreiben.
+  \item Bei Unsicherheit zunächst einen Einzel-Schüler-Export testen, bevor Klassenexporte ausgeführt werden.
+\end{itemize}
+
 \subsection{Klassen anlegen \& Template zuweisen}
 \begin{enumerate}
   \item Admin \(\rightarrow\) Klassen \(\rightarrow\) Neu.
@@ -277,6 +305,13 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 \end{tabular}
 
 \PlaceholderFigure{Abb. 10 – Lehrerbereich – Übersicht}{Platzhalter: Klassenliste/Startansicht mit Statusanzeigen. Aufnahme: Lehrerbereich nach Login.}
+
+\subsection*{Bearbeitungsstand \& Statusanzeigen}
+\begin{itemize}
+  \item Fortschrittsbalken oder Listen zeigen offene Pflichtfelder pro Gruppe; \enquote{unvollständig} bedeutet meist fehlende Pflichtfelder oder nicht gespeicherte Eingaben.
+  \item Empfohlene Kontrolle: vor Export mindestens eine Gruppe pro Klasse stichprobenartig prüfen und einen Einzel-Schüler-Export durchführen.
+  \item Delegationen berücksichtigen: abgeschlossene Delegationen prüfen und zurückholen, falls Änderungen nötig sind.
+\end{itemize}
 
 \subsection{Klassenweite Felder (einmal \textendash{} für alle)}
 \begin{enumerate}
@@ -358,6 +393,35 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
 
 \PlaceholderFigure{Abb. 17 – Export im Adminbereich}{Platzhalter: Admin-Export mit Filtern (Schuljahr/Klasse) und Start-Button. Aufnahme: Adminbereich → Export.}
 
+\section{Rollenabgrenzung im Betrieb (Admin vs. Lehrkraft)}
+\begin{itemize}
+  \item \textbf{Admin im laufenden Betrieb:} Keine Template-Wechsel oder Feldextraktionen während der Schreibphase; Fokus auf technischer Unterstützung und Nutzerverwaltung. \textbf{TODO: Interne Eskalationswege bei dringenden Änderungen ergänzen.}
+  \item \textbf{Lehrkraft:} Inhalte pflegen, Freigaben steuern, Exporte anstoßen; keine Änderungen an Templates oder Optionslisten.
+  \item \textbf{Abstimmung:} Vor größeren Änderungen Kollegium informieren und Testlauf (Einzel-Schüler-Export) durchführen.
+\end{itemize}
+
+\section{Bearbeitungsstand \& Statusanzeigen (Übersicht)}
+\begin{itemize}
+  \item \textbf{Offene Pflichtfelder:} Markierungen oder Fortschrittsanzeigen weisen auf fehlende Eingaben hin; erst bei \enquote{vollständig} exportieren.
+  \item \textbf{Freigabe-Status:} Klar erkennbar, ob Schüler:innen schreiben dürfen; nach Abschluss deaktivieren.
+  \item \textbf{Qualitätssicherung:} Stichprobe (mindestens zwei Schüler:innen) und Testexport pro Klasse vor dem finalen Klassenexport.
+\end{itemize}
+
+\section{Nach dem Zeugnis: Archivierung \& Vorbereitung neues Schuljahr}
+\begin{enumerate}
+  \item Freigaben schließen und sicherstellen, dass keine Schüler-Eingabe mehr möglich ist.
+  \item Exportdateien nachvollziehbar benennen (Schuljahr, Klasse) und im Schularchiv ablegen.
+  \item Template oder Optionslisten erst nach Abschluss anpassen; Änderungen dokumentieren.
+  \item Optional: Klassenübergang oder Schuljahrwechsel vorbereiten (z.\,B. neue Klassen anlegen). \textbf{TODO: Schuljahreswechsel-Prozess des Systems ergänzen.}
+\end{enumerate}
+
+\section{Support \& Eskalation (schulintern)}
+\begin{itemize}
+  \item \textbf{Erste Anlaufstelle:} Klassenlehrkraft oder zuständige:r Admin. \textbf{TODO: Konkrete Kontaktstellen (IT/Admin/Entwicklung) eintragen.}
+  \item \textbf{Bei Fehlermeldungen mitschicken:} Screenshot, Uhrzeit, Nutzerrolle, Klasse, ausgeführter Schritt, verwendeter Browser.
+  \item \textbf{Dringende Fälle:} Exportstopps oder Datenverlust umgehend an Admin/IT eskalieren; Änderungen dokumentieren.
+\end{itemize}
+
 \section{FAQ \& Troubleshooting}
 \begin{longtable}{|p{0.45\textwidth}|p{0.45\textwidth}|}
 \hline
@@ -404,5 +468,25 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
 
 \vspace{1cm}
 {\small Stand: automatisch aus aktuellem Code abgeleitet. Bitte Anpassungen nach Software-Updates prüfen.}
+
+\clearpage
+\section*{Anhang B: Mini-Glossar}
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Begriff} & \textbf{Kurzdefinition}\\
+\hline
+Template (PDF) & Vorlage mit Formularfeldern; ist die führende Instanz für Struktur und Export.\\
+\hline
+Feldextraktion & Auslesen der Formularfelder aus dem Template; liefert Feldnamen, Typ, Seite.\\
+\hline
+Optionsliste & Werteliste mit stabilem Value und änderbarem Label; wird Dropdown-Feldern zugeordnet.\\
+\hline
+Klassenfeld & Feld, das einmal je Klasse ausgefüllt wird und für alle Schüler:innen gilt.\\
+\hline
+Freigabe & Zeitlich begrenzte Schreibfreigabe für Schüler:innen, gesteuert durch die Lehrkraft.\\
+\hline
+Export & Erzeugung druckfertiger PDFs auf Basis von Template und gespeicherten Eingaben.\\
+\hline
+\end{tabularx}
 
 \end{document}
