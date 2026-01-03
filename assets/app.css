@@ -136,6 +136,63 @@ h2{margin:0 0 12px}
   margin:16px 0;
 }
 
+.stats-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;
+  margin-top:10px;
+}
+
+.stat-box{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px 14px;
+  background:#f8fafc;
+}
+
+.stat-value{
+  font-size:24px;
+  font-weight:800;
+  margin-bottom:4px;
+}
+
+.stat-label{
+  color:var(--muted);
+  font-size:12px;
+}
+
+.tab-switcher{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:12px 0 6px;
+}
+
+.tab-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:8px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:#f8fafc;
+  text-decoration:none;
+  color:var(--secondary);
+  font-weight:700;
+}
+
+.tab-btn.active{
+  background:rgba(11,87,208,0.12);
+  border-color:rgba(11,87,208,0.4);
+  color:var(--primary);
+}
+
+.stat-hint{
+  color:var(--muted);
+  font-size:12px;
+  margin-top:6px;
+}
+
 label{display:block; margin:10px 0 6px; color:#111}
 input, select{
   width:100%;
