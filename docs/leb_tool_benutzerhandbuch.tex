@@ -226,28 +226,6 @@ Beim PDF-Export wird auf korrekte Datumsformatierung geachtet (z.\,B. \texttt{01
   \item Export basiert immer auf Template + gespeicherten Daten; die PDF ist führend.
 \end{itemize}
 
-\section{Fehlerbehebung}
-\subsection{Typische Probleme}
-\begin{itemize}
-  \item \textbf{Compile-Fehler bei Bildern:} Pfade prüfen oder \texttt{\textbackslash IfFileExists} verwenden.
-  \item \textbf{Sonderzeichen/Encoding:} UTF-8 sicherstellen, \texttt{inputenc} und \texttt{fontenc} verwenden.
-  \item \textbf{Mathe-Kommandos im Text:} z.\,B. \texttt{\textbackslash rightarrow} nur in Mathemodus \(\rightarrow\) nutzen.
-  \item \textbf{Leere Dropdowns:} Optionsliste fehlt oder wurde nicht zugeordnet; prüfen Sie Schrittfolge unter Abschnitt \ref{sec:setup-sequenz}.
-  \item \textbf{Schüler sehen keine Felder:} Freigabe wurde nicht gesetzt oder bereits geschlossen.
-  \item \textbf{Falsche Seitenzuordnung:} Feldextraktion aus PDF prüfen und ggf. neu ausführen.
-  \item \textbf{Optionslisten-Value verändert:} Bestehende Values nicht ändern; stattdessen neue Optionsliste anlegen.
-  \item \textbf{Klassenexport leer:} Prüfen, ob Klasse ein Template hat und Nutzerrechte korrekt gesetzt sind.
-\end{itemize}
-
-\subsection{Support-Infos}
-Für Support hilfreich:
-\begin{itemize}
-  \item verwendeter Commit/Version
-  \item Rolle (Admin/Teacher/Student/Parent)
-  \item genaue URL/Seite
-  \item Fehlermeldung (Screenshot/Log)
-\end{itemize}
-
 \appendix
 \section{Platzhalter-Screenshots}
 \begin{figure}[H]
