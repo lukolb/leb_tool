@@ -308,15 +308,15 @@ render_admin_header('Admin – Dashboard');
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['students_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
-          <span class="muted small">(<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
+          <?=h((string)($scope['students_done'] ?? 0))?>
+          <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?></div>
       </div>
       <div class="stat-box">
         <div class="stat-value">
-          <?=h((string)($scope['teachers_done'] ?? 0))?> / <?=h((string)($scope['forms_total'] ?? 0))?>
-          <span class="muted small">(<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
+          <?=h((string)($scope['teachers_done'] ?? 0))?>
+          <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
       </div>
@@ -327,7 +327,7 @@ render_admin_header('Admin – Dashboard');
       <div class="stat-box">
         <div class="stat-value">
           <?=h((string)($scope['delegations_done'] ?? 0))?>
-          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> · <?=h((string)($scope['delegations_percent'] ?? '–'))?> %<?php endif; ?></span>
+          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)<?php endif; ?></span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?></div>
       </div>
