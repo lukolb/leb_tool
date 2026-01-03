@@ -309,7 +309,7 @@ function translations_catalog(): array {
       'student.tts.nothing' => 'Nichts zum Vorlesen gefunden.',
       'student.tts.disabled' => 'Vorlesen wurde von deiner Lehrkraft deaktiviert.',
       'student.tts.unsupported' => 'Vorlesen wird von diesem Gerät nicht unterstützt.',
-      'student.tts.error' => 'Vorlesen konnte nicht gestartet werden.',
+      'student.tts.error' => 'Vorlesen wurde gestoppt.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',
@@ -666,7 +666,7 @@ function translations_catalog(): array {
       'student.tts.nothing' => 'Nothing to read here.',
       'student.tts.disabled' => 'Read aloud was disabled by your teacher.',
       'student.tts.unsupported' => 'Read aloud is not supported on this device.',
-      'student.tts.error' => 'Could not start read aloud.',
+      'student.tts.error' => 'Read aloud stopped.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',

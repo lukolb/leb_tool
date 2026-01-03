@@ -58,6 +58,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   <title><?=h($orgName)?> – <?=h(t('student.html_title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
   <style>
       body.page{
         font-family: "Druckschrift";
@@ -305,7 +306,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
               <div class="tts-status" id="ttsStatus"><?=h(t('student.tts.ready', 'Bereit zum Vorlesen.'))?></div>
             </div>
             <div class="tts-actions">
-              <button class="btn secondary" type="button" id="ttsButton" aria-label="<?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?>">🔈</button>
+              <button class="btn secondary" type="button" id="ttsButton" aria-label="<?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?>"><i class="fa fa-volume-up"></i></button>
             </div>
           </div>
 
@@ -416,7 +417,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (ttsButton) {
       ttsButton.style.display = '';
       const isSpeaking = speechSynthesis.speaking;
-      ttsButton.innerHTML = isSpeaking ? '⏹' : '🔈';
+      ttsButton.innerHTML = isSpeaking ? '⏹' : '<i class="fa fa-volume-up"></i>';
       ttsButton.setAttribute('aria-label', isSpeaking
         ? t('student.tts.stop', 'Stopp')
         : t('student.tts.start', 'Aktuellen Abschnitt vorlesen'));
@@ -487,7 +488,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (voice) utter.voice = voice;
     utter.onstart = () => { updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
     utter.onend = () => { updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
-    utter.onerror = () => { updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
+    utter.onerror = () => { updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();

@@ -867,7 +867,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
-            <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
+            <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge warn">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
                 <span class="muted">—</span>
