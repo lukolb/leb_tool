@@ -309,22 +309,15 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
   $total = count($studentIds);
   if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
-  $in = implode(',', array_fill(0, $total, '?'));
+  $statusMap = load_child_status_map($pdo, $templateId, $schoolYear, $studentIds);
 
-  $q = $pdo->prepare(
-    "SELECT status, COUNT(*) AS c
-     FROM report_instances
-     WHERE template_id=? AND school_year=? AND period_label='Standard'
-       AND student_id IN ($in)
-     GROUP BY status"
-  );
-  $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
-  $m = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
-  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $stt = (string)$r['status'];
-    $m[$stt] = (int)$r['c'];
+  $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
+  foreach ($statusMap as $status) {
+    if (!isset($counts[$status])) continue;
+    $counts[$status]++;
   }
-  return $m;
+
+  return $counts;
 }
 
 /**
@@ -344,8 +337,16 @@ function load_child_status_map(PDO $pdo, int $templateId, string $schoolYear, ar
   $q->execute(array_merge([$templateId, $schoolYear], $studentIds));
 
   $map = [];
+  $priority = ['submitted' => 3, 'locked' => 2, 'draft' => 1];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $map[(int)$r['student_id']] = (string)$r['status'];
+    $sid = (int)$r['student_id'];
+    $status = (string)$r['status'];
+
+    $newRank = $priority[$status] ?? 0;
+    $curRank = isset($map[$sid]) ? ($priority[$map[$sid]] ?? 0) : -1;
+    if ($newRank >= $curRank) {
+      $map[$sid] = $status;
+    }
   }
   return $map;
 }
