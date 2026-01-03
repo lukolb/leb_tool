@@ -404,8 +404,17 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let ttsWordTexts = [];
   let ttsActiveWord = -1;
   let ttsBoundaryWordGuess = 0;
+  let ttsFallbackTimer = null;
+
+  function clearTtsFallbackTimer(){
+    if (ttsFallbackTimer) {
+      clearTimeout(ttsFallbackTimer);
+      ttsFallbackTimer = null;
+    }
+  }
 
   function teardownTtsHighlighting(){
+    clearTtsFallbackTimer();
     if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
       ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
     }
@@ -590,6 +599,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     utter.onstart = () => {
       ttsBoundaryWordGuess = 0;
       highlightWordByIndex(0);
+      scheduleTtsFallback(1);
       updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     };
     utter.onboundary = (ev) => {
@@ -604,13 +614,33 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       } else {
         ttsBoundaryWordGuess = idx;
       }
-      if (idx >= 0) highlightWordByIndex(idx);
+      if (idx >= 0) {
+        highlightWordByIndex(idx);
+        scheduleTtsFallback(idx + 1);
+      }
     };
     utter.onend = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
     utter.onerror = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.error', 'Vorlesen konnte nicht gestartet werden.')); };
     ttsUtterance = utter;
     speechSynthesis.speak(utter);
     updateTtsUi();
+  }
+
+  function scheduleTtsFallback(nextIndex){
+    clearTtsFallbackTimer();
+    if (!ttsWordTexts.length) return;
+    const idx = Math.max(0, Math.min(nextIndex, ttsWordTexts.length - 1));
+    const word = ttsWordTexts[idx] || '';
+    const base = 320;
+    const perChar = 22;
+    const delay = Math.max(120, (base + perChar * Math.max(1, word.length)) / Math.max(0.5, TTS_RATE));
+    ttsFallbackTimer = setTimeout(() => {
+      if (!speechSynthesis.speaking) return;
+      highlightWordByIndex(idx);
+      if (idx + 1 < ttsWordTexts.length) {
+        scheduleTtsFallback(idx + 1);
+      }
+    }, delay);
   }
 
   function initTts(){
