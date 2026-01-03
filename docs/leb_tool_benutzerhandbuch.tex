@@ -1,0 +1,324 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{tabularx}
+\geometry{margin=2.5cm}
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+
+\definecolor{primary}{HTML}{0B57D0}
+\definecolor{secondary}{HTML}{111111}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  urlcolor=primary,
+  citecolor=primary
+}
+
+\begin{document}
+
+% Titelblatt
+\begin{titlepage}
+  \centering
+  \vspace*{1cm}
+  \includegraphics[width=4cm]{../assets/icons/lebtool-icon-512x512.png}\\[1cm]
+  {\LARGE \textbf{LEB Tool}}\\[0.2cm]
+  {\Large Digitale Lernentwicklungsberichte}\\[1cm]
+  \rule{\textwidth}{0.4pt}\\[0.8cm]
+  {\Large \textbf{Benutzerhandbuch}}\\[0.5cm]
+  {\large Version nach aktuellem Entwicklungsstand}\\[2cm]
+  \vfill
+  {\large Für Administrator:innen, Lehrkräfte, Schüler:innen und Eltern}\par
+  \vspace*{1.5cm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Einleitung}
+Das LEB Tool ist eine webbasierte Anwendung für die strukturierte und datenschutzkonforme Erstellung von Lernentwicklungsberichten im Grundschulkontext. Dieses Handbuch beschreibt Installation, Einrichtung und Nutzung der unterschiedlichen Rollen (Admin, Lehrkraft, Schüler:in, Eltern) und basiert auf den aktuell im Code verfügbaren Funktionen.
+
+\subsection{Leistungsmerkmale im Überblick}
+\begin{itemize}
+  \item Rollenbasiertes System mit getrennten Oberflächen und Rechten
+  \item Delegationen für Teamarbeit nach Klasse \(\times\) Fachbereich
+  \item Fortschrittslogik zur Vollständigkeitsprüfung
+  \item Ausfüllbare PDF-Formulare mit Platzhaltersystem
+  \item Audit-Log für revisionssichere Nachvollziehbarkeit
+  \item Optionale KI-Unterstützung für Textvorschläge
+  \item QR-basierter, passwortloser Schülerzugang mit Vorlesefunktion (TTS)
+\end{itemize}
+
+\section{Systemüberblick}
+\subsection{Zielsetzung}
+\begin{itemize}
+  \item Einheitliche und nachvollziehbare Lernentwicklungsberichte
+  \item Reduktion von Copy\&Paste und manuellen Fehlern
+  \item Klare Rollen- und Rechteverteilung
+  \item Zusammenarbeit mehrerer Lehrkräfte durch Delegationen
+  \item Transparenz durch Audit-Logging
+  \item DSGVO-konforme Datenhaltung und Löschung
+\end{itemize}
+
+\subsection{Hauptmodule}
+\begin{description}[leftmargin=1.6cm]
+  \item[Admin (/admin)] Vollständiger Systemzugriff mit Verwaltung von Personen, Klassen, Templates und globalen Einstellungen.
+  \item[Lehrkraft (/teacher)] Klassenbezogene Arbeit, Datenerfassung, Delegationen und PDF-Export.
+  \item[Schüler:in (/student)] Passwortloser Zugriff per QR-Code für Selbsteinschätzungen.
+  \item[Eltern (/parent)] Optionales Feedback-Formular, klar getrennt vom übrigen System.
+\end{description}
+
+\section{Installation}
+Das System ist für klassisches Shared-Webhosting ohne Shell-Zugriff ausgelegt. Die folgenden Schritte beziehen sich auf den bereitgestellten Code.
+
+\subsection{Voraussetzungen}
+\begin{itemize}
+  \item PHP 8.1+ mit PDO-MySQL-Erweiterung
+  \item MySQL/MariaDB-Datenbank (Zeichensatz \texttt{utf8mb4})
+  \item HTTPS-fähiges Hosting (empfohlen)
+  \item Schreibrechte für \texttt{uploads/} und temporäre Dateien
+\end{itemize}
+
+\begin{enumerate}
+  \item \textbf{Dateien kopieren:} Alle Projektdateien auf den Webserver hochladen.
+  \item \textbf{Installationsassistent starten:} \texttt{install.php} im Browser aufrufen.
+  \item \textbf{Datenbank konfigurieren:} Verbindungsdaten angeben (Host, Port, Name, Benutzer, Passwort, Zeichensatz). Vorgeschlagenes Charset ist \texttt{utf8mb4} (siehe \texttt{config.sample.php}).
+  \item \textbf{Applikationspfade setzen:} \texttt{base\_path} (relativer Pfad zur Installation) und \texttt{public\_base\_url} (vollständige URL) prüfen.
+  \item \textbf{Branding festlegen:} Primärfarbe, Sekundärfarbe und Logo-Pfad definieren (optional bereits im Installer verfügbar). Das mitgelieferte Icon befindet sich unter \texttt{assets/icons/lebtool-icon-512x512.png}.
+  \item \textbf{Admin-Account anlegen:} Zugangsdaten im Installer vergeben.
+  \item \textbf{Abschluss und Absicherung:} Installation abschließen und \texttt{install.php} anschließend löschen oder umbenennen.
+  \item \textbf{Konfigurationsdatei prüfen:} Bei Bedarf \texttt{config.sample.php} kopieren und anpassen (z.\,B. KI-Provider, Mail-Absender, Upload-Verzeichnis, Standard-Schuljahr).
+\end{enumerate}
+
+\subsection{Update-Hinweise}
+\begin{itemize}
+  \item Vor Updates stets Datenbank- und Datei-Backup erstellen.
+  \item Installer nach Updates erneut entfernen/absichern.
+  \item Individuelle Konfiguration in \texttt{config.php} nicht überschreiben.
+  \item Browser-Cache leeren, falls Styles nicht aktualisiert werden.
+\end{itemize}
+
+\section{Erstkonfiguration}
+\subsection{Systemparameter}
+\begin{itemize}
+  \item \textbf{Branding:} Farben und Logo für Schulauftritt setzen (\texttt{app.brand}).
+  \item \textbf{Uploads:} Verzeichnis \texttt{uploads} mit Schreibrechten bereitstellen.
+  \item \textbf{Mail:} Absenderadresse in \texttt{mail.from\_email} und \texttt{mail.from\_name} festlegen.
+  \item \textbf{KI-Integration:} In \texttt{ai} API-Key und Modell konfigurieren (optional). Buttons erscheinen nur bei aktiver Konfiguration.
+  \item \textbf{Vorleseoptionen (Schülerbereich):} Standard-Stimme und Geschwindigkeit in \texttt{student.tts\_voice} und \texttt{student.tts\_rate} anpassen.
+  \item \textbf{Schuljahr-Voreinstellung:} \texttt{app.default\_school\_year} für CSV-Importe ohne Jahresangabe.
+\end{itemize}
+
+\subsection{Benutzer und Klassen anlegen}
+\begin{enumerate}
+  \item Als Admin einloggen und Lehrkräfte erfassen.
+  \item Klassen anlegen (aktiv/archiviert) und Schüler hinzufügen.
+  \item Schüler den Klassen zuordnen; Delegationsregeln definieren.
+  \item Templates und Template-Felder konfigurieren (Text, Option, Datum, Systembindung, Gruppen, Filter).
+  \item Feature-Flags und globale Einstellungen nach Bedarf setzen.
+\end{enumerate}
+
+\subsection{Benutzerkonten und Passwörter}
+\begin{itemize}
+  \item Passwortrücksetzung über \texttt{forgot\_password.php}; neue Passwörter werden nach Bestätigung gesetzt.
+  \item Passwortänderung im eingeloggten Zustand über \texttt{changepassword.php}.
+  \item Admins können Konten neu setzen oder deaktivieren; Protokollierung erfolgt im Audit-Log.
+\end{itemize}
+
+\section{Rollenbasierte Nutzung}
+\subsection{Administrator:in}
+\textbf{Zugriff:} \url{.../admin}
+
+\textbf{Zentrale Funktionen}
+\begin{itemize}
+  \item Lehrkräfte- und Klassenverwaltung (inkl. Archivierung)
+  \item Schülerverwaltung und Zuordnung zu Klassen
+  \item Template-Management (Vorlagen, Felder, Optionslisten, Gruppen, Filterbarkeit)
+  \item Globale Einstellungen und Feature-Flags (z.\,B. KI, Elternsicht)
+  \item Audit-Log mit Filtern (User, Event, Zeitraum), Pagination, Sortierung und optionaler IP-Anzeige
+  \item DSGVO-konformes Löschen personenbezogener Daten
+\end{itemize}
+
+\textbf{Besonderheiten}
+\begin{itemize}
+  \item Zugriff auf alle Klassen und Delegationen
+  \item Vollständige Protokollierung aller Admin-Aktionen
+  \item Export-API zugänglich (PDF mit Platzhaltern wie \texttt{{\{\}student.firstname\}})
+\end{itemize}
+
+\textbf{Arbeitsbereiche im Detail}
+\begin{description}[leftmargin=1.6cm]
+  \item[Dashboard] Schnellzugriff auf Klassenstatus, offene Delegationen und zuletzt exportierte PDFs.
+  \item[Lehrkräfte] Anlegen, Bearbeiten, Deaktivieren, Passwort-Reset; Suche und Sortierung nach Namen/E-Mail.
+  \item[Klassen] Erstellen/Archivieren, Schuljahr und Stufe pflegen, Template zuweisen, TTS-Freigabe setzen, QR-Codes für Schüler neu generieren.
+  \item[Schüler:innen] Stammdaten verwalten, Klassenwechsel durchführen, QR-Tokens neu ausstellen, Zugehörigkeit zu Delegationen prüfen.
+  \item[Templates] Vorlagen strukturieren (Gruppen, Reihenfolge), Felder anlegen (Typ Text/Option/Datum/System), Pflicht- und Filter-Flags setzen, Optionslisten pflegen (inkl. Vorlagen).
+  \item[Einstellungen] Branding (Farben/Logo), Basis-URLs, Upload-Pfade, KI-Provider/Modell, Feature-Flags für Elternsicht und Klassenexport.
+  \item[Audit-Log] Detailansicht mit JSON-Daten; Filter auf Benutzer, Event, Zeitfenster; CSV/PDF-Export via Standard-Print.
+\end{description}
+
+\subsection{Lehrkraft}
+\textbf{Zugriff:} \url{.../teacher}
+
+\textbf{Arbeitsablauf}
+\begin{enumerate}
+  \item Anmeldung und Auswahl einer Klasse oder eines delegierten Fachbereichs.
+  \item Schülerdaten prüfen und Lernentwicklungsfelder ausfüllen (Pflichtfelder werden berücksichtigt, systemgebundene Felder werden ignoriert).
+  \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren, Status einsehen oder ändern.
+  \item Live-Vorschau nutzen und PDF-Exporte erstellen (einzelner Schüler oder, je nach Konfiguration, Klassenexport).
+  \item Fortschrittsanzeigen beachten (fehlende Felder, Vollständigkeit) und offene Schüler- oder Lehrerfelder abschließen.
+\end{enumerate}
+
+\textbf{Werkzeuge}
+\begin{itemize}
+  \item Filter und Suche innerhalb von Klassen
+  \item Fortschrittslogik für Berichte (Pflichtfelder, offene Abschnitte)
+  \item KI-Textvorschläge (falls aktiviert) ohne automatische Speicherung
+  \item Delegationsübersicht (eigene Klassen, delegierte Klassen, delegierte Fächer)
+  \item PDF-Export mit Platzhalterauflösung; Auswahl einzelner Schüler oder gesamter Klasse (abhängig von Einstellung)
+  \item Klassen- und Schülerlisten mit Sortierung/Filterung
+\end{itemize}
+
+\textbf{Formular- und Feldtypen}
+\begin{itemize}
+  \item Freitextfelder mit Rich-Text-ähnlicher Eingabe (Absätze, Listen)
+  \item Optionsfelder (Drop-down) inkl. Optionslisten-Vorlagen
+  \item Datumsfelder mit Formatierung nach Templatevorgabe
+  \item Systemfelder werden angezeigt, sind aber nicht bearbeitbar und fließen in Exporte ein
+\end{itemize}
+
+\textbf{Delegationen}\footnote{Delegationen betreffen immer Klasse \(\times\) Fachbereich.}
+\begin{itemize}
+  \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen (zurücksetzbar)
+  \item Lehrkräfte können eigene Delegationen abgeben oder zurückholen; Admins können jederzeit eingreifen
+  \item Delegierte Bereiche erscheinen separat in der Übersicht
+\end{itemize}
+
+\textbf{Speicher- und Vorschauflogik}
+\begin{itemize}
+  \item Änderungen werden serverseitig gespeichert; Statusanzeigen zeigen \enquote{Speichern}, \enquote{Gespeichert} oder Fehler an.
+  \item Live-Vorschau nutzt aktuelle Eingaben und Template-Placeholders.
+\end{itemize}
+
+\subsection{Schüler:in}
+\textbf{Zugriff:} \url{.../student} (passwortlos)
+
+\textbf{Merkmale}
+\begin{itemize}
+  \item Login per QR-Code; kein Benutzername/Passwort notwendig
+  \item Nur freigegebene Felder sichtbar
+  \item Automatisches Speichern mit Statusanzeige (Speichern/OK/Fehler)
+  \item Tokenbasierter Login verhindert Fremdzugriff; Lehrer können Tokens neu generieren
+  \item Fortschrittsanzeige pro Schritt und Gesamtreport
+  \item TTS-Bar mit Play-/Stop-Button; Stimme und Geschwindigkeit konfigurierbar
+\end{itemize}
+
+\subsection{Eltern}
+\textbf{Zugriff:} \url{.../parent}
+
+\textbf{Aktueller Stand}
+\begin{itemize}
+  \item Eltern-Feedback-Formular mit CSRF-Schutz
+  \item Eigenes Routing, keine Einsicht in Verwaltungs- oder Schülerdaten
+  \item Bestätigte Abgabe wird im Audit-Log vermerkt
+\end{itemize}
+
+\textbf{Geplante Erweiterungen (bereits vorbereitet)}
+\begin{itemize}
+  \item Elternansicht der Berichte
+  \item Unterschriftenfeld mit Lehrkraftname (nur Elternansicht)
+\end{itemize}
+
+\section{PDF- und Exportfunktionen}
+\begin{itemize}
+  \item Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
+  \item Platzhalter wie \texttt{{\{\}student.firstname\}}, \texttt{{\{\}class.label\}} und formatierbare Systemfelder
+  \item Einheitliche Export-API unter \texttt{/shared/export\_*}
+  \item Zugriffskontrolle: Lehrkräfte nur auf eigene Klassen, Admin auf alle Daten
+  \item Klassen- oder Einzel-Exports je nach Einstellung; Dateiablage in \texttt{uploads/} (konfigurierbar)
+\end{itemize}
+
+\section{Delegationen und Zusammenarbeit}
+\begin{itemize}
+  \item Delegation pro Kombination aus Klasse und Fachbereich
+  \item Statusverfolgung (offen / in Bearbeitung / abgeschlossen)
+  \item Delegationen können geändert oder widerrufen werden
+  \item Darstellung delegierter sowie delegierender Klassen
+  \item Admin kann jederzeit eingreifen
+\end{itemize}
+
+\section{Fortschritts- und Vollständigkeitslogik}
+\begin{itemize}
+  \item Automatische Berechnung des Bearbeitungsstands pro Schüler und Klasse
+  \item Berücksichtigung fehlender Pflichtfelder und abgeschlossener Eingaben
+  \item Anzeige in Klassenübersichten, Lehrkraft-UI und Exporten
+  \item Wizard-Navigation im Schülerbereich mit Status pro Schritt
+\end{itemize}
+
+\section{Datenschutz und Sicherheit}
+\begin{itemize}
+  \item Rollenbasierte Zugriffskontrolle
+  \item CSRF-Schutz für schreibende Aktionen
+  \item QR-Token statt Passwörter für Schülerzugänge
+  \item Trennung von Stammdaten und Berichtsdaten
+  \item Audit-Log für Nachvollziehbarkeit
+  \item Empfohlen: HTTPS erzwingen, regelmäßige Backups, Entfernung von \texttt{install.php} nach Setup
+\end{itemize}
+
+\section{Fehlerbehebung und Tipps}
+\begin{itemize}
+  \item \textbf{Login-Probleme:} Cookies und Session-Namen prüfen (\texttt{app.session\_name}).
+  \item \textbf{PDF-Export fehlschlägt:} Stellen Sie sicher, dass Template-Platzhalter vorhanden und Felder vollständig sind.
+  \item \textbf{KI-Vorschläge erscheinen nicht:} \texttt{ai.enabled} und API-Key prüfen.
+  \item \textbf{Uploads schlagen fehl:} Schreibrechte für \texttt{uploads}-Verzeichnis setzen.
+  \item \textbf{QR-Code ungültig:} Token im Admin- oder Lehrkräftebereich neu generieren und erneut verteilen.
+  \item \textbf{Langsame Antwortzeiten:} PHP-Timeout und KI-Timeout (\texttt{ai.timeout\_seconds}) kontrollieren.
+\end{itemize}
+
+\section{Screenshots (Platzhalter)}
+Fügen Sie hier aktuelle Screenshots ein, sobald verfügbar.
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Login-Screen (Platzhalter)}}
+  \caption{Login und Rollenwahl}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering Klassenübersicht mit Fortschritt (Platzhalter)}}
+  \caption{Klassenübersicht im Lehrkräftebereich}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox[c][5cm][c]{12cm}{\centering PDF-Vorschau und Export (Platzhalter)}}
+  \caption{PDF-Export aus einer Lernentwicklungsansicht}
+\end{figure}
+
+\clearpage
+\appendix
+\section{Schnellanleitung für Lehrkräfte}
+\textbf{Ziel:} Innerhalb weniger Minuten Berichte pro Klasse pflegen.
+
+\begin{enumerate}
+  \item Einloggen unter \url{.../teacher}.
+  \item Klasse oder delegierten Fachbereich öffnen.
+  \item Schüler auswählen \rightarrow Pflichtfelder und Freitextfelder ausfüllen.
+  \item Fortschritt prüfen (Anzeige fehlender Felder beachten).
+  \item Optional: KI-Textvorschläge einblenden und bei Bedarf übernehmen.
+  \item Live-Vorschau kontrollieren und PDF exportieren (einzeln oder Klassenexport, falls freigeschaltet).
+  \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren oder zurückholen.
+\end{enumerate}
+
+\vspace{1cm}
+{\small Stand: automatisch aus aktuellem Code abgeleitet. Bitte Anpassungen nach Software-Updates prüfen.}
+
+\end{document}
