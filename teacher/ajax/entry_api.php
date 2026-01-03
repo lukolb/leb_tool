@@ -56,7 +56,36 @@ function load_option_list_items(PDO $pdo, int $listId): array {
   return $out;
 }
 
-function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw, ?string $valueTextRaw): array {
+function option_label_for_lang(PDO $pdo, int $listId, ?int $itemId, ?string $value, string $lang): ?string {
+  if ($listId <= 0) return null;
+
+  if ($itemId !== null && $itemId > 0) {
+    $st = $pdo->prepare("SELECT value, label, label_en FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
+    $st->execute([$itemId, $listId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $lbl = label_for_lang((string)($row['label'] ?? ''), (string)($row['label_en'] ?? ''), $lang);
+      $val = trim((string)($row['value'] ?? ''));
+      return $lbl !== '' ? $lbl : ($val !== '' ? $val : null);
+    }
+  }
+
+  $value = trim((string)$value);
+  if ($value !== '') {
+    $st = $pdo->prepare("SELECT value, label, label_en FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+    $st->execute([$listId, $value]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      $lbl = label_for_lang((string)($row['label'] ?? ''), (string)($row['label_en'] ?? ''), $lang);
+      $val = trim((string)($row['value'] ?? $value));
+      return $lbl !== '' ? $lbl : ($val !== '' ? $val : $value);
+    }
+  }
+
+  return null;
+}
+
+function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw, ?string $valueTextRaw, string $lang = 'de'): array {
   $out = ['text' => $valueTextRaw, 'json' => $valueJsonRaw];
   $listId = option_list_id_from_meta($meta);
   if ($listId <= 0) return $out;
@@ -67,25 +96,39 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
     if (is_array($tmp)) $vj = $tmp;
   }
 
-  $optId = is_array($vj) && isset($vj['option_item_id']) ? (int)$vj['option_item_id'] : 0;
-  if ($optId > 0) {
-    $st = $pdo->prepare("SELECT value FROM option_list_items WHERE id=? AND list_id=? LIMIT 1");
-    $st->execute([$optId, $listId]);
-    $rowVal = $st->fetchColumn();
-    if ($rowVal !== false && $rowVal !== null) {
-      $out['text'] = (string)$rowVal;
-      return $out;
+  if (is_array($vj)) {
+    if (isset($vj['option_item_id'])) {
+      $optId = (int)$vj['option_item_id'];
+      if ($optId > 0) {
+        $lbl = option_label_for_lang($pdo, $listId, $optId, $valueTextRaw, $lang);
+        if ($lbl !== null && trim($lbl) !== '') {
+          $out['text'] = trim($lbl);
+          return $out;
+        }
+      }
+    } else {
+      $parts = [];
+      foreach ($vj as $piece) {
+        if (is_array($piece) && isset($piece['option_item_id'])) {
+          $lbl = option_label_for_lang($pdo, $listId, (int)$piece['option_item_id'], null, $lang);
+          if ($lbl !== null && trim($lbl) !== '') $parts[] = trim($lbl);
+        } else {
+          $s = trim((string)$piece);
+          if ($s !== '') $parts[] = $s;
+        }
+      }
+      if ($parts) {
+        $out['text'] = implode(', ', $parts);
+        return $out;
+      }
     }
   }
 
   $vt = $valueTextRaw !== null ? trim((string)$valueTextRaw) : '';
   if ($vt !== '') {
-    $st = $pdo->prepare("SELECT id, value FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
-    $st->execute([$listId, $vt]);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-    if ($row) {
-      $out['json'] = json_encode(['option_item_id' => (int)$row['id']], JSON_UNESCAPED_UNICODE);
-      $out['text'] = (string)($row['value'] ?? $vt);
+    $lbl = option_label_for_lang($pdo, $listId, null, $vt, $lang);
+    if ($lbl !== null && trim($lbl) !== '') {
+      $out['text'] = trim($lbl);
       return $out;
     }
   }
@@ -542,7 +585,7 @@ function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source): array {
+function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source, string $lang): array {
   $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
   $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
   if (!$reportIds || !$fieldIds) return [];
@@ -571,14 +614,15 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
       $pdo,
       $meta,
       $r['value_json'] !== null ? (string)$r['value_json'] : null,
-      $r['value_text'] !== null ? (string)$r['value_text'] : null
+      $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      $lang
     );
     $out[$rid][$fid] = $res['text'] !== null ? (string)$res['text'] : '';
   }
   return $out;
 }
 
-function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $fieldMetaById, int $limit = 5): array {
+function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $fieldMetaById, string $lang, int $limit = 5): array {
   $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
   $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
   if (!$reportIds || !$fieldIds) return [];
@@ -614,7 +658,8 @@ function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $
       $pdo,
       $meta,
       $r['value_json'] !== null ? (string)$r['value_json'] : null,
-      $r['value_text'] !== null ? (string)$r['value_text'] : null
+      $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      $lang
     );
 
     $out[$rid][$fid][] = [
@@ -728,7 +773,7 @@ try {
     // load values for editable class fields
     $classValuesById = [];
     if ($classReportInstanceId > 0 && $classFieldIdsEditable) {
-      $classValuesById = load_values($pdo, [$classReportInstanceId], $classFieldIdsEditable, 'teacher');
+      $classValuesById = load_values($pdo, [$classReportInstanceId], $classFieldIdsEditable, 'teacher', $lang);
     }
 
     // name => value for placeholder resolution
@@ -866,8 +911,8 @@ try {
       array_values($childByBase)
     ), fn($x)=>$x>0)));
 
-    $valuesTeacher = load_values($pdo, $reportIds, $teacherFieldIds, 'teacher');
-    $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child');
+    $valuesTeacher = load_values($pdo, $reportIds, $teacherFieldIds, 'teacher', $lang);
+    $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
 
     // --- progress (teacher / child / overall) ---
     $teacherProgressIds = [];
@@ -905,9 +950,9 @@ try {
     }
 
     $historyFieldIds = array_values(array_unique(array_merge($teacherFieldIds, $childProgressIds, $classFieldIdsEditable)));
-    $valueHistory = load_value_history($pdo, $reportIds, $historyFieldIds, $fieldMetaById, 5);
+    $valueHistory = load_value_history($pdo, $reportIds, $historyFieldIds, $fieldMetaById, $lang, 5);
 
-    $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child');
+    $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child', $lang);
 
     $teacherTotal = count($teacherProgressIds);
     $childTotal = count($childProgressIds);
@@ -1088,8 +1133,8 @@ try {
     $missingOptionFields = [];
     foreach ($ctxFields as $cf) {
       $meta = meta_read($cf['meta_json'] ?? null);
-      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
-      $resolvedChild = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '');
+      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '', $lang);
+      $resolvedChild = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '', $lang);
 
       $val = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
       $childVal = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
@@ -1248,8 +1293,8 @@ try {
     foreach ($ctxFields as $cf) {
       $meta = meta_read($cf['meta_json'] ?? null);
 
-      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '');
-      $resolvedChild   = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '');
+      $resolvedTeacher = resolve_option_value_text($pdo, $meta, $cf['teacher_value_json'] ?? null, $cf['teacher_value'] ?? '', $lang);
+      $resolvedChild   = resolve_option_value_text($pdo, $meta, $cf['child_value_json'] ?? null, $cf['child_value'] ?? '', $lang);
 
       $teacherText = trim((string)($resolvedTeacher['text'] ?? ($cf['teacher_value'] ?? '')));
       $childText   = trim((string)($resolvedChild['text'] ?? ($cf['child_value'] ?? '')));
