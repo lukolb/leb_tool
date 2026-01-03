@@ -10,6 +10,8 @@ $userId = (int)($u['id'] ?? 0);
 
 $toClassesUrl = get_role() == "admin" ? 'admin/classes.php' : 'teacher/classes.php';
 
+const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
+
 function student_custom_field_label(array $field): string {
   $labelEn = trim((string)($field['label_en'] ?? ''));
   if (ui_lang() === 'en' && $labelEn !== '') return $labelEn;
@@ -876,7 +878,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
               <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
               
               <?php if ($ai_enabled) : ?>
-              <a class="btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;' style="margin-right:6px;"><?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
+              <a class="btn secondary ai-btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;' style="margin-right:6px;"><svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg> <?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
               
               <?php endif; ?>
               
@@ -976,6 +978,9 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     .modal-overlay.is-open { display: flex; }
     .modal { background: #fff; color: inherit; border-radius: 8px; padding: 16px; width: min(720px, 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid var(--border); max-height: 90vh; overflow:auto; }
     .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    
+    .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: currentColor; }
+  .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   </style>
   <script>
     const studentData = <?=json_encode($studentsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
@@ -1084,7 +1089,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       html += section('<?=h(t('teacher.students.support_organization', 'Lernorganisation'))?>', plan?.lernorganisation);
       html += section('<?=h(t('teacher.students.support_social', 'Sozial/Emotional'))?>', plan?.sozial_emotional);
       html += section('<?=h(t('teacher.students.support_home', 'Zu Hause'))?>', plan?.zu_hause);
-      html += section('<?=h(t('teacher.students.support_next', 'Diagnostik & nächste Schritte'))?>', plan?.diagnostik_naechste_schritte);
+      html += section('<?=h(t('teacher.students.support_next', 'Diagnostik und nächste Schritte'))?>', plan?.diagnostik_naechste_schritte);
 
       if (html.trim() === '') {
         html = '<div class="muted"><?=h(t('teacher.students.support_no_data', 'Keine verwertbaren Vorschläge erhalten.'))?></div>';
