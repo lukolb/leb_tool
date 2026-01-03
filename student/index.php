@@ -403,12 +403,14 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let ttsWordOffsets = [];
   let ttsWordTexts = [];
   let ttsActiveWord = -1;
+  let ttsBoundaryWordGuess = 0;
 
   function teardownTtsHighlighting(){
     if (ttsActiveWord >= 0 && ttsWordSpans[ttsActiveWord]) {
       ttsWordSpans[ttsActiveWord].classList.remove('tts-word-active');
     }
     ttsActiveWord = -1;
+    ttsBoundaryWordGuess = 0;
     if (ttsWordSpans.length === 0) return;
     ttsWordSpans.forEach(span => {
       if (!span || !span.parentNode) return;
@@ -469,6 +471,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     ttsWordSpans = spans;
     ttsWordOffsets = offsets;
     ttsWordTexts = words;
+    ttsBoundaryWordGuess = 0;
 
     return { text: words.join(' '), words };
   }
@@ -584,10 +587,23 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
     const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
     if (voice) utter.voice = voice;
-    utter.onstart = () => { highlightWordByIndex(0); updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
+    utter.onstart = () => {
+      ttsBoundaryWordGuess = 0;
+      highlightWordByIndex(0);
+      updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+    };
     utter.onboundary = (ev) => {
       if (ev?.name && ev.name !== 'word') return;
-      const idx = wordIndexFromChar(ev.charIndex);
+      let idx = wordIndexFromChar(ev.charIndex);
+      if (idx < 0) {
+        ttsBoundaryWordGuess = Math.min(
+          (ttsActiveWord >= 0 ? ttsActiveWord + 1 : ttsBoundaryWordGuess + 1),
+          Math.max(0, ttsWordSpans.length - 1)
+        );
+        idx = ttsBoundaryWordGuess;
+      } else {
+        ttsBoundaryWordGuess = idx;
+      }
       if (idx >= 0) highlightWordByIndex(idx);
     };
     utter.onend = () => { teardownTtsHighlighting(); updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
