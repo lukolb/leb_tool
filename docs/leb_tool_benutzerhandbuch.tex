@@ -30,6 +30,9 @@
 
 \definecolor{primary}{HTML}{0B57D0}
 \definecolor{secondary}{HTML}{111111}
+\definecolor{hintbg}{HTML}{EEF3FF}
+\definecolor{warnbg}{HTML}{FFF4E5}
+\definecolor{warnborder}{HTML}{E29500}
 \hypersetup{
   colorlinks=true,
   linkcolor=primary,
@@ -39,12 +42,40 @@
 
 \newcommand{\HandbuchStand}{25.12.2025}
 
+\newcommand{\HintBox}[1]{%
+  \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
+}
+
+\newcommand{\WarnBox}[1]{%
+  \noindent\fcolorbox{warnborder}{warnbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Warnung:} #1}}\par
+}
+
+\newcommand{\PlaceholderFigure}[2]{%
+  \begin{figure}[H]
+    \centering
+    \fcolorbox{primary}{white}{\parbox[c][5cm][c]{12cm}{\centering #2}}
+    \caption{#1}
+  \end{figure}
+}
+
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{LEB Tool \textendash{} Benutzerhandbuch}
-\chead{Stand: \HandbuchStand}
-\rhead{PDF als führende Instanz}
-\cfoot{\thepage}
+\rhead{}
+\lfoot{Stand: \HandbuchStand}
+\rfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\fancypagestyle{plain}{%
+  \fancyhf{}
+  \lhead{LEB Tool \textendash{} Benutzerhandbuch}
+  \rhead{}
+  \lfoot{Stand: \HandbuchStand}
+  \rfoot{\thepage}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
 
 \setlist[itemize]{noitemsep, topsep=2pt}
 \setlist[enumerate]{noitemsep, topsep=2pt}
@@ -54,14 +85,19 @@
 
 % Titelblatt
 \pagenumbering{gobble}
+\thispagestyle{empty}
 \begin{center}
   \LEBTitleIcon\\[1cm]
-  {\Huge \textbf{LEB Tool \textendash{} Benutzerhandbuch}}\\[0.2cm]
-  {\Large Schritt-für-Schritt Anleitung für Admins, Lehrkräfte und Schüler:innen}\\[0.4cm]
-  {\large Lernentwicklungsberichte digital verwalten}\\[0.6cm]
-  {\large Zielgruppe: Grundschule · Kollegium · Administration}\\[0.6cm]
-  {\large Stand: \HandbuchStand}\\[0.6cm]
-  {\large Format: Hybrid \textendash{} vollständiger Text + Screenshot-Platzhalter (Abb.)}\\[0.9cm]
+  {\Huge \textbf{LEB Tool \textendash{} Benutzerhandbuch}}\\[0.3cm]
+  {\Large Schritt-für-Schritt Anleitung für Admins, Lehrkräfte und Schüler:innen}\\[0.5cm]
+  \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.4cm]
+  {\large Lernentwicklungsberichte digital verwalten}\\[0.2cm]
+  {\large Zielgruppe: Grundschule · Kollegium · Administration}\\[0.2cm]
+  {\large Stand: \HandbuchStand}\\[0.2cm]
+  {\large Format: Hybrid \textendash{} vollständiger Text + Screenshot-Platzhalter (Abb.)}\\[0.2cm]
+  \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.6cm]
+  {\normalsize \textit{Die PDF ist führend · Die Klasse ist der zentrale Kontext · Freigaben sind zeitlich begrenzt}}\\[0.3cm]
+  {\normalsize \textit{Values in Optionslisten bleiben stabil · Stabilität vor maximaler Flexibilität}}
 \end{center}
 
 \vfill
@@ -77,8 +113,20 @@
 \section{Überblick: Was ist das LEB Tool?}
 Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von Lernentwicklungsberichten (LEB). Kernidee: Eine PDF-Vorlage mit Formularfeldern ist die führende Instanz. Das Tool extrahiert diese Felder, strukturiert sie in Gruppen, verknüpft sie bei Bedarf mit Optionslisten und erzeugt wieder eine ausgefüllte, druckfertige PDF. \textbf{Zentraler Arbeitskontext} ist die Klasse: Zugriffe erfolgen stets über die Klasse, nicht direkt über einzelne Personen.
 
-\textbf{Abb. 1 – Login / Rollen-Einstieg}\
-Platzhalter für Screenshot der Start- bzw. Login-Seite mit erkennbaren Zugängen für Admin, Lehrkraft und Schüler:in.
+\textbf{Kernobjekte und Prinzipien}
+\begin{itemize}
+  \item \textbf{Template (PDF):} definiert Feldnamen, Seiten und Struktur. Änderungen wirken auf alle zugeordneten Klassen.
+  \item \textbf{Felder:} besitzen Typ (Text/Option), Gruppe, Reihenfolge, Seiteninfo und optional eine Optionsliste. Feldnamen können mehrfach vorkommen.
+  \item \textbf{Optionslisten:} bestehen aus stabilen Values und änderbaren Labels; bei größeren Änderungen wird eine neue Liste versioniert.
+  \item \textbf{Klasse:} Schuljahr, Stufe, Bezeichnung, Template, zugeordnete Lehrkräfte und Schüler:innen bilden den primären Arbeitskontext.
+  \item \textbf{Elternansicht (optional):} Lesender Zugriff auf fertige Berichte kann bereitgestellt werden, ohne Schreibrechte zu vergeben.
+  \item \textbf{Freigabeprinzip:} Schüler-Eingabe ist standardmäßig gesperrt und wird nur zeitlich begrenzt geöffnet.
+  \item \textbf{Exportlogik:} Berichte werden stets aus Template + gespeicherten Daten erzeugt; die PDF ist führend.
+\end{itemize}
+
+\HintBox{Best Practices: Klassenbezug immer zuerst prüfen, keine Values in bestehenden Optionslisten ändern, Freigaben bewusst setzen und wieder schließen.}
+
+\PlaceholderFigure{Abb. 1 – Login / Rollen-Einstieg}{Platzhalter: Start- bzw. Login-Seite mit erkennbaren Zugängen für Admin, Lehrkraft und Schüler:in. Aufnahme: Browser öffnen und Tool-URL aufrufen.}
 
 \subsection{Rollen \& Rechte}
 \begin{tabularx}{\textwidth}{|l|X|l|}
@@ -93,7 +141,7 @@ Schüler:in & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 \hline
 \end{tabularx}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Hinweis:} Schüler:innen haben niemals dauerhaften Schreibzugriff. Die Freigabe ist immer zeitlich begrenzt und wird bewusst von der Lehrkraft gesteuert.}}
+\HintBox{Schüler:innen haben niemals dauerhaften Schreibzugriff. Die Freigabe ist immer zeitlich begrenzt und wird bewusst von der Lehrkraft gesteuert.}
 
 \section{Installation \& Erstinbetriebnahme (Admin)}
 Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung mit Vorlage, Feldern, Optionslisten und Klassen.
@@ -116,13 +164,19 @@ Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung
   \item Sicherheit: \texttt{install.php} entfernen oder per Server-Regel sperren (sofern vorgesehen).
 \end{enumerate}
 
-\textbf{Abb. 2 – Installationsmaske}\
-Platzhalter für Screenshot der Seite \texttt{install.php} mit Datenbankfeldern und Abschluss-Button.
+\textbf{Nach der Installation}
+\begin{itemize}
+  \item Prüfen Sie Dateiberechtigungen für \texttt{storage}/Export-Ordner, damit PDF-Schreibrechte vorhanden sind.
+  \item Legen Sie ein Backup der PDF-Template-Version ab, auf die sich die folgenden Schritte beziehen.
+  \item Dokumentieren Sie den ersten Admin-Account (Name, E-Mail) für spätere Supportfälle.
+\end{itemize}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Warnung:} Falsche Datenbank-Zugangsdaten oder fehlende PHP-Erweiterungen führen zu Installationsfehlern. Prüfen Sie Host, Port und Rechte.}}
+\PlaceholderFigure{Abb. 2 – Installationsmaske}{Platzhalter: Seite \texttt{install.php} mit Datenbankfeldern und Abschluss-Button. Aufnahme: während der Installation vor Abschluss.}
+
+\WarnBox{Falsche Datenbank-Zugangsdaten oder fehlende PHP-Erweiterungen führen zu Installationsfehlern. Prüfen Sie Host, Port und Rechte.}
 
 \section{Admin: Einrichtung in der richtigen Reihenfolge}\label{sec:setup-sequenz}
-Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängigen Daten korrekt verknüpft sind.
+Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängigen Daten korrekt verknüpft sind. Jede Stufe baut auf der vorherigen auf: erst wenn Felder existieren, können sie gruppiert werden; erst wenn Gruppen und Optionslisten definiert sind, lohnt sich die Klassenanlage.
 
 \subsection{Vorlage (PDF) hochladen}
 \begin{enumerate}
@@ -131,8 +185,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
   \item Vorlage speichern und aktivieren.
 \end{enumerate}
 
-\textbf{Abb. 3 – Template-Upload}\
-Platzhalter für Upload-Maske: PDF auswählen, Name vergeben, Speichern/Aktivieren.
+\PlaceholderFigure{Abb. 3 – Template-Upload}{Platzhalter: Upload-Maske mit Dateiauswahl, Namensfeld und Speichern/Aktivieren-Buttons. Aufnahme: Admin → Templates.}
 
 \subsection{Felder extrahieren (Formularfelder auslesen)}
 \begin{enumerate}
@@ -142,8 +195,9 @@ Platzhalter für Upload-Maske: PDF auswählen, Name vergeben, Speichern/Aktivier
   \item Seitenzuordnung stichprobenartig prüfen (Seite 1 Felder von Seite 1).
 \end{enumerate}
 
-\textbf{Abb. 4 – Feldliste nach Extraktion}\
-Platzhalter für Liste der Feldnamen inkl. Seiten und Status.
+\HintBox{Vergleichen Sie die Feldanzahl mit der PDF: Abweichungen bedeuten oft, dass die Vorlage versteckte Felder oder nicht unterstützte Elemente enthält. Bei Dubletten hilft ein Export der Feldliste zum Abgleich.}
+
+\PlaceholderFigure{Abb. 4 – Feldliste nach Extraktion}{Platzhalter: Liste der extrahierten Feldnamen inkl. Seiten- und Statusspalte. Aufnahme: Admin → Template → Felder extrahieren.}
 
 \subsection{Felder gruppieren \& Reihenfolge festlegen}
 \begin{enumerate}
@@ -153,8 +207,9 @@ Platzhalter für Liste der Feldnamen inkl. Seiten und Status.
   \item Reihenfolge speichern und in der Lehreransicht testen.
 \end{enumerate}
 
-\textbf{Abb. 5 – Gruppierung \& Filter}\
-Platzhalter für Gruppenliste mit Batch-Zuordnung und Filtern.
+\HintBox{Die Gruppen bestimmen UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
+
+\PlaceholderFigure{Abb. 5 – Gruppierung \& Filter}{Platzhalter: Gruppenliste mit Batch-Zuordnung, Filtern und Vorschau. Aufnahme: Admin → Template-Felder.}
 
 \subsection{Optionslisten erstellen (Noten/Skalen)}
 \begin{enumerate}
@@ -164,10 +219,9 @@ Platzhalter für Gruppenliste mit Batch-Zuordnung und Filtern.
   \item Speichern und testen.
 \end{enumerate}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Hinweis:} Labels dürfen angepasst werden. Values bleiben stabil. Bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}}
+\HintBox{Labels dürfen angepasst werden. Values bleiben stabil. Bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}
 
-\textbf{Abb. 6 – Optionslisten-Editor}\
-Platzhalter für Ansicht zum Bearbeiten einer Optionsliste mit Einträgen.
+\PlaceholderFigure{Abb. 6 – Optionslisten-Editor}{Platzhalter: Editor mit Namensfeld und Tabelle der Values/Labels. Aufnahme: Admin → Optionslisten.}
 
 \subsection{Optionslisten den Feldern zuordnen}
 \begin{enumerate}
@@ -176,8 +230,9 @@ Platzhalter für Ansicht zum Bearbeiten einer Optionsliste mit Einträgen.
   \item Batch-Zuordnung nutzen, wenn mehrere Felder identisch sind.
 \end{enumerate}
 
-\textbf{Abb. 7 – Zuordnung Optionsliste \(\rightarrow\) Feld}\
-Platzhalter für Feldbearbeitung mit Auswahl einer Optionsliste.
+\WarnBox{Ändern Sie keine bestehenden Values in produktiven Optionslisten. Wenn Skalen angepasst werden müssen, legen Sie eine neue Liste an und ordnen Sie sie allen betroffenen Feldern neu zu.}
+
+\PlaceholderFigure{Abb. 7 – Zuordnung Optionsliste → Feld}{Platzhalter: Feldbearbeitung mit Optionslisten-Auswahl und Speichern-Button. Aufnahme: Admin → Template-Felder → Feld bearbeiten.}
 
 \subsection{Klassen anlegen \& Template zuweisen}
 \begin{enumerate}
@@ -186,8 +241,9 @@ Platzhalter für Feldbearbeitung mit Auswahl einer Optionsliste.
   \item Template auswählen und Klasse aktiv setzen.
 \end{enumerate}
 
-\textbf{Abb. 8 – Klasse anlegen}\
-Platzhalter für Klassenformular mit Template-Auswahl.
+\HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie daher neue Vorlagen zunächst an einer Testklasse, bevor Sie produktive Klassen umstellen.}
+
+\PlaceholderFigure{Abb. 8 – Klasse anlegen}{Platzhalter: Klassenformular mit Feldern für Schuljahr, Stufe, Bezeichnung und Template-Auswahl. Aufnahme: Admin → Klassen.}
 
 \subsection{Lehrkräfte \& Schüler:innen verwalten}
 \textbf{Lehrkräfte}
@@ -202,11 +258,10 @@ Platzhalter für Klassenformular mit Template-Auswahl.
   \item Schüler-Login vergeben oder erzeugen; Login-Liste für die Klasse ausgeben.
 \end{itemize}
 
-\textbf{Abb. 9 – Benutzer \& Zuordnungen}\
-Platzhalter für Ansicht zum Anlegen und Zuweisen von Lehrkräften und Schüler:innen.
+\PlaceholderFigure{Abb. 9 – Benutzer \& Zuordnungen}{Platzhalter: Benutzerliste und Zuordnungsdialog für Lehrkräfte und Schüler:innen. Aufnahme: Admin → Benutzerverwaltung oder Klasse → Zuordnung.}
 
 \section{Lehrkräfte: Berichte erstellen}
-Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schülerberichte ergänzen, Freigabe steuern, Export durchführen.
+Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schülerberichte ergänzen, Freigabe steuern, Export durchführen. Die UI orientiert sich an den Gruppen aus dem Template; Pflichtfelder sind gekennzeichnet und Fortschrittsanzeigen zeigen fehlende Eingaben.
 
 \subsection{Klasse auswählen \& Überblick}
 \begin{enumerate}
@@ -214,8 +269,14 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   \item Klasse wählen und Status (Freigabe, Bearbeitungsstand, Export) prüfen.
 \end{enumerate}
 
-\textbf{Abb. 10 – Lehrerbereich \textendash{} Übersicht}\
-Platzhalter für Klassenliste/Startansicht mit Status.
+\begin{tabular}{p{0.35\textwidth}p{0.6\textwidth}}
+  \textbf{Statusfelder} & \textbf{Bedeutung}\\\hline
+  Freigabe & Gibt an, ob Schüler:innen aktuell schreiben dürfen.\\
+  Bearbeitungsstand & Zeigt, welche Gruppen oder Pflichtfelder noch offen sind.\\
+  Export & Markiert, ob ein Testexport durchgeführt wurde.\\
+\end{tabular}
+
+\PlaceholderFigure{Abb. 10 – Lehrerbereich – Übersicht}{Platzhalter: Klassenliste/Startansicht mit Statusanzeigen. Aufnahme: Lehrerbereich nach Login.}
 
 \subsection{Klassenweite Felder (einmal \textendash{} für alle)}
 \begin{enumerate}
@@ -223,8 +284,9 @@ Platzhalter für Klassenliste/Startansicht mit Status.
   \item Felder vollständig ausfüllen und speichern.
 \end{enumerate}
 
-\textbf{Abb. 11 – Lehrerbereich \textendash{} Klassenfelder}\
-Platzhalter für Ansicht der klassenweiten Felder.
+\HintBox{Klassenweite Felder sollten früh ausgefüllt werden, da sie als Basis in individuellen Texten erscheinen können. Nutzen Sie Zwischenstände und speichern Sie nach jeder Gruppe.}
+
+\PlaceholderFigure{Abb. 11 – Lehrerbereich – Klassenfelder}{Platzhalter: Bereich \enquote{Klassenfelder} mit Eingabefeldern und Speicher-Button. Aufnahme: Lehrerbereich → Klasse → Klassenfelder.}
 
 \subsection{Schülerberichte (individuell)}
 \begin{enumerate}
@@ -233,10 +295,16 @@ Platzhalter für Ansicht der klassenweiten Felder.
   \item Textfelder ausfüllen, Optionsfelder setzen, speichern.
 \end{enumerate}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Hinweis:} Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler:innen ausfüllen, statt pro Kind den gesamten Bericht.}}
+\HintBox{Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler:innen ausfüllen, statt pro Kind den gesamten Bericht.}
 
-\textbf{Abb. 12 – Lehrerbereich \textendash{} Schülerbericht}\
-Platzhalter für Einzelansicht eines Schülers mit Gruppen und Eingabefeldern.
+\PlaceholderFigure{Abb. 12 – Lehrerbereich – Schülerbericht}{Platzhalter: Einzelansicht eines Schülers mit Gruppenregister und Eingabefeldern. Aufnahme: Lehrerbereich → Klasse → Schüler.}
+
+\subsection*{Delegationen und Teamarbeit}
+\begin{itemize}
+  \item Fachbereiche oder Gruppen können an Kolleg:innen delegiert werden; delegierte Bereiche erscheinen im Posteingang der Empfängerin.
+  \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen. Status kann bei Bedarf zurückgesetzt werden.
+  \item Delegationen sind klassen- und gruppenbezogen, nicht schülerbezogen; sie entlasten beim arbeitsteiligen Schreiben.
+\end{itemize}
 
 \subsection{Schüler-Eingabe freigeben (kontrolliert)}
 \begin{enumerate}
@@ -245,23 +313,32 @@ Platzhalter für Einzelansicht eines Schülers mit Gruppen und Eingabefeldern.
   \item Nach Ablauf Freigabe schließen; danach kein Schüler-Schreibzugriff.
 \end{enumerate}
 
-\textbf{Abb. 13 – Lehrerbereich \textendash{} Freigabe}\
-Platzhalter für Freigabe-Schalter und Hinweistext.
+\PlaceholderFigure{Abb. 13 – Lehrerbereich – Freigabe}{Platzhalter: Freigabe-Schalter mit Zeitfenster und Hinweistext. Aufnahme: Lehrerbereich → Klasse → Freigabe.}
 
 \section{Schüler:innen: Eingaben machen}
 Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. Standardzustand ist gesperrt.
 
+\begin{itemize}
+  \item Zugriff erfolgt je nach Schule per QR-Code oder Login-Daten; es werden ausschließlich eigene Felder angezeigt.
+  \item Optional kann eine Vorlesefunktion (TTS) aktiv sein; prüfen Sie Browser-Kompatibilität im Vorfeld.
+  \item Bei Fragen oder Unsicherheiten sollen Schüler:innen die Lehrkraft ansprechen, bevor sie absenden.
+\end{itemize}
+
 \subsection{Gesperrt vs. Freigegeben}
-\textbf{Abb. 14 – Schülerbereich \textendash{} gesperrt}\
-Platzhalter für Seite mit Hinweis: Eingabe noch nicht freigegeben.
+\PlaceholderFigure{Abb. 14 – Schülerbereich – gesperrt}{Platzhalter: Hinweisseite ohne Eingabefelder, weil Freigabe fehlt. Aufnahme: Schülerbereich ohne Freigabe.}
 
-\textbf{Abb. 15 – Schülerbereich \textendash{} freigegeben}\
-Platzhalter für Eingabemaske mit Feldern und Speichern.
+\PlaceholderFigure{Abb. 15 – Schülerbereich – freigegeben}{Platzhalter: Eingabemaske mit Feldern und Speichern-Button. Aufnahme: Schülerbereich mit aktiver Freigabe.}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Hinweis für Schüler:innen (Copy \& Paste):} Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}}
+\HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
 \section{PDF-Export \& Archivierung}
 Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führend.
+
+\begin{itemize}
+  \item Lehrkräfte exportieren auf Klassenebene oder testen zunächst Einzel-Schüler-Exporte, um Format und Inhalte zu prüfen.
+  \item Admins können klassenübergreifend nach Schuljahr oder Klasse filtern; Exportrechte folgen dem Rollenmodell.
+  \item Benennen Sie Exportpakete nachvollziehbar (z.\,B. \enquote{2025-LEB-4a.pdf}) und sichern Sie sie im Schularchiv.
+\end{itemize}
 
 \subsection{Export durch Lehrkräfte}
 \begin{enumerate}
@@ -270,8 +347,7 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
   \item Klassenexport durchführen und PDF stichprobenartig kontrollieren.
 \end{enumerate}
 
-\textbf{Abb. 16 – Export im Lehrerbereich}\
-Platzhalter für Export-Buttons/Optionen im Lehrerbereich.
+\PlaceholderFigure{Abb. 16 – Export im Lehrerbereich}{Platzhalter: Exportbereich mit Einzel- und Klassenexport. Aufnahme: Lehrerbereich → Export.}
 
 \subsection{Export durch Admin (alle Klassen)}
 \begin{enumerate}
@@ -280,8 +356,7 @@ Platzhalter für Export-Buttons/Optionen im Lehrerbereich.
   \item Gesamtexport starten.
 \end{enumerate}
 
-\textbf{Abb. 17 – Export im Adminbereich}\
-Platzhalter für Filter + Start-Export im Adminbereich.
+\PlaceholderFigure{Abb. 17 – Export im Adminbereich}{Platzhalter: Admin-Export mit Filtern (Schuljahr/Klasse) und Start-Button. Aufnahme: Adminbereich → Export.}
 
 \section{FAQ \& Troubleshooting}
 \begin{longtable}{|p{0.45\textwidth}|p{0.45\textwidth}|}
@@ -300,33 +375,17 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
 \hline
 \end{longtable}
 
-\noindent\fbox{\parbox{\textwidth}{\textbf{Checkliste vor dem Zeugnisdruck:} Klassenfelder vollständig, zwei Schülerberichte stichprobenartig geprüft, Schüler-Freigabe geschlossen, PDF-Export (ein Schüler + Klasse) getestet, Ablage-/Archivordner vorbereitet.}}
+\HintBox{Checkliste vor dem Zeugnisdruck: Klassenfelder vollständig, zwei Schülerberichte stichprobenartig geprüft, Schüler-Freigabe geschlossen, PDF-Export (ein Schüler + Klasse) getestet, Ablage-/Archivordner vorbereitet.}
 
 \appendix
 \section{Platzhalter-Screenshots}
-\begin{figure}[H]
-  \centering
-  \fbox{\parbox[c][5cm][c]{12cm}{\centering Admin-Dashboard (Platzhalter)}}
-  \caption{Admin-Dashboard Übersicht}
-\end{figure}
+\PlaceholderFigure{Admin-Dashboard Übersicht}{Admin-Dashboard (Platzhalter)}
 
-\begin{figure}[H]
-  \centering
-  \fbox{\parbox[c][5cm][c]{12cm}{\centering Lehrer-Eingabemaske (Platzhalter)}}
-  \caption{Lehrer: Bericht bearbeiten}
-\end{figure}
+\PlaceholderFigure{Lehrer: Bericht bearbeiten}{Lehrer-Eingabemaske (Platzhalter)}
 
-\begin{figure}[H]
-  \centering
-  \fbox{\parbox[c][5cm][c]{12cm}{\centering Delegations-Inbox (Platzhalter)}}
-  \caption{Delegations-Inbox}
-\end{figure}
+\PlaceholderFigure{Delegations-Inbox}{Delegations-Inbox (Platzhalter)}
 
-\begin{figure}[H]
-  \centering
-  \fbox{\parbox[c][5cm][c]{12cm}{\centering Schüler-QR-Login und TTS-Bar (Platzhalter)}}
-  \caption{Schülerzugang mit Vorlesefunktion}
-\end{figure}
+\PlaceholderFigure{Schülerzugang mit Vorlesefunktion}{Schüler-QR-Login und TTS-Bar (Platzhalter)}
 
 \clearpage
 \section{Schnellanleitung für Lehrkräfte}
