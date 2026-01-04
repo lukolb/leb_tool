@@ -53,7 +53,7 @@ if ($hasTemplate && $schoolYear !== '') {
     " LIMIT 1"
   );
   $st->execute([$classTemplateId, $studentId, $schoolYear]);
-  $reportStatus = (string)($st->fetchColumn() ?: 'draft');
+  $reportStatus = (string)($st->fetchColumn() ?: 'locked');
 }
 
 $canUseWizard = $hasTemplate && $isActive && $reportStatus === 'draft';

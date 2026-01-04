@@ -224,7 +224,7 @@ function random_student_token(): string {
 
 function random_login_code(): string {
   // Avoid ambiguous chars (0,O,1,I)
-  $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ123456789';
   $len = strlen($alphabet);
   $raw = '';
   for ($i = 0; $i < 8; $i++) {
@@ -243,12 +243,12 @@ function class_display(array $c): string {
 /**
  * Child input lock/unlock helpers (class-wide)
  */
-function get_active_template(PDO $pdo): ?array {
+function get_active_template(PDO $pdo, int $classId): ?array {
   $st = $pdo->query(
-    "SELECT id, name, template_version
-     FROM templates
-     WHERE is_active=1
-     ORDER BY created_at DESC, id DESC
+    "SELECT t.id AS id, t.name AS name, template_version
+     FROM templates t INNER JOIN classes c ON c.template_id = t.id
+     WHERE t.is_active=1 AND c.id = $classId
+     ORDER BY t.created_at DESC, t.id DESC
      LIMIT 1"
   );
   $t = $st->fetch(PDO::FETCH_ASSOC);
@@ -392,7 +392,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     // class-wide child input lock/unlock
     if ($action === 'child_lock_class' || $action === 'child_unlock_class') {
-      $tpl = get_active_template($pdo);
+      $tpl = get_active_template($pdo, $classId);
         if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
 
       $templateId = (int)$tpl['id'];
@@ -734,7 +734,7 @@ if (($u['role'] ?? '') === 'admin') {
 }
 
 // Status overview + per-student status map
-$activeTpl = get_active_template($pdo);
+$activeTpl = get_active_template($pdo, $classId);
 $tplIdForUi = $activeTpl ? (int)$activeTpl['id'] : 0;
 $schoolYearUi = (string)($class['school_year'] ?? '');
 if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_school_year'] ?? '');
