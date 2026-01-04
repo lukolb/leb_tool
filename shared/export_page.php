@@ -26,14 +26,14 @@ $tx = [
   'class_hint' => t('teacher.export.class_hint', 'Exportiert die der Klasse zugeordnete Vorlage.'),
   'mode_label' => t('teacher.export.mode_label', 'Export-Variante'),
   'mode.zip' => t('teacher.export.mode.zip', 'ZIP-Export'),
-  'mode.zip_sub' => t('teacher.export.mode.zip_sub', 'eine PDF pro Schüler:in'),
+  'mode.zip_sub' => t('teacher.export.mode.zip_sub', 'eine PDF pro Schüler'),
   'mode.merged' => t('teacher.export.mode.merged', 'Gesamt-PDF'),
-  'mode.merged_sub' => t('teacher.export.mode.merged_sub', 'alle Schüler:innen in einer Datei'),
+  'mode.merged_sub' => t('teacher.export.mode.merged_sub', 'alle Schüler in einer Datei'),
   'mode.single' => t('teacher.export.mode.single', 'Einzel-Export'),
   'mode.single_sub' => t('teacher.export.mode.single_sub', 'nur eine ausgewählte Person'),
   'filter_label' => t('teacher.export.filter_label', 'Filter'),
   'filter_only_submitted' => t('teacher.export.filter_only_submitted', 'Nur abgegebene (submitted)'),
-  'student_label' => t('teacher.export.student_label', 'Schüler:in'),
+  'student_label' => t('teacher.export.student_label', 'Schüler'),
   'check' => t('teacher.export.check', 'Prüfen'),
   'start' => t('teacher.export.start', 'Export starten'),
   'warn_note' => t('teacher.export.warn_note', 'Warnungen blockieren den Export nicht.'),
@@ -46,7 +46,7 @@ $tx = [
   'speed_hint' => t('teacher.export.speed_hint', 'Bei großen Klassen kann „Eine PDF (alle)“ etwas dauern'),
   'debug_active' => t('teacher.export.debug_active', 'Debug aktiv (debug_pdf=1) – siehe Browser-Konsole'),
   'missing_title' => t('teacher.export.missing_title', 'Fehlende Einträge gefunden'),
-  'missing_search' => t('teacher.export.missing_search', 'Suchen (Schüler:in oder Feld) …'),
+  'missing_search' => t('teacher.export.missing_search', 'Suchen (Schüler oder Feld) …'),
   'expand_all' => t('teacher.export.expand_all', 'Alle ausklappen'),
   'collapse_all' => t('teacher.export.collapse_all', 'Alle einklappen'),
   'cancel' => t('teacher.export.cancel', 'Abbrechen'),
@@ -417,7 +417,7 @@ function updateWarnBoxFromPreview(preview){
   if (!warnBox || !warnText) return;
 
   if (total > 0) {
-    warnText.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler:in(en).`;
+    warnText.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler(n).`;
     warnBox.style.display = '';
     if (btnWarnDetails) btnWarnDetails.style.display = '';
   } else {
@@ -471,7 +471,7 @@ async function check(){
     lastPreview = merged;
     updateWarnBoxFromPreview(merged);
     const cnt = __fullStudentList.length || 0;
-    setStatus(`OK. ${cnt} Schüler:in(en) gefunden.`);
+    setStatus(`OK. ${cnt} Schüler gefunden.`);
     showProgress('Prüfen fertig', 3, 3);
     return merged;
 
@@ -591,7 +591,7 @@ function openMissingModal(preview){
 
     __missingRenderSource = preview;
 
-    if (modalSummary) modalSummary.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler:in(en).`;
+    if (modalSummary) modalSummary.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler(n).`;
 
     if (elMissingSearch) elMissingSearch.value = '';
     if (modalList) modalList.innerHTML = buildMissingHtml(preview, '');
@@ -1045,7 +1045,7 @@ async function exportNow(){
   }
 
   const students = data.students || [];
-  if (!students.length) throw new Error('Keine Schüler:innen gefunden (Filter?).');
+  if (!students.length) throw new Error('Keine Schüler gefunden (Filter?).');
 
   const needZip = (mode === 'zip');
   setStatus('Lade Bibliotheken …');

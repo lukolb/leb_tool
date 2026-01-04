@@ -165,7 +165,7 @@ try {
     if ($targetUserId > 0) {
       $stU = $pdo->prepare("SELECT id FROM users WHERE id=? AND is_active=1 AND deleted_at IS NULL AND role IN ('teacher','admin') LIMIT 1");
       $stU->execute([$targetUserId]);
-      if (!$stU->fetchColumn()) throw new RuntimeException('Ungültige Kolleg:in.');
+      if (!$stU->fetchColumn()) throw new RuntimeException('Ungültiger Kollege.');
     }
 
     // school_year from classes (authoritative)

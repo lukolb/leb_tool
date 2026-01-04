@@ -42,7 +42,7 @@ function parse_group_title_overrides_from_post(array $keys, array $titles): arra
 function known_intro_placeholders(): array {
   return [
     '{{org_name}}'      => 'Schule/Organisation',
-    '{{student_name}}'  => 'Schüler:in (Vorname Nachname)',
+    '{{student_name}}'  => 'Schüler (Vorname Nachname)',
     '{{first_name}}'    => 'Vorname',
     '{{last_name}}'     => 'Nachname',
     '{{class}}'         => 'Klasse (z.B. 4A)',
@@ -380,7 +380,7 @@ render_admin_header('Admin – Settings');
 
 <div class="card">
   <h2>Vorlesen (Text-to-Speech)</h2>
-  <p class="muted">Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler:innen. Browser können je nach Gerät unterschiedliche Stimmen bereitstellen.</p>
+  <p class="muted">Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler. Browser können je nach Gerät unterschiedliche Stimmen bereitstellen.</p>
 
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -430,7 +430,7 @@ render_admin_header('Admin – Settings');
 <div class="card">
   <h2>Schüler-Startseite (Intro)</h2>
   <p class="muted">
-    Diese Seite sieht jede:r Schüler:in als erstes. Du kannst Platzhalter einfügen (z.B. für persönliche Begrüßung).
+    Diese Seite sieht jeder Schüler als erstes. Du kannst Platzhalter einfügen (z.B. für persönliche Begrüßung).
   </p>
 
   <div class="panel" style="padding:10px; margin-bottom:10px;">

@@ -196,7 +196,7 @@ render_admin_header($pageTitle);
       <table>
         <thead>
           <tr>
-            <th><?=h(t('admin.parent_requests.student', 'Schüler:in'))?></th>
+            <th><?=h(t('admin.parent_requests.student', 'Schüler'))?></th>
             <th><?=h(t('admin.parent_requests.class', 'Klasse'))?></th>
             <th><?=h(t('admin.parent_requests.status', 'Status'))?></th>
             <th><?=h(t('admin.parent_requests.expires', 'Gültig bis'))?></th>

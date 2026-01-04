@@ -9,7 +9,7 @@ require_teacher();
 $pageTitle = t('teacher.delegations.title', 'Delegationen');
 $pageIntro = t('teacher.delegations.intro', 'Hier siehst du alle Delegationen in Klassen, auf die du Zugriff hast – sowohl <strong>an dich</strong> als auch <strong>an andere</strong>. Du kannst Delegationen hier auch <strong>neu zuweisen</strong> oder <strong>aufheben</strong>.');
 $pageSearchLabel = t('teacher.delegations.search', 'Suche');
-$pageSearchPlaceholder = t('teacher.delegations.search_placeholder', 'Klasse / Gruppe / Kolleg:in…');
+$pageSearchPlaceholder = t('teacher.delegations.search_placeholder', 'Klasse / Gruppe / Kollege…');
 $pageSearchHint = t('teacher.delegations.search_hint', '„Bearbeiten…“ öffnet den Dialog zum Zuweisen/Status/Kommentar.');
 $statusOpen = t('teacher.delegations.status.open', 'offen');
 $statusDone = t('teacher.delegations.status.done', 'fertig');

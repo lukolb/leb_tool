@@ -103,14 +103,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $studentId = (int)($_POST['student_id'] ?? 0);
 
       if ($studentId <= 0) {
-        throw new RuntimeException('Schüler:in fehlt.');
+        throw new RuntimeException('Schüler fehlt.');
       }
 
       $stStudent = $pdo->prepare("SELECT id, class_id, first_name, last_name FROM students WHERE id=? LIMIT 1");
       $stStudent->execute([$studentId]);
       $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
       if (!$studentRow) {
-        throw new RuntimeException('Schüler:in nicht gefunden.');
+        throw new RuntimeException('Schüler nicht gefunden.');
       }
 
       $studentClassId = (int)($studentRow['class_id'] ?? 0);
@@ -289,13 +289,13 @@ render_teacher_header($pageTitle);
 <div class="card">
   <h2><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
   <?php if (!$students): ?>
-    <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schüler:innendaten gefunden.'))?></p>
+    <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
   <?php else: ?>
     <div class="responsive-table">
       <table>
         <thead>
           <tr>
-            <th><?=h(t('teacher.parents.student', 'Schüler:in'))?></th>
+            <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
             <th><?=h(t('teacher.parents.status', 'Status'))?></th>
             <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
             <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
@@ -386,7 +386,7 @@ render_teacher_header($pageTitle);
       <table>
         <thead>
           <tr>
-            <th><?=h(t('teacher.parents.feedback_student', 'Schüler:in'))?></th>
+            <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
             <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
             <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
             <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>

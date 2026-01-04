@@ -147,7 +147,7 @@ render_teacher_header($pageTitle);
       <label class="label">Ansicht</label>
       <select class="input" id="viewSelect" style="width:100%;">
         <option value="grades">Notenübersicht</option>
-        <option value="student">Nach Schüler:in</option>
+        <option value="student">Nach Schüler</option>
         <option value="item">Nach Item/Fach</option>
       </select>
     </div>
@@ -276,7 +276,7 @@ render_teacher_header($pageTitle);
           <h3 style="margin:0;">Fachbereiche delegieren</h3>
         </div>
         <div class="muted" style="margin-top:6px;">
-          Hier kannst du pro <strong>Fach/Gruppe</strong> eine Kollegin/einen Kollegen als Bearbeiter:in festlegen.
+          Hier kannst du pro <strong>Fach/Gruppe</strong> einen Kollegen als Bearbeiter festlegen.
           Delegierte Gruppen sind für andere Lehrkräfte <strong>schreibgeschützt</strong> (Admin darf immer).
         </div>
 
@@ -286,7 +286,7 @@ render_teacher_header($pageTitle);
             <select class="input" id="dlgGroup" style="width:100%;"></select>
           </div>
           <div style="min-width:280px;">
-            <label class="label">Kolleg:in</label>
+            <label class="label">Kollege</label>
             <select class="input" id="dlgUser" style="width:100%;"></select>
             <div class="muted" style="font-size:12px; margin-top:4px;">Leer = Delegation aufheben</div>
           </div>
@@ -318,7 +318,7 @@ render_teacher_header($pageTitle);
   <div id="classFieldsBox" class="card" style="margin:12px 0; display:none;">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <div>
-        <h2>Klassenfelder (für alle Schüler:innen)</h2>
+        <h2>Klassenfelder (für alle Schüler)</h2>
         <div style="opacity:.85; font-size:13px;">Diese Werte gelten für die gesamte Klasse und können in Labels/Hilfetexten per <code>{{Feldname}}</code> referenziert werden.</div>
       </div>
     </div>
@@ -814,11 +814,11 @@ render_teacher_header($pageTitle);
 
     if (!decision) {
       const msg = [
-        'Für dieses Feld gibt es bereits einen Schüler:innen-Wert:',
+        'Für dieses Feld gibt es bereits einen Schüler-Wert:',
         '',
         childDisplay(f, childRaw) || childRaw,
         '',
-        'Sollen beide Werte kombiniert werden (OK) oder der Schüler:innen-Wert überschrieben werden (Abbrechen)?'
+        'Sollen beide Werte kombiniert werden (OK) oder der Schüler-Wert überschrieben werden (Abbrechen)?'
       ].join('\n');
       decision = window.confirm(msg) ? 'combine' : 'overwrite';
     }
@@ -1125,7 +1125,7 @@ render_teacher_header($pageTitle);
     if (!entries.length) return '';
 
     const rows = entries.map(e => {
-      const role = (e.source === 'child') ? 'Schüler:in' : 'Lehrkraft';
+      const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
       const ts = formatDateTime(e.created_at);
       const val = String(e.text ?? '');
       return `
@@ -2037,7 +2037,7 @@ render_teacher_header($pageTitle);
 
   function render(){
     elApp.style.display = 'block';
-    elMetaTop.textContent = `${state.template?.name ?? 'Template'} · ${state.students.length} Schüler:innen · ${state.groups.reduce((a,g)=>a+g.fields.length,0)} Felder`;
+    elMetaTop.textContent = `${state.template?.name ?? 'Template'} · ${state.students.length} Schüler · ${state.groups.reduce((a,g)=>a+g.fields.length,0)} Felder`;
 
     // ✅ always render class fields (independent from view)
     renderClassFields();
@@ -2317,7 +2317,7 @@ render_teacher_header($pageTitle);
     const tr1 = document.createElement('tr');
     const th0 = document.createElement('th');
     th0.className = 'sticky';
-    th0.textContent = 'Schüler:in';
+    th0.textContent = 'Schüler';
     tr1.appendChild(th0);
 
     const groupOrder = [];

@@ -12,7 +12,7 @@ function text_snippet_base_templates(): array {
     ['category' => 'Lernwege', 'title' => 'Feedback nutzen', 'content' => 'nimmt Rückmeldungen an, setzt konkrete nächste Schritte fest und überprüft den eigenen Fortschritt.'],
     ['category' => 'Lernwege', 'title' => 'Hausaufgaben', 'content' => 'erledigt Hausaufgaben zuverlässig, bringt Materialien mit und fragt bei Unklarheiten nach.'],
     ['category' => 'Engagement', 'title' => 'AG Teilnahme', 'content' => 'nimmt mit Interesse an der Arbeitsgemeinschaft teil und bringt eigene Ideen ein.'],
-    ['category' => 'Engagement', 'title' => 'Klassensprecher:in', 'content' => 'wurde zum Klassensprecher gewählt und vertritt die Klasse zuverlässig.'],
+    ['category' => 'Engagement', 'title' => 'Klassensprecher', 'content' => 'wurde zum Klassensprecher gewählt und vertritt die Klasse zuverlässig.'],
     ['category' => 'Engagement', 'title' => 'Pausendienst', 'content' => 'übernimmt den Pausendienst zuverlässig und erinnert andere freundlich an die Regeln.'],
     ['category' => 'Elternkommunikation', 'title' => 'Elterngespräch vereinbart', 'content' => 'hat einen Gesprächstermin mit den Erziehungsberechtigten, um Lernfortschritte zu besprechen.'],
     ['category' => 'Sozialverhalten', 'title' => 'Konflikte lösen', 'content' => 'hört in Streitgesprächen zu, sucht nach gemeinsamen Lösungen und bezieht andere fair ein.'],

@@ -80,7 +80,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 
 ---
 
-### 🧒 Schüler:innen (`/student`)
+### 🧒 Schüler (`/student`)
 
 Der Schülerbereich ist **passwortlos** und **stark reduziert**.
 

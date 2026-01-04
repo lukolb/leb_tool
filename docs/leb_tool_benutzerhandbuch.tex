@@ -114,7 +114,7 @@
 
 \vfill
 \begin{center}
-  \textcolor{secondary}{\small Dieses Dokument beschreibt Funktionen und Bedienung des LEB Tools für Admins, Lehrkräfte, Schüler:innen und Elternzugänge.}
+  \textcolor{secondary}{\small Dieses Dokument beschreibt Funktionen und Bedienung des LEB Tools für Admins, Lehrkräfte, Schüler und Elternzugänge.}
 \end{center}
 \clearpage
 
@@ -123,7 +123,7 @@
 \clearpage
 
 \section{Geltungsbereich \& Versionierung}
-Dieses Handbuch richtet sich an Admins, Lehrkräfte und (wo vorgesehen) Schüler:innen der Grundschule. Es beschreibt Bedienung und Abläufe des LEB Tools für die Erstellung von Lernentwicklungsberichten.
+Dieses Handbuch richtet sich an Admins, Lehrkräfte und (wo vorgesehen) Schüler der Grundschule. Es beschreibt Bedienung und Abläufe des LEB Tools für die Erstellung von Lernentwicklungsberichten.
 \begin{itemize}
   \item \textbf{Zweck:} Schritt-für-Schritt-Anleitung für Einrichtung, Nutzung und Export der Berichte.
   \item \textbf{Gültig für:} aktuelle Produktivversion zum Stand \HandbuchStand{}; Anpassungen nach Software-Updates sind einzuarbeiten.
@@ -140,7 +140,7 @@ Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von
   \item \textbf{Template (PDF):}\index{Template} definiert Feldnamen, Seiten und Struktur. Änderungen wirken auf alle zugeordneten Klassen.
   \item \textbf{Felder:} besitzen Typ (Text/Option), Gruppe, Reihenfolge, Seiteninfo und optional eine Optionsliste. Feldnamen können mehrfach vorkommen.\index{Feldextraktion|see{Felder}}
   \item \textbf{Optionslisten:}\index{Optionsliste} bestehen aus stabilen Values und änderbaren Labels; bei größeren Änderungen wird eine neue Liste versioniert.
-  \item \textbf{Klasse:} Schuljahr, Stufe, Bezeichnung, Template, zugeordnete Lehrkräfte und Schüler:innen bilden den primären Arbeitskontext.\index{Klasse}
+  \item \textbf{Klasse:} Schuljahr, Stufe, Bezeichnung, Template, zugeordnete Lehrkräfte und Schüler bilden den primären Arbeitskontext.\index{Klasse}
   \item \textbf{Elternansicht (optional):} Lesender Zugriff auf fertige Berichte kann bereitgestellt werden, ohne Schreibrechte zu vergeben.
   \item \textbf{Freigabeprinzip:}\index{Freigabe} Schüler-Eingabe ist standardmäßig gesperrt und wird nur zeitlich begrenzt geöffnet.
   \item \textbf{Exportlogik:}\index{Export} Berichte werden stets aus Template + gespeicherten Daten erzeugt; die PDF ist führend.
@@ -159,16 +159,16 @@ Admin & Installation, Templates, Optionslisten, Klassen/Benutzer, Gesamt-Export 
 \hline
 Lehrkraft & Klassenfelder, Schülerberichte, Freigaben, Export & Arbeitsphase\\
 \hline
-Schüler:in & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
+Schüler & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 \hline
 \end{tabularx}
 
-\HintBox{Schüler:innen haben niemals dauerhaften Schreibzugriff. Die Freigabe ist immer zeitlich begrenzt und wird bewusst von der Lehrkraft gesteuert.}
+\HintBox{Schüler haben niemals dauerhaften Schreibzugriff. Die Freigabe ist immer zeitlich begrenzt und wird bewusst von der Lehrkraft gesteuert.}
 
 \section{Datenschutz \& Verantwortlichkeiten}
 Kurzer Leitfaden (nicht rechtsverbindlich):
 \begin{itemize}
-  \item \textbf{Rollenbasierter Zugriff:} Admins verwalten Templates, Klassen und Nutzer; Lehrkräfte sehen nur ihre Klassen; Schüler:innen sehen ausschließlich eigene, freigegebene Felder.
+  \item \textbf{Rollenbasierter Zugriff:} Admins verwalten Templates, Klassen und Nutzer; Lehrkräfte sehen nur ihre Klassen; Schüler sehen ausschließlich eigene, freigegebene Felder.
   \item \textbf{Schüler-Logins:} Ausgabe der Zugangsdaten geschützt verwahren; bei Verlust Passwörter zurücksetzen.
   \item \textbf{Transport-Sicherheit:} Zugriff nach Möglichkeit per HTTPS; Testdaten vor Produktivstart nutzen, um echte Schülerdaten zu schützen.
   \item \textbf{Verantwortlichkeiten:} Schulen regeln intern, wer Datenschutzanfragen beantwortet (z.\,B. Admin, IT, Datenschutzbeauftragte:r). \textbf{TODO: Interne Ansprechperson und Kontaktweg ergänzen.}
@@ -205,7 +205,7 @@ Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung
   \item Dokumentieren Sie den ersten Admin-Account (Name, E-Mail) für spätere Supportfälle.
 \end{itemize}
 
-\PlaceholderFigure{Abb. 2 – Installationsmaske}{Platzhalter: Seite \texttt{install.php} mit Datenbankfeldern und Abschluss-Button. Aufnahme: während der Installation vor Abschluss.}
+\ScreenshotFigure{screenshots/install.png}{Installationsmaske}
 
 \WarnBox{Falsche Datenbank-Zugangsdaten oder fehlende PHP-Erweiterungen führen zu Installationsfehlern. Prüfen Sie Host, Port und Rechte.}
 
@@ -286,7 +286,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \ScreenshotFigure{screenshots/admin_newclass.png}{Klasse anlegen}
 
-\subsection{Lehrkräfte \& Schüler:innen verwalten}
+\subsection{Lehrkräfte \& Schüler verwalten}
 \textbf{Lehrkräfte}
 \begin{itemize}
   \item Lehrkraft anlegen (Name, Login, Passwort).
@@ -294,16 +294,16 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
   \item Passwörter zurücksetzen oder ändern (z.\,B. bei Verlust oder nach Personalwechsel). Nutzen Sie sichere Übergabekanäle und dokumentieren Sie Rollenänderungen.
 \end{itemize}
 
-\textbf{Schüler:innen}
+\textbf{Schüler}
 \begin{itemize}
-  \item Schüler:innen anlegen oder importieren (Vorname, Nachname, Klasse).
+  \item Schüler anlegen oder importieren (Vorname, Nachname, Klasse).
   \item Schüler-Login vergeben oder erzeugen; Login-Liste für die Klasse ausgeben.
   \item Test-Logins getrennt von Echtdaten führen, damit Exporte und Statistiken sauber bleiben.
 \end{itemize}
 
 \subsection*{Zugänge \& Passwort-Management}
 \begin{itemize}
-  \item \textbf{Login-Verteilung:} Zugangsdaten (insbesondere Schüler:innen) nur persönlich oder über gesicherte Kanäle aushändigen; bei Verlust sofort neu setzen.
+  \item \textbf{Login-Verteilung:} Zugangsdaten (insbesondere Schüler) nur persönlich oder über gesicherte Kanäle aushändigen; bei Verlust sofort neu setzen.
   \item \textbf{Passwort-Reset:} Passwort-vergessen-Funktion für Lehrkräfte/Admins nutzen; bei häufiger Nutzung Ursachen prüfen (z.\,B. veraltete Verteilerlisten).
   \item \textbf{Regelmäßige Prüfung:} Nicht mehr genutzte Accounts deaktivieren; Rollen von Vertretungen nach Projektende zurücksetzen.
 \end{itemize}
@@ -347,7 +347,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \begin{tabular}{p{0.35\textwidth}p{0.6\textwidth}}
   \textbf{Statusfelder} & \textbf{Bedeutung}\\\hline
-  Freigabe & Gibt an, ob Schüler:innen aktuell schreiben dürfen.\\
+  Freigabe & Gibt an, ob Schüler aktuell schreiben dürfen.\\
   Bearbeitungsstand & Zeigt, welche Gruppen oder Pflichtfelder noch offen sind.\\
   Export & Markiert, ob ein Testexport durchgeführt wurde.\\
 \end{tabular}
@@ -378,13 +378,13 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   \item Textfelder ausfüllen, Optionsfelder setzen, speichern.
 \end{enumerate}
 
-\HintBox{Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler:innen ausfüllen, statt pro Kind den gesamten Bericht.}
+\HintBox{Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler ausfüllen, statt pro Kind den gesamten Bericht.}
 
 \ScreenshotFigure{screenshots/teacher_entrystudent.png}{Lehrerbereich – Schülerbericht}
 
 \subsection*{Delegationen und Teamarbeit}
 \begin{itemize}
-  \item Fachbereiche oder Gruppen können an Kolleg:innen delegiert werden; delegierte Bereiche erscheinen im Posteingang der Empfängerin.
+  \item Fachbereiche oder Gruppen können an Kollegen delegiert werden; delegierte Bereiche erscheinen im Posteingang der Empfängerin.
   \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen. Status kann bei Bedarf zurückgesetzt werden.
   \item Delegationen sind klassen- und gruppenbezogen, nicht schülerbezogen; sie entlasten beim arbeitsteiligen Schreiben.
 \end{itemize}
@@ -392,23 +392,23 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 \subsection{Schüler-Eingabe freigeben (kontrolliert)}\index{Freigabe}
 \begin{enumerate}
   \item Freigabe aktivieren und Zeitfenster festlegen.
-  \item Hinweistext für Schüler:innen hinterlegen (kurz, klar).
+  \item Hinweistext für Schüler hinterlegen (kurz, klar).
   \item Nach Ablauf Freigabe schließen; danach kein Schüler-Schreibzugriff.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/teacher_students.png}{Lehrerbereich – Freigabe}
 
-\section{Schüler:innen: Eingaben machen}
-Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. Standardzustand ist gesperrt.
+\section{Schüler: Eingaben machen}
+Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. Standardzustand ist gesperrt.
 
 \begin{itemize}
   \item Zugriff erfolgt je nach Schule per QR-Code oder Login-Daten; es werden ausschließlich eigene Felder angezeigt.
   \item Optional kann eine Vorlesefunktion (TTS) aktiv sein; prüfen Sie Browser-Kompatibilität im Vorfeld.
-  \item Bei Fragen oder Unsicherheiten sollen Schüler:innen die Lehrkraft ansprechen, bevor sie absenden.
+  \item Bei Fragen oder Unsicherheiten sollen Schüler die Lehrkraft ansprechen, bevor sie absenden.
 \end{itemize}
 
 \subsection{Gesperrt vs. Freigegeben}
-\PlaceholderFigure{Abb. 14 – Schülerbereich – gesperrt}{Platzhalter: Hinweisseite ohne Eingabefelder, weil Freigabe fehlt. Aufnahme: Schülerbereich ohne Freigabe.}
+\ScreenshotFigure{screenshots/student_locked.png}{Schülerbereich – gesperrt}
 
 \ScreenshotFigure{screenshots/student_inputs.png}{Schülerbereich – freigegeben}
 
@@ -422,7 +422,7 @@ Falls freigeschaltet, können Eltern fertige Berichte lesen und ggf. Feedback ge
   \item Datenschutz beachten: Links nicht öffentlich teilen; idealerweise mit Ablaufdatum oder Schutzmechanismus ausliefern.
 \end{itemize}
 
-\PlaceholderFigure{Abb. 16 – Elternansicht (Platzhalter)}{Platzhalter: Ansicht mit fertigem Bericht und optionalem Feedback-Feld. Aufnahme: Elternzugang nach Freischaltung.}
+\ScreenshotFigure{screenshots/parent_view.png}{Elternansicht (Platzhalter)}
 
 \section{PDF-Export \& Archivierung}\index{Export}
 Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führend.
@@ -461,8 +461,8 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
 \section{Bearbeitungsstand \& Statusanzeigen (Übersicht)}
 \begin{itemize}
   \item \textbf{Offene Pflichtfelder:} Markierungen oder Fortschrittsanzeigen weisen auf fehlende Eingaben hin; erst bei \enquote{vollständig} exportieren.
-  \item \textbf{Freigabe-Status:} Klar erkennbar, ob Schüler:innen schreiben dürfen; nach Abschluss deaktivieren.
-  \item \textbf{Qualitätssicherung:} Stichprobe (mindestens zwei Schüler:innen) und Testexport pro Klasse vor dem finalen Klassenexport.
+  \item \textbf{Freigabe-Status:} Klar erkennbar, ob Schüler schreiben dürfen; nach Abschluss deaktivieren.
+  \item \textbf{Qualitätssicherung:} Stichprobe (mindestens zwei Schüler) und Testexport pro Klasse vor dem finalen Klassenexport.
 \end{itemize}
 
 \section{Funktionsabdeckung \& Vollständigkeitscheck}
@@ -499,7 +499,7 @@ Kurzer Überblick, welche Kernfunktionen in diesem Handbuch beschrieben sind und
 \hline
 Dropdown zeigt keine Werte & Optionsliste fehlt oder wurde dem Feld nicht zugeordnet; Liste prüfen und zuweisen.\\
 \hline
-Schüler:innen sehen keine Eingabe & Freigabe durch Lehrkraft fehlt oder wurde geschlossen; Freigabe erneut aktivieren.\\
+Schüler sehen keine Eingabe & Freigabe durch Lehrkraft fehlt oder wurde geschlossen; Freigabe erneut aktivieren.\\
 \hline
 Felder erscheinen auf falschen Seiten & Felder erneut extrahieren und Seitenzuordnung prüfen.\\
 \hline
@@ -522,8 +522,8 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
   \item Klasse oder delegierten Fachbereich öffnen.
   \item Schüler auswählen \(\rightarrow\) Pflichtfelder und Freitextfelder ausfüllen.
   \item Fortschritt prüfen (Anzeige fehlender Felder beachten).
-  \item Bei Bedarf delegieren: Fachbereiche an Kolleg:innen abgeben.
-  \item Delegationen verwalten: Fachbereiche an Kolleg:innen delegieren oder zurückholen.
+  \item Bei Bedarf delegieren: Fachbereiche an Kollegen abgeben.
+  \item Delegationen verwalten: Fachbereiche an Kollegen delegieren oder zurückholen.
   \item Optional Schülerfreigabe setzen und nach Ablauf wieder schließen.
   \item Export je Schüler oder gesamte Klasse durchführen (PDF prüfen).
 \end{enumerate}
@@ -543,9 +543,9 @@ Feldextraktion & Auslesen der Formularfelder aus dem Template; liefert Feldnamen
 \hline
 Optionsliste & Werteliste mit stabilem Value und änderbarem Label; wird Dropdown-Feldern zugeordnet.\\
 \hline
-Klassenfeld & Feld, das einmal je Klasse ausgefüllt wird und für alle Schüler:innen gilt.\\
+Klassenfeld & Feld, das einmal je Klasse ausgefüllt wird und für alle Schüler gilt.\\
 \hline
-Freigabe & Zeitlich begrenzte Schreibfreigabe für Schüler:innen, gesteuert durch die Lehrkraft.\\
+Freigabe & Zeitlich begrenzte Schreibfreigabe für Schüler, gesteuert durch die Lehrkraft.\\
 \hline
 Export & Erzeugung druckfertiger PDFs auf Basis von Template und gespeicherten Eingaben.\\
 \hline
