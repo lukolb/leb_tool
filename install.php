@@ -1,5 +1,6 @@
 <?php
 // install.php (standalone; shared-hosting friendly)
+// Vollversion inkl. Schema + UI
 declare(strict_types=1);
 
 ini_set('display_errors', '1');
@@ -71,6 +72,13 @@ if (file_exists($configPath)) {
 $errors = [];
 $ok = false;
 
+// Debug-Log (ausklappbar)
+$debugLog = [];
+function dlog(string $msg): void {
+  global $debugLog;
+  $debugLog[] = $msg;
+}
+
 $dbHost = $_POST['db_host'] ?? '';
 $dbPort = $_POST['db_port'] ?? '3306';
 $dbName = $_POST['db_name'] ?? '';
@@ -102,33 +110,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!preg_match('/^#[0-9a-fA-F]{6}$/', $brandSecondary)) $errors[] = "Secondary Color muss ein Hex-Wert wie #111111 sein.";
 
   if (!$errors) {
+    $pdo = null;
     try {
       $portInt = (int)$dbPort;
       $dsn = "mysql:host={$dbHost};port={$portInt};dbname={$dbName};charset=utf8mb4";
+      dlog("DSN: {$dsn}");
+      dlog("DB-User: {$dbUser}");
+
       $pdo = new PDO($dsn, $dbUser, $dbPass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
       ]);
 
-      $schema = getSchemaSql();
-      foreach (splitSqlStatements($schema) as $sql) {
-        $pdo->exec($sql);
-      }
+      $dbNow = (string)$pdo->query("SELECT DATABASE()")->fetchColumn();
+      $ver = (string)$pdo->query("SELECT VERSION()")->fetchColumn();
+      dlog("Connected. DATABASE()={$dbNow}");
+      dlog("MySQL/MariaDB VERSION()={$ver}");
 
+      // Schema ausführen (mit präziser Fehlerstelle)
+      $schema = getSchemaSql();
+      $stmts = splitSqlStatements($schema);
+      dlog("Schema statements: " . count($stmts));
+
+      $i = 0;
+      foreach ($stmts as $sql) {
+        $i++;
+        try {
+          $pdo->exec($sql);
+        } catch (Throwable $e) {
+          $preview = trim(preg_replace('/\s+/', ' ', $sql));
+          if (strlen($preview) > 260) $preview = substr($preview, 0, 260) . ' …';
+          throw new RuntimeException("Schema-Statement #{$i} fehlgeschlagen: {$e->getMessage()} | SQL: {$preview}");
+        }
+      }
+      dlog("Schema executed OK.");
+
+      // Admin anlegen
       $stmt = $pdo->query("SELECT COUNT(*) AS c FROM users WHERE role='admin' AND is_active=1 AND deleted_at IS NULL");
       $count = (int)($stmt->fetch()['c'] ?? 0);
+      dlog("Existing active admins: {$count}");
 
       $pepper = bin2hex(random_bytes(32));
       $passHash = password_hash($adminPass . $pepper, PASSWORD_DEFAULT);
 
       if ($count === 0) {
+        dlog("Creating initial admin user...");
+
         $ins = $pdo->prepare(
           "INSERT INTO users (email, password_hash, password_set_at, display_name, role, is_active, must_change_password)
            VALUES (?, ?, NOW(), ?, 'admin', 1, 0)"
         );
         $ins->execute([$adminEmail, $passHash, $adminName]);
+
+        $newId = (int)$pdo->lastInsertId();
+        dlog("Admin inserted. lastInsertId={$newId}");
+      } else {
+        dlog("Skipped admin creation (admin already exists).");
       }
 
+      // Verifizieren: users darf nicht leer sein, wenn count==0 war
+      $usersTotal = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+      $adminsTotal = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role='admin'")->fetchColumn();
+      dlog("After admin step: users_total={$usersTotal} admins_total={$adminsTotal}");
+
+      if ($usersTotal === 0) {
+        throw new RuntimeException("users ist nach Installation immer noch leer. Dann wurde der INSERT nicht ausgeführt/committed oder du schaust in eine andere DB. Bitte Install-Log prüfen (DATABASE()).");
+      }
+
+      // config.php schreiben
       $cfg = require $samplePath;
       $cfg['db']['host'] = $dbHost;
       $cfg['db']['port'] = $portInt;
@@ -175,32 +224,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (file_put_contents($configPath, $export, LOCK_EX) === false) {
         throw new RuntimeException("Konnte config.php nicht schreiben. Rechte prüfen.");
       }
+      dlog("config.php written OK.");
 
       $ok = true;
     } catch (Throwable $e) {
       $errors[] = "Fehler: " . $e->getMessage();
+      // Debug zusätzlich anzeigen hilft bei Strato extrem
+      if ($debugLog) {
+        $errors[] = "Install-Log: " . implode(" | ", $debugLog);
+      }
     }
   }
 }
 
 function splitSqlStatements(string $sql): array {
+  // Entferne -- Kommentare
   $sql = preg_replace('/^\s*--.*$/m', '', $sql);
   $sql = trim($sql);
+  if ($sql === '') return [];
+
+  // Split: Semikolon + Zeilenende oder EOF
   $parts = preg_split('/;\s*(?:\r\n|\r|\n|$)/', $sql);
   $out = [];
   foreach ($parts as $p) {
     $p = trim($p);
-    if ($p !== '') $out[] = $p . ';';
+    if ($p !== '') $out[] = $p;
   }
   return $out;
 }
 
 function getSchemaSql(): string {
+  // Vereinheitlicht: utf8mb4_unicode_ci statt utf8mb4_0900_ai_ci (Shared-Hosting/MariaDB-friendly)
+  // Trigger im Installer entfernt (oft Problemquelle auf Shared Hosting)
   $JSON = "LONGTEXT";
   return <<<SQL
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
-SET AUTOCOMMIT = 0;
-START TRANSACTION;
 SET time_zone = "+00:00";
 SET NAMES utf8mb4;
 
@@ -283,14 +341,14 @@ CREATE TABLE IF NOT EXISTS `templates` (
   UNIQUE KEY `uq_templates_name_version` (`name`,`template_version`),
   KEY `idx_templates_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  
+
 CREATE TABLE IF NOT EXISTS `template_fields` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `template_id` bigint UNSIGNED NOT NULL,
   `field_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `field_type` enum('text','multiline','date','number','grade','checkbox','radio','select','signature') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio',
   `label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `label_en` VARCHAR(255) NULL
+  `label_en` VARCHAR(255) NULL,
   `help_text` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `is_multiline` tinyint(1) NOT NULL DEFAULT '0',
   `is_required` tinyint(1) NOT NULL DEFAULT '0',
@@ -445,7 +503,7 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
 CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` bigint UNSIGNED NOT NULL,
-  `token_hash` char(64) NOT NULL,
+  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
   `expires_at` datetime NOT NULL,
   `used_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -453,7 +511,7 @@ CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
   UNIQUE KEY `uq_prt_token_hash` (`token_hash`),
   KEY `idx_prt_user` (`user_id`),
   KEY `idx_prt_valid` (`expires_at`,`used_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `user_class_assignments` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -465,7 +523,7 @@ CREATE TABLE IF NOT EXISTS `user_class_assignments` (
   KEY `idx_uca_user` (`user_id`),
   KEY `idx_uca_class` (`class_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-          
+
 CREATE TABLE IF NOT EXISTS `option_scales` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -480,8 +538,8 @@ CREATE TABLE IF NOT EXISTS `option_scales` (
 
 CREATE TABLE IF NOT EXISTS `option_list_templates` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `name` varchar(190) NOT NULL,
-  `description` text,
+  `name` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_by_user_id` int DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -489,37 +547,37 @@ CREATE TABLE IF NOT EXISTS `option_list_templates` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_option_list_templates_name` (`name`),
   KEY `idx_option_list_templates_active` (`is_active`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `option_list_items` (
   `id` int NOT NULL AUTO_INCREMENT,
   `list_id` int NOT NULL,
-  `value` varchar(190) NOT NULL,
-  `label` varchar(190) NOT NULL,
-  `label_en` VARCHAR(190) NOT NULL DEFAULT ''
+  `value` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `label` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `label_en` VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `icon_id` int DEFAULT NULL,
   `sort_order` int NOT NULL DEFAULT '0',
-  `meta_json` $JSON CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `meta_json` $JSON COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_list_id_sort` (`list_id`,`sort_order`),
   KEY `idx_option_list_items_icon` (`icon_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-          
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `icon_library` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `filename` varchar(255) NOT NULL,
-  `storage_path` varchar(255) NOT NULL,
-  `file_ext` varchar(16) NOT NULL,
-  `mime_type` varchar(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
-  `sha256` char(64) DEFAULT NULL,
+  `filename` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `storage_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `file_ext` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mime_type` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `sha256` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_by_user_id` int DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_icon_storage_path` (`storage_path`),
   KEY `idx_icon_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `text_snippets` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -554,7 +612,7 @@ CREATE TABLE IF NOT EXISTS `classes` (
   KEY `idx_classes_active_year` (`is_active`,`school_year`),
   KEY `idx_classes_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-          
+
 CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `class_id` bigint UNSIGNED NOT NULL,
@@ -573,7 +631,7 @@ CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   KEY `idx_class_group_deleg_user` (`user_id`),
   KEY `idx_class_group_deleg_class` (`class_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-          
+
 ALTER TABLE `classes`
   ADD CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -589,10 +647,9 @@ ALTER TABLE `user_class_assignments`
           
 CREATE TRIGGER `delete_old_password_tokens` BEFORE INSERT ON `audit_log` FOR EACH ROW DELETE FROM password_reset_tokens WHERE expires_at < NOW();
           
-COMMIT;
-          
 SQL;
 }
+
 ?>
 <!doctype html>
 <html lang="de">
@@ -628,6 +685,13 @@ SQL;
         <p class="muted">
           Wenn das Löschen nicht klappt: bitte <code>install.php</code> per FTP löschen oder serverseitig sperren.
         </p>
+
+        <?php if ($debugLog): ?>
+          <details style="margin-top:12px;">
+            <summary><strong>Install-Log anzeigen</strong></summary>
+            <pre style="white-space:pre-wrap; margin-top:10px;"><?=h(implode("\n", $debugLog))?></pre>
+          </details>
+        <?php endif; ?>
       </div>
 
     <?php else: ?>
@@ -638,6 +702,13 @@ SQL;
           <ul>
             <?php foreach ($errors as $e): ?><li><?=h($e)?></li><?php endforeach; ?>
           </ul>
+
+          <?php if ($debugLog): ?>
+            <details style="margin-top:12px;">
+              <summary><strong>Install-Log anzeigen</strong></summary>
+              <pre style="white-space:pre-wrap; margin-top:10px;"><?=h(implode("\n", $debugLog))?></pre>
+            </details>
+          <?php endif; ?>
         </div>
       <?php endif; ?>
 
