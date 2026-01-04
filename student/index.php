@@ -9,7 +9,7 @@ $pdo = db();
 $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
-  "SELECT s.id, s.first_name, s.last_name, s.class_id,
+  "SELECT s.id, s.first_name, s.last_name, s.class_id, s.is_active,
           c.school_year, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
@@ -33,10 +33,49 @@ function class_display(array $row): string {
 $studentName = trim((string)($me['first_name'] ?? '') . ' ' . (string)($me['last_name'] ?? ''));
 $classDisp = class_display($me);
 $schoolYear = (string)($me['school_year'] ?? '');
+if ($schoolYear === '') {
+  $cfg = app_config();
+  $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+}
 
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
 $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
+$isActive = (int)($me['is_active'] ?? 0) === 1;
+
+$reportStatus = 'draft';
+if ($hasTemplate && $schoolYear !== '') {
+  $st = $pdo->prepare(
+    "SELECT status\n" .
+    " FROM report_instances\n" .
+    " WHERE template_id=? AND student_id=? AND period_label='Standard' AND school_year=?\n" .
+    " ORDER BY updated_at DESC, id DESC\n" .
+    " LIMIT 1"
+  );
+  $st->execute([$classTemplateId, $studentId, $schoolYear]);
+  $reportStatus = (string)($st->fetchColumn() ?: 'draft');
+}
+
+$canUseWizard = $hasTemplate && $isActive && $reportStatus === 'draft';
+
+$lockedTitle = '';
+$lockedText = '';
+if (!$isActive) {
+  $lockedTitle = t('student.locked.inactive_title', 'Zugang deaktiviert');
+  $lockedText = t('student.locked.inactive_text', 'Dein Zugang ist derzeit deaktiviert. Bitte wende dich an deine Lehrkraft.');
+} elseif (!$hasTemplate) {
+  $lockedTitle = t('student.locked.none_title');
+  $lockedText = t('student.locked.none_text');
+} elseif ($reportStatus === 'locked') {
+  $lockedTitle = t('student.js.locked_title', 'Eingabe gesperrt');
+  $lockedText = t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+} elseif ($reportStatus === 'submitted') {
+  $lockedTitle = t('student.js.already_submitted', 'Bereits abgegeben');
+  $lockedText = t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.');
+} else {
+  $lockedTitle = t('student.locked.pending_title', 'Eingabe noch nicht freigegeben');
+  $lockedText = t('student.locked.pending_text', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
+}
 
 $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
@@ -262,21 +301,15 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     </div>
 
     <!-- Locked-only container -->
-    <div id="lockedOnly" class="card" style="display:<?= $hasTemplate ? 'none' : 'block' ?>;">
+    <div id="lockedOnly" class="card" style="display:<?= $canUseWizard ? 'none' : 'block' ?>;">
       <div class="locked-only">
-        <h2 id="lockedTitle"><?= $hasTemplate ? h(t('student.locked.pending_title')) : h(t('student.locked.none_title')) ?></h2>
-        <p class="muted" id="lockedText">
-          <?php if ($hasTemplate): ?>
-            <?=h(t('student.locked.pending_text'))?>
-          <?php else: ?>
-            <?=h(t('student.locked.none_text'))?>
-          <?php endif; ?>
-        </p>
+        <h2 id="lockedTitle"><?=h($lockedTitle)?></h2>
+        <p class="muted" id="lockedText"><?=h($lockedText)?></p>
       </div>
     </div>
 
     <!-- Wizard shell -->
-    <div id="wizShell" class="wiz" style="<?= $hasTemplate ? '' : 'display:none;' ?>">
+    <div id="wizShell" class="wiz" style="<?= $canUseWizard ? '' : 'display:none;' ?>">
       <div class="sidebar">
         <div class="card">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
@@ -335,6 +368,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   const ORG_NAME = <?= json_encode($orgName) ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
+  const STUDENT_ACTIVE = <?=json_encode($isActive)?>;
+  const REPORT_STATUS = <?=json_encode($reportStatus)?>;
   const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
   const TTS_RATE = Number(<?=json_encode($ttsRate)?>) || 1;
   const TTS_VOICE_PREF = <?=json_encode($ttsVoicePref)?>;
@@ -591,11 +626,31 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     document.title = `${ORG_NAME} – ${t('student.html_title')}`;
 
-    if (!HAS_TEMPLATE) {
+    if (!STUDENT_ACTIVE) {
+      const lockedTitle = document.getElementById('lockedTitle');
+      const lockedText = document.getElementById('lockedText');
+      if (lockedTitle) lockedTitle.textContent = t('student.locked.inactive_title', 'Zugang deaktiviert');
+      if (lockedText) lockedText.textContent = t('student.locked.inactive_text', 'Dein Zugang ist derzeit deaktiviert. Bitte wende dich an deine Lehrkraft.');
+    }
+    else if (!HAS_TEMPLATE) {
       const lockedTitle = document.getElementById('lockedTitle');
       const lockedText = document.getElementById('lockedText');
       if (lockedTitle) lockedTitle.textContent = t('student.locked.none_title');
       if (lockedText) lockedText.textContent = t('student.locked.none_text');
+    }
+    else if (REPORT_STATUS && REPORT_STATUS !== 'draft') {
+      const lockedTitle = document.getElementById('lockedTitle');
+      const lockedText = document.getElementById('lockedText');
+      if (lockedTitle) {
+        lockedTitle.textContent = REPORT_STATUS === 'submitted'
+          ? t('student.js.already_submitted', 'Bereits abgegeben')
+          : t('student.js.locked_title', 'Eingabe gesperrt');
+      }
+      if (lockedText) {
+        lockedText.textContent = REPORT_STATUS === 'submitted'
+          ? t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.')
+          : t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.');
+      }
     }
   }
 
@@ -1415,7 +1470,28 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   (async function init(){
     try {
       initTts();
+      if (!STUDENT_ACTIVE) {
+        showLockedOnly(
+          t('student.locked.inactive_title', 'Zugang deaktiviert'),
+          t('student.locked.inactive_text', 'Dein Zugang ist derzeit deaktiviert. Bitte wende dich an deine Lehrkraft.')
+        );
+        elMeta.textContent = '';
+        return;
+      }
       if (!HAS_TEMPLATE) return;
+
+      const initialStatus = String(REPORT_STATUS || 'draft');
+      if (initialStatus !== 'draft') {
+        if (initialStatus === 'submitted') {
+          showLockedOnly(t('student.js.already_submitted', 'Bereits abgegeben'), t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.'));
+        } else if (initialStatus === 'locked') {
+          showLockedOnly(t('student.js.locked_title', 'Eingabe gesperrt'), t('student.js.locked_text', 'Deine Lehrkraft hat die Eingabe gerade gesperrt. Bitte versuche es später noch einmal.'));
+        } else {
+          showLockedOnly(t('student.js.not_ready_title', 'Eingabe noch nicht freigegeben oder bereits abgegeben'), t('student.js.not_ready_text', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben oder du hast deine Eingabe bereits abgegeben. Bitte versuche es später noch einmal.'));
+        }
+        elMeta.textContent = '';
+        return;
+      }
 
       const j = await api('bootstrap', {});
       applyBootstrapResponse(j);
