@@ -86,13 +86,13 @@ render_admin_header('Admin – Icon & Options');
         <h3 style="margin-top:0;">Icon hochladen</h3>
         <form id="iconUploadForm" method="post" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-          <input type="file" name="icon" accept=".png,.jpg,.jpeg,.webp,.svg" required>
+          <input type="file" name="icon[]" accept=".png,.jpg,.jpeg,.webp,.svg" multiple required>
           <div class="actions" style="margin-top:12px;">
             <button class="btn primary" type="submit">Upload</button>
           </div>
         </form>
         <div class="muted small" style="margin-top:10px;">
-          Empfohlen: kleine Icons (z.B. 32–128px), transparente PNG/WebP.
+          Empfohlen: kleine Icons (z.B. 32–128px), transparente PNG/WebP. Mehrfachauswahl möglich.
         </div>
         <div class="muted small" id="iconUploadMsg" style="margin-top:8px;"></div>
       </div>
@@ -227,6 +227,7 @@ render_admin_header('Admin – Icon & Options');
   const btnReloadIcons = document.getElementById('btnReloadIcons');
   const iconUploadForm = document.getElementById('iconUploadForm');
   const iconUploadMsg = document.getElementById('iconUploadMsg');
+  const iconFileInput = iconUploadForm.querySelector('input[type="file"]');
 
   let iconsCache = [];
 
@@ -305,6 +306,10 @@ render_admin_header('Admin – Icon & Options');
 
   iconUploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!iconFileInput.files || iconFileInput.files.length === 0) {
+      iconUploadMsg.textContent = 'Bitte mindestens eine Datei auswählen.';
+      return;
+    }
     iconUploadMsg.textContent = 'Upload…';
 
     const fd = new FormData(iconUploadForm);
@@ -317,7 +322,13 @@ render_admin_header('Admin – Icon & Options');
       iconUploadMsg.textContent = 'Fehler: ' + (j.error || ('HTTP '+resp.status));
       return;
     }
-    iconUploadMsg.textContent = 'OK: ' + (j.filename || 'hochgeladen');
+    const uploaded = Array.isArray(j.uploaded) ? j.uploaded : [];
+    if (uploaded.length > 0) {
+      const names = uploaded.map(u => u.filename || 'Datei').join(', ');
+      iconUploadMsg.textContent = `OK: ${uploaded.length} Datei(en) hochgeladen (${names})`;
+    } else {
+      iconUploadMsg.textContent = 'OK: ' + (j.filename || 'hochgeladen');
+    }
     iconUploadForm.reset();
     await loadIcons();
   });
