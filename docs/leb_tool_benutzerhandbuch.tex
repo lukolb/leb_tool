@@ -59,6 +59,18 @@
   \end{figure}
 }
 
+\newcommand{\ScreenshotFigure}[3]{%
+  \begin{figure}[H]
+    \centering
+    \IfFileExists{#1}{%
+      \includegraphics[width=0.9\linewidth]{#1}%
+    }{%
+      \fcolorbox{primary}{white}{\parbox[c][5cm][c]{12cm}{\centering #3}}%
+    }%
+    \caption{#2}
+  \end{figure}
+}
+
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{LEB Tool \textendash{} Benutzerhandbuch}
@@ -92,15 +104,12 @@
 \begin{center}
   \LEBTitleIcon\\[1cm]
   {\Huge \textbf{LEB Tool \textendash{} Benutzerhandbuch}}\\[0.3cm]
-  {\Large Schritt-für-Schritt Anleitung für Admins, Lehrkräfte und Schüler:innen}\\[0.5cm]
+  {\Large Schritt-für-Schritt Anleitung für Admins und Lehrkräfte}\\[0.5cm]
   \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.4cm]
   {\large Lernentwicklungsberichte digital verwalten}\\[0.2cm]
   {\large Zielgruppe: Grundschule · Kollegium · Administration}\\[0.2cm]
   {\large Stand: \HandbuchStand}\\[0.2cm]
-  {\large Format: Hybrid \textendash{} vollständiger Text + Screenshot-Platzhalter (Abb.)}\\[0.2cm]
   \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.6cm]
-  {\normalsize \textit{Die PDF ist führend · Die Klasse ist der zentrale Kontext · Freigaben sind zeitlich begrenzt}}\\[0.3cm]
-  {\normalsize \textit{Values in Optionslisten bleiben stabil · Stabilität vor maximaler Flexibilität}}
 \end{center}
 
 \vfill
@@ -139,7 +148,7 @@ Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung von
 
 \HintBox{Best Practices: Klassenbezug immer zuerst prüfen, keine Values in bestehenden Optionslisten ändern, Freigaben bewusst setzen und wieder schließen.}
 
-\PlaceholderFigure{Abb. 1 – Login / Rollen-Einstieg}{Platzhalter: Start- bzw. Login-Seite mit erkennbaren Zugängen für Admin, Lehrkraft und Schüler:in. Aufnahme: Browser öffnen und Tool-URL aufrufen.}
+\ScreenshotFigure{screenshots/login_teacher.png}{Login / Rollen-Einstieg}
 
 \subsection{Rollen \& Rechte}
 \begin{tabularx}{\textwidth}{|l|X|l|}
@@ -210,7 +219,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
   \item Vorlage speichern und aktivieren.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 3 – Template-Upload}{Platzhalter: Upload-Maske mit Dateiauswahl, Namensfeld und Speichern/Aktivieren-Buttons. Aufnahme: Admin → Templates.}
+\ScreenshotFigure{screenshots/admin_template.png}{Template-Upload}
 
 \subsection{Felder extrahieren (Formularfelder auslesen)}\index{Feldextraktion}
 \begin{enumerate}
@@ -222,7 +231,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \HintBox{Vergleichen Sie die Feldanzahl mit der PDF: Abweichungen bedeuten oft, dass die Vorlage versteckte Felder oder nicht unterstützte Elemente enthält. Bei Dubletten hilft ein Export der Feldliste zum Abgleich.}
 
-\PlaceholderFigure{Abb. 4 – Feldliste nach Extraktion}{Platzhalter: Liste der extrahierten Feldnamen inkl. Seiten- und Statusspalte. Aufnahme: Admin → Template → Felder extrahieren.}
+\ScreenshotFigure{screenshots/admin_extract.png}{Feldliste nach Extraktion}
 
 \subsection{Felder gruppieren \& Reihenfolge festlegen}
 \begin{enumerate}
@@ -234,7 +243,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \HintBox{Die Gruppen bestimmen UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
 
-\PlaceholderFigure{Abb. 5 – Gruppierung \& Filter}{Platzhalter: Gruppenliste mit Batch-Zuordnung, Filtern und Vorschau. Aufnahme: Admin → Template-Felder.}
+\ScreenshotFigure{screenshots/admin_template_fields.png}{Gruppierung \& Filter}
 
 \subsection{Optionslisten erstellen (Noten/Skalen)}\index{Optionsliste}
 \begin{enumerate}
@@ -246,7 +255,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \HintBox{Labels dürfen angepasst werden. Values bleiben stabil. Bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}
 
-\PlaceholderFigure{Abb. 6 – Optionslisten-Editor}{Platzhalter: Editor mit Namensfeld und Tabelle der Values/Labels. Aufnahme: Admin → Optionslisten.}
+\ScreenshotFigure{screenshots/admin_options.png}{Optionslisten-Editor}
 
 \subsection{Optionslisten den Feldern zuordnen}\index{Optionsliste}
 \begin{enumerate}
@@ -255,9 +264,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
   \item Batch-Zuordnung nutzen, wenn mehrere Felder identisch sind.
 \end{enumerate}
 
-\WarnBox{Ändern Sie keine bestehenden Values in produktiven Optionslisten. Wenn Skalen angepasst werden müssen, legen Sie eine neue Liste an und ordnen Sie sie allen betroffenen Feldern neu zu.}
-
-\PlaceholderFigure{Abb. 7 – Zuordnung Optionsliste → Feld}{Platzhalter: Feldbearbeitung mit Optionslisten-Auswahl und Speichern-Button. Aufnahme: Admin → Template-Felder → Feld bearbeiten.}
+\ScreenshotFigure{screenshots/admin_optionuse.png}{Zuordnung Optionsliste → Feld}
 
 \subsection*{Änderungen im laufenden Zeugnisprozess \textendash{} Warnhinweise}
 \WarnBox{Nach Beginn der Eingaben sollten Sie keine Template-Wechsel, erneute Feldextraktionen oder Value-Änderungen in Optionslisten vornehmen. Dies kann zu Zuordnungsverlusten oder fehlerhaften Exporten führen.}
@@ -277,7 +284,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie daher neue Vorlagen zunächst an einer Testklasse, bevor Sie produktive Klassen umstellen.}
 
-\PlaceholderFigure{Abb. 8 – Klasse anlegen}{Platzhalter: Klassenformular mit Feldern für Schuljahr, Stufe, Bezeichnung und Template-Auswahl. Aufnahme: Admin → Klassen.}
+\ScreenshotFigure{screenshots/admin_newclass.png}{Klasse anlegen}
 
 \subsection{Lehrkräfte \& Schüler:innen verwalten}
 \textbf{Lehrkräfte}
@@ -327,7 +334,7 @@ Zur Nachvollziehbarkeit wichtiger Aktionen.
   \item Bei sicherheitsrelevanten Vorfällen zeitnah sichern und auswerten.
 \end{itemize}
 
-\PlaceholderFigure{Abb. 9 – Benutzer \& Zuordnungen}{Platzhalter: Benutzerliste und Zuordnungsdialog für Lehrkräfte und Schüler:innen. Aufnahme: Admin → Benutzerverwaltung oder Klasse → Zuordnung.}
+\ScreenshotFigure{screenshots/admin_classedit.png}{Benutzer \& Zuordnungen}
 
 \section{Lehrkräfte: Berichte erstellen}
 Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schülerberichte ergänzen, Freigabe steuern, Export durchführen. Die UI orientiert sich an den Gruppen aus dem Template; Pflichtfelder sind gekennzeichnet und Fortschrittsanzeigen zeigen fehlende Eingaben.
@@ -345,7 +352,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   Export & Markiert, ob ein Testexport durchgeführt wurde.\\
 \end{tabular}
 
-\PlaceholderFigure{Abb. 10 – Lehrerbereich – Übersicht}{Platzhalter: Klassenliste/Startansicht mit Statusanzeigen. Aufnahme: Lehrerbereich nach Login.}
+\ScreenshotFigure{screenshots/dashboard_teacher.png}{\textendash{} Lehrerbereich \textendash{} Übersicht}
 
 \subsection*{Bearbeitungsstand \& Statusanzeigen}
 \begin{itemize}
@@ -362,7 +369,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \HintBox{Klassenweite Felder sollten früh ausgefüllt werden, da sie als Basis in individuellen Texten erscheinen können. Nutzen Sie Zwischenstände und speichern Sie nach jeder Gruppe.}
 
-\PlaceholderFigure{Abb. 11 – Lehrerbereich – Klassenfelder}{Platzhalter: Bereich \enquote{Klassenfelder} mit Eingabefeldern und Speicher-Button. Aufnahme: Lehrerbereich → Klasse → Klassenfelder.}
+\ScreenshotFigure{screenshots/teacher_classentry.png}{Lehrerbereich – Klassenfelder}
 
 \subsection{Schülerberichte (individuell)}
 \begin{enumerate}
@@ -373,7 +380,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \HintBox{Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler:innen ausfüllen, statt pro Kind den gesamten Bericht.}
 
-\PlaceholderFigure{Abb. 12 – Lehrerbereich – Schülerbericht}{Platzhalter: Einzelansicht eines Schülers mit Gruppenregister und Eingabefeldern. Aufnahme: Lehrerbereich → Klasse → Schüler.}
+\ScreenshotFigure{screenshots/teacher_entrystudent.png}{Lehrerbereich – Schülerbericht}
 
 \subsection*{Delegationen und Teamarbeit}
 \begin{itemize}
@@ -389,7 +396,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
   \item Nach Ablauf Freigabe schließen; danach kein Schüler-Schreibzugriff.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 13 – Lehrerbereich – Freigabe}{Platzhalter: Freigabe-Schalter mit Zeitfenster und Hinweistext. Aufnahme: Lehrerbereich → Klasse → Freigabe.}
+\ScreenshotFigure{screenshots/teacher_students.png}{Lehrerbereich – Freigabe}
 
 \section{Schüler:innen: Eingaben machen}
 Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. Standardzustand ist gesperrt.
@@ -403,7 +410,7 @@ Schüler:innen können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben
 \subsection{Gesperrt vs. Freigegeben}
 \PlaceholderFigure{Abb. 14 – Schülerbereich – gesperrt}{Platzhalter: Hinweisseite ohne Eingabefelder, weil Freigabe fehlt. Aufnahme: Schülerbereich ohne Freigabe.}
 
-\PlaceholderFigure{Abb. 15 – Schülerbereich – freigegeben}{Platzhalter: Eingabemaske mit Feldern und Speichern-Button. Aufnahme: Schülerbereich mit aktiver Freigabe.}
+\ScreenshotFigure{screenshots/student_inputs.png}{Schülerbereich – freigegeben}
 
 \HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
@@ -433,7 +440,7 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
   \item Klassenexport durchführen und PDF stichprobenartig kontrollieren.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 17 – Export im Lehrerbereich}{Platzhalter: Exportbereich mit Einzel- und Klassenexport. Aufnahme: Lehrerbereich → Export.}
+\ScreenshotFigure{screenshots/teacher_export.png}{Export im Lehrerbereich}
 
 \subsection{Export durch Admin (alle Klassen)}
 \begin{enumerate}
@@ -442,7 +449,7 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
   \item Gesamtexport starten.
 \end{enumerate}
 
-\PlaceholderFigure{Abb. 18 – Export im Adminbereich}{Platzhalter: Admin-Export mit Filtern (Schuljahr/Klasse) und Start-Button. Aufnahme: Adminbereich → Export.}
+\ScreenshotFigure{screenshots/admin_export.png}{Export im Adminbereich}
 
 \section{Rollenabgrenzung im Betrieb (Admin vs. Lehrkraft)}
 \begin{itemize}
@@ -493,59 +500,6 @@ Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exp
 \HintBox{Checkliste vor dem Zeugnisdruck: Klassenfelder vollständig, zwei Schülerberichte stichprobenartig geprüft, Schüler-Freigabe geschlossen, PDF-Export (ein Schüler + Klasse) getestet, Ablage-/Archivordner vorbereitet.}
 
 \appendix
-\section{Screenshot-Checkliste}
-Dieser Anhang hilft beim Ersetzen der Platzhalter-Abbildungen. Empfehlung: Browser auf 100\% Zoom, neutrale Testdaten und konsistente Fenstergröße nutzen.
-
-\begin{tabularx}{\textwidth}{|c|X|X|}
-\hline
-\textbf{Abb.} & \textbf{Titel} & \textbf{Ort (wo aufnehmen)}\\
-\hline
-1 & Login / Rollen-Einstieg & Startseite / Login\\
-\hline
-2 & Installationsmaske & \texttt{install.php}\\
-\hline
-3 & Template-Upload & Admin \(\rightarrow\) Templates\\
-\hline
-4 & Feldliste nach Extraktion & Admin \(\rightarrow\) Template \(\rightarrow\) Felder extrahieren\\
-\hline
-5 & Gruppierung \& Filter & Admin \(\rightarrow\) Template-Felder\\
-\hline
-6 & Optionslisten-Editor & Admin \(\rightarrow\) Optionslisten\\
-\hline
-7 & Zuordnung Optionsliste \(\rightarrow\) Feld & Admin \(\rightarrow\) Template-Felder \(\rightarrow\) Feld bearbeiten\\
-\hline
-8 & Klasse anlegen & Admin \(\rightarrow\) Klassen\\
-\hline
-9 & Benutzer \& Zuordnungen & Admin \(\rightarrow\) Benutzer / Klasse \(\rightarrow\) Zuordnungen\\
-\hline
-10 & Lehrerbereich \textendash{} Übersicht & Lehrerbereich nach Login\\
-\hline
-11 & Lehrerbereich \textendash{} Klassenfelder & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Klassenfelder\\
-\hline
-12 & Lehrerbereich \textendash{} Schülerbericht & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Schüler\\
-\hline
-13 & Lehrerbereich \textendash{} Freigabe & Lehrerbereich \(\rightarrow\) Klasse \(\rightarrow\) Freigabe\\
-\hline
-14 & Schülerbereich \textendash{} gesperrt & Schülerbereich ohne Freigabe\\
-\hline
-15 & Schülerbereich \textendash{} freigegeben & Schülerbereich mit Freigabe\\
-\hline
-16 & Elternansicht (optional) & Elternzugang nach Freischaltung\\
-\hline
-17 & Export im Lehrerbereich & Lehrerbereich \(\rightarrow\) Export\\
-\hline
-18 & Export im Adminbereich & Adminbereich \(\rightarrow\) Export\\
-\hline
-\end{tabularx}
-
-\section{Platzhalter-Screenshots}
-\PlaceholderFigure{Admin-Dashboard Übersicht}{Admin-Dashboard (Platzhalter)}
-
-\PlaceholderFigure{Lehrer: Bericht bearbeiten}{Lehrer-Eingabemaske (Platzhalter)}
-
-\PlaceholderFigure{Delegations-Inbox}{Delegations-Inbox (Platzhalter)}
-
-\PlaceholderFigure{Schülerzugang mit Vorlesefunktion}{Schüler-QR-Login und TTS-Bar (Platzhalter)}
 
 \clearpage
 \section{Schnellanleitung für Lehrkräfte}
