@@ -247,12 +247,7 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   $id = (int)($st->fetchColumn() ?: 0);
   if ($id > 0) return $id;
 
-  $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
-     VALUES (?, 0, '__class__', ?, 'draft', NULL, NOW(), NOW())"
-  )->execute([$templateId, $schoolYear]);
-
-  return (int)$pdo->lastInsertId();
+  return -1;
 }
 
 function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array {
@@ -302,18 +297,10 @@ function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateI
     ];
   }
 
-  $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_at, updated_at)
-     VALUES (?, ?, 'Standard', ?, 'draft', NOW(), NOW())"
-  )->execute([$templateId, $studentId, $schoolYear]);
-  $rid = (int)$pdo->lastInsertId();
-
-  audit('student_report_instance_create', null, ['student_id'=>$studentId,'report_instance_id'=>$rid,'template_id'=>$templateId]);
-
   return [
-    'report_instance_id' => $rid,
-    'status' => 'draft',
-  ];
+      'report_instance_id' => -1,
+      'status' => 'locked',
+    ];
 }
 
 function ensure_editable_or_throw(PDO $pdo, int $reportId): void {
@@ -442,6 +429,9 @@ try {
   if ($schoolYear === '') throw new RuntimeException('Schuljahr konnte nicht ermittelt werden.');
 
   $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
+  
+  if ((int)$ctx['report_instance_id'] < 0) throw new RuntimeException('Kein Bericht verfügbar.');
+  
   $reportId = (int)$ctx['report_instance_id'];
 
   $status = get_report_status($pdo, $reportId);
