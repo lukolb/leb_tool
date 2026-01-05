@@ -341,6 +341,9 @@ render_teacher_header($pageTitle);
     <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
       <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> nur offene
     </label>
+    <label class="pill-mini" for="optionButtonsToggle" style="cursor:pointer; user-select:none; white-space:nowrap;">
+      <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> Optionen als Buttons
+    </label>
   </div>
 
   <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
@@ -456,6 +459,12 @@ render_teacher_header($pageTitle);
   .field .child{ display:none; margin-top:8px; border-top:1px dashed var(--border); padding-top:8px; color:var(--muted); font-size:12px; }
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
+
+  .opts{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:8px; }
+  .opt{ display:flex; gap:10px; align-items:center; padding:10px; border-radius:14px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; width:100%; text-align:left; color: inherit; }
+  .opt:hover{ background: rgba(0,0,0,0.02); }
+  .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
+  .opt:disabled{ opacity:0.5; cursor:not-allowed; }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -619,6 +628,7 @@ render_teacher_header($pageTitle);
   const btnAiRefresh = document.getElementById('btnAiRefresh');
 
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
+  const OPTION_STYLE_KEY = 'leb_option_style';
 
   let state = {
     class_id: 0,
@@ -653,6 +663,7 @@ render_teacher_header($pageTitle);
     gradeGroupKey: 'ALL',
     gradeFilter: '',
     gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows',
+    optionMode: (localStorage.getItem(OPTION_STYLE_KEY) === 'buttons') ? 'buttons' : 'dropdown',
     saveTimers: new Map(),
     saveInFlight: 0,
     mergeDecisions: new Map(),
@@ -1644,6 +1655,42 @@ render_teacher_header($pageTitle);
         });
       }
     });
+
+    rootEl.querySelectorAll('[data-option-card="1"]').forEach(card => {
+      const wrap = card.closest('[data-option-block]');
+      if (!wrap) return;
+
+      const reportId = Number(wrap.getAttribute('data-report-id') || '0');
+      const fieldId = Number(wrap.getAttribute('data-field-id') || '0');
+      if (!reportId || !fieldId) return;
+
+      const disabled = wrap.getAttribute('data-disabled') === '1' || card.disabled;
+      if (disabled) return;
+
+      const isClass = isClassFieldId(fieldId);
+      const saveMerged = (val) => {
+        const finalVal = resolveMergeWithChild(reportId, fieldId, val);
+        if (isClass) scheduleSaveClass(fieldId, finalVal);
+        else scheduleSave(reportId, fieldId, finalVal);
+        return finalVal;
+      };
+
+      const val = String(card.getAttribute('data-value') || '');
+      const select = () => {
+        const merged = saveMerged(val);
+        wrap.querySelectorAll('[data-option-card="1"]').forEach(btn => {
+          const match = String(btn.getAttribute('data-value') || '') === val;
+          btn.classList.toggle('selected', match);
+          btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+        });
+        syncMissingClass(card, merged);
+      };
+
+      card.addEventListener('click', select);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
+      });
+    });
   }
 
   function eligibleForSnippetInput(inp){
@@ -2032,6 +2079,25 @@ render_teacher_header($pageTitle);
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
+      const opts = Array.isArray(f.options) ? f.options : [];
+
+      if (ui.optionMode === 'buttons' && opts.length > 0) {
+        const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
+        const cards = opts.map(o => {
+          const oVal = String(o?.value ?? '');
+          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const selected = String(value ?? '') === oVal;
+          const dis = (locked || !canEdit) ? 'disabled' : '';
+          return `<button type="button" class="opt ${selected ? 'selected' : ''}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${esc(lbl)}</button>`;
+        }).join('');
+
+        return `
+          <div class="opts" data-option-block="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${disabledAttr}>
+            ${cards || '<div class="muted">Keine Optionen.</div>'}
+          </div>
+        `;
+      }
+
       const dlId = `dl_${String(f.id)}`;
       const shown = teacherDisplay(f, value);
       const actual = String(value ?? '');
@@ -2173,6 +2239,10 @@ render_teacher_header($pageTitle);
 
     if (studentMissingOnly && studentMissingOnly.checked !== !!ui.studentMissingOnly) {
       studentMissingOnly.checked = !!ui.studentMissingOnly;
+    }
+
+    if (optionButtonsToggle && optionButtonsToggle.checked !== (ui.optionMode === 'buttons')) {
+      optionButtonsToggle.checked = (ui.optionMode === 'buttons');
     }
 
     if (ui.showChild) elApp.classList.add('show-child');
@@ -2933,6 +3003,12 @@ if (dlgSave) {
   studentMissingOnly.addEventListener('change', () => {
     ui.studentMissingOnly = !!studentMissingOnly.checked;
     ui.activeStudentIndex = 0;
+    render();
+  });
+
+  optionButtonsToggle.addEventListener('change', () => {
+    ui.optionMode = optionButtonsToggle.checked ? 'buttons' : 'dropdown';
+    localStorage.setItem(OPTION_STYLE_KEY, ui.optionMode);
     render();
   });
 
