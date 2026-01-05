@@ -1678,6 +1678,93 @@ if ($action === 'delegations_save') {
     json_out(['ok' => true]);
   }
 
+  if ($action === 'child_value_update') {
+    $reportId = (int)($data['report_instance_id'] ?? 0);
+    $fieldId = (int)($data['child_field_id'] ?? 0);
+    $deleteValue = array_key_exists('value_text', $data) ? ($data['value_text'] === null) : false;
+    $valueText = array_key_exists('value_text', $data) ? (string)$data['value_text'] : null;
+
+    if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+    if ($fieldId <= 0) throw new RuntimeException('child_field_id fehlt.');
+
+    $st = $pdo->prepare(
+      "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id,
+              tf.field_type, tf.meta_json
+       FROM report_instances ri
+       JOIN students s ON s.id=ri.student_id
+       JOIN classes c ON c.id=s.class_id
+       JOIN template_fields tf ON tf.id=? AND tf.template_id=ri.template_id AND tf.can_child_edit=1
+       WHERE ri.id=?
+       LIMIT 1"
+    );
+    $st->execute([$fieldId, $reportId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) throw new RuntimeException('Schülerfeld nicht gefunden oder nicht freigegeben.');
+
+    $classId = (int)($row['class_id'] ?? 0);
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $reportTplId = (int)($row['report_template_id'] ?? 0);
+    $classTplId = (int)($row['class_template_id'] ?? 0);
+    if ($reportTplId <= 0 || $classTplId <= 0) throw new RuntimeException('Vorlage nicht gefunden.');
+    if ($reportTplId !== $classTplId) throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
+
+    $meta = meta_read($row['meta_json'] ?? null);
+    if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
+
+    $type = (string)($row['field_type'] ?? '');
+    $valueJson = null;
+
+    if ($deleteValue) {
+      $valueText = null;
+    } elseif (in_array($type, ['radio','select','grade'], true)) {
+      $valueText = $valueText !== null ? trim($valueText) : '';
+      if ($valueText === '') $valueText = null;
+
+      $listId = option_list_id_from_meta($meta);
+      if ($listId > 0 && $valueText !== null) {
+        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+        $st2->execute([$listId, $valueText]);
+        $optId = (int)($st2->fetchColumn() ?: 0);
+        if ($optId > 0) {
+          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+        }
+      }
+    } elseif ($type === 'checkbox') {
+      $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+    } else {
+      $valueText = $valueText !== null ? trim($valueText) : null;
+      if ($valueText === '') $valueText = null;
+    }
+
+    $up = $pdo->prepare(
+      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+       VALUES (?, ?, ?, ?, 'child', ?, NOW())
+       ON DUPLICATE KEY UPDATE
+         value_text=VALUES(value_text),
+         value_json=VALUES(value_json),
+         source='child',
+         updated_by_user_id=VALUES(updated_by_user_id),
+         updated_by_student_id=NULL,
+         updated_at=NOW()"
+    );
+    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+
+    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', $userId, null);
+
+    $resolved = resolve_option_value_text($pdo, $meta, $valueJson, $valueText, $lang);
+    audit('teacher_child_value_update', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
+
+    json_out([
+      'ok' => true,
+      'value_text' => $resolved['text'] !== null ? (string)$resolved['text'] : '',
+      'value_json' => $resolved['json'] ?? $valueJson,
+      'raw_value_text' => $valueText,
+    ]);
+  }
+
   if ($action === 'unlock_child_entry') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
