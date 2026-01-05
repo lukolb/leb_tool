@@ -777,6 +777,32 @@ render_teacher_header($pageTitle);
     return v;
   }
 
+  function childLabel(field){
+    if (!field || !field.child) return '';
+    const c = field.child;
+    return String(c.label || c.field_name || 'Schülerfeld');
+  }
+
+  function childInfoHtml(f, reportId){
+    if (!f || !f.child || !f.child.id) return '';
+    const childId = Number(f.child.id);
+    const rawChild = childVal(reportId, childId);
+    const shownChild = rawChild ? childDisplay(f, rawChild) : '';
+    const label = childLabel(f);
+    const baseAttrs = `data-child-field="${esc(childId)}" data-child-label="${esc(label)}"`;
+    const deleteDisabled = rawChild ? '' : 'disabled';
+
+    return `
+      <div class="child">
+        <div><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+        <div class="child-actions" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
+          <button class="btn secondary" type="button" data-edit-child="${esc(reportId)}" ${baseAttrs}>Bearbeiten</button>
+          <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>Löschen</button>
+        </div>
+      </div>
+    `;
+  }
+
   function resolveMergeWithChild(reportId, fieldId, nextValue){
     const f = state.fieldMap[String(fieldId)];
     if (!f || !f.child || !f.child.id) return String(nextValue ?? '');
@@ -1118,6 +1144,97 @@ render_teacher_header($pageTitle);
     });
 
     if (list.length > 5) list.length = 5;
+  }
+
+  function adjustChildProgress(reportId, label, prevRaw, nextRaw){
+    const stu = (state.students || []).find(s => Number(s.report_instance_id || 0) === Number(reportId));
+    if (!stu) return;
+
+    const wasDone = String(prevRaw ?? '').trim() !== '';
+    const isDone = String(nextRaw ?? '').trim() !== '';
+    if (wasDone === isDone) return;
+
+    const total = Number(stu.progress_child_total || 0);
+    let done = Number(stu.progress_child_done || 0);
+    done = wasDone && !isDone ? Math.max(0, done - 1) : done;
+    done = !wasDone && isDone ? done + 1 : done;
+    stu.progress_child_done = Math.min(total, Math.max(0, done));
+    stu.progress_child_missing = Math.max(0, total - stu.progress_child_done);
+
+    const teacherDone = Number(stu.progress_teacher_done || 0);
+    const overallTotal = Number(stu.progress_overall_total || 0);
+    stu.progress_overall_done = teacherDone + stu.progress_child_done;
+    stu.progress_overall_missing = Math.max(0, overallTotal - stu.progress_overall_done);
+    stu.progress_is_complete = stu.progress_overall_missing === 0;
+
+    const lbl = String(label || '').trim();
+    if (lbl !== '') {
+      const missingList = Array.isArray(stu.child_missing_fields) ? [...stu.child_missing_fields] : [];
+      const inList = missingList.includes(lbl);
+      const updatedList = isDone ? missingList.filter(x => x !== lbl) : (inList ? missingList : missingList.concat([lbl]));
+      stu.child_missing_fields = updatedList;
+    }
+  }
+
+  async function updateChildValue(reportId, childFieldId, nextValue, childLabelText){
+    const rid = Number(reportId || 0);
+    const fid = Number(childFieldId || 0);
+    if (!rid || !fid) return;
+
+    const prevRaw = childVal(rid, fid);
+    const deleting = nextValue === null || typeof nextValue === 'undefined';
+
+    try {
+      setSaveStatus('saving', deleting ? '⏳ Schülereingabe wird gelöscht …' : '⏳ Schülereingabe wird aktualisiert …');
+      const res = await api('child_value_update', {
+        report_instance_id: rid,
+        child_field_id: fid,
+        value_text: deleting ? null : String(nextValue ?? ''),
+      });
+
+      const ridKey = String(rid);
+      const fidKey = String(fid);
+      if (!state.values_child[ridKey]) state.values_child[ridKey] = {};
+      state.values_child[ridKey][fidKey] = res.value_text ?? '';
+
+      addHistoryEntry(rid, fid, res.value_text || '', 'child', res.raw_value_text ?? null, res.value_json ?? null);
+      adjustChildProgress(rid, childLabelText || '', prevRaw, res.raw_value_text ?? (deleting ? '' : nextValue));
+
+      render();
+      setSaveStatus('ok', deleting ? '✔ Schülereingabe gelöscht' : '✔ Schülereingabe aktualisiert');
+    } catch (e) {
+      console.error(e);
+      showErr(e?.message || 'Fehler beim Aktualisieren.');
+      setSaveStatus('error', '❌ Konnte nicht gespeichert werden');
+    }
+  }
+
+  function wireChildValueControls(root){
+    const cont = root || document;
+
+    cont.querySelectorAll('[data-edit-child]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-edit-child') || 0);
+        const fid = Number(btn.getAttribute('data-child-field') || 0);
+        const lbl = String(btn.getAttribute('data-child-label') || 'Schülereingabe');
+        const current = childVal(rid, fid);
+        const next = window.prompt(`Neuer Schülerwert für "${lbl}":`, current);
+        if (next === null) return;
+        await updateChildValue(rid, fid, next, lbl);
+      });
+    });
+
+    cont.querySelectorAll('[data-delete-child]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-delete-child') || 0);
+        const fid = Number(btn.getAttribute('data-child-field') || 0);
+        const lbl = String(btn.getAttribute('data-child-label') || 'Schülereingabe');
+        if (!window.confirm(`Schülereingabe "${lbl}" wirklich löschen?`)) return;
+        await updateChildValue(rid, fid, null, lbl);
+      });
+    });
   }
 
   function renderHistoryHtml(reportId, fieldId){
@@ -2176,9 +2293,7 @@ render_teacher_header($pageTitle);
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
       fields.forEach(f => {
         const v = teacherVal(reportId, f.id);
-        const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
-        const shownChild = rawChild ? childDisplay(f, rawChild) : '';
-        const childInfo = (f.child && f.child.id) ? `<div class="child"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>` : '';
+        const childInfo = childInfoHtml(f, reportId);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
@@ -2226,6 +2341,7 @@ render_teacher_header($pageTitle);
       });
     });
 
+    wireChildValueControls(studentForm);
     wireTeacherInputs(studentForm);
 
   }
@@ -2292,26 +2408,24 @@ render_teacher_header($pageTitle);
           const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
           const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
-          const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
-          const shownChild = rawChild ? childDisplay(f, rawChild) : '';
-
-        const missingCls = (v === '') ? 'missing' : '';
-        td.innerHTML = `
-          <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-            ${renderHistoryHtml(reportId, f.id)}
-            ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
-          </div>
-        `;
-        row.appendChild(td);
+          const missingCls = (v === '') ? 'missing' : '';
+          td.innerHTML = `
+            <div class="cellWrap ${missingCls}">
+              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+              ${renderHistoryHtml(reportId, f.id)}
+              ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
+            </div>
+          `;
+          row.appendChild(td);
         });
 
-        gradeBody.appendChild(row);
-      });
+      gradeBody.appendChild(row);
+    });
 
-      wireTeacherInputs(gradeBody);
-      return;
-    }
+    wireTeacherInputs(gradeBody);
+    wireChildValueControls(gradeBody);
+    return;
+  }
 
     gradeHead.innerHTML = '';
     const tr1 = document.createElement('tr');
@@ -2369,14 +2483,11 @@ render_teacher_header($pageTitle);
         const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
         const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
-        const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
-        const shownChild = rawChild ? childDisplay(f, rawChild) : '';
-
         const missingCls = (v === '') ? 'missing' : '';
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-            ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
+            ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
         tr.appendChild(td);
@@ -2386,6 +2497,7 @@ render_teacher_header($pageTitle);
     });
 
     wireTeacherInputs(gradeBody);
+    wireChildValueControls(gradeBody);
   }
 
   function renderItemView(){
@@ -2442,15 +2554,12 @@ render_teacher_header($pageTitle);
         const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
         const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
 
-        const rawChild = (f.child && f.child.id) ? childVal(reportId, f.child.id) : '';
-        const shownChild = rawChild ? childDisplay(f, rawChild) : '';
-
         const missingCls = (v === '') ? 'missing' : '';
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
             ${renderHistoryHtml(reportId, f.id)}
-            ${(f.child && f.child.id) ? `<div class="cellChild"><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '—'}</div>` : ''}
+            ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
         row.appendChild(td);
@@ -2460,6 +2569,7 @@ render_teacher_header($pageTitle);
     });
 
     wireTeacherInputs(itemBody);
+    wireChildValueControls(itemBody);
   }
 
   async function loadClass(classId){
