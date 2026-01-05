@@ -2087,10 +2087,13 @@ render_teacher_header($pageTitle);
 
       if (ui.optionMode === 'buttons' && opts.length > 0) {
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
+        const currentVal = String(value ?? '').trim();
         const cards = opts.map(o => {
           const oVal = String(o?.value ?? '');
+          const lblDe = String(o?.label ?? '').trim();
+          const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = String(value ?? '') === oVal;
+          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn;
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
