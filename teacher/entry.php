@@ -464,6 +464,9 @@ render_teacher_header($pageTitle);
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
   .opt:hover{ background: rgba(0,0,0,0.02); }
   .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
+  .opt.child-val{ border-color: rgba(11, 122, 11, 0.55); background: rgba(11, 122, 11, 0.08); box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35); }
+  .opt.child-val .lbl{ color: #0b7a0b; }
+  .opt.selected.child-val{ background: rgba(11, 122, 11, 0.14); outline-color: rgba(11, 122, 11, 0.35); }
   .opt:disabled{ opacity:0.5; cursor:not-allowed; }
   .opt .lbl{ font-weight:750; }
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
@@ -2088,18 +2091,23 @@ render_teacher_header($pageTitle);
       if (ui.optionMode === 'buttons' && opts.length > 0) {
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
+        const childValRaw = (ui.showChild && f.child && f.child.id) ? String(childVal(reportId, f.child.id) ?? '').trim() : '';
         const cards = opts.map(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
           const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn;
+          const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
             ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
             : `<span class="ico placeholder" aria-hidden="true">•</span>`;
-          return `<button type="button" class="opt ${selected ? 'selected' : ''}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
+          const classes = ['opt'];
+          if (selected) classes.push('selected');
+          if (matchesChild) classes.push('child-val');
+          return `<button type="button" class="${classes.join(' ')}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
         }).join('');
 
         return `
