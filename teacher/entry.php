@@ -460,11 +460,15 @@ render_teacher_header($pageTitle);
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
 
-  .opts{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:8px; }
-  .opt{ display:flex; gap:10px; align-items:center; padding:10px; border-radius:14px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; width:100%; text-align:left; color: inherit; }
+  .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
+  .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
   .opt:hover{ background: rgba(0,0,0,0.02); }
   .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
   .opt:disabled{ opacity:0.5; cursor:not-allowed; }
+  .opt .lbl{ font-weight:750; }
+  .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
+  .opt .ico img{ width:100%; height:100%; object-fit:contain; display:block; }
+  .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -2088,7 +2092,11 @@ render_teacher_header($pageTitle);
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
           const selected = String(value ?? '') === oVal;
           const dis = (locked || !canEdit) ? 'disabled' : '';
-          return `<button type="button" class="opt ${selected ? 'selected' : ''}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${esc(lbl)}</button>`;
+          const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
+          const ico = iconUrl
+            ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
+            : `<span class="ico placeholder" aria-hidden="true">•</span>`;
+          return `<button type="button" class="opt ${selected ? 'selected' : ''}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
         }).join('');
 
         return `
