@@ -264,6 +264,31 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     .progress-bar{ height:100%; width:0%; background: var(--primary); border-radius:999px; transition: width .2s ease; }
     .progress.sm{ height:8px; }
     .progress-bar.ok{ background: rgba(0,128,0,0.65); }
+
+    /* Beginner mode (Leseanfänger) */
+    body.beginner-mode .wiz{ grid-template-columns: 1fr; }
+    body.beginner-mode .sidebar{ display:none; }
+    body.beginner-mode #overallProgressWrap,
+    body.beginner-mode #reqHint,
+    body.beginner-mode #metaLine,
+    body.beginner-mode .brand-sub{ display:none !important; }
+    body.beginner-mode .tts-bar{ border-style: solid; background: #eef4ff; }
+    body.beginner-mode #ttsButton{
+      width:64px;
+      height:64px;
+      font-size:28px;
+      border-radius:16px;
+      border-width:2px;
+    }
+    body.beginner-mode .q{ padding:16px; }
+    body.beginner-mode .q .lbl{ font-size:22px; line-height:1.25; }
+    body.beginner-mode .q .help{ display:none; }
+    body.beginner-mode .opts{ grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; }
+    body.beginner-mode .opt{ padding:16px; font-size:18px; border-width:2px; }
+    body.beginner-mode .opt img{ width:110px; height:110px; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.08)); }
+    body.beginner-mode .opt .lbl{ font-size:18px; }
+    body.beginner-mode .wiz-actions .btn{ min-height:54px; font-size:18px; padding:14px 18px; }
+    body.beginner-mode #btnNext.cta-ready{ box-shadow: 0 10px 24px rgba(11,87,208,0.35); transform: translateY(-1px); }
   </style>
 </head>
 <body class="page">
@@ -410,6 +435,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   };
 
   let displayMode = 'groups';
+  let isBeginnerMode = false;
   let flatSteps = [];
   let activeStep = 0;
 
@@ -475,7 +501,29 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     updateTtsUi();
   }
 
+  async function enterFullscreenForBeginner(){
+    if (!isBeginnerMode) return;
+    const el = document.documentElement;
+    if (!el || document.fullscreenElement || !el.requestFullscreen) return;
+    try { await el.requestFullscreen(); } catch(e) {}
+  }
+
+  function exitFullscreenForBeginner(){
+    if (!document.fullscreenElement || !document.exitFullscreen) return;
+    try { document.exitFullscreen(); } catch(e) {}
+  }
+
   function currentStepTextForTts(){
+    if (isBeginnerMode) {
+      const cur = flatSteps[activeStep];
+      const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
+      if (cur && cur.kind === 'field') {
+        const lbl = elBody ? elBody.querySelector('.lbl') : null;
+        const text = lbl ? lbl.textContent : heading;
+        return String(text || heading || '').trim();
+      }
+      return String(heading || '').trim();
+    }
     if (!elBody) return '';
     return String(elBody.innerText || '').trim();
   }
@@ -823,7 +871,9 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const groups = steps.filter(s => s && !s.is_intro);
 
     displayMode = (state.ui && state.ui.display_mode) ? state.ui.display_mode : 'groups';
-    if (displayMode !== 'items') displayMode = 'groups';
+    const allowed = ['groups', 'items', 'beginner'];
+    if (!allowed.includes(displayMode)) displayMode = 'groups';
+    isBeginnerMode = displayMode === 'beginner';
 
     const out = [];
     if (intro) {
@@ -842,7 +892,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
           fields: Array.isArray(g.fields) ? g.fields : []
         });
       }
-    } else {
+    } else if (displayMode === 'items') {
       for (const g of groups) {
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
@@ -856,6 +906,23 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
           groupTitle: gTitle,
           fields: fields
         });
+
+        for (const f of fields) {
+          out.push({
+            kind:'field',
+            key: gKey + ':' + String(f.id),
+            title: gTitle,
+            group: gKey,
+            groupTitle: gTitle,
+            field: f
+          });
+        }
+      }
+    } else {
+      for (const g of groups) {
+        const gKey = String(g.key || g.title || 'Abschnitt');
+        const gTitle = String(g.title || g.key || 'Abschnitt');
+        const fields = Array.isArray(g.fields) ? g.fields : [];
 
         for (const f of fields) {
           out.push({
@@ -891,6 +958,16 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   }
 
   function renderNav(){
+    if (isBeginnerMode) {
+      const navCard = elNav ? elNav.closest('.card') : null;
+      if (elNav) elNav.innerHTML = '';
+      if (navCard) navCard.style.display = 'none';
+      if (elOverallWrap) elOverallWrap.style.display = 'none';
+      return;
+    }
+
+    const navCard = elNav ? elNav.closest('.card') : null;
+    if (navCard) navCard.style.display = '';
     const groups = getGroupsList();
 
     const html = [];
@@ -1095,6 +1172,9 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     const multiline = !!f.multiline;
     const val = fieldValueText(f);
 
+    const showHelp = !isBeginnerMode && !!help;
+    const helpStyle = showHelp ? '' : 'display:none;';
+
     const missing = fieldIsMissing(f);
     const wrapCls = 'q' + (missing ? ' missing' : '');
 
@@ -1123,7 +1203,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
             </div>`;
           }).join('') +
         `</div>
-        <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
+        <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
       </div>`;
     }
 
@@ -1131,14 +1211,14 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       return `<div class="${wrapCls}" data-field="${fid}">
         <div class="lbl" data-dyn="label">${esc(label)}</div>
         <textarea rows="4" class="input" data-input="1" style="width:100%;">${esc(val)}</textarea>
-        <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
+        <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
       </div>`;
     }
 
     return `<div class="${wrapCls}" data-field="${fid}">
       <div class="lbl" data-dyn="label">${esc(label)}</div>
       <input type="text" class="input" data-input="1" style="width:100%;" value="${esc(val)}">
-      <div class="help" data-dyn="help" style="${help ? '' : 'display:none;'}">${esc(help)}</div>
+      <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
     </div>`;
   }
 
@@ -1227,6 +1307,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   }
 
   function updateReqHint(){
+    if (isBeginnerMode) {
+      if (elReqHint) elReqHint.textContent = '';
+      return;
+    }
     const cur = flatSteps[activeStep];
     if (!cur) { elReqHint.textContent = ''; return; }
 
@@ -1325,6 +1409,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       activeStep = flatSteps.findIndex(s => s.kind==='submit');
       if (activeStep < 0) activeStep = flatSteps.length - 1;
       render();
+      exitFullscreenForBeginner();
       alert(t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
     } catch(e){
       alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
@@ -1351,21 +1436,28 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     buildFlatSteps();
 
+    document.body.classList.toggle('beginner-mode', isBeginnerMode);
+    if (isBeginnerMode) enterFullscreenForBeginner();
+    else exitFullscreenForBeginner();
+
     const tplName = state.template ? String(state.template.name || '') : '';
     const ver = state.template ? String(state.template.version || '') : '';
     elMeta.textContent = tplName ? (tplName + (ver ? (' · v' + ver) : '')) : t('student.js.form_label', 'Formular');
+    elMeta.style.display = isBeginnerMode ? 'none' : '';
 
     setLockedUi();
     renderNav();
+    if (elReqHint) elReqHint.style.display = isBeginnerMode ? 'none' : '';
 
     const cur = flatSteps[activeStep];
     if (!cur) return;
 
     btnPrev.style.visibility = (activeStep <= 0) ? 'hidden' : 'visible';
+    btnNext.classList.remove('cta-ready');
 
-    if (cur.kind === 'intro') {
-      elTitle.textContent = t('student.js.start_title', 'Start');
-      elSub.textContent = t('student.js.start_sub', 'Bitte lies die Infos. Danach geht es los.');
+      if (cur.kind === 'intro') {
+        elTitle.textContent = t('student.js.start_title', 'Start');
+        elSub.textContent = isBeginnerMode ? '' : t('student.js.start_sub', 'Bitte lies die Infos. Danach geht es los.');
       const html = (cur.intro_html || '').trim();
       elBody.innerHTML = `<div class="intro-box">${html ? html : `<p class="muted">${esc(t('student.js.no_intro', 'Keine Intro-Infos hinterlegt.'))}</p>`}</div>`;
       btnNext.textContent = t('student.js.cta_start', 'Los geht’s');
@@ -1374,9 +1466,9 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       btnNext.style.visibility = 'visible';
     }
 
-    else if (cur.kind === 'group') {
-      elTitle.textContent = cur.title;
-      elSub.textContent = t('student.js.group_sub', 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.');
+      else if (cur.kind === 'group') {
+        elTitle.textContent = cur.title;
+        elSub.textContent = isBeginnerMode ? '' : t('student.js.group_sub', 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.');
       elBody.innerHTML = ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || `<p class="muted">${esc(t('student.js.no_fields', 'Keine Felder.'))}</p>`);
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
@@ -1411,13 +1503,21 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     else if (cur.kind === 'field') {
       const f = cur.field;
-      elTitle.textContent = cur.groupTitle;
-      elSub.textContent = t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
+      const idx = buildFieldNameIndex();
+      const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
+      elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
+      elSub.textContent = isBeginnerMode ? '' : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
       elBody.innerHTML = renderFieldBlock(f);
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
-      btnNext.disabled = false;
+      const ready = !fieldIsMissing(f);
+      btnNext.disabled = isBeginnerMode ? !ready : false;
+      btnNext.classList.toggle('cta-ready', isBeginnerMode && ready);
       btnNext.style.visibility = 'visible';
+
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
+        speakCurrentStep();
+      }
     }
 
     else { // submit
