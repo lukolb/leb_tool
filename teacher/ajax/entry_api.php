@@ -34,7 +34,39 @@ function option_list_id_from_meta(array $meta): int {
   return (int)$tid;
 }
 
-function load_option_list_items(PDO $pdo, int $listId): array {
+function resolve_icon_urls(PDO $pdo, array $iconIds, array &$cache = []): array {
+  $iconIds = array_values(array_unique(array_filter(array_map('intval', $iconIds), fn($x)=>$x>0)));
+  $iconIds = array_values(array_filter($iconIds, fn($id) => !isset($cache[$id])));
+  if ($iconIds) {
+    $in = implode(',', array_fill(0, count($iconIds), '?'));
+    $st = $pdo->prepare("SELECT id, storage_path FROM icon_library WHERE id IN ($in)");
+    $st->execute($iconIds);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $cache[(int)$r['id']] = url((string)$r['storage_path']);
+    }
+  }
+  return $cache;
+}
+
+function map_option_icons(PDO $pdo, array $options, array &$iconCache = []): array {
+  $iconIds = [];
+  foreach ($options as $opt) {
+    $iid = isset($opt['icon_id']) ? (int)$opt['icon_id'] : 0;
+    if ($iid > 0) $iconIds[] = $iid;
+  }
+
+  $map = resolve_icon_urls($pdo, $iconIds, $iconCache);
+
+  foreach ($options as &$opt) {
+    $iid = isset($opt['icon_id']) ? (int)$opt['icon_id'] : 0;
+    $opt['icon_url'] = ($iid > 0 && isset($map[$iid])) ? $map[$iid] : null;
+  }
+  unset($opt);
+
+  return $options;
+}
+
+function load_option_list_items(PDO $pdo, int $listId, array &$iconCache = []): array {
   if ($listId <= 0) return [];
   $st = $pdo->prepare(
     "SELECT id, value, label, label_en, icon_id
@@ -53,7 +85,7 @@ function load_option_list_items(PDO $pdo, int $listId): array {
       'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
     ];
   }
-  return $out;
+  return map_option_icons($pdo, $out, $iconCache);
 }
 
 function option_label_for_lang(PDO $pdo, int $listId, ?int $itemId, ?string $value, string $lang): ?string {
@@ -707,6 +739,7 @@ try {
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
 
     $optCache = []; // listId => option definitions
+    $iconCache = []; // iconId => url
 
     // students in class
     $st = $pdo->prepare(
@@ -747,10 +780,10 @@ try {
       $listId = option_list_id_from_meta($mcf);
       $optsChild = [];
       if ($listId > 0) {
-        if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId);
+        if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId, $iconCache);
         $optsChild = $optCache[$listId];
       } else {
-        $optsChild = decode_options($cf['options_json'] ?? null);
+        $optsChild = map_option_icons($pdo, decode_options($cf['options_json'] ?? null), $iconCache);
       }
       $childByBase[$base] = [
         'id' => (int)$cf['id'],
@@ -799,10 +832,10 @@ try {
       $optsTeacher = [];
       $listIdT = option_list_id_from_meta($m0);
       if ($listIdT > 0) {
-        if (!isset($optCache[$listIdT])) $optCache[$listIdT] = load_option_list_items($pdo, $listIdT);
+        if (!isset($optCache[$listIdT])) $optCache[$listIdT] = load_option_list_items($pdo, $listIdT, $iconCache);
         $optsTeacher = $optCache[$listIdT];
       } else {
-        $optsTeacher = decode_options($f0['options_json'] ?? null);
+        $optsTeacher = map_option_icons($pdo, decode_options($f0['options_json'] ?? null), $iconCache);
       }
       if (!$optsTeacher && (string)$f0['field_type'] === 'grade') {
         $optsTeacher = [
@@ -848,10 +881,10 @@ try {
       $optsTeacher = [];
       $listIdF = option_list_id_from_meta($meta);
       if ($listIdF > 0) {
-        if (!isset($optCache[$listIdF])) $optCache[$listIdF] = load_option_list_items($pdo, $listIdF);
+        if (!isset($optCache[$listIdF])) $optCache[$listIdF] = load_option_list_items($pdo, $listIdF, $iconCache);
         $optsTeacher = $optCache[$listIdF];
       } else {
-        $optsTeacher = decode_options($f['options_json'] ?? null);
+        $optsTeacher = map_option_icons($pdo, decode_options($f['options_json'] ?? null), $iconCache);
       }
       if (!$optsTeacher && (string)$f['field_type'] === 'grade') {
         $optsTeacher = [
