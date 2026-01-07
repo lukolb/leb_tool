@@ -110,10 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!is_array($titles)) $titles = [];
     $cfg['student']['group_titles'] = parse_group_title_overrides_from_post($keys, $titles);
 
-    $ttsVoice = trim((string)($_POST['tts_voice'] ?? ($cfg['student']['tts_voice'] ?? '')));
+    $ttsVoiceDe = trim((string)($_POST['tts_voice_de'] ?? ($cfg['student']['tts_voice_de'] ?? ($cfg['student']['tts_voice'] ?? ''))));
+    $ttsVoiceEn = trim((string)($_POST['tts_voice_en'] ?? ($cfg['student']['tts_voice_en'] ?? '')));
     $ttsRate = (float)($_POST['tts_rate'] ?? ($cfg['student']['tts_rate'] ?? 1.0));
     if ($ttsRate <= 0) $ttsRate = 1.0;
-    $cfg['student']['tts_voice'] = $ttsVoice;
+    $cfg['student']['tts_voice_de'] = $ttsVoiceDe;
+    $cfg['student']['tts_voice_en'] = $ttsVoiceEn;
+    $cfg['student']['tts_voice'] = $ttsVoiceDe;
     $cfg['student']['tts_rate'] = max(0.5, min(1.5, $ttsRate));
 
     // ---- Logo actions ----
@@ -203,7 +206,8 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
-$ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
+$ttsVoicePrefDe = trim((string)($studentCfg['tts_voice_de'] ?? ($studentCfg['tts_voice'] ?? '')));
+$ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 $ttsRate = (float)($studentCfg['tts_rate'] ?? 1.0);
 if ($ttsRate <= 0) $ttsRate = 1.0;
 $ttsRate = max(0.5, min(1.5, $ttsRate));
@@ -387,7 +391,10 @@ render_admin_header('Admin – Settings');
     <input type="hidden" name="action" value="save">
 
     <label>Bevorzugte Stimme (optional)</label>
-    <input name="tts_voice" list="ttsVoiceList" value="<?=h($ttsVoicePref)?>" placeholder="z.B. Google Deutsch, Microsoft Katja">
+    <label>Standard-Stimme (Deutsch)</label>
+    <input name="tts_voice_de" list="ttsVoiceList" value="<?=h($ttsVoicePrefDe)?>" placeholder="z.B. Google Deutsch, Microsoft Katja">
+    <label style="margin-top:10px;">Standard-Stimme (Englisch)</label>
+    <input name="tts_voice_en" list="ttsVoiceList" value="<?=h($ttsVoicePrefEn)?>" placeholder="z.B. Google UK English, Microsoft Ryan">
     <datalist id="ttsVoiceList">
       <option value="Google Deutsch"></option>
       <option value="Google Deutsch (Deutschland)"></option>

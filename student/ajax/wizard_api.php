@@ -576,6 +576,7 @@ try {
       'field_lookup' => $fieldLookup,
       'ui' => [
         'display_mode' => student_wizard_display_mode_from_class($studentRow),
+        'ai_enabled' => ai_provider_enabled(),
       ],
       'ui_lang' => $lang,
       'translations' => ui_translations(),

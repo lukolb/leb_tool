@@ -326,6 +326,10 @@ function translations_catalog(): array {
       'student.tts.disabled' => 'Vorlesen wurde von deiner Lehrkraft deaktiviert.',
       'student.tts.unsupported' => 'Vorlesen wird von diesem Gerät nicht unterstützt.',
       'student.tts.error' => 'Vorlesen wurde gestoppt.',
+      'student.ai.title' => 'Kurze Erklärung',
+      'student.ai.close' => 'Schließen',
+      'student.ai.button' => 'Kurze Erklärung',
+      'student.ai.error' => 'KI konnte keine Erklärung liefern.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',
@@ -345,6 +349,7 @@ function translations_catalog(): array {
       'student.js.group_intro_sub' => 'Bevor es losgeht: kurze Übersicht.',
       'student.js.group_intro_kicker' => 'Neuer Abschnitt',
       'student.js.group_intro_hint' => 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.',
+      'student.js.group_intro_tts' => 'Weiter geht es mit dem Thema',
       'student.js.cta_begin_group' => 'Starten',
       'student.js.field_sub' => 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.',
       'student.js.finish_title' => 'Fertig',
@@ -699,6 +704,10 @@ function translations_catalog(): array {
       'student.tts.disabled' => 'Read aloud was disabled by your teacher.',
       'student.tts.unsupported' => 'Read aloud is not supported on this device.',
       'student.tts.error' => 'Read aloud stopped.',
+      'student.ai.title' => 'Quick explanation',
+      'student.ai.close' => 'Close',
+      'student.ai.button' => 'Quick explanation',
+      'student.ai.error' => 'AI could not generate an explanation.',
 
       // Student area (JS translations)
       'student.js.nav_start_title' => 'Start',
@@ -718,6 +727,7 @@ function translations_catalog(): array {
       'student.js.group_intro_sub' => 'Before you start: short overview.',
       'student.js.group_intro_kicker' => 'New section',
       'student.js.group_intro_hint' => 'There are {count} questions. You can always jump using the menu.',
+      'student.js.group_intro_tts' => 'Next up is the topic',
       'student.js.cta_begin_group' => 'Start',
       'student.js.field_sub' => 'One question at a time. You can always jump back.',
       'student.js.finish_title' => 'Done',
