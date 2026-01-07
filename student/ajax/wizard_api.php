@@ -115,7 +115,7 @@ function group_key_from_meta(array $meta): string {
 function student_wizard_display_mode_from_class(array $classRow): string {
   $mode = (string)($classRow['student_wizard_display'] ?? 'groups');
   $mode = strtolower(trim($mode));
-  return in_array($mode, ['groups','items'], true) ? $mode : 'groups';
+  return in_array($mode, ['groups','items','beginner'], true) ? $mode : 'groups';
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback=''): string {
