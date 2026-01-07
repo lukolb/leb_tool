@@ -317,12 +317,13 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     body.beginner-mode .wiz-actions .btn{
       min-height: 64px;
       min-width: 64px;
-      font-size: 26px;
+      font-size: 30px;
       padding: 14px 18px;
       border-radius: 16px;
       display:flex;
       align-items:center;
       justify-content:center;
+      font-weight: 800;
     }
     body.beginner-mode #ttsActionsInline{
       flex: 1;
@@ -514,6 +515,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let flatSteps = [];
   let activeStep = 0;
   let suppressTtsOnce = false;
+  let didAutoReadIntro = false;
 
   const pendingTimers = new Map();
   let saveInFlight = 0;
@@ -608,6 +610,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
   function currentStepTextForTts(){
     if (isBeginnerMode) {
+      const cur = flatSteps[activeStep];
+      if (cur && cur.kind === 'intro' && elBody) {
+        return String(elBody.innerText || '').trim();
+      }
       const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
       return String(heading || '').trim();
     }
@@ -1563,6 +1569,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported && !didAutoReadIntro) {
+        speakCurrentStep();
+        didAutoReadIntro = true;
+      }
     }
 
     else if (cur.kind === 'group') {
@@ -1644,8 +1654,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     }
 
     if (isBeginnerMode) {
-      btnPrev.textContent = '←';
-      btnNext.textContent = '→';
+      btnPrev.textContent = '<';
+      btnNext.textContent = '>';
       btnPrev.setAttribute('aria-label', t('student.buttons.prev'));
       btnNext.setAttribute('aria-label', t('student.buttons.next'));
     }
