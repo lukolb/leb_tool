@@ -444,6 +444,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
             </div>
             <div class="tts-actions">
               <button class="btn secondary" type="button" id="ttsButton" aria-label="<?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?>"><i class="fa fa-volume-up"></i></button>
+              <button class="btn secondary" type="button" id="aiHelpButton" style="display:none;" aria-label="<?=h(t('student.ai.button', 'Kurze Erklärung'))?>">?</button>
             </div>
           </div>
 
@@ -524,6 +525,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const ttsButton = document.getElementById('ttsButton');
   const ttsStatus = document.getElementById('ttsStatus');
   const ttsActionsInline = document.getElementById('ttsActionsInline');
+  const aiHelpButton = document.getElementById('aiHelpButton');
   const aiModal = document.getElementById('aiModal');
   const aiModalText = document.getElementById('aiModalText');
   const aiModalClose = document.getElementById('aiModalClose');
@@ -624,11 +626,15 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       ttsActionsInline.style.display = '';
       ttsActionsInline.innerHTML = '';
       ttsActionsInline.appendChild(ttsButton);
+      if (aiHelpButton) ttsActionsInline.appendChild(aiHelpButton);
     } else {
       if (ttsActionsInline) ttsActionsInline.style.display = 'none';
       const barActions = ttsBar ? ttsBar.querySelector('.tts-actions') : null;
       if (barActions && !barActions.contains(ttsButton)) {
         barActions.appendChild(ttsButton);
+      }
+      if (barActions && aiHelpButton && !barActions.contains(aiHelpButton)) {
+        barActions.appendChild(aiHelpButton);
       }
     }
   }
@@ -813,6 +819,21 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     refreshStaticLabels();
   }
 
+  function updateAiBeginnerButton(){
+    if (!aiHelpButton) return;
+    const aiEnabled = !!(state && state.ui && state.ui.ai_enabled);
+    const cur = flatSteps[activeStep];
+    const show = aiEnabled && isBeginnerMode && cur && cur.kind === 'field' && cur.field && cur.field.id;
+    if (show) {
+      aiHelpButton.style.display = '';
+      aiHelpButton.setAttribute('aria-label', t('student.ai.button', 'Kurze Erklärung'));
+      aiHelpButton.setAttribute('data-field-id', String(cur.field.id));
+    } else {
+      aiHelpButton.style.display = 'none';
+      aiHelpButton.removeAttribute('data-field-id');
+    }
+  }
+
   function refreshStaticLabels(){
     const elSub = document.getElementById('brandSubtitle');
     if (elSub) elSub.textContent = t('student.subtitle');
@@ -835,6 +856,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (aiModalTitle) aiModalTitle.textContent = t('student.ai.title', 'Kurze Erklärung');
     const aiClose = document.getElementById('aiModalClose');
     if (aiClose) aiClose.textContent = t('student.ai.close', 'Schließen');
+    if (aiHelpButton) aiHelpButton.setAttribute('aria-label', t('student.ai.button', 'Kurze Erklärung'));
 
     if (!STUDENT_ACTIVE) {
       const lockedTitle = document.getElementById('lockedTitle');
@@ -1342,7 +1364,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     const missing = fieldIsMissing(f);
     const wrapCls = 'q' + (missing ? ' missing' : '');
     const aiEnabled = !!(state && state.ui && state.ui.ai_enabled);
-    const aiBtn = (showLabel && aiEnabled)
+    const aiBtn = (showLabel && aiEnabled && !isBeginnerMode)
       ? `<button class="ai-help-btn" type="button" data-ai-help="1" data-field-id="${fid}" aria-label="${esc(t('student.ai.button', 'Kurze Erklärung'))}">?</button>`
       : '';
     const labelHtml = showLabel
@@ -1800,8 +1822,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         if (key && curGroup && String(key) === String(curGroup)) g.classList.add('open');
       });
     }
+
+    updateAiBeginnerButton();
   }
 
+  if (aiHelpButton) aiHelpButton.addEventListener('click', () => handleAiHelpClick(aiHelpButton));
   if (aiModalClose) aiModalClose.addEventListener('click', closeAiModal);
   if (aiModal) {
     aiModal.addEventListener('click', (e) => {

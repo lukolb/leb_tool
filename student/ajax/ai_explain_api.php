@@ -155,11 +155,11 @@ try {
   $gradeInfo = $grade > 0 ? (string)$grade : '';
 
   $sys = ($lang === 'en')
-    ? 'You explain school form items for students. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists.'
-    : 'Du erklärst Felder eines Schulformulars für Schüler. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen.';
+    ? 'You explain school form items for students. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists.'
+    : 'Du erklärst Felder eines Schulformulars für Schüler. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen.';
   $user = ($lang === 'en')
-    ? "Explain this item briefly for a student. Grade: {$gradeInfo}. Item: {$label}. Help text: {$help}."
-    : "Erkläre dieses Feld kurz für eine Schülerin oder einen Schüler. Klassenstufe: {$gradeInfo}. Feld: {$label}. Hilfetext: {$help}.";
+    ? "Explain what the student should enter for this item, without judging. Grade: {$gradeInfo}. Item: {$label}. Help text: {$help}."
+    : "Erkläre, was die Schülerin oder der Schüler hier eintragen soll, ohne zu bewerten. Klassenstufe: {$gradeInfo}. Feld: {$label}. Hilfetext: {$help}.";
 
   $aiCfg = ai_provider_config();
   $text = ai_chat_completion([
