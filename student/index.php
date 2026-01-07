@@ -1539,6 +1539,16 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return 0;
   }
 
+  function firstMissingStepIndex(){
+    if (!Array.isArray(flatSteps)) return null;
+    for (let i = 0; i < flatSteps.length; i += 1) {
+      const step = flatSteps[i];
+      if (!step || step.kind !== 'field') continue;
+      if (fieldIsMissing(step.field)) return i;
+    }
+    return null;
+  }
+
   function updateReqHint(){
     if (isBeginnerMode) {
       if (elReqHint) elReqHint.textContent = '';
@@ -1877,7 +1887,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       }
 
       buildFlatSteps();
-      activeStep = 0;
+      const missingIdx = firstMissingStepIndex();
+      activeStep = (typeof missingIdx === 'number') ? missingIdx : 0;
       render();
     } catch (e) {
       const msg = String(e?.message || t('student.js.load_error', 'Fehler'));
