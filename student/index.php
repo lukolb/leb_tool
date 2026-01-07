@@ -546,7 +546,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let flatSteps = [];
   let activeStep = 0;
   let suppressTtsOnce = false;
-  let didAutoReadIntro = false;
 
   const pendingTimers = new Map();
   let saveInFlight = 0;
@@ -662,15 +661,12 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   function currentStepTextForTts(){
     if (isBeginnerMode) {
       const cur = flatSteps[activeStep];
-      if (cur && cur.kind === 'intro' && elBody) {
+      if (cur && (cur.kind === 'intro' || cur.kind === 'group_intro') && elBody) {
         return String(elBody.innerText || '').trim();
       }
       if (cur && cur.kind === 'field') {
         const idx = buildFieldNameIndex();
         const fieldLabel = resolveTextTemplate(String(cur.field?.label || cur.field?.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
-        const prev = flatSteps[activeStep - 1];
-        const isNewGroup = !prev || prev.kind !== 'field' || String(prev.group) !== String(cur.group);
-        if (isNewGroup) return `${cur.groupTitle || cur.group || ''}. ${fieldLabel}`.trim();
         return String(fieldLabel || '').trim();
       }
       const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
@@ -1116,6 +1112,15 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
         const fields = Array.isArray(g.fields) ? g.fields : [];
+
+        out.push({
+          kind: 'group_intro',
+          key: 'gi:' + gKey,
+          title: gTitle,
+          group: gKey,
+          groupTitle: gTitle,
+          fields: fields
+        });
 
         for (const f of fields) {
           out.push({
@@ -1725,10 +1730,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported && !didAutoReadIntro) {
-        speakCurrentStep();
-        didAutoReadIntro = true;
-      }
     }
 
     else if (cur.kind === 'group') {
@@ -1743,16 +1744,20 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     else if (cur.kind === 'group_intro') {
       const fields = Array.isArray(cur.fields) ? cur.fields : [];
-      elTitle.textContent = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
-      elSub.textContent = t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
-      elBody.innerHTML = `
-        <div class="group-intro">
-          <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
-          <h3>${esc(cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt'))}</h3>
-          <div class="muted">${esc(tfmt('student.js.group_intro_hint', 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.', { count: fields.length }))}</div>
-          <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
-        </div>
-      `;
+      const groupLabel = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
+      elTitle.textContent = isBeginnerMode ? groupLabel : groupLabel;
+      elSub.textContent = isBeginnerMode ? '' : t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
+      elBody.innerHTML = isBeginnerMode
+        ? `<div class="group-intro">
+            <h2 style="margin:0 0 6px; font-weight:900; font-size:28px;">${esc(groupLabel)}</h2>
+            <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
+          </div>`
+        : `<div class="group-intro">
+            <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
+            <h3>${esc(groupLabel)}</h3>
+            <div class="muted">${esc(tfmt('student.js.group_intro_hint', 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.', { count: fields.length }))}</div>
+            <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
+          </div>`;
       const b = document.getElementById('btnStartGroup');
       if (b) {
         b.addEventListener('click', () => {
@@ -1761,7 +1766,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
       }
-      btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
+      btnNext.textContent = isBeginnerMode ? t('student.js.cta_begin_group', 'Starten') : t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
     }
@@ -1770,13 +1775,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const f = cur.field;
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
-      const prev = flatSteps[activeStep - 1];
-      const isNewGroup = !prev || prev.kind !== 'field' || String(prev.group) !== String(cur.group);
-      const groupHeader = isBeginnerMode && isNewGroup
+      const groupHeader = isBeginnerMode
         ? `<div class="beginner-group-title">${esc(cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))}</div>`
         : '';
       elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
-      elSub.textContent = isBeginnerMode ? '' : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
+      elSub.textContent = isBeginnerMode
+        ? (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))
+        : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
       elBody.innerHTML = groupHeader + renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
@@ -1787,8 +1792,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.classList.toggle('cta-ready', isBeginnerMode && ready);
       btnNext.style.visibility = 'visible';
 
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
-        if (!suppressTtsOnce) speakCurrentStep();
+      if (isBeginnerMode) {
         suppressTtsOnce = false;
       }
     }
