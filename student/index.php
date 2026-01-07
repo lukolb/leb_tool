@@ -87,7 +87,8 @@ $secondary = (string)($brand['secondary'] ?? '#111111');
 $ttsRate = (float)($studentCfg['tts_rate'] ?? 0.95);
 if ($ttsRate <= 0) $ttsRate = 1.0;
 $ttsRate = max(0.5, min(1.5, $ttsRate));
-$ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
+$ttsVoicePrefDe = trim((string)($studentCfg['tts_voice_de'] ?? ($studentCfg['tts_voice'] ?? '')));
+$ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 ?>
 <!doctype html>
 <html lang="<?=h(ui_lang())?>">
@@ -181,6 +182,18 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     .content h2{ margin-top:0; }
     .step-meta{ color:var(--muted); font-size:12px; margin: -4px 0 10px; }
+
+    .ai-help-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .ai-help-btn{ border:1px solid var(--border); background:#fff; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; cursor:pointer; }
+    .ai-help-btn:hover{ background: rgba(11,87,208,0.06); }
+    .ai-help-btn[disabled]{ opacity:0.6; cursor:wait; }
+
+    .ai-modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:50; background: rgba(0,0,0,0.4); padding:20px; }
+    .ai-modal.open{ display:flex; }
+    .ai-modal-card{ background:#fff; border-radius:16px; max-width:520px; width:100%; padding:16px; border:1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
+    .ai-modal-card h3{ margin:0 0 8px; font-size:16px; }
+    .ai-modal-card .text{ font-size:14px; line-height:1.4; }
+    .ai-modal-card .actions{ margin-top:12px; display:flex; justify-content:flex-end; }
 
     .intro-box{ border:1px dashed var(--border); border-radius:14px; padding:14px; background: rgba(0,0,0,0.02); }
     .intro-box :first-child{ margin-top:0; }
@@ -347,13 +360,13 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       transition: width .25s ease;
     }
     @keyframes pulse-glow {
-      0% { box-shadow: 0 0 0 rgba(11,87,208,0.45); }
-      50% { box-shadow: 0 0 24px rgba(11,87,208,0.65); }
-      100% { box-shadow: 0 0 0 rgba(11,87,208,0.45); }
+      0% { box-shadow: 0 0 6px rgba(11,87,208,0.55); }
+      50% { box-shadow: 0 0 32px rgba(11,87,208,0.75); }
+      100% { box-shadow: 0 0 6px rgba(11,87,208,0.55); }
     }
     body.beginner-mode #btnNext.cta-ready{
       animation: pulse-glow 1.6s ease-in-out infinite;
-      transform: translateY(-1px);
+      transform: translateY(-1px) scale(1.02);
     }
   </style>
 </head>
@@ -431,6 +444,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
             </div>
             <div class="tts-actions">
               <button class="btn secondary" type="button" id="ttsButton" aria-label="<?=h(t('student.tts.start', 'Aktuellen Abschnitt vorlesen'))?>"><i class="fa fa-volume-up"></i></button>
+              <button class="btn secondary" type="button" id="aiHelpButton" style="display:none;" aria-label="<?=h(t('student.ai.button', 'Kurze Erklärung'))?>">?</button>
             </div>
           </div>
 
@@ -459,9 +473,20 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     <div class="muted" id="metaLine" style="text-align: center;"><?=h(t('student.meta.loading'))?></div>
   </div>
 
+  <div class="ai-modal" id="aiModal" role="dialog" aria-modal="true" aria-labelledby="aiModalTitle">
+    <div class="ai-modal-card">
+      <h3 id="aiModalTitle"><?=h(t('student.ai.title', 'Kurze Erklärung'))?></h3>
+      <div class="text" id="aiModalText"></div>
+      <div class="actions">
+        <button class="btn secondary" type="button" id="aiModalClose"><?=h(t('student.ai.close', 'Schließen'))?></button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
+  const aiApiUrl = <?=json_encode(url('student/ajax/ai_explain_api.php'))?>;
   const ORG_NAME = <?= json_encode($orgName) ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
@@ -469,7 +494,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   const REPORT_STATUS = <?=json_encode($reportStatus)?>;
   const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
   const TTS_RATE = Number(<?=json_encode($ttsRate)?>) || 1;
-  const TTS_VOICE_PREF = <?=json_encode($ttsVoicePref)?>;
+  const TTS_VOICE_PREF_DE = <?=json_encode($ttsVoicePrefDe)?>;
+  const TTS_VOICE_PREF_EN = <?=json_encode($ttsVoicePrefEn)?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -499,6 +525,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   const ttsButton = document.getElementById('ttsButton');
   const ttsStatus = document.getElementById('ttsStatus');
   const ttsActionsInline = document.getElementById('ttsActionsInline');
+  const aiHelpButton = document.getElementById('aiHelpButton');
+  const aiModal = document.getElementById('aiModal');
+  const aiModalText = document.getElementById('aiModalText');
+  const aiModalClose = document.getElementById('aiModalClose');
 
   let state = {
     ok: false,
@@ -506,7 +536,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     report_instance_id: 0,
     report_status: 'draft',
     child_can_edit: true,
-    ui: { display_mode: 'groups' },
+    ui: { display_mode: 'groups', ai_enabled: false },
     steps: [],
   };
 
@@ -515,7 +545,6 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   let flatSteps = [];
   let activeStep = 0;
   let suppressTtsOnce = false;
-  let didAutoReadIntro = false;
 
   const pendingTimers = new Map();
   let saveInFlight = 0;
@@ -532,6 +561,43 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
   };
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  function playPling(){
+    if (!isBeginnerMode) return;
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+      osc.onended = () => { try { ctx.close(); } catch(e) {} };
+    } catch(e) {}
+  }
+
+  function voicePrefForLang(){
+    if (currentLang === 'en') return TTS_VOICE_PREF_EN || TTS_VOICE_PREF_DE || '';
+    return TTS_VOICE_PREF_DE || TTS_VOICE_PREF_EN || '';
+  }
+
+  function openAiModal(text){
+    if (!aiModal || !aiModalText) return;
+    aiModalText.textContent = text || '';
+    aiModal.classList.add('open');
+  }
+
+  function closeAiModal(){
+    if (!aiModal) return;
+    aiModal.classList.remove('open');
+  }
 
   // -------- Vorlese-Funktion (Web Speech API) --------
   const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
@@ -580,11 +646,15 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       ttsActionsInline.style.display = '';
       ttsActionsInline.innerHTML = '';
       ttsActionsInline.appendChild(ttsButton);
+      if (aiHelpButton) ttsActionsInline.appendChild(aiHelpButton);
     } else {
       if (ttsActionsInline) ttsActionsInline.style.display = 'none';
       const barActions = ttsBar ? ttsBar.querySelector('.tts-actions') : null;
       if (barActions && !barActions.contains(ttsButton)) {
         barActions.appendChild(ttsButton);
+      }
+      if (barActions && aiHelpButton && !barActions.contains(aiHelpButton)) {
+        barActions.appendChild(aiHelpButton);
       }
     }
   }
@@ -608,11 +678,25 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     try { document.exitFullscreen(); } catch(e) {}
   }
 
-  function currentStepTextForTts(){
+  function currentStepTextForTts(includeGroup = false){
     if (isBeginnerMode) {
       const cur = flatSteps[activeStep];
       if (cur && cur.kind === 'intro' && elBody) {
         return String(elBody.innerText || '').trim();
+      }
+      if (cur && cur.kind === 'group_intro') {
+        const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+        const intro = t('student.js.group_intro_tts', 'Weiter geht es mit dem Thema');
+        return `${intro} ${groupLabel}.`.trim();
+      }
+      if (cur && cur.kind === 'field') {
+        const idx = buildFieldNameIndex();
+        const fieldLabel = resolveTextTemplate(String(cur.field?.label || cur.field?.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
+        if (includeGroup) {
+          const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+          return `${groupLabel}. ${fieldLabel}`.trim();
+        }
+        return String(fieldLabel || '').trim();
       }
       const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
       return String(heading || '').trim();
@@ -646,10 +730,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     return voices[0] || null;
   }
 
-  function speakCurrentStep(){
+  function speakCurrentStep(includeGroup = false){
     if (!ttsSupported) return;
     stopTts();
-    const text = currentStepTextForTts();
+    const text = currentStepTextForTts(includeGroup);
     const normalizedText = typeof text === 'string' ? text : '';
     if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
       updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
@@ -660,7 +744,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     utter.rate = TTS_RATE;
     utter.pitch = 1;
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
-    const voice = pickVoice(utter.lang, TTS_VOICE_PREF);
+    const voice = pickVoice(utter.lang, voicePrefForLang());
     if (voice) utter.voice = voice;
     utter.onstart = () => { updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
     utter.onend = () => { updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
@@ -670,12 +754,32 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     updateTtsUi();
   }
 
+  function speakText(text){
+    if (!ttsSupported) return false;
+    const normalized = typeof text === 'string' ? text.trim() : '';
+    if (!normalized) return false;
+    stopTts();
+    const utter = new SpeechSynthesisUtterance(normalized);
+    utter.rate = TTS_RATE;
+    utter.pitch = 1;
+    utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
+    const voice = pickVoice(utter.lang, voicePrefForLang());
+    if (voice) utter.voice = voice;
+    utter.onstart = () => { updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
+    utter.onend = () => { updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
+    utter.onerror = () => { updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.')); };
+    ttsUtterance = utter;
+    speechSynthesis.speak(utter);
+    updateTtsUi();
+    return true;
+  }
+
   function initTts(){
     updateTtsUi();
     if (!ttsSupported || !ttsButton) return;
     ttsButton.addEventListener('click', () => {
       if (speechSynthesis.speaking) { stopTts(); }
-      else { speakCurrentStep(); }
+      else { speakCurrentStep(true); }
     });
     if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
@@ -749,6 +853,21 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     refreshStaticLabels();
   }
 
+  function updateAiBeginnerButton(){
+    if (!aiHelpButton) return;
+    const aiEnabled = !!(state && state.ui && state.ui.ai_enabled);
+    const cur = flatSteps[activeStep];
+    const show = aiEnabled && isBeginnerMode && cur && cur.kind === 'field' && cur.field && cur.field.id;
+    if (show) {
+      aiHelpButton.style.display = '';
+      aiHelpButton.setAttribute('aria-label', t('student.ai.button', 'Kurze Erklärung'));
+      aiHelpButton.setAttribute('data-field-id', String(cur.field.id));
+    } else {
+      aiHelpButton.style.display = 'none';
+      aiHelpButton.removeAttribute('data-field-id');
+    }
+  }
+
   function refreshStaticLabels(){
     const elSub = document.getElementById('brandSubtitle');
     if (elSub) elSub.textContent = t('student.subtitle');
@@ -766,6 +885,12 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     document.querySelectorAll('.lang[data-lang="en"]').forEach(el => el.setAttribute('title', t('student.lang_en', 'English')));
 
     document.title = `${ORG_NAME} – ${t('student.html_title')}`;
+
+    const aiModalTitle = document.getElementById('aiModalTitle');
+    if (aiModalTitle) aiModalTitle.textContent = t('student.ai.title', 'Kurze Erklärung');
+    const aiClose = document.getElementById('aiModalClose');
+    if (aiClose) aiClose.textContent = t('student.ai.close', 'Schließen');
+    if (aiHelpButton) aiHelpButton.setAttribute('aria-label', t('student.ai.button', 'Kurze Erklärung'));
 
     if (!STUDENT_ACTIVE) {
       const lockedTitle = document.getElementById('lockedTitle');
@@ -1016,6 +1141,15 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
         const fields = Array.isArray(g.fields) ? g.fields : [];
+
+        out.push({
+          kind: 'group_intro',
+          key: 'gi:' + gKey,
+          title: gTitle,
+          group: gKey,
+          groupTitle: gTitle,
+          fields: fields
+        });
 
         for (const f of fields) {
           out.push({
@@ -1272,6 +1406,13 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     const missing = fieldIsMissing(f);
     const wrapCls = 'q' + (missing ? ' missing' : '');
+    const aiEnabled = !!(state && state.ui && state.ui.ai_enabled);
+    const aiBtn = (showLabel && aiEnabled && !isBeginnerMode)
+      ? `<button class="ai-help-btn" type="button" data-ai-help="1" data-field-id="${fid}" aria-label="${esc(t('student.ai.button', 'Kurze Erklärung'))}">?</button>`
+      : '';
+    const labelHtml = showLabel
+      ? (aiBtn ? `<div class="ai-help-row"><div class="lbl" data-dyn="label">${esc(label)}</div>${aiBtn}</div>` : `<div class="lbl" data-dyn="label">${esc(label)}</div>`)
+      : `<div class="lbl" data-dyn="label" style="display:none;">${esc(label)}</div>`;
 
     if (['radio','select','grade'].includes(type) || type === 'checkbox') {
       let opts = [];
@@ -1285,7 +1426,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       }
 
       return `<div class="${wrapCls}" data-field="${fid}">
-        <div class="lbl" data-dyn="label" style="${showLabel ? '' : 'display:none;'}">${esc(label)}</div>
+        ${labelHtml}
         <div class="opts">` +
           opts.map(o => {
             const oVal = optionValue(o);
@@ -1304,17 +1445,52 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     if (multiline || type === 'textarea') {
       return `<div class="${wrapCls}" data-field="${fid}">
-        <div class="lbl" data-dyn="label" style="${showLabel ? '' : 'display:none;'}">${esc(label)}</div>
+        ${labelHtml}
         <textarea rows="4" class="input" data-input="1" style="width:100%;">${esc(val)}</textarea>
         <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
       </div>`;
     }
 
     return `<div class="${wrapCls}" data-field="${fid}">
-      <div class="lbl" data-dyn="label" style="${showLabel ? '' : 'display:none;'}">${esc(label)}</div>
+      ${labelHtml}
       <input type="text" class="input" data-input="1" style="width:100%;" value="${esc(val)}">
       <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
     </div>`;
+  }
+
+  async function fetchAiExplanation(fieldId){
+    const res = await fetch(aiApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template_field_id: Number(fieldId), lang: currentLang, csrf_token: csrf })
+    });
+    const j = await res.json().catch(()=>null);
+    if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
+    return String(j.text || '');
+  }
+
+  async function handleAiHelpClick(btn){
+    if (!btn || btn.disabled) return;
+    const fid = Number(btn.getAttribute('data-field-id') || 0);
+    if (!fid) return;
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = '…';
+    try {
+      const text = await fetchAiExplanation(fid);
+      const ttsActive = TTS_ALLOWED && ttsSupported;
+      if (ttsActive) {
+        speakText(text);
+      } else {
+        openAiModal(text);
+      }
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : t('student.ai.error', 'KI konnte keine Erklärung liefern.');
+      openAiModal(msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old || '?';
+    }
   }
 
   function attachFieldHandlers(container){
@@ -1347,7 +1523,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       const click = async () => {
         if (isLocked()) return;
         updateFieldLocal(fid, v);
-        if (isBeginnerMode) suppressTtsOnce = true;
+        if (isBeginnerMode) {
+          suppressTtsOnce = true;
+          playPling();
+        }
         render();
         try { await saveFieldValue(fid, v); } catch(e){}
       };
@@ -1355,6 +1534,10 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       card.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); }
       });
+    });
+
+    container.querySelectorAll('[data-ai-help="1"]').forEach(btn => {
+      btn.addEventListener('click', () => handleAiHelpClick(btn));
     });
   }
 
@@ -1400,6 +1583,16 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
     if (cur.kind === 'group_intro') return groupStats(cur.fields).missing;
     if (cur.kind === 'field') return fieldIsMissing(cur.field) ? 1 : 0;
     return 0;
+  }
+
+  function firstMissingStepIndex(){
+    if (!Array.isArray(flatSteps)) return null;
+    for (let i = 0; i < flatSteps.length; i += 1) {
+      const step = flatSteps[i];
+      if (!step || step.kind !== 'field') continue;
+      if (fieldIsMissing(step.field)) return i;
+    }
+    return null;
   }
 
   function updateReqHint(){
@@ -1569,10 +1762,6 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported && !didAutoReadIntro) {
-        speakCurrentStep();
-        didAutoReadIntro = true;
-      }
     }
 
     else if (cur.kind === 'group') {
@@ -1587,16 +1776,19 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
 
     else if (cur.kind === 'group_intro') {
       const fields = Array.isArray(cur.fields) ? cur.fields : [];
-      elTitle.textContent = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
-      elSub.textContent = t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
-      elBody.innerHTML = `
-        <div class="group-intro">
-          <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
-          <h3>${esc(cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt'))}</h3>
-          <div class="muted">${esc(tfmt('student.js.group_intro_hint', 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.', { count: fields.length }))}</div>
-          <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
-        </div>
-      `;
+      const groupLabel = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
+      elTitle.textContent = isBeginnerMode ? groupLabel : groupLabel;
+      elSub.textContent = isBeginnerMode ? '' : t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
+      elBody.innerHTML = isBeginnerMode
+        ? `<div class="group-intro">
+            <h2 style="margin:0; font-weight:900; font-size:28px;">${esc(groupLabel)}</h2>
+          </div>`
+        : `<div class="group-intro">
+            <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
+            <h3>${esc(groupLabel)}</h3>
+            <div class="muted">${esc(tfmt('student.js.group_intro_hint', 'Hier kommen {count} Fragen. Du kannst jederzeit im Menü springen.', { count: fields.length }))}</div>
+            <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
+          </div>`;
       const b = document.getElementById('btnStartGroup');
       if (b) {
         b.addEventListener('click', () => {
@@ -1605,9 +1797,12 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
           else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
       }
-      btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
+      btnNext.textContent = isBeginnerMode ? t('student.buttons.next', 'Weiter') : t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
+        speakCurrentStep(false);
+      }
     }
 
     else if (cur.kind === 'field') {
@@ -1615,7 +1810,9 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
       elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
-      elSub.textContent = isBeginnerMode ? '' : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
+      elSub.textContent = isBeginnerMode
+        ? (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))
+        : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
       elBody.innerHTML = renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
@@ -1627,7 +1824,7 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       btnNext.style.visibility = 'visible';
 
       if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
-        if (!suppressTtsOnce) speakCurrentStep();
+        if (!suppressTtsOnce) speakCurrentStep(false);
         suppressTtsOnce = false;
       }
     }
@@ -1685,6 +1882,16 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
         if (key && curGroup && String(key) === String(curGroup)) g.classList.add('open');
       });
     }
+
+    updateAiBeginnerButton();
+  }
+
+  if (aiHelpButton) aiHelpButton.addEventListener('click', () => handleAiHelpClick(aiHelpButton));
+  if (aiModalClose) aiModalClose.addEventListener('click', closeAiModal);
+  if (aiModal) {
+    aiModal.addEventListener('click', (e) => {
+      if (e.target === aiModal) closeAiModal();
+    });
   }
 
   (async function init(){
@@ -1730,7 +1937,8 @@ $ttsVoicePref = trim((string)($studentCfg['tts_voice'] ?? ''));
       }
 
       buildFlatSteps();
-      activeStep = 0;
+      const missingIdx = firstMissingStepIndex();
+      activeStep = (typeof missingIdx === 'number') ? missingIdx : 0;
       render();
     } catch (e) {
       const msg = String(e?.message || t('student.js.load_error', 'Fehler'));
