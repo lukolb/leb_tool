@@ -621,7 +621,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (ttsButton) {
       ttsButton.style.display = '';
       const isSpeaking = speechSynthesis.speaking;
-      ttsButton.innerHTML = isSpeaking ? '⏹' : '<i class="fa fa-volume-up"></i>';
+      ttsButton.innerHTML = isSpeaking ? '<i class="fa fa-stop"></i>' : '<i class="fa fa-volume-up"></i>';
       ttsButton.setAttribute('aria-label', isSpeaking
         ? t('student.tts.stop', 'Stopp')
         : t('student.tts.start', 'Aktuellen Abschnitt vorlesen'));
@@ -1162,23 +1162,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           });
         }
       }
-    } else {
-      for (const g of groups) {
-        const gKey = String(g.key || g.title || 'Abschnitt');
-        const gTitle = String(g.title || g.key || 'Abschnitt');
-        const fields = Array.isArray(g.fields) ? g.fields : [];
-
-        for (const f of fields) {
-          out.push({
-            kind:'field',
-            key: gKey + ':' + String(f.id),
-            title: gTitle,
-            group: gKey,
-            groupTitle: gTitle,
-            field: f
-          });
-        }
-      }
     }
 
     out.push({ kind:'submit', key:'submit', title:'Fertig', group:'Fertig' });
@@ -1506,7 +1489,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       openAiModal(msg);
     } finally {
       btn.disabled = false;
-      btn.textContent = old || '?';
+      btn.innerHTML = old || '<i class="fa fa-question" aria-hidden="true"></i>';
     }
   }
 
@@ -1872,8 +1855,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
 
     if (isBeginnerMode) {
-      btnPrev.textContent = '<';
-      btnNext.textContent = '>';
+      btnPrev.innerHTML = '<i class="fa fa-angle-double-left" aria-hidden="true"></i>';
+  btnNext.innerHTML = '<i class="fa fa-angle-double-right" aria-hidden="true"></i>';
       btnPrev.setAttribute('aria-label', t('student.buttons.prev'));
       btnNext.setAttribute('aria-label', t('student.buttons.next'));
     }

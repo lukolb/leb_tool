@@ -118,6 +118,15 @@ function student_wizard_display_mode_from_class(array $classRow): string {
   return in_array($mode, ['groups','items','beginner'], true) ? $mode : 'groups';
 }
 
+function ai_provider_enabled(): bool {
+  $cfg = app_config();
+  $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
+  $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  if (!$enabled) return false;
+  $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
+  return trim($apiKey) !== '';
+}
+
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback=''): string {
   $de = trim((string)$labelDe);
   $en = trim((string)$labelEn);
