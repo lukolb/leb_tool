@@ -60,7 +60,7 @@ function parse_labels(string $raw): array {
  */
 function normalize_wizard_display(string $v): string {
   $v = strtolower(trim($v));
-  return in_array($v, ['groups','items'], true) ? $v : 'groups';
+  return in_array($v, ['groups','items','beginner'], true) ? $v : 'groups';
 }
 
 /**
@@ -445,6 +445,7 @@ render_admin_header('Klassen');
           <select name="student_wizard_display">
             <option value="groups" selected>Abschnitte (Gruppen)</option>
             <option value="items">Einzelne Fragen (Items)</option>
+            <option value="beginner">Leseanfänger</option>
           </select>
           <div class="muted">Anzeigeform wird in der Klasse gespeichert (Admin/Lehrkraft können beide ändern).</div>
         </div>
@@ -510,6 +511,7 @@ render_admin_header('Klassen');
           <select name="student_wizard_display">
             <option value="groups" selected>Abschnitte (Gruppen)</option>
             <option value="items">Einzelne Fragen (Items)</option>
+            <option value="beginner">Leseanfänger</option>
           </select>
           <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
         </div>
@@ -667,6 +669,7 @@ render_admin_header('Klassen');
         <select name="student_wizard_display">
           <option value="groups" <?=$curWiz==='groups'?'selected':''?>>Abschnitte (Gruppen)</option>
           <option value="items" <?=$curWiz==='items'?'selected':''?>>Einzelne Fragen (Items)</option>
+          <option value="beginner" <?=$curWiz==='beginner'?'selected':''?>>Leseanfänger</option>
         </select>
         <div class="muted">Wert wird direkt in <code>classes.student_wizard_display</code> gespeichert.</div>
       </div>

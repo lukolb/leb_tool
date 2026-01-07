@@ -115,7 +115,7 @@ function group_key_from_meta(array $meta): string {
 function student_wizard_display_mode_from_class(array $classRow): string {
   $mode = (string)($classRow['student_wizard_display'] ?? 'groups');
   $mode = strtolower(trim($mode));
-  return in_array($mode, ['groups','items'], true) ? $mode : 'groups';
+  return in_array($mode, ['groups','items','beginner'], true) ? $mode : 'groups';
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang, string $fallback=''): string {
@@ -150,7 +150,8 @@ function get_student_and_class(PDO $pdo, int $studentId): array {
     "SELECT s.id, s.first_name, s.last_name, s.class_id,
             c.school_year, c.grade_level, c.label, c.name AS class_name,
             c.template_id AS class_template_id,
-            c.student_wizard_display AS student_wizard_display
+            c.student_wizard_display AS student_wizard_display,
+            c.student_intro_html AS student_intro_html
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -438,11 +439,16 @@ try {
   $childCanEdit = ($status === 'draft');
 
   if ($action === 'bootstrap') {
-    $introAbs = child_intro_file_abs();
     $introHtml = '';
-    if (is_file($introAbs)) {
-      $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
-      $introHtml = render_intro_placeholders($introHtml, $studentRow);
+    $classIntro = trim((string)($studentRow['student_intro_html'] ?? ''));
+    if ($classIntro !== '') {
+      $introHtml = render_intro_placeholders(sanitize_intro_html($classIntro), $studentRow);
+    } else {
+      $introAbs = child_intro_file_abs();
+      if (is_file($introAbs)) {
+        $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
+        $introHtml = render_intro_placeholders($introHtml, $studentRow);
+      }
     }
 
     $fieldsRaw = load_child_fields($pdo, $templateId);

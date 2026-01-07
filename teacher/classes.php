@@ -23,7 +23,7 @@ function class_display(array $c): string {
 // NEW: normalize wizard display (per-class)
 function normalize_wizard_display(string $v): string {
   $v = strtolower(trim($v));
-  return in_array($v, ['groups','items'], true) ? $v : 'groups';
+  return in_array($v, ['groups','items','beginner'], true) ? $v : 'groups';
 }
 
 // POST: toggle active/inactive (teachers can archive their classes; admins can toggle all)
@@ -185,6 +185,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                   <select name="student_wizard_display" style="min-width:160px;">
                     <option value="groups" <?=$cur==='groups'?'selected':''?>><?=h(t('teacher.classes.wizard.groups', 'Gruppen'))?></option>
                     <option value="items" <?=$cur==='items'?'selected':''?>><?=h(t('teacher.classes.wizard.items', 'Items'))?></option>
+                    <option value="beginner" <?=$cur==='beginner'?'selected':''?>><?=h(t('teacher.classes.wizard.beginner', 'Leseanfänger'))?></option>
                   </select>
                   <button class="btn secondary" type="submit"><?=h(t('teacher.classes.wizard.save', 'Speichern'))?></button>
                 </form>
@@ -207,6 +208,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
                 <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.students', 'Schüler verwalten'))?></a>
                 <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.entries', 'Eingaben'))?></a>
+                <a class="btn secondary" href="<?=h(url('teacher/class_intro.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.intro', 'Intro bearbeiten'))?></a>
                 <form id="classActiveForm" method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
