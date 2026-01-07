@@ -238,6 +238,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     .q.missing{ border-color: rgba(176,0,32,0.25); background: rgba(176,0,32,0.03); }
     .q .lbl{ font-weight:800; }
     .q .help{ color:var(--muted); font-size:12px; margin-top:6px; }
+    .beginner-group-title{ font-weight:900; font-size:20px; margin: 4px 0 10px; color: var(--secondary); }
 
     .opts{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:8px; }
     .opt{ display:flex; gap:10px; align-items:center; padding:10px; border-radius:14px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; }
@@ -663,6 +664,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const cur = flatSteps[activeStep];
       if (cur && cur.kind === 'intro' && elBody) {
         return String(elBody.innerText || '').trim();
+      }
+      if (cur && cur.kind === 'field') {
+        const idx = buildFieldNameIndex();
+        const fieldLabel = resolveTextTemplate(String(cur.field?.label || cur.field?.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
+        const prev = flatSteps[activeStep - 1];
+        const isNewGroup = !prev || prev.kind !== 'field' || String(prev.group) !== String(cur.group);
+        if (isNewGroup) return `${cur.groupTitle || cur.group || ''}. ${fieldLabel}`.trim();
+        return String(fieldLabel || '').trim();
       }
       const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
       return String(heading || '').trim();
@@ -1761,9 +1770,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const f = cur.field;
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
+      const prev = flatSteps[activeStep - 1];
+      const isNewGroup = !prev || prev.kind !== 'field' || String(prev.group) !== String(cur.group);
+      const groupHeader = isBeginnerMode && isNewGroup
+        ? `<div class="beginner-group-title">${esc(cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))}</div>`
+        : '';
       elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
       elSub.textContent = isBeginnerMode ? '' : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
-      elBody.innerHTML = renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
+      elBody.innerHTML = groupHeader + renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       const type = String(f.type || 'text');
