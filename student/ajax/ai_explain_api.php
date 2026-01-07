@@ -133,7 +133,7 @@ try {
   if ($templateId <= 0) throw new RuntimeException('Keine Vorlage verfügbar.');
 
   $st = $pdo->prepare(
-    "SELECT id, field_name, label, label_en, help_text\n" .
+    "SELECT id, field_name, field_type, label, label_en, help_text\n" .
     "FROM template_fields\n" .
     "WHERE id=? AND template_id=? AND can_child_edit=1\n" .
     "LIMIT 1"
@@ -150,16 +150,21 @@ try {
     $label = trim((string)($field['label'] ?? $field['field_name'] ?? ''));
   }
   $help = trim((string)($field['help_text'] ?? ''));
+  $type = strtolower(trim((string)($field['field_type'] ?? '')));
+  $expectsChoice = in_array($type, ['radio','select','grade','checkbox'], true);
+  $inputHint = $expectsChoice
+    ? (($lang === 'en') ? 'The student should select one of the given options.' : 'Das Kind soll eine der vorgegebenen Optionen auswählen.')
+    : (($lang === 'en') ? 'The student should write a short answer in their own words.' : 'Das Kind soll eine kurze Antwort in eigenen Worten schreiben.');
 
   $grade = isset($ctx['grade_level']) ? (int)$ctx['grade_level'] : 0;
   $gradeInfo = $grade > 0 ? (string)$grade : '';
 
   $sys = ($lang === 'en')
-    ? 'You explain school form items for students. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists.'
-    : 'Du erklärst Felder eines Schulformulars für Schüler. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen.';
+    ? 'You explain competencies for students to self-assess. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists.'
+    : 'Du erklärst Kompetenzen für die Selbsteinschätzung. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen.';
   $user = ($lang === 'en')
-    ? "Explain what the student should enter for this item, without judging. Grade: {$gradeInfo}. Item: {$label}. Help text: {$help}."
-    : "Erkläre, was die Schülerin oder der Schüler hier eintragen soll, ohne zu bewerten. Klassenstufe: {$gradeInfo}. Feld: {$label}. Hilfetext: {$help}.";
+    ? "Explain this competency in simple terms for a student, without judging. {$inputHint} Grade: {$gradeInfo}. Competency: {$label}. Help text: {$help}."
+    : "Erkläre diese Kompetenz in einfachen Worten, ohne zu bewerten. {$inputHint} Klassenstufe: {$gradeInfo}. Kompetenz: {$label}. Hilfetext: {$help}.";
 
   $aiCfg = ai_provider_config();
   $text = ai_chat_completion([
