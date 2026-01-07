@@ -160,11 +160,11 @@ try {
   $gradeInfo = $grade > 0 ? (string)$grade : '';
 
   $sys = ($lang === 'en')
-    ? 'You explain competencies for students to self-assess. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists.'
-    : 'Du erklärst Kompetenzen für die Selbsteinschätzung. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen.';
+    ? 'You explain competencies for students to self-assess. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists. End with a simple question prompting the student to answer the item.'
+    : 'Du erklärst Kompetenzen für die Selbsteinschätzung. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen. Am Ende steht immer eine einfache Frage, die zur Antwort auf das Item auffordert.';
   $user = ($lang === 'en')
-    ? "Explain this competency in simple terms for a student, without judging. {$inputHint} Grade: {$gradeInfo}. Competency: {$label}. Help text: {$help}."
-    : "Erkläre diese Kompetenz in einfachen Worten, ohne zu bewerten. {$inputHint} Klassenstufe: {$gradeInfo}. Kompetenz: {$label}. Hilfetext: {$help}.";
+    ? "Explain this competency in simple terms for a student, without judging. {$inputHint} Grade: {$gradeInfo}. Competency: {$label}. Help text: {$help}. End with a short prompt question like \"How well can you do this already?\" or \"Choose how well you can do this.\""
+    : "Erkläre diese Kompetenz in einfachen Worten, ohne zu bewerten. {$inputHint} Klassenstufe: {$gradeInfo}. Kompetenz: {$label}. Hilfetext: {$help}. Beende mit einer kurzen Aufforderungsfrage wie „Wie gut kannst du das schon?“ oder „Wähle aus, wie gut du das schon kannst.“";
 
   $aiCfg = ai_provider_config();
   $text = ai_chat_completion([
