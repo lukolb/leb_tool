@@ -361,13 +361,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       transition: width .25s ease;
     }
     @keyframes pulse-glow {
-      0% { box-shadow: 0 0 0 rgba(11,87,208,0.45); }
-      50% { box-shadow: 0 0 24px rgba(11,87,208,0.65); }
-      100% { box-shadow: 0 0 0 rgba(11,87,208,0.45); }
+      0% { box-shadow: 0 0 6px rgba(11,87,208,0.55); }
+      50% { box-shadow: 0 0 32px rgba(11,87,208,0.75); }
+      100% { box-shadow: 0 0 6px rgba(11,87,208,0.55); }
     }
     body.beginner-mode #btnNext.cta-ready{
       animation: pulse-glow 1.6s ease-in-out infinite;
-      transform: translateY(-1px);
+      transform: translateY(-1px) scale(1.02);
     }
   </style>
 </head>
@@ -562,6 +562,27 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   };
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  function playPling(){
+    if (!isBeginnerMode) return;
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+      osc.onended = () => { try { ctx.close(); } catch(e) {} };
+    } catch(e) {}
+  }
 
   function voicePrefForLang(){
     if (currentLang === 'en') return TTS_VOICE_PREF_EN || TTS_VOICE_PREF_DE || '';
@@ -1498,7 +1519,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const click = async () => {
         if (isLocked()) return;
         updateFieldLocal(fid, v);
-        if (isBeginnerMode) suppressTtsOnce = true;
+        if (isBeginnerMode) {
+          suppressTtsOnce = true;
+          playPling();
+        }
         render();
         try { await saveFieldValue(fid, v); } catch(e){}
       };
