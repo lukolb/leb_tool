@@ -37,7 +37,9 @@ return [
   ],
   'student' => [
     // Standard-Einstellungen für Vorlesen (TTS)
-    'tts_voice' => '', // z.B. "Google Deutsch", leer = Auto
+    'tts_voice_de' => '', // z.B. "Google Deutsch", leer = Auto
+    'tts_voice_en' => '', // z.B. "Google UK English", leer = Auto
+    'tts_voice' => '', // legacy fallback (Deutsch)
     'tts_rate' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
   ],
   'ai' => [
