@@ -658,7 +658,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     try { document.exitFullscreen(); } catch(e) {}
   }
 
-  function currentStepTextForTts(){
+  function currentStepTextForTts(includeGroup = false){
     if (isBeginnerMode) {
       const cur = flatSteps[activeStep];
       if (cur && (cur.kind === 'intro' || cur.kind === 'group_intro') && elBody) {
@@ -667,6 +667,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (cur && cur.kind === 'field') {
         const idx = buildFieldNameIndex();
         const fieldLabel = resolveTextTemplate(String(cur.field?.label || cur.field?.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
+        if (includeGroup) {
+          const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+          return `${groupLabel}. ${fieldLabel}`.trim();
+        }
         return String(fieldLabel || '').trim();
       }
       const heading = (elTitle && elTitle.textContent) ? elTitle.textContent : '';
@@ -701,10 +705,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return voices[0] || null;
   }
 
-  function speakCurrentStep(){
+  function speakCurrentStep(includeGroup = false){
     if (!ttsSupported) return;
     stopTts();
-    const text = currentStepTextForTts();
+    const text = currentStepTextForTts(includeGroup);
     const normalizedText = typeof text === 'string' ? text : '';
     if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
       updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
@@ -750,7 +754,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!ttsSupported || !ttsButton) return;
     ttsButton.addEventListener('click', () => {
       if (speechSynthesis.speaking) { stopTts(); }
-      else { speakCurrentStep(); }
+      else { speakCurrentStep(true); }
     });
     if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
@@ -1792,7 +1796,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.classList.toggle('cta-ready', isBeginnerMode && ready);
       btnNext.style.visibility = 'visible';
 
-      if (isBeginnerMode) {
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
+        if (!suppressTtsOnce) speakCurrentStep(false);
         suppressTtsOnce = false;
       }
     }
