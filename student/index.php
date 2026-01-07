@@ -238,7 +238,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     .q.missing{ border-color: rgba(176,0,32,0.25); background: rgba(176,0,32,0.03); }
     .q .lbl{ font-weight:800; }
     .q .help{ color:var(--muted); font-size:12px; margin-top:6px; }
-    .beginner-group-title{ font-weight:900; font-size:20px; margin: 4px 0 10px; color: var(--secondary); }
 
     .opts{ display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:8px; }
     .opt{ display:flex; gap:10px; align-items:center; padding:10px; border-radius:14px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; }
@@ -682,8 +681,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   function currentStepTextForTts(includeGroup = false){
     if (isBeginnerMode) {
       const cur = flatSteps[activeStep];
-      if (cur && (cur.kind === 'intro' || cur.kind === 'group_intro') && elBody) {
+      if (cur && cur.kind === 'intro' && elBody) {
         return String(elBody.innerText || '').trim();
+      }
+      if (cur && cur.kind === 'group_intro') {
+        const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+        const intro = t('student.js.group_intro_tts', 'Weiter geht es mit dem Thema');
+        return `${intro} ${groupLabel}.`.trim();
       }
       if (cur && cur.kind === 'field') {
         const idx = buildFieldNameIndex();
@@ -1777,8 +1781,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       elSub.textContent = isBeginnerMode ? '' : t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
       elBody.innerHTML = isBeginnerMode
         ? `<div class="group-intro">
-            <h2 style="margin:0 0 6px; font-weight:900; font-size:28px;">${esc(groupLabel)}</h2>
-            <div style="margin-top:12px;"><button class="btn" type="button" id="btnStartGroup">${esc(t('student.js.cta_begin_group', 'Starten'))}</button></div>
+            <h2 style="margin:0; font-weight:900; font-size:28px;">${esc(groupLabel)}</h2>
           </div>`
         : `<div class="group-intro">
             <p class="kicker">${esc(t('student.js.group_intro_kicker', 'Neuer Abschnitt'))}</p>
@@ -1794,23 +1797,23 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
       }
-      btnNext.textContent = isBeginnerMode ? t('student.js.cta_begin_group', 'Starten') : t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
+      btnNext.textContent = isBeginnerMode ? t('student.buttons.next', 'Weiter') : t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
+        speakCurrentStep(false);
+      }
     }
 
     else if (cur.kind === 'field') {
       const f = cur.field;
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
-      const groupHeader = isBeginnerMode
-        ? `<div class="beginner-group-title">${esc(cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))}</div>`
-        : '';
       elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
       elSub.textContent = isBeginnerMode
         ? (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))
         : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
-      elBody.innerHTML = groupHeader + renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
+      elBody.innerHTML = renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       const type = String(f.type || 'text');
