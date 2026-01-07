@@ -1162,6 +1162,23 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           });
         }
       }
+    } else {
+      for (const g of groups) {
+        const gKey = String(g.key || g.title || 'Abschnitt');
+        const gTitle = String(g.title || g.key || 'Abschnitt');
+        const fields = Array.isArray(g.fields) ? g.fields : [];
+
+        for (const f of fields) {
+          out.push({
+            kind:'field',
+            key: gKey + ':' + String(f.id),
+            title: gTitle,
+            group: gKey,
+            groupTitle: gTitle,
+            field: f
+          });
+        }
+      }
     }
 
     out.push({ kind:'submit', key:'submit', title:'Fertig', group:'Fertig' });
@@ -1762,6 +1779,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported && !didAutoReadIntro) {
+        speakCurrentStep();
+        didAutoReadIntro = true;
+      }
     }
 
     else if (cur.kind === 'group') {
