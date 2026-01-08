@@ -79,17 +79,18 @@ function parent_is_class_field(array $meta): bool {
 }
 
 /**
- * ✅ NEW: find class report instance (student_id=0, period_label='__class__')
+ * ✅ NEW: find class report instance (student_id=0, period_label=class_report_period_label(class_id))
  */
-function parent_find_class_report_instance_id(PDO $pdo, int $templateId, string $schoolYear): ?int {
+function parent_find_class_report_instance_id(PDO $pdo, int $templateId, int $classId, string $schoolYear): ?int {
+  $periodLabel = class_report_period_label($classId);
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
-     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $schoolYear]);
+  $st->execute([$templateId, $schoolYear, $periodLabel]);
   $id = (int)($st->fetchColumn() ?: 0);
   return $id > 0 ? $id : null;
 }
@@ -228,7 +229,7 @@ if ($token === '') {
 }
 
 $st = $pdo->prepare(
-  "SELECT ppl.*, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name,\n" .
+  "SELECT ppl.*, s.first_name, s.last_name, c.id AS class_id, c.school_year, c.grade_level, c.label, c.name,\n" .
   "       ri.template_id, ri.period_label, ri.school_year AS report_school_year\n" .
   "FROM parent_portal_links ppl\n" .
   "JOIN students s ON s.id=ppl.student_id\n" .
@@ -325,7 +326,7 @@ if ($canPreview) {
 
   // ✅ NEW: merge class-wide values on top (override for class fields)
   if ($templateId > 0 && $reportSchoolYear !== '' && $classFieldNames) {
-    $classRiId = parent_find_class_report_instance_id($pdo, $templateId, $reportSchoolYear);
+    $classRiId = parent_find_class_report_instance_id($pdo, $templateId, (int)($link['class_id'] ?? 0), $reportSchoolYear);
     if ($classRiId) {
       $classValues = parent_load_values_for_report($pdo, (int)$classRiId);
       foreach ($classFieldNames as $fname => $_) {

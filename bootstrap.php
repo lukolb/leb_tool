@@ -69,6 +69,10 @@ function url_with_lang(string $lang): string {
   return $path . ($newQs ? ('?' . $newQs) : '');
 }
 
+function class_report_period_label(int $classId): string {
+  return '__class__:' . $classId;
+}
+
 // One-shot: allow switching language via ?lang=de|en
 if (isset($_GET['lang'])) {
   ui_lang_set((string)$_GET['lang']);
