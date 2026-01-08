@@ -246,14 +246,15 @@ function template_for_student(PDO $pdo, int $studentId): array {
 }
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
+  $periodLabel = class_report_period_label($classId);
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
-     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $schoolYear]);
+  $st->execute([$templateId, $schoolYear, $periodLabel]);
   $id = (int)($st->fetchColumn() ?: 0);
   if ($id > 0) return $id;
 

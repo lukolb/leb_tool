@@ -552,21 +552,22 @@ function class_school_year(PDO $pdo, int $classId): string {
 }
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
+  $periodLabel = class_report_period_label($classId);
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
-     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label='__class__'
+     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $schoolYear]);
+  $st->execute([$templateId, $schoolYear, $periodLabel]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if ($row) return (int)$row['id'];
 
   $pdo->prepare(
     "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
-     VALUES (?, 0, '__class__', ?, 'draft', NULL, NOW(), NOW())"
-  )->execute([$templateId, $schoolYear]);
+     VALUES (?, 0, ?, ?, 'draft', NULL, NOW(), NOW())"
+  )->execute([$templateId, $periodLabel, $schoolYear]);
 
   return (int)$pdo->lastInsertId();
 }
@@ -1544,7 +1545,8 @@ if ($action === 'delegations_save') {
     if ((int)($ri['template_id'] ?? 0) !== $templateId) throw new RuntimeException('Vorlagenkonflikt.');
     if ((int)($ri['student_id'] ?? 0) !== 0) throw new RuntimeException('Kein Klassen-Report.');
     if ((string)($ri['school_year'] ?? '') !== $schoolYear) throw new RuntimeException('Schuljahr-Konflikt.');
-    if ((string)($ri['period_label'] ?? '') !== '__class__') throw new RuntimeException('Perioden-Konflikt.');
+    $expectedLabel = class_report_period_label($classId);
+    if ((string)($ri['period_label'] ?? '') !== $expectedLabel) throw new RuntimeException('Perioden-Konflikt.');
 
     $status = (string)($ri['status'] ?? 'draft');
     if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
