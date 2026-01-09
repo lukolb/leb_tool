@@ -781,36 +781,36 @@ function pickLabelFromLine(textItems, fieldRect) {
     }).filter(l => l.text);
   };
 
-  const estimateLineStep = () => {
-    const ys = textItems.map(it => it.y).filter(v => Number.isFinite(v)).sort((a,b) => b - a);
-    const deltas = [];
-    for (let i = 1; i < ys.length; i++) {
-      const d = Math.abs(ys[i - 1] - ys[i]);
-      if (d > 1 && d < 80) deltas.push(d);
-    }
-    if (!deltas.length) return 0;
-    deltas.sort((a,b) => a - b);
-    return deltas[Math.floor(deltas.length / 2)] || 0;
+  const allLines = buildLines(textItems);
+  const estimateRowSpan = (anchorY) => {
+    if (!allLines.length) return 0;
+    const sorted = allLines.slice().sort((a,b) => b.y - a.y);
+    const idx = sorted.findIndex(l => l.y === anchorY);
+    let above = null;
+    let below = null;
+    if (idx > 0) above = sorted[idx - 1];
+    if (idx >= 0 && idx < sorted.length - 1) below = sorted[idx + 1];
+    if (!above && !below) return 0;
+    const dAbove = above ? Math.abs(above.y - anchorY) : Infinity;
+    const dBelow = below ? Math.abs(below.y - anchorY) : Infinity;
+    const step = Math.min(dAbove, dBelow);
+    if (!Number.isFinite(step)) return 0;
+    return Math.max(step * 0.55, lineTol * 2, 6);
   };
-
-  const lineStep = estimateLineStep();
-  const rowTol = Math.max(yTol * 2, lineStep * 2.5, fh * 1.2, 12);
-  const rowYMin = Math.min(fieldRect[1], fieldRect[3]) - rowTol;
-  const rowYMax = Math.max(fieldRect[1], fieldRect[3]) + rowTol;
 
   const rowLeftItems = textItems.filter(it => {
     if (!it.str || it.str.trim() === '') return false;
     if (it.x > xMin - 2) return false;
-    return it.y >= rowYMin && it.y <= rowYMax;
+    return Math.abs(it.y - cy) <= Math.max(yTol, fh * 0.8);
   });
 
   const rowLines = buildLines(rowLeftItems);
   if (rowLines.length) {
     rowLines.sort((a,b) => Math.abs(a.y - cy) - Math.abs(b.y - cy));
     const anchor = rowLines[0];
-    const groupTol = Math.max(lineStep * 1.6, lineTol * 2, 8);
+    const rowSpan = estimateRowSpan(anchor.y);
     const selected = rowLines
-      .filter(l => Math.abs(l.y - anchor.y) <= groupTol)
+      .filter(l => Math.abs(l.y - anchor.y) <= rowSpan)
       .sort((a,b) => b.y - a.y);
     const label = selected.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
     if (label.length >= 2) return label;
@@ -819,7 +819,7 @@ function pickLabelFromLine(textItems, fieldRect) {
   const inColumnItems = textItems.filter(it => {
     if (!it.str || it.str.trim() === '') return false;
     if (it.x < xMin - xTol || it.x > xMax + xTol) return false;
-    return it.y >= yMax && it.y <= (yMax + Math.max(rowTol, yTol * 3));
+    return it.y >= yMax && it.y <= (yMax + yTol * 3);
   });
 
   const columnLines = buildLines(inColumnItems).sort((a,b) => b.y - a.y);
