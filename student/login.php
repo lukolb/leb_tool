@@ -112,6 +112,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
       display: flex;
       align-items: center;
+      gap: 2px;
 
       padding: 10px 12px;
       font-size: 18px;
@@ -290,6 +291,19 @@ $logo = (string)($b['logo_path'] ?? '');
         input.addEventListener('input', () => {
           const raw = cleanRaw(input.value);
           setRaw(raw);
+        });
+
+        // Cursor nie manuell verschieben (Pfeiltasten/Home/Ende unterbinden)
+        input.addEventListener('keydown', (e) => {
+          const blocked = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+          if (blocked.includes(e.key)) {
+            e.preventDefault();
+            setCaretToEnd(getRaw().length);
+          }
+        });
+
+        input.addEventListener('select', () => {
+          setCaretToEnd(getRaw().length);
         });
 
         // Klick ins Feld: immer “Eingabemodus” + Cursor zur nächsten Stelle
