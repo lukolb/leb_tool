@@ -200,6 +200,9 @@ $logo = (string)($b['logo_path'] ?? '');
             value=""
             required
             autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
             inputmode="text"
             maxlength="8"
             aria-label="<?=h(t('student.login.aria_code', 'Login-Code im Format ABCD-1234'))?>"
