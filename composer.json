@@ -1,0 +1,8 @@
+{
+  "name": "leb-tool/app",
+  "description": "LEB Tool",
+  "type": "project",
+  "require": {
+    "smalot/pdfparser": "^2.11"
+  }
+}

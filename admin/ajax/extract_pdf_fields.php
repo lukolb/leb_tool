@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../../bootstrap.php';
+$autoload = __DIR__ . '/../../vendor/autoload.php';
+if (is_file($autoload)) {
+  require $autoload;
+}
 require __DIR__ . '/../../shared/pdf_extract.php';
 require_admin();
 

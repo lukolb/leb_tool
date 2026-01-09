@@ -66,6 +66,26 @@ function pdf_normalize_text(string $raw): string {
   return $raw;
 }
 
+function pdf_extract_text_lines_with_library(string $absPath): array {
+  if (!class_exists('\\Smalot\\PdfParser\\Parser')) return [];
+  try {
+    $parser = new \Smalot\PdfParser\Parser();
+    $doc = $parser->parseFile($absPath);
+    $pages = $doc->getPages();
+    $out = [];
+    $index = 1;
+    foreach ($pages as $page) {
+      $text = (string)$page->getText();
+      $lines = array_values(array_filter(array_map('trim', preg_split('/\\R/u', $text))));
+      if ($lines) $out[$index] = $lines;
+      $index++;
+    }
+    return $out;
+  } catch (Throwable $e) {
+    return [];
+  }
+}
+
 function pdf_extract_objects(string $pdf): array {
   $objects = [];
   if (preg_match_all('/(\\d+)\\s+(\\d+)\\s+obj(.*?)endobj/s', $pdf, $matches, PREG_SET_ORDER)) {
@@ -316,6 +336,7 @@ function extract_pdf_fields(string $absPath): array {
   $pdf = file_get_contents($absPath);
   if ($pdf === false) throw new RuntimeException('PDF konnte nicht gelesen werden.');
   $objects = pdf_extract_objects($pdf);
+  $libraryLines = pdf_extract_text_lines_with_library($absPath);
 
   $pageAnnots = [];
   $pageContents = [];
@@ -458,5 +479,31 @@ function extract_pdf_fields(string $absPath): array {
   }
 
   uasort($fields, static fn($a, $b) => ($a['sort'] ?? 0) <=> ($b['sort'] ?? 0));
+  if ($libraryLines) {
+    $grouped = [];
+    foreach ($fields as $f) {
+      $page = $f['meta']['page'] ?? null;
+      if (!$page || empty($f['meta']['rect'])) continue;
+      $grouped[$page][] = $f;
+    }
+    foreach ($grouped as $page => $pageFields) {
+      if (empty($libraryLines[$page])) continue;
+      $lines = $libraryLines[$page];
+      usort($pageFields, static fn($a, $b) => ($b['meta']['rect'][3] <=> $a['meta']['rect'][3]));
+      $fieldCount = count($pageFields);
+      $lineCount = count($lines);
+      foreach ($pageFields as $idx => $f) {
+        if (($f['label'] ?? '') !== ($f['name'] ?? '')) continue;
+        if ($lineCount === 0) break;
+        $ratio = ($fieldCount > 1) ? ($idx / ($fieldCount - 1)) : 0;
+        $lineIndex = (int)round($ratio * ($lineCount - 1));
+        $candidate = trim((string)($lines[$lineIndex] ?? ''));
+        if ($candidate !== '') {
+          $fields[$f['name']]['label'] = $candidate;
+        }
+      }
+    }
+  }
+
   return array_values($fields);
 }
