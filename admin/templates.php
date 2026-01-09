@@ -750,48 +750,65 @@ pdfCanvas.addEventListener('click', (ev) => {
 
 // ---- Label aus Textzeile links vom Feld (heuristisch)
 function pickLabelFromLine(textItems, fieldRect) {
-  const cy = (fieldRect[1] + fieldRect[3]) / 2;
   const fh = Math.abs(fieldRect[3] - fieldRect[1]);
   const yTol = Math.max(6, fh * 0.6);
   const lineTol = Math.max(3, fh * 0.3);
   const yMin = Math.min(fieldRect[1], fieldRect[3]) - yTol * 1.2;
   const yMax = Math.max(fieldRect[1], fieldRect[3]) + yTol * 1.2;
+  const xMin = Math.min(fieldRect[0], fieldRect[2]);
+  const xMax = Math.max(fieldRect[0], fieldRect[2]);
+  const xTol = Math.max(6, Math.abs(fieldRect[2] - fieldRect[0]) * 0.15);
+
+  const buildLines = (items) => {
+    const sorted = items.slice().sort((a,b) => (b.y - a.y) || (a.x - b.x));
+    const lines = [];
+    for (const item of sorted) {
+      const line = lines.find(l => Math.abs(l.y - item.y) <= lineTol);
+      if (line) {
+        line.items.push(item);
+        line.y = (line.y * (line.items.length - 1) + item.y) / line.items.length;
+      } else {
+        lines.push({ y: item.y, items: [item] });
+      }
+    }
+    return lines.map(line => {
+      const items = line.items.slice().sort((a,b) => a.x - b.x);
+      const text = items.map(it => it.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
+      const xMax = Math.max(...items.map(it => it.x));
+      const xMin = Math.min(...items.map(it => it.x));
+      return { y: line.y, text, xMax, xMin };
+    }).filter(l => l.text);
+  };
+
+  const inColumnItems = textItems.filter(it => {
+    if (!it.str || it.str.trim() === '') return false;
+    if (it.x < xMin - xTol || it.x > xMax + xTol) return false;
+    return it.y >= yMax && it.y <= (yMax + yTol * 3);
+  });
+
+  const columnLines = buildLines(inColumnItems).sort((a,b) => b.y - a.y);
+  if (columnLines.length) {
+    const label = columnLines.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
+    if (label.length >= 2) return label;
+  }
 
   const leftItems = textItems.filter(it => {
     if (!it.str || it.str.trim() === '') return false;
-    if (it.x > fieldRect[0] - 2) return false;
+    if (it.x > xMin - 2) return false;
     return it.y >= yMin && it.y <= yMax;
   });
 
   if (!leftItems.length) return null;
 
-  const sorted = leftItems.slice().sort((a,b) => (b.y - a.y) || (a.x - b.x));
-  const lines = [];
-  for (const item of sorted) {
-    const line = lines.find(l => Math.abs(l.y - item.y) <= lineTol);
-    if (line) {
-      line.items.push(item);
-      line.y = (line.y * (line.items.length - 1) + item.y) / line.items.length;
-    } else {
-      lines.push({ y: item.y, items: [item] });
-    }
-  }
+  const lines = buildLines(leftItems);
+  if (!lines.length) return null;
 
-  const lineData = lines.map(line => {
-    const items = line.items.slice().sort((a,b) => a.x - b.x);
-    const text = items.map(it => it.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
-    const xMax = Math.max(...items.map(it => it.x));
-    return { y: line.y, text, xMax };
-  }).filter(l => l.text);
+  lines.sort((a,b) => (xMin - a.xMax) - (xMin - b.xMax));
+  const anchor = lines[0];
+  const maxDx = (xMin - anchor.xMax) + Math.max(8, fh * 0.4);
 
-  if (!lineData.length) return null;
-
-  lineData.sort((a,b) => (fieldRect[0] - a.xMax) - (fieldRect[0] - b.xMax));
-  const anchor = lineData[0];
-  const maxDx = (fieldRect[0] - anchor.xMax) + Math.max(8, fh * 0.4);
-
-  const selected = lineData
-    .filter(l => (fieldRect[0] - l.xMax) <= maxDx)
+  const selected = lines
+    .filter(l => (xMin - l.xMax) <= maxDx)
     .sort((a,b) => b.y - a.y);
 
   const label = selected.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
