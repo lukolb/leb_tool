@@ -751,16 +751,50 @@ pdfCanvas.addEventListener('click', (ev) => {
 // ---- Label aus Textzeile links vom Feld (heuristisch)
 function pickLabelFromLine(textItems, fieldRect) {
   const cy = (fieldRect[1] + fieldRect[3]) / 2;
-  const yTol = Math.max(6, Math.abs(fieldRect[3]-fieldRect[1]) * 0.6);
+  const fh = Math.abs(fieldRect[3] - fieldRect[1]);
+  const yTol = Math.max(6, fh * 0.6);
+  const lineTol = Math.max(3, fh * 0.3);
+  const yMin = Math.min(fieldRect[1], fieldRect[3]) - yTol * 1.2;
+  const yMax = Math.max(fieldRect[1], fieldRect[3]) + yTol * 1.2;
 
-  const candidates = textItems
-    .filter(it => Math.abs(it.y - cy) <= yTol && it.x <= fieldRect[0] - 2 && it.str && it.str.trim() !== '')
-    .sort((a,b) => (fieldRect[0]-a.x) - (fieldRect[0]-b.x));
+  const leftItems = textItems.filter(it => {
+    if (!it.str || it.str.trim() === '') return false;
+    if (it.x > fieldRect[0] - 2) return false;
+    return it.y >= yMin && it.y <= yMax;
+  });
 
-  if (!candidates.length) return null;
+  if (!leftItems.length) return null;
 
-  const best = candidates.slice(0, 3).reverse();
-  const label = best.map(x => x.str.trim()).join(' ').replace(/\s+/g,' ').trim();
+  const sorted = leftItems.slice().sort((a,b) => (b.y - a.y) || (a.x - b.x));
+  const lines = [];
+  for (const item of sorted) {
+    const line = lines.find(l => Math.abs(l.y - item.y) <= lineTol);
+    if (line) {
+      line.items.push(item);
+      line.y = (line.y * (line.items.length - 1) + item.y) / line.items.length;
+    } else {
+      lines.push({ y: item.y, items: [item] });
+    }
+  }
+
+  const lineData = lines.map(line => {
+    const items = line.items.slice().sort((a,b) => a.x - b.x);
+    const text = items.map(it => it.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
+    const xMax = Math.max(...items.map(it => it.x));
+    return { y: line.y, text, xMax };
+  }).filter(l => l.text);
+
+  if (!lineData.length) return null;
+
+  lineData.sort((a,b) => (fieldRect[0] - a.xMax) - (fieldRect[0] - b.xMax));
+  const anchor = lineData[0];
+  const maxDx = (fieldRect[0] - anchor.xMax) + Math.max(8, fh * 0.4);
+
+  const selected = lineData
+    .filter(l => (fieldRect[0] - l.xMax) <= maxDx)
+    .sort((a,b) => b.y - a.y);
+
+  const label = selected.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
   if (label.length < 2) return null;
   return label;
 }
