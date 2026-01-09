@@ -750,6 +750,7 @@ pdfCanvas.addEventListener('click', (ev) => {
 
 // ---- Label aus Textzeile links vom Feld (heuristisch)
 function pickLabelFromLine(textItems, fieldRect) {
+  const cy = (fieldRect[1] + fieldRect[3]) / 2;
   const fh = Math.abs(fieldRect[3] - fieldRect[1]);
   const yTol = Math.max(6, fh * 0.6);
   const lineTol = Math.max(3, fh * 0.3);
@@ -780,10 +781,45 @@ function pickLabelFromLine(textItems, fieldRect) {
     }).filter(l => l.text);
   };
 
+  const estimateLineStep = () => {
+    const ys = textItems.map(it => it.y).filter(v => Number.isFinite(v)).sort((a,b) => b - a);
+    const deltas = [];
+    for (let i = 1; i < ys.length; i++) {
+      const d = Math.abs(ys[i - 1] - ys[i]);
+      if (d > 1 && d < 80) deltas.push(d);
+    }
+    if (!deltas.length) return 0;
+    deltas.sort((a,b) => a - b);
+    return deltas[Math.floor(deltas.length / 2)] || 0;
+  };
+
+  const lineStep = estimateLineStep();
+  const rowTol = Math.max(yTol * 2, lineStep * 2.5, fh * 1.2, 12);
+  const rowYMin = Math.min(fieldRect[1], fieldRect[3]) - rowTol;
+  const rowYMax = Math.max(fieldRect[1], fieldRect[3]) + rowTol;
+
+  const rowLeftItems = textItems.filter(it => {
+    if (!it.str || it.str.trim() === '') return false;
+    if (it.x > xMin - 2) return false;
+    return it.y >= rowYMin && it.y <= rowYMax;
+  });
+
+  const rowLines = buildLines(rowLeftItems);
+  if (rowLines.length) {
+    rowLines.sort((a,b) => Math.abs(a.y - cy) - Math.abs(b.y - cy));
+    const anchor = rowLines[0];
+    const groupTol = Math.max(lineStep * 1.6, lineTol * 2, 8);
+    const selected = rowLines
+      .filter(l => Math.abs(l.y - anchor.y) <= groupTol)
+      .sort((a,b) => b.y - a.y);
+    const label = selected.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
+    if (label.length >= 2) return label;
+  }
+
   const inColumnItems = textItems.filter(it => {
     if (!it.str || it.str.trim() === '') return false;
     if (it.x < xMin - xTol || it.x > xMax + xTol) return false;
-    return it.y >= yMax && it.y <= (yMax + yTol * 3);
+    return it.y >= yMax && it.y <= (yMax + Math.max(rowTol, yTol * 3));
   });
 
   const columnLines = buildLines(inColumnItems).sort((a,b) => b.y - a.y);
