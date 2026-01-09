@@ -51,6 +51,21 @@ function pdf_parse_string(?string $raw): string {
   return $raw;
 }
 
+function pdf_normalize_text(string $raw): string {
+  if ($raw === '') return '';
+  $prefix = substr($raw, 0, 2);
+  if ($prefix === "\xFE\xFF" || $prefix === "\xFF\xFE") {
+    $enc = ($prefix === "\xFE\xFF") ? 'UTF-16BE' : 'UTF-16LE';
+    return (string)@mb_convert_encoding($raw, 'UTF-8', $enc);
+  }
+  $hasNulls = strpos($raw, "\x00") !== false;
+  if ($hasNulls && (strlen($raw) % 2 === 0)) {
+    $utf16 = (string)@mb_convert_encoding($raw, 'UTF-8', 'UTF-16BE');
+    if ($utf16 !== '') return $utf16;
+  }
+  return $raw;
+}
+
 function pdf_extract_objects(string $pdf): array {
   $objects = [];
   if (preg_match_all('/(\\d+)\\s+(\\d+)\\s+obj(.*?)endobj/s', $pdf, $matches, PREG_SET_ORDER)) {
@@ -76,11 +91,15 @@ function pdf_decode_stream(string $raw, string $dict): string {
     if (stripos($filters, '/FlateDecode') !== false) {
       $decoded = @gzuncompress($raw);
       if (is_string($decoded)) return $decoded;
+      $inflated = @gzinflate($raw);
+      if (is_string($inflated)) return $inflated;
     }
   } elseif (preg_match('/\\/Filter\\s*\\/([A-Za-z0-9]+)/', $dict, $fm)) {
     if (strcasecmp($fm[1], 'FlateDecode') === 0) {
       $decoded = @gzuncompress($raw);
       if (is_string($decoded)) return $decoded;
+      $inflated = @gzinflate($raw);
+      if (is_string($inflated)) return $inflated;
     }
   }
   return $raw;
@@ -153,7 +172,7 @@ function pdf_extract_text_items(string $content): array {
       $y -= 12;
     } elseif ($op === 'Tj' && count($stack) >= 1) {
       $raw = array_pop($stack);
-      $str = pdf_parse_string($raw);
+      $str = pdf_normalize_text(pdf_parse_string($raw));
       if ($str !== '') $items[] = ['str' => $str, 'x' => $x, 'y' => $y];
     } elseif ($op === 'TJ' && count($stack) >= 1) {
       $raw = array_pop($stack);
@@ -164,10 +183,18 @@ function pdf_extract_text_items(string $content): array {
         foreach ($parts as $part) {
           $part = trim($part);
           if ($part === '' || preg_match('/^-?\\d/', $part)) continue;
-          $text .= pdf_parse_string($part);
+          $text .= pdf_normalize_text(pdf_parse_string($part));
         }
         if ($text !== '') $items[] = ['str' => $text, 'x' => $x, 'y' => $y];
       }
+    } elseif ($op === "'" && count($stack) >= 1) {
+      $raw = array_pop($stack);
+      $str = pdf_normalize_text(pdf_parse_string($raw));
+      if ($str !== '') $items[] = ['str' => $str, 'x' => $x, 'y' => $y];
+    } elseif ($op === '"' && count($stack) >= 3) {
+      $raw = array_pop($stack);
+      $str = pdf_normalize_text(pdf_parse_string($raw));
+      if ($str !== '') $items[] = ['str' => $str, 'x' => $x, 'y' => $y];
     } else {
       $stack = [];
     }
