@@ -781,39 +781,43 @@ function pickLabelFromLine(textItems, fieldRect) {
     }).filter(l => l.text);
   };
 
-  const allLines = buildLines(textItems);
-  const estimateRowSpan = (anchorY) => {
-    if (!allLines.length) return 0;
-    const sorted = allLines.slice().sort((a,b) => b.y - a.y);
-    const idx = sorted.findIndex(l => l.y === anchorY);
-    let above = null;
-    let below = null;
-    if (idx > 0) above = sorted[idx - 1];
-    if (idx >= 0 && idx < sorted.length - 1) below = sorted[idx + 1];
-    if (!above && !below) return 0;
-    const dAbove = above ? Math.abs(above.y - anchorY) : Infinity;
-    const dBelow = below ? Math.abs(below.y - anchorY) : Infinity;
-    const step = Math.min(dAbove, dBelow);
-    if (!Number.isFinite(step)) return 0;
-    return Math.max(step * 0.55, lineTol * 2, 6);
-  };
-
   const rowLeftItems = textItems.filter(it => {
     if (!it.str || it.str.trim() === '') return false;
     if (it.x > xMin - 2) return false;
     return Math.abs(it.y - cy) <= Math.max(yTol, fh * 0.8);
   });
+  if (rowLeftItems.length) {
+    const sorted = rowLeftItems.slice().sort((a,b) => a.x - b.x);
+    const segments = [];
+    let seg = null;
+    const gapTol = Math.max(10, fh * 0.8, lineTol * 2);
+    for (const item of sorted) {
+      if (!seg) {
+        seg = { items: [item], xMin: item.x, xMax: item.x, yAvg: item.y };
+        continue;
+      }
+      const gap = item.x - seg.xMax;
+      if (gap > gapTol) {
+        segments.push(seg);
+        seg = { items: [item], xMin: item.x, xMax: item.x, yAvg: item.y };
+      } else {
+        seg.items.push(item);
+        seg.xMax = Math.max(seg.xMax, item.x);
+        seg.yAvg = (seg.yAvg * (seg.items.length - 1) + item.y) / seg.items.length;
+      }
+    }
+    if (seg) segments.push(seg);
 
-  const rowLines = buildLines(rowLeftItems);
-  if (rowLines.length) {
-    rowLines.sort((a,b) => Math.abs(a.y - cy) - Math.abs(b.y - cy));
-    const anchor = rowLines[0];
-    const rowSpan = estimateRowSpan(anchor.y);
-    const selected = rowLines
-      .filter(l => Math.abs(l.y - anchor.y) <= rowSpan)
-      .sort((a,b) => b.y - a.y);
-    const label = selected.map(l => l.text).join(' ').replace(/\s+/g, ' ').trim();
-    if (label.length >= 2) return label;
+    const candidates = segments
+      .filter(s => Math.abs(s.yAvg - cy) <= Math.max(lineTol * 2, fh))
+      .filter(s => s.xMax <= xMin + 2);
+
+    if (candidates.length) {
+      candidates.sort((a,b) => (xMin - a.xMax) - (xMin - b.xMax));
+      const target = candidates[0];
+      const label = target.items.map(it => it.str.trim()).join(' ').replace(/\s+/g, ' ').trim();
+      if (label.length >= 2) return label;
+    }
   }
 
   const inColumnItems = textItems.filter(it => {
