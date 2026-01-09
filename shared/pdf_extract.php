@@ -320,9 +320,11 @@ function extract_pdf_fields(string $absPath): array {
   $pageAnnots = [];
   $pageContents = [];
   $pageIndex = 0;
+  $pageByObject = [];
   foreach ($objects as $num => $obj) {
-    if (strpos($obj['raw'], '/Type /Page') === false) continue;
+    if (!preg_match('/\\/Type\\s*\\/Page\\b/', $obj['raw'])) continue;
     $pageIndex++;
+    $pageByObject[$num] = $pageIndex;
     if (preg_match('/\\/Annots\\s*\\[(.*?)\\]/s', $obj['raw'], $am)) {
       preg_match_all('/(\\d+)\\s+\\d+\\s+R/', $am[1], $refs);
       foreach ($refs[1] as $ref) {
@@ -438,7 +440,12 @@ function extract_pdf_fields(string $absPath): array {
 
     if ($rect !== null) {
       $fields[$name]['meta']['rect'] = $rect;
-      $page = $pageAnnots[$num] ?? null;
+      $page = null;
+      if (preg_match('/\\/P\\s+(\\d+)\\s+\\d+\\s+R/', $obj['raw'], $pm)) {
+        $pageRef = (int)$pm[1];
+        if (isset($pageByObject[$pageRef])) $page = $pageByObject[$pageRef];
+      }
+      if ($page === null) $page = $pageAnnots[$num] ?? null;
       if ($page !== null) $fields[$name]['meta']['page'] = $page;
       if ($page !== null && isset($pageText[$page])) {
         $suggested = pdf_pick_label($pageText[$page], $rect);
