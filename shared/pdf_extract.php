@@ -332,11 +332,36 @@ function extract_pdf_fields(string $absPath): array {
   $seen = [];
   $sort = 0;
   foreach ($objects as $num => $obj) {
-    if (strpos($obj['raw'], '/Subtype /Widget') === false) continue;
+    if (!preg_match('/\\/Subtype\\s*\\/Widget/', $obj['raw'])) continue;
+    $raw = $obj['raw'];
     $name = '';
-    if (preg_match('/\\/T\\s*(\\(.*?\\)|<.*?>)/s', $obj['raw'], $nm)) {
-      $name = pdf_parse_string($nm[1]);
+    $rawType = '';
+    $flags = null;
+    $hint = '';
+
+    $seenParents = [];
+    while (true) {
+      if ($name === '' && preg_match('/\\/T\\s*(\\(.*?\\)|<.*?>)/s', $raw, $nm)) {
+        $name = pdf_parse_string($nm[1]);
+      }
+      if ($rawType === '' && preg_match('/\\/FT\\s*\\/([A-Za-z]+)/', $raw, $tm)) {
+        $rawType = $tm[1];
+      }
+      if ($flags === null && preg_match('/\\/Ff\\s+(\\d+)/', $raw, $fm)) {
+        $flags = (int)$fm[1];
+      }
+      if ($hint === '' && preg_match('/\\/TU\\s*(\\(.*?\\)|<.*?>)/s', $raw, $hm)) {
+        $hint = pdf_parse_string($hm[1]);
+      }
+      if ($name !== '' && $rawType !== '' && $flags !== null) break;
+
+      if (!preg_match('/\\/Parent\\s+(\\d+)\\s+\\d+\\s+R/', $raw, $pm)) break;
+      $parentId = (int)$pm[1];
+      if (isset($seenParents[$parentId]) || !isset($objects[$parentId])) break;
+      $seenParents[$parentId] = true;
+      $raw = $objects[$parentId]['raw'];
     }
+
     $name = trim($name);
     if ($name === '') continue;
 
@@ -346,12 +371,11 @@ function extract_pdf_fields(string $absPath): array {
       if (count($parts) >= 4) $rect = array_map('floatval', array_slice($parts, 0, 4));
     }
 
-    $rawType = '';
-    if (preg_match('/\\/FT\\s*\\/([A-Za-z]+)/', $obj['raw'], $tm)) {
+    if ($rawType === '' && preg_match('/\\/FT\\s*\\/([A-Za-z]+)/', $obj['raw'], $tm)) {
       $rawType = $tm[1];
     }
-    $flags = 0;
-    if (preg_match('/\\/Ff\\s+(\\d+)/', $obj['raw'], $fm)) {
+    $flags = $flags ?? 0;
+    if ($flags === 0 && preg_match('/\\/Ff\\s+(\\d+)/', $obj['raw'], $fm)) {
       $flags = (int)$fm[1];
     }
     $multiline = ($flags & (1 << 12)) !== 0;
@@ -363,8 +387,7 @@ function extract_pdf_fields(string $absPath): array {
       $type = $isRadio ? 'radio' : 'checkbox';
     }
 
-    $hint = '';
-    if (preg_match('/\\/TU\\s*(\\(.*?\\)|<.*?>)/s', $obj['raw'], $hm)) {
+    if ($hint === '' && preg_match('/\\/TU\\s*(\\(.*?\\)|<.*?>)/s', $obj['raw'], $hm)) {
       $hint = pdf_parse_string($hm[1]);
     }
 
