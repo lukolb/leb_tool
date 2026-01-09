@@ -92,6 +92,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
       color: transparent;
       caret-color: transparent;
+      user-select: none;
 
       border: 1px solid #cfd6e4;
       border-radius: 10px;
@@ -112,6 +113,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
       display: flex;
       align-items: center;
+      gap: 2px;
 
       padding: 10px 12px;
       font-size: 18px;
@@ -199,8 +201,11 @@ $logo = (string)($b['logo_path'] ?? '');
             value=""
             required
             autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
             inputmode="text"
-            maxlength="9"
+            maxlength="8"
             aria-label="<?=h(t('student.login.aria_code', 'Login-Code im Format ABCD-1234'))?>"
             autofocus
           >
@@ -249,37 +254,15 @@ $logo = (string)($b['logo_path'] ?? '');
         function setRaw(raw) {
           raw = cleanRaw(raw);
           hidden.value = formatForSubmit(raw);
-
-          // Input bleibt konstant (für selectionStart/Range)
-          input.value = "____-____";
-
+          input.value = raw;
           input.setCustomValidity(raw.length === 8 ? '' : 'Bitte 8 Zeichen eingeben (ABCD-1234).');
           wrap.classList.toggle('is-complete', raw.length === 8);
-
           renderOverlay(raw);
+          setCaretToEnd(raw.length);
         }
 
-        function slotIndexFromCaretPos(pos) {
-          let count = 0;
-          for (const p of SLOT_TO_POS) if (p < pos) count++;
-          return count;
-        }
-
-        function caretPosFromSlotIndex(slotIdx) {
-          if (slotIdx <= 0) return SLOT_TO_POS[0];
-          if (slotIdx >= SLOT_TO_POS.length) return SLOT_TO_POS[SLOT_TO_POS.length - 1] + 1;
-          return SLOT_TO_POS[slotIdx];
-        }
-
-        function setCaretToNext() {
-          const raw = getRaw();
-          const idx = Math.min(raw.length, 8);
-          const pos = caretPosFromSlotIndex(idx);
-          input.setSelectionRange(pos, pos);
-        }
-
-        function setCaretToSlot(slotIdx) {
-          const pos = caretPosFromSlotIndex(Math.min(Math.max(slotIdx, 0), 8));
+        function setCaretToEnd(len) {
+          const pos = Math.min(Math.max(len, 0), 8);
           input.setSelectionRange(pos, pos);
         }
 
@@ -308,128 +291,45 @@ $logo = (string)($b['logo_path'] ?? '');
           overlay.innerHTML = html;
         }
 
-        // === Eingabe komplett selbst steuern ===
-        input.addEventListener('beforeinput', (e) => {
-          const t = e.inputType;
-          const allowed = [
-            'insertText',
-            'deleteContentBackward',
-            'deleteContentForward',
-            'insertFromPaste',
-            'insertReplacementText'
-          ];
-          if (!allowed.includes(t)) return;
+        // Eingabe robust über input-Event (iOS-kompatibel)
+        input.addEventListener('input', () => {
+          const raw = cleanRaw(input.value);
+          setRaw(raw);
+        });
 
-          e.preventDefault();
-
-          let raw = getRaw();
-
-          const selStart = input.selectionStart ?? 0;
-          const selEnd   = input.selectionEnd ?? selStart;
-
-          const startSlot = slotIndexFromCaretPos(selStart);
-          const endSlot   = slotIndexFromCaretPos(selEnd);
-
-          if (selEnd > selStart) {
-            const removeCount = Math.max(0, endSlot - startSlot);
-            raw = raw.slice(0, startSlot) + raw.slice(startSlot + removeCount);
-          }
-
-          if (t === 'insertText' || t === 'insertReplacementText') {
-            const ch = cleanRaw(e.data || '');
-            if (!ch) {
-              setRaw(raw);
-              setCaretToSlot(startSlot);
-              return;
-            }
-            if (raw.length < 8) {
-              raw = raw.slice(0, startSlot) + ch[0] + raw.slice(startSlot);
-              raw = raw.slice(0, 8);
-            }
-            setRaw(raw);
-            setCaretToSlot(startSlot + 1);
-            return;
-          }
-
-          if (t === 'insertFromPaste') {
-            const pasted = cleanRaw(
-              (e.data) ||
-              (e.clipboardData && e.clipboardData.getData('text')) ||
-              ''
-            );
-            if (!pasted) {
-              setRaw(raw);
-              setCaretToSlot(startSlot);
-              return;
-            }
-            const space = 8 - raw.length;
-            const toInsert = pasted.slice(0, space);
-
-            raw = raw.slice(0, startSlot) + toInsert + raw.slice(startSlot);
-            raw = raw.slice(0, 8);
-
-            setRaw(raw);
-            setCaretToSlot(startSlot + toInsert.length);
-            return;
-          }
-
-          if (t === 'deleteContentBackward') {
-            const idx = (selEnd > selStart) ? startSlot : startSlot - 1;
-            if (idx >= 0 && idx < raw.length) {
-              raw = raw.slice(0, idx) + raw.slice(idx + 1);
-            }
-            setRaw(raw);
-            setCaretToSlot(Math.max(idx, 0));
-            return;
-          }
-
-          if (t === 'deleteContentForward') {
-            const idx = startSlot;
-            if (idx >= 0 && idx < raw.length) {
-              raw = raw.slice(0, idx) + raw.slice(idx + 1);
-            }
-            setRaw(raw);
-            setCaretToSlot(idx);
-            return;
+        // Cursor nie manuell verschieben (Pfeiltasten/Home/Ende unterbinden)
+        input.addEventListener('keydown', (e) => {
+          const blocked = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+          if (blocked.includes(e.key)) {
+            e.preventDefault();
+            setCaretToEnd(getRaw().length);
           }
         });
 
-        // Pfeiltasten: slotweise bewegen
-        input.addEventListener('keydown', (e) => {
-          const key = e.key;
-          const selStart = input.selectionStart ?? 0;
-          const idx = slotIndexFromCaretPos(selStart);
-          const raw = getRaw();
+        input.addEventListener('select', () => {
+          setCaretToEnd(getRaw().length);
+        });
 
-          if (key === 'ArrowLeft') {
-            e.preventDefault();
-            setCaretToSlot(Math.max(idx - 1, 0));
-            renderOverlay(raw);
-          } else if (key === 'ArrowRight') {
-            e.preventDefault();
-            setCaretToSlot(Math.min(idx + 1, 8));
-            renderOverlay(raw);
-          } else if (key === 'Home') {
-            e.preventDefault();
-            setCaretToSlot(0);
-            renderOverlay(raw);
-          } else if (key === 'End') {
-            e.preventDefault();
-            setCaretToSlot(Math.min(raw.length, 8));
-            renderOverlay(raw);
+        document.addEventListener('selectionchange', () => {
+          if (document.activeElement === input) {
+            setCaretToEnd(getRaw().length);
           }
+        });
+
+        input.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          input.focus({ preventScroll: true });
+          setCaretToEnd(getRaw().length);
         });
 
         // Klick ins Feld: immer “Eingabemodus” + Cursor zur nächsten Stelle
         input.addEventListener('focus', () => {
-          setCaretToNext();
-          renderOverlay(getRaw());
+          setRaw(getRaw());
         });
 
         input.addEventListener('click', () => {
           setTimeout(() => {
-            setCaretToNext();
-            renderOverlay(getRaw());
+            setRaw(getRaw());
           }, 0);
         });
 
@@ -439,8 +339,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
         setTimeout(() => {
           input.focus({ preventScroll: true });
-          setCaretToNext();
-          renderOverlay(getRaw());
+          setRaw(getRaw());
         }, 0);
       });
       </script>
