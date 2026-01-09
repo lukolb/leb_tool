@@ -92,6 +92,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
       color: transparent;
       caret-color: transparent;
+      user-select: none;
 
       border: 1px solid #cfd6e4;
       border-radius: 10px;
@@ -306,6 +307,18 @@ $logo = (string)($b['logo_path'] ?? '');
         });
 
         input.addEventListener('select', () => {
+          setCaretToEnd(getRaw().length);
+        });
+
+        document.addEventListener('selectionchange', () => {
+          if (document.activeElement === input) {
+            setCaretToEnd(getRaw().length);
+          }
+        });
+
+        input.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          input.focus({ preventScroll: true });
           setCaretToEnd(getRaw().length);
         });
 
