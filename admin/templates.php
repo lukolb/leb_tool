@@ -442,6 +442,7 @@ const cpMeta  = document.getElementById('cpMeta');
 
 let currentTemplateId = null;
 let currentPdfUrl = null;
+const extractFieldsUrl = "<?=h(url('admin/ajax/extract_pdf_fields.php'))?>";
 
 let fields = [];
 let filterText = '';
@@ -857,90 +858,21 @@ function pickLabelFromLine(textItems, fieldRect) {
 }
 
 async function extractFieldsFromPdf() {
-  const pdf = await pdfjsLib.getDocument({ url: currentPdfUrl, withCredentials: true }).promise;
+  const params = new URLSearchParams();
+  params.set('csrf_token', csrf);
+  params.set('template_id', String(currentTemplateId || 0));
 
-  const out = new Map();
-  let sort = 0;
-
-  if (pdf.getFieldObjects) {
-    const fo = await pdf.getFieldObjects();
-    if (fo && typeof fo === 'object') {
-      for (const [name, arr] of Object.entries(fo)) {
-        const first = (Array.isArray(arr) && arr[0]) ? arr[0] : {};
-        const rawType = first.type || first.fieldType || '';
-        const multilineFlag = !!(first.multiline || first.multiLine);
-        let type = normalizeType(rawType, multilineFlag);
-
-        out.set(name, {
-          name,
-          type,
-          label: name,
-          help_text: '',
-          multiline: multilineFlag,
-          sort: sort++,
-          meta: { type: rawType, multiline: multilineFlag }
-        });
-      }
-    }
-  }
-
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-
-    const textContent = await page.getTextContent();
-    const textItems = (textContent.items || []).map(it => {
-      const str = (it.str || '').toString();
-      const tr = it.transform || [0,0,0,0,0,0];
-      return { str, x: tr[4] || 0, y: tr[5] || 0 };
-    });
-
-    const annots = await page.getAnnotations({ intent: "display" });
-    for (const a of annots) {
-      if (a.subtype !== 'Widget') continue;
-      const name = (a.fieldName || '').toString().trim();
-      if (!name) continue;
-
-      const rect = Array.isArray(a.rect) && a.rect.length === 4 ? a.rect : null;
-      const rawType = a.fieldType || a.type || '';
-      let type = normalizeType(rawType, false);
-
-      if (a.radioButton === true) type = 'radio';
-      if (a.checkBox === true) type = 'checkbox';
-
-      const hint = (a.alternativeText || a.altText || a.tooltip || a.title || a.fieldLabel || '')?.toString?.() || '';
-
-      if (!out.has(name)) {
-        out.set(name, {
-          name,
-          type: FIELD_TYPES.includes(type) ? type : 'radio',
-          label: name,
-          help_text: hint || '',
-          multiline: false,
-          sort: sort++,
-          meta: { type: rawType }
-        });
-      } else {
-        const it = out.get(name);
-        if (it && type === 'radio') it.type = 'radio';
-        if (it && !it.help_text && hint) it.help_text = hint;
-      }
-
-      const item = out.get(name);
-      if (item && rect) {
-        item.meta = item.meta || {};
-        if (!item.meta.page) item.meta.page = p;
-        if (!item.meta.rect) item.meta.rect = rect;
-
-        const suggested = pickLabelFromLine(textItems, rect);
-        if (suggested) {
-          if (!item.label || item.label === item.name) item.label = suggested;
-          if (!item.help_text && suggested.length > 18) item.help_text = suggested;
-        }
-      }
-    }
-  }
-
-  return Array.from(out.values()).sort((a,b)=> (a.sort??0)-(b.sort??0));
+  const resp = await fetch(extractFieldsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-CSRF-Token': csrf
+    },
+    body: params.toString()
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return Array.isArray(data.fields) ? data.fields : [];
 }
 
 // COPY: fetch template_fields map from server
