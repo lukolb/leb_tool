@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../../bootstrap.php';
+require __DIR__ . '/../../shared/pdf_extract.php';
 require_admin();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -33,28 +34,8 @@ try {
   $uploadsAbs = realpath(__DIR__ . '/..' . '/..' . '/' . $uploadsDirRel);
   if (!$uploadsAbs || !str_starts_with($abs, $uploadsAbs)) throw new RuntimeException('Ungültiger PDF-Pfad.');
 
-  $nodeBin = trim((string)@shell_exec('command -v node'));
-  if ($nodeBin === '') $nodeBin = 'node';
-
-  $scriptPath = realpath(__DIR__ . '/../tools/extract_pdf_fields.mjs');
-  if (!$scriptPath || !is_file($scriptPath)) throw new RuntimeException('Extractor-Script fehlt.');
-
-  $cmd = $nodeBin . ' ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($abs) . ' 2>&1';
-  $output = [];
-  $code = 0;
-  exec($cmd, $output, $code);
-  $raw = trim(implode("\n", $output));
-
-  if ($code !== 0) {
-    throw new RuntimeException('PDF-Analyse fehlgeschlagen: ' . $raw);
-  }
-
-  $data = json_decode($raw, true);
-  if (!is_array($data)) {
-    throw new RuntimeException('Ungültige Antwort vom PDF-Extractor.');
-  }
-
-  json_out(['ok' => true, 'fields' => $data]);
+  $fields = extract_pdf_fields($abs);
+  json_out(['ok' => true, 'fields' => $fields]);
 } catch (Throwable $e) {
   json_out(['ok' => false, 'error' => $e->getMessage()], 400);
 }
