@@ -558,6 +558,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let flatSteps = [];
   let activeStep = 0;
   let suppressTtsOnce = false;
+  let didAutoReadIntro = false;
 
   const pendingTimers = new Map();
   let saveInFlight = 0;
