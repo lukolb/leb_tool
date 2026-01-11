@@ -892,6 +892,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
     if (TTS_ALLOWED) {
       void loadVitsModule();
+      void ensureVitsSession(vitsVoiceIdForLang());
     }
   }
 
