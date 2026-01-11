@@ -99,6 +99,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "onnxruntime-web": "<?=h(url('assets/vits-web/dist/onnxruntime-web.js'))?>"
+      }
+    }
+  </script>
   <style>
       body.page{
         font-family: "Druckschrift";
@@ -496,6 +503,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const TTS_RATE = Number(<?=json_encode($ttsRate)?>) || 1;
   const TTS_VOICE_PREF_DE = <?=json_encode($ttsVoicePrefDe)?>;
   const TTS_VOICE_PREF_EN = <?=json_encode($ttsVoicePrefEn)?>;
+  const VITS_MODULE_URL = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -599,9 +607,20 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     aiModal.classList.remove('open');
   }
 
-  // -------- Vorlese-Funktion (Web Speech API) --------
-  const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  // -------- Vorlese-Funktion (vits-web + Web Speech API Fallback) --------
+  const webSpeechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  let ttsSupported = webSpeechSupported;
   let ttsUtterance = null;
+  let vitsModule = null;
+  let vitsLoading = false;
+  let vitsSession = null;
+  let vitsVoiceId = '';
+  let vitsAudio = null;
+
+  function isTtsSpeaking(){
+    if (vitsAudio && !vitsAudio.paused) return true;
+    return !!(speechSynthesis && speechSynthesis.speaking);
+  }
 
   function updateTtsUi(text){
     if (!ttsBar) return;
@@ -609,6 +628,12 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       ttsBar.style.display = isBeginnerMode ? 'none' : 'flex';
       if (ttsButton) ttsButton.style.display = 'none';
       if (ttsStatus) ttsStatus.textContent = t('student.tts.disabled', 'Vorlesen wurde von deiner Lehrkraft deaktiviert.');
+      return;
+    }
+    if (!ttsSupported && vitsLoading) {
+      ttsBar.style.display = isBeginnerMode ? 'none' : 'flex';
+      if (ttsButton) ttsButton.style.display = 'none';
+      if (ttsStatus) ttsStatus.textContent = t('student.tts.loading', 'Vorlesen wird vorbereitet …');
       return;
     }
     if (!ttsSupported) {
@@ -620,7 +645,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     ttsBar.style.display = isBeginnerMode ? 'none' : 'flex';
     if (ttsButton) {
       ttsButton.style.display = '';
-      const isSpeaking = speechSynthesis.speaking;
+      const isSpeaking = isTtsSpeaking();
       ttsButton.innerHTML = isSpeaking ? '<i class="fa fa-stop"></i>' : '<i class="fa fa-volume-up"></i>';
       ttsButton.setAttribute('aria-label', isSpeaking
         ? t('student.tts.stop', 'Stopp')
@@ -630,7 +655,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (text) {
         ttsStatus.textContent = text;
       } else {
-        ttsStatus.textContent = speechSynthesis.speaking
+        ttsStatus.textContent = isTtsSpeaking()
           ? t('student.tts.reading', 'Liest gerade …')
           : t('student.tts.ready', 'Bereit zum Vorlesen.');
       }
@@ -660,8 +685,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   function stopTts(){
-    if (!ttsSupported || !speechSynthesis) return;
-    try { speechSynthesis.cancel(); } catch(e) {}
+    if (!ttsSupported) return;
+    if (vitsAudio) {
+      try { vitsAudio.pause(); vitsAudio.currentTime = 0; } catch(e) {}
+      vitsAudio = null;
+    }
+    if (speechSynthesis) {
+      try { speechSynthesis.cancel(); } catch(e) {}
+    }
     ttsUtterance = null;
     updateTtsUi();
   }
@@ -730,32 +761,75 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return voices[0] || null;
   }
 
-  function speakCurrentStep(includeGroup = false){
-    if (!ttsSupported) return;
-    stopTts();
-    const text = currentStepTextForTts(includeGroup);
-    const normalizedText = typeof text === 'string' ? text : '';
-    if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
-      updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
-      return;
-    }
-
-    const utter = new SpeechSynthesisUtterance(normalizedText);
-    utter.rate = TTS_RATE;
-    utter.pitch = 1;
-    utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
-    const voice = pickVoice(utter.lang, voicePrefForLang());
-    if (voice) utter.voice = voice;
-    utter.onstart = () => { updateTtsUi(t('student.tts.reading', 'Liest gerade …')); };
-    utter.onend = () => { updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.')); };
-    utter.onerror = () => { updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.')); };
-    ttsUtterance = utter;
-    speechSynthesis.speak(utter);
-    updateTtsUi();
+  function vitsVoiceIdForLang(){
+    const pref = voicePrefForLang();
+    if (pref) return pref;
+    if (currentLang === 'en') return 'en_US-lessac-medium';
+    return 'de_DE-thorsten-medium';
   }
 
-  function speakText(text){
-    if (!ttsSupported) return false;
+  async function loadVitsModule(){
+    if (vitsModule || vitsLoading) return vitsModule;
+    vitsLoading = true;
+    updateTtsUi();
+    try {
+      vitsModule = await import(VITS_MODULE_URL);
+      ttsSupported = true;
+    } catch (e) {
+      console.warn('vits-web failed to load', e);
+      ttsSupported = webSpeechSupported;
+    } finally {
+      vitsLoading = false;
+      updateTtsUi();
+    }
+    return vitsModule;
+  }
+
+  async function ensureVitsSession(voiceId){
+    const mod = await loadVitsModule();
+    if (!mod || !mod.TtsSession) return null;
+    if (vitsSession && vitsVoiceId === voiceId) return vitsSession;
+    vitsVoiceId = voiceId;
+    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
+    vitsSession = await mod.TtsSession.create({ voiceId });
+    return vitsSession;
+  }
+
+  async function speakWithVits(text){
+    const normalized = typeof text === 'string' ? text.trim() : '';
+    if (!normalized) return false;
+    const voiceId = vitsVoiceIdForLang();
+    const session = await ensureVitsSession(voiceId);
+    if (!session) return false;
+    stopTts();
+    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+    const blob = await session.predict(normalized);
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.playbackRate = TTS_RATE;
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
+      vitsAudio = null;
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+      vitsAudio = null;
+    };
+    vitsAudio = audio;
+    try {
+      await audio.play();
+      updateTtsUi();
+      return true;
+    } catch (e) {
+      updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+      return false;
+    }
+  }
+
+  function speakWithWebSpeech(text){
+    if (!webSpeechSupported || !speechSynthesis) return false;
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
     stopTts();
@@ -774,15 +848,43 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return true;
   }
 
+  async function speakCurrentStep(includeGroup = false){
+    if (!ttsSupported) return;
+    const text = currentStepTextForTts(includeGroup);
+    const normalizedText = typeof text === 'string' ? text : '';
+    if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
+      updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
+      return;
+    }
+    const ok = await speakWithVits(normalizedText);
+    if (!ok) {
+      speakWithWebSpeech(normalizedText);
+    }
+  }
+
+  async function speakText(text){
+    if (!ttsSupported) return false;
+    const normalized = typeof text === 'string' ? text.trim() : '';
+    if (!normalized) return false;
+    const ok = await speakWithVits(normalized);
+    if (!ok) {
+      return speakWithWebSpeech(normalized);
+    }
+    return true;
+  }
+
   function initTts(){
     updateTtsUi();
-    if (!ttsSupported || !ttsButton) return;
+    if (!ttsButton) return;
     ttsButton.addEventListener('click', () => {
-      if (speechSynthesis.speaking) { stopTts(); }
-      else { speakCurrentStep(true); }
+      if (isTtsSpeaking()) { stopTts(); }
+      else { void speakCurrentStep(true); }
     });
     if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
+    }
+    if (!ttsSupported) {
+      void loadVitsModule();
     }
   }
 
@@ -1480,7 +1582,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const text = await fetchAiExplanation(fid);
       const ttsActive = TTS_ALLOWED && ttsSupported;
       if (ttsActive) {
-        speakText(text);
+        void speakText(text);
       } else {
         openAiModal(text);
       }
