@@ -613,8 +613,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let ttsUtterance = null;
   let vitsModule = null;
   let vitsLoading = false;
-  let vitsSession = null;
-  let vitsVoiceId = '';
   let vitsAudio = null;
 
   function isTtsSpeaking(){
@@ -774,9 +772,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     updateTtsUi();
     try {
       const rawModule = await import(VITS_MODULE_URL);
-      if (rawModule && rawModule.TtsSession) {
+      if (rawModule && rawModule.predict) {
         vitsModule = rawModule;
-      } else if (rawModule && rawModule.default && rawModule.default.TtsSession) {
+      } else if (rawModule && rawModule.default && rawModule.default.predict) {
         vitsModule = rawModule.default;
       } else {
         vitsModule = null;
@@ -793,25 +791,22 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return vitsModule;
   }
 
-  async function ensureVitsSession(voiceId){
-    const mod = await loadVitsModule();
-    if (!mod || !mod.TtsSession) return null;
-    if (vitsSession && vitsVoiceId === voiceId) return vitsSession;
-    vitsVoiceId = voiceId;
-    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
-    vitsSession = await mod.TtsSession.create({ voiceId });
-    return vitsSession;
-  }
-
   async function speakWithVits(text){
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
     const voiceId = vitsVoiceIdForLang();
-    const session = await ensureVitsSession(voiceId);
-    if (!session) return false;
+    const mod = await loadVitsModule();
+    if (!mod || !mod.predict) return false;
     stopTts();
-    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
-    const blob = await session.predict(normalized);
+    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
+    const blob = await mod.predict({ text: normalized, voiceId }, (p) => {
+      if (!p) return;
+      const total = Number(p.total || 0);
+      const loaded = Number(p.loaded || 0);
+      if (!total) return;
+      const pct = Math.max(0, Math.min(100, Math.round((loaded * 100) / total)));
+      updateTtsUi(`${t('student.tts.downloading', 'Download')}: ${pct}%`);
+    });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = TTS_RATE;
