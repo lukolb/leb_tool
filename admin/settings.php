@@ -50,6 +50,34 @@ function known_intro_placeholders(): array {
   ];
 }
 
+function load_vits_voice_ids(): array {
+  $path = __DIR__ . '/../assets/vits-web/src/fixtures.ts';
+  if (!is_file($path)) return [];
+  $contents = file_get_contents($path);
+  if ($contents === false) return [];
+  if (!preg_match('~PATH_MAP\\s*:[^{]*\\{(.*?)\\}\\s*$~s', $contents, $match)) {
+    return [];
+  }
+  $block = $match[1];
+  preg_match_all("/'([a-z]{2}_[A-Z]{2}[^']*)'\\s*:/", $block, $ids);
+  $out = array_values(array_unique($ids[1] ?? []));
+  sort($out);
+  return $out;
+}
+
+function filter_vits_voice_ids(array $ids, array $prefixes): array {
+  $out = [];
+  foreach ($ids as $id) {
+    foreach ($prefixes as $prefix) {
+      if (str_starts_with($id, $prefix)) {
+        $out[] = $id;
+        break;
+      }
+    }
+  }
+  return $out;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -211,6 +239,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 $ttsRate = (float)($studentCfg['tts_rate'] ?? 1.0);
 if ($ttsRate <= 0) $ttsRate = 1.0;
 $ttsRate = max(0.5, min(1.5, $ttsRate));
+
+$vitsVoiceIds = load_vits_voice_ids();
+$vitsVoiceIdsDe = filter_vits_voice_ids($vitsVoiceIds, ['de_DE-']);
+$vitsVoiceIdsEn = filter_vits_voice_ids($vitsVoiceIds, ['en_GB-', 'en_US-']);
 
 $introAbs = child_intro_file_abs();
 $introHtml = '';
@@ -384,30 +416,27 @@ render_admin_header('Admin – Settings');
 
 <div class="card">
   <h2>Vorlesen (Text-to-Speech)</h2>
-  <p class="muted">Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler. Browser können je nach Gerät unterschiedliche Stimmen bereitstellen.</p>
+  <p class="muted">Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler. Die Liste basiert auf den in vits-web verfügbaren Stimmen.</p>
 
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
 
-    <label>Bevorzugte Stimme (optional)</label>
     <label>Standard-Stimme (Deutsch)</label>
-    <input name="tts_voice_de" list="ttsVoiceList" value="<?=h($ttsVoicePrefDe)?>" placeholder="z.B. Google Deutsch, Microsoft Katja">
+    <select name="tts_voice_de">
+      <option value="">Automatisch (Standard)</option>
+      <?php foreach ($vitsVoiceIdsDe as $voiceId): ?>
+        <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefDe ? 'selected' : ''?>><?=h($voiceId)?></option>
+      <?php endforeach; ?>
+    </select>
     <label style="margin-top:10px;">Standard-Stimme (Englisch)</label>
-    <input name="tts_voice_en" list="ttsVoiceList" value="<?=h($ttsVoicePrefEn)?>" placeholder="z.B. Google UK English, Microsoft Ryan">
-    <datalist id="ttsVoiceList">
-      <option value="Google Deutsch"></option>
-      <option value="Google Deutsch (Deutschland)"></option>
-      <option value="Google Deutsch (Österreich)"></option>
-      <option value="Microsoft Katja Online (Natural) - German (Germany)"></option>
-      <option value="Microsoft Conrad Online (Natural) - German (Germany)"></option>
-      <option value="Microsoft Hedda Desktop - German (Germany)"></option>
-      <option value="Microsoft Jonas Desktop - German (Germany)"></option>
-      <option value="Google US English"></option>
-      <option value="Microsoft Aria Online (Natural) - English (United States)"></option>
-      <option value="Microsoft Guy Online (Natural) - English (United States)"></option>
-    </datalist>
-    <p class="muted">Wir versuchen zuerst diese Stimme zu nutzen (Teiltreffer erlaubt). Fällt zurück auf die passende Sprache.</p>
+    <select name="tts_voice_en">
+      <option value="">Automatisch (Standard)</option>
+      <?php foreach ($vitsVoiceIdsEn as $voiceId): ?>
+        <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefEn ? 'selected' : ''?>><?=h($voiceId)?></option>
+      <?php endforeach; ?>
+    </select>
+    <p class="muted">Die Auswahl verwendet die Voice-IDs von vits-web (z.B. de_DE-thorsten-medium).</p>
 
     <label>Lesegeschwindigkeit</label>
     <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
