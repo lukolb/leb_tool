@@ -1726,6 +1726,35 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return null;
   }
 
+  function firstFieldIndexForGroup(groupKey){
+    if (!Array.isArray(flatSteps)) return null;
+    for (let i = 0; i < flatSteps.length; i += 1) {
+      const step = flatSteps[i];
+      if (!step || step.kind !== 'field') continue;
+      if (String(step.group) === String(groupKey)) return i;
+    }
+    return null;
+  }
+
+  function initialStepIndex(){
+    const total = totalFieldCount();
+    const missing = totalMissingCount();
+    if (total > 0 && missing === total) {
+      return 0;
+    }
+    const missingIdx = firstMissingStepIndex();
+    if (typeof missingIdx !== 'number') return 0;
+    const step = flatSteps[missingIdx];
+    if (step && step.kind === 'field' && displayMode !== 'groups') {
+      const firstIdx = firstFieldIndexForGroup(step.group);
+      if (firstIdx === missingIdx) {
+        const giIdx = flatSteps.findIndex(s => s.kind === 'group_intro' && String(s.group) === String(step.group));
+        if (giIdx >= 0) return giIdx;
+      }
+    }
+    return missingIdx;
+  }
+
   function updateReqHint(){
     if (isBeginnerMode) {
       if (elReqHint) elReqHint.textContent = '';
@@ -2072,8 +2101,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       }
 
       buildFlatSteps();
-      const missingIdx = firstMissingStepIndex();
-      activeStep = (typeof missingIdx === 'number') ? missingIdx : 0;
+      activeStep = initialStepIndex();
       render();
     } catch (e) {
       const msg = String(e?.message || t('student.js.load_error', 'Fehler'));
