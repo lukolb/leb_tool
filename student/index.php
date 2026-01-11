@@ -840,6 +840,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       vitsAudio = null;
     };
     vitsAudio = audio;
+    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     try {
       await audio.play();
       updateTtsUi();
@@ -900,7 +901,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!ttsButton) return;
     ttsButton.addEventListener('click', () => {
       if (isTtsSpeaking()) { stopTts(); }
-      else { void speakCurrentStep(true); }
+      else {
+        updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+        void speakCurrentStep(true);
+      }
     });
     if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
