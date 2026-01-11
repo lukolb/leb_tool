@@ -620,6 +620,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let vitsLoading = false;
   let vitsAudio = null;
   const vitsSessions = new Map();
+  let vitsPrefetchPromise = null;
 
   function isTtsSpeaking(){
     if (vitsAudio && !vitsAudio.paused) return true;
@@ -797,6 +798,15 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return vitsModule;
   }
 
+  async function prefetchVitsModel(voiceId){
+    if (vitsPrefetchPromise) return vitsPrefetchPromise;
+    const mod = await loadVitsModule();
+    if (!mod || !mod.download) return null;
+    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
+    vitsPrefetchPromise = mod.download(voiceId).catch(() => null);
+    return vitsPrefetchPromise;
+  }
+
   async function ensureVitsSession(voiceId){
     const mod = await loadVitsModule();
     if (!mod || !mod.TtsSession) return null;
@@ -896,8 +906,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
     }
     if (TTS_ALLOWED) {
+      const voiceId = vitsVoiceIdForLang();
       void loadVitsModule();
-      void ensureVitsSession(vitsVoiceIdForLang());
+      void prefetchVitsModel(voiceId);
+      void ensureVitsSession(voiceId);
     }
   }
 
