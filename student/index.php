@@ -773,10 +773,18 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     vitsLoading = true;
     updateTtsUi();
     try {
-      vitsModule = await import(VITS_MODULE_URL);
-      ttsSupported = true;
+      const rawModule = await import(VITS_MODULE_URL);
+      if (rawModule && rawModule.TtsSession) {
+        vitsModule = rawModule;
+      } else if (rawModule && rawModule.default && rawModule.default.TtsSession) {
+        vitsModule = rawModule.default;
+      } else {
+        vitsModule = null;
+      }
+      ttsSupported = !!vitsModule || webSpeechSupported;
     } catch (e) {
       console.warn('vits-web failed to load', e);
+      vitsModule = null;
       ttsSupported = webSpeechSupported;
     } finally {
       vitsLoading = false;
