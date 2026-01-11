@@ -5,6 +5,11 @@ declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require_student();
 
+if (!headers_sent()) {
+  header('Cross-Origin-Opener-Policy: same-origin');
+  header('Cross-Origin-Embedder-Policy: require-corp');
+}
+
 $pdo = db();
 $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
@@ -98,7 +103,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   <title><?=h($orgName)?> – <?=h(t('student.html_title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <link rel="stylesheet" href="<?=h(url('assets/font-awesome/font-awesome.css'))?>">
   <script type="importmap">
     {
       "imports": {
