@@ -31,7 +31,7 @@ export class TtsSession {
     this.#ort = await import('onnxruntime-web');
 
     this.#ort.env.allowLocalModels = false;
-    this.#ort.env.wasm.numThreads = navigator.hardwareConcurrency;
+    this.#ort.env.wasm.numThreads = self.crossOriginIsolated ? navigator.hardwareConcurrency : 1;
     this.#ort.env.wasm.wasmPaths = ONNX_BASE;
 
     const path = PATH_MAP[this.voiceId];

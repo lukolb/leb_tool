@@ -614,6 +614,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let vitsModule = null;
   let vitsLoading = false;
   let vitsAudio = null;
+  const vitsSessions = new Map();
 
   function isTtsSpeaking(){
     if (vitsAudio && !vitsAudio.paused) return true;
@@ -791,22 +792,25 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return vitsModule;
   }
 
+  async function ensureVitsSession(voiceId){
+    const mod = await loadVitsModule();
+    if (!mod || !mod.TtsSession) return null;
+    if (vitsSessions.has(voiceId)) return vitsSessions.get(voiceId);
+    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
+    const session = await mod.TtsSession.create({ voiceId });
+    vitsSessions.set(voiceId, session);
+    return session;
+  }
+
   async function speakWithVits(text){
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
     const voiceId = vitsVoiceIdForLang();
-    const mod = await loadVitsModule();
-    if (!mod || !mod.predict) return false;
+    const session = await ensureVitsSession(voiceId);
+    if (!session) return false;
     stopTts();
-    updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
-    const blob = await mod.predict({ text: normalized, voiceId }, (p) => {
-      if (!p) return;
-      const total = Number(p.total || 0);
-      const loaded = Number(p.loaded || 0);
-      if (!total) return;
-      const pct = Math.max(0, Math.min(100, Math.round((loaded * 100) / total)));
-      updateTtsUi(`${t('student.tts.downloading', 'Download')}: ${pct}%`);
-    });
+    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+    const blob = await session.predict(normalized);
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = TTS_RATE;
