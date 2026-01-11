@@ -883,7 +883,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (speechSynthesis && typeof speechSynthesis.addEventListener === 'function') {
       speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
     }
-    if (!ttsSupported) {
+    if (TTS_ALLOWED) {
       void loadVitsModule();
     }
   }
