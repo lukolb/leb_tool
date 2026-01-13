@@ -191,7 +191,7 @@ render_admin_header('Feld-Editor');
   .muted2{ color: var(--muted); font-size: 12px; }
   tr.is-selected{ outline: 2px solid rgba(176,0,32,0.25); outline-offset:-2px; }
   tr.is-found{ box-shadow: inset 0 0 0 3px rgba(176,0,32,0.25); }
-  tr.is-flash td{ animation: rowFlash 0.9s ease-out; }
+  tr.is-flash td{ animation: rowFlash 1.5s ease-out; }
   @keyframes rowFlash{
     0%{ background-color: rgba(255, 204, 0, 0.35); box-shadow: inset 0 0 0 9999px rgba(255, 204, 0, 0.2); }
     100%{ background-color: transparent; box-shadow: none; }
@@ -778,7 +778,7 @@ function flashRow(tr){
   tr.classList.remove('is-flash');
   void tr.offsetWidth;
   tr.classList.add('is-flash');
-  setTimeout(()=>tr.classList.remove('is-flash'), 900);
+  setTimeout(()=>tr.classList.remove('is-flash'), 1500);
 }
 
 function escapeHtml(s){
