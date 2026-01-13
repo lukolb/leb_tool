@@ -391,6 +391,10 @@ render_teacher_header($pageTitle);
         <div style="display:flex; gap:8px; align-items:center;">
           <input class="input" id="studentSearch" type="search" placeholder="Schüler suchen…" style="width:100%;">
         </div>
+        <div style="margin-top:8px;">
+          <label class="label" for="studentGroupSelect">Fach/Gruppe</label>
+          <select class="input" id="studentGroupSelect" style="width:100%;"></select>
+        </div>
         <div id="studentList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
       </div>
       <div>
@@ -601,6 +605,7 @@ render_teacher_header($pageTitle);
   const gradeBody = document.getElementById('gradeBody');
 
   const studentSearch = document.getElementById('studentSearch');
+  const studentGroupSelect = document.getElementById('studentGroupSelect');
   const studentList = document.getElementById('studentList');
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
@@ -665,6 +670,7 @@ render_teacher_header($pageTitle);
     activeStudentIndex: 0,
     studentFilter: '',
     studentMissingOnly: false,
+    studentGroupKey: 'ALL',
     groupKey: 'ALL',
     itemFilter: '',
     gradeGroupKey: 'ALL',
@@ -1571,6 +1577,32 @@ render_teacher_header($pageTitle);
     }, 350));
   }
 
+  function isVisibleElement(el){
+    if (!el || el.disabled) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return !!(el.offsetParent || el.getClientRects().length);
+  }
+
+  function collectTeacherFields(){
+    const selector = [
+      '[data-teacher-input="1"]',
+      '[data-option-card="1"]'
+    ].join(',');
+    return Array.from(document.querySelectorAll(selector))
+      .filter(el => !el.disabled && !el.getAttribute('aria-disabled') && isVisibleElement(el));
+  }
+
+  function focusNextTeacherField(currentEl, dir=1){
+    const list = collectTeacherFields();
+    if (!list.length) return;
+    const idx = list.indexOf(currentEl);
+    const nextIdx = idx >= 0 ? idx + dir : (dir > 0 ? 0 : list.length - 1);
+    if (nextIdx < 0 || nextIdx >= list.length) return;
+    const target = list[nextIdx];
+    if (target && typeof target.focus === 'function') target.focus();
+  }
+
   function wireTeacherInputs(rootEl){
     if (!rootEl) return;
 
@@ -1621,7 +1653,12 @@ render_teacher_header($pageTitle);
         inp.addEventListener('change', commit);
         inp.addEventListener('blur', commit);
         inp.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter') { ev.preventDefault(); commit(); inp.blur(); }
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            commit();
+            inp.blur();
+            focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+          }
         });
         return;
       }
@@ -1647,6 +1684,24 @@ render_teacher_header($pageTitle);
         const wrap = inp.closest('.field');
         if (wrap) wrap.scrollIntoView({block:'nearest'});
       });
+
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter') return;
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        const tag = (inp.tagName || '').toLowerCase();
+        if (tag === 'textarea') return;
+        ev.preventDefault();
+        focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+      });
+
+      if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        inp.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
+            ev.preventDefault();
+            focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+          }
+        });
+      }
 
       if (eligibleForSnippetInput(inp)) {
         ['select','mouseup','keyup','focus'].forEach(ev => {
@@ -1695,7 +1750,41 @@ render_teacher_header($pageTitle);
 
       card.addEventListener('click', select);
       card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          select();
+          focusNextTeacherField(card, e.shiftKey ? -1 : 1);
+          return;
+        }
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          e.preventDefault();
+          const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'))
+            .filter(btn => !btn.disabled && isVisibleElement(btn));
+          if (!cards.length) return;
+          const idx = cards.indexOf(card);
+          const dir = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+          const nextIdx = Math.min(Math.max(idx + dir, 0), cards.length - 1);
+          const target = cards[nextIdx];
+          if (target && typeof target.focus === 'function') target.focus();
+          return;
+        }
+        if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const needle = e.key.toLowerCase();
+          const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'))
+            .filter(btn => !btn.disabled && isVisibleElement(btn));
+          if (!cards.length) return;
+          const startIdx = Math.max(cards.indexOf(card), 0);
+          const ordered = cards.slice(startIdx + 1).concat(cards.slice(0, startIdx + 1));
+          const orderedLabels = ordered.map(btn => {
+            const lbl = btn.querySelector('.lbl');
+            return (lbl ? lbl.textContent : btn.textContent || '').trim().toLowerCase();
+          });
+          const matchIdx = orderedLabels.findIndex(text => text.startsWith(needle));
+          if (matchIdx >= 0) {
+            const target = ordered[matchIdx];
+            if (target && typeof target.focus === 'function') target.focus();
+          }
+        }
       });
     });
   }
@@ -2201,6 +2290,25 @@ render_teacher_header($pageTitle);
     ui.groupKey = groupSelect.value;
   }
 
+  function ensureStudentGroupsSelect(){
+    if (!studentGroupSelect) return;
+    if (!studentGroupSelect.options.length) {
+      studentGroupSelect.innerHTML = '';
+      const optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.textContent = 'Alle';
+      studentGroupSelect.appendChild(optAll);
+      state.groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.key;
+        opt.textContent = g.title;
+        studentGroupSelect.appendChild(opt);
+      });
+    }
+    if (!studentGroupSelect.value) studentGroupSelect.value = 'ALL';
+    ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+  }
+
   function renderClassFields(){
     const cf = state.class_fields;
     dbg('class_fields', cf);
@@ -2273,6 +2381,7 @@ render_teacher_header($pageTitle);
   }
 
   function renderStudentView(){
+    ensureStudentGroupsSelect();
     const list = currentStudents();
 
     studentList.innerHTML = '';
@@ -2352,6 +2461,7 @@ render_teacher_header($pageTitle);
     }
 
     state.groups.forEach(g => {
+      if (ui.studentGroupKey !== 'ALL' && String(g.key) !== String(ui.studentGroupKey)) return;
       const fields = ui.studentMissingOnly
         ? (g.fields || []).filter(f => isTeacherFieldMissing(reportId, f.id))
         : (g.fields || []);
@@ -2687,6 +2797,7 @@ render_teacher_header($pageTitle);
     // reset group selects (delegation badges etc.)
     groupSelect.innerHTML = '';
     gradeGroupSelect.innerHTML = '';
+    if (studentGroupSelect) studentGroupSelect.innerHTML = '';
     state.students = j.students;
     state.values_teacher = j.values_teacher || {};
     state.values_child = j.values_child || {};
@@ -2738,10 +2849,12 @@ render_teacher_header($pageTitle);
     ui.activeStudentIndex = 0;
     groupSelect.innerHTML = '';
     gradeGroupSelect.innerHTML = '';
+    if (studentGroupSelect) studentGroupSelect.innerHTML = '';
     gradeSearch.value = '';
     itemSearch.value = '';
     studentSearch.value = '';
     ui.studentFilter = '';
+    ui.studentGroupKey = 'ALL';
     ui.itemFilter = '';
     ui.gradeFilter = '';
 
@@ -3018,6 +3131,14 @@ if (dlgSave) {
     ui.activeStudentIndex = 0;
     renderStudentView();
   });
+
+  if (studentGroupSelect) {
+    studentGroupSelect.addEventListener('change', () => {
+      ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+      ui.activeStudentIndex = 0;
+      renderStudentView();
+    });
+  }
 
   studentMissingOnly.addEventListener('change', () => {
     ui.studentMissingOnly = !!studentMissingOnly.checked;
