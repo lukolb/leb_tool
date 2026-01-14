@@ -666,6 +666,7 @@ render_teacher_header($pageTitle);
 
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
   const OPTION_STYLE_KEY = 'leb_option_style';
+  const VIEW_STORAGE_KEY = 'leb_view_mode';
 
   let state = {
     class_id: 0,
@@ -1112,6 +1113,25 @@ render_teacher_header($pageTitle);
       render();
       requestAnimationFrame(() => setLoading(false));
     });
+  }
+
+  function normalizeViewMode(mode){
+    const m = String(mode || '').toLowerCase();
+    if (m === 'student' || m === 'item' || m === 'grades') return m;
+    return 'grades';
+  }
+
+  function applyStoredView(){
+    if (!viewSelect) return;
+    const saved = normalizeViewMode(localStorage.getItem(VIEW_STORAGE_KEY));
+    viewSelect.value = saved;
+  }
+
+  function saveViewSelection(){
+    if (!viewSelect) return;
+    const value = normalizeViewMode(viewSelect.value);
+    viewSelect.value = value;
+    localStorage.setItem(VIEW_STORAGE_KEY, value);
   }
 
   async function unlockChildEntry(reportId){
@@ -2885,6 +2905,7 @@ render_teacher_header($pageTitle);
       refreshSnippetCategoryList();
       updateSnippetSelectionUI();
 
+      applyStoredView();
       ui.activeStudentIndex = 0;
       groupSelect.innerHTML = '';
       gradeGroupSelect.innerHTML = '';
@@ -3165,7 +3186,11 @@ if (dlgSave) {
     }
   });
 
-  viewSelect.addEventListener('change', () => renderWithLoading());
+  applyStoredView();
+  viewSelect.addEventListener('change', () => {
+    saveViewSelection();
+    renderWithLoading();
+  });
   toggleChild.addEventListener('change', () => render());
 
   studentSearch.addEventListener('input', () => {
@@ -3226,6 +3251,7 @@ if (dlgSave) {
         const cur = viewSelect.value || 'grades';
         const idx = order.indexOf(cur);
         viewSelect.value = order[(idx + 1) % order.length];
+        saveViewSelection();
         renderWithLoading();
       }
     }
