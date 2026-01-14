@@ -1322,16 +1322,16 @@ render_teacher_header($pageTitle);
     const entries = historyEntries(reportId, fieldId);
     if (!entries.length) return '';
 
-    const rows = entries.map(e => {
-      const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
-      const ts = formatDateTime(e.created_at);
-      const val = String(e.text ?? '');
-      return `
-        <div class="history-row">
-          <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
-          <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
-          <div class="history-actions">
-            <button class="btn tiny secondary" type="button"
+      const rows = entries.map(e => {
+        const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
+        const ts = formatDateTime(e.created_at);
+        const val = String(e.text ?? '');
+        return `
+          <div class="history-row">
+            <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
+            <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
+            <div class="history-actions">
+            <button class="btn tiny secondary" type="button" tabindex="-1"
               style="padding:4px 8px; font-size:11px;"
               data-history-restore="1"
               data-report-id="${esc(reportId)}"
@@ -1346,7 +1346,7 @@ render_teacher_header($pageTitle);
 
     return `
       <div class="history-inline" data-history-wrap="1">
-        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen"
+        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen" tabindex="-1"
           data-history-toggle="1" data-report-id="${esc(reportId)}" data-field-id="${esc(fieldId)}">🕒</button>
         <div class="history-popover" data-history-menu="1">
           <div class="history-rows">${rows}</div>
@@ -1647,7 +1647,10 @@ render_teacher_header($pageTitle);
       '[data-option-card="1"]'
     ].join(',');
     return Array.from(document.querySelectorAll(selector))
-      .filter(el => !el.disabled && !el.getAttribute('aria-disabled') && isVisibleElement(el));
+      .filter(el => {
+        if (el.matches('[data-option-card="1"]') && el.getAttribute('tabindex') === '-1') return false;
+        return !el.disabled && !el.getAttribute('aria-disabled') && isVisibleElement(el);
+      });
   }
 
   function focusNextTeacherField(currentEl, dir=1){
@@ -1801,6 +1804,7 @@ render_teacher_header($pageTitle);
           const match = String(btn.getAttribute('data-value') || '') === val;
           btn.classList.toggle('selected', match);
           btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+          btn.setAttribute('tabindex', match ? '0' : '-1');
         });
         syncMissingClass(card, merged);
       };
@@ -1830,6 +1834,16 @@ render_teacher_header($pageTitle);
           const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'))
             .filter(btn => !btn.disabled && isVisibleElement(btn));
           if (!cards.length) return;
+          if (needle >= '0' && needle <= '9') {
+            const idx = needle === '0' ? 9 : Number(needle) - 1;
+            const target = cards[idx];
+            if (target) {
+              e.preventDefault();
+              target.focus();
+              target.click();
+            }
+            return;
+          }
           const startIdx = Math.max(cards.indexOf(card), 0);
           const ordered = cards.slice(startIdx + 1).concat(cards.slice(0, startIdx + 1));
           const orderedLabels = ordered.map(btn => {
@@ -2238,14 +2252,22 @@ render_teacher_header($pageTitle);
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
         const childValRaw = (ui.showChild && f.child && f.child.id) ? String(childVal(reportId, f.child.id) ?? '').trim() : '';
-        const cards = opts.map(o => {
+        const hasSelected = opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn;
+          return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+        });
+        const cards = opts.map((o, idx) => {
+          const oVal = String(o?.value ?? '');
+          const lblDe = String(o?.label ?? '').trim();
+          const lblEn = String(o?.label_en ?? '').trim();
+          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
           const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
+          const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
             ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
@@ -2253,7 +2275,7 @@ render_teacher_header($pageTitle);
           const classes = ['opt'];
           if (selected) classes.push('selected');
           if (matchesChild) classes.push('child-val');
-          return `<button type="button" class="${classes.join(' ')}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
+          return `<button type="button" class="${classes.join(' ')}" tabindex="${tabIndex}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
         }).join('');
 
         return `
@@ -2535,7 +2557,7 @@ render_teacher_header($pageTitle);
       const delBadge = (del && del.user_id) ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>` : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = CAN_DELEGATE
-  ? `<button class="btn" type="button" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
+  ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
   : '';
       html += `
           <div class="section-h" style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
