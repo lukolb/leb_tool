@@ -2468,6 +2468,13 @@ render_teacher_header($pageTitle);
   function renderStudentView(){
     ensureStudentGroupsSelect();
     const list = currentStudents();
+    const hasPrev = ui.activeStudentIndex > 0;
+    const hasNext = ui.activeStudentIndex < list.length - 1;
+
+    btnPrevStudent.disabled = !hasPrev;
+    btnPrevStudent.setAttribute('aria-disabled', String(!hasPrev));
+    btnNextStudent.disabled = !hasNext;
+    btnNextStudent.setAttribute('aria-disabled', String(!hasNext));
 
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
@@ -3281,6 +3288,18 @@ if (dlgSave) {
         viewSelect.value = order[(idx + 1) % order.length];
         saveViewSelection();
         renderWithLoading();
+      }
+      if (k === 'arrowleft') {
+        if (btnPrevStudent && !btnPrevStudent.disabled) {
+          ev.preventDefault();
+          btnPrevStudent.click();
+        }
+      }
+      if (k === 'arrowright') {
+        if (btnNextStudent && !btnNextStudent.disabled) {
+          ev.preventDefault();
+          btnNextStudent.click();
+        }
       }
     }
   });
