@@ -143,15 +143,6 @@ render_teacher_header($pageTitle);
       </select>
     </div>
 
-    <div style="min-width:260px;">
-      <label class="label">Ansicht</label>
-      <select class="input" id="viewSelect" style="width:100%;">
-        <option value="grades">Notenübersicht</option>
-        <option value="student">Nach Schüler</option>
-        <option value="item">Nach Item/Fach</option>
-      </select>
-    </div>
-
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
@@ -179,6 +170,9 @@ render_teacher_header($pageTitle);
 </div>
 
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
+<div id="loadingOverlay" class="loading-overlay" style="display:none;">
+  <div class="loading-pill"><span class="spin"></span> Lade…</div>
+</div>
 
 <div class="card" id="snippetDrawer" style="display:none;">
   <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
@@ -345,6 +339,16 @@ render_teacher_header($pageTitle);
       <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> Optionen als Buttons
     </label>
   </div>
+  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+    <div style="min-width:260px;">
+      <label class="label">Ansicht</label>
+      <select class="input" id="viewSelect" style="width:100%;">
+        <option value="grades">Notenübersicht</option>
+        <option value="student">Nach Schüler</option>
+        <option value="item">Nach Item/Fach</option>
+      </select>
+    </div>
+  </div>
 
   <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
     <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
@@ -456,6 +460,26 @@ render_teacher_header($pageTitle);
   .save-status[data-state="saving"]{ color: #0b57d0; font-weight:750; }
   .save-status[data-state="ok"]{ color: #0b7a0b; font-weight:750; }
   .save-status[data-state="error"]{ color: #b00020; font-weight:800; }
+  .loading-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(255,255,255,0.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+  }
+  .loading-pill{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:10px 16px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-weight:700;
+    box-shadow:0 6px 24px rgba(0,0,0,0.12);
+  }
 
   .field{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; }
   .field .lbl{ font-weight:800; }
@@ -560,6 +584,7 @@ render_teacher_header($pageTitle);
   const classFieldsForm = document.getElementById('classFieldsForm');
   const elErrBox = document.getElementById('errBox');
   const elErrMsg = document.getElementById('errMsg');
+  const loadingOverlay = document.getElementById('loadingOverlay');
   const elMetaTop = document.getElementById('metaTop');
   const formsProgressWrap = document.getElementById('formsProgressWrap');
   const formsProgressBar = document.getElementById('formsProgressBar');
@@ -1075,6 +1100,18 @@ render_teacher_header($pageTitle);
   }
   function setSaving(on){
     elSavePill.style.display = on ? 'inline-flex' : 'none';
+  }
+  function setLoading(on){
+    if (!loadingOverlay) return;
+    loadingOverlay.style.display = on ? 'flex' : 'none';
+  }
+
+  function renderWithLoading(){
+    setLoading(true);
+    requestAnimationFrame(() => {
+      render();
+      requestAnimationFrame(() => setLoading(false));
+    });
   }
 
   async function unlockChildEntry(reportId){
@@ -2772,94 +2809,99 @@ render_teacher_header($pageTitle);
   }
 
   async function loadClass(classId){
-    clearErr();
-    elApp.style.display = 'none';
-    setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
-    const j = await api('load', { class_id: classId });
+    setLoading(true);
+    try {
+      clearErr();
+      elApp.style.display = 'none';
+      setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
+      const j = await api('load', { class_id: classId });
 
-    state.class_id = classId;
-    state.template = j.template;
-    state.groups = j.groups;
-    
-    // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
-    if (DELEGATED_MODE) {
-      const uid = CURRENT_USER_ID;
-      state.groups = (state.groups || []).filter(g => {
-        const delUid = Number(g?.delegation?.user_id || 0);
-        return (delUid > 0 && delUid === uid);
+      state.class_id = classId;
+      state.template = j.template;
+      state.groups = j.groups;
+      
+      // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
+      if (DELEGATED_MODE) {
+        const uid = CURRENT_USER_ID;
+        state.groups = (state.groups || []).filter(g => {
+          const delUid = Number(g?.delegation?.user_id || 0);
+          return (delUid > 0 && delUid === uid);
+        });
+      }
+      
+      state.delegation_users = j.delegation_users || [];
+      state.delegations = j.delegations || [];
+      state.period_label = j.period_label || 'Standard';
+
+      // reset group selects (delegation badges etc.)
+      groupSelect.innerHTML = '';
+      gradeGroupSelect.innerHTML = '';
+      if (studentGroupSelect) studentGroupSelect.innerHTML = '';
+      state.students = j.students;
+      state.values_teacher = j.values_teacher || {};
+      state.values_child = j.values_child || {};
+      state.value_history = j.value_history || {};
+      state.class_report_instance_id = j.class_report_instance_id || 0;
+      state.class_fields = j.class_fields || null;
+      state.progress_summary = j.progress_summary || null;
+      state.text_snippets = j.text_snippets || [];
+      state.ai_enabled = !!j.ai_enabled;
+      state.class_grade_level = j.class_grade_level || null;
+      aiCache = new Map();
+      aiCurrentStudent = null;
+      ui.mergeDecisions = new Map();
+      const savedDecisions = readMergeMemory();
+      Object.entries(savedDecisions).forEach(([k, v]) => {
+        if (!v || typeof v !== 'object') return;
+        const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
+        const settled = v.settled === true;
+        if (decision) ui.mergeDecisions.set(k, { decision, settled });
       });
-    }
-    
-    state.delegation_users = j.delegation_users || [];
-    state.delegations = j.delegations || [];
-    state.period_label = j.period_label || 'Standard';
 
-    // reset group selects (delegation badges etc.)
-    groupSelect.innerHTML = '';
-    gradeGroupSelect.innerHTML = '';
-    if (studentGroupSelect) studentGroupSelect.innerHTML = '';
-    state.students = j.students;
-    state.values_teacher = j.values_teacher || {};
-    state.values_child = j.values_child || {};
-    state.value_history = j.value_history || {};
-    state.class_report_instance_id = j.class_report_instance_id || 0;
-    state.class_fields = j.class_fields || null;
-    state.progress_summary = j.progress_summary || null;
-    state.text_snippets = j.text_snippets || [];
-    state.ai_enabled = !!j.ai_enabled;
-    state.class_grade_level = j.class_grade_level || null;
-    aiCache = new Map();
-    aiCurrentStudent = null;
-    ui.mergeDecisions = new Map();
-    const savedDecisions = readMergeMemory();
-    Object.entries(savedDecisions).forEach(([k, v]) => {
-      if (!v || typeof v !== 'object') return;
-      const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
-      const settled = v.settled === true;
-      if (decision) ui.mergeDecisions.set(k, { decision, settled });
-    });
+      // In delegated mode: class fields should not be visible/editable here
+      if (DELEGATED_MODE) {
+        state.class_fields = null;
+      }
 
-    // In delegated mode: class fields should not be visible/editable here
-    if (DELEGATED_MODE) {
-      state.class_fields = null;
-    }
+      rebuildFieldMap();
+      
+      if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
+        elApp.style.display = 'block';
+        if (classFieldsBox) classFieldsBox.style.display = 'none';
+        elMetaTop.textContent = 'Keine Delegationen vorhanden.';
+        viewGrades.style.display = 'none';
+        viewStudent.style.display = 'none';
+        viewItem.style.display = 'none';
+        showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
+        return;
+      }
+      
+      // keep client-side progress consistent (teacher edits update live)
+      (state.students||[]).forEach(recomputeStudentProgress);
+      recomputeFormsSummary();
+      dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
 
-    rebuildFieldMap();
-    
-    if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
+      renderSnippetList();
+      refreshSnippetCategoryList();
+      updateSnippetSelectionUI();
+
+      ui.activeStudentIndex = 0;
+      groupSelect.innerHTML = '';
+      gradeGroupSelect.innerHTML = '';
+      if (studentGroupSelect) studentGroupSelect.innerHTML = '';
+      gradeSearch.value = '';
+      itemSearch.value = '';
+      studentSearch.value = '';
+      ui.studentFilter = '';
+      ui.studentGroupKey = 'ALL';
+      ui.itemFilter = '';
+      ui.gradeFilter = '';
+
       elApp.style.display = 'block';
-      if (classFieldsBox) classFieldsBox.style.display = 'none';
-      elMetaTop.textContent = 'Keine Delegationen vorhanden.';
-      viewGrades.style.display = 'none';
-      viewStudent.style.display = 'none';
-      viewItem.style.display = 'none';
-      showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
-      return;
+      render();
+    } finally {
+      setLoading(false);
     }
-    
-    // keep client-side progress consistent (teacher edits update live)
-    (state.students||[]).forEach(recomputeStudentProgress);
-    recomputeFormsSummary();
-    dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
-
-    renderSnippetList();
-    refreshSnippetCategoryList();
-    updateSnippetSelectionUI();
-
-    ui.activeStudentIndex = 0;
-    groupSelect.innerHTML = '';
-    gradeGroupSelect.innerHTML = '';
-    if (studentGroupSelect) studentGroupSelect.innerHTML = '';
-    gradeSearch.value = '';
-    itemSearch.value = '';
-    studentSearch.value = '';
-    ui.studentFilter = '';
-    ui.studentGroupKey = 'ALL';
-    ui.itemFilter = '';
-    ui.gradeFilter = '';
-
-    elApp.style.display = 'block';
-    render();
   }
 
 // --- delegations modal ---
@@ -3123,7 +3165,7 @@ if (dlgSave) {
     }
   });
 
-  viewSelect.addEventListener('change', () => render());
+  viewSelect.addEventListener('change', () => renderWithLoading());
   toggleChild.addEventListener('change', () => render());
 
   studentSearch.addEventListener('input', () => {
@@ -3184,7 +3226,7 @@ if (dlgSave) {
         const cur = viewSelect.value || 'grades';
         const idx = order.indexOf(cur);
         viewSelect.value = order[(idx + 1) % order.length];
-        render();
+        renderWithLoading();
       }
     }
   });
