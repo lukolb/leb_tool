@@ -500,6 +500,8 @@ render_teacher_header($pageTitle);
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
   .opt .ico img{ width:100%; height:100%; object-fit:contain; display:block; }
   .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
+  .opt:focus-visible{ outline: 2px solid rgba(11,87,208,0.5); outline-offset:2px; }
+  .field:focus-within{ outline: 2px solid rgba(11,87,208,0.2); }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -1853,7 +1855,11 @@ render_teacher_header($pageTitle);
           const matchIdx = orderedLabels.findIndex(text => text.startsWith(needle));
           if (matchIdx >= 0) {
             const target = ordered[matchIdx];
-            if (target && typeof target.focus === 'function') target.focus();
+            if (target) {
+              e.preventDefault();
+              target.focus();
+              target.click();
+            }
           }
         }
       });
