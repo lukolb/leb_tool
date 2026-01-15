@@ -957,7 +957,8 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
     .map(it => ({
       str: (it && it.str ? String(it.str) : '').trim(),
       x: (it && typeof it.x === 'number') ? it.x : Number(it?.x) || 0,
-      y: (it && typeof it.y === 'number') ? it.y : Number(it?.y) || 0
+      y: (it && typeof it.y === 'number') ? it.y : Number(it?.y) || 0,
+      w: (it && typeof it.w === 'number') ? it.w : Number(it?.w) || 0
     }))
     .filter(it => {
       if (it.str === '') return false;
@@ -985,66 +986,46 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
   }
 
   const sortedCandidates = rawCandidates
-    .sort((a, b) => {
-      const dy = Math.abs(a.y - yMid) - Math.abs(b.y - yMid);
-      if (dy !== 0) return dy;
-      return a.x - b.x;
-    });
+    .sort((a, b) => a.y - b.y || a.x - b.x);
 
   const limitedCandidates = sortedCandidates.slice(0, parseCfg.maxCandidates);
 
-  const clustered = [];
-  const byY = [...limitedCandidates].sort((a, b) => b.y - a.y);
-
-  for (const cand of byY) {
-    let line = clustered.find(l => Math.abs(l.y - cand.y) <= parseCfg.yLineCluster);
-    if (!line) {
-      line = { y: cand.y, items: [] };
-      clustered.push(line);
+  const lines = [];
+  for (const t of limitedCandidates) {
+    let placed = false;
+    for (const line of lines) {
+      if (Math.abs(line.y - t.y) <= parseCfg.yLineCluster) {
+        line.items.push(t);
+        line.y = (line.y * (line.items.length - 1) + t.y) / line.items.length;
+        placed = true;
+        break;
+      }
     }
-    line.items.push(cand);
-    line.y = (line.y * (line.items.length - 1) + cand.y) / line.items.length;
+    if (!placed) lines.push({ y: t.y, items: [t] });
   }
 
-  const lines = clustered
-    .map(l => {
-      const sortedItems = l.items
-        .map(it => ({ ...it, str: it.str.trim() }))
-        .filter(it => it.str !== '')
-        .sort((a, b) => a.x - b.x);
+  lines.sort((a, b) => a.y - b.y);
 
-      if (!sortedItems.length) return null;
-
-      const selectedTokens = [];
-      let prevX = null;
-      for (let i = sortedItems.length - 1; i >= 0; i--) {
-        const token = sortedItems[i];
-        if (prevX === null) {
-          selectedTokens.push(token);
-          prevX = token.x;
-          continue;
-        }
-        const gap = prevX - token.x;
-        if (gap <= parseCfg.xGapTol) {
-          selectedTokens.push(token);
-          prevX = token.x;
+  const lineData = lines
+    .map(line => {
+      const items = [...line.items].sort((a, b) => a.x - b.x);
+      let text = '';
+      let last = null;
+      for (const item of items) {
+        if (!last) {
+          text = item.str;
         } else {
-          break;
+          const gap = item.x - (last.x + (last.w || 0));
+          text += (gap > parseCfg.xGapTol ? ' ' : ' ') + item.str;
         }
+        last = item;
       }
-
-      selectedTokens.reverse();
-      const text = selectedTokens
-        .map(it => it.str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      return { y: l.y, text, selectedTokens, allTokens: sortedItems };
+      const cleaned = text.replace(/\s+/g, ' ').trim();
+      return { y: line.y, text: cleaned, items };
     })
-    .filter(l => l && l.text.length > 0);
+    .filter(line => line.text.length > 0);
 
-  if (!lines.length) {
+  if (!lineData.length) {
     return {
       label: null,
       debug: parseCfg.debugLabelCandidates ? {
@@ -1056,36 +1037,26 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
         yRangeUsed: { top: yRangeTop, bottom: yRangeBottom },
         candidateCount: rawCandidates.length,
         usedLines: [],
-        topCandidates: sortedCandidates.slice(0, 10)
+        topCandidates: sortedCandidates.slice(0, 10),
+        selectedTokens: []
       } : null
     };
   }
 
-  const sortedLines = [...lines].sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid));
-  const bestLine = sortedLines[0];
-
-  let selectedLines = bestLine ? [bestLine] : [];
-  let effectiveMaxLines = parseCfg.maxLines;
-  if (!isSingleLine && rectHeight >= parseCfg.singleLineHeightThreshold * 2) {
-    effectiveMaxLines = Math.max(effectiveMaxLines, 3);
+  let selectedLines = [];
+  if (isSingleLine) {
+    const bestLine = [...lineData].sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid))[0];
+    if (bestLine) selectedLines = [bestLine];
+  } else {
+    let effectiveMaxLines = parseCfg.maxLines;
+    if (rectHeight >= parseCfg.singleLineHeightThreshold * 2) {
+      effectiveMaxLines = Math.max(effectiveMaxLines, 3);
+    }
+    selectedLines = [...lineData]
+      .sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid))
+      .slice(0, effectiveMaxLines)
+      .sort((a, b) => b.y - a.y);
   }
-  if (!isSingleLine && bestLine && effectiveMaxLines > 1 && sortedLines.length > 1) {
-    const ySortedLines = [...lines].sort((a, b) => b.y - a.y);
-    const bestIdx = ySortedLines.indexOf(bestLine);
-    const candidatesForSecond = [
-      ySortedLines[bestIdx - 1],
-      ySortedLines[bestIdx + 1]
-    ].filter(Boolean);
-
-    const secondLine = candidatesForSecond.find(line => {
-      const dist = Math.abs(line.y - bestLine.y);
-      return dist <= (2 * parseCfg.yLineCluster + 8) || dist <= (parseCfg.multiLineBandExtra + parseCfg.yTol);
-    });
-
-    if (secondLine) selectedLines.push(secondLine);
-  }
-
-  selectedLines = selectedLines.sort((a, b) => b.y - a.y);
 
   const joiner = parseCfg.keepLineBreaks ? '\n' : ' ';
   const label = selectedLines.map(l => l.text).join(joiner).trim();
@@ -1108,7 +1079,7 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
         candidateCount: rawCandidates.length,
         usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
         topCandidates: sortedCandidates.slice(0, 10),
-        selectedTokens: selectedLines.flatMap(l => l.selectedTokens || []).slice(0, 20)
+        selectedTokens: selectedLines.flatMap(l => l.items || []).slice(0, 20)
       } : null
     };
   }
@@ -1127,7 +1098,7 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
       candidateCount: rawCandidates.length,
       usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
       topCandidates: sortedCandidates.slice(0, 10),
-      selectedTokens: selectedLines.flatMap(l => l.selectedTokens || []).slice(0, 20)
+      selectedTokens: selectedLines.flatMap(l => l.items || []).slice(0, 20)
     } : null
   };
 }
