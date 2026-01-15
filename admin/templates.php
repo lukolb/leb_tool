@@ -186,6 +186,12 @@ render_admin_header('Admin – Templates');
   margin-top:10px;
   gap:10px;
 }
+.expert-settings .checklist{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:6px;
+}
 .expert-settings .hint{
   margin-top:8px;
 }
@@ -376,15 +382,15 @@ tr.tpl-inactive { opacity: 0.65; }
         <label for="parseMaxCandidates">maxCandidates</label>
         <input id="parseMaxCandidates" type="number" min="1" step="1" value="40">
       </div>
-      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+      <label class="checklist">
         <input id="parseKeepLineBreaks" type="checkbox">
         keepLineBreaks
       </label>
-      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+      <label class="checklist">
         <input id="parseFillHelpFromLabel" type="checkbox">
         fillHelpFromLabel
       </label>
-      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+      <label class="checklist">
         <input id="parseDebugLabelCandidates" type="checkbox">
         debugLabelCandidates
       </label>
@@ -517,6 +523,7 @@ const PARSE_DEFAULTS = {
   yLineCluster: 6,
   minLen: 6,
   maxCandidates: 40,
+  maxLines: 2,
   keepLineBreaks: false,
   fillHelpFromLabel: false,
   debugLabelCandidates: false,
@@ -593,6 +600,7 @@ function getParsingConfigFromUI() {
     yLineCluster: clampNumber(parseLineCluster.value, PARSE_DEFAULTS.yLineCluster, 0),
     minLen: clampNumber(parseMinLen.value, PARSE_DEFAULTS.minLen, 0),
     maxCandidates: clampNumber(parseMaxCandidates.value, PARSE_DEFAULTS.maxCandidates, 1),
+    maxLines: PARSE_DEFAULTS.maxLines,
     keepLineBreaks: !!parseKeepLineBreaks.checked,
     fillHelpFromLabel: !!parseFillHelpFromLabel.checked,
     debugLabelCandidates: !!parseDebugLabelCandidates.checked,
@@ -908,7 +916,7 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
   if (!rawCandidates.length) {
     return {
       label: null,
-      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: 0, candidates: [] } : null
+      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: 0, usedLines: [], topCandidates: [] } : null
     };
   }
 
@@ -917,11 +925,12 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
       const dy = Math.abs(a.y - yMid) - Math.abs(b.y - yMid);
       if (dy !== 0) return dy;
       return a.x - b.x;
-    })
-    .slice(0, parseCfg.maxCandidates);
+    });
+
+  const limitedCandidates = sortedCandidates.slice(0, parseCfg.maxCandidates);
 
   const clustered = [];
-  const byY = [...sortedCandidates].sort((a, b) => b.y - a.y);
+  const byY = [...limitedCandidates].sort((a, b) => b.y - a.y);
 
   for (const cand of byY) {
     let line = clustered.find(l => Math.abs(l.y - cand.y) <= parseCfg.yLineCluster);
@@ -948,35 +957,72 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
   if (!lines.length) {
     return {
       label: null,
-      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: rawCandidates.length, candidates: sortedCandidates.slice(0, 10) } : null
+      debug: parseCfg.debugLabelCandidates ? {
+        yMid,
+        band,
+        rect: fieldRect,
+        candidateCount: rawCandidates.length,
+        usedLines: [],
+        topCandidates: sortedCandidates.slice(0, 10)
+      } : null
     };
   }
 
-  const closestLines = [...lines]
-    .sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid))
-    .slice(0, 2)
-    .sort((a, b) => b.y - a.y);
+  const sortedLines = [...lines].sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid));
+  const bestLine = sortedLines[0];
+
+  let selectedLines = bestLine ? [bestLine] : [];
+  if (bestLine && parseCfg.maxLines > 1 && sortedLines.length > 1) {
+    const ySortedLines = [...lines].sort((a, b) => b.y - a.y);
+    const bestIdx = ySortedLines.indexOf(bestLine);
+    const candidatesForSecond = [
+      ySortedLines[bestIdx - 1],
+      ySortedLines[bestIdx + 1]
+    ].filter(Boolean);
+
+    const secondLine = candidatesForSecond.find(line => {
+      const dist = Math.abs(line.y - bestLine.y);
+      return dist <= (2 * parseCfg.yLineCluster + 8) || dist <= (parseCfg.multiLineBandExtra + parseCfg.yTol);
+    });
+
+    if (secondLine) selectedLines.push(secondLine);
+  }
+
+  selectedLines = selectedLines.sort((a, b) => b.y - a.y);
 
   const joiner = parseCfg.keepLineBreaks ? '\n' : ' ';
-  const label = closestLines.map(l => l.text).join(joiner).trim();
+  const label = selectedLines.map(l => l.text).join(joiner).trim();
   const normalizedLabel = label.replace(/\s+/g, ' ').trim();
+  const normalizedLabelForCompare = normalizedLabel.toLowerCase();
+  const normalizedReject = Array.isArray(parseCfg.rejectExact)
+    ? parseCfg.rejectExact.map(x => String(x).replace(/\s+/g, ' ').trim().toLowerCase())
+    : [];
 
-  const rejectExact = Array.isArray(parseCfg.rejectExact) ? parseCfg.rejectExact.map(x => String(x)) : [];
-  if (!normalizedLabel || normalizedLabel.length < parseCfg.minLen || rejectExact.includes(normalizedLabel)) {
+  if (!normalizedLabel || normalizedLabel.length < parseCfg.minLen || normalizedReject.includes(normalizedLabelForCompare)) {
     return {
       label: null,
-      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: rawCandidates.length, candidates: sortedCandidates.slice(0, 10) } : null
+      debug: parseCfg.debugLabelCandidates ? {
+        yMid,
+        band,
+        rect: fieldRect,
+        candidateCount: rawCandidates.length,
+        usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
+        topCandidates: sortedCandidates.slice(0, 10)
+      } : null
     };
   }
 
+  const finalLabel = parseCfg.keepLineBreaks ? label : normalizedLabel;
+
   return {
-    label: parseCfg.keepLineBreaks ? label : normalizedLabel,
+    label: finalLabel,
     debug: parseCfg.debugLabelCandidates ? {
       yMid,
       band,
       rect: fieldRect,
       candidateCount: rawCandidates.length,
-      candidates: sortedCandidates.slice(0, 10)
+      usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
+      topCandidates: sortedCandidates.slice(0, 10)
     } : null
   };
 }
