@@ -177,6 +177,19 @@ render_admin_header('Admin – Templates');
 .copyopts label{ display:flex; align-items:center; gap:8px; margin:0; }
 .copybar .actions{ justify-content:flex-start; }
 
+/* Expert settings */
+.expert-settings summary{
+  cursor:pointer;
+  font-weight:600;
+}
+.expert-settings .grid{
+  margin-top:10px;
+  gap:10px;
+}
+.expert-settings .hint{
+  margin-top:8px;
+}
+
 /* Preview toggle */
 #wizGrid.is-preview-hidden{
   grid-template-columns: 1fr !important;
@@ -336,6 +349,51 @@ tr.tpl-inactive { opacity: 0.65; }
     <div class="muted small" id="copyResult" style="min-width:220px;">&nbsp;</div>
   </div>
 
+  <details class="card expert-settings" id="expertSettings" style="margin-top:12px;">
+    <summary>Experteneinstellungen (Parsing)</summary>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+      <div>
+        <label for="parseYtol">yTol</label>
+        <input id="parseYtol" type="number" min="0" step="1" value="14">
+      </div>
+      <div>
+        <label for="parseMultiLineBandExtra">multiLineBandExtra</label>
+        <input id="parseMultiLineBandExtra" type="number" min="0" step="1" value="8">
+      </div>
+      <div>
+        <label for="parsePadLeft">padLeft</label>
+        <input id="parsePadLeft" type="number" min="0" step="1" value="8">
+      </div>
+      <div>
+        <label for="parseLineCluster">yLineCluster</label>
+        <input id="parseLineCluster" type="number" min="0" step="1" value="6">
+      </div>
+      <div>
+        <label for="parseMinLen">minLen</label>
+        <input id="parseMinLen" type="number" min="0" step="1" value="6">
+      </div>
+      <div>
+        <label for="parseMaxCandidates">maxCandidates</label>
+        <input id="parseMaxCandidates" type="number" min="1" step="1" value="40">
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+        <input id="parseKeepLineBreaks" type="checkbox">
+        keepLineBreaks
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+        <input id="parseFillHelpFromLabel" type="checkbox">
+        fillHelpFromLabel
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+        <input id="parseDebugLabelCandidates" type="checkbox">
+        debugLabelCandidates
+      </label>
+    </div>
+    <div class="muted small hint">
+      Tipp: Änderungen wirken direkt beim nächsten „Felder auslesen“.
+    </div>
+  </details>
+
   <div class="grid" id="wizGrid" style="grid-template-columns: 1.2fr 0.8fr; gap:14px; margin-top:12px;">
     <div style="overflow:hidden;">
       <div class="grid" style="grid-template-columns: 1fr 200px; gap:12px; align-items:end;">
@@ -440,6 +498,31 @@ const cpHelp  = document.getElementById('cpHelp');
 const cpRights= document.getElementById('cpRights');
 const cpMeta  = document.getElementById('cpMeta');
 
+// Expert parsing settings UI
+const parseYtol = document.getElementById('parseYtol');
+const parseMultiLineBandExtra = document.getElementById('parseMultiLineBandExtra');
+const parsePadLeft = document.getElementById('parsePadLeft');
+const parseLineCluster = document.getElementById('parseLineCluster');
+const parseMinLen = document.getElementById('parseMinLen');
+const parseMaxCandidates = document.getElementById('parseMaxCandidates');
+const parseKeepLineBreaks = document.getElementById('parseKeepLineBreaks');
+const parseFillHelpFromLabel = document.getElementById('parseFillHelpFromLabel');
+const parseDebugLabelCandidates = document.getElementById('parseDebugLabelCandidates');
+
+const PARSE_STORAGE_KEY = 'wizard_parse_cfg_v1';
+const PARSE_DEFAULTS = {
+  yTol: 14,
+  multiLineBandExtra: 8,
+  padLeft: 8,
+  yLineCluster: 6,
+  minLen: 6,
+  maxCandidates: 40,
+  keepLineBreaks: false,
+  fillHelpFromLabel: false,
+  debugLabelCandidates: false,
+  rejectExact: []
+};
+
 let currentTemplateId = null;
 let currentPdfUrl = null;
 
@@ -469,6 +552,60 @@ function normalizeType(rawType, multilineFlag) {
   if (u === 'CHECKBOX') return 'checkbox';
   if (u === 'RADIO') return 'radio';
   return 'radio';
+}
+
+function clampNumber(value, fallback, min = null, max = null) {
+  const n = Number(value);
+  if (Number.isNaN(n) || !Number.isFinite(n)) return fallback;
+  if (min !== null && n < min) return min;
+  if (max !== null && n > max) return max;
+  return n;
+}
+
+function loadParsingConfig() {
+  let cfg = { ...PARSE_DEFAULTS };
+  try {
+    const stored = localStorage.getItem(PARSE_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === 'object') cfg = { ...cfg, ...parsed };
+    }
+  } catch (e) {
+    // ignore storage errors
+  }
+
+  parseYtol.value = String(clampNumber(cfg.yTol, PARSE_DEFAULTS.yTol, 0));
+  parseMultiLineBandExtra.value = String(clampNumber(cfg.multiLineBandExtra, PARSE_DEFAULTS.multiLineBandExtra, 0));
+  parsePadLeft.value = String(clampNumber(cfg.padLeft, PARSE_DEFAULTS.padLeft, 0));
+  parseLineCluster.value = String(clampNumber(cfg.yLineCluster, PARSE_DEFAULTS.yLineCluster, 0));
+  parseMinLen.value = String(clampNumber(cfg.minLen, PARSE_DEFAULTS.minLen, 0));
+  parseMaxCandidates.value = String(clampNumber(cfg.maxCandidates, PARSE_DEFAULTS.maxCandidates, 1));
+  parseKeepLineBreaks.checked = !!cfg.keepLineBreaks;
+  parseFillHelpFromLabel.checked = !!cfg.fillHelpFromLabel;
+  parseDebugLabelCandidates.checked = !!cfg.debugLabelCandidates;
+}
+
+function getParsingConfigFromUI() {
+  const cfg = {
+    yTol: clampNumber(parseYtol.value, PARSE_DEFAULTS.yTol, 0),
+    multiLineBandExtra: clampNumber(parseMultiLineBandExtra.value, PARSE_DEFAULTS.multiLineBandExtra, 0),
+    padLeft: clampNumber(parsePadLeft.value, PARSE_DEFAULTS.padLeft, 0),
+    yLineCluster: clampNumber(parseLineCluster.value, PARSE_DEFAULTS.yLineCluster, 0),
+    minLen: clampNumber(parseMinLen.value, PARSE_DEFAULTS.minLen, 0),
+    maxCandidates: clampNumber(parseMaxCandidates.value, PARSE_DEFAULTS.maxCandidates, 1),
+    keepLineBreaks: !!parseKeepLineBreaks.checked,
+    fillHelpFromLabel: !!parseFillHelpFromLabel.checked,
+    debugLabelCandidates: !!parseDebugLabelCandidates.checked,
+    rejectExact: []
+  };
+
+  try {
+    localStorage.setItem(PARSE_STORAGE_KEY, JSON.stringify(cfg));
+  } catch (e) {
+    // ignore storage errors
+  }
+
+  return cfg;
 }
 
 function isVisibleByFilter(f) {
@@ -748,25 +885,105 @@ pdfCanvas.addEventListener('click', (ev) => {
   });
 });
 
-// ---- Label aus Textzeile links vom Feld (heuristisch)
-function pickLabelFromLine(textItems, fieldRect) {
-  const cy = (fieldRect[1] + fieldRect[3]) / 2;
-  const yTol = Math.max(6, Math.abs(fieldRect[3]-fieldRect[1]) * 0.6);
+// ---- Robustes Label-Parsing links vom Feld (PDF-Koordinaten!)
+function extractLabelNearField(textItems, fieldRect, cfg) {
+  if (!Array.isArray(textItems) || !Array.isArray(fieldRect) || fieldRect.length !== 4) {
+    return { label: null, debug: null };
+  }
 
-  const candidates = textItems
-    .filter(it => Math.abs(it.y - cy) <= yTol && it.x <= fieldRect[0] - 2 && it.str && it.str.trim() !== '')
-    .sort((a,b) => (fieldRect[0]-a.x) - (fieldRect[0]-b.x));
+  const parseCfg = { ...PARSE_DEFAULTS, ...(cfg || {}) };
+  const [x1, y1, x2, y2] = fieldRect;
+  const rectLeft = Math.min(x1, x2);
+  const yMid = (y1 + y2) / 2;
+  const band = parseCfg.yTol + parseCfg.multiLineBandExtra;
 
-  if (!candidates.length) return null;
+  const rawCandidates = textItems
+    .map(it => ({
+      str: (it && it.str ? String(it.str) : '').trim(),
+      x: (it && typeof it.x === 'number') ? it.x : Number(it?.x) || 0,
+      y: (it && typeof it.y === 'number') ? it.y : Number(it?.y) || 0
+    }))
+    .filter(it => it.str !== '' && it.x < (rectLeft - parseCfg.padLeft) && Math.abs(it.y - yMid) <= band);
 
-  const best = candidates.slice(0, 3).reverse();
-  const label = best.map(x => x.str.trim()).join(' ').replace(/\s+/g,' ').trim();
-  if (label.length < 2) return null;
-  return label;
+  if (!rawCandidates.length) {
+    return {
+      label: null,
+      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: 0, candidates: [] } : null
+    };
+  }
+
+  const sortedCandidates = rawCandidates
+    .sort((a, b) => {
+      const dy = Math.abs(a.y - yMid) - Math.abs(b.y - yMid);
+      if (dy !== 0) return dy;
+      return a.x - b.x;
+    })
+    .slice(0, parseCfg.maxCandidates);
+
+  const clustered = [];
+  const byY = [...sortedCandidates].sort((a, b) => b.y - a.y);
+
+  for (const cand of byY) {
+    let line = clustered.find(l => Math.abs(l.y - cand.y) <= parseCfg.yLineCluster);
+    if (!line) {
+      line = { y: cand.y, items: [] };
+      clustered.push(line);
+    }
+    line.items.push(cand);
+    line.y = (line.y * (line.items.length - 1) + cand.y) / line.items.length;
+  }
+
+  const lines = clustered
+    .map(l => {
+      const text = l.items
+        .sort((a, b) => a.x - b.x)
+        .map(it => it.str.trim())
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return { y: l.y, text };
+    })
+    .filter(l => l.text.length > 0);
+
+  if (!lines.length) {
+    return {
+      label: null,
+      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: rawCandidates.length, candidates: sortedCandidates.slice(0, 10) } : null
+    };
+  }
+
+  const closestLines = [...lines]
+    .sort((a, b) => Math.abs(a.y - yMid) - Math.abs(b.y - yMid))
+    .slice(0, 2)
+    .sort((a, b) => b.y - a.y);
+
+  const joiner = parseCfg.keepLineBreaks ? '\n' : ' ';
+  const label = closestLines.map(l => l.text).join(joiner).trim();
+  const normalizedLabel = label.replace(/\s+/g, ' ').trim();
+
+  const rejectExact = Array.isArray(parseCfg.rejectExact) ? parseCfg.rejectExact.map(x => String(x)) : [];
+  if (!normalizedLabel || normalizedLabel.length < parseCfg.minLen || rejectExact.includes(normalizedLabel)) {
+    return {
+      label: null,
+      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: rawCandidates.length, candidates: sortedCandidates.slice(0, 10) } : null
+    };
+  }
+
+  return {
+    label: parseCfg.keepLineBreaks ? label : normalizedLabel,
+    debug: parseCfg.debugLabelCandidates ? {
+      yMid,
+      band,
+      rect: fieldRect,
+      candidateCount: rawCandidates.length,
+      candidates: sortedCandidates.slice(0, 10)
+    } : null
+  };
 }
 
 async function extractFieldsFromPdf() {
   const pdf = await pdfjsLib.getDocument({ url: currentPdfUrl, withCredentials: true }).promise;
+  const parseCfg = getParsingConfigFromUI();
 
   const out = new Map();
   let sort = 0;
@@ -840,10 +1057,20 @@ async function extractFieldsFromPdf() {
         if (!item.meta.page) item.meta.page = p;
         if (!item.meta.rect) item.meta.rect = rect;
 
-        const suggested = pickLabelFromLine(textItems, rect);
-        if (suggested) {
-          if (!item.label || item.label === item.name) item.label = suggested;
-          if (!item.help_text && suggested.length > 18) item.help_text = suggested;
+        const parsed = extractLabelNearField(textItems, rect, { ...parseCfg, rejectExact: [item.name] });
+        if (parsed && parsed.label) {
+          if (!item.label || item.label === item.name) item.label = parsed.label;
+          if (parseCfg.fillHelpFromLabel && !item.help_text && parsed.label.length > 0) {
+            item.help_text = parsed.label;
+          }
+        }
+        if (parseCfg.debugLabelCandidates && parsed && parsed.debug) {
+          item.meta = item.meta || {};
+          item.meta._label_debug = {
+            page: p,
+            rect,
+            ...parsed.debug
+          };
         }
       }
     }
@@ -936,6 +1163,24 @@ btnCopyAll.addEventListener('click', async () => {
   } catch (e) {
     copyResult.textContent = 'Fehler: ' + (e && e.message ? e.message : e);
   }
+});
+
+const parseInputs = [
+  parseYtol,
+  parseMultiLineBandExtra,
+  parsePadLeft,
+  parseLineCluster,
+  parseMinLen,
+  parseMaxCandidates,
+  parseKeepLineBreaks,
+  parseFillHelpFromLabel,
+  parseDebugLabelCandidates
+];
+
+parseInputs.forEach(input => {
+  if (!input) return;
+  const ev = (input.type === 'checkbox') ? 'change' : 'input';
+  input.addEventListener(ev, () => { getParsingConfigFromUI(); });
 });
 
 // Preview toggle
@@ -1077,6 +1322,8 @@ btnCancel.addEventListener('click', () => {
 
 fieldFilter.addEventListener('input', () => { filterText = String(fieldFilter.value || '').trim(); renderTable(); });
 btnClearFilter.addEventListener('click', () => { fieldFilter.value = ''; filterText=''; renderTable(); });
+
+loadParsingConfig();
 
 </script>
 
