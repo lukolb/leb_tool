@@ -143,15 +143,6 @@ render_teacher_header($pageTitle);
       </select>
     </div>
 
-    <div style="min-width:260px;">
-      <label class="label">Ansicht</label>
-      <select class="input" id="viewSelect" style="width:100%;">
-        <option value="grades">Notenübersicht</option>
-        <option value="student">Nach Schüler</option>
-        <option value="item">Nach Item/Fach</option>
-      </select>
-    </div>
-
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
@@ -179,6 +170,9 @@ render_teacher_header($pageTitle);
 </div>
 
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
+<div id="loadingOverlay" class="loading-overlay" style="display:none;">
+  <div class="loading-pill"><span class="spin"></span> Lade…</div>
+</div>
 
 <div class="card" id="snippetDrawer" style="display:none;">
   <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
@@ -345,6 +339,16 @@ render_teacher_header($pageTitle);
       <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> Optionen als Buttons
     </label>
   </div>
+  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+    <div style="min-width:260px;">
+      <label class="label">Ansicht</label>
+      <select class="input" id="viewSelect" style="width:100%;">
+        <option value="grades">Notenübersicht</option>
+        <option value="student">Nach Schüler</option>
+        <option value="item">Nach Item/Fach</option>
+      </select>
+    </div>
+  </div>
 
   <div id="formsProgressWrap" class="progress-wrap" style="display:none; margin-bottom:14px;">
     <div class="progress-meta"><span id="formsProgressText">—</span><span id="formsProgressPct"></span></div>
@@ -390,6 +394,10 @@ render_teacher_header($pageTitle);
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
           <input class="input" id="studentSearch" type="search" placeholder="Schüler suchen…" style="width:100%;">
+        </div>
+        <div style="margin-top:8px;">
+          <label class="label" for="studentGroupSelect">Fach/Gruppe</label>
+          <select class="input" id="studentGroupSelect" style="width:100%;"></select>
         </div>
         <div id="studentList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
       </div>
@@ -452,6 +460,26 @@ render_teacher_header($pageTitle);
   .save-status[data-state="saving"]{ color: #0b57d0; font-weight:750; }
   .save-status[data-state="ok"]{ color: #0b7a0b; font-weight:750; }
   .save-status[data-state="error"]{ color: #b00020; font-weight:800; }
+  .loading-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(255,255,255,0.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:9999;
+  }
+  .loading-pill{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:10px 16px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-weight:700;
+    box-shadow:0 6px 24px rgba(0,0,0,0.12);
+  }
 
   .field{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; }
   .field .lbl{ font-weight:800; }
@@ -472,6 +500,8 @@ render_teacher_header($pageTitle);
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
   .opt .ico img{ width:100%; height:100%; object-fit:contain; display:block; }
   .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
+  .opt:focus-visible{ outline: 2px solid rgba(11,87,208,0.5); outline-offset:2px; }
+  .field:focus-within{ outline: 2px solid rgba(11,87,208,0.2); }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -556,6 +586,7 @@ render_teacher_header($pageTitle);
   const classFieldsForm = document.getElementById('classFieldsForm');
   const elErrBox = document.getElementById('errBox');
   const elErrMsg = document.getElementById('errMsg');
+  const loadingOverlay = document.getElementById('loadingOverlay');
   const elMetaTop = document.getElementById('metaTop');
   const formsProgressWrap = document.getElementById('formsProgressWrap');
   const formsProgressBar = document.getElementById('formsProgressBar');
@@ -601,6 +632,7 @@ render_teacher_header($pageTitle);
   const gradeBody = document.getElementById('gradeBody');
 
   const studentSearch = document.getElementById('studentSearch');
+  const studentGroupSelect = document.getElementById('studentGroupSelect');
   const studentList = document.getElementById('studentList');
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
@@ -636,6 +668,7 @@ render_teacher_header($pageTitle);
 
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
   const OPTION_STYLE_KEY = 'leb_option_style';
+  const VIEW_STORAGE_KEY = 'leb_view_mode';
 
   let state = {
     class_id: 0,
@@ -665,6 +698,7 @@ render_teacher_header($pageTitle);
     activeStudentIndex: 0,
     studentFilter: '',
     studentMissingOnly: false,
+    studentGroupKey: 'ALL',
     groupKey: 'ALL',
     itemFilter: '',
     gradeGroupKey: 'ALL',
@@ -1070,6 +1104,37 @@ render_teacher_header($pageTitle);
   function setSaving(on){
     elSavePill.style.display = on ? 'inline-flex' : 'none';
   }
+  function setLoading(on){
+    if (!loadingOverlay) return;
+    loadingOverlay.style.display = on ? 'flex' : 'none';
+  }
+
+  function renderWithLoading(){
+    setLoading(true);
+    requestAnimationFrame(() => {
+      render();
+      requestAnimationFrame(() => setLoading(false));
+    });
+  }
+
+  function normalizeViewMode(mode){
+    const m = String(mode || '').toLowerCase();
+    if (m === 'student' || m === 'item' || m === 'grades') return m;
+    return 'grades';
+  }
+
+  function applyStoredView(){
+    if (!viewSelect) return;
+    const saved = normalizeViewMode(localStorage.getItem(VIEW_STORAGE_KEY));
+    viewSelect.value = saved;
+  }
+
+  function saveViewSelection(){
+    if (!viewSelect) return;
+    const value = normalizeViewMode(viewSelect.value);
+    viewSelect.value = value;
+    localStorage.setItem(VIEW_STORAGE_KEY, value);
+  }
 
   async function unlockChildEntry(reportId){
     if (!reportId) return;
@@ -1259,16 +1324,16 @@ render_teacher_header($pageTitle);
     const entries = historyEntries(reportId, fieldId);
     if (!entries.length) return '';
 
-    const rows = entries.map(e => {
-      const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
-      const ts = formatDateTime(e.created_at);
-      const val = String(e.text ?? '');
-      return `
-        <div class="history-row">
-          <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
-          <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
-          <div class="history-actions">
-            <button class="btn tiny secondary" type="button"
+      const rows = entries.map(e => {
+        const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
+        const ts = formatDateTime(e.created_at);
+        const val = String(e.text ?? '');
+        return `
+          <div class="history-row">
+            <div class="history-meta"><span>${esc(role)}</span><span>${esc(ts)}</span></div>
+            <div class="history-val">${val ? esc(val) : '<span class="muted">—</span>'}</div>
+            <div class="history-actions">
+            <button class="btn tiny secondary" type="button" tabindex="-1"
               style="padding:4px 8px; font-size:11px;"
               data-history-restore="1"
               data-report-id="${esc(reportId)}"
@@ -1283,7 +1348,7 @@ render_teacher_header($pageTitle);
 
     return `
       <div class="history-inline" data-history-wrap="1">
-        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen"
+        <button class="btn ghost icon" type="button" aria-label="Verlauf anzeigen" tabindex="-1"
           data-history-toggle="1" data-report-id="${esc(reportId)}" data-field-id="${esc(fieldId)}">🕒</button>
         <div class="history-popover" data-history-menu="1">
           <div class="history-rows">${rows}</div>
@@ -1571,6 +1636,35 @@ render_teacher_header($pageTitle);
     }, 350));
   }
 
+  function isVisibleElement(el){
+    if (!el || el.disabled) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    return !!(el.offsetParent || el.getClientRects().length);
+  }
+
+  function collectTeacherFields(){
+    const selector = [
+      '[data-teacher-input="1"]',
+      '[data-option-card="1"]'
+    ].join(',');
+    return Array.from(document.querySelectorAll(selector))
+      .filter(el => {
+        if (el.matches('[data-option-card="1"]') && el.getAttribute('tabindex') === '-1') return false;
+        return !el.disabled && !el.getAttribute('aria-disabled') && isVisibleElement(el);
+      });
+  }
+
+  function focusNextTeacherField(currentEl, dir=1){
+    const list = collectTeacherFields();
+    if (!list.length) return;
+    const idx = list.indexOf(currentEl);
+    const nextIdx = idx >= 0 ? idx + dir : (dir > 0 ? 0 : list.length - 1);
+    if (nextIdx < 0 || nextIdx >= list.length) return;
+    const target = list[nextIdx];
+    if (target && typeof target.focus === 'function') target.focus();
+  }
+
   function wireTeacherInputs(rootEl){
     if (!rootEl) return;
 
@@ -1621,7 +1715,12 @@ render_teacher_header($pageTitle);
         inp.addEventListener('change', commit);
         inp.addEventListener('blur', commit);
         inp.addEventListener('keydown', (ev) => {
-          if (ev.key === 'Enter') { ev.preventDefault(); commit(); inp.blur(); }
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            commit();
+            inp.blur();
+            focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+          }
         });
         return;
       }
@@ -1647,6 +1746,24 @@ render_teacher_header($pageTitle);
         const wrap = inp.closest('.field');
         if (wrap) wrap.scrollIntoView({block:'nearest'});
       });
+
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter') return;
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        const tag = (inp.tagName || '').toLowerCase();
+        if (tag === 'textarea') return;
+        ev.preventDefault();
+        focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+      });
+
+      if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        inp.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
+            ev.preventDefault();
+            focusNextTeacherField(inp, ev.shiftKey ? -1 : 1);
+          }
+        });
+      }
 
       if (eligibleForSnippetInput(inp)) {
         ['select','mouseup','keyup','focus'].forEach(ev => {
@@ -1689,13 +1806,62 @@ render_teacher_header($pageTitle);
           const match = String(btn.getAttribute('data-value') || '') === val;
           btn.classList.toggle('selected', match);
           btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+          btn.setAttribute('tabindex', match ? '0' : '-1');
         });
         syncMissingClass(card, merged);
       };
 
       card.addEventListener('click', select);
       card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(); }
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          select();
+          focusNextTeacherField(card, e.shiftKey ? -1 : 1);
+          return;
+        }
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          e.preventDefault();
+          const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'))
+            .filter(btn => !btn.disabled && isVisibleElement(btn));
+          if (!cards.length) return;
+          const idx = cards.indexOf(card);
+          const dir = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 1;
+          const nextIdx = Math.min(Math.max(idx + dir, 0), cards.length - 1);
+          const target = cards[nextIdx];
+          if (target && typeof target.focus === 'function') target.focus();
+          return;
+        }
+        if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const needle = e.key.toLowerCase();
+          const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'))
+            .filter(btn => !btn.disabled && isVisibleElement(btn));
+          if (!cards.length) return;
+          if (needle >= '0' && needle <= '9') {
+            const idx = needle === '0' ? 9 : Number(needle) - 1;
+            const target = cards[idx];
+            if (target) {
+              e.preventDefault();
+              target.focus();
+              target.click();
+            }
+            return;
+          }
+          const startIdx = Math.max(cards.indexOf(card), 0);
+          const ordered = cards.slice(startIdx + 1).concat(cards.slice(0, startIdx + 1));
+          const orderedLabels = ordered.map(btn => {
+            const lbl = btn.querySelector('.lbl');
+            return (lbl ? lbl.textContent : btn.textContent || '').trim().toLowerCase();
+          });
+          const matchIdx = orderedLabels.findIndex(text => text.startsWith(needle));
+          if (matchIdx >= 0) {
+            const target = ordered[matchIdx];
+            if (target) {
+              e.preventDefault();
+              target.focus();
+              target.click();
+            }
+          }
+        }
       });
     });
   }
@@ -2092,14 +2258,22 @@ render_teacher_header($pageTitle);
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
         const childValRaw = (ui.showChild && f.child && f.child.id) ? String(childVal(reportId, f.child.id) ?? '').trim() : '';
-        const cards = opts.map(o => {
+        const hasSelected = opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn;
+          return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+        });
+        const cards = opts.map((o, idx) => {
+          const oVal = String(o?.value ?? '');
+          const lblDe = String(o?.label ?? '').trim();
+          const lblEn = String(o?.label_en ?? '').trim();
+          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
           const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
+          const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
             ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
@@ -2107,7 +2281,7 @@ render_teacher_header($pageTitle);
           const classes = ['opt'];
           if (selected) classes.push('selected');
           if (matchesChild) classes.push('child-val');
-          return `<button type="button" class="${classes.join(' ')}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
+          return `<button type="button" class="${classes.join(' ')}" tabindex="${tabIndex}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
         }).join('');
 
         return `
@@ -2201,6 +2375,25 @@ render_teacher_header($pageTitle);
     ui.groupKey = groupSelect.value;
   }
 
+  function ensureStudentGroupsSelect(){
+    if (!studentGroupSelect) return;
+    if (!studentGroupSelect.options.length) {
+      studentGroupSelect.innerHTML = '';
+      const optAll = document.createElement('option');
+      optAll.value = 'ALL';
+      optAll.textContent = 'Alle';
+      studentGroupSelect.appendChild(optAll);
+      state.groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.key;
+        opt.textContent = g.title;
+        studentGroupSelect.appendChild(opt);
+      });
+    }
+    if (!studentGroupSelect.value) studentGroupSelect.value = 'ALL';
+    ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+  }
+
   function renderClassFields(){
     const cf = state.class_fields;
     dbg('class_fields', cf);
@@ -2273,7 +2466,15 @@ render_teacher_header($pageTitle);
   }
 
   function renderStudentView(){
+    ensureStudentGroupsSelect();
     const list = currentStudents();
+    const hasPrev = ui.activeStudentIndex > 0;
+    const hasNext = ui.activeStudentIndex < list.length - 1;
+
+    btnPrevStudent.disabled = !hasPrev;
+    btnPrevStudent.setAttribute('aria-disabled', String(!hasPrev));
+    btnNextStudent.disabled = !hasNext;
+    btnNextStudent.setAttribute('aria-disabled', String(!hasNext));
 
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
@@ -2352,6 +2553,7 @@ render_teacher_header($pageTitle);
     }
 
     state.groups.forEach(g => {
+      if (ui.studentGroupKey !== 'ALL' && String(g.key) !== String(ui.studentGroupKey)) return;
       const fields = ui.studentMissingOnly
         ? (g.fields || []).filter(f => isTeacherFieldMissing(reportId, f.id))
         : (g.fields || []);
@@ -2368,7 +2570,7 @@ render_teacher_header($pageTitle);
       const delBadge = (del && del.user_id) ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>` : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = CAN_DELEGATE
-  ? `<button class="btn" type="button" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
+  ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
   : '';
       html += `
           <div class="section-h" style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
@@ -2662,91 +2864,100 @@ render_teacher_header($pageTitle);
   }
 
   async function loadClass(classId){
-    clearErr();
-    elApp.style.display = 'none';
-    setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
-    const j = await api('load', { class_id: classId });
+    setLoading(true);
+    try {
+      clearErr();
+      elApp.style.display = 'none';
+      setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
+      const j = await api('load', { class_id: classId });
 
-    state.class_id = classId;
-    state.template = j.template;
-    state.groups = j.groups;
-    
-    // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
-    if (DELEGATED_MODE) {
-      const uid = CURRENT_USER_ID;
-      state.groups = (state.groups || []).filter(g => {
-        const delUid = Number(g?.delegation?.user_id || 0);
-        return (delUid > 0 && delUid === uid);
+      state.class_id = classId;
+      state.template = j.template;
+      state.groups = j.groups;
+      
+      // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
+      if (DELEGATED_MODE) {
+        const uid = CURRENT_USER_ID;
+        state.groups = (state.groups || []).filter(g => {
+          const delUid = Number(g?.delegation?.user_id || 0);
+          return (delUid > 0 && delUid === uid);
+        });
+      }
+      
+      state.delegation_users = j.delegation_users || [];
+      state.delegations = j.delegations || [];
+      state.period_label = j.period_label || 'Standard';
+
+      // reset group selects (delegation badges etc.)
+      groupSelect.innerHTML = '';
+      gradeGroupSelect.innerHTML = '';
+      if (studentGroupSelect) studentGroupSelect.innerHTML = '';
+      state.students = j.students;
+      state.values_teacher = j.values_teacher || {};
+      state.values_child = j.values_child || {};
+      state.value_history = j.value_history || {};
+      state.class_report_instance_id = j.class_report_instance_id || 0;
+      state.class_fields = j.class_fields || null;
+      state.progress_summary = j.progress_summary || null;
+      state.text_snippets = j.text_snippets || [];
+      state.ai_enabled = !!j.ai_enabled;
+      state.class_grade_level = j.class_grade_level || null;
+      aiCache = new Map();
+      aiCurrentStudent = null;
+      ui.mergeDecisions = new Map();
+      const savedDecisions = readMergeMemory();
+      Object.entries(savedDecisions).forEach(([k, v]) => {
+        if (!v || typeof v !== 'object') return;
+        const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
+        const settled = v.settled === true;
+        if (decision) ui.mergeDecisions.set(k, { decision, settled });
       });
-    }
-    
-    state.delegation_users = j.delegation_users || [];
-    state.delegations = j.delegations || [];
-    state.period_label = j.period_label || 'Standard';
 
-    // reset group selects (delegation badges etc.)
-    groupSelect.innerHTML = '';
-    gradeGroupSelect.innerHTML = '';
-    state.students = j.students;
-    state.values_teacher = j.values_teacher || {};
-    state.values_child = j.values_child || {};
-    state.value_history = j.value_history || {};
-    state.class_report_instance_id = j.class_report_instance_id || 0;
-    state.class_fields = j.class_fields || null;
-    state.progress_summary = j.progress_summary || null;
-    state.text_snippets = j.text_snippets || [];
-    state.ai_enabled = !!j.ai_enabled;
-    state.class_grade_level = j.class_grade_level || null;
-    aiCache = new Map();
-    aiCurrentStudent = null;
-    ui.mergeDecisions = new Map();
-    const savedDecisions = readMergeMemory();
-    Object.entries(savedDecisions).forEach(([k, v]) => {
-      if (!v || typeof v !== 'object') return;
-      const decision = (v.decision === 'combine' || v.decision === 'overwrite') ? v.decision : null;
-      const settled = v.settled === true;
-      if (decision) ui.mergeDecisions.set(k, { decision, settled });
-    });
+      // In delegated mode: class fields should not be visible/editable here
+      if (DELEGATED_MODE) {
+        state.class_fields = null;
+      }
 
-    // In delegated mode: class fields should not be visible/editable here
-    if (DELEGATED_MODE) {
-      state.class_fields = null;
-    }
+      rebuildFieldMap();
+      
+      if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
+        elApp.style.display = 'block';
+        if (classFieldsBox) classFieldsBox.style.display = 'none';
+        elMetaTop.textContent = 'Keine Delegationen vorhanden.';
+        viewGrades.style.display = 'none';
+        viewStudent.style.display = 'none';
+        viewItem.style.display = 'none';
+        showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
+        return;
+      }
+      
+      // keep client-side progress consistent (teacher edits update live)
+      (state.students||[]).forEach(recomputeStudentProgress);
+      recomputeFormsSummary();
+      dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
 
-    rebuildFieldMap();
-    
-    if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
+      renderSnippetList();
+      refreshSnippetCategoryList();
+      updateSnippetSelectionUI();
+
+      applyStoredView();
+      ui.activeStudentIndex = 0;
+      groupSelect.innerHTML = '';
+      gradeGroupSelect.innerHTML = '';
+      if (studentGroupSelect) studentGroupSelect.innerHTML = '';
+      gradeSearch.value = '';
+      itemSearch.value = '';
+      studentSearch.value = '';
+      ui.studentFilter = '';
+      ui.studentGroupKey = 'ALL';
+      ui.itemFilter = '';
+      ui.gradeFilter = '';
+
       elApp.style.display = 'block';
-      if (classFieldsBox) classFieldsBox.style.display = 'none';
-      elMetaTop.textContent = 'Keine Delegationen vorhanden.';
-      viewGrades.style.display = 'none';
-      viewStudent.style.display = 'none';
-      viewItem.style.display = 'none';
-      showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
-      return;
+      render();
+    } finally {
+      setLoading(false);
     }
-    
-    // keep client-side progress consistent (teacher edits update live)
-    (state.students||[]).forEach(recomputeStudentProgress);
-    recomputeFormsSummary();
-    dbg('loaded', { class_id: state.class_id, class_report_instance_id: state.class_report_instance_id, class_fields_count: (state.class_fields?.fields||[]).length });
-
-    renderSnippetList();
-    refreshSnippetCategoryList();
-    updateSnippetSelectionUI();
-
-    ui.activeStudentIndex = 0;
-    groupSelect.innerHTML = '';
-    gradeGroupSelect.innerHTML = '';
-    gradeSearch.value = '';
-    itemSearch.value = '';
-    studentSearch.value = '';
-    ui.studentFilter = '';
-    ui.itemFilter = '';
-    ui.gradeFilter = '';
-
-    elApp.style.display = 'block';
-    render();
   }
 
 // --- delegations modal ---
@@ -3010,7 +3221,11 @@ if (dlgSave) {
     }
   });
 
-  viewSelect.addEventListener('change', () => render());
+  applyStoredView();
+  viewSelect.addEventListener('change', () => {
+    saveViewSelection();
+    renderWithLoading();
+  });
   toggleChild.addEventListener('change', () => render());
 
   studentSearch.addEventListener('input', () => {
@@ -3018,6 +3233,14 @@ if (dlgSave) {
     ui.activeStudentIndex = 0;
     renderStudentView();
   });
+
+  if (studentGroupSelect) {
+    studentGroupSelect.addEventListener('change', () => {
+      ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+      ui.activeStudentIndex = 0;
+      renderStudentView();
+    });
+  }
 
   studentMissingOnly.addEventListener('change', () => {
     ui.studentMissingOnly = !!studentMissingOnly.checked;
@@ -3063,7 +3286,20 @@ if (dlgSave) {
         const cur = viewSelect.value || 'grades';
         const idx = order.indexOf(cur);
         viewSelect.value = order[(idx + 1) % order.length];
-        render();
+        saveViewSelection();
+        renderWithLoading();
+      }
+      if (k === 'arrowleft') {
+        if (btnPrevStudent && !btnPrevStudent.disabled) {
+          ev.preventDefault();
+          btnPrevStudent.click();
+        }
+      }
+      if (k === 'arrowright') {
+        if (btnNextStudent && !btnNextStudent.disabled) {
+          ev.preventDefault();
+          btnNextStudent.click();
+        }
       }
     }
   });
