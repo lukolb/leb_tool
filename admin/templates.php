@@ -382,6 +382,26 @@ tr.tpl-inactive { opacity: 0.65; }
         <label for="parseMaxCandidates">maxCandidates</label>
         <input id="parseMaxCandidates" type="number" min="1" step="1" value="40">
       </div>
+      <div>
+        <label for="parseSingleLineHeightThreshold">singleLineHeightThreshold</label>
+        <input id="parseSingleLineHeightThreshold" type="number" min="0" step="1" value="22">
+      </div>
+      <div>
+        <label for="parseYTolSingle">yTolSingle</label>
+        <input id="parseYTolSingle" type="number" min="0" step="1" value="7">
+      </div>
+      <div>
+        <label for="parseRectPadY">rectPadY</label>
+        <input id="parseRectPadY" type="number" min="0" step="1" value="3">
+      </div>
+      <div>
+        <label for="parseMaxLeftDistance">maxLeftDistance</label>
+        <input id="parseMaxLeftDistance" type="number" min="0" step="1" value="260">
+      </div>
+      <div>
+        <label for="parseXGapTol">xGapTol</label>
+        <input id="parseXGapTol" type="number" min="0" step="1" value="14">
+      </div>
       <label class="checklist">
         <input id="parseKeepLineBreaks" type="checkbox">
         keepLineBreaks
@@ -511,6 +531,11 @@ const parsePadLeft = document.getElementById('parsePadLeft');
 const parseLineCluster = document.getElementById('parseLineCluster');
 const parseMinLen = document.getElementById('parseMinLen');
 const parseMaxCandidates = document.getElementById('parseMaxCandidates');
+const parseSingleLineHeightThreshold = document.getElementById('parseSingleLineHeightThreshold');
+const parseYTolSingle = document.getElementById('parseYTolSingle');
+const parseRectPadY = document.getElementById('parseRectPadY');
+const parseMaxLeftDistance = document.getElementById('parseMaxLeftDistance');
+const parseXGapTol = document.getElementById('parseXGapTol');
 const parseKeepLineBreaks = document.getElementById('parseKeepLineBreaks');
 const parseFillHelpFromLabel = document.getElementById('parseFillHelpFromLabel');
 const parseDebugLabelCandidates = document.getElementById('parseDebugLabelCandidates');
@@ -524,6 +549,11 @@ const PARSE_DEFAULTS = {
   minLen: 6,
   maxCandidates: 40,
   maxLines: 2,
+  singleLineHeightThreshold: 22,
+  yTolSingle: 7,
+  rectPadY: 3,
+  maxLeftDistance: 260,
+  xGapTol: 14,
   keepLineBreaks: false,
   fillHelpFromLabel: false,
   debugLabelCandidates: false,
@@ -587,6 +617,11 @@ function loadParsingConfig() {
   parseLineCluster.value = String(clampNumber(cfg.yLineCluster, PARSE_DEFAULTS.yLineCluster, 0));
   parseMinLen.value = String(clampNumber(cfg.minLen, PARSE_DEFAULTS.minLen, 0));
   parseMaxCandidates.value = String(clampNumber(cfg.maxCandidates, PARSE_DEFAULTS.maxCandidates, 1));
+  parseSingleLineHeightThreshold.value = String(clampNumber(cfg.singleLineHeightThreshold, PARSE_DEFAULTS.singleLineHeightThreshold, 0));
+  parseYTolSingle.value = String(clampNumber(cfg.yTolSingle, PARSE_DEFAULTS.yTolSingle, 0));
+  parseRectPadY.value = String(clampNumber(cfg.rectPadY, PARSE_DEFAULTS.rectPadY, 0));
+  parseMaxLeftDistance.value = String(clampNumber(cfg.maxLeftDistance, PARSE_DEFAULTS.maxLeftDistance, 0));
+  parseXGapTol.value = String(clampNumber(cfg.xGapTol, PARSE_DEFAULTS.xGapTol, 0));
   parseKeepLineBreaks.checked = !!cfg.keepLineBreaks;
   parseFillHelpFromLabel.checked = !!cfg.fillHelpFromLabel;
   parseDebugLabelCandidates.checked = !!cfg.debugLabelCandidates;
@@ -601,6 +636,11 @@ function getParsingConfigFromUI() {
     minLen: clampNumber(parseMinLen.value, PARSE_DEFAULTS.minLen, 0),
     maxCandidates: clampNumber(parseMaxCandidates.value, PARSE_DEFAULTS.maxCandidates, 1),
     maxLines: PARSE_DEFAULTS.maxLines,
+    singleLineHeightThreshold: clampNumber(parseSingleLineHeightThreshold.value, PARSE_DEFAULTS.singleLineHeightThreshold, 0),
+    yTolSingle: clampNumber(parseYTolSingle.value, PARSE_DEFAULTS.yTolSingle, 0),
+    rectPadY: clampNumber(parseRectPadY.value, PARSE_DEFAULTS.rectPadY, 0),
+    maxLeftDistance: clampNumber(parseMaxLeftDistance.value, PARSE_DEFAULTS.maxLeftDistance, 0),
+    xGapTol: clampNumber(parseXGapTol.value, PARSE_DEFAULTS.xGapTol, 0),
     keepLineBreaks: !!parseKeepLineBreaks.checked,
     fillHelpFromLabel: !!parseFillHelpFromLabel.checked,
     debugLabelCandidates: !!parseDebugLabelCandidates.checked,
@@ -902,8 +942,16 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
   const parseCfg = { ...PARSE_DEFAULTS, ...(cfg || {}) };
   const [x1, y1, x2, y2] = fieldRect;
   const rectLeft = Math.min(x1, x2);
+  const rectTop = Math.max(y1, y2);
+  const rectBottom = Math.min(y1, y2);
+  const rectHeight = Math.abs(y2 - y1);
   const yMid = (y1 + y2) / 2;
   const band = parseCfg.yTol + parseCfg.multiLineBandExtra;
+  const isSingleLine = rectHeight <= parseCfg.singleLineHeightThreshold;
+  const mode = isSingleLine ? 'singleLine' : 'rectRange';
+
+  const yRangeTop = isSingleLine ? (yMid + parseCfg.yTolSingle) : (rectTop + parseCfg.rectPadY);
+  const yRangeBottom = isSingleLine ? (yMid - parseCfg.yTolSingle) : (rectBottom - parseCfg.rectPadY);
 
   const rawCandidates = textItems
     .map(it => ({
@@ -911,12 +959,28 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
       x: (it && typeof it.x === 'number') ? it.x : Number(it?.x) || 0,
       y: (it && typeof it.y === 'number') ? it.y : Number(it?.y) || 0
     }))
-    .filter(it => it.str !== '' && it.x < (rectLeft - parseCfg.padLeft) && Math.abs(it.y - yMid) <= band);
+    .filter(it => {
+      if (it.str === '') return false;
+      if (it.x >= (rectLeft - parseCfg.padLeft)) return false;
+      if (parseCfg.maxLeftDistance > 0 && it.x < (rectLeft - parseCfg.maxLeftDistance)) return false;
+      return it.y >= yRangeBottom && it.y <= yRangeTop;
+    });
 
   if (!rawCandidates.length) {
     return {
       label: null,
-      debug: parseCfg.debugLabelCandidates ? { yMid, band, rect: fieldRect, candidateCount: 0, usedLines: [], topCandidates: [] } : null
+      debug: parseCfg.debugLabelCandidates ? {
+        yMid,
+        band,
+        rect: fieldRect,
+        rectHeight,
+        mode,
+        yRangeUsed: { top: yRangeTop, bottom: yRangeBottom },
+        candidateCount: 0,
+        usedLines: [],
+        topCandidates: [],
+        selectedTokens: []
+      } : null
     };
   }
 
@@ -944,15 +1008,41 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
 
   const lines = clustered
     .map(l => {
-      const text = l.items
-        .sort((a, b) => a.x - b.x)
-        .map(it => it.str.trim())
+      const sortedItems = l.items
+        .map(it => ({ ...it, str: it.str.trim() }))
+        .filter(it => it.str !== '')
+        .sort((a, b) => a.x - b.x);
+
+      if (!sortedItems.length) return null;
+
+      const selectedTokens = [];
+      let prevX = null;
+      for (let i = sortedItems.length - 1; i >= 0; i--) {
+        const token = sortedItems[i];
+        if (prevX === null) {
+          selectedTokens.push(token);
+          prevX = token.x;
+          continue;
+        }
+        const gap = prevX - token.x;
+        if (gap <= parseCfg.xGapTol) {
+          selectedTokens.push(token);
+          prevX = token.x;
+        } else {
+          break;
+        }
+      }
+
+      selectedTokens.reverse();
+      const text = selectedTokens
+        .map(it => it.str)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
-      return { y: l.y, text };
+
+      return { y: l.y, text, selectedTokens, allTokens: sortedItems };
     })
-    .filter(l => l.text.length > 0);
+    .filter(l => l && l.text.length > 0);
 
   if (!lines.length) {
     return {
@@ -961,6 +1051,9 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
         yMid,
         band,
         rect: fieldRect,
+        rectHeight,
+        mode,
+        yRangeUsed: { top: yRangeTop, bottom: yRangeBottom },
         candidateCount: rawCandidates.length,
         usedLines: [],
         topCandidates: sortedCandidates.slice(0, 10)
@@ -972,7 +1065,11 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
   const bestLine = sortedLines[0];
 
   let selectedLines = bestLine ? [bestLine] : [];
-  if (bestLine && parseCfg.maxLines > 1 && sortedLines.length > 1) {
+  let effectiveMaxLines = parseCfg.maxLines;
+  if (!isSingleLine && rectHeight >= parseCfg.singleLineHeightThreshold * 2) {
+    effectiveMaxLines = Math.max(effectiveMaxLines, 3);
+  }
+  if (!isSingleLine && bestLine && effectiveMaxLines > 1 && sortedLines.length > 1) {
     const ySortedLines = [...lines].sort((a, b) => b.y - a.y);
     const bestIdx = ySortedLines.indexOf(bestLine);
     const candidatesForSecond = [
@@ -1005,9 +1102,13 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
         yMid,
         band,
         rect: fieldRect,
+        rectHeight,
+        mode,
+        yRangeUsed: { top: yRangeTop, bottom: yRangeBottom },
         candidateCount: rawCandidates.length,
         usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
-        topCandidates: sortedCandidates.slice(0, 10)
+        topCandidates: sortedCandidates.slice(0, 10),
+        selectedTokens: selectedLines.flatMap(l => l.selectedTokens || []).slice(0, 20)
       } : null
     };
   }
@@ -1020,9 +1121,13 @@ function extractLabelNearField(textItems, fieldRect, cfg) {
       yMid,
       band,
       rect: fieldRect,
+      rectHeight,
+      mode,
+      yRangeUsed: { top: yRangeTop, bottom: yRangeBottom },
       candidateCount: rawCandidates.length,
       usedLines: selectedLines.map(l => ({ y: l.y, text: l.text })),
-      topCandidates: sortedCandidates.slice(0, 10)
+      topCandidates: sortedCandidates.slice(0, 10),
+      selectedTokens: selectedLines.flatMap(l => l.selectedTokens || []).slice(0, 20)
     } : null
   };
 }
@@ -1218,6 +1323,11 @@ const parseInputs = [
   parseLineCluster,
   parseMinLen,
   parseMaxCandidates,
+  parseSingleLineHeightThreshold,
+  parseYTolSingle,
+  parseRectPadY,
+  parseMaxLeftDistance,
+  parseXGapTol,
   parseKeepLineBreaks,
   parseFillHelpFromLabel,
   parseDebugLabelCandidates
