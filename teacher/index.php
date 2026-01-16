@@ -57,7 +57,8 @@ if (($u['role'] ?? '') === 'admin') {
   $classes = $st->fetchAll();
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id
+    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id,
+            uca.user_id AS assigned_user_id, d.user_id AS delegated_user_id
      FROM classes c
      LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
      LEFT JOIN class_group_delegations d ON d.class_id=c.id AND d.user_id=?
@@ -105,6 +106,7 @@ function build_progress(PDO $pdo, array $classes): array {
   $progress = [];
   foreach ($classes as $c) {
     $id = (int)($c['id'] ?? 0);
+    $isDelegateOnly = !isset($c['assigned_user_id']) && isset($c['delegated_user_id']);
     $progress[$id] = [
       'class' => $c,
       'forms_total' => 0,
@@ -115,6 +117,7 @@ function build_progress(PDO $pdo, array $classes): array {
       'delegations_total' => 0,
       'delegations_done' => 0,
       'recent_delegations' => 0,
+      'delegate_only' => $isDelegateOnly,
     ];
   }
 
@@ -280,6 +283,7 @@ $overall = [
   'recent_delegations' => 0,
   'avg_minutes_sum' => 0.0,
   'avg_minutes_count' => 0,
+  'delegate_only' => true,
 ];
 foreach ($progressByClass as $p) {
   $overall['forms_total'] += (int)$p['forms_total'];
@@ -290,6 +294,7 @@ foreach ($progressByClass as $p) {
   $overall['recent_delegations'] += (int)$p['recent_delegations'];
   $overall['avg_minutes_sum'] += (float)($p['avg_minutes_sum'] ?? 0.0);
   $overall['avg_minutes_count'] += (int)($p['avg_minutes_count'] ?? 0);
+  if (!($p['delegate_only'] ?? false)) $overall['delegate_only'] = false;
 }
 $overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : null;
 $overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : null;
@@ -334,10 +339,11 @@ render_teacher_header(t('teacher.title'));
     <?php endforeach; ?>
   </div>
 
-  <?php if (($scope['forms_total'] ?? 0) === 0): ?>
+  <?php if (($scope['forms_total'] ?? 0) === 0 && ($scope['delegations_total'] ?? 0) === 0): ?>
     <div class="alert"><?=h(t('teacher.progress.empty', 'Keine Daten verfügbar.'))?></div>
   <?php else: ?>
     <div class="stats-grid">
+      <?php if (!($scope['delegate_only'] ?? false)): ?>
       <div class="stat-box">
         <div class="stat-value"><?=h((string)($scope['forms_total'] ?? 0))?></div>
         <div class="stat-label"><?=h(t('teacher.progress.total_forms', 'Formulare insgesamt'))?></div>
@@ -360,6 +366,7 @@ render_teacher_header(t('teacher.title'));
         <div class="stat-value"><?=h(format_minutes_short($scope['avg_minutes'] ?? null))?></div>
         <div class="stat-label"><?=h(t('teacher.progress.avg_time', 'Ø Bearbeitungszeit'))?></div>
       </div>
+      <?php endif; ?>
       <div class="stat-box">
         <div class="stat-value">
           <?=h((string)($scope['delegations_done'] ?? 0))?>
