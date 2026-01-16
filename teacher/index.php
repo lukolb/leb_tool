@@ -29,6 +29,12 @@ function is_system_bound(array $meta): bool {
   return false;
 }
 
+function group_key_from_meta(array $meta): string {
+  $g = (string)($meta['group'] ?? '');
+  $g = trim($g);
+  return $g !== '' ? $g : 'Allgemein';
+}
+
 function format_minutes_short(?float $minutes): string {
   if ($minutes === null) return (string)t('teacher.progress.time_unknown', '–');
   $m = (int)round($minutes);
@@ -95,15 +101,45 @@ function load_completion_field_sets(PDO $pdo, array $templateIds): array {
   return $out;
 }
 
-function build_progress(PDO $pdo, array $classes): array {
+function load_grouped_teacher_fields(PDO $pdo, array $templateIds): array {
+  $templateIds = array_values(array_unique(array_filter(array_map('intval', $templateIds), fn($x)=>$x>0)));
+  if (!$templateIds) return [];
+
+  $ph = implode(',', array_fill(0, count($templateIds), '?'));
+  $st = $pdo->prepare(
+    "SELECT id, template_id, meta_json
+       FROM template_fields
+      WHERE template_id IN ($ph)
+        AND can_teacher_edit=1"
+  );
+  $st->execute($templateIds);
+
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $tplId = (int)$r['template_id'];
+    $fid = (int)$r['id'];
+    $meta = meta_read($r['meta_json'] ?? null);
+    if (is_system_bound($meta) || is_class_field($meta)) continue;
+    $gk = group_key_from_meta($meta);
+    if (!isset($out[$tplId])) $out[$tplId] = [];
+    if (!isset($out[$tplId][$gk])) $out[$tplId][$gk] = [];
+    $out[$tplId][$gk][] = $fid;
+  }
+  return $out;
+}
+
+function build_progress(PDO $pdo, array $classes, int $userId): array {
   if (!$classes) return [];
 
   $classIds = array_map(fn($c) => (int)($c['id'] ?? 0), $classes);
   $tplIds = array_values(array_unique(array_filter(array_map(fn($c) => (int)($c['template_id'] ?? 0), $classes), fn($x)=>$x>0)));
   $fieldSets = load_completion_field_sets($pdo, $tplIds);
+  $groupedTeacherFields = load_grouped_teacher_fields($pdo, $tplIds);
   $inClass = implode(',', array_fill(0, count($classIds), '?'));
 
   $progress = [];
+  $delegatedGroupsByClass = [];
+  $delegatedFieldsByClass = [];
   foreach ($classes as $c) {
     $id = (int)($c['id'] ?? 0);
     $isDelegateOnly = !isset($c['assigned_user_id']) && isset($c['delegated_user_id']);
@@ -119,6 +155,38 @@ function build_progress(PDO $pdo, array $classes): array {
       'recent_delegations' => 0,
       'delegate_only' => $isDelegateOnly,
     ];
+    $delegatedGroupsByClass[$id] = [];
+    $delegatedFieldsByClass[$id] = [];
+  }
+
+  $stDelegatedGroups = $pdo->prepare(
+    "SELECT class_id, group_key
+       FROM class_group_delegations
+      WHERE class_id IN ($inClass)
+        AND period_label='Standard'
+        AND user_id=?"
+  );
+  $stDelegatedGroups->execute(array_merge($classIds, [$userId]));
+  foreach ($stDelegatedGroups->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $cid = (int)$r['class_id'];
+    if (!isset($progress[$cid])) continue;
+    $gk = trim((string)($r['group_key'] ?? ''));
+    if ($gk === '') continue;
+    $delegatedGroupsByClass[$cid][] = $gk;
+  }
+
+  foreach ($classes as $c) {
+    $cid = (int)($c['id'] ?? 0);
+    if (!isset($progress[$cid])) continue;
+    $tplId = (int)($c['template_id'] ?? 0);
+    $gks = array_values(array_unique($delegatedGroupsByClass[$cid] ?? []));
+    $fieldIds = [];
+    foreach ($gks as $gk) {
+      foreach (($groupedTeacherFields[$tplId][$gk] ?? []) as $fid) {
+        $fieldIds[] = $fid;
+      }
+    }
+    $delegatedFieldsByClass[$cid] = array_values(array_unique($fieldIds));
   }
 
   // total forms per class equals active students in class
@@ -159,6 +227,8 @@ function build_progress(PDO $pdo, array $classes): array {
       'teacher_required' => $reqTeacher,
       'child_filled' => 0,
       'teacher_filled' => 0,
+      'delegated_required' => count($delegatedFieldsByClass[$cid] ?? []),
+      'delegated_filled' => 0,
     ];
     $minutes = strtotime((string)$r['updated_at']) - strtotime((string)$r['created_at']);
     if ($minutes > 0) {
@@ -219,30 +289,46 @@ function build_progress(PDO $pdo, array $classes): array {
         $reports[$rid]['teacher_filled']++;
       }
     }
+
+    $delegatedFieldIds = [];
+    foreach ($delegatedFieldsByClass as $fieldIds) {
+      foreach ($fieldIds as $fid) $delegatedFieldIds[] = $fid;
+    }
+    $delegatedFieldIds = array_values(array_unique($delegatedFieldIds));
+    if ($delegatedFieldIds) {
+      $phD = implode(',', array_fill(0, count($delegatedFieldIds), '?'));
+      $stDelegatedValues = $pdo->prepare(
+        "SELECT report_instance_id, template_field_id, value_text, value_json
+           FROM field_values
+          WHERE report_instance_id IN ($phR)
+            AND template_field_id IN ($phD)
+            AND source='teacher'"
+      );
+      $stDelegatedValues->execute(array_merge($reportIds, $delegatedFieldIds));
+      foreach ($stDelegatedValues->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $rid = (int)$r['report_instance_id'];
+        if (!isset($reports[$rid])) continue;
+        $valTxt = trim((string)($r['value_text'] ?? ''));
+        $valJson = trim((string)($r['value_json'] ?? ''));
+        if ($valTxt === '' && $valJson === '') continue;
+        $reports[$rid]['delegated_filled']++;
+      }
+    }
   }
 
   foreach ($reports as $rid => $info) {
     $cid = $info['class_id'];
     $reqChild = $info['child_required'];
     $reqTeacher = $info['teacher_required'];
+    $reqDelegated = $info['delegated_required'];
     if ($reqChild > 0 && $info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
     if ($reqTeacher > 0 && $info['teacher_filled'] >= $reqTeacher) $progress[$cid]['teachers_done']++;
+    if ($reqDelegated > 0 && $info['delegated_filled'] >= $reqDelegated) $progress[$cid]['delegations_done']++;
   }
 
-  $stDel = $pdo->prepare(
-    "SELECT class_id, status, COUNT(*) AS c
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-      GROUP BY class_id, status"
-  );
-  $stDel->execute($classIds);
-  foreach ($stDel->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $cid = (int)$r['class_id'];
-    if (!isset($progress[$cid])) continue;
-    $count = (int)$r['c'];
-    $progress[$cid]['delegations_total'] += $count;
-    if ((string)($r['status'] ?? '') === 'done') $progress[$cid]['delegations_done'] += $count;
+  foreach ($progress as $cid => $p) {
+    $hasDelegatedFields = !empty($delegatedFieldsByClass[$cid]);
+    $progress[$cid]['delegations_total'] = $hasDelegatedFields ? (int)$p['forms_total'] : 0;
   }
 
   $stDelRecent = $pdo->prepare(
@@ -250,10 +336,11 @@ function build_progress(PDO $pdo, array $classes): array {
        FROM class_group_delegations
       WHERE class_id IN ($inClass)
         AND period_label='Standard'
+        AND user_id=?
         AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
       GROUP BY class_id"
   );
-  $stDelRecent->execute($classIds);
+  $stDelRecent->execute(array_merge($classIds, [$userId]));
   foreach ($stDelRecent->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $cid = (int)$r['class_id'];
     if (isset($progress[$cid])) $progress[$cid]['recent_delegations'] = (int)$r['c'];
@@ -273,7 +360,7 @@ function build_progress(PDO $pdo, array $classes): array {
   return $progress;
 }
 
-$progressByClass = build_progress($pdo, $classes);
+$progressByClass = build_progress($pdo, $classes, $userId);
 $overall = [
   'forms_total' => 0,
   'students_done' => 0,
