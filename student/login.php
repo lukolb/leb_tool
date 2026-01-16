@@ -60,6 +60,8 @@ $logo = (string)($b['logo_path'] ?? '');
   <title><?=h($org)?> – <?=h(t('student.login.html_title', 'Schüler Login'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
+  <link rel="stylesheet" href="<?=h(url('assets/font-awesome/font-awesome.css'))?>">
+  <script src="<?=h(url('assets/js/jsqr.min.js'))?>"></script>
   <style>
       body.page{
         font-family: "Druckschrift";
@@ -70,7 +72,7 @@ $logo = (string)($b['logo_path'] ?? '');
     .code-wrap{
       position: relative;
       width: 100%;
-      max-width: 360px;
+      max-width: 200px;
     }
 
     /* Monospace = feste Zeichenbreite => Overlay/“Blinken” sitzt perfekt */
@@ -85,7 +87,7 @@ $logo = (string)($b['logo_path'] ?? '');
       position: relative;
       z-index: 2;
       width: 100%;
-      padding: 10px 12px;
+      padding: 10px 48px 10px 12px;
       font-size: 18px;           /* auf Handy besser */
       line-height: 1.2;
       background: transparent;
@@ -161,6 +163,92 @@ $logo = (string)($b['logo_path'] ?? '');
       animation: none;
       opacity: 0;
     }
+
+    .qr-button{
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      color: #1d2433;
+      cursor: pointer;
+    }
+
+    .qr-button .fa{
+      width: 25px;
+      height: 25px;
+    }
+
+    .qr-scan{
+      margin-top: 16px;
+      border: 1px dashed #cfd6e4;
+      border-radius: 12px;
+      padding: 12px;
+      display: none;
+      gap: 12px;
+      align-items: center;
+      background: #f7f9fc;
+    }
+
+    .qr-scan.active{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .qr-video{
+      width: 100%;
+      max-height: 260px;
+      border-radius: 10px;
+      background: #111;
+      object-fit: cover;
+    }
+
+    .qr-video-wrap{
+      position: relative;
+    }
+
+    .qr-overlay{
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      background: rgba(17, 24, 39, 0.78);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.3;
+      display: flex;
+      align-items: center;
+      min-height: 32px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .qr-actions{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .qr-hint{
+      font-size: 14px;
+      color: #5a667a;
+      margin: 0;
+    }
+
+    .qr-overlay .qr-hint{
+      color: #fff;
+    }
   </style>
 </head>
 <body class="page">
@@ -209,6 +297,10 @@ $logo = (string)($b['logo_path'] ?? '');
             aria-label="<?=h(t('student.login.aria_code', 'Login-Code im Format ABCD-1234'))?>"
             autofocus
           >
+
+          <button class="qr-button" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
+            <i class="fa fa-qrcode" aria-hidden="true"></i>
+          </button>
         </div>
 
         <input
@@ -219,7 +311,21 @@ $logo = (string)($b['logo_path'] ?? '');
         >
 
         <div class="actions">
-          <a class="btn primary" type="submit"onclick="this.closest('form').submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
+          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
+        </div>
+
+        <div class="qr-scan" id="qrScanPanel" aria-live="polite">
+          <div class="qr-video-wrap">
+            <video class="qr-video" id="qrScanVideo" playsinline></video>
+            <div class="qr-overlay">
+              <p class="qr-hint" id="qrScanHint"><?=h(t('student.login.scan_hint', 'Kamera öffnen und QR-Code in den Rahmen halten.'))?></p>
+            </div>
+          </div>
+          <div class="qr-actions">
+            <button class="btn secondary" type="button" id="qrScanStop">
+              <?=h(t('student.login.scan_stop', 'Kamera schließen'))?>
+            </button>
+          </div>
         </div>
 
         <!-- Dezent, damit Schüler nicht aus Versehen drauf klicken -->
@@ -234,6 +340,19 @@ $logo = (string)($b['logo_path'] ?? '');
         const input = document.getElementById('login_code_mask');
         const overlay = document.getElementById('login_code_overlay');
         const hidden = document.getElementById('login_code');
+        const qrScanButton = document.getElementById('qrScanButton');
+        const qrScanPanel = document.getElementById('qrScanPanel');
+        const qrScanVideo = document.getElementById('qrScanVideo');
+        const qrScanHint = document.getElementById('qrScanHint');
+        const qrScanStop = document.getElementById('qrScanStop');
+
+        let qrStream = null;
+        let qrScanActive = false;
+        let qrScanTimer = null;
+        let qrDetector = null;
+        let qrAudioCtx = null;
+        let qrCanvas = null;
+        let qrCanvasCtx = null;
 
         const MASK_LEN = 9;                // "____-____"
         const DASH_POS = 4;
@@ -336,6 +455,209 @@ $logo = (string)($b['logo_path'] ?? '');
         // Init
         const initialRaw = cleanRaw(hidden.value);
         setRaw(initialRaw);
+
+        function stopQrScan() {
+          qrScanActive = false;
+          if (qrScanTimer) {
+            clearInterval(qrScanTimer);
+            qrScanTimer = null;
+          }
+          if (qrStream) {
+            qrStream.getTracks().forEach((track) => track.stop());
+            qrStream = null;
+          }
+          if (qrScanVideo) {
+            qrScanVideo.srcObject = null;
+          }
+          if (qrScanPanel) {
+            qrScanPanel.classList.remove('active');
+          }
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+          if (document.webkitFullscreenElement) {
+            document.webkitExitFullscreen();
+          }
+        }
+
+        function playQrBeep() {
+          if (!window.AudioContext && !window.webkitAudioContext) return;
+          if (!qrAudioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            qrAudioCtx = new Ctx();
+          }
+          if (qrAudioCtx.state === 'suspended') {
+            qrAudioCtx.resume();
+          }
+          const osc = qrAudioCtx.createOscillator();
+          const gain = qrAudioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = 880;
+          gain.gain.value = 0.12;
+          osc.connect(gain);
+          gain.connect(qrAudioCtx.destination);
+          osc.start();
+          setTimeout(() => {
+            osc.stop();
+            osc.disconnect();
+            gain.disconnect();
+          }, 120);
+        }
+
+        function handleQrPayload(payload) {
+          if (!payload) return;
+
+          const trimmed = payload.trim();
+          const codeMatch = trimmed.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const codeCandidate = codeMatch.length === 8 ? codeMatch : '';
+
+          if (codeCandidate) {
+            playQrBeep();
+            setRaw(codeCandidate);
+            stopQrScan();
+            input.focus({ preventScroll: true });
+            return;
+          }
+
+          const urlCandidate = (() => {
+            try {
+              return new URL(trimmed);
+            } catch (e) {
+              return null;
+            }
+          })();
+
+          if (urlCandidate) {
+            const sameOrigin = urlCandidate.origin === window.location.origin;
+            const token = urlCandidate.searchParams.get('token');
+            if (token && sameOrigin) {
+              playQrBeep();
+              window.location.href = urlCandidate.toString();
+              return;
+            }
+          }
+
+          qrScanHint.textContent = 'Kein gültiger LEB-Tool QR-Code gefunden.';
+        }
+
+        async function startQrScan() {
+          if (qrScanPanel) {
+            qrScanPanel.classList.add('active');
+          }
+          if (qrScanHint) {
+            qrScanHint.textContent = 'Kamera öffnet sich …';
+          }
+          const getUserMedia = navigator.mediaDevices?.getUserMedia
+            ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+            : null;
+          if (!getUserMedia) {
+            qrScanHint.textContent = window.isSecureContext
+              ? 'Kamera wird von diesem Gerät nicht unterstützt.'
+              : 'Kamera erfordert HTTPS oder localhost.';
+            return;
+          }
+
+          const hasBarcodeDetector = 'BarcodeDetector' in window;
+          const hasJsQr = typeof window.jsQR === 'function';
+          if (!hasBarcodeDetector && !hasJsQr) {
+            qrScanHint.textContent = 'QR-Scanner wird von diesem Browser nicht unterstützt.';
+            return;
+          }
+          
+          qrDetector = null;
+
+          if (hasBarcodeDetector) {
+            const supported = await window.BarcodeDetector.getSupportedFormats();
+            if (!supported.includes('qr_code')) {
+              qrScanHint.textContent = 'QR-Scanner ist hier nicht verfügbar.';
+              return;
+            }
+            qrDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+          }
+
+          try {
+            qrStream = await getUserMedia({
+              video: { facingMode: { ideal: 'environment' } },
+              audio: false
+            });
+          } catch (e) {
+            qrScanHint.textContent = 'Kamera-Zugriff wurde verweigert.';
+            return;
+          }
+
+          qrScanVideo.srcObject = qrStream;
+          qrScanVideo.muted = true;
+          qrScanVideo.setAttribute('playsinline', '');
+          qrScanVideo.setAttribute('webkit-playsinline', '');
+          
+          await qrScanVideo.play();
+          if (qrScanVideo.requestFullscreen) {
+            qrScanVideo.requestFullscreen().catch(() => {});
+          } else if (qrScanVideo.webkitRequestFullscreen) {
+            qrScanVideo.webkitRequestFullscreen();
+          }
+          qrScanActive = true;
+          qrScanHint.textContent = 'QR-Code in den Rahmen halten.';
+
+          qrScanTimer = setInterval(async () => {
+            if (!qrScanActive) return;
+            try {
+              if (qrDetector) {
+                const results = await qrDetector.detect(qrScanVideo);
+                if (results && results.length > 0) {
+                  handleQrPayload(results[0].rawValue || results[0].data);
+                }
+                return;
+              }
+
+              if (!qrCanvas) {
+                qrCanvas = document.createElement('canvas');
+                qrCanvasCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+              }
+              const width = qrScanVideo.videoWidth;
+              const height = qrScanVideo.videoHeight;
+              if (!width || !height || !qrCanvasCtx) return;
+              qrCanvas.width = width;
+              qrCanvas.height = height;
+              qrCanvasCtx.drawImage(qrScanVideo, 0, 0, width, height);
+              const imageData = qrCanvasCtx.getImageData(0, 0, width, height);
+              const result = window.jsQR(imageData.data, width, height);
+              if (result && result.data) {
+                handleQrPayload(result.data);
+              }
+            } catch (e) {
+              qrScanHint.textContent = 'Scan fehlgeschlagen. Bitte erneut versuchen.';
+            }
+          }, 350);
+        }
+
+        if (qrScanButton) {
+          qrScanButton.addEventListener('click', () => {
+            if (qrScanActive) {
+              stopQrScan();
+              return;
+            }
+            startQrScan().catch((err) => {
+              if (qrScanPanel) {
+                qrScanPanel.classList.add('active');
+              }
+              if (qrScanHint) {
+                qrScanHint.textContent = 'Kamera konnte nicht gestartet werden.';
+              }
+              console.error('QR scan start failed', err);
+            });
+          });
+        }
+
+        if (qrScanStop) {
+          qrScanStop.addEventListener('click', () => {
+            stopQrScan();
+          });
+        }
+
+        window.addEventListener('beforeunload', () => {
+          stopQrScan();
+        });
 
         setTimeout(() => {
           input.focus({ preventScroll: true });
