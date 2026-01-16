@@ -61,6 +61,7 @@ try {
 if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll();
+  $hasOwnClasses = !empty($classes);
 } else {
   $st = $pdo->prepare(
     "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id,
@@ -74,6 +75,13 @@ if (($u['role'] ?? '') === 'admin') {
   );
   $st->execute([$userId, $userId]);
   $classes = $st->fetchAll();
+  $hasOwnClasses = false;
+  foreach ($classes as $c) {
+    if (isset($c['assigned_user_id'])) {
+      $hasOwnClasses = true;
+      break;
+    }
+  }
 }
 
 function load_completion_field_sets(PDO $pdo, array $templateIds): array {
@@ -474,10 +482,12 @@ render_teacher_header(t('teacher.title'));
   <p class="muted"><?=h(t('teacher.management_hint'))?></p>
 
   <div class="nav-grid">
-    <a class="nav-tile primary" href="<?=h(url('teacher/classes.php'))?>">
-      <div class="nav-title"><?=h(t('teacher.my_classes'))?></div>
-      <p class="nav-desc"><?=h(t('teacher.my_classes_desc'))?></p>
-    </a>
+    <?php if ($hasOwnClasses): ?>
+      <a class="nav-tile primary" href="<?=h(url('teacher/classes.php'))?>">
+        <div class="nav-title"><?=h(t('teacher.my_classes'))?></div>
+        <p class="nav-desc"><?=h(t('teacher.my_classes_desc'))?></p>
+      </a>
+    <?php endif; ?>
     <a class="nav-tile primary" href="<?=h(url('teacher/entry.php'))?>">
       <div class="nav-title"><?=h(t('teacher.fill_entries'))?></div>
       <p class="nav-desc"><?=h(t('teacher.fill_entries_desc'))?></p>
@@ -501,39 +511,42 @@ render_teacher_header(t('teacher.title'));
   </div>
 </div>
 
-<div class="card">
-  <h2><?=h(t('teacher.class_list'))?></h2>
+<?php if ($hasOwnClasses): ?>
+  <div class="card">
+    <h2><?=h(t('teacher.class_list'))?></h2>
 
-  <?php if (!$classes): ?>
-    <div class="alert"><?=h(t('teacher.class_none'))?></div>
-  <?php else: ?>
-    <table class="table">
-      <thead>
-        <tr>
-          <th><?=h(t('teacher.table.school_year'))?></th>
-          <th><?=h(t('teacher.table.class'))?></th>
-          <th><?=h(t('teacher.table.actions'))?></th>
-        </tr>
-      </thead>
-      <tbody>
-      <?php foreach ($classes as $c):
-        $label = (string)($c['label'] ?? '');
-        $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
-        $name = (string)($c['name'] ?? '');
-        $display = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
-      ?>
-        <tr>
-          <td><?=h((string)$c['school_year'])?></td>
-          <td><?=h($display)?></td>
-          <td>
-            <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.table.students'))?></a>
-          </td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-  <?php endif; ?>
-</div>
+    <?php if (!$classes): ?>
+      <div class="alert"><?=h(t('teacher.class_none'))?></div>
+    <?php else: ?>
+      <table class="table">
+        <thead>
+          <tr>
+            <th><?=h(t('teacher.table.school_year'))?></th>
+            <th><?=h(t('teacher.table.class'))?></th>
+            <th><?=h(t('teacher.table.actions'))?></th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($classes as $c):
+          if (!isset($c['assigned_user_id']) && ($u['role'] ?? '') !== 'admin') continue;
+          $label = (string)($c['label'] ?? '');
+          $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+          $name = (string)($c['name'] ?? '');
+          $display = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
+        ?>
+          <tr>
+            <td><?=h((string)$c['school_year'])?></td>
+            <td><?=h($display)?></td>
+            <td>
+              <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.table.students'))?></a>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <?php
 render_teacher_footer();
