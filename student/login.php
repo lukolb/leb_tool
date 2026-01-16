@@ -181,10 +181,9 @@ $logo = (string)($b['logo_path'] ?? '');
       cursor: pointer;
     }
 
-    .qr-button svg{
+    .qr-button .fa{
       width: 20px;
       height: 20px;
-      fill: currentColor;
     }
 
     .qr-scan{
@@ -273,9 +272,7 @@ $logo = (string)($b['logo_path'] ?? '');
           >
 
           <button class="qr-button" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
-            <svg viewBox="0 0 448 512" aria-hidden="true" focusable="false">
-              <path d="M0 32C0 14.3 14.3 0 32 0H160c17.7 0 32 14.3 32 32V160c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V32zm64 32v96h96V64H64zm224-32h128c17.7 0 32 14.3 32 32V160c0 17.7-14.3 32-32 32H288c-17.7 0-32-14.3-32-32V32c0-17.7 14.3-32 32-32zm32 128h96V64h-96v96zM0 288c0-17.7 14.3-32 32-32H160c17.7 0 32 14.3 32 32V416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V288zm64 32v96h96V320H64zm160-32c0-17.7 14.3-32 32-32H352v64H288v64h64v64H256c-17.7 0-32-14.3-32-32V288zm160-32h64c17.7 0 32 14.3 32 32v96c0 17.7-14.3 32-32 32H384v-64h32V320H384V256z"/>
-            </svg>
+            <i class="fa fa-qrcode" aria-hidden="true"></i>
           </button>
         </div>
 
