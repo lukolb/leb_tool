@@ -804,12 +804,15 @@ function load_teacher_values_for_user(
   $uid = (int)($currentUser['id'] ?? 0);
   $isClassTeacher = (($currentUser['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $uid, $classId);
 
-  $out = [];
+  $combined = [];
+  $own = [];
+  $parts = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $rid = (string)(int)$r['report_instance_id'];
     $fid = (int)$r['template_field_id'];
     if (!isset($fieldMap[$fid])) continue;
-    if (!isset($out[$rid])) $out[$rid] = [];
+    if (!isset($combined[$rid])) $combined[$rid] = [];
+    if (!isset($own[$rid])) $own[$rid] = [];
 
     $meta = $fieldMap[$fid]['meta'] ?? [];
     $fieldType = (string)($fieldMap[$fid]['field_type'] ?? '');
@@ -828,20 +831,31 @@ function load_teacher_values_for_user(
         $delegateMatches = ((int)$free['delegate_user_id'] === $assigned);
         $classText = (string)$free['class_text'];
         $delegateText = $delegateMatches ? (string)$free['delegate_text'] : '';
+        $textCombined = combine_free_text($classText, $delegateText);
         $isDelegate = ($assigned === $uid);
-        $text = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
-        $out[$rid][(string)$fid] = $text;
+        $textOwn = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
+        $combined[$rid][(string)$fid] = $textCombined;
+        $own[$rid][(string)$fid] = $textOwn;
+        if (!isset($parts[$rid])) $parts[$rid] = [];
+        $parts[$rid][(string)$fid] = [
+          'class_text' => $classText,
+          'delegate_text' => $delegateText,
+          'delegate_user_id' => $assigned,
+        ];
         continue;
       }
-      $out[$rid][(string)$fid] = $valueTextRaw;
+      $combined[$rid][(string)$fid] = $valueTextRaw;
+      $own[$rid][(string)$fid] = $valueTextRaw;
       continue;
     }
 
     $resolved = resolve_option_value_text($pdo, $meta, $valueJsonRaw, $valueTextRaw, $lang);
-    $out[$rid][(string)$fid] = $resolved['text'] !== null ? (string)$resolved['text'] : '';
+    $text = $resolved['text'] !== null ? (string)$resolved['text'] : '';
+    $combined[$rid][(string)$fid] = $text;
+    $own[$rid][(string)$fid] = $text;
   }
 
-  return $out;
+  return ['combined' => $combined, 'own' => $own, 'parts' => $parts];
 }
 
 function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $fieldMetaById, string $lang, int $limit = 5): array {
@@ -1010,9 +1024,10 @@ try {
 
     // load values for editable class fields
     $classValuesById = [];
+    $classValuesOwnById = [];
     if ($classReportInstanceId > 0 && $classFieldIdsEditable) {
       $classFieldMap = array_intersect_key($teacherFieldMap, array_flip($classFieldIdsEditable));
-      $classValuesById = load_teacher_values_for_user(
+      $classValues = load_teacher_values_for_user(
         $pdo,
         [$classReportInstanceId],
         $classFieldMap,
@@ -1023,6 +1038,8 @@ try {
         $periodLabel,
         $lang
       );
+      $classValuesById = $classValues['combined'] ?? [];
+      $classValuesOwnById = $classValues['own'] ?? [];
     }
 
     // name => value for placeholder resolution
@@ -1155,7 +1172,7 @@ try {
       array_values($childByBase)
     ), fn($x)=>$x>0)));
 
-    $valuesTeacher = load_teacher_values_for_user(
+    $teacherValues = load_teacher_values_for_user(
       $pdo,
       $reportIds,
       $teacherFieldMap,
@@ -1166,6 +1183,8 @@ try {
       $periodLabel,
       $lang
     );
+    $valuesTeacher = $teacherValues['combined'] ?? [];
+    $valuesTeacherOwn = $teacherValues['own'] ?? [];
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
 
     // --- progress (teacher / child / overall) ---
@@ -1289,6 +1308,8 @@ try {
     $stClass->execute([$classId]);
     $classGradeLevel = $stClass->fetchColumn();
 
+    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+
     json_out([
       'ok' => true,
       'template' => [
@@ -1303,6 +1324,8 @@ try {
       'period_label' => $periodLabel,
       'text_snippets' => text_snippets_list($pdo),
       'values_teacher' => $valuesTeacher,
+      'values_teacher_own' => $valuesTeacherOwn,
+      'values_teacher_parts' => $teacherValues['parts'] ?? [],
       'values_child' => $valuesChild,
       'value_history' => $valueHistory,
       'progress_summary' => $progressSummary,
@@ -1312,10 +1335,13 @@ try {
         'field_ids' => $classFieldIdsEditable,
         'fields' => $classFieldsDefs,
         'values' => $classValuesById,
+        'values_own' => $classValuesOwnById,
+        'values_parts' => $classValues['parts'] ?? [],
         'value_by_name' => $classValueByName,
       ],
       'ai_enabled' => ai_provider_enabled(),
       'class_grade_level' => $classGradeLevel !== false ? $classGradeLevel : null,
+      'is_class_teacher' => $isClassTeacher,
     ]);
   }
 
