@@ -583,10 +583,10 @@ function save_free_text_value(
   $insertText = combine_free_text($classText, $delegateText);
 
   if ($isDelegate) {
-    $jsonExpr = "JSON_SET(COALESCE(value_json, '{}'), '$.free_text.delegate_text', ?, '$.free_text.delegate_user_id', ?)";
+    $jsonExpr = "JSON_SET(COALESCE(NULLIF(value_json, ''), '{}'), '$.free_text.delegate_text', ?, '$.free_text.delegate_user_id', ?)";
     $jsonParams = [$delegateText, $delegateUserId];
   } else {
-    $jsonExpr = "JSON_SET(COALESCE(value_json, '{}'), '$.free_text.class_text', ?, '$.free_text.delegate_user_id', ?)";
+    $jsonExpr = "JSON_SET(COALESCE(NULLIF(value_json, ''), '{}'), '$.free_text.class_text', ?, '$.free_text.delegate_user_id', ?)";
     $jsonParams = [$classText, $delegateUserId];
   }
 
