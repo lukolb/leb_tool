@@ -61,6 +61,7 @@ $logo = (string)($b['logo_path'] ?? '');
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <link rel="stylesheet" href="<?=h(url('assets/font-awesome/font-awesome.css'))?>">
+  <script src="<?=h(url('assets/js/jsqr.min.js'))?>"></script>
   <style>
       body.page{
         font-family: "Druckschrift";
@@ -71,7 +72,7 @@ $logo = (string)($b['logo_path'] ?? '');
     .code-wrap{
       position: relative;
       width: 100%;
-      max-width: 360px;
+      max-width: 200px;
     }
 
     /* Monospace = feste Zeichenbreite => Overlay/“Blinken” sitzt perfekt */
@@ -183,8 +184,8 @@ $logo = (string)($b['logo_path'] ?? '');
     }
 
     .qr-button .fa{
-      width: 20px;
-      height: 20px;
+      width: 25px;
+      height: 25px;
     }
 
     .qr-scan{
@@ -211,6 +212,27 @@ $logo = (string)($b['logo_path'] ?? '');
       object-fit: cover;
     }
 
+    .qr-video-wrap{
+      position: relative;
+    }
+
+    .qr-overlay{
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      background: rgba(17, 24, 39, 0.78);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.3;
+      display: flex;
+      align-items: center;
+      min-height: 32px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
     .qr-actions{
       display: flex;
       gap: 8px;
@@ -222,6 +244,10 @@ $logo = (string)($b['logo_path'] ?? '');
       font-size: 14px;
       color: #5a667a;
       margin: 0;
+    }
+
+    .qr-overlay .qr-hint{
+      color: #fff;
     }
   </style>
 </head>
@@ -289,8 +315,12 @@ $logo = (string)($b['logo_path'] ?? '');
         </div>
 
         <div class="qr-scan" id="qrScanPanel" aria-live="polite">
-          <video class="qr-video" id="qrScanVideo" playsinline></video>
-          <p class="qr-hint" id="qrScanHint"><?=h(t('student.login.scan_hint', 'Kamera öffnen und QR-Code in den Rahmen halten.'))?></p>
+          <div class="qr-video-wrap">
+            <video class="qr-video" id="qrScanVideo" playsinline></video>
+            <div class="qr-overlay">
+              <p class="qr-hint" id="qrScanHint"><?=h(t('student.login.scan_hint', 'Kamera öffnen und QR-Code in den Rahmen halten.'))?></p>
+            </div>
+          </div>
           <div class="qr-actions">
             <button class="btn secondary" type="button" id="qrScanStop">
               <?=h(t('student.login.scan_stop', 'Kamera schließen'))?>
@@ -321,6 +351,8 @@ $logo = (string)($b['logo_path'] ?? '');
         let qrScanTimer = null;
         let qrDetector = null;
         let qrAudioCtx = null;
+        let qrCanvas = null;
+        let qrCanvasCtx = null;
 
         const MASK_LEN = 9;                // "____-____"
         const DASH_POS = 4;
@@ -496,51 +528,55 @@ $logo = (string)($b['logo_path'] ?? '');
           })();
 
           if (urlCandidate) {
+            const sameOrigin = urlCandidate.origin === window.location.origin;
             const token = urlCandidate.searchParams.get('token');
-            if (token) {
+            if (token && sameOrigin) {
               playQrBeep();
               window.location.href = urlCandidate.toString();
               return;
             }
           }
 
-          if (trimmed.length >= 6) {
-            const newUrl = new URL(window.location.href);
-            newUrl.searchParams.set('token', trimmed);
-            playQrBeep();
-            window.location.href = newUrl.toString();
-            return;
-          }
-
-          qrScanHint.textContent = 'QR-Code konnte nicht erkannt werden.';
+          qrScanHint.textContent = 'Kein gültiger LEB-Tool QR-Code gefunden.';
         }
 
         async function startQrScan() {
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            qrScanHint.textContent = 'Kamera wird von diesem Gerät nicht unterstützt.';
+          if (qrScanPanel) {
             qrScanPanel.classList.add('active');
+          }
+          if (qrScanHint) {
+            qrScanHint.textContent = 'Kamera öffnet sich …';
+          }
+          const getUserMedia = navigator.mediaDevices?.getUserMedia
+            ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+            : null;
+          if (!getUserMedia) {
+            qrScanHint.textContent = window.isSecureContext
+              ? 'Kamera wird von diesem Gerät nicht unterstützt.'
+              : 'Kamera erfordert HTTPS oder localhost.';
             return;
           }
 
-          if (!('BarcodeDetector' in window)) {
+          const hasBarcodeDetector = 'BarcodeDetector' in window;
+          const hasJsQr = typeof window.jsQR === 'function';
+          if (!hasBarcodeDetector && !hasJsQr) {
             qrScanHint.textContent = 'QR-Scanner wird von diesem Browser nicht unterstützt.';
-            qrScanPanel.classList.add('active');
             return;
           }
+          
+          qrDetector = null;
 
-          const supported = await window.BarcodeDetector.getSupportedFormats();
-          if (!supported.includes('qr_code')) {
-            qrScanHint.textContent = 'QR-Scanner ist hier nicht verfügbar.';
-            qrScanPanel.classList.add('active');
-            return;
+          if (hasBarcodeDetector) {
+            const supported = await window.BarcodeDetector.getSupportedFormats();
+            if (!supported.includes('qr_code')) {
+              qrScanHint.textContent = 'QR-Scanner ist hier nicht verfügbar.';
+              return;
+            }
+            qrDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
           }
-
-          qrDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
-          qrScanHint.textContent = 'Kamera öffnet sich …';
-          qrScanPanel.classList.add('active');
 
           try {
-            qrStream = await navigator.mediaDevices.getUserMedia({
+            qrStream = await getUserMedia({
               video: { facingMode: { ideal: 'environment' } },
               audio: false
             });
@@ -550,6 +586,10 @@ $logo = (string)($b['logo_path'] ?? '');
           }
 
           qrScanVideo.srcObject = qrStream;
+          qrScanVideo.muted = true;
+          qrScanVideo.setAttribute('playsinline', '');
+          qrScanVideo.setAttribute('webkit-playsinline', '');
+          
           await qrScanVideo.play();
           if (qrScanVideo.requestFullscreen) {
             qrScanVideo.requestFullscreen().catch(() => {});
@@ -562,9 +602,28 @@ $logo = (string)($b['logo_path'] ?? '');
           qrScanTimer = setInterval(async () => {
             if (!qrScanActive) return;
             try {
-              const results = await qrDetector.detect(qrScanVideo);
-              if (results && results.length > 0) {
-                handleQrPayload(results[0].rawValue || results[0].data);
+              if (qrDetector) {
+                const results = await qrDetector.detect(qrScanVideo);
+                if (results && results.length > 0) {
+                  handleQrPayload(results[0].rawValue || results[0].data);
+                }
+                return;
+              }
+
+              if (!qrCanvas) {
+                qrCanvas = document.createElement('canvas');
+                qrCanvasCtx = qrCanvas.getContext('2d', { willReadFrequently: true });
+              }
+              const width = qrScanVideo.videoWidth;
+              const height = qrScanVideo.videoHeight;
+              if (!width || !height || !qrCanvasCtx) return;
+              qrCanvas.width = width;
+              qrCanvas.height = height;
+              qrCanvasCtx.drawImage(qrScanVideo, 0, 0, width, height);
+              const imageData = qrCanvasCtx.getImageData(0, 0, width, height);
+              const result = window.jsQR(imageData.data, width, height);
+              if (result && result.data) {
+                handleQrPayload(result.data);
               }
             } catch (e) {
               qrScanHint.textContent = 'Scan fehlgeschlagen. Bitte erneut versuchen.';
@@ -578,7 +637,15 @@ $logo = (string)($b['logo_path'] ?? '');
               stopQrScan();
               return;
             }
-            startQrScan();
+            startQrScan().catch((err) => {
+              if (qrScanPanel) {
+                qrScanPanel.classList.add('active');
+              }
+              if (qrScanHint) {
+                qrScanHint.textContent = 'Kamera konnte nicht gestartet werden.';
+              }
+              console.error('QR scan start failed', err);
+            });
           });
         }
 
