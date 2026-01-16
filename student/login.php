@@ -60,6 +60,7 @@ $logo = (string)($b['logo_path'] ?? '');
   <title><?=h($org)?> – <?=h(t('student.login.html_title', 'Schüler Login'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
+  <link rel="stylesheet" href="<?=h(url('assets/font-awesome/font-awesome.css'))?>">
   <style>
       body.page{
         font-family: "Druckschrift";
