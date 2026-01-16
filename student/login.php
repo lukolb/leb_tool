@@ -174,11 +174,16 @@ $logo = (string)($b['logo_path'] ?? '');
       display: grid;
       place-items: center;
       padding: 0;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      color: #1d2433;
+      cursor: pointer;
     }
 
     .qr-button svg{
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       fill: currentColor;
     }
 
@@ -267,9 +272,9 @@ $logo = (string)($b['logo_path'] ?? '');
             autofocus
           >
 
-          <button class="btn secondary qr-button" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M3 3h6v2H5v4H3V3zm10 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 0h2v6h-6v-2h4v-4zM7 7h4v4H7V7zm6 6h4v4h-4v-4z"/>
+          <button class="qr-button" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
+            <svg viewBox="0 0 448 512" aria-hidden="true" focusable="false">
+              <path d="M0 32C0 14.3 14.3 0 32 0H160c17.7 0 32 14.3 32 32V160c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V32zm64 32v96h96V64H64zm224-32h128c17.7 0 32 14.3 32 32V160c0 17.7-14.3 32-32 32H288c-17.7 0-32-14.3-32-32V32c0-17.7 14.3-32 32-32zm32 128h96V64h-96v96zM0 288c0-17.7 14.3-32 32-32H160c17.7 0 32 14.3 32 32V416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V288zm64 32v96h96V320H64zm160-32c0-17.7 14.3-32 32-32H352v64H288v64h64v64H256c-17.7 0-32-14.3-32-32V288zm160-32h64c17.7 0 32 14.3 32 32v96c0 17.7-14.3 32-32 32H384v-64h32V320H384V256z"/>
             </svg>
           </button>
         </div>
@@ -437,6 +442,12 @@ $logo = (string)($b['logo_path'] ?? '');
           if (qrScanPanel) {
             qrScanPanel.classList.remove('active');
           }
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+          if (document.webkitFullscreenElement) {
+            document.webkitExitFullscreen();
+          }
         }
 
         function playQrBeep() {
@@ -542,6 +553,11 @@ $logo = (string)($b['logo_path'] ?? '');
 
           qrScanVideo.srcObject = qrStream;
           await qrScanVideo.play();
+          if (qrScanVideo.requestFullscreen) {
+            qrScanVideo.requestFullscreen().catch(() => {});
+          } else if (qrScanVideo.webkitRequestFullscreen) {
+            qrScanVideo.webkitRequestFullscreen();
+          }
           qrScanActive = true;
           qrScanHint.textContent = 'QR-Code in den Rahmen halten.';
 
