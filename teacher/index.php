@@ -59,11 +59,13 @@ if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->prepare(
     "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id
      FROM classes c
-     JOIN user_class_assignments uca ON uca.class_id=c.id
-     WHERE uca.user_id=? AND is_active = 1
+     LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
+     LEFT JOIN class_group_delegations d ON d.class_id=c.id AND d.user_id=?
+     WHERE is_active = 1
+       AND (uca.user_id IS NOT NULL OR d.user_id IS NOT NULL)
      ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
   );
-  $st->execute([$userId]);
+  $st->execute([$userId, $userId]);
   $classes = $st->fetchAll();
 }
 
