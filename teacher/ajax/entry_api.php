@@ -573,45 +573,58 @@ function save_free_text_value(
   $classText = trim($classText);
   $delegateText = trim($delegateText);
 
-  $insertJson = json_encode([
-    'free_text' => [
-      'class_text' => $classText,
-      'delegate_text' => $delegateText,
-      'delegate_user_id' => $delegateUserId,
-    ],
-  ], JSON_UNESCAPED_UNICODE);
-  $insertText = combine_free_text($classText, $delegateText);
+  $pdo->beginTransaction();
+  try {
+    $st = $pdo->prepare(
+      "SELECT value_text, value_json
+       FROM field_values
+       WHERE report_instance_id=? AND template_field_id=? AND source='teacher'
+       LIMIT 1
+       FOR UPDATE"
+    );
+    $st->execute([$reportId, $fieldId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
 
-  $baseJson = "CASE WHEN value_json IS NULL OR value_json='' OR JSON_VALID(value_json)=0 THEN '{}' ELSE value_json END";
-  if ($isDelegate) {
-    $jsonExpr = "JSON_SET($baseJson, '$.free_text.delegate_text', ?, '$.free_text.delegate_user_id', ?)";
-    $jsonParams = [$delegateText, $delegateUserId];
-  } else {
-    $jsonExpr = "JSON_SET($baseJson, '$.free_text.class_text', ?, '$.free_text.delegate_user_id', ?)";
-    $jsonParams = [$classText, $delegateUserId];
+    $existingClass = '';
+    $existingDelegate = '';
+    if ($row) {
+      $free = free_text_parts_from_json($row['value_json'] !== null ? (string)$row['value_json'] : null);
+      if ($free['has_free_text']) {
+        $existingClass = (string)($free['class_text'] ?? '');
+        $existingDelegate = (string)($free['delegate_text'] ?? '');
+      } else {
+        $existingClass = (string)($row['value_text'] ?? '');
+      }
+    }
+
+    if ($isDelegate) $existingDelegate = $delegateText;
+    else $existingClass = $classText;
+
+    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId);
+    $valueText = combine_free_text($existingClass, $existingDelegate);
+    if (trim($valueText) === '') $valueText = null;
+
+    if ($row) {
+      $up = $pdo->prepare(
+        "UPDATE field_values
+         SET value_text=?, value_json=?, source='teacher', updated_by_user_id=?, updated_at=NOW()
+         WHERE report_instance_id=? AND template_field_id=? AND source='teacher'
+         LIMIT 1"
+      );
+      $up->execute([$valueText, $valueJson, $userId, $reportId, $fieldId]);
+    } else {
+      $ins = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+         VALUES (?, ?, ?, ?, 'teacher', ?, NOW())"
+      );
+      $ins->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    }
+
+    $pdo->commit();
+  } catch (Throwable $e) {
+    $pdo->rollBack();
+    throw $e;
   }
-
-  $textExpr = "TRIM(CONCAT_WS('\n\n',
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT($jsonExpr, '$.free_text.class_text')), ''),
-    NULLIF(JSON_UNQUOTE(JSON_EXTRACT($jsonExpr, '$.free_text.delegate_text')), '')
-  ))";
-
-  $up = $pdo->prepare(
-    "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
-     VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
-     ON DUPLICATE KEY UPDATE
-       value_json=$jsonExpr,
-       value_text=$textExpr,
-       source='teacher',
-       updated_by_user_id=VALUES(updated_by_user_id),
-       updated_at=NOW()"
-  );
-  $up->execute(array_merge(
-    [$reportId, $fieldId, $insertText !== '' ? $insertText : null, $insertJson, $userId],
-    $jsonParams,
-    $jsonParams,
-    $jsonParams
-  ));
 
   return load_existing_teacher_value($pdo, $reportId, $fieldId);
 }
