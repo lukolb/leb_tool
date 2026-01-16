@@ -85,7 +85,7 @@ $logo = (string)($b['logo_path'] ?? '');
       position: relative;
       z-index: 2;
       width: 100%;
-      padding: 10px 12px;
+      padding: 10px 48px 10px 12px;
       font-size: 18px;           /* auf Handy besser */
       line-height: 1.2;
       background: transparent;
@@ -160,6 +160,26 @@ $logo = (string)($b['logo_path'] ?? '');
     .code-wrap.is-complete .code-overlay .blink .b{
       animation: none;
       opacity: 0;
+    }
+
+    .qr-button{
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+
+    .qr-button svg{
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
     }
 
     .qr-scan{
@@ -246,6 +266,12 @@ $logo = (string)($b['logo_path'] ?? '');
             aria-label="<?=h(t('student.login.aria_code', 'Login-Code im Format ABCD-1234'))?>"
             autofocus
           >
+
+          <button class="btn secondary qr-button" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 3h6v2H5v4H3V3zm10 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm16 0h2v6h-6v-2h4v-4zM7 7h4v4H7V7zm6 6h4v4h-4v-4z"/>
+            </svg>
+          </button>
         </div>
 
         <input
@@ -257,9 +283,6 @@ $logo = (string)($b['logo_path'] ?? '');
 
         <div class="actions">
           <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h(t('student.login.submit', 'Einloggen'))?></a>
-          <button class="btn secondary" type="button" id="qrScanButton" aria-label="<?=h(t('student.login.scan_qr', 'QR-Code scannen'))?>">
-            <i class="fa fa-qrcode" aria-hidden="true"></i>
-          </button>
         </div>
 
         <div class="qr-scan" id="qrScanPanel" aria-live="polite">
@@ -294,6 +317,7 @@ $logo = (string)($b['logo_path'] ?? '');
         let qrScanActive = false;
         let qrScanTimer = null;
         let qrDetector = null;
+        let qrAudioCtx = null;
 
         const MASK_LEN = 9;                // "____-____"
         const DASH_POS = 4;
@@ -415,6 +439,30 @@ $logo = (string)($b['logo_path'] ?? '');
           }
         }
 
+        function playQrBeep() {
+          if (!window.AudioContext && !window.webkitAudioContext) return;
+          if (!qrAudioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            qrAudioCtx = new Ctx();
+          }
+          if (qrAudioCtx.state === 'suspended') {
+            qrAudioCtx.resume();
+          }
+          const osc = qrAudioCtx.createOscillator();
+          const gain = qrAudioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = 880;
+          gain.gain.value = 0.12;
+          osc.connect(gain);
+          gain.connect(qrAudioCtx.destination);
+          osc.start();
+          setTimeout(() => {
+            osc.stop();
+            osc.disconnect();
+            gain.disconnect();
+          }, 120);
+        }
+
         function handleQrPayload(payload) {
           if (!payload) return;
 
@@ -423,6 +471,7 @@ $logo = (string)($b['logo_path'] ?? '');
           const codeCandidate = codeMatch.length === 8 ? codeMatch : '';
 
           if (codeCandidate) {
+            playQrBeep();
             setRaw(codeCandidate);
             stopQrScan();
             input.focus({ preventScroll: true });
@@ -440,6 +489,7 @@ $logo = (string)($b['logo_path'] ?? '');
           if (urlCandidate) {
             const token = urlCandidate.searchParams.get('token');
             if (token) {
+              playQrBeep();
               window.location.href = urlCandidate.toString();
               return;
             }
@@ -448,6 +498,7 @@ $logo = (string)($b['logo_path'] ?? '');
           if (trimmed.length >= 6) {
             const newUrl = new URL(window.location.href);
             newUrl.searchParams.set('token', trimmed);
+            playQrBeep();
             window.location.href = newUrl.toString();
             return;
           }
