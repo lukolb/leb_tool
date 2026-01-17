@@ -95,12 +95,15 @@ try {
                 u.display_name
          FROM class_group_delegations d
          INNER JOIN classes c ON c.id=d.class_id
-         INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
          LEFT JOIN users u ON u.id=d.user_id
          WHERE c.is_active=1
+           AND (
+             EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
+             OR d.user_id=?
+           )
          ORDER BY d.updated_at DESC, d.class_id DESC, d.group_key ASC"
       );
-      $st->execute([$userId]);
+      $st->execute([$userId, $userId]);
       $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     }
 

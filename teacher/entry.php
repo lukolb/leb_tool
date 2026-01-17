@@ -502,6 +502,26 @@ render_teacher_header($pageTitle);
   .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
   .opt:focus-visible{ outline: 2px solid rgba(11,87,208,0.5); outline-offset:2px; }
   .field:focus-within{ outline: 2px solid rgba(11,87,208,0.2); }
+  .field-actions{ display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .combined-tip{ display:inline-flex; align-items:center; position:relative; }
+  .combined-tip-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    line-height:1;
+  }
+  .combined-tip-btn:hover{ color:#0b57d0; }
+  .combined-tip-bubble{
+    position:absolute; bottom: calc(100% + 6px); left:0;
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px; font-size:12px; color:var(--text);
+    box-shadow:0 8px 24px rgba(0,0,0,0.12);
+    min-width:600px; max-width:600px; z-index:30; display:none;
+  }
+  .combined-tip.open .combined-tip-bubble{ display:block; }
+  .combined-tip-bubble::after{
+    content:""; position:absolute; top:100%; left:10px;
+    border-width:6px; border-style:solid;
+    border-color:#fff transparent transparent transparent;
+  }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -542,7 +562,7 @@ render_teacher_header($pageTitle);
   .snippet-card .c{ color:var(--muted); font-size:12px; }
   .snippet-card .txt{ white-space:pre-wrap; }
   .snippet-menu{ position:absolute; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:360px; max-height:60vh; overflow:auto; }
-  .snippet-menu h4{ margin:4px 0; font-size:14px; }
+  .snippet-menu h4{ margin:4px 0; font-size:14px; border-top: solid lightgray; padding-top: 5px; }
   .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
   .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
   .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; position: sticky;
@@ -680,6 +700,8 @@ render_teacher_header($pageTitle);
     period_label: 'Standard',
     students: [],
     values_teacher: {},
+    values_teacher_own: {},
+    values_teacher_parts: {},
     values_child: {},
     value_history: {},
     class_report_instance_id: 0,
@@ -688,6 +710,7 @@ render_teacher_header($pageTitle);
     ai_enabled: false,
     class_grade_level: null,
     fieldMap: {},
+    is_class_teacher: false,
   };
 
   let lastSaveAt = null;
@@ -763,7 +786,7 @@ render_teacher_header($pageTitle);
   }
 
   function isTeacherFieldMissing(reportId, fieldId){
-    return String(teacherVal(reportId, fieldId) ?? '').trim() === '';
+    return String(teacherEditVal(reportId, fieldId) ?? '').trim() === '';
   }
 
   function optionCompletionForStudent(reportId){
@@ -1053,7 +1076,8 @@ render_teacher_header($pageTitle);
   function rebuildFieldMap(){
     const map = {};
     (state.groups || []).forEach(g => {
-      (g.fields || []).forEach(f => { map[String(f.id)] = f; });
+      const delegatedUserId = Number(g?.delegation?.user_id || 0);
+      (g.fields || []).forEach(f => { map[String(f.id)] = { ...f, _group_key: g.key, _delegated_user_id: delegatedUserId }; });
     });
     // class fields are NOT in groups (by design), so add them too:
     if (state.class_fields && Array.isArray(state.class_fields.fields)) {
@@ -1165,16 +1189,108 @@ render_teacher_header($pageTitle);
     return Number(state.class_report_instance_id || 0);
   }
 
+  function combineTextParts(classText, delegateText){
+    const ct = String(classText ?? '').replace(/\s+$/, '');
+    const dt = String(delegateText ?? '').replace(/\s+$/, '');
+    const parts = [];
+    if (ct.trim() !== '') parts.push(ct);
+    if (dt.trim() !== '') parts.push(dt);
+    return parts.join('\n\n');
+  }
+
   function teacherVal(reportId, fieldId){
     if (isClassFieldId(fieldId)) {
       const rid = classReportId();
+      const parts = state.values_teacher_parts[String(rid)]?.[String(fieldId)];
+      if (parts) {
+        return combineTextParts(parts.class_text ?? '', parts.delegate_text ?? '');
+      }
       const r = state.values_teacher[String(rid)] || {};
       const v = r[String(fieldId)];
       return (v === null || typeof v === 'undefined') ? '' : String(v);
     }
+    const parts = state.values_teacher_parts[String(reportId)]?.[String(fieldId)];
+    if (parts) {
+      return combineTextParts(parts.class_text ?? '', parts.delegate_text ?? '');
+    }
     const r = state.values_teacher[String(reportId)] || {};
     const v = r[String(fieldId)];
     return (v === null || typeof v === 'undefined') ? '' : String(v);
+  }
+
+  function teacherEditVal(reportId, fieldId){
+    if (isClassFieldId(fieldId)) {
+      const rid = classReportId();
+      const r = state.values_teacher_own[String(rid)] || {};
+      const v = r[String(fieldId)];
+      return (v === null || typeof v === 'undefined') ? teacherVal(reportId, fieldId) : String(v);
+    }
+    const r = state.values_teacher_own[String(reportId)] || {};
+    const v = r[String(fieldId)];
+    return (v === null || typeof v === 'undefined') ? teacherVal(reportId, fieldId) : String(v);
+  }
+
+  function delegatedEditPart(fieldId){
+    const f = state.fieldMap?.[String(fieldId)];
+    if (!f) return null;
+    if (!isFreeTextField(f)) return null;
+    const delegatedUserId = Number(f._delegated_user_id || 0);
+    if (!delegatedUserId) return null;
+    const isDelegate = delegatedUserId === CURRENT_USER_ID && !state.is_class_teacher;
+    return isDelegate ? 'delegate' : 'class';
+  }
+
+  function setTeacherFreeTextPart(reportId, fieldId, value){
+    const part = delegatedEditPart(fieldId);
+    if (!part) return false;
+
+    const ridKey = String(reportId);
+    const fidKey = String(fieldId);
+    if (!state.values_teacher_parts[ridKey]) state.values_teacher_parts[ridKey] = {};
+    const existing = state.values_teacher_parts[ridKey][fidKey] || {};
+    const delegatedUserId = Number(state.fieldMap?.[String(fieldId)]?._delegated_user_id || 0);
+    const next = {
+      class_text: existing.class_text ?? '',
+      delegate_text: existing.delegate_text ?? '',
+      delegate_user_id: delegatedUserId,
+    };
+    if (part === 'delegate') next.delegate_text = String(value ?? '');
+    else next.class_text = String(value ?? '');
+    state.values_teacher_parts[ridKey][fidKey] = next;
+
+    if (!state.values_teacher_own[ridKey]) state.values_teacher_own[ridKey] = {};
+    state.values_teacher_own[ridKey][fidKey] = String(value ?? '');
+
+    if (!state.values_teacher[ridKey]) state.values_teacher[ridKey] = {};
+    state.values_teacher[ridKey][fidKey] = combineTextParts(next.class_text, next.delegate_text);
+    return true;
+  }
+
+  function isFreeTextField(f){
+    const t = String(f.field_type || 'text').toLowerCase();
+    if (t === 'multiline' || t === 'text') return true;
+    return Number(f.is_multiline || 0) === 1;
+  }
+
+  function combinedPreviewHtml(reportId, field){
+    if (!field) return '';
+    if (!isFreeTextField(field)) return '';
+    const delegatedUserId = Number(
+      field._delegated_user_id
+      || state.fieldMap?.[String(field.id)]?._delegated_user_id
+      || 0
+    );
+    if (!delegatedUserId) return '';
+    const combined = teacherVal(reportId, field.id);
+    const html = combined
+      ? esc(String(combined)).replace(/\n/g, '<br>')
+      : '<span class="muted">—</span>';
+    return `
+      <span class="combined-tip" data-tip="1">
+        <button type="button" class="btn ghost icon combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
+        <span class="combined-tip-bubble">${html}</span>
+      </span>
+    `;
   }
 
   function childVal(reportId, fieldId){
@@ -1575,8 +1691,13 @@ render_teacher_header($pageTitle);
     const key = `${reportId}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
 
-    if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
-    state.values_teacher[String(reportId)][String(fieldId)] = value;
+    const updated = setTeacherFreeTextPart(reportId, fieldId, value);
+    if (!updated) {
+      if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
+      state.values_teacher[String(reportId)][String(fieldId)] = value;
+      if (!state.values_teacher_own[String(reportId)]) state.values_teacher_own[String(reportId)] = {};
+      state.values_teacher_own[String(reportId)][String(fieldId)] = value;
+    }
     onTeacherValueChanged(reportId, fieldId);
 
     ui.saveTimers.set(key, setTimeout(async () => {
@@ -1587,8 +1708,9 @@ render_teacher_header($pageTitle);
       try {
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
-        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
-        addHistoryEntry(reportId, fieldId, displayVal, 'teacher', value);
+        const combinedValue = teacherVal(reportId, fieldId);
+        const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
+        addHistoryEntry(reportId, fieldId, displayVal, 'teacher', combinedValue);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -1608,8 +1730,13 @@ render_teacher_header($pageTitle);
     const key = `class:${rid}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
 
-    if (!state.values_teacher[String(rid)]) state.values_teacher[String(rid)] = {};
-    state.values_teacher[String(rid)][String(fieldId)] = value;
+    const updated = setTeacherFreeTextPart(rid, fieldId, value);
+    if (!updated) {
+      if (!state.values_teacher[String(rid)]) state.values_teacher[String(rid)] = {};
+      state.values_teacher[String(rid)][String(fieldId)] = value;
+      if (!state.values_teacher_own[String(rid)]) state.values_teacher_own[String(rid)] = {};
+      state.values_teacher_own[String(rid)][String(fieldId)] = value;
+    }
     onTeacherValueChanged(rid, fieldId);
 
     ui.saveTimers.set(key, setTimeout(async () => {
@@ -1620,8 +1747,9 @@ render_teacher_header($pageTitle);
       try {
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
-        const displayVal = fDef ? teacherDisplay(fDef, value) : String(value ?? '');
-        addHistoryEntry(rid, fieldId, displayVal, 'teacher', value);
+        const combinedValue = teacherVal(rid, fieldId);
+        const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
+        addHistoryEntry(rid, fieldId, displayVal, 'teacher', combinedValue);
         lastSaveAt = new Date();
         setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
       } catch (e) {
@@ -2202,7 +2330,26 @@ render_teacher_header($pageTitle);
     snippetMenu.style.top = `${py}px`;
   }
 
+  function closeCombinedTips(except){
+    document.querySelectorAll('.combined-tip.open').forEach(t => {
+      if (except && t === except) return;
+      t.classList.remove('open');
+    });
+  }
+
   document.addEventListener('click', (ev) => {
+    const tipBtn = ev.target && ev.target.closest('.js-combined-tip');
+    if (tipBtn) {
+      ev.preventDefault();
+      const tipWrap = tipBtn.closest('.combined-tip');
+      if (tipWrap) {
+        const open = tipWrap.classList.contains('open');
+        closeCombinedTips(open ? null : tipWrap);
+        tipWrap.classList.toggle('open', !open);
+      }
+      return;
+    }
+
     const restoreBtn = ev.target && ev.target.closest('[data-history-restore="1"]');
     if (restoreBtn) {
       ev.preventDefault();
@@ -2229,6 +2376,7 @@ render_teacher_header($pageTitle);
 
     if (ev.target && ev.target.closest('[data-history-menu="1"]')) return;
     closeHistoryMenus();
+    closeCombinedTips();
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
@@ -2413,15 +2561,21 @@ render_teacher_header($pageTitle);
 
     const html = cf.fields.map(f => {
       const fid = Number(f.id);
-      const v = teacherVal(rid, fid);
+      const v = teacherEditVal(rid, fid);
       const lbl = String(f.label_resolved || f.label || f.field_name || '');
       const help = String(f.help_text_resolved || f.help_text || '');
+      const canEditField = (Number(f.can_edit || 0) === 1);
+      const combinedHtml = combinedPreviewHtml(rid, f);
+      const historyHtml = renderHistoryHtml(rid, fid);
+      const actionsHtml = (combinedHtml || historyHtml)
+        ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+        : '';
       return `
         <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
           <div class="lbl" data-dyn="label">${esc(lbl)}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-          ${renderInputHtml(f, rid, v, locked)}
-          ${renderHistoryHtml(rid, fid)}
+          ${renderInputHtml(f, rid, v, locked, canEditField)}
+          ${actionsHtml}
         </div>
       `;
     }).join('');
@@ -2562,12 +2716,14 @@ render_teacher_header($pageTitle);
 
       const _gtTotal = fields.length;
       let _gtDone = 0;
-      fields.forEach(_f => { const _v = teacherVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
+      fields.forEach(_f => { const _v = teacherEditVal(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
       const del = g.delegation;
-      const delBadge = (del && del.user_id) ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>` : '';
+      const delBadge = (del && del.user_id)
+        ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>`
+        : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = CAN_DELEGATE
   ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
@@ -2583,17 +2739,23 @@ render_teacher_header($pageTitle);
         `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
       fields.forEach(f => {
-        const v = teacherVal(reportId, f.id);
+        const v = teacherEditVal(reportId, f.id);
+        const canEditField = (Number(f.can_edit || 0) === 1);
         const childInfo = childInfoHtml(f, reportId);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
+        const combinedHtml = combinedPreviewHtml(reportId, f);
+        const historyHtml = renderHistoryHtml(reportId, f.id);
+        const actionsHtml = (combinedHtml || historyHtml)
+          ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+          : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-            ${renderHistoryHtml(reportId, f.id)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
+            ${actionsHtml}
             ${childInfo}
           </div>
         `;
@@ -2695,15 +2857,19 @@ render_teacher_header($pageTitle);
           const reportId = s.report_instance_id;
           const status = String(s.status||'draft');
           const locked = (status === 'locked');
-          const v = teacherVal(reportId, f.id);
-          const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-          const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+          const v = teacherEditVal(reportId, f.id);
+          const canEditField = (Number(f.can_edit || 0) === 1);
 
           const missingCls = (v === '') ? 'missing' : '';
+          const combinedHtml = combinedPreviewHtml(reportId, f);
+          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const actionsHtml = (combinedHtml || historyHtml)
+            ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+            : '';
           td.innerHTML = `
             <div class="cellWrap ${missingCls}">
-              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-              ${renderHistoryHtml(reportId, f.id)}
+              ${renderInputHtml(f, reportId, v, locked, canEditField)}
+              ${actionsHtml}
               ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
             </div>
           `;
@@ -2770,14 +2936,13 @@ render_teacher_header($pageTitle);
         const td = document.createElement('td');
         const reportId = s.report_instance_id;
         const locked = (status === 'locked');
-        const v = teacherVal(reportId, f.id);
-        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+        const v = teacherEditVal(reportId, f.id);
+        const canEditField = (Number(f.can_edit || 0) === 1);
 
         const missingCls = (v === '') ? 'missing' : '';
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
             ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
@@ -2841,15 +3006,19 @@ render_teacher_header($pageTitle);
         const reportId = s.report_instance_id;
         const status = String(s.status||'draft');
         const locked = (status === 'locked');
-        const v = teacherVal(reportId, f.id);
-        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+        const v = teacherEditVal(reportId, f.id);
+        const canEditField = (Number(f.can_edit || 0) === 1);
 
         const missingCls = (v === '') ? 'missing' : '';
+          const combinedHtml = combinedPreviewHtml(reportId, f);
+          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const actionsHtml = (combinedHtml || historyHtml)
+            ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+            : '';
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
-            ${renderHistoryHtml(reportId, f.id)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
+            ${actionsHtml}
             ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
@@ -2894,6 +3063,8 @@ render_teacher_header($pageTitle);
       if (studentGroupSelect) studentGroupSelect.innerHTML = '';
       state.students = j.students;
       state.values_teacher = j.values_teacher || {};
+      state.values_teacher_own = j.values_teacher_own || {};
+      state.values_teacher_parts = j.values_teacher_parts || {};
       state.values_child = j.values_child || {};
       state.value_history = j.value_history || {};
       state.class_report_instance_id = j.class_report_instance_id || 0;
@@ -2902,6 +3073,7 @@ render_teacher_header($pageTitle);
       state.text_snippets = j.text_snippets || [];
       state.ai_enabled = !!j.ai_enabled;
       state.class_grade_level = j.class_grade_level || null;
+      state.is_class_teacher = !!j.is_class_teacher;
       aiCache = new Map();
       aiCurrentStudent = null;
       ui.mergeDecisions = new Map();

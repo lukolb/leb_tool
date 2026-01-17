@@ -488,6 +488,13 @@ function delegated_user_for_group(PDO $pdo, int $classId, string $schoolYear, st
   return (int)($st->fetchColumn() ?: 0);
 }
 
+function user_is_class_teacher(PDO $pdo, int $userId, int $classId): bool {
+  if ($userId <= 0 || $classId <= 0) return false;
+  $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+  $st->execute([$userId, $classId]);
+  return (bool)$st->fetch();
+}
+
 function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, string $groupKey): bool {
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
@@ -495,6 +502,146 @@ function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string 
   $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
   if ($assigned <= 0) return true;        // not delegated => anyone with class access may edit
   return $assigned === $uid;              // delegated => only that teacher
+}
+
+function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, array $meta, string $fieldType, int $isMultiline): bool {
+  if (($currentUser['role'] ?? '') === 'admin') return true;
+  $uid = (int)($currentUser['id'] ?? 0);
+  if ($uid <= 0) return false;
+
+  $groupKey = group_key_from_meta($meta);
+  $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  if ($assigned <= 0) return true;
+
+  if (is_free_text_field($fieldType, $isMultiline)) {
+    return ($assigned === $uid) || user_is_class_teacher($pdo, $uid, $classId);
+  }
+
+  return $assigned === $uid;
+}
+
+function is_free_text_field(string $fieldType, int $isMultiline): bool {
+  $t = strtolower(trim($fieldType));
+  if ($t === 'multiline' || $t === 'text') return true;
+  return $isMultiline === 1;
+}
+
+function free_text_parts_from_json(?string $valueJsonRaw): array {
+  if (!$valueJsonRaw) {
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+  }
+  $j = json_decode($valueJsonRaw, true);
+  if (!is_array($j) || !isset($j['free_text']) || !is_array($j['free_text'])) {
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+  }
+  $ft = $j['free_text'];
+  return [
+    'has_free_text' => true,
+    'class_text' => (string)($ft['class_text'] ?? ''),
+    'delegate_text' => (string)($ft['delegate_text'] ?? ''),
+    'delegate_user_id' => (int)($ft['delegate_user_id'] ?? 0),
+  ];
+}
+
+function build_free_text_json(string $classText, string $delegateText, int $delegateUserId): string {
+  return json_encode([
+    'free_text' => [
+      'class_text' => $classText,
+      'delegate_text' => $delegateText,
+      'delegate_user_id' => $delegateUserId,
+    ],
+  ], JSON_UNESCAPED_UNICODE);
+}
+
+function combine_free_text(string $classText, string $delegateText): string {
+  $parts = [];
+  if (trim($classText) !== '') $parts[] = rtrim($classText);
+  if (trim($delegateText) !== '') $parts[] = rtrim($delegateText);
+  return implode("\n\n", $parts);
+}
+
+function load_existing_teacher_value(PDO $pdo, int $reportInstanceId, int $fieldId): array {
+  $st = $pdo->prepare(
+    "SELECT value_text, value_json
+     FROM field_values
+     WHERE report_instance_id=? AND template_field_id=? AND source='teacher'
+     LIMIT 1"
+  );
+  $st->execute([$reportInstanceId, $fieldId]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return [
+    'value_text' => $row && $row['value_text'] !== null ? (string)$row['value_text'] : null,
+    'value_json' => $row && $row['value_json'] !== null ? (string)$row['value_json'] : null,
+  ];
+}
+
+function save_free_text_value(
+  PDO $pdo,
+  int $reportId,
+  int $fieldId,
+  string $classText,
+  string $delegateText,
+  int $delegateUserId,
+  bool $isDelegate,
+  int $userId
+): array {
+  $classText = trim($classText);
+  $delegateText = trim($delegateText);
+
+  $pdo->beginTransaction();
+  try {
+    $st = $pdo->prepare(
+      "SELECT value_text, value_json
+       FROM field_values
+       WHERE report_instance_id=? AND template_field_id=? AND source='teacher'
+       LIMIT 1
+       FOR UPDATE"
+    );
+    $st->execute([$reportId, $fieldId]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+
+    $existingClass = '';
+    $existingDelegate = '';
+    if ($row) {
+      $free = free_text_parts_from_json($row['value_json'] !== null ? (string)$row['value_json'] : null);
+      if ($free['has_free_text']) {
+        $existingClass = (string)($free['class_text'] ?? '');
+        $existingDelegate = (string)($free['delegate_text'] ?? '');
+      } else {
+        $existingClass = (string)($row['value_text'] ?? '');
+      }
+    }
+
+    if ($isDelegate) $existingDelegate = $delegateText;
+    else $existingClass = $classText;
+
+    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId);
+    $valueText = combine_free_text($existingClass, $existingDelegate);
+    if (trim($valueText) === '') $valueText = null;
+
+    if ($row) {
+      $up = $pdo->prepare(
+        "UPDATE field_values
+         SET value_text=?, value_json=?, source='teacher', updated_by_user_id=?, updated_at=NOW()
+         WHERE report_instance_id=? AND template_field_id=? AND source='teacher'
+         LIMIT 1"
+      );
+      $up->execute([$valueText, $valueJson, $userId, $reportId, $fieldId]);
+    } else {
+      $ins = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+         VALUES (?, ?, ?, ?, 'teacher', ?, NOW())"
+      );
+      $ins->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    }
+
+    $pdo->commit();
+  } catch (Throwable $e) {
+    $pdo->rollBack();
+    throw $e;
+  }
+
+  return load_existing_teacher_value($pdo, $reportId, $fieldId);
 }
 
 function base_field_key(string $fieldName): string {
@@ -655,6 +802,91 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
   return $out;
 }
 
+function load_teacher_values_for_user(
+  PDO $pdo,
+  array $reportIds,
+  array $fieldMap,
+  array $delegations,
+  array $currentUser,
+  int $classId,
+  string $schoolYear,
+  string $periodLabel,
+  string $lang
+): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', array_keys($fieldMap)), fn($x)=>$x>0)));
+  if (!$reportIds || !$fieldIds) return [];
+
+  $inR = implode(',', array_fill(0, count($reportIds), '?'));
+  $inF = implode(',', array_fill(0, count($fieldIds), '?'));
+  $params = array_merge($reportIds, $fieldIds);
+
+  $st = $pdo->prepare(
+    "SELECT report_instance_id, template_field_id, value_text, value_json
+     FROM field_values
+     WHERE report_instance_id IN ($inR)
+       AND template_field_id IN ($inF)
+       AND source='teacher'"
+  );
+  $st->execute($params);
+
+  $uid = (int)($currentUser['id'] ?? 0);
+  $isClassTeacher = (($currentUser['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $uid, $classId);
+
+  $combined = [];
+  $own = [];
+  $parts = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $rid = (string)(int)$r['report_instance_id'];
+    $fid = (int)$r['template_field_id'];
+    if (!isset($fieldMap[$fid])) continue;
+    if (!isset($combined[$rid])) $combined[$rid] = [];
+    if (!isset($own[$rid])) $own[$rid] = [];
+
+    $meta = $fieldMap[$fid]['meta'] ?? [];
+    $fieldType = (string)($fieldMap[$fid]['field_type'] ?? '');
+    $isMultiline = (int)($fieldMap[$fid]['is_multiline'] ?? 0);
+
+    $groupKey = group_key_from_meta($meta);
+    $del = $groupKey !== '' ? ($delegations[$groupKey] ?? null) : null;
+    $assigned = $del ? (int)($del['user_id'] ?? 0) : 0;
+
+    $valueTextRaw = $r['value_text'] !== null ? (string)$r['value_text'] : '';
+    $valueJsonRaw = $r['value_json'] !== null ? (string)$r['value_json'] : null;
+
+    if ($assigned > 0 && is_free_text_field($fieldType, $isMultiline)) {
+      $free = free_text_parts_from_json($valueJsonRaw);
+      if ($free['has_free_text']) {
+        $delegateMatches = ((int)$free['delegate_user_id'] === $assigned);
+        $classText = (string)$free['class_text'];
+        $delegateText = $delegateMatches ? (string)$free['delegate_text'] : '';
+        $textCombined = combine_free_text($classText, $delegateText);
+        $isDelegate = ($assigned === $uid);
+        $textOwn = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
+        $combined[$rid][(string)$fid] = $textCombined;
+        $own[$rid][(string)$fid] = $textOwn;
+        if (!isset($parts[$rid])) $parts[$rid] = [];
+        $parts[$rid][(string)$fid] = [
+          'class_text' => $classText,
+          'delegate_text' => $delegateText,
+          'delegate_user_id' => $assigned,
+        ];
+        continue;
+      }
+      $combined[$rid][(string)$fid] = $valueTextRaw;
+      $own[$rid][(string)$fid] = $valueTextRaw;
+      continue;
+    }
+
+    $resolved = resolve_option_value_text($pdo, $meta, $valueJsonRaw, $valueTextRaw, $lang);
+    $text = $resolved['text'] !== null ? (string)$resolved['text'] : '';
+    $combined[$rid][(string)$fid] = $text;
+    $own[$rid][(string)$fid] = $text;
+  }
+
+  return ['combined' => $combined, 'own' => $own, 'parts' => $parts];
+}
+
 function load_value_history(PDO $pdo, array $reportIds, array $fieldIds, array $fieldMetaById, string $lang, int $limit = 5): array {
   $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
   $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
@@ -804,10 +1036,39 @@ try {
       $classFieldIdsEditable[] = (int)$f0['id'];
     }
 
+    $periodLabel = 'Standard';
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $delegationUsers = load_teachers_for_delegation($pdo);
+
+    $teacherFieldMap = [];
+    foreach ($teacherFields as $f0) {
+      $fid = (int)($f0['id'] ?? 0);
+      if ($fid <= 0) continue;
+      $teacherFieldMap[$fid] = [
+        'field_type' => (string)($f0['field_type'] ?? ''),
+        'is_multiline' => (int)($f0['is_multiline'] ?? 0),
+        'meta' => meta_read($f0['meta_json'] ?? null),
+      ];
+    }
+
     // load values for editable class fields
     $classValuesById = [];
+    $classValuesOwnById = [];
     if ($classReportInstanceId > 0 && $classFieldIdsEditable) {
-      $classValuesById = load_values($pdo, [$classReportInstanceId], $classFieldIdsEditable, 'teacher', $lang);
+      $classFieldMap = array_intersect_key($teacherFieldMap, array_flip($classFieldIdsEditable));
+      $classValues = load_teacher_values_for_user(
+        $pdo,
+        [$classReportInstanceId],
+        $classFieldMap,
+        $delegations,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $lang
+      );
+      $classValuesById = $classValues['combined'] ?? [];
+      $classValuesOwnById = $classValues['own'] ?? [];
     }
 
     // name => value for placeholder resolution
@@ -849,6 +1110,17 @@ try {
         ];
       }
 
+      $canEditClassField = can_user_edit_field(
+        $pdo,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $m0,
+        (string)($f0['field_type'] ?? ''),
+        (int)($f0['is_multiline'] ?? 0)
+      );
+
       $classFieldsDefs[] = [
         'id' => (int)$f0['id'],
         'field_name' => (string)$f0['field_name'],
@@ -859,6 +1131,7 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f0['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
+        'can_edit' => $canEditClassField ? 1 : 0,
       ];
     }
 
@@ -901,6 +1174,17 @@ try {
       $base = base_field_key((string)$f['field_name']);
       $child = ($base !== '' && isset($childByBase[$base])) ? $childByBase[$base] : null;
 
+      $canEditField = can_user_edit_field(
+        $pdo,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $meta,
+        (string)($f['field_type'] ?? ''),
+        (int)($f['is_multiline'] ?? 0)
+      );
+
       $groups[$gKey]['fields'][] = [
         'id' => (int)$f['id'],
         'field_name' => (string)$f['field_name'],
@@ -911,6 +1195,7 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
+        'can_edit' => $canEditField ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],
           'field_type' => (string)$child['field_type'],
@@ -921,19 +1206,22 @@ try {
 
     $groupsList = array_values($groups);
 
-    // --- delegations (per class/school_year/period_label + group) ---
-    $periodLabel = 'Standard';
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $delegationUsers = load_teachers_for_delegation($pdo);
-
     // annotate groups with permissions + delegation meta for UI
     $groupsList2 = [];
     foreach ($groupsList as $g0) {
       $gk = (string)($g0['key'] ?? '');
       $del = $gk !== '' && isset($delegations[$gk]) ? $delegations[$gk] : null;
-      $canEditGroup = $gk !== '' ? can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gk) : true;
+      $anyEditable = false;
+      if (isset($g0['fields']) && is_array($g0['fields'])) {
+        foreach ($g0['fields'] as $f0) {
+          if (!empty($f0['can_edit'])) {
+            $anyEditable = true;
+            break;
+          }
+        }
+      }
       $g0['delegation'] = $del;
-      $g0['can_edit'] = $canEditGroup ? 1 : 0;
+      $g0['can_edit'] = $anyEditable ? 1 : 0;
       $groupsList2[] = $g0;
     }
     $groupsList = $groupsList2;
@@ -945,7 +1233,19 @@ try {
       array_values($childByBase)
     ), fn($x)=>$x>0)));
 
-    $valuesTeacher = load_values($pdo, $reportIds, $teacherFieldIds, 'teacher', $lang);
+    $teacherValues = load_teacher_values_for_user(
+      $pdo,
+      $reportIds,
+      $teacherFieldMap,
+      $delegations,
+      $u,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $lang
+    );
+    $valuesTeacher = $teacherValues['combined'] ?? [];
+    $valuesTeacherOwn = $teacherValues['own'] ?? [];
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
 
     // --- progress (teacher / child / overall) ---
@@ -1069,6 +1369,8 @@ try {
     $stClass->execute([$classId]);
     $classGradeLevel = $stClass->fetchColumn();
 
+    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+
     json_out([
       'ok' => true,
       'template' => [
@@ -1083,6 +1385,8 @@ try {
       'period_label' => $periodLabel,
       'text_snippets' => text_snippets_list($pdo),
       'values_teacher' => $valuesTeacher,
+      'values_teacher_own' => $valuesTeacherOwn,
+      'values_teacher_parts' => $teacherValues['parts'] ?? [],
       'values_child' => $valuesChild,
       'value_history' => $valueHistory,
       'progress_summary' => $progressSummary,
@@ -1092,10 +1396,13 @@ try {
         'field_ids' => $classFieldIdsEditable,
         'fields' => $classFieldsDefs,
         'values' => $classValuesById,
+        'values_own' => $classValuesOwnById,
+        'values_parts' => $classValues['parts'] ?? [],
         'value_by_name' => $classValueByName,
       ],
       'ai_enabled' => ai_provider_enabled(),
       'class_grade_level' => $classGradeLevel !== false ? $classGradeLevel : null,
+      'is_class_teacher' => $isClassTeacher,
     ]);
   }
 
@@ -1552,7 +1859,7 @@ if ($action === 'delegations_save') {
     if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
 
     $st = $pdo->prepare(
-      "SELECT id, field_name, field_type, meta_json
+      "SELECT id, field_name, field_type, is_multiline, meta_json
        FROM template_fields
        WHERE id=? AND template_id=? AND can_teacher_edit=1
        LIMIT 1"
@@ -1570,46 +1877,70 @@ if ($action === 'delegations_save') {
     $periodLabelDeleg = 'Standard';
 
     $gKey = group_key_from_meta($meta);
-    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $gKey)) {
-        throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
+    $type = (string)($frow['field_type'] ?? '');
+    $isMultiline = (int)($frow['is_multiline'] ?? 0);
+    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline)) {
+      throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
-
-    $type = (string)$frow['field_type'];
-    $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+    $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     $valueJson = null;
+    $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabelDeleg, $gKey);
 
-    if (in_array($type, ['radio','select','grade'], true)) {
-      $valueText = $valueText !== null ? trim($valueText) : '';
-      if ($valueText === '') $valueText = null;
+    if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
+      $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
+      $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
+      $classText = $isDelegate ? '' : $inputText;
+      $delegateText = $isDelegate ? $inputText : '';
 
-      $listId = option_list_id_from_meta($meta);
-      if ($listId > 0 && $valueText !== null) {
-        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
-        $st2->execute([$listId, $valueText]);
-        $optId = (int)($st2->fetchColumn() ?: 0);
-        if ($optId > 0) {
-          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
-        }
-      }
-    } elseif ($type === 'checkbox') {
-      $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+      $saved = save_free_text_value(
+        $pdo,
+        $reportId,
+        $fieldId,
+        $classText,
+        $delegateText,
+        $assigned,
+        $isDelegate,
+        $userId
+      );
+      $valueText = $saved['value_text'];
+      $valueJson = $saved['value_json'];
     } else {
-      $valueText = $valueText !== null ? trim($valueText) : null;
-      if ($valueText === '') $valueText = null;
+      $valueText = $valueTextInput;
+      if (in_array($type, ['radio','select','grade'], true)) {
+        $valueText = $valueText !== null ? trim($valueText) : '';
+        if ($valueText === '') $valueText = null;
+
+        $listId = option_list_id_from_meta($meta);
+        if ($listId > 0 && $valueText !== null) {
+          $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+          $st2->execute([$listId, $valueText]);
+          $optId = (int)($st2->fetchColumn() ?: 0);
+          if ($optId > 0) {
+            $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+          }
+        }
+      } elseif ($type === 'checkbox') {
+        $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+      } else {
+        $valueText = $valueText !== null ? trim($valueText) : null;
+        if ($valueText === '') $valueText = null;
+      }
     }
 
-    $up = $pdo->prepare(
-      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
-       VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         value_text=VALUES(value_text),
-         value_json=VALUES(value_json),
-         source='teacher',
-         updated_by_user_id=VALUES(updated_by_user_id),
-         updated_at=NOW()"
-    );
-    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    if (!($assigned > 0 && is_free_text_field($type, $isMultiline))) {
+      $up = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+         VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           value_text=VALUES(value_text),
+           value_json=VALUES(value_json),
+           source='teacher',
+           updated_by_user_id=VALUES(updated_by_user_id),
+           updated_at=NOW()"
+      );
+      $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    }
 
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
@@ -1649,7 +1980,7 @@ if ($action === 'delegations_save') {
     $templateId = $riTemplateId;
 
     $st = $pdo->prepare(
-      "SELECT id, field_type, meta_json
+      "SELECT id, field_type, is_multiline, meta_json
        FROM template_fields
        WHERE id=? AND template_id=? AND can_teacher_edit=1
        LIMIT 1"
@@ -1665,47 +1996,71 @@ if ($action === 'delegations_save') {
     $schoolYear = (string)($ri['school_year'] ?? '');
     $periodLabel = (string)($ri['period_label'] ?? 'Standard');
     $gKey = group_key_from_meta($meta);
-    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gKey)) {
+    $type = (string)($frow['field_type'] ?? '');
+    $isMultiline = (int)($frow['is_multiline'] ?? 0);
+    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
-
-    $type = (string)$frow['field_type'];
-    $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+    $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     // ✅ immer initialisieren (sonst Undefined variable)
     $valueJson = null;
+    $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $gKey);
 
-    if (in_array($type, ['radio','select','grade'], true)) {
-      $valueText = $valueText !== null ? trim($valueText) : '';
-      if ($valueText === '') $valueText = null;
+    if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
+      $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
+      $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
+      $classText = $isDelegate ? '' : $inputText;
+      $delegateText = $isDelegate ? $inputText : '';
 
-      $listId = option_list_id_from_meta($meta);
-      if ($listId > 0 && $valueText !== null) {
-        $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
-        $st2->execute([$listId, $valueText]);
-        $optId = (int)($st2->fetchColumn() ?: 0);
-        if ($optId > 0) {
-          $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
-        }
-      }
-    } elseif ($type === 'checkbox') {
-      $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+      $saved = save_free_text_value(
+        $pdo,
+        $reportId,
+        $fieldId,
+        $classText,
+        $delegateText,
+        $assigned,
+        $isDelegate,
+        $userId
+      );
+      $valueText = $saved['value_text'];
+      $valueJson = $saved['value_json'];
     } else {
-      $valueText = $valueText !== null ? trim($valueText) : null;
-      if ($valueText === '') $valueText = null;
+      $valueText = $valueTextInput;
+      if (in_array($type, ['radio','select','grade'], true)) {
+        $valueText = $valueText !== null ? trim($valueText) : '';
+        if ($valueText === '') $valueText = null;
+
+        $listId = option_list_id_from_meta($meta);
+        if ($listId > 0 && $valueText !== null) {
+          $st2 = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+          $st2->execute([$listId, $valueText]);
+          $optId = (int)($st2->fetchColumn() ?: 0);
+          if ($optId > 0) {
+            $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+          }
+        }
+      } elseif ($type === 'checkbox') {
+        $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
+      } else {
+        $valueText = $valueText !== null ? trim($valueText) : null;
+        if ($valueText === '') $valueText = null;
+      }
     }
 
-    $up = $pdo->prepare(
-      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
-       VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         value_text=VALUES(value_text),
-         value_json=VALUES(value_json),
-         source='teacher',
-         updated_by_user_id=VALUES(updated_by_user_id),
-         updated_at=NOW()"
-    );
-    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    if (!($assigned > 0 && is_free_text_field($type, $isMultiline))) {
+      $up = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+         VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           value_text=VALUES(value_text),
+           value_json=VALUES(value_json),
+           source='teacher',
+           updated_by_user_id=VALUES(updated_by_user_id),
+           updated_at=NOW()"
+      );
+      $up->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+    }
 
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
