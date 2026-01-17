@@ -1877,12 +1877,11 @@ if ($action === 'delegations_save') {
     $periodLabelDeleg = 'Standard';
 
     $gKey = group_key_from_meta($meta);
+    $type = (string)($frow['field_type'] ?? '');
+    $isMultiline = (int)($frow['is_multiline'] ?? 0);
     if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
-
-    $type = (string)$frow['field_type'];
-    $isMultiline = (int)($frow['is_multiline'] ?? 0);
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     $valueJson = null;
@@ -1997,12 +1996,11 @@ if ($action === 'delegations_save') {
     $schoolYear = (string)($ri['school_year'] ?? '');
     $periodLabel = (string)($ri['period_label'] ?? 'Standard');
     $gKey = group_key_from_meta($meta);
+    $type = (string)($frow['field_type'] ?? '');
+    $isMultiline = (int)($frow['is_multiline'] ?? 0);
     if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
-
-    $type = (string)$frow['field_type'];
-    $isMultiline = (int)($frow['is_multiline'] ?? 0);
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     // ✅ immer initialisieren (sonst Undefined variable)
