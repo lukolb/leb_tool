@@ -1277,13 +1277,16 @@ render_teacher_header($pageTitle);
   function combinedPreviewHtml(reportId, field){
     if (!field) return '';
     if (!isFreeTextField(field)) return '';
+    const delegatedUserId = Number(field._delegated_user_id || 0);
+    if (!delegatedUserId) return '';
     const combined = teacherVal(reportId, field.id);
     const own = teacherEditVal(reportId, field.id);
     const same = String(combined ?? '') === String(own ?? '');
     if (!combined || same) return '';
     const html = esc(String(combined)).replace(/\n/g, '<br>');
     return `
-      <span class="combined-tip" data-tip="1" style="margin-top:6px;">
+      <span class="badge-del combined-tip" data-tip="1" style="margin-top:6px;">
+        <span>Delegiert</span>
         <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">i</button>
         <span class="combined-tip-bubble">${html}</span>
       </span>
