@@ -112,6 +112,9 @@ function translations_catalog(): array {
       'teacher.students.ai_class_support' => 'Fördermöglichkeiten',
       'teacher.students.ai_class_focus' => 'Fachliche Schwerpunkte',
       'teacher.students.ai_class_levels' => 'Kompetenzstufen',
+      'teacher.students.ai_class_areas' => 'Bereichsfeedback',
+      'teacher.students.ai_class_area_support' => 'Förderempfehlung',
+      'teacher.students.ai_class_area_fallback' => 'Bereich',
 
       // Teacher dashboard
       'teacher.title' => 'Lehrkraft – Übersicht',
@@ -521,6 +524,9 @@ function translations_catalog(): array {
       'teacher.students.ai_class_support' => 'Support options',
       'teacher.students.ai_class_focus' => 'Subject priorities',
       'teacher.students.ai_class_levels' => 'Competency levels',
+      'teacher.students.ai_class_areas' => 'Area feedback',
+      'teacher.students.ai_class_area_support' => 'Support recommendation',
+      'teacher.students.ai_class_area_fallback' => 'Area',
 
       // Teacher dashboard
       'teacher.title' => 'Teacher – overview',

@@ -1891,6 +1891,7 @@ try {
     $gradeDistribution = [];
     $groupGrades = [];
     $performanceValues = [];
+    $groupStats = [];
 
     foreach ($values as $row) {
       $fid = (int)($row['template_field_id'] ?? 0);
@@ -1908,6 +1909,15 @@ try {
       $text = trim((string)($resolved['text'] ?? ''));
       if ($text === '') continue;
 
+      $group = $field['group'] ?: '—';
+      if (!isset($groupStats[$group])) {
+        $groupStats[$group] = [
+          'grade' => [],
+          'performance' => [],
+          'competency' => [],
+        ];
+      }
+
       $numeric = parse_numeric_value($text);
       if ($numeric === null && $row['value_text'] !== null) {
         $numeric = parse_numeric_value((string)$row['value_text']);
@@ -1917,12 +1927,15 @@ try {
         $gradeDistribution[$text] = ($gradeDistribution[$text] ?? 0) + 1;
         if ($numeric !== null) {
           $gradeValues[] = $numeric;
-          $group = $field['group'] ?: '—';
           if (!isset($groupGrades[$group])) $groupGrades[$group] = [];
           $groupGrades[$group][] = $numeric;
+          $groupStats[$group]['grade'][] = $numeric;
         }
+      } elseif ($field['field_type'] === 'select' || $field['field_type'] === 'radio') {
+        $groupStats[$group]['competency'][$text] = ($groupStats[$group]['competency'][$text] ?? 0) + 1;
       } elseif ($numeric !== null) {
         $performanceValues[] = $numeric;
+        $groupStats[$group]['performance'][] = $numeric;
       }
     }
 
@@ -1981,6 +1994,28 @@ try {
     }
     if (!$groupLines) $groupLines[] = 'Keine numerischen Notenwerte für Fachgruppen.';
 
+    $groupContextLines = [];
+    foreach ($groupStats as $group => $stats) {
+      $parts = [];
+      if (!empty($stats['grade'])) {
+        $parts[] = 'Noten-Ø ' . number_format(array_sum($stats['grade']) / count($stats['grade']), 2, ',', '') . ' (n=' . count($stats['grade']) . ')';
+      }
+      if (!empty($stats['performance'])) {
+        $parts[] = 'Leistungsschnitt Ø ' . number_format(array_sum($stats['performance']) / count($stats['performance']), 2, ',', '') . ' (n=' . count($stats['performance']) . ')';
+      }
+      if (!empty($stats['competency'])) {
+        $labels = [];
+        foreach ($stats['competency'] as $label => $cnt) {
+          $labels[] = $label . ': ' . $cnt;
+        }
+        $parts[] = 'Kompetenzverteilung: ' . implode(', ', $labels);
+      }
+      if ($parts) {
+        $groupContextLines[] = 'Bereich ' . $group . ': ' . implode(' | ', $parts);
+      }
+    }
+    if (!$groupContextLines) $groupContextLines[] = 'Keine bereichsspezifischen Werte verfügbar.';
+
     $contextParts = [];
     $contextParts[] = 'Klassenstufe: ' . ($gradeLevel !== null ? (string)$gradeLevel : '—');
     $contextParts[] = 'Schuljahr: ' . ($schoolYear !== '' ? $schoolYear : '—');
@@ -1990,15 +2025,17 @@ try {
     $contextParts[] = 'Fachgruppen (Noten-Ø): ' . implode(' | ', $groupLines);
     $contextParts[] = 'Leistungsschnitt (sonstige numerische Felder): ' . ($performanceAvg !== null ? ('Ø ' . number_format($performanceAvg, 2, ',', '') . ' aus ' . count($performanceValues) . ' Werten') : 'Keine numerischen Leistungswerte verfügbar.');
     $contextParts[] = "Kompetenzstufen (geordnet niedrig → hoch):\n- " . implode("\n- ", $competencyLines);
+    $contextParts[] = "Bereichsspezifische Zusammenfassung:\n- " . implode("\n- ", $groupContextLines);
 
     $system = "Du bist eine erfahrene Lehrkraft und erstellst eine Klassen-Rückmeldung. Antworte ausschließlich als JSON mit genau diesen Keys:\n"
-      . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), kompetenzstufen_erklaerung (array).\n"
+      . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), kompetenzstufen_erklaerung (array), bereiche (array).\n"
       . "Keine weiteren Keys. Keine Markdown-Umrahmung.";
 
     $userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die folgenden aggregierten Informationen und erfinde keine Details. "
       . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler. "
       . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
       . "Erkläre zudem die Bedeutung der Kompetenzstufen anhand der genannten Stufenreihenfolge (niedrig → hoch). "
+      . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
       . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
 
     $aiCfg = ai_provider_config();
@@ -2015,6 +2052,7 @@ try {
       'foerdermoeglichkeiten' => [],
       'schwerpunkte_faecher' => [],
       'kompetenzstufen_erklaerung' => [],
+      'bereiche' => [],
     ];
     $json = json_decode((string)$aiText, true);
     if (is_array($json)) {
@@ -2024,6 +2062,22 @@ try {
         if (isset($json[$k]) && is_array($json[$k])) {
           $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!=='' ));
         }
+      }
+      if (isset($json['bereiche']) && is_array($json['bereiche'])) {
+        $areas = [];
+        foreach ($json['bereiche'] as $item) {
+          if (!is_array($item)) continue;
+          $bereich = trim((string)($item['bereich'] ?? ''));
+          $rueckmeldung = trim((string)($item['rueckmeldung'] ?? ''));
+          $foerderung = trim((string)($item['foerderung'] ?? ''));
+          if ($bereich === '' && $rueckmeldung === '' && $foerderung === '') continue;
+          $areas[] = [
+            'bereich' => $bereich,
+            'rueckmeldung' => $rueckmeldung,
+            'foerderung' => $foerderung,
+          ];
+        }
+        $parsed['bereiche'] = $areas;
       }
     } else {
       $parsed['rueckmeldung_gesamt'] = trim((string)$aiText);

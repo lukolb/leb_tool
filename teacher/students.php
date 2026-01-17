@@ -1234,6 +1234,23 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       return `<ul style="margin:0; padding-left:18px;">${items.map(it=>`<li style="margin:6px 0;">${escapeHtml(it)}</li>`).join('')}</ul>`;
     }
 
+    function renderAiClassAreas(areas){
+      const items = Array.isArray(areas) ? areas : [];
+      const rows = items.filter(item => item && (String(item.bereich||'').trim() || String(item.rueckmeldung||'').trim() || String(item.foerderung||'').trim()));
+      if (!rows.length) return '<span class="muted"><?=h(t('teacher.students.ai_class_empty', 'Keine Angaben.'))?></span>';
+      return `
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          ${rows.map(item => `
+            <div style="border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff;">
+              <div style="font-weight:700;">${escapeHtml(item.bereich || '<?=h(t('teacher.students.ai_class_area_fallback', 'Bereich'))?>')}</div>
+              <div class="muted" style="margin-top:4px;">${escapeHtml(item.rueckmeldung || '')}</div>
+              ${String(item.foerderung || '').trim() !== '' ? `<div style="margin-top:6px;"><strong><?=h(t('teacher.students.ai_class_area_support', 'Förderempfehlung'))?>:</strong> ${escapeHtml(item.foerderung)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
     function renderAiClassFeedback(feedback){
       if (!aiClassContent) return;
       const overall = String(feedback?.rueckmeldung_gesamt || '').trim();
@@ -1241,6 +1258,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       const support = Array.isArray(feedback?.foerdermoeglichkeiten) ? feedback.foerdermoeglichkeiten : [];
       const focus = Array.isArray(feedback?.schwerpunkte_faecher) ? feedback.schwerpunkte_faecher : [];
       const levels = Array.isArray(feedback?.kompetenzstufen_erklaerung) ? feedback.kompetenzstufen_erklaerung : [];
+      const areas = Array.isArray(feedback?.bereiche) ? feedback.bereiche : [];
 
       let html = '';
       if (overall) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_overall', 'Rückmeldung'))?>', escapeHtml(overall));
@@ -1248,6 +1266,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_support', 'Fördermöglichkeiten'))?>', renderAiClassList(support));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_focus', 'Fachliche Schwerpunkte'))?>', renderAiClassList(focus));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_levels', 'Kompetenzstufen'))?>', renderAiClassList(levels));
+      html += renderAiClassSection('<?=h(t('teacher.students.ai_class_areas', 'Bereichsfeedback'))?>', renderAiClassAreas(areas));
 
       aiClassContent.innerHTML = html;
     }
