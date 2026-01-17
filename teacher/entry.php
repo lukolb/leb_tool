@@ -514,7 +514,7 @@ render_teacher_header($pageTitle);
     background:#fff; border:1px solid var(--border); border-radius:10px;
     padding:8px 10px; font-size:12px; color:var(--text);
     box-shadow:0 8px 24px rgba(0,0,0,0.12);
-    min-width:160px; max-width:320px; z-index:30; display:none;
+    min-width:600px; max-width:600px; z-index:30; display:none;
   }
   .combined-tip.open .combined-tip-bubble{ display:block; }
   .combined-tip-bubble::after{
@@ -562,7 +562,7 @@ render_teacher_header($pageTitle);
   .snippet-card .c{ color:var(--muted); font-size:12px; }
   .snippet-card .txt{ white-space:pre-wrap; }
   .snippet-menu{ position:absolute; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:360px; max-height:60vh; overflow:auto; }
-  .snippet-menu h4{ margin:4px 0; font-size:14px; }
+  .snippet-menu h4{ margin:4px 0; font-size:14px; border-top: solid lightgray; padding-top: 5px; }
   .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
   .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
   .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; position: sticky;
