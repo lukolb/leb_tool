@@ -46,6 +46,13 @@ if (!$class) {
 
 $err = '';
 $ok = '';
+$importSkippedDetails = [];
+$addFormValues = [
+  'first_name' => '',
+  'last_name' => '',
+  'date_of_birth' => '',
+  'custom' => [],
+];
 
 function ai_provider_enabled(): bool {
   $cfg = app_config();
@@ -438,10 +445,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     elseif ($action === 'add') {
-      $first = normalize_name((string)($_POST['first_name'] ?? ''));
-      $last  = normalize_name((string)($_POST['last_name'] ?? ''));
-      $dob   = normalize_date($_POST['date_of_birth'] ?? null);
-      $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
+      $addFormValues = [
+        'first_name' => trim((string)($_POST['first_name'] ?? '')),
+        'last_name' => trim((string)($_POST['last_name'] ?? '')),
+        'date_of_birth' => (string)($_POST['date_of_birth'] ?? ''),
+        'custom' => is_array($_POST['custom'] ?? null) ? $_POST['custom'] : [],
+      ];
+      $first = normalize_name((string)($addFormValues['first_name'] ?? ''));
+      $last  = normalize_name((string)($addFormValues['last_name'] ?? ''));
+      $dob   = normalize_date($addFormValues['date_of_birth'] ?? null);
+      $customInput = read_custom_field_input($customFields, $addFormValues['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
       if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
@@ -462,6 +475,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         audit('teacher_student_add', $userId, ['class_id'=>$classId,'student_id'=>$newId]);
         $ok = t('teacher.students.ok_added', 'Schüler wurde angelegt.');
+        $addFormValues = [
+          'first_name' => '',
+          'last_name' => '',
+          'date_of_birth' => '',
+          'custom' => [],
+        ];
     }
 
     elseif ($action === 'toggle_active') {
@@ -498,6 +517,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $created = 0;
       $skipped = 0;
+      $importSkippedDetails = [];
 
       $pdo->beginTransaction();
 
@@ -521,10 +541,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($first === '' && $last === '') continue;
-        if ($first === '' || $last === '' || $dob === null) { $skipped++; continue; }
+        if ($first === '' || $last === '') {
+          $skipped++;
+          $name = trim($first . ' ' . $last);
+          $importSkippedDetails[] = [
+            'name' => $name !== '' ? $name : t('teacher.students.import_unknown_name', 'Unbekannt'),
+            'reason' => t('teacher.students.import_missing_name', 'Vorname oder Nachname fehlt.'),
+          ];
+          continue;
+        }
+        if ($dob === null) {
+          $skipped++;
+          $importSkippedDetails[] = [
+            'name' => trim($first . ' ' . $last),
+            'reason' => t('teacher.students.import_missing_dob', 'Geburtsdatum fehlt oder ist ungültig.'),
+          ];
+          continue;
+        }
 
         $check->execute([$first, $last, $dob]);
-        if ($check->fetch()) { $skipped++; continue; }
+        if ($check->fetch()) {
+          $skipped++;
+          $importSkippedDetails[] = [
+            'name' => trim($first . ' ' . $last),
+            'reason' => t('teacher.students.import_duplicate', 'Schüler existiert bereits.'),
+          ];
+          continue;
+        }
 
         $master = find_master_student_id($pdo, $first, $last, $dob);
         $ins->execute([$master, $classId, $first, $last, $dob]);
@@ -792,6 +835,16 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+<?php if ($importSkippedDetails): ?>
+  <div class="alert">
+    <strong><?=h(t('teacher.students.import_skipped_title', 'Übersprungene Einträge:'))?></strong>
+    <ul style="margin:6px 0 0 18px;">
+      <?php foreach ($importSkippedDetails as $detail): ?>
+        <li><?=h($detail['name'])?> — <?=h($detail['reason'])?></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+<?php endif; ?>
 
 <div class="card">
     <h2><?=h(t('teacher.students.card_access_codes', 'Schüler-Zugangscodes'))?></h2>
@@ -1231,15 +1284,15 @@ aiSupportLoading = true;
 
     <div>
       <label><?=h(t('teacher.students.label_first_name', 'Vorname'))?></label>
-      <input name="first_name" type="text" required>
+      <input name="first_name" type="text" required value="<?=h((string)($addFormValues['first_name'] ?? ''))?>">
     </div>
     <div>
       <label><?=h(t('teacher.students.label_last_name', 'Nachname'))?></label>
-      <input name="last_name" type="text" required>
+      <input name="last_name" type="text" required value="<?=h((string)($addFormValues['last_name'] ?? ''))?>">
     </div>
     <div>
       <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
-      <input name="date_of_birth" type="date" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>">
+      <input name="date_of_birth" type="date" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>" value="<?=h((string)($addFormValues['date_of_birth'] ?? ''))?>">
     </div>
     <?php if ($customFields): ?>
       <div style="grid-column: 1 / span 3; margin-top:6px;">
@@ -1249,7 +1302,7 @@ aiSupportLoading = true;
         <div>
           <?php $label = student_custom_field_label($cf); ?>
           <label><?=h($label)?></label>
-          <input name="custom[<?=h((string)$cf['field_key'])?>]" type="text" value="<?=h((string)($cf['default_value'] ?? ''))?>">
+          <input name="custom[<?=h((string)$cf['field_key'])?>]" type="text" value="<?=h((string)($addFormValues['custom'][(string)$cf['field_key']] ?? ($cf['default_value'] ?? '')))?>">
         </div>
       <?php endforeach; ?>
     <?php endif; ?>
