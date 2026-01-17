@@ -1203,7 +1203,11 @@ try {
         'can_edit' => $canEditField ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],
+          'field_name' => (string)($child['field_name'] ?? ''),
           'field_type' => (string)$child['field_type'],
+          'label' => (string)($child['label'] ?? ''),
+          'help_text' => (string)($child['help_text'] ?? ''),
+          'is_multiline' => (int)($child['is_multiline'] ?? 0),
           'options' => $child['options'],
         ] : null,
       ];

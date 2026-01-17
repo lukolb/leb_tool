@@ -629,6 +629,7 @@ render_teacher_header($pageTitle);
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm', 'Schülereingabe "{label}" wirklich löschen?'))?>;
+  const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear', 'Zurücksetzen'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
 
@@ -3256,9 +3257,9 @@ render_teacher_header($pageTitle);
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
         const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
-        const historyHtml = renderHistoryHtml(reportId, f.id);
+        const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
         const clearBtn = CHILD_MODE
-          ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(t('teacher.child_entry.clear', 'Zurücksetzen'))}</button>`
+          ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
           : '';
         const actionsHtml = (combinedHtml || historyHtml || clearBtn)
           ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
@@ -3414,7 +3415,7 @@ render_teacher_header($pageTitle);
 
           const missingCls = (v === '') ? 'missing' : '';
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
-          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
             ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
             : '';
@@ -3567,7 +3568,7 @@ render_teacher_header($pageTitle);
 
         const missingCls = (v === '') ? 'missing' : '';
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
-          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
             ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
             : '';
