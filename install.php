@@ -62,6 +62,11 @@ if (file_exists($configPath)) {
         <p>Bitte lösche die Datei manuell per FTP.</p>
         <p>👉 <a class="btn" href="<?= h(url_local('login.php')) ?>">Zum Login</a></p>
       </div>
+      <script data-history-replace-state>
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, document.title, window.location.href);
+        }
+      </script>
     </body></html>
     <?php
     exit;
@@ -962,5 +967,10 @@ SQL;
 
     <?php endif; ?>
   </div>
+  <script data-history-replace-state>
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, document.title, window.location.href);
+    }
+  </script>
 </body>
 </html>

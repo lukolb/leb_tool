@@ -700,5 +700,6 @@ $logo = (string)($b['logo_path'] ?? '');
       </script>
     </div>
   </div>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>
