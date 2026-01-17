@@ -1283,7 +1283,7 @@ render_teacher_header($pageTitle);
       : '<span class="muted">—</span>';
     return `
       <span class="combined-tip" data-tip="1" style="margin-top:6px;">
-        <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">i</button>
+        <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
         <span class="combined-tip-bubble">${html}</span>
       </span>
     `;
@@ -2714,7 +2714,7 @@ render_teacher_header($pageTitle);
       const canEditGroup = (Number(g.can_edit||0) === 1);
       const del = g.delegation;
       const delBadge = (del && del.user_id)
-        ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''} ${fields.map(f => combinedPreviewHtml(reportId, f)).join('')}</span>`
+        ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>`
         : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = CAN_DELEGATE
@@ -2742,6 +2742,7 @@ render_teacher_header($pageTitle);
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditField)}
+            ${combinedPreviewHtml(reportId, f)}
             ${renderHistoryHtml(reportId, f.id)}
             ${childInfo}
           </div>
