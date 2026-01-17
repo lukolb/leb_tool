@@ -25,13 +25,14 @@ function ai_provider_config(): array {
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
 
   $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+  $studentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['student_enabled'] : $enabled;
   $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
   $provider = strtolower(trim((string)($ai['provider'] ?? 'openai')));
   $baseUrl = (string)($ai['base_url'] ?? 'https://api.openai.com');
   $model = (string)($ai['model'] ?? 'gpt-4o-mini');
   $timeout = (int)($ai['timeout_seconds'] ?? 20);
 
-  if (!$enabled) {
+  if (!$enabled || !$studentEnabled) {
     throw new RuntimeException('KI ist deaktiviert.');
   }
   if ($apiKey === '') {

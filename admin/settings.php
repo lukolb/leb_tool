@@ -122,8 +122,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $aiEnabled = (isset($_POST['ai_enabled']) || $_POST['ai_key'])
       ? (int)$_POST['ai_enabled']
       : (int)($cfg['ai']['enabled'] ?? 1);
+    $aiStudentEnabled = isset($_POST['ai_student_enabled'])
+      ? 1
+      : 0;
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
     $cfg['ai']['enabled'] = ($aiEnabled === 1);
+    $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
     $cfg['ai']['api_key'] = $aiKey;
     $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
     $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
@@ -228,6 +232,7 @@ $studentCfg = $cfg['student'] ?? [];
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
 $aiEnabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
+$aiStudentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['student_enabled'] : $aiEnabled;
 $aiProvider = $ai['provider'] ?? 'openai';
 $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
@@ -389,6 +394,11 @@ render_admin_header('Admin – Settings');
       <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> KI-Vorschläge für Lehrkräfte aktivieren
     </label>
     <p class="muted">Wenn deaktiviert, wird der KI-Button ausgeblendet und es werden keine externen Tokens verbraucht.</p>
+
+    <label class="chk" style="margin-top:8px;">
+      <input type="checkbox" name="ai_student_enabled" value="1" <?=$aiStudentEnabled ? 'checked' : ''?>> KI-Erklärungen für Schüler aktivieren
+    </label>
+    <p class="muted">Steuert die KI-Kurzerklärung im Schülerbereich (separat vom Lehrkräfte-Feature).</p>
 
     <label>Provider</label>
     <select name="ai_provider">
