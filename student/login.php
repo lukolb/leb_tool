@@ -385,6 +385,16 @@ $logo = (string)($b['logo_path'] ?? '');
           input.setSelectionRange(pos, pos);
         }
 
+        function ensureInputFocus() {
+          if (qrScanActive) {
+            return;
+          }
+          if (document.activeElement !== input) {
+            input.focus({ preventScroll: true });
+            setCaretToEnd(getRaw().length);
+          }
+        }
+
         function renderOverlay(raw) {
           const showBlink = raw.length < 8;
           const blinkSlot = showBlink ? Math.min(raw.length, 7) : -1;
@@ -452,6 +462,28 @@ $logo = (string)($b['logo_path'] ?? '');
           }, 0);
         });
 
+        input.addEventListener('blur', () => {
+          setTimeout(() => {
+            ensureInputFocus();
+          }, 0);
+        });
+
+        document.addEventListener('pointerdown', (event) => {
+          if (event.target !== input) {
+            setTimeout(() => {
+              ensureInputFocus();
+            }, 0);
+          }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            setTimeout(() => {
+              ensureInputFocus();
+            }, 0);
+          }
+        });
+
         // Init
         const initialRaw = cleanRaw(hidden.value);
         setRaw(initialRaw);
@@ -478,6 +510,7 @@ $logo = (string)($b['logo_path'] ?? '');
           if (document.webkitFullscreenElement) {
             document.webkitExitFullscreen();
           }
+          ensureInputFocus();
         }
 
         function playQrBeep() {
@@ -660,7 +693,7 @@ $logo = (string)($b['logo_path'] ?? '');
         });
 
         setTimeout(() => {
-          input.focus({ preventScroll: true });
+          ensureInputFocus();
           setRaw(getRaw());
         }, 0);
       });
