@@ -756,7 +756,7 @@ function load_teacher_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, options_json, meta_json
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -1018,9 +1018,14 @@ try {
       } else {
         $optsChild = map_option_icons($pdo, decode_options($cf['options_json'] ?? null), $iconCache);
       }
+      $labelChild = label_for_lang($cf['label'] ?? null, $cf['label_en'] ?? null, $lang);
       $childByBase[$base] = [
         'id' => (int)$cf['id'],
+        'field_name' => (string)($cf['field_name'] ?? ''),
         'field_type' => (string)($cf['field_type'] ?? ''),
+        'label' => $labelChild,
+        'help_text' => (string)($cf['help_text'] ?? ''),
+        'is_multiline' => (int)($cf['is_multiline'] ?? 0),
         'options' => $optsChild,
       ];
     }

@@ -492,6 +492,10 @@ render_teacher_header(t('teacher.title'));
       <div class="nav-title"><?=h(t('teacher.fill_entries'))?></div>
       <p class="nav-desc"><?=h(t('teacher.fill_entries_desc'))?></p>
     </a>
+    <a class="nav-tile" href="<?=h(url('teacher/child_entry.php'))?>">
+      <div class="nav-title"><?=h(t('teacher.student_entries'))?></div>
+      <p class="nav-desc"><?=h(t('teacher.student_entries_desc'))?></p>
+    </a>
     <a class="nav-tile" href="<?=h(url('teacher/delegations.php'))?>">
       <div class="nav-title"><?=h(t('teacher.delegations'))?></div>
       <p class="nav-desc"><?=h(t('teacher.delegations_desc'))?></p>
