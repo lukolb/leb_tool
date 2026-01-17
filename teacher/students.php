@@ -18,6 +18,181 @@ function student_custom_field_label(array $field): string {
   return (string)($field['label'] ?? '');
 }
 
+function meta_read(?string $json): array {
+  if (!$json) return [];
+  $a = json_decode($json, true);
+  return is_array($a) ? $a : [];
+}
+
+function group_key_from_meta(array $meta): string {
+  $g = (string)($meta['group'] ?? '');
+  $g = trim($g);
+  if ($g !== '' && strpos($g, '-') !== false) {
+    $g = explode('-', $g, 2)[0];
+    $g = trim($g);
+  }
+  return $g !== '' ? $g : 'Allgemein';
+}
+
+function group_title_override_lang(string $groupKey, string $lang): string {
+  $cfg = app_config();
+  $bucket = ($lang === 'en') ? 'group_titles_en' : 'group_titles';
+  $map = $cfg['student'][$bucket] ?? [];
+  if (!is_array($map)) return $groupKey;
+  $t = $map[$groupKey] ?? null;
+  $t = is_string($t) ? trim($t) : '';
+  return $t !== '' ? $t : $groupKey;
+}
+
+function group_title_from_meta(array $meta, string $groupKey, string $lang): string {
+  if ($lang === 'en') {
+    $t = (string)($meta['group_title_en'] ?? '');
+    $t = trim($t);
+    if ($t !== '') return $t;
+  }
+  return group_title_override_lang($groupKey, $lang);
+}
+
+function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang): array {
+  if ($templateId <= 0) return [];
+  $st = $pdo->prepare(
+    "SELECT id, meta_json
+     FROM template_fields
+     WHERE template_id=? AND can_child_edit=1
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $st->execute([$templateId]);
+  $groups = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $fid = (int)($r['id'] ?? 0);
+    if ($fid <= 0) continue;
+    $meta = meta_read($r['meta_json'] ?? null);
+    $gKey = group_key_from_meta($meta);
+    $gTitle = group_title_from_meta($meta, $gKey, $lang);
+    if (!isset($groups[$gKey])) {
+      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'field_ids' => []];
+    } else {
+      $groups[$gKey]['title'] = $gTitle;
+    }
+    $groups[$gKey]['field_ids'][] = $fid;
+  }
+  return $groups;
+}
+
+function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($classId <= 0 || $schoolYear === '') return ['active' => false, 'map' => []];
+  $st = $pdo->prepare(
+    "SELECT group_key, is_unlocked
+     FROM class_child_group_unlocks
+     WHERE class_id=? AND school_year=? AND period_label=?"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) return ['active' => false, 'map' => []];
+  $map = [];
+  foreach ($rows as $r) {
+    $gk = trim((string)($r['group_key'] ?? ''));
+    if ($gk === '') continue;
+    $map[$gk] = ((int)($r['is_unlocked'] ?? 0) === 1);
+  }
+  return ['active' => true, 'map' => $map];
+}
+
+function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int $templateId, string $schoolYear): array {
+  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  if (!$studentIds || $templateId <= 0 || $schoolYear === '') return [];
+
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $sql =
+    "SELECT student_id, id AS report_instance_id
+     FROM report_instances
+     WHERE student_id IN ($in)
+       AND template_id=?
+       AND school_year=?
+       AND period_label='Standard'";
+  $q = $pdo->prepare($sql);
+  $q->execute(array_merge($studentIds, [$templateId, $schoolYear]));
+
+  $map = [];
+  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $sid = (int)$r['student_id'];
+    if ($sid <= 0) continue;
+    $map[$sid] = (int)($r['report_instance_id'] ?? 0);
+  }
+  return $map;
+}
+
+function build_child_group_progress(PDO $pdo, array $groups, array $studentIds, array $reportMap): array {
+  if (!$groups || !$studentIds) return [];
+  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  if (!$studentIds) return [];
+
+  $fieldGroupMap = [];
+  $fieldIds = [];
+  foreach ($groups as $gKey => $gData) {
+    foreach (($gData['field_ids'] ?? []) as $fid) {
+      $fieldIds[] = (int)$fid;
+      $fieldGroupMap[(int)$fid] = $gKey;
+    }
+  }
+  $fieldIds = array_values(array_unique(array_filter($fieldIds, fn($x)=>$x>0)));
+
+  $reportIds = [];
+  foreach ($reportMap as $rid) {
+    $rid = (int)$rid;
+    if ($rid > 0) $reportIds[] = $rid;
+  }
+  $reportIds = array_values(array_unique($reportIds));
+
+  $filledByReportGroup = [];
+  if ($reportIds && $fieldIds) {
+    $phR = implode(',', array_fill(0, count($reportIds), '?'));
+    $phF = implode(',', array_fill(0, count($fieldIds), '?'));
+    $st = $pdo->prepare(
+      "SELECT report_instance_id, template_field_id, value_text, value_json
+       FROM field_values
+       WHERE report_instance_id IN ($phR)
+         AND template_field_id IN ($phF)
+         AND source='child'"
+    );
+    $st->execute(array_merge($reportIds, $fieldIds));
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $rid = (int)$r['report_instance_id'];
+      $fid = (int)$r['template_field_id'];
+      $valTxt = trim((string)($r['value_text'] ?? ''));
+      $valJson = trim((string)($r['value_json'] ?? ''));
+      if ($valTxt === '' && $valJson === '') continue;
+      $gKey = $fieldGroupMap[$fid] ?? '';
+      if ($gKey === '') continue;
+      if (!isset($filledByReportGroup[$rid])) $filledByReportGroup[$rid] = [];
+      $filledByReportGroup[$rid][$gKey] = ($filledByReportGroup[$rid][$gKey] ?? 0) + 1;
+    }
+  }
+
+  $out = [];
+  $studentsTotal = count($studentIds);
+  foreach ($groups as $gKey => $gData) {
+    $fieldsTotal = count($gData['field_ids'] ?? []);
+    $done = 0;
+    if ($fieldsTotal > 0) {
+      foreach ($studentIds as $sid) {
+        $rid = (int)($reportMap[$sid] ?? 0);
+        $filled = ($rid > 0 && isset($filledByReportGroup[$rid][$gKey]))
+          ? (int)$filledByReportGroup[$rid][$gKey]
+          : 0;
+        if ($filled >= $fieldsTotal) $done++;
+      }
+    }
+    $out[$gKey] = [
+      'students_done' => $done,
+      'students_total' => $studentsTotal,
+      'fields_total' => $fieldsTotal,
+      'students_percent' => $studentsTotal > 0 ? round(($done / $studentsTotal) * 100) : null,
+    ];
+  }
+  return $out;
+}
+
 $classId = (int)($_GET['class_id'] ?? ($_POST['class_id'] ?? 0));
 if ($classId <= 0) {
   render_teacher_header(t('teacher.students.title', 'Schüler'));
@@ -444,6 +619,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    elseif ($action === 'child_group_unlocks') {
+      $tpl = get_active_template($pdo, $classId);
+      if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
+
+      $templateId = (int)$tpl['id'];
+      $schoolYear = (string)($class['school_year'] ?? '');
+      if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+
+      $lang = ui_lang();
+      $groups = load_child_groups_for_template($pdo, $templateId, $lang);
+      if (!$groups) throw new RuntimeException(t('teacher.students.error_no_child_groups', 'Keine Kategorien für Schülerfelder gefunden.'));
+
+      $selected = $_POST['group_unlocks'] ?? [];
+      $selected = is_array($selected) ? array_map('strval', $selected) : [];
+      $selected = array_values(array_unique(array_filter(array_map('trim', $selected), fn($x)=>$x!=='')));
+      $validKeys = array_keys($groups);
+      $selected = array_values(array_intersect($selected, $validKeys));
+
+      $pdo->beginTransaction();
+      $periodLabel = 'Standard';
+      $pdo->prepare(
+        "DELETE FROM class_child_group_unlocks
+         WHERE class_id=? AND school_year=? AND period_label=?"
+      )->execute([$classId, $schoolYear, $periodLabel]);
+
+      $ins = $pdo->prepare(
+        "INSERT INTO class_child_group_unlocks
+         (class_id, school_year, period_label, group_key, is_unlocked, created_by_user_id, updated_by_user_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+      );
+      foreach ($validKeys as $gk) {
+        $isUnlocked = in_array($gk, $selected, true) ? 1 : 0;
+        $ins->execute([$classId, $schoolYear, $periodLabel, $gk, $isUnlocked, $userId, $userId]);
+      }
+      $pdo->commit();
+
+      audit('teacher_child_group_unlocks_update', $userId, [
+        'class_id' => $classId,
+        'template_id' => $templateId,
+        'school_year' => $schoolYear,
+        'groups_total' => count($validKeys),
+        'groups_unlocked' => count($selected),
+      ]);
+
+      $ok = t('teacher.students.ok_child_groups_updated', 'Kategorien wurden aktualisiert.');
+    }
+
     elseif ($action === 'add') {
       $addFormValues = [
         'first_name' => trim((string)($_POST['first_name'] ?? '')),
@@ -820,6 +1042,16 @@ $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds) : [];
 
 $reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds) : [];
 
+$groupProgress = [];
+$childGroups = $tplIdForUi ? load_child_groups_for_template($pdo, $tplIdForUi, ui_lang()) : [];
+$groupUnlockInfo = ($tplIdForUi && $schoolYearUi !== '')
+  ? load_child_group_unlocks($pdo, $classId, $schoolYearUi, 'Standard')
+  : ['active' => false, 'map' => []];
+if ($childGroups && $studentIds && $tplIdForUi) {
+  $groupReportMap = load_report_instance_map_for_template($pdo, $studentIds, $tplIdForUi, $schoolYearUi);
+  $groupProgress = build_child_group_progress($pdo, $childGroups, $studentIds, $groupReportMap);
+}
+
 $ai_enabled = ai_provider_enabled();
 
 render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (string)$class['school_year'] . ' · ' . class_display($class));
@@ -911,6 +1143,74 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         </a>
       </form>
     </div>
+  <?php endif; ?>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?=h(t('teacher.students.child_group_card', 'Kategorien für Schüler'))?></h2>
+
+  <?php if (!$activeTpl): ?>
+    <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kategorien können nicht gesteuert werden.'))?></div>
+  <?php elseif (!$childGroups): ?>
+    <div class="alert"><?=h(t('teacher.students.no_child_groups', 'Keine Schülerfelder mit Kategorien gefunden.'))?></div>
+  <?php else: ?>
+    <p class="muted" style="margin:0 0 10px 0;">
+      <?=h(t('teacher.students.child_group_hint', 'Wähle aus, welche Kategorien die Schüler aktuell bearbeiten dürfen. Nicht ausgewählte Kategorien bleiben gesperrt.'))?>
+    </p>
+
+    <div class="row-actions" style="margin-bottom:10px;">
+      <?php if ($groupUnlockInfo['active']): ?>
+        <span class="pill"><?=h(t('teacher.students.child_group_mode_selected', 'Auswahl aktiv'))?></span>
+      <?php else: ?>
+        <span class="pill"><?=h(t('teacher.students.child_group_mode_all', 'Alle Kategorien freigegeben'))?></span>
+      <?php endif; ?>
+    </div>
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+      <input type="hidden" name="action" value="child_group_unlocks">
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th><?=h(t('teacher.students.child_group_col_name', 'Kategorie'))?></th>
+            <th><?=h(t('teacher.students.child_group_col_unlock', 'Freigabe'))?></th>
+            <th><?=h(t('teacher.students.child_group_col_progress', 'Bearbeitungsstand'))?></th>
+            <th><?=h(t('teacher.students.child_group_col_fields', 'Felder'))?></th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($childGroups as $gKey => $gData): ?>
+            <?php
+              $isUnlocked = $groupUnlockInfo['active']
+                ? (bool)($groupUnlockInfo['map'][$gKey] ?? false)
+                : true;
+              $prog = $groupProgress[$gKey] ?? ['students_done'=>0,'students_total'=>0,'fields_total'=>count($gData['field_ids'] ?? []),'students_percent'=>null];
+              $pct = $prog['students_percent'] !== null ? (string)$prog['students_percent'] : '–';
+            ?>
+            <tr>
+              <td><?=h((string)($gData['title'] ?? $gKey))?></td>
+              <td>
+                <label style="display:flex; align-items:center; gap:8px;">
+                  <input type="checkbox" name="group_unlocks[]" value="<?=h((string)$gKey)?>" <?= $isUnlocked ? 'checked' : '' ?>>
+                  <span><?= $isUnlocked ? h(t('teacher.students.child_group_unlocked', 'freigegeben')) : h(t('teacher.students.child_group_locked', 'gesperrt')) ?></span>
+                </label>
+              </td>
+              <td>
+                <?=h((string)($prog['students_done'] ?? 0))?> / <?=h((string)($prog['students_total'] ?? 0))?>
+                <span class="muted small">(<?=h($pct)?> %)</span>
+              </td>
+              <td><?=h((string)($prog['fields_total'] ?? 0))?></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+
+      <div class="actions" style="justify-content:flex-start; margin-top:12px;">
+        <button class="btn primary" type="submit"><?=h(t('teacher.students.child_group_save', 'Kategorien speichern'))?></button>
+      </div>
+    </form>
   <?php endif; ?>
 </div>
 

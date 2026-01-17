@@ -634,6 +634,22 @@ CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   KEY `idx_class_group_deleg_class` (`class_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `class_child_group_unlocks` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+  `group_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `is_unlocked` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_class_child_group_unlock` (`class_id`,`school_year`,`period_label`,`group_key`),
+  KEY `idx_class_child_group_unlock_class` (`class_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 ALTER TABLE `classes`
   ADD CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
