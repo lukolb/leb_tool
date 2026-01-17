@@ -284,7 +284,7 @@ CREATE TABLE IF NOT EXISTS `students` (
   `class_id` bigint UNSIGNED DEFAULT NULL,
   `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `date_of_birth` date DEFAULT NULL,
+  `date_of_birth` date NOT NULL,
   `external_ref` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `qr_token` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `login_code` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,

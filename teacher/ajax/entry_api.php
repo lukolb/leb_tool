@@ -719,7 +719,7 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   return (int)$pdo->lastInsertId();
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear): array {
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, int $userId): array {
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
@@ -735,12 +735,12 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
   }
 
   $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, created_at, updated_at)
-     VALUES (?, ?, 'Standard', ?, 'draft', NULL, NOW(), NOW())"
-  )->execute([$templateId, $studentId, $schoolYear]);
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
+     VALUES (?, ?, 'Standard', ?, 'locked', NULL, ?, NOW(), NOW(), NOW())"
+  )->execute([$templateId, $studentId, $schoolYear, $userId]);
 
   $rid = (int)$pdo->lastInsertId();
-  return ['id' => $rid, 'status' => 'draft'];
+  return ['id' => $rid, 'status' => 'locked'];
 }
 
 function load_teacher_fields(PDO $pdo, int $templateId): array {
@@ -989,7 +989,7 @@ try {
     foreach ($studentsRaw as $s) {
       $sid = (int)$s['id'];
       $name = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
-      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear);
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $userId);
       $students[] = [
         'id' => $sid,
         'name' => $name,
