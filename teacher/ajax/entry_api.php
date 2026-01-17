@@ -168,6 +168,27 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
+function parse_numeric_value(?string $raw): ?float {
+  $s = trim((string)$raw);
+  if ($s === '') return null;
+  $s = str_replace(',', '.', $s);
+  if (!preg_match('/-?\d+(?:\.\d+)?/', $s, $m)) return null;
+  return (float)$m[0];
+}
+
+function option_list_names(PDO $pdo, array $listIds): array {
+  $listIds = array_values(array_unique(array_filter(array_map('intval', $listIds), fn($x)=>$x>0)));
+  if (!$listIds) return [];
+  $in = implode(',', array_fill(0, count($listIds), '?'));
+  $st = $pdo->prepare("SELECT id, name FROM option_list_templates WHERE id IN ($in)");
+  $st->execute($listIds);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $out[(int)$row['id']] = (string)($row['name'] ?? '');
+  }
+  return $out;
+}
+
 function ai_provider_config(): array {
   $cfg = app_config();
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
@@ -1734,6 +1755,290 @@ try {
         'cached' => false,
         'filled_fields' => $filledCount,
         'cache_ttl_seconds' => $ttl,
+      ],
+    ]);
+  }
+
+  if ($action === 'ai_class_feedback') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $force = (int)($data['force'] ?? 0) === 1;
+
+    if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+    if (!ai_provider_enabled()) {
+      throw new RuntimeException('KI-Vorschläge sind deaktiviert oder nicht konfiguriert.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $ttl = ai_cache_ttl_seconds();
+    $cacheKey = 'class_feedback:v1:' . $classId . ':' . ui_lang();
+    if (!$force) {
+      $cached = ai_cache_get($cacheKey, $ttl);
+      if (is_array($cached) && isset($cached['payload']) && is_array($cached['payload'])) {
+        $age = time() - (int)($cached['created_at'] ?? time());
+        json_out([
+          'ok' => true,
+          'feedback' => $cached['payload'],
+          'meta' => [
+            'cached' => true,
+            'cache_age_seconds' => max(0, (int)$age),
+          ],
+        ]);
+      }
+    }
+
+    $tpl = template_for_class($pdo, $classId);
+    $templateId = (int)$tpl['id'];
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+
+    $stClass = $pdo->prepare("SELECT grade_level FROM classes WHERE id=? LIMIT 1");
+    $stClass->execute([$classId]);
+    $gradeLevel = $stClass->fetchColumn();
+    $gradeLevel = $gradeLevel !== false ? (int)$gradeLevel : null;
+
+    $stStudents = $pdo->prepare(
+      "SELECT id FROM students WHERE class_id=? AND is_active=1 ORDER BY id ASC"
+    );
+    $stStudents->execute([$classId]);
+    $studentIds = array_map(fn($r) => (int)$r['id'], $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    $studentCount = count($studentIds);
+
+    $reportIds = [];
+    foreach ($studentIds as $sid) {
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $userId);
+      if (is_array($ri) && isset($ri['id'])) $reportIds[] = (int)$ri['id'];
+    }
+
+    $teacherFields = load_teacher_fields($pdo, $templateId);
+    $fieldsById = [];
+    $gradeFieldIds = [];
+    $competencyLists = [];
+    $optCache = [];
+
+    foreach ($teacherFields as $f) {
+      $meta = meta_read($f['meta_json'] ?? null);
+      if (is_system_bound($meta) || is_class_field($meta)) continue;
+      $fid = (int)($f['id'] ?? 0);
+      if ($fid <= 0) continue;
+
+      $groupKey = group_key_from_meta($meta);
+      $groupTitle = group_title_from_meta($meta, $groupKey, $lang);
+      $label = label_for_lang($f['label'] ?? null, $f['label_en'] ?? null, $lang);
+      $listId = option_list_id_from_meta($meta);
+      $fieldType = (string)($f['field_type'] ?? '');
+
+      $options = [];
+      if ($listId > 0) {
+        if (!isset($optCache[$listId])) $optCache[$listId] = load_option_list_items($pdo, $listId);
+        $options = $optCache[$listId];
+      } else {
+        $options = decode_options($f['options_json'] ?? null);
+      }
+
+      $fieldsById[$fid] = [
+        'label' => $label !== '' ? $label : ('Feld#' . $fid),
+        'group' => $groupTitle !== '' ? $groupTitle : $groupKey,
+        'field_type' => $fieldType,
+        'meta' => $meta,
+        'list_id' => $listId,
+        'options' => $options,
+      ];
+
+      if ($fieldType === 'grade') {
+        $gradeFieldIds[] = $fid;
+      }
+
+      if (in_array($fieldType, ['select','radio'], true)) {
+        if ($listId > 0) {
+          $competencyLists[$listId] = [
+            'name' => '',
+            'items' => $options,
+          ];
+        } elseif ($options) {
+          $competencyLists['field_' . $fid] = [
+            'name' => $label !== '' ? $label : ('Feld#' . $fid),
+            'items' => $options,
+          ];
+        }
+      }
+    }
+
+    $gradeFieldIds = array_values(array_unique($gradeFieldIds));
+    $fieldIds = array_keys($fieldsById);
+
+    $values = [];
+    if ($reportIds && $fieldIds) {
+      $reportChunks = array_chunk($reportIds, 200);
+      $fieldChunks = array_chunk($fieldIds, 200);
+      foreach ($reportChunks as $rChunk) {
+        foreach ($fieldChunks as $fChunk) {
+          $rIn = implode(',', array_fill(0, count($rChunk), '?'));
+          $fIn = implode(',', array_fill(0, count($fChunk), '?'));
+          $stVals = $pdo->prepare(
+            "SELECT report_instance_id, template_field_id, value_text, value_json
+             FROM field_values
+             WHERE source='teacher' AND report_instance_id IN ($rIn) AND template_field_id IN ($fIn)"
+          );
+          $stVals->execute([...$rChunk, ...$fChunk]);
+          $values = array_merge($values, $stVals->fetchAll(PDO::FETCH_ASSOC) ?: []);
+        }
+      }
+    }
+
+    $gradeValues = [];
+    $gradeDistribution = [];
+    $groupGrades = [];
+    $performanceValues = [];
+
+    foreach ($values as $row) {
+      $fid = (int)($row['template_field_id'] ?? 0);
+      if (!isset($fieldsById[$fid])) continue;
+      $field = $fieldsById[$fid];
+      $meta = $field['meta'];
+
+      $resolved = resolve_option_value_text(
+        $pdo,
+        $meta,
+        $row['value_json'] !== null ? (string)$row['value_json'] : null,
+        $row['value_text'] !== null ? (string)$row['value_text'] : null,
+        $lang
+      );
+      $text = trim((string)($resolved['text'] ?? ''));
+      if ($text === '') continue;
+
+      $numeric = parse_numeric_value($text);
+      if ($numeric === null && $row['value_text'] !== null) {
+        $numeric = parse_numeric_value((string)$row['value_text']);
+      }
+
+      if ($field['field_type'] === 'grade') {
+        $gradeDistribution[$text] = ($gradeDistribution[$text] ?? 0) + 1;
+        if ($numeric !== null) {
+          $gradeValues[] = $numeric;
+          $group = $field['group'] ?: '—';
+          if (!isset($groupGrades[$group])) $groupGrades[$group] = [];
+          $groupGrades[$group][] = $numeric;
+        }
+      } elseif ($numeric !== null) {
+        $performanceValues[] = $numeric;
+      }
+    }
+
+    $gradeAvg = $gradeValues ? (array_sum($gradeValues) / count($gradeValues)) : null;
+    $performanceAvg = $performanceValues ? (array_sum($performanceValues) / count($performanceValues)) : null;
+
+    $groupAverages = [];
+    foreach ($groupGrades as $group => $vals) {
+      if (!$vals) continue;
+      $groupAverages[] = [
+        'group' => $group,
+        'avg' => array_sum($vals) / count($vals),
+        'count' => count($vals),
+      ];
+    }
+
+    $competencyListIds = array_filter(array_keys($competencyLists), 'is_int');
+    $listNames = option_list_names($pdo, $competencyListIds);
+    foreach ($competencyLists as $key => &$list) {
+      if (is_int($key)) $list['name'] = $listNames[$key] ?? ('Liste #' . $key);
+      $items = [];
+      foreach ($list['items'] as $opt) {
+        if (is_array($opt)) {
+          $label = (string)($opt['label'] ?? $opt['label_en'] ?? $opt['value'] ?? '');
+          $label = trim($label);
+          if ($label !== '') $items[] = $label;
+        } else {
+          $label = trim((string)$opt);
+          if ($label !== '') $items[] = $label;
+        }
+      }
+      $list['items'] = $items;
+    }
+    unset($list);
+
+    $competencyLines = [];
+    foreach ($competencyLists as $list) {
+      if (!$list['items']) continue;
+      $competencyLines[] = ($list['name'] !== '' ? $list['name'] : 'Kompetenzstufen') . ': ' . implode(' > ', $list['items']);
+    }
+    if (!$competencyLines) $competencyLines[] = 'Keine Kompetenzstufenlisten gefunden.';
+
+    $gradeDistributionTxt = '';
+    if ($gradeDistribution) {
+      ksort($gradeDistribution, SORT_NATURAL);
+      $parts = [];
+      foreach ($gradeDistribution as $label => $cnt) {
+        $parts[] = $label . ': ' . $cnt;
+      }
+      $gradeDistributionTxt = implode(', ', $parts);
+    }
+
+    $groupLines = [];
+    foreach ($groupAverages as $g) {
+      $groupLines[] = $g['group'] . ': Ø ' . number_format($g['avg'], 2, ',', '') . ' (n=' . $g['count'] . ')';
+    }
+    if (!$groupLines) $groupLines[] = 'Keine numerischen Notenwerte für Fachgruppen.';
+
+    $contextParts = [];
+    $contextParts[] = 'Klassenstufe: ' . ($gradeLevel !== null ? (string)$gradeLevel : '—');
+    $contextParts[] = 'Schuljahr: ' . ($schoolYear !== '' ? $schoolYear : '—');
+    $contextParts[] = 'Aktive Schüler: ' . $studentCount;
+    $contextParts[] = 'Notenfelder (numerisch, Lehrkraft): ' . ($gradeAvg !== null ? ('Notenschnitt Ø ' . number_format($gradeAvg, 2, ',', '') . ' aus ' . count($gradeValues) . ' Werten') : 'Keine numerischen Notenwerte verfügbar.');
+    if ($gradeDistributionTxt !== '') $contextParts[] = 'Notenverteilung (alle Notenfelder): ' . $gradeDistributionTxt;
+    $contextParts[] = 'Fachgruppen (Noten-Ø): ' . implode(' | ', $groupLines);
+    $contextParts[] = 'Leistungsschnitt (sonstige numerische Felder): ' . ($performanceAvg !== null ? ('Ø ' . number_format($performanceAvg, 2, ',', '') . ' aus ' . count($performanceValues) . ' Werten') : 'Keine numerischen Leistungswerte verfügbar.');
+    $contextParts[] = "Kompetenzstufen (geordnet niedrig → hoch):\n- " . implode("\n- ", $competencyLines);
+
+    $system = "Du bist eine erfahrene Lehrkraft und erstellst eine Klassen-Rückmeldung. Antworte ausschließlich als JSON mit genau diesen Keys:\n"
+      . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), kompetenzstufen_erklaerung (array).\n"
+      . "Keine weiteren Keys. Keine Markdown-Umrahmung.";
+
+    $userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die folgenden aggregierten Informationen und erfinde keine Details. "
+      . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler. "
+      . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
+      . "Erkläre zudem die Bedeutung der Kompetenzstufen anhand der genannten Stufenreihenfolge (niedrig → hoch). "
+      . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
+
+    $aiCfg = ai_provider_config();
+    $messages = [
+      ['role' => 'system', 'content' => $system],
+      ['role' => 'user', 'content' => $userPrompt],
+    ];
+
+    $aiText = ai_chat_completion($messages, $aiCfg);
+
+    $parsed = [
+      'rueckmeldung_gesamt' => '',
+      'noten_leistungsschnitt' => '',
+      'foerdermoeglichkeiten' => [],
+      'schwerpunkte_faecher' => [],
+      'kompetenzstufen_erklaerung' => [],
+    ];
+    $json = json_decode((string)$aiText, true);
+    if (is_array($json)) {
+      $parsed['rueckmeldung_gesamt'] = trim((string)($json['rueckmeldung_gesamt'] ?? ''));
+      $parsed['noten_leistungsschnitt'] = trim((string)($json['noten_leistungsschnitt'] ?? ''));
+      foreach (['foerdermoeglichkeiten','schwerpunkte_faecher','kompetenzstufen_erklaerung'] as $k) {
+        if (isset($json[$k]) && is_array($json[$k])) {
+          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!=='' ));
+        }
+      }
+    } else {
+      $parsed['rueckmeldung_gesamt'] = trim((string)$aiText);
+    }
+
+    ai_cache_set($cacheKey, $parsed);
+
+    json_out([
+      'ok' => true,
+      'feedback' => $parsed,
+      'meta' => [
+        'cached' => false,
+        'students' => $studentCount,
+        'grade_values' => count($gradeValues),
+        'performance_values' => count($performanceValues),
       ],
     ]);
   }

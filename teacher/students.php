@@ -828,6 +828,12 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 <div class="card">
     <div class="row-actions" style="float: right;">
     <a class="btn secondary" href="<?=h(url($toClassesUrl))?>"><?=h(t('teacher.students.back_to_classes', '← zurück zu den Klassen'))?></a>
+    <?php if ($ai_enabled): ?>
+      <button class="btn secondary ai-btn" type="button" id="btnAiClassFeedback">
+        <?= AI_ICON ?>
+        <?=h(t('teacher.students.ai_class_feedback_btn', 'KI-Rückmeldung (Klasse)'))?>
+      </button>
+    <?php endif; ?>
   </div>
     
     <h1><?=h(t('teacher.students.class_heading', 'Klasse'))?> <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
@@ -1057,6 +1063,28 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     </div>
   </div>
 
+  <?php if ($ai_enabled): ?>
+    <div id="aiClassModal" class="modal-overlay" aria-hidden="true" style="display:none;">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="aiClassModalTitle" style="max-width:980px;">
+        <div class="modal-header" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div>
+            <h3 id="aiClassModalTitle" style="margin:0;"><?=h(t('teacher.students.ai_class_title', 'KI-Rückmeldung zur Klasse'))?></h3>
+            <div class="muted" id="aiClassMeta" style="margin-top:4px;"></div>
+          </div>
+          <button class="btn secondary" type="button" onclick="closeAiClassModal(); return false;"><?=h(t('teacher.students.btn_close', 'Schließen'))?></button>
+        </div>
+
+        <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn" type="button" id="btnAiClassRefresh"><?=h(t('teacher.students.ai_class_refresh', 'Neu berechnen'))?></button>
+          <span class="muted" id="aiClassMetaInline"></span>
+        </div>
+
+        <div id="aiClassStatus" class="alert" style="display:none; margin-top:10px;"></div>
+        <div id="aiClassContent" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  <?php endif; ?>
+
 <style>
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 12px; }
     .modal-overlay.is-open { display: flex; }
@@ -1109,6 +1137,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
     // ===== KI: Fördermöglichkeiten (Popup + Cache) =====
     const aiApiUrl = <?=json_encode(url('teacher/ajax/student_ai_api.php'))?>;
+    const aiClassApiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
     const classIdForAi = Number(<?= (int)$classId ?>);
 
     const aiSupportModal = document.getElementById('aiSupportModal');
@@ -1117,9 +1146,17 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     const aiSupportStatus = document.getElementById('aiSupportStatus');
     const aiSupportMeta = document.getElementById('aiSupportMeta');
     const btnAiSupportRefresh = document.getElementById('btnAiSupportRefresh');
+    const btnAiClassFeedback = document.getElementById('btnAiClassFeedback');
+    const aiClassModal = document.getElementById('aiClassModal');
+    const aiClassMeta = document.getElementById('aiClassMeta');
+    const aiClassMetaInline = document.getElementById('aiClassMetaInline');
+    const aiClassStatus = document.getElementById('aiClassStatus');
+    const aiClassContent = document.getElementById('aiClassContent');
+    const btnAiClassRefresh = document.getElementById('btnAiClassRefresh');
 
     let aiSupport = { studentId: 0, studentName: '' };
     let aiSupportLoading = false;
+    let aiClassLoading = false;
 
     function escapeHtml(s){
       return String(s ?? '').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -1180,6 +1217,104 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       }
 
       aiSupportContent.innerHTML = html;
+    }
+
+    function renderAiClassSection(title, bodyHtml){
+      return `
+        <div class="card" style="margin-top:10px; background:#f8f9fb;">
+          <h4 style="margin:0 0 8px 0;">${escapeHtml(title)}</h4>
+          <div>${bodyHtml}</div>
+        </div>
+      `;
+    }
+
+    function renderAiClassList(list){
+      const items = Array.isArray(list) ? list.filter(x=>String(x||'').trim()!=='') : [];
+      if (!items.length) return '<span class="muted"><?=h(t('teacher.students.ai_class_empty', 'Keine Angaben.'))?></span>';
+      return `<ul style="margin:0; padding-left:18px;">${items.map(it=>`<li style="margin:6px 0;">${escapeHtml(it)}</li>`).join('')}</ul>`;
+    }
+
+    function renderAiClassFeedback(feedback){
+      if (!aiClassContent) return;
+      const overall = String(feedback?.rueckmeldung_gesamt || '').trim();
+      const grades = String(feedback?.noten_leistungsschnitt || '').trim();
+      const support = Array.isArray(feedback?.foerdermoeglichkeiten) ? feedback.foerdermoeglichkeiten : [];
+      const focus = Array.isArray(feedback?.schwerpunkte_faecher) ? feedback.schwerpunkte_faecher : [];
+      const levels = Array.isArray(feedback?.kompetenzstufen_erklaerung) ? feedback.kompetenzstufen_erklaerung : [];
+
+      let html = '';
+      if (overall) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_overall', 'Rückmeldung'))?>', escapeHtml(overall));
+      if (grades) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_grades', 'Noten- & Leistungsschnitt'))?>', escapeHtml(grades));
+      html += renderAiClassSection('<?=h(t('teacher.students.ai_class_support', 'Fördermöglichkeiten'))?>', renderAiClassList(support));
+      html += renderAiClassSection('<?=h(t('teacher.students.ai_class_focus', 'Fachliche Schwerpunkte'))?>', renderAiClassList(focus));
+      html += renderAiClassSection('<?=h(t('teacher.students.ai_class_levels', 'Kompetenzstufen'))?>', renderAiClassList(levels));
+
+      aiClassContent.innerHTML = html;
+    }
+
+    function showAiClassStatus(msg, kind){
+      if (!aiClassStatus) return;
+      aiClassStatus.style.display = 'block';
+      aiClassStatus.className = 'alert ' + (kind || '');
+      aiClassStatus.textContent = msg || '';
+    }
+
+    function clearAiClassStatus(){
+      if (!aiClassStatus) return;
+      aiClassStatus.style.display = 'none';
+      aiClassStatus.className = 'alert';
+      aiClassStatus.textContent = '';
+    }
+
+    async function loadAiClassFeedback(force){
+      if (aiClassLoading) return;
+      aiClassLoading = true;
+      clearAiClassStatus();
+      if (aiClassMeta) aiClassMeta.textContent = '<?=h(t('teacher.students.ai_class_loading', 'Rückmeldung wird geladen…'))?>';
+      if (aiClassMetaInline) aiClassMetaInline.textContent = '';
+      if (aiClassContent) aiClassContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.ai_class_loading2', 'KI erstellt eine Rückmeldung…'))?></div>';
+      if (btnAiClassRefresh) btnAiClassRefresh.disabled = true;
+
+      try {
+        const res = await fetch(aiClassApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({
+            action: 'ai_class_feedback',
+            class_id: classIdForAi,
+            force: force ? 1 : 0
+          })
+        });
+        const json = await res.json();
+        if (!res.ok || !json || json.ok !== true) {
+          throw new Error((json && (json.error || json.message)) ? (json.error || json.message) : ('HTTP ' + res.status));
+        }
+
+        renderAiClassFeedback(json.feedback || {});
+        const meta = json.meta || {};
+        if (aiClassMeta) {
+          if (meta.cached) {
+            const age = typeof meta.cache_age_seconds === 'number' ? Math.round(meta.cache_age_seconds / 60) + ' min' : '<?=h(t('teacher.students.ai_class_cached_yes', 'ja'))?>';
+            aiClassMeta.textContent = '<?=h(t('teacher.students.ai_class_cached', 'Cache:'))?> ' + age;
+          } else {
+            const students = typeof meta.students === 'number' ? meta.students : null;
+            const gradeValues = typeof meta.grade_values === 'number' ? meta.grade_values : null;
+            aiClassMeta.textContent = (students !== null ? ('<?=h(t('teacher.students.ai_class_students', 'Schüler:'))?> ' + students) : '');
+            aiClassMetaInline.textContent = gradeValues !== null ? ('<?=h(t('teacher.students.ai_class_values', 'Notenwerte:'))?> ' + gradeValues) : '';
+          }
+        }
+      } catch (e) {
+        showAiClassStatus('<?=h(t('teacher.students.ai_class_error', 'Konnte KI-Rückmeldung nicht laden:'))?> ' + (e && e.message ? e.message : String(e)), 'danger');
+        if (aiClassMeta) aiClassMeta.textContent = '';
+        if (aiClassMetaInline) aiClassMetaInline.textContent = '';
+        if (aiClassContent) aiClassContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.ai_class_try_again', 'Bitte erneut versuchen.'))?></div>';
+      } finally {
+        aiClassLoading = false;
+        if (btnAiClassRefresh) btnAiClassRefresh.disabled = false;
+      }
     }
 
     async function loadAiSupportPlan(force){
@@ -1272,6 +1407,28 @@ aiSupportLoading = true;
     if (btnAiSupportRefresh) btnAiSupportRefresh.addEventListener('click', ()=>{
       loadAiSupportPlan(true); // force refresh, bypass cache
     });
+
+    function openAiClassModal(){
+      if (!aiClassModal) return;
+      aiClassModal.style.display = 'flex';
+      aiClassModal.setAttribute('aria-hidden', 'false');
+      loadAiClassFeedback(false);
+    }
+
+    function closeAiClassModal(){
+      if (!aiClassModal) return;
+      aiClassModal.style.display = 'none';
+      aiClassModal.setAttribute('aria-hidden', 'true');
+      aiClassLoading = false;
+    }
+
+    if (aiClassModal) {
+      aiClassModal.addEventListener('click', (ev)=>{
+        if (ev.target === aiClassModal) closeAiClassModal();
+      });
+    }
+    if (btnAiClassFeedback) btnAiClassFeedback.addEventListener('click', openAiClassModal);
+    if (btnAiClassRefresh) btnAiClassRefresh.addEventListener('click', ()=>loadAiClassFeedback(true));
   </script>
 <?php endif; ?>
 
