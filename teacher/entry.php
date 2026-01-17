@@ -1280,8 +1280,9 @@ render_teacher_header($pageTitle);
     const delegatedUserId = Number(field._delegated_user_id || 0);
     if (!delegatedUserId) return '';
     const combined = teacherVal(reportId, field.id);
-    if (!combined) return '';
-    const html = esc(String(combined)).replace(/\n/g, '<br>');
+    const html = combined
+      ? esc(String(combined)).replace(/\n/g, '<br>')
+      : '<span class="muted">—</span>';
     return `
       <span class="badge-del combined-tip" data-tip="1" style="margin-top:6px;">
         <span>Delegiert:</span>
