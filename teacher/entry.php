@@ -1259,8 +1259,7 @@ render_teacher_header($pageTitle);
     const own = teacherEditVal(reportId, field.id);
     const same = String(combined ?? '') === String(own ?? '');
     if (!combined || same) return '';
-    const html = esc(String(combined)).replace(/\n/g, '<br>');
-    return `<div class="muted small" style="margin-top:6px;">Gesamt: ${html}</div>`;
+    return `<span class="muted small" style="margin-top:6px; display:inline-flex; gap:6px; align-items:center;" title="${esc(String(combined))}">ⓘ Gesamt</span>`;
   }
 
   function childVal(reportId, fieldId){
@@ -2514,11 +2513,12 @@ render_teacher_header($pageTitle);
       const v = teacherEditVal(rid, fid);
       const lbl = String(f.label_resolved || f.label || f.field_name || '');
       const help = String(f.help_text_resolved || f.help_text || '');
+      const canEditField = (Number(f.can_edit || 0) === 1);
       return `
         <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
           <div class="lbl" data-dyn="label">${esc(lbl)}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-          ${renderInputHtml(f, rid, v, locked)}
+          ${renderInputHtml(f, rid, v, locked, canEditField)}
           ${combinedPreviewHtml(rid, f)}
           ${renderHistoryHtml(rid, fid)}
         </div>
@@ -2683,6 +2683,7 @@ render_teacher_header($pageTitle);
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
       fields.forEach(f => {
         const v = teacherEditVal(reportId, f.id);
+        const canEditField = (Number(f.can_edit || 0) === 1);
         const childInfo = childInfoHtml(f, reportId);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
@@ -2691,7 +2692,7 @@ render_teacher_header($pageTitle);
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
             ${combinedPreviewHtml(reportId, f)}
             ${renderHistoryHtml(reportId, f.id)}
             ${childInfo}
@@ -2796,13 +2797,12 @@ render_teacher_header($pageTitle);
           const status = String(s.status||'draft');
           const locked = (status === 'locked');
           const v = teacherEditVal(reportId, f.id);
-          const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-          const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+          const canEditField = (Number(f.can_edit || 0) === 1);
 
           const missingCls = (v === '') ? 'missing' : '';
           td.innerHTML = `
             <div class="cellWrap ${missingCls}">
-              ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+              ${renderInputHtml(f, reportId, v, locked, canEditField)}
               ${combinedPreviewHtml(reportId, f)}
               ${renderHistoryHtml(reportId, f.id)}
               ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
@@ -2872,13 +2872,12 @@ render_teacher_header($pageTitle);
         const reportId = s.report_instance_id;
         const locked = (status === 'locked');
         const v = teacherEditVal(reportId, f.id);
-        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+        const canEditField = (Number(f.can_edit || 0) === 1);
 
         const missingCls = (v === '') ? 'missing' : '';
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
             ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
@@ -2943,13 +2942,12 @@ render_teacher_header($pageTitle);
         const status = String(s.status||'draft');
         const locked = (status === 'locked');
         const v = teacherEditVal(reportId, f.id);
-        const gObj = (state.groups||[]).find(x => String(x.key) === String(f._group_key));
-        const canEditGroup = gObj ? (Number(gObj.can_edit||0) === 1) : true;
+        const canEditField = (Number(f.can_edit || 0) === 1);
 
         const missingCls = (v === '') ? 'missing' : '';
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
-            ${renderInputHtml(f, reportId, v, locked, canEditGroup)}
+            ${renderInputHtml(f, reportId, v, locked, canEditField)}
             ${combinedPreviewHtml(reportId, f)}
             ${renderHistoryHtml(reportId, f.id)}
             ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}

@@ -499,10 +499,25 @@ function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string 
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
-  if (user_is_class_teacher($pdo, $uid, $classId)) return true;
   $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
   if ($assigned <= 0) return true;        // not delegated => anyone with class access may edit
   return $assigned === $uid;              // delegated => only that teacher
+}
+
+function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, array $meta, string $fieldType, int $isMultiline): bool {
+  if (($currentUser['role'] ?? '') === 'admin') return true;
+  $uid = (int)($currentUser['id'] ?? 0);
+  if ($uid <= 0) return false;
+
+  $groupKey = group_key_from_meta($meta);
+  $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  if ($assigned <= 0) return true;
+
+  if (is_free_text_field($fieldType, $isMultiline)) {
+    return ($assigned === $uid) || user_is_class_teacher($pdo, $uid, $classId);
+  }
+
+  return $assigned === $uid;
 }
 
 function is_free_text_field(string $fieldType, int $isMultiline): bool {
@@ -1095,6 +1110,17 @@ try {
         ];
       }
 
+      $canEditClassField = can_user_edit_field(
+        $pdo,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $m0,
+        (string)($f0['field_type'] ?? ''),
+        (int)($f0['is_multiline'] ?? 0)
+      );
+
       $classFieldsDefs[] = [
         'id' => (int)$f0['id'],
         'field_name' => (string)$f0['field_name'],
@@ -1105,6 +1131,7 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f0['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
+        'can_edit' => $canEditClassField ? 1 : 0,
       ];
     }
 
@@ -1147,6 +1174,17 @@ try {
       $base = base_field_key((string)$f['field_name']);
       $child = ($base !== '' && isset($childByBase[$base])) ? $childByBase[$base] : null;
 
+      $canEditField = can_user_edit_field(
+        $pdo,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $meta,
+        (string)($f['field_type'] ?? ''),
+        (int)($f['is_multiline'] ?? 0)
+      );
+
       $groups[$gKey]['fields'][] = [
         'id' => (int)$f['id'],
         'field_name' => (string)$f['field_name'],
@@ -1157,6 +1195,7 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
+        'can_edit' => $canEditField ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],
           'field_type' => (string)$child['field_type'],
@@ -1172,9 +1211,17 @@ try {
     foreach ($groupsList as $g0) {
       $gk = (string)($g0['key'] ?? '');
       $del = $gk !== '' && isset($delegations[$gk]) ? $delegations[$gk] : null;
-      $canEditGroup = $gk !== '' ? can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gk) : true;
+      $anyEditable = false;
+      if (isset($g0['fields']) && is_array($g0['fields'])) {
+        foreach ($g0['fields'] as $f0) {
+          if (!empty($f0['can_edit'])) {
+            $anyEditable = true;
+            break;
+          }
+        }
+      }
       $g0['delegation'] = $del;
-      $g0['can_edit'] = $canEditGroup ? 1 : 0;
+      $g0['can_edit'] = $anyEditable ? 1 : 0;
       $groupsList2[] = $g0;
     }
     $groupsList = $groupsList2;
@@ -1830,7 +1877,7 @@ if ($action === 'delegations_save') {
     $periodLabelDeleg = 'Standard';
 
     $gKey = group_key_from_meta($meta);
-    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $gKey)) {
+    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
 
@@ -1950,7 +1997,7 @@ if ($action === 'delegations_save') {
     $schoolYear = (string)($ri['school_year'] ?? '');
     $periodLabel = (string)($ri['period_label'] ?? 'Standard');
     $gKey = group_key_from_meta($meta);
-    if (!can_user_edit_group($pdo, $u, $classId, $schoolYear, $periodLabel, $gKey)) {
+    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
 
