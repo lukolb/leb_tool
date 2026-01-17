@@ -231,7 +231,7 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
     'model' => $aiCfg['model'],
     'messages' => $messages,
     'temperature' => 0.7,
-    'max_tokens' => 900,
+    'max_tokens' => 1500,
   ];
 
   $ch = curl_init($url);
