@@ -502,6 +502,28 @@ render_teacher_header($pageTitle);
   .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
   .opt:focus-visible{ outline: 2px solid rgba(11,87,208,0.5); outline-offset:2px; }
   .field:focus-within{ outline: 2px solid rgba(11,87,208,0.2); }
+  .combined-tip{ display:inline-flex; align-items:center; position:relative; }
+  .combined-tip-btn{
+    width:16px; height:16px; min-width:16px; min-height:16px;
+    border-radius:999px; border:1px solid var(--border); background:#fff;
+    color: var(--muted); font-size:11px; line-height:1;
+    display:inline-flex; align-items:center; justify-content:center;
+    cursor:pointer; padding:0;
+  }
+  .combined-tip-btn:hover{ color:#0b57d0; border-color:rgba(11,87,208,0.35); }
+  .combined-tip-bubble{
+    position:absolute; bottom: calc(100% + 6px); left:0;
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px; font-size:12px; color:var(--text);
+    box-shadow:0 8px 24px rgba(0,0,0,0.12);
+    min-width:160px; max-width:320px; z-index:30; display:none;
+  }
+  .combined-tip.open .combined-tip-bubble{ display:block; }
+  .combined-tip-bubble::after{
+    content:""; position:absolute; top:100%; left:10px;
+    border-width:6px; border-style:solid;
+    border-color:#fff transparent transparent transparent;
+  }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
@@ -1259,7 +1281,13 @@ render_teacher_header($pageTitle);
     const own = teacherEditVal(reportId, field.id);
     const same = String(combined ?? '') === String(own ?? '');
     if (!combined || same) return '';
-    return `<span class="muted small" style="margin-top:6px; display:inline-flex; gap:6px; align-items:center;" title="${esc(String(combined))}">ⓘ Gesamt</span>`;
+    const html = esc(String(combined)).replace(/\n/g, '<br>');
+    return `
+      <span class="combined-tip" data-tip="1" style="margin-top:6px;">
+        <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">i</button>
+        <span class="combined-tip-bubble">${html}</span>
+      </span>
+    `;
   }
 
   function childVal(reportId, fieldId){
@@ -2299,7 +2327,26 @@ render_teacher_header($pageTitle);
     snippetMenu.style.top = `${py}px`;
   }
 
+  function closeCombinedTips(except){
+    document.querySelectorAll('.combined-tip.open').forEach(t => {
+      if (except && t === except) return;
+      t.classList.remove('open');
+    });
+  }
+
   document.addEventListener('click', (ev) => {
+    const tipBtn = ev.target && ev.target.closest('.js-combined-tip');
+    if (tipBtn) {
+      ev.preventDefault();
+      const tipWrap = tipBtn.closest('.combined-tip');
+      if (tipWrap) {
+        const open = tipWrap.classList.contains('open');
+        closeCombinedTips(open ? null : tipWrap);
+        tipWrap.classList.toggle('open', !open);
+      }
+      return;
+    }
+
     const restoreBtn = ev.target && ev.target.closest('[data-history-restore="1"]');
     if (restoreBtn) {
       ev.preventDefault();
@@ -2326,6 +2373,7 @@ render_teacher_header($pageTitle);
 
     if (ev.target && ev.target.closest('[data-history-menu="1"]')) return;
     closeHistoryMenus();
+    closeCombinedTips();
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
