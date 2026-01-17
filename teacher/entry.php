@@ -502,15 +502,13 @@ render_teacher_header($pageTitle);
   .opt .ico.placeholder{ color: rgba(0,0,0,0.35); font-size:14px; }
   .opt:focus-visible{ outline: 2px solid rgba(11,87,208,0.5); outline-offset:2px; }
   .field:focus-within{ outline: 2px solid rgba(11,87,208,0.2); }
+  .field-actions{ display:flex; align-items:center; gap:6px; margin-top:6px; }
   .combined-tip{ display:inline-flex; align-items:center; position:relative; }
   .combined-tip-btn{
-    width:16px; height:16px; min-width:16px; min-height:16px;
-    border-radius:999px; border:1px solid var(--border); background:#fff;
-    color: var(--muted); font-size:11px; line-height:1;
     display:inline-flex; align-items:center; justify-content:center;
-    cursor:pointer; padding:0;
+    line-height:1;
   }
-  .combined-tip-btn:hover{ color:#0b57d0; border-color:rgba(11,87,208,0.35); }
+  .combined-tip-btn:hover{ color:#0b57d0; }
   .combined-tip-bubble{
     position:absolute; bottom: calc(100% + 6px); left:0;
     background:#fff; border:1px solid var(--border); border-radius:10px;
@@ -1282,8 +1280,8 @@ render_teacher_header($pageTitle);
       ? esc(String(combined)).replace(/\n/g, '<br>')
       : '<span class="muted">—</span>';
     return `
-      <span class="combined-tip" data-tip="1" style="margin-top:6px;">
-        <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
+      <span class="combined-tip" data-tip="1">
+        <button type="button" class="btn ghost icon combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
         <span class="combined-tip-bubble">${html}</span>
       </span>
     `;
@@ -2561,13 +2559,17 @@ render_teacher_header($pageTitle);
       const lbl = String(f.label_resolved || f.label || f.field_name || '');
       const help = String(f.help_text_resolved || f.help_text || '');
       const canEditField = (Number(f.can_edit || 0) === 1);
+      const combinedHtml = combinedPreviewHtml(rid, f);
+      const historyHtml = renderHistoryHtml(rid, fid);
+      const actionsHtml = (combinedHtml || historyHtml)
+        ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+        : '';
       return `
         <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
           <div class="lbl" data-dyn="label">${esc(lbl)}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
           ${renderInputHtml(f, rid, v, locked, canEditField)}
-          ${combinedPreviewHtml(rid, f)}
-          ${renderHistoryHtml(rid, fid)}
+          ${actionsHtml}
         </div>
       `;
     }).join('');
@@ -2737,13 +2739,17 @@ render_teacher_header($pageTitle);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
+        const combinedHtml = combinedPreviewHtml(reportId, f);
+        const historyHtml = renderHistoryHtml(reportId, f.id);
+        const actionsHtml = (combinedHtml || historyHtml)
+          ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+          : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
             <div class="lbl">${esc(lbl)}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderInputHtml(f, reportId, v, locked, canEditField)}
-            ${combinedPreviewHtml(reportId, f)}
-            ${renderHistoryHtml(reportId, f.id)}
+            ${actionsHtml}
             ${childInfo}
           </div>
         `;
@@ -2849,11 +2855,15 @@ render_teacher_header($pageTitle);
           const canEditField = (Number(f.can_edit || 0) === 1);
 
           const missingCls = (v === '') ? 'missing' : '';
+          const combinedHtml = combinedPreviewHtml(reportId, f);
+          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const actionsHtml = (combinedHtml || historyHtml)
+            ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+            : '';
           td.innerHTML = `
             <div class="cellWrap ${missingCls}">
               ${renderInputHtml(f, reportId, v, locked, canEditField)}
-              ${combinedPreviewHtml(reportId, f)}
-              ${renderHistoryHtml(reportId, f.id)}
+              ${actionsHtml}
               ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
             </div>
           `;
@@ -2994,11 +3004,15 @@ render_teacher_header($pageTitle);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
         const missingCls = (v === '') ? 'missing' : '';
+          const combinedHtml = combinedPreviewHtml(reportId, f);
+          const historyHtml = renderHistoryHtml(reportId, f.id);
+          const actionsHtml = (combinedHtml || historyHtml)
+            ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+            : '';
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderInputHtml(f, reportId, v, locked, canEditField)}
-            ${combinedPreviewHtml(reportId, f)}
-            ${renderHistoryHtml(reportId, f.id)}
+            ${actionsHtml}
             ${(f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
         `;
