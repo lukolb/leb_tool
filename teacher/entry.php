@@ -372,7 +372,9 @@ render_teacher_header($pageTitle);
     <div style="min-width:260px;">
       <label class="label">Ansicht</label>
       <select class="input" id="viewSelect" style="width:100%;">
-        <option value="grades">Notenübersicht</option>
+        <?php if (!$childMode): ?>
+          <option value="grades">Notenübersicht</option>
+        <?php endif; ?>
         <option value="student">Nach Schüler</option>
         <option value="item">Nach Item/Fach</option>
       </select>
@@ -1259,6 +1261,7 @@ render_teacher_header($pageTitle);
 
   function normalizeViewMode(mode){
     const m = String(mode || '').toLowerCase();
+    if (CHILD_MODE && m === 'grades') return 'student';
     if (m === 'student' || m === 'item' || m === 'grades') return m;
     return 'grades';
   }
@@ -3087,6 +3090,10 @@ render_teacher_header($pageTitle);
     updateFormsProgressUI();
 
     ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
+    if (CHILD_MODE && ui.view === 'grades') {
+      ui.view = 'student';
+      viewSelect.value = 'student';
+    }
     ui.showChild = CHILD_MODE ? false : !!(toggleChild && toggleChild.checked);
 
     viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
