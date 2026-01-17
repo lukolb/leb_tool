@@ -122,9 +122,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $aiEnabled = (isset($_POST['ai_enabled']) || $_POST['ai_key'])
       ? (int)$_POST['ai_enabled']
       : (int)($cfg['ai']['enabled'] ?? 1);
-    $aiStudentEnabled = (isset($_POST['ai_student_enabled']) || $_POST['ai_key'])
-      ? (int)($_POST['ai_student_enabled'] ?? 0)
-      : (int)($cfg['ai']['student_enabled'] ?? ($cfg['ai']['enabled'] ?? 1));
+    $aiStudentEnabled = isset($_POST['ai_student_enabled'])
+      ? 1
+      : 0;
     if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
     $cfg['ai']['enabled'] = ($aiEnabled === 1);
     $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
