@@ -1275,6 +1275,8 @@ render_teacher_header($pageTitle);
   function combinedPreviewHtml(reportId, field){
     if (!field) return '';
     if (!isFreeTextField(field)) return '';
+    const delegatedUserId = Number(field._delegated_user_id || 0);
+    if (!delegatedUserId) return '';
     const combined = teacherVal(reportId, field.id);
     const html = combined
       ? esc(String(combined)).replace(/\n/g, '<br>')
