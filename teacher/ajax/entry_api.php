@@ -2034,8 +2034,10 @@ try {
     $userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die folgenden aggregierten Informationen und erfinde keine Details. "
       . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler. "
       . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
+      . "Die Fördermöglichkeiten müssen konkret, beobachtungsnah und umsetzbar sein (Material/Übung, Sozialform, Häufigkeit/Dauer). "
       . "Erkläre zudem die Bedeutung der Kompetenzstufen anhand der genannten Stufenreihenfolge (niedrig → hoch). "
       . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
+      . "Bei jedem Bereich nenne mindestens zwei konkrete Förderideen (z. B. Übungsformate, Methoden, Differenzierung). "
       . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
 
     $aiCfg = ai_provider_config();
