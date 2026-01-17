@@ -628,6 +628,7 @@ render_teacher_header($pageTitle);
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
+  const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm', 'Schülereingabe "{label}" wirklich löschen?'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
 
@@ -1549,7 +1550,9 @@ render_teacher_header($pageTitle);
         const rid = Number(btn.getAttribute('data-delete-child') || 0);
         const fid = Number(btn.getAttribute('data-child-field') || 0);
         const lbl = String(btn.getAttribute('data-child-label') || 'Schülereingabe');
-        if (!window.confirm(`Schülereingabe "${lbl}" wirklich löschen?`)) return;
+        const confirmMsg = String(CHILD_CLEAR_CONFIRM || 'Schülereingabe "{label}" wirklich löschen?')
+          .replace('{label}', lbl);
+        if (!window.confirm(confirmMsg)) return;
         await updateChildValue(rid, fid, null, lbl);
       });
     });
@@ -3241,8 +3244,11 @@ render_teacher_header($pageTitle);
         const missingCls = (v === '') ? 'missing' : '';
         const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
         const historyHtml = renderHistoryHtml(reportId, f.id);
-        const actionsHtml = (combinedHtml || historyHtml)
-          ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
+        const clearBtn = CHILD_MODE
+          ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(t('teacher.child_entry.clear', 'Zurücksetzen'))}</button>`
+          : '';
+        const actionsHtml = (combinedHtml || historyHtml || clearBtn)
+          ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
           : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
@@ -3285,6 +3291,43 @@ render_teacher_header($pageTitle);
         ev.preventDefault();
         const rid = Number(btn.getAttribute('data-unlock-child') || 0);
         if (rid > 0) await unlockChildEntry(rid);
+      });
+    });
+
+    studentForm.querySelectorAll('[data-clear-child]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-clear-child') || 0);
+        const fid = Number(btn.getAttribute('data-child-field') || 0);
+        const lbl = String(btn.getAttribute('data-child-label') || 'Schülerfeld');
+        if (!rid || !fid) return;
+        const confirmMsg = String(CHILD_CLEAR_CONFIRM || 'Schülereingabe "{label}" wirklich löschen?')
+          .replace('{label}', lbl);
+        if (!window.confirm(confirmMsg)) return;
+        await updateChildValue(rid, fid, null, lbl, { render: false });
+        const current = childVal(rid, fid);
+        const val = (current ?? '');
+        const wrap = btn.closest('.field') || btn.closest('.cellWrap');
+        if (wrap) {
+          wrap.classList.toggle('missing', String(val).trim() === '');
+          const input = wrap.querySelector('[data-child-input="1"]');
+          if (input) {
+            if (input.dataset.combo === '1') {
+              input.dataset.actual = String(val ?? '');
+              input.value = childFieldDisplay(state.fieldMap[String(fid)], val);
+            } else if (input.type === 'checkbox') {
+              input.checked = String(val) === '1';
+            } else {
+              input.value = String(val ?? '');
+            }
+          }
+          wrap.querySelectorAll('[data-option-card="1"]').forEach(card => {
+            const match = String(card.getAttribute('data-value') || '') === String(val ?? '');
+            card.classList.toggle('selected', match);
+            card.setAttribute('aria-pressed', match ? 'true' : 'false');
+            card.setAttribute('tabindex', match ? '0' : '-1');
+          });
+        }
       });
     });
 
