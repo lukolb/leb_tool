@@ -46,6 +46,8 @@ return [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über
     // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.
     'enabled' => true,
+    // Separater Schalter für KI-Erklärungen in der Schüleransicht.
+    'student_enabled' => true,
     'api_key' => '',
     // Provider & Modell können in den Einstellungen gewählt werden.
     'provider' => 'openai',

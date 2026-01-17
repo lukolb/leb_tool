@@ -122,7 +122,8 @@ function ai_provider_enabled(): bool {
   $cfg = app_config();
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
   $enabled = array_key_exists('enabled', $ai) ? (bool)$ai['enabled'] : true;
-  if (!$enabled) return false;
+  $studentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['student_enabled'] : $enabled;
+  if (!$enabled || !$studentEnabled) return false;
   $apiKey = (string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '');
   return trim($apiKey) !== '';
 }
