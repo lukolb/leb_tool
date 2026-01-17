@@ -30,6 +30,29 @@ session_set_cookie_params([
 session_name($config['app']['session_name'] ?? 'legtool_sess');
 session_start();
 
+// Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
+ob_start(function (string $buffer): string {
+  if (is_ajax_request()) return $buffer;
+  if (stripos($buffer, '</body>') === false) return $buffer;
+  if (strpos($buffer, 'data-history-replace-state') !== false) return $buffer;
+
+  $header = '';
+  foreach (headers_list() as $item) {
+    if (stripos($item, 'Content-Type:') === 0) {
+      $header = $item;
+      break;
+    }
+  }
+  if ($header && stripos($header, 'text/html') === false) return $buffer;
+
+  $script = "\n  <script data-history-replace-state>\n" .
+    "    if (window.history && window.history.replaceState) {\n" .
+    "      window.history.replaceState(null, document.title, window.location.href);\n" .
+    "    }\n" .
+    "  </script>\n";
+  return preg_replace('/<\/body>/i', $script . '</body>', $buffer, 1) ?? $buffer;
+});
+
 
 // --- UI language (only affects dynamic field labels/group titles) ---
 function ui_lang(): string {
