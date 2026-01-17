@@ -136,5 +136,6 @@ $logo = $b['logo_path'] ?? '';
       <?php endif; ?>
     </div>
   </div>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>

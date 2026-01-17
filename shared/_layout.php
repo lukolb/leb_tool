@@ -159,7 +159,9 @@ function render_role_header(string $title): void {
 }
 
 function render_role_footer(): void {
-  echo "</div></body></html>";
+  echo "</div>";
+  render_history_replace_state_script();
+  echo "</body></html>";
 }
 
 function render_admin_header(string $title): void { render_role_header($title); }

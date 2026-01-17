@@ -97,5 +97,6 @@ $logo = $b['logo_path'] ?? '';
 
     <p class="muted">© <?=h($org)?> · <?=h(date('Y'))?></p>
   </div>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>

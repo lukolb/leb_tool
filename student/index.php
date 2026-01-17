@@ -2118,5 +2118,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   })();
 })();
 </script>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>

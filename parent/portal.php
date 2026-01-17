@@ -811,5 +811,6 @@ $secondary = $b['secondary'] ?? '#111111';
     fillPdf().catch(e => showError(e?.message || String(e)));
   </script>
   <?php endif; ?>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>

@@ -218,6 +218,14 @@ function db(): PDO {
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+function render_history_replace_state_script(): void {
+  echo "\n  <script data-history-replace-state>\n";
+  echo "    if (window.history && window.history.replaceState) {\n";
+  echo "      window.history.replaceState(null, document.title, window.location.href);\n";
+  echo "    }\n";
+  echo "  </script>\n";
+}
+
 // --------------------
 // Schema (additive migrations)
 // --------------------

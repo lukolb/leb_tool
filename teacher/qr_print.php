@@ -122,5 +122,6 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
       });
     })();
   </script>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>

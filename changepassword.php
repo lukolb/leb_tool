@@ -66,5 +66,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </form>
   </div>
+<?php render_history_replace_state_script(); ?>
 </body>
 </html>
