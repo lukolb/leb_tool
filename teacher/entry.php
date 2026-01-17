@@ -123,11 +123,11 @@ render_teacher_header($pageTitle);
         <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation', 'Delegation abschließen…'))?></button>
       <?php endif; ?>
     <?php if ($childMode): ?>
-        <a class="btn secondary" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+        <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
           <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
         </a>
       <?php else: ?>
-        <a class="btn secondary" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+        <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
           <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
         </a>
       <?php endif; ?>
@@ -1266,6 +1266,19 @@ render_teacher_header($pageTitle);
     if (!viewSelect) return;
     const saved = normalizeViewMode(localStorage.getItem(VIEW_STORAGE_KEY));
     viewSelect.value = saved;
+  }
+
+  function updateSwitchLinks(){
+    if (!classSelect) return;
+    const classId = Number(classSelect.value || 0);
+    document.querySelectorAll('[data-switch-view="teacher"]').forEach(link => {
+      const base = <?=json_encode(url('teacher/entry.php'))?>;
+      link.href = classId > 0 ? `${base}?class_id=${classId}` : base;
+    });
+    document.querySelectorAll('[data-switch-view="child"]').forEach(link => {
+      const base = <?=json_encode(url('teacher/child_entry.php'))?>;
+      link.href = classId > 0 ? `${base}?class_id=${classId}` : base;
+    });
   }
 
   function saveViewSelection(){
@@ -3947,6 +3960,10 @@ if (dlgSave) {
   });
   if (toggleChild) {
     toggleChild.addEventListener('change', () => render());
+  }
+  updateSwitchLinks();
+  if (classSelect) {
+    classSelect.addEventListener('change', updateSwitchLinks);
   }
 
   studentSearch.addEventListener('input', () => {
