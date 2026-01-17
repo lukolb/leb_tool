@@ -2065,9 +2065,20 @@ try {
       }
       if (isset($json['bereiche']) && is_array($json['bereiche'])) {
         $areas = [];
-        foreach ($json['bereiche'] as $item) {
+        foreach ($json['bereiche'] as $key => $item) {
+          if (is_string($item)) {
+            $text = trim($item);
+            if ($text === '') continue;
+            $areas[] = [
+              'bereich' => is_string($key) ? trim($key) : '',
+              'rueckmeldung' => $text,
+              'foerderung' => '',
+            ];
+            continue;
+          }
+
           if (!is_array($item)) continue;
-          $bereich = trim((string)($item['bereich'] ?? ''));
+          $bereich = trim((string)($item['bereich'] ?? (is_string($key) ? $key : '')));
           $rueckmeldung = trim((string)($item['rueckmeldung'] ?? ''));
           $foerderung = trim((string)($item['foerderung'] ?? ''));
           if ($bereich === '' && $rueckmeldung === '' && $foerderung === '') continue;
