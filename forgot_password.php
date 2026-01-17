@@ -82,4 +82,3 @@ $logo = $b['logo_path'] ?? '';
   </div>
 </body>
 </html>
-
