@@ -425,6 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
+      if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
 
       $ins = $pdo->prepare(
         "INSERT INTO students (class_id, first_name, last_name, date_of_birth, is_active)
@@ -498,7 +499,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($first === '' && $last === '') continue;
-        if ($first === '' || $last === '') { $skipped++; continue; }
+        if ($first === '' || $last === '' || $dob === null) { $skipped++; continue; }
 
         $check->execute([$classId, $first, $last, $dob]);
         if ($check->fetch()) { $skipped++; continue; }
