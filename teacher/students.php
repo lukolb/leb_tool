@@ -192,6 +192,25 @@ function find_master_student_id(PDO $pdo, string $first, string $last, ?string $
   return null;
 }
 
+function find_existing_student_id(PDO $pdo, string $first, string $last, ?string $dob, ?int $excludeId = null): ?int {
+  $first = trim($first);
+  $last  = trim($last);
+  if ($first === '' || $last === '') return null;
+  if ($dob === null || $dob === '') return null;
+
+  $sql = "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=?";
+  $params = [$first, $last, $dob];
+  if ($excludeId !== null && $excludeId > 0) {
+    $sql .= " AND id<>?";
+    $params[] = $excludeId;
+  }
+  $sql .= " LIMIT 1";
+  $q = $pdo->prepare($sql);
+  $q->execute($params);
+  $id = $q->fetchColumn();
+  return $id !== false ? (int)$id : null;
+}
+
 function ensure_master_id(PDO $pdo, int $studentId): int {
   $q = $pdo->prepare("SELECT id, master_student_id FROM students WHERE id=? LIMIT 1");
   $q->execute([$studentId]);
@@ -426,6 +445,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
       if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
+      if (find_existing_student_id($pdo, $first, $last, $dob) !== null) {
+        throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Schüler mit gleichem Namen und Geburtsdatum existiert bereits.'));
+      }
 
       $ins = $pdo->prepare(
         "INSERT INTO students (class_id, first_name, last_name, date_of_birth, is_active)
@@ -480,7 +502,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->beginTransaction();
 
       $check = $pdo->prepare(
-        "SELECT id FROM students WHERE class_id=? AND first_name=? AND last_name=? AND (date_of_birth <=> ?) LIMIT 1"
+        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? LIMIT 1"
       );
       $ins = $pdo->prepare(
         "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
@@ -501,7 +523,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($first === '' && $last === '') continue;
         if ($first === '' || $last === '' || $dob === null) { $skipped++; continue; }
 
-        $check->execute([$classId, $first, $last, $dob]);
+        $check->execute([$first, $last, $dob]);
         if ($check->fetch()) { $skipped++; continue; }
 
         $master = find_master_student_id($pdo, $first, $last, $dob);
@@ -638,6 +660,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       foreach ($src as $s) {
         $sid = (int)$s['id'];
         if (isset($excludeMap[$sid])) continue;
+        if (empty($s['date_of_birth'])) continue;
+        if (find_existing_student_id($pdo, (string)$s['first_name'], (string)$s['last_name'], (string)$s['date_of_birth']) !== null) {
+          continue;
+        }
 
         $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
         if ($master <= 0) $master = ensure_master_id($pdo, $sid);
@@ -671,6 +697,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
+      if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
+      if (find_existing_student_id($pdo, $first, $last, $dob, $studentId) !== null) {
+        throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Schüler mit gleichem Namen und Geburtsdatum existiert bereits.'));
+      }
 
       $upd = $pdo->prepare("UPDATE students SET first_name=?, last_name=?, date_of_birth=? WHERE id=?");
       $upd->execute([$first, $last, $dob, $studentId]);
