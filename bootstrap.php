@@ -384,6 +384,27 @@ function ensure_schema(PDO $pdo): void {
       );
     }
 
+    // --- class_child_group_unlocks: per-class category unlocks for student wizard
+    if (!db_has_table($pdo, 'class_child_group_unlocks')) {
+      $pdo->exec(
+        "CREATE TABLE class_child_group_unlocks (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  class_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
+        "  group_key VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  is_unlocked TINYINT(1) NOT NULL DEFAULT '1',\n" .
+        "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  updated_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_class_child_group_unlock (class_id, school_year, period_label, group_key),\n" .
+        "  KEY idx_class_child_group_unlock_class (class_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }

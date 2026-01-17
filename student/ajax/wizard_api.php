@@ -155,6 +155,25 @@ function group_title_from_meta(array $meta, string $groupKey, string $lang): str
   return group_title_override_lang($groupKey, $lang);
 }
 
+function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($classId <= 0 || $schoolYear === '') return ['active' => false, 'map' => []];
+  $st = $pdo->prepare(
+    "SELECT group_key, is_unlocked
+     FROM class_child_group_unlocks
+     WHERE class_id=? AND school_year=? AND period_label=?"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) return ['active' => false, 'map' => []];
+  $map = [];
+  foreach ($rows as $r) {
+    $gk = trim((string)($r['group_key'] ?? ''));
+    if ($gk === '') continue;
+    $map[$gk] = ((int)($r['is_unlocked'] ?? 0) === 1);
+  }
+  return ['active' => true, 'map' => $map];
+}
+
 function get_student_and_class(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.class_id,
@@ -439,6 +458,7 @@ try {
     $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
   }
   if ($schoolYear === '') throw new RuntimeException('Schuljahr konnte nicht ermittelt werden.');
+  $classId = (int)($studentRow['class_id'] ?? 0);
 
   $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
   
@@ -448,6 +468,7 @@ try {
 
   $status = get_report_status($pdo, $reportId);
   $childCanEdit = ($status === 'draft');
+  $groupUnlocks = load_child_group_unlocks($pdo, $classId, $schoolYear, 'Standard');
 
   if ($action === 'bootstrap') {
     $introHtml = '';
@@ -468,7 +489,6 @@ try {
     $fieldLookup = load_all_fields_lookup($pdo, $templateId, $reportId);
 
     // Merge class-wide values into field_lookup so placeholders can resolve even if the student has no value.
-    $classId = (int)($studentRow['class_id'] ?? 0);
     if ($classId > 0 && $schoolYear !== '') {
       $classReportId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
       $classLookup = load_class_lookup($pdo, $templateId, $classReportId);
@@ -565,6 +585,13 @@ try {
       'fields' => [],
     ];
 
+    if ($groupUnlocks['active']) {
+      foreach ($groups as $gKey => $gData) {
+        if (empty($groupUnlocks['map'][$gKey])) unset($groups[$gKey]);
+      }
+      if (!$groups) $childCanEdit = false;
+    }
+
     foreach ($groups as $gKey => $gData) {
       $steps[] = [
         'key' => $gKey,
@@ -613,6 +640,13 @@ try {
     $type = (string)$frow['field_type'];
     $meta = meta_read($frow['meta_json'] ?? null);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
+
+    if ($groupUnlocks['active']) {
+      $gKey = group_key_from_meta($meta);
+      if (empty($groupUnlocks['map'][$gKey])) {
+        throw new RuntimeException('Kategorie noch nicht freigegeben.');
+      }
+    }
 
     $valueJson = null;
 
