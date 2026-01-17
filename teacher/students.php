@@ -263,11 +263,11 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
   if (!$ids) return;
 
   $ins = $pdo->prepare(
-    "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id)
-     VALUES (?, ?, 'Standard', ?, 'draft', ?)"
+    "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
+     VALUES (?, ?, 'Standard', ?, 'locked', ?, ?, NOW())"
   );
   foreach ($ids as $sid) {
-    $ins->execute([$templateId, $sid, $schoolYear, $userId]);
+    $ins->execute([$templateId, $sid, $schoolYear, $userId, $userId]);
   }
 }
 
