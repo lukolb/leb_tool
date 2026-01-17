@@ -1284,8 +1284,7 @@ render_teacher_header($pageTitle);
       ? esc(String(combined)).replace(/\n/g, '<br>')
       : '<span class="muted">—</span>';
     return `
-      <span class="badge-del combined-tip" data-tip="1" style="margin-top:6px;">
-        <span>Delegiert:</span>
+      <span class="combined-tip" data-tip="1" style="margin-top:6px;">
         <button type="button" class="combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">i</button>
         <span class="combined-tip-bubble">${html}</span>
       </span>
