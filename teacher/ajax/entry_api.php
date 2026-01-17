@@ -2046,6 +2046,13 @@ try {
 
     $aiText = ai_chat_completion($messages, $aiCfg);
 
+    $decoded = json_decode((string)$aiText, true);
+    if (!is_array($decoded)) {
+      if (preg_match('/\{[\s\S]*\}/', (string)$aiText, $m)) {
+        $decoded = json_decode($m[0], true);
+      }
+    }
+
     $parsed = [
       'rueckmeldung_gesamt' => '',
       'noten_leistungsschnitt' => '',
@@ -2054,18 +2061,17 @@ try {
       'kompetenzstufen_erklaerung' => [],
       'bereiche' => [],
     ];
-    $json = json_decode((string)$aiText, true);
-    if (is_array($json)) {
-      $parsed['rueckmeldung_gesamt'] = trim((string)($json['rueckmeldung_gesamt'] ?? ''));
-      $parsed['noten_leistungsschnitt'] = trim((string)($json['noten_leistungsschnitt'] ?? ''));
+    if (is_array($decoded)) {
+      $parsed['rueckmeldung_gesamt'] = trim((string)($decoded['rueckmeldung_gesamt'] ?? ''));
+      $parsed['noten_leistungsschnitt'] = trim((string)($decoded['noten_leistungsschnitt'] ?? ''));
       foreach (['foerdermoeglichkeiten','schwerpunkte_faecher','kompetenzstufen_erklaerung'] as $k) {
-        if (isset($json[$k]) && is_array($json[$k])) {
-          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $json[$k]), fn($s)=>$s!=='' ));
+        if (isset($decoded[$k]) && is_array($decoded[$k])) {
+          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $decoded[$k]), fn($s)=>$s!=='' ));
         }
       }
-      if (isset($json['bereiche']) && is_array($json['bereiche'])) {
+      if (isset($decoded['bereiche']) && is_array($decoded['bereiche'])) {
         $areas = [];
-        foreach ($json['bereiche'] as $key => $item) {
+        foreach ($decoded['bereiche'] as $key => $item) {
           if (is_string($item)) {
             $text = trim($item);
             if ($text === '') continue;
