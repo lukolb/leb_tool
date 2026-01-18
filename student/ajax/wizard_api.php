@@ -27,6 +27,29 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
+function pdf_max_len_from_meta(array $meta): ?int {
+  $raw = $meta['pdf_max_len'] ?? null;
+  if ($raw === null || $raw === '') return null;
+  if (!is_numeric($raw)) return null;
+  $n = (int)$raw;
+  return $n > 0 ? $n : null;
+}
+
+function clamp_text_length(?string $text, ?int $maxLen): ?string {
+  if ($text === null) return null;
+  if (!$maxLen || $maxLen <= 0) return $text;
+  if (function_exists('mb_strlen')) {
+    if (mb_strlen($text) <= $maxLen) return $text;
+    return mb_substr($text, 0, $maxLen);
+  }
+  if (function_exists('iconv_strlen') && function_exists('iconv_substr')) {
+    if (iconv_strlen($text, 'UTF-8') <= $maxLen) return $text;
+    return iconv_substr($text, 0, $maxLen, 'UTF-8');
+  }
+  if (strlen($text) <= $maxLen) return $text;
+  return substr($text, 0, $maxLen);
+}
+
 /**
  * Option-list templates: keep selections stable even if the *value* changes.
  * We store/resolve by option_list_items.id (option_item_id) and derive the current value from that.
@@ -560,6 +583,7 @@ try {
         'group' => $gKey,
         'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
+        'max_length' => pdf_max_len_from_meta($meta),
       ];
     }
 
@@ -639,6 +663,7 @@ try {
 
     $type = (string)$frow['field_type'];
     $meta = meta_read($frow['meta_json'] ?? null);
+    $maxLen = pdf_max_len_from_meta($meta);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     if ($groupUnlocks['active']) {
@@ -668,7 +693,11 @@ try {
       $valueText = $v;
     } else {
       $valueText = $valueText !== null ? trim($valueText) : null;
-      if ($valueText === '') $valueText = null;
+      if ($valueText === '') {
+        $valueText = null;
+      } else {
+        $valueText = clamp_text_length($valueText, $maxLen);
+      }
     }
 
     $up = $pdo->prepare(

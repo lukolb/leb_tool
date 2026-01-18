@@ -847,8 +847,10 @@ async function readPdfFieldInfoFromDoc(doc){
       const rawType = it?.type || it?.fieldType || '';
       const multiline = !!(it?.multiline || it?.multiLine);
       const hint = (it?.alternativeText || it?.altText || it?.tooltip || it?.title || it?.fieldLabel || '')?.toString?.() || '';
+      let maxLen = Number(it?.maxLen ?? it?.maxLength ?? it?.maxlength ?? it?.maxlen ?? it?.MaxLen ?? NaN);
+      if (!Number.isFinite(maxLen) || maxLen <= 0) maxLen = null;
 
-      tmp.push({ name, pNum, rect, rawType, multiline, hint });
+      tmp.push({ name, pNum, rect, rawType, multiline, hint, maxLen });
     }
   }
 
@@ -867,7 +869,8 @@ async function readPdfFieldInfoFromDoc(doc){
         rawType: t.rawType,
         type: normalizePdfType(t.rawType, t.multiline),
         multiline: !!t.multiline,
-        hint: t.hint
+        hint: t.hint,
+        pdf_max_len: t.maxLen
       });
     }
   }
@@ -1059,6 +1062,8 @@ async function syncPdfPositionsWithFields(opts={}){
       const info = pdfInfo.fields.get(newName) || {};
       const next = { ...fields[idx], name: newName };
       next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+      if (Number.isFinite(info.pdf_max_len) && info.pdf_max_len > 0) next.meta.pdf_max_len = info.pdf_max_len;
+      else if (next.meta?.pdf_max_len) delete next.meta.pdf_max_len;
       fields[idx] = next;
       markDirty(next.id);
       renameApplied.push({ from: oldName, to: newName });
@@ -1078,6 +1083,8 @@ async function syncPdfPositionsWithFields(opts={}){
 
     const next = { ...f };
     next.meta = { ...(next.meta || {}), page: info.page, rect: info.rect, detectedType: info.rawType, multiline: info.multiline };
+    if (Number.isFinite(info.pdf_max_len) && info.pdf_max_len > 0) next.meta.pdf_max_len = info.pdf_max_len;
+    else if (next.meta?.pdf_max_len) delete next.meta.pdf_max_len;
     markDirty(next.id);
     updated++;
     return next;

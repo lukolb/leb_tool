@@ -1530,6 +1530,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     const help = resolveTextTemplate(String(f.help || ''), idx);
     const multiline = !!f.multiline;
     const val = fieldValueText(f);
+    const maxLenRaw = f && typeof f.max_length !== 'undefined' ? Number(f.max_length) : null;
+    const maxLen = Number.isFinite(maxLenRaw) && maxLenRaw > 0 ? Math.floor(maxLenRaw) : null;
+    const maxAttr = maxLen ? `maxlength="${esc(String(maxLen))}"` : '';
 
     const showLabel = opts.showLabel !== false;
     const allowHelp = opts.showHelp !== false;
@@ -1578,14 +1581,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (multiline || type === 'textarea') {
       return `<div class="${wrapCls}" data-field="${fid}">
         ${labelHtml}
-        <textarea rows="4" class="input" data-input="1" style="width:100%;">${esc(val)}</textarea>
+        <textarea rows="4" class="input" data-input="1" ${maxAttr} style="width:100%;">${esc(val)}</textarea>
         <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
       </div>`;
     }
 
     return `<div class="${wrapCls}" data-field="${fid}">
       ${labelHtml}
-      <input type="text" class="input" data-input="1" style="width:100%;" value="${esc(val)}">
+      <input type="text" class="input" data-input="1" ${maxAttr} style="width:100%;" value="${esc(val)}">
       <div class="help" data-dyn="help" style="${helpStyle}">${esc(help)}</div>
     </div>`;
   }

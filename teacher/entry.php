@@ -2793,6 +2793,17 @@ render_teacher_header($pageTitle);
   });
 
   // --- rendering helpers
+  function fieldMaxLen(f){
+    const raw = f?.meta?.pdf_max_len ?? null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.floor(n);
+  }
+
+  function maxLenAttr(f){
+    const n = fieldMaxLen(f);
+    return n ? `maxlength="${esc(String(n))}"` : '';
+  }
 
   function renderInputHtml(f, reportId, value, locked, canEdit=true){
     const dis = (locked || !canEdit) ? 'disabled' : '';
@@ -2806,7 +2817,8 @@ render_teacher_header($pageTitle);
     }
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
-      return `<textarea rows="4" ${common} style="width:100%;">${esc(value)}</textarea>`;
+      const maxAttr = maxLenAttr(f);
+      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -2866,7 +2878,8 @@ render_teacher_header($pageTitle);
     }
 
     const inputType = (type === 'number') ? 'number' : ((type === 'date') ? 'date' : 'text');
-    return `<input type="${esc(inputType)}" ${common} style="width:100%;" value="${esc(value)}">`;
+    const maxAttr = inputType === 'text' ? maxLenAttr(f) : '';
+    return `<input type="${esc(inputType)}" ${common} ${maxAttr} style="width:100%;" value="${esc(value)}">`;
   }
 
   function renderChildInputHtml(f, reportId, value, locked, canEdit=true){
@@ -2881,7 +2894,8 @@ render_teacher_header($pageTitle);
     }
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
-      return `<textarea rows="4" ${common} style="width:100%;">${esc(value)}</textarea>`;
+      const maxAttr = maxLenAttr(f);
+      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -2938,7 +2952,8 @@ render_teacher_header($pageTitle);
     }
 
     const inputType = (type === 'number') ? 'number' : ((type === 'date') ? 'date' : 'text');
-    return `<input type="${esc(inputType)}" ${common} style="width:100%;" value="${esc(value)}">`;
+    const maxAttr = inputType === 'text' ? maxLenAttr(f) : '';
+    return `<input type="${esc(inputType)}" ${common} ${maxAttr} style="width:100%;" value="${esc(value)}">`;
   }
 
   function renderActiveInputHtml(f, reportId, value, locked, canEdit=true){
