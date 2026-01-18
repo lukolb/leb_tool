@@ -311,12 +311,16 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return wrapper;
   }
 
-  function positionField(wrapper, rect){
+  function positionField(wrapper, rect, field){
     const [x1, y1, x2, y2] = rect;
     const left = Math.min(x1, x2);
     const top = Math.min(y1, y2);
     const width = Math.abs(x2 - x1);
-    const height = Math.abs(y2 - y1);
+    let height = Math.abs(y2 - y1);
+    if (field?.field_type === 'radio') {
+      const count = Array.isArray(field.options) ? field.options.length : 0;
+      if (count > 1) height = Math.max(height, 18 * count + 8);
+    }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${width}px`;
@@ -371,7 +375,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         const viewRect = viewport.convertToViewportRectangle(rect);
         const value = (state.values && field.id in state.values) ? state.values[field.id] : '';
         const el = createFieldInput(field, value);
-        positionField(el, viewRect);
+        positionField(el, viewRect, field);
         overlay.appendChild(el);
       });
     }
