@@ -583,7 +583,11 @@ function load_student_form_value_counts(PDO $pdo, array $studentIds): array {
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT r.student_id, COUNT(fv.id) AS value_count
+    "SELECT r.student_id,
+            SUM(CASE
+                  WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
+                  ELSE 0
+                END) AS value_count
      FROM report_instances r
      LEFT JOIN field_values fv ON fv.report_instance_id = r.id
      WHERE r.student_id IN ($in)
@@ -753,7 +757,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$q->fetch()) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
       $q = $pdo->prepare(
-        "SELECT COUNT(fv.id) AS value_count
+        "SELECT SUM(CASE
+                      WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
+                      ELSE 0
+                    END) AS value_count
          FROM report_instances r
          LEFT JOIN field_values fv ON fv.report_instance_id = r.id
          WHERE r.student_id=?"
