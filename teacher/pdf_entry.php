@@ -115,8 +115,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   }
   .pdf-radio-group {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
   }
   .pdf-radio-item {
     display: flex;
@@ -256,9 +257,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el.className = 'pdf-radio-group';
       const name = `pdf-radio-${field.id}`;
       const resolvedValue = resolveOptionValue();
+      const columns = Math.min(4, Math.max(1, options.length));
+      const itemWidth = `calc(${100 / columns}% - 10px)`;
       options.forEach((opt) => {
         const item = document.createElement('label');
         item.className = 'pdf-radio-item';
+        item.style.flex = `0 0 ${itemWidth}`;
         const input = document.createElement('input');
         input.type = 'radio';
         input.name = name;
@@ -332,7 +336,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     let height = Math.abs(y2 - y1);
     if (field?.field_type === 'radio') {
       const count = Array.isArray(field.options) ? field.options.length : 0;
-      if (count > 1) height = Math.max(height, 18 * count + 8);
+      if (count > 1) {
+        const columns = Math.min(4, Math.max(1, count));
+        const rows = Math.ceil(count / columns);
+        height = Math.max(height, 20 * rows + 12);
+      }
     }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
