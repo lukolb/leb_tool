@@ -2038,6 +2038,7 @@ try {
       . "Fachliche Schwerpunkte müssen ebenfalls immer begründet sein (warum dieser Schwerpunkt aus den Daten hervorgeht). "
       . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete, begründete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
       . "Bei jedem Bereich nenne mindestens zwei konkrete Förderideen mit kurzer Begründung (z. B. Übungsformate, Methoden, Differenzierung). "
+      . "Alle Einträge in foerdermoeglichkeiten und schwerpunkte_faecher müssen reine Strings sein (keine Objekte). "
       . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
 
     $aiCfg = ai_provider_config();
@@ -2062,12 +2063,35 @@ try {
       'schwerpunkte_faecher' => [],
       'bereiche' => [],
     ];
+    $normalizeList = function($items) {
+      if (!is_array($items)) return [];
+      $result = [];
+      foreach ($items as $item) {
+        if (is_string($item)) {
+          $text = trim($item);
+          if ($text !== '') $result[] = $text;
+          continue;
+        }
+        if (is_array($item)) {
+          $parts = [];
+          foreach (['fach','titel','name','massnahme','foerderung','idee','begruendung','text'] as $key) {
+            if (!empty($item[$key]) && is_string($item[$key])) {
+              $parts[] = trim($item[$key]);
+            }
+          }
+          $text = trim(implode(' – ', array_filter($parts, fn($p) => $p !== '')));
+          if ($text !== '') $result[] = $text;
+        }
+      }
+      return $result;
+    };
+
     if (is_array($decoded)) {
       $parsed['rueckmeldung_gesamt'] = trim((string)($decoded['rueckmeldung_gesamt'] ?? ''));
       $parsed['noten_leistungsschnitt'] = trim((string)($decoded['noten_leistungsschnitt'] ?? ''));
       foreach (['foerdermoeglichkeiten','schwerpunkte_faecher'] as $k) {
         if (isset($decoded[$k]) && is_array($decoded[$k])) {
-          $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $decoded[$k]), fn($s)=>$s!=='' ));
+          $parsed[$k] = $normalizeList($decoded[$k]);
         }
       }
       if (isset($decoded['bereiche']) && is_array($decoded['bereiche'])) {
