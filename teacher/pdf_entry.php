@@ -151,6 +151,16 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     font-size: 12px;
     background: #f1f3f7;
   }
+  .pdf-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .pdf-toggle input {
+    width: 14px;
+    height: 14px;
+  }
 </style>
 
 <div class="pdf-entry-wrap">
@@ -163,7 +173,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       <?=h($studentName)?> · <?=h((string)($student['school_year'] ?? ''))?> · <?=h(pdf_entry_class_display($student))?>
     </div>
     <div class="muted" style="margin-top:6px;">Die Felder werden automatisch gespeichert.</div>
-    <div style="margin-top:8px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+      <label class="pdf-toggle">
+        <input type="checkbox" id="toggleStudentValues" />
+        <?=h(t('teacher.entry.show_student_values', 'Schülerwerte anzeigen'))?>
+      </label>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
@@ -193,12 +207,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const errMsg = document.getElementById('errMsg');
   const savePill = document.getElementById('savePill');
   const saveStatus = document.getElementById('saveStatus');
+  const toggleStudentValues = document.getElementById('toggleStudentValues');
 
   let pdfDoc = null;
   let state = null;
   let renderToken = 0;
   let saveTimer = null;
   let renderTimer = null;
+  let showStudentValues = false;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -452,7 +468,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const [x1, y1, x2, y2] = rect;
     const left = Math.min(x1, x2);
     const top = Math.min(y1, y2);
-    const width = Math.abs(x2 - x1);
+    let width = Math.abs(x2 - x1);
     let height = Math.abs(y2 - y1);
     const isRadioLayout = field?.field_type === 'radio' || (['select'].includes(String(field?.field_type || '')) && Array.isArray(field?.options) && field.options.length > 0 && field.options.length <= 10);
     if (isRadioLayout) {
@@ -462,6 +478,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         const rows = Math.ceil(count / columns);
         height = Math.max(height, 20 * rows + 12);
       }
+    }
+    if (['select', 'grade'].includes(String(field?.field_type || ''))) {
+      width = Math.max(width, 140);
     }
     if (height < 18) height = 18;
     wrapper.style.left = `${left}px`;
@@ -525,12 +544,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
-        const value = (state.values && field.id in state.values) ? state.values[field.id] : '';
-        if (shouldUseWidgetRadios(field)) {
-          const options = Array.isArray(field.options) ? field.options : [];
-          const resolvedValue = resolveOptionValue(field, value);
-          const widgets = field.widget_rects || [];
-          const groupName = `pdf-radio-${field.id}`;
+        const valuesSource = showStudentValues ? state?.values_child : state?.values;
+        const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
+        const fieldForRender = showStudentValues ? { ...field, can_edit: 0 } : field;
+        if (shouldUseWidgetRadios(fieldForRender)) {
+          const options = Array.isArray(fieldForRender.options) ? fieldForRender.options : [];
+          const resolvedValue = resolveOptionValue(fieldForRender, value);
+          const widgets = fieldForRender.widget_rects || [];
+          const groupName = `pdf-radio-${fieldForRender.id}-${showStudentValues ? 'student' : 'teacher'}`;
           widgets.forEach((widget) => {
             let pageNum = Number(widget.page || 0);
             if (pageNum === 0) pageNum = 1;
@@ -540,7 +561,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
             if (optValueRaw === null || optValueRaw === undefined || String(optValueRaw) === '') {
               optValueRaw = options[idx] ? options[idx].value : '';
             }
-            let optValue = resolveOptionValue(field, optValueRaw);
+            let optValue = resolveOptionValue(fieldForRender, optValueRaw);
             let matched = options.find((opt) => String(opt.value ?? '') === String(optValue ?? ''));
             if (!matched && options[idx]) {
               optValue = String(options[idx].value ?? '');
@@ -550,17 +571,17 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
             const rect = Array.isArray(widget.rect) ? widget.rect : null;
             if (!rect || rect.length < 4) return;
             const viewRect = viewport.convertToViewportRectangle(rect);
-            const el = createRadioWidget(field, optValue, label, resolvedValue, groupName);
+            const el = createRadioWidget(fieldForRender, optValue, label, resolvedValue, groupName);
             positionWidget(el, viewRect);
             overlay.appendChild(el);
           });
           return;
         }
-        const rect = Array.isArray(field.rect) ? field.rect : null;
+        const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
         if (!rect || rect.length < 4) return;
         const viewRect = viewport.convertToViewportRectangle(rect);
-        const el = createFieldInput(field, value);
-        positionField(el, viewRect, field);
+        const el = createFieldInput(fieldForRender, value);
+        positionField(el, viewRect, fieldForRender);
         overlay.appendChild(el);
       });
     }
@@ -618,6 +639,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(() => renderPages(), 120);
   });
+
+  if (toggleStudentValues) {
+    toggleStudentValues.addEventListener('change', () => {
+      showStudentValues = toggleStudentValues.checked;
+      renderPages();
+    });
+  }
 
   load();
 </script>

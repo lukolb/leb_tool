@@ -1658,10 +1658,13 @@ try {
     }
 
     $values = [];
+    $valuesChild = [];
     if ($reportId > 0 && $studentFieldIds) {
       $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
       $vals = load_input_values($pdo, [$reportId], $studentFieldMap, 'teacher');
       $values = $vals[(string)$reportId] ?? [];
+      $valsChild = load_input_values($pdo, [$reportId], $studentFieldMap, 'child');
+      $valuesChild = $valsChild[(string)$reportId] ?? [];
     }
     if ($classReportInstanceId > 0 && $classFieldIds) {
       $classFieldMap = array_intersect_key($fieldMapInput, array_flip($classFieldIds));
@@ -1686,6 +1689,7 @@ try {
       'class_report_instance_id' => $classReportInstanceId,
       'fields' => $fields,
       'values' => $values,
+      'values_child' => $valuesChild,
     ]);
   }
 
