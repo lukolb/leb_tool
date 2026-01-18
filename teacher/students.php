@@ -1283,6 +1283,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
                   <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
               </form>
+              <a class="btn secondary" href="<?=h(url('teacher/pdf_entry.php?class_id=' . (int)$classId . '&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?></a>
               <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
             </td>
           </tr>

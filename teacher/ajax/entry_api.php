@@ -823,6 +823,34 @@ function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source
   return $out;
 }
 
+function load_raw_values(PDO $pdo, array $reportIds, array $fieldIds, string $source): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
+  if (!$reportIds || !$fieldIds) return [];
+
+  $inR = implode(',', array_fill(0, count($reportIds), '?'));
+  $inF = implode(',', array_fill(0, count($fieldIds), '?'));
+  $params = array_merge($reportIds, $fieldIds, [$source]);
+
+  $st = $pdo->prepare(
+    "SELECT fv.report_instance_id, fv.template_field_id, fv.value_text
+     FROM field_values fv
+     WHERE fv.report_instance_id IN ($inR)
+       AND fv.template_field_id IN ($inF)
+       AND fv.source=?"
+  );
+  $st->execute($params);
+
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $rid = (string)(int)$r['report_instance_id'];
+    $fid = (string)(int)$r['template_field_id'];
+    if (!isset($out[$rid])) $out[$rid] = [];
+    $out[$rid][$fid] = $r['value_text'] !== null ? (string)$r['value_text'] : '';
+  }
+  return $out;
+}
+
 function load_teacher_values_for_user(
   PDO $pdo,
   array $reportIds,
@@ -1433,6 +1461,132 @@ try {
       'ai_enabled' => ai_provider_enabled(),
       'class_grade_level' => $classGradeLevel !== false ? $classGradeLevel : null,
       'is_class_teacher' => $isClassTeacher,
+    ]);
+  }
+
+  if ($action === 'load_pdf') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $studentId = (int)($data['student_id'] ?? 0);
+    if ($classId <= 0 || $studentId <= 0) throw new RuntimeException('class_id/student_id fehlt.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $stStu = $pdo->prepare("SELECT id, first_name, last_name, class_id FROM students WHERE id=? LIMIT 1");
+    $stStu->execute([$studentId]);
+    $stu = $stStu->fetch(PDO::FETCH_ASSOC);
+    if (!$stu || (int)($stu['class_id'] ?? 0) !== $classId) {
+      throw new RuntimeException('Schüler gehört nicht zur Klasse.');
+    }
+
+    $tpl = template_for_class($pdo, $classId);
+    $templateId = (int)$tpl['id'];
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+
+    $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
+    $reportId = (int)($ri['id'] ?? 0);
+    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+
+    $teacherFields = load_teacher_fields($pdo, $templateId);
+    $optCache = [];
+    $iconCache = [];
+
+    $fields = [];
+    $studentFieldIds = [];
+    $classFieldIds = [];
+
+    foreach ($teacherFields as $f) {
+      $meta = meta_read($f['meta_json'] ?? null);
+      if (is_system_bound($meta)) continue;
+
+      $page = $meta['page'] ?? null;
+      $rect = $meta['rect'] ?? null;
+      if ($page === null || !is_array($rect) || count($rect) < 4) continue;
+
+      $listIdF = option_list_id_from_meta($meta);
+      if ($listIdF > 0) {
+        if (!isset($optCache[$listIdF])) $optCache[$listIdF] = load_option_list_items($pdo, $listIdF, $iconCache);
+        $optsTeacher = $optCache[$listIdF];
+      } else {
+        $optsTeacher = map_option_icons($pdo, decode_options($f['options_json'] ?? null), $iconCache);
+      }
+      if (!$optsTeacher && (string)$f['field_type'] === 'grade') {
+        $optsTeacher = [
+          ['value'=>'1','label'=>'1'],
+          ['value'=>'2','label'=>'2'],
+          ['value'=>'3','label'=>'3'],
+          ['value'=>'4','label'=>'4'],
+          ['value'=>'5','label'=>'5'],
+          ['value'=>'6','label'=>'6'],
+        ];
+      }
+
+      $periodLabel = 'Standard';
+      $type = (string)($f['field_type'] ?? '');
+      $isMultiline = (int)($f['is_multiline'] ?? 0);
+      $canEditField = can_user_edit_field(
+        $pdo,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $meta,
+        $type,
+        $isMultiline
+      );
+
+      $isClassField = is_class_field($meta);
+      $fid = (int)($f['id'] ?? 0);
+      if ($isClassField) {
+        $classFieldIds[] = $fid;
+      } else {
+        $studentFieldIds[] = $fid;
+      }
+
+      $fields[] = [
+        'id' => $fid,
+        'field_name' => (string)($f['field_name'] ?? ''),
+        'field_type' => $type,
+        'label' => label_for_lang($f['label'] ?? null, $f['label_en'] ?? null, $lang),
+        'help_text' => (string)($f['help_text'] ?? ''),
+        'is_multiline' => $isMultiline,
+        'options' => $optsTeacher,
+        'can_edit' => $canEditField ? 1 : 0,
+        'page' => $page,
+        'rect' => array_slice($rect, 0, 4),
+        'scope' => $isClassField ? 'class' : 'student',
+      ];
+    }
+
+    $values = [];
+    if ($reportId > 0 && $studentFieldIds) {
+      $vals = load_raw_values($pdo, [$reportId], $studentFieldIds, 'teacher');
+      $values = $vals[(string)$reportId] ?? [];
+    }
+    if ($classReportInstanceId > 0 && $classFieldIds) {
+      $vals = load_raw_values($pdo, [$classReportInstanceId], $classFieldIds, 'teacher');
+      $classVals = $vals[(string)$classReportInstanceId] ?? [];
+      $values = array_replace($values, $classVals);
+    }
+
+    json_out([
+      'ok' => true,
+      'template' => [
+        'id' => $templateId,
+        'name' => (string)$tpl['name'],
+        'version' => (int)$tpl['template_version'],
+        'pdf_url' => url('template_file.php?class_id=' . (int)$classId),
+      ],
+      'student' => [
+        'id' => (int)$stu['id'],
+        'name' => trim((string)($stu['first_name'] ?? '') . ' ' . (string)($stu['last_name'] ?? '')),
+        'report_instance_id' => $reportId,
+      ],
+      'class_report_instance_id' => $classReportInstanceId,
+      'fields' => $fields,
+      'values' => $values,
     ]);
   }
 
