@@ -1279,6 +1279,9 @@ try {
           ['value'=>'6','label'=>'6'],
         ];
       }
+      if (!$optsTeacher && isset($meta['options']) && is_array($meta['options'])) {
+        $optsTeacher = map_option_icons($pdo, $meta['options'], $iconCache);
+      }
       if ($optsTeacher) {
         $optsTeacher = array_map(function(array $opt) use ($lang) {
           $label = label_for_lang($opt['label'] ?? null, $opt['label_en'] ?? null, $lang);
@@ -1585,6 +1588,9 @@ try {
           ['value'=>'5','label'=>'5'],
           ['value'=>'6','label'=>'6'],
         ];
+      }
+      if (!$optsTeacher && isset($meta['options']) && is_array($meta['options'])) {
+        $optsTeacher = map_option_icons($pdo, $meta['options'], $iconCache);
       }
       if ($optsTeacher) {
         $optsTeacher = array_map(function(array $opt) use ($lang) {

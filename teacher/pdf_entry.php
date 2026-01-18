@@ -234,6 +234,18 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
     let el = null;
     const type = String(field.field_type || '');
+    const rawValue = String(value ?? '');
+    const options = Array.isArray(field.options) ? field.options : [];
+    const resolveOptionValue = () => {
+      if (!options.length) return rawValue;
+      const direct = options.find((opt) => String(opt.value ?? '') === rawValue);
+      if (direct) return String(direct.value ?? '');
+      const byLabel = options.find((opt) => {
+        const label = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
+        return label === rawValue;
+      });
+      return byLabel ? String(byLabel.value ?? '') : rawValue;
+    };
     if (type === 'checkbox') {
       el = document.createElement('input');
       el.type = 'checkbox';
@@ -243,14 +255,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el = document.createElement('div');
       el.className = 'pdf-radio-group';
       const name = `pdf-radio-${field.id}`;
-      (field.options || []).forEach((opt) => {
+      const resolvedValue = resolveOptionValue();
+      options.forEach((opt) => {
         const item = document.createElement('label');
         item.className = 'pdf-radio-item';
         const input = document.createElement('input');
         input.type = 'radio';
         input.name = name;
         input.value = String(opt.value ?? '');
-        input.checked = String(value ?? '') === input.value;
+        input.checked = resolvedValue === input.value;
         if (!field.can_edit) input.disabled = true;
         const text = document.createElement('span');
         text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
@@ -264,13 +277,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       empty.value = '';
       empty.textContent = '';
       el.appendChild(empty);
-      (field.options || []).forEach((opt) => {
+      options.forEach((opt) => {
         const o = document.createElement('option');
         o.value = String(opt.value ?? '');
         o.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
         el.appendChild(o);
       });
-      el.value = String(value ?? '');
+      el.value = resolveOptionValue();
     } else if (type === 'multiline' || Number(field.is_multiline || 0) === 1) {
       el = document.createElement('textarea');
       el.value = String(value ?? '');
