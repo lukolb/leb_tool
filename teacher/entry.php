@@ -612,7 +612,7 @@ render_teacher_header($pageTitle);
   }
   .ai-banner{ border:1px dashed var(--border); border-radius:12px; padding:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; background: rgba(11,87,208,0.03); }
   .ai-banner .t{ font-weight:700; }
-  .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: currentColor; }
+  .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: dodgerblue; }
   .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }

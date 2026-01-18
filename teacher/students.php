@@ -828,12 +828,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 <div class="card">
     <div class="row-actions" style="float: right;">
     <a class="btn secondary" href="<?=h(url($toClassesUrl))?>"><?=h(t('teacher.students.back_to_classes', '← zurück zu den Klassen'))?></a>
-    <?php if ($ai_enabled): ?>
-      <button class="btn secondary ai-btn" type="button" id="btnAiClassFeedback">
-        <?= AI_ICON ?>
-        <?=h(t('teacher.students.ai_class_feedback_btn', 'KI-Rückmeldung (Klasse)'))?>
-      </button>
-    <?php endif; ?>
   </div>
     
     <h1><?=h(t('teacher.students.class_heading', 'Klasse'))?> <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
@@ -935,7 +929,16 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 </div>
 
 <div class="card">
+    <?php if ($ai_enabled): ?>
+  <div class="row-actions" style="float: right;">
+      <button class="btn secondary ai-btn" type="button" id="btnAiClassFeedback">
+        <?= AI_ICON ?>
+        <?=h(t('teacher.students.ai_class_feedback_btn', 'KI-Rückmeldung (Klasse)'))?>
+      </button>
+  </div>
+    <?php endif; ?>
   <h2 style="margin-top:0;"><?=h(t('teacher.students.list_title', 'Schüler'))?></h2>
+  
 
   <?php if (!$students): ?>
     <p class="muted"><?=h(t('teacher.students.none', 'Noch keine Schüler in dieser Klasse.'))?></p>
@@ -1091,7 +1094,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     .modal { background: #fff; color: inherit; border-radius: 8px; padding: 16px; width: min(720px, 100%); box-shadow: 0 10px 30px rgba(0,0,0,0.2); border: 1px solid var(--border); max-height: 90vh; overflow:auto; }
     .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     
-    .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: currentColor; }
+    .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: dodgerblue; }
   .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   </style>
   <script>
@@ -1261,7 +1264,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
       let html = '';
       if (overall) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_overall', 'Rückmeldung'))?>', escapeHtml(overall));
-      if (grades) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_grades', 'Noten- & Leistungsschnitt'))?>', escapeHtml(grades));
+      if (grades) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_grades', 'Noten- und Leistungsschnitt'))?>', escapeHtml(grades));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_support', 'Fördermöglichkeiten'))?>', renderAiClassList(support));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_focus', 'Fachliche Schwerpunkte'))?>', renderAiClassList(focus));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_areas', 'Bereichsfeedback'))?>', renderAiClassAreas(areas));
