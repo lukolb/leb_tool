@@ -112,7 +112,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     height: calc(100% - var(--delegate-height, 0px));
   }
   .pdf-field__delegate-text {
-    margin-top: 4px;
+    margin-top: 2px;
     color: #2b4a77;
     font-style: italic;
     white-space: pre-wrap;
@@ -600,7 +600,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (height < 18) height = 18;
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
       const lines = String(field.delegate_other || '').split(/\r?\n/).length || 1;
-      const extra = Math.min(80, 12 * lines + 10);
+      const extra = Math.min(48, 10 * lines + 6);
       height += extra;
       wrapper.style.setProperty('--delegate-height', `${extra}px`);
     }
