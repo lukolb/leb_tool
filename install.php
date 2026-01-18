@@ -546,7 +546,7 @@ CREATE TABLE IF NOT EXISTS `option_list_templates` (
   `name` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text COLLATE utf8mb4_unicode_ci,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_by_user_id` int DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -577,7 +577,7 @@ CREATE TABLE IF NOT EXISTS `icon_library` (
   `file_ext` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
   `mime_type` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `sha256` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_by_user_id` int DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_icon_storage_path` (`storage_path`),
@@ -714,9 +714,15 @@ ALTER TABLE `audit_log`
   ADD CONSTRAINT `fk_audit_log_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_audit_log_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
+ALTER TABLE `option_list_templates`
+  ADD CONSTRAINT `fk_option_list_templates_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+          
 ALTER TABLE `option_list_items`
   ADD CONSTRAINT `fk_option_list_items_list` FOREIGN KEY (`list_id`) REFERENCES `option_list_templates` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_option_list_items_icon` FOREIGN KEY (`icon_id`) REFERENCES `icon_library` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `icon_library`
+  ADD CONSTRAINT `fk_icon_library_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE `password_reset_tokens`
   ADD CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
