@@ -1571,17 +1571,32 @@ try {
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
 
     $teacherFields = load_teacher_fields($pdo, $templateId);
+    $childFields = load_child_fields_for_pairing($pdo, $templateId);
     $optCache = [];
     $iconCache = [];
 
     $fields = [];
+    $fieldsById = [];
     $studentFieldIds = [];
     $classFieldIds = [];
     $fieldMapInput = [];
 
-    foreach ($teacherFields as $f) {
+    $appendField = function(array $f, bool $canEditOverride, bool $forceChildOnly) use (
+      $pdo,
+      $u,
+      $classId,
+      $schoolYear,
+      $lang,
+      &$optCache,
+      &$iconCache,
+      &$fields,
+      &$fieldsById,
+      &$studentFieldIds,
+      &$classFieldIds,
+      &$fieldMapInput
+    ): void {
       $meta = meta_read($f['meta_json'] ?? null);
-      if (is_system_bound($meta)) continue;
+      if (is_system_bound($meta)) return;
 
       $pageRaw = $meta['page'] ?? null;
       $page = is_numeric($pageRaw) ? (int)$pageRaw : null;
@@ -1619,7 +1634,7 @@ try {
       $periodLabel = 'Standard';
       $type = (string)($f['field_type'] ?? '');
       $isMultiline = (int)($f['is_multiline'] ?? 0);
-      $canEditField = can_user_edit_field(
+      $canEditField = $canEditOverride ? can_user_edit_field(
         $pdo,
         $u,
         $classId,
@@ -1628,7 +1643,7 @@ try {
         $meta,
         $type,
         $isMultiline
-      );
+      ) : false;
 
       $isClassField = is_class_field($meta);
       $fid = (int)($f['id'] ?? 0);
@@ -1654,7 +1669,21 @@ try {
         'page' => $page,
         'rect' => $rect,
         'scope' => $isClassField ? 'class' : 'student',
+        'child_only' => $forceChildOnly ? 1 : 0,
       ];
+      $fieldsById[$fid] = true;
+    };
+
+    foreach ($teacherFields as $f) {
+      $fid = (int)($f['id'] ?? 0);
+      if ($fid <= 0 || isset($fieldsById[$fid])) continue;
+      $appendField($f, true, false);
+    }
+
+    foreach ($childFields as $f) {
+      $fid = (int)($f['id'] ?? 0);
+      if ($fid <= 0 || isset($fieldsById[$fid])) continue;
+      $appendField($f, false, true);
     }
 
     $values = [];

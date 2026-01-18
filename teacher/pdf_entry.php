@@ -544,6 +544,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
+        if (!showStudentValues && Number(field.child_only || 0) === 1) return;
         const valuesSource = showStudentValues ? state?.values_child : state?.values;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
         const fieldForRender = showStudentValues ? { ...field, can_edit: 0 } : field;
