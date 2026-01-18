@@ -88,10 +88,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     padding: 2px 4px;
     font: 500 12px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
+    --radio-color: #475a70;
   }
-  .pdf-field.is-readonly {
-    background: rgba(245,245,245,0.8);
-    color: rgba(0,0,0,0.5);
+  .pdf-field.is-readonly:not(.is-student) {
+    background: #e7f2ff;
+    border-color: #b6d1ff;
+    color: #2b4a77;
+  }
+  .pdf-field.is-student {
+    --radio-color: #2e7d32;
   }
   .pdf-field textarea {
     resize: none;
@@ -137,9 +142,29 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     align-items: center;
     gap: 4px;
   }
-  .pdf-radio-item input[type="radio"] {
+  .pdf-radio-item input[type="radio"],
+  .pdf-field--widget input[type="radio"] {
+    appearance: none;
     width: 14px;
     height: 14px;
+    border: 2px solid var(--radio-color);
+    border-radius: 2px;
+    background: #fff;
+    position: relative;
+  }
+  .pdf-radio-item input[type="radio"]::before,
+  .pdf-field--widget input[type="radio"]::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    background:
+      linear-gradient(45deg, transparent 45%, var(--radio-color) 45%, var(--radio-color) 55%, transparent 55%),
+      linear-gradient(-45deg, transparent 45%, var(--radio-color) 45%, var(--radio-color) 55%, transparent 55%);
+    opacity: 0;
+  }
+  .pdf-radio-item input[type="radio"]:checked::before,
+  .pdf-field--widget input[type="radio"]:checked::before {
+    opacity: 1;
   }
   .pdf-field input[type="checkbox"] {
     width: 18px;
@@ -354,6 +379,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field pdf-field--widget';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
+    if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
 
     const input = document.createElement('input');
     input.type = 'radio';
@@ -375,6 +401,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
+    if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
 
     let el = null;
     const type = String(field.field_type || '');
