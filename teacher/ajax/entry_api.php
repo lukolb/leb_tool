@@ -1629,6 +1629,48 @@ try {
     if (!$stu || (int)($stu['class_id'] ?? 0) !== $classId) {
       throw new RuntimeException('Schüler gehört nicht zur Klasse.');
     }
+    $studentNav = [
+      'prev_id' => null,
+      'next_id' => null,
+      'prev_name' => '',
+      'next_name' => '',
+      'position' => null,
+      'total' => null,
+    ];
+    $stNav = $pdo->prepare(
+      "SELECT id, first_name, last_name
+       FROM students
+       WHERE class_id=? AND is_active=1
+       ORDER BY last_name ASC, first_name ASC"
+    );
+    $stNav->execute([$classId]);
+    $navRows = $stNav->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $navIds = [];
+    $navNames = [];
+    foreach ($navRows as $row) {
+      $sid = (int)($row['id'] ?? 0);
+      if ($sid <= 0) continue;
+      $navIds[] = $sid;
+      $navNames[$sid] = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+    }
+    $navCount = count($navIds);
+    if ($navCount > 0) {
+      $pos = array_search($studentId, $navIds, true);
+      if ($pos !== false) {
+        $studentNav['position'] = $pos + 1;
+        $studentNav['total'] = $navCount;
+        if ($pos > 0) {
+          $prevId = $navIds[$pos - 1];
+          $studentNav['prev_id'] = $prevId;
+          $studentNav['prev_name'] = (string)($navNames[$prevId] ?? '');
+        }
+        if ($pos < $navCount - 1) {
+          $nextId = $navIds[$pos + 1];
+          $studentNav['next_id'] = $nextId;
+          $studentNav['next_name'] = (string)($navNames[$nextId] ?? '');
+        }
+      }
+    }
 
     $tpl = template_for_class($pdo, $classId);
     $templateId = (int)$tpl['id'];
@@ -1846,6 +1888,7 @@ try {
         'name' => trim((string)($stu['first_name'] ?? '') . ' ' . (string)($stu['last_name'] ?? '')),
         'report_instance_id' => $reportId,
       ],
+      'student_nav' => $studentNav,
       'class_report_instance_id' => $classReportInstanceId,
       'fields' => $fields,
       'values' => $values,

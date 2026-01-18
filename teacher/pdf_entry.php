@@ -247,9 +247,50 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     opacity: 1;
     pointer-events: auto;
   }
+  .pdf-student-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .pdf-student-nav.left { left: 12px; }
+  .pdf-student-nav.right { right: 12px; }
+  .pdf-student-nav button {
+    pointer-events: auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid #cbd4e1;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .pdf-student-nav button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .pdf-student-nav-label {
+    font-size: 11px;
+    color: #2b4a77;
+    text-align: center;
+  }
 </style>
 
 <div class="pdf-entry-wrap">
+  <div class="pdf-student-nav left">
+    <button type="button" id="prevStudentBtn" title="Vorheriger Schüler" disabled>‹</button>
+    <div class="pdf-student-nav-label" id="prevStudentLabel"></div>
+  </div>
+  <div class="pdf-student-nav right">
+    <button type="button" id="nextStudentBtn" title="Nächster Schüler" disabled>›</button>
+    <div class="pdf-student-nav-label" id="nextStudentLabel"></div>
+  </div>
   <div class="card">
     <div class="row-actions" style="float: right;">
       <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$classId))?>">Zurück zur Klasse</a>
@@ -294,6 +335,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const savePill = document.getElementById('savePill');
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
+  const prevStudentBtn = document.getElementById('prevStudentBtn');
+  const nextStudentBtn = document.getElementById('nextStudentBtn');
+  const prevStudentLabel = document.getElementById('prevStudentLabel');
+  const nextStudentLabel = document.getElementById('nextStudentLabel');
 
   let pdfDoc = null;
   let state = null;
@@ -319,6 +364,32 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function setSaving(active){
     if (!savePill) return;
     savePill.style.display = active ? '' : 'none';
+  }
+
+  function goToStudent(nextId){
+    if (!nextId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('student_id', String(nextId));
+    url.searchParams.set('class_id', String(classId));
+    window.location.href = url.toString();
+  }
+
+  function updateStudentNav(){
+    const nav = state?.student_nav || {};
+    if (prevStudentBtn) {
+      const hasPrev = Boolean(nav.prev_id);
+      prevStudentBtn.disabled = !hasPrev;
+      prevStudentBtn.title = hasPrev ? `Vorheriger Schüler: ${nav.prev_name || ''}` : 'Vorheriger Schüler';
+      if (prevStudentLabel) prevStudentLabel.textContent = hasPrev ? (nav.prev_name || '') : '';
+      prevStudentBtn.onclick = () => goToStudent(nav.prev_id);
+    }
+    if (nextStudentBtn) {
+      const hasNext = Boolean(nav.next_id);
+      nextStudentBtn.disabled = !hasNext;
+      nextStudentBtn.title = hasNext ? `Nächster Schüler: ${nav.next_name || ''}` : 'Nächster Schüler';
+      if (nextStudentLabel) nextStudentLabel.textContent = hasNext ? (nav.next_name || '') : '';
+      nextStudentBtn.onclick = () => goToStudent(nav.next_id);
+    }
   }
 
   async function api(action, payload){
@@ -412,6 +483,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function resolveOptionValue(field, rawValue){
     const options = Array.isArray(field.options) ? field.options : [];
     const valueText = String(rawValue ?? '');
+    if (valueText.trim().toLowerCase() === 'off') return '';
     if (!options.length) return valueText;
     const asNumber = Number(valueText);
     if (Number.isFinite(asNumber)) {
@@ -645,8 +717,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.style.top = `${Math.max(0, top - size * 0.4)}px`;
   }
 
-  async function renderPages(){
+  async function renderPages(opts = {}){
     if (!pdfDoc || !state || !preview) return;
+    const preserveScroll = opts?.preserveScroll === true;
+    const scrollY = preserveScroll ? window.scrollY : null;
+    const scrollX = preserveScroll ? window.scrollX : null;
     const token = ++renderToken;
     preview.innerHTML = '';
 
@@ -764,6 +839,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         overlay.appendChild(el);
       });
     }
+    if (preserveScroll && token === renderToken) {
+      requestAnimationFrame(() => window.scrollTo(scrollX ?? 0, scrollY ?? 0));
+    }
   }
 
   function queueSave(field, value){
@@ -807,6 +885,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       pdfDoc = await pdfjsLib.getDocument({ url: data.template.pdf_url, withCredentials: true }).promise;
       await renderPages();
       await enrichFieldRectsFromPdf();
+      updateStudentNav();
       showSaveStatus('Bereit');
     } catch (e) {
       showError(e?.message || 'Laden fehlgeschlagen.');
@@ -822,7 +901,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentValues) {
     toggleStudentValues.addEventListener('change', () => {
       showStudentValues = toggleStudentValues.checked;
-      renderPages();
+      renderPages({ preserveScroll: true });
     });
   }
 
@@ -833,7 +912,20 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     event.preventDefault();
     toggleStudentValues.checked = !toggleStudentValues.checked;
     showStudentValues = toggleStudentValues.checked;
-    renderPages();
+    renderPages({ preserveScroll: true });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (!event.altKey) return;
+    const active = document.activeElement;
+    if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      goToStudent(state?.student_nav?.prev_id);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      goToStudent(state?.student_nav?.next_id);
+    }
   });
 
   load();
