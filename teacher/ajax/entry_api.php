@@ -1810,6 +1810,20 @@ try {
       $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $userId);
       if (is_array($ri) && isset($ri['id'])) $reportIds[] = (int)$ri['id'];
     }
+    $reportToStudent = [];
+    if ($reportIds) {
+      $chunks = array_chunk($reportIds, 200);
+      foreach ($chunks as $chunk) {
+        $in = implode(',', array_fill(0, count($chunk), '?'));
+        $stMap = $pdo->prepare(
+          "SELECT id, student_id FROM report_instances WHERE id IN ($in)"
+        );
+        $stMap->execute($chunk);
+        foreach ($stMap->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+          $reportToStudent[(int)$row['id']] = (int)$row['student_id'];
+        }
+      }
+    }
 
     $teacherFields = load_teacher_fields($pdo, $templateId);
     $fieldsById = [];
@@ -1892,6 +1906,14 @@ try {
     $groupGrades = [];
     $performanceValues = [];
     $groupStats = [];
+    $studentSummaries = [];
+    $studentIndex = [];
+    foreach ($studentIds as $idx => $sid) {
+      $studentIndex[$sid] = $idx + 1;
+      $studentSummaries[$sid] = [
+        'groups' => [],
+      ];
+    }
 
     foreach ($values as $row) {
       $fid = (int)($row['template_field_id'] ?? 0);
@@ -1916,6 +1938,17 @@ try {
           'performance' => [],
           'competency' => [],
         ];
+      }
+
+      $rid = (int)($row['report_instance_id'] ?? 0);
+      $sid = $rid && isset($reportToStudent[$rid]) ? $reportToStudent[$rid] : null;
+      if ($sid !== null && isset($studentSummaries[$sid])) {
+        $label = $field['label'] ?? ('Feld#' . $fid);
+        $entry = $label . ': ' . $text;
+        if (!isset($studentSummaries[$sid]['groups'][$group])) {
+          $studentSummaries[$sid]['groups'][$group] = [];
+        }
+        $studentSummaries[$sid]['groups'][$group][] = $entry;
       }
 
       $numeric = parse_numeric_value($text);
@@ -1999,16 +2032,24 @@ try {
       $parts = [];
       if (!empty($stats['grade'])) {
         $parts[] = 'Noten-Ø ' . number_format(array_sum($stats['grade']) / count($stats['grade']), 2, ',', '') . ' (n=' . count($stats['grade']) . ')';
+        $parts[] = 'Notenbereich ' . number_format(min($stats['grade']), 2, ',', '') . '–' . number_format(max($stats['grade']), 2, ',', '');
       }
       if (!empty($stats['performance'])) {
         $parts[] = 'Leistungsschnitt Ø ' . number_format(array_sum($stats['performance']) / count($stats['performance']), 2, ',', '') . ' (n=' . count($stats['performance']) . ')';
+        $parts[] = 'Leistungsbereich ' . number_format(min($stats['performance']), 2, ',', '') . '–' . number_format(max($stats['performance']), 2, ',', '');
       }
       if (!empty($stats['competency'])) {
         $labels = [];
         foreach ($stats['competency'] as $label => $cnt) {
           $labels[] = $label . ': ' . $cnt;
         }
+        arsort($stats['competency']);
+        $topLabel = array_key_first($stats['competency']);
+        $topCount = $topLabel !== null ? $stats['competency'][$topLabel] : 0;
         $parts[] = 'Kompetenzverteilung: ' . implode(', ', $labels);
+        if ($topLabel !== null) {
+          $parts[] = 'Häufigste Kompetenzstufe: ' . $topLabel . ' (n=' . $topCount . ')';
+        }
       }
       if ($parts) {
         $groupContextLines[] = 'Bereich ' . $group . ': ' . implode(' | ', $parts);
@@ -2016,10 +2057,24 @@ try {
     }
     if (!$groupContextLines) $groupContextLines[] = 'Keine bereichsspezifischen Werte verfügbar.';
 
+    $studentContextLines = [];
+    foreach ($studentSummaries as $sid => $summary) {
+      if (empty($summary['groups'])) continue;
+      $lines = [];
+      foreach ($summary['groups'] as $group => $items) {
+        $items = array_slice($items, 0, 20);
+        $lines[] = $group . ': ' . implode('; ', $items);
+      }
+      if ($lines) {
+        $studentContextLines[] = 'Schüler #' . ($studentIndex[$sid] ?? $sid) . ":\n- " . implode("\n- ", $lines);
+      }
+    }
+
     $contextParts = [];
     $contextParts[] = 'Klassenstufe: ' . ($gradeLevel !== null ? (string)$gradeLevel : '—');
     $contextParts[] = 'Schuljahr: ' . ($schoolYear !== '' ? $schoolYear : '—');
     $contextParts[] = 'Aktive Schüler: ' . $studentCount;
+    $contextParts[] = 'Schülerdaten (anonymisiert, pro Schüler gruppiert):' . ($studentContextLines ? "\n- " . implode("\n- ", $studentContextLines) : ' Keine Schülerdaten verfügbar.');
     $contextParts[] = 'Notenfelder (numerisch, Lehrkraft): ' . ($gradeAvg !== null ? ('Notenschnitt Ø ' . number_format($gradeAvg, 2, ',', '') . ' aus ' . count($gradeValues) . ' Werten') : 'Keine numerischen Notenwerte verfügbar.');
     if ($gradeDistributionTxt !== '') $contextParts[] = 'Notenverteilung (alle Notenfelder): ' . $gradeDistributionTxt;
     $contextParts[] = 'Fachgruppen (Noten-Ø): ' . implode(' | ', $groupLines);
@@ -2036,8 +2091,8 @@ try {
       . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
       . "Fördermöglichkeiten müssen konkret, beobachtungsnah und umsetzbar sein (Material/Übung, Sozialform, Häufigkeit/Dauer) und immer eine kurze Begründung enthalten, die sich auf die aggregierten Daten bezieht. "
       . "Fachliche Schwerpunkte müssen ebenfalls immer begründet sein (warum dieser Schwerpunkt aus den Daten hervorgeht). "
-      . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete, begründete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
-      . "Bei jedem Bereich nenne mindestens zwei konkrete Förderideen mit kurzer Begründung (z. B. Übungsformate, Methoden, Differenzierung). "
+      . "Erstelle zusätzlich pro Bereich eine ausführliche Rückmeldung und konkrete, begründete Empfehlungen zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung und die nach Schülern gruppierten Daten. "
+      . "Bei jedem Bereich nenne mindestens drei konkrete Förderideen mit kurzer Begründung (z. B. Übungsformate, Methoden, Differenzierung). "
       . "Alle Einträge in foerdermoeglichkeiten und schwerpunkte_faecher müssen reine Strings sein (keine Objekte). "
       . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
 
