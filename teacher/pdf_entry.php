@@ -247,11 +247,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       });
       return byLabel ? String(byLabel.value ?? '') : rawValue;
     };
+    const useRadioGroup = ['radio', 'select', 'grade'].includes(type) && options.length > 0 && options.length <= 10;
+
     if (type === 'checkbox') {
       el = document.createElement('input');
       el.type = 'checkbox';
       el.checked = String(value || '').trim() === '1';
-    } else if (type === 'radio') {
+    } else if (useRadioGroup) {
       wrapper.classList.add('pdf-field--radio');
       el = document.createElement('div');
       el.className = 'pdf-radio-group';
@@ -316,7 +318,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       queueSave(field, nextVal);
     };
 
-    if (type === 'radio') {
+    if (useRadioGroup) {
       el.addEventListener('change', handler);
     } else if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
       el.addEventListener('blur', handler);
@@ -334,7 +336,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const top = Math.min(y1, y2);
     const width = Math.abs(x2 - x1);
     let height = Math.abs(y2 - y1);
-    if (field?.field_type === 'radio') {
+    const isRadioLayout = field?.field_type === 'radio' || (['select','grade'].includes(String(field?.field_type || '')) && Array.isArray(field?.options) && field.options.length > 0 && field.options.length <= 10);
+    if (isRadioLayout) {
       const count = Array.isArray(field.options) ? field.options.length : 0;
       if (count > 1) {
         const columns = Math.min(4, Math.max(1, count));
