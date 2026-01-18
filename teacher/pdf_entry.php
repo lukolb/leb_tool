@@ -103,6 +103,21 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     border-color: #9dbcf2;
     color: #2b4a77;
   }
+  .pdf-field.has-delegate-other {
+    display: flex;
+    flex-direction: column;
+  }
+  .pdf-field.has-delegate-other input,
+  .pdf-field.has-delegate-other textarea {
+    height: calc(100% - var(--delegate-height, 0px));
+  }
+  .pdf-field__delegate-text {
+    margin-top: 8px;
+    color: #2b4a77;
+    font-style: italic;
+    white-space: pre-wrap;
+    line-height: 1.2;
+  }
   .pdf-field textarea {
     resize: none;
   }
@@ -535,6 +550,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
+    if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
+      wrapper.classList.add('has-delegate-other');
+      const delegate = document.createElement('div');
+      delegate.className = 'pdf-field__delegate-text';
+      delegate.textContent = String(field.delegate_other || '');
+      wrapper.appendChild(delegate);
+    }
     return wrapper;
   }
 
@@ -576,6 +598,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       width = Math.max(width, 140);
     }
     if (height < 18) height = 18;
+    if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
+      const lines = String(field.delegate_other || '').split(/\r?\n/).length || 1;
+      const extra = Math.min(140, 14 * lines + 22);
+      height += extra;
+      wrapper.style.setProperty('--delegate-height', `${extra}px`);
+    }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${width}px`;
@@ -651,7 +679,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         const isChildOnly = Number(field.child_only || 0) === 1;
         const valuesSource = isChildOnly ? state?.values_child : state?.values;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
-        const fieldForRender = isChildOnly ? { ...field, can_edit: 0 } : field;
+        const delegateOther = (!isChildOnly && state?.values_delegate_other && field.id in state.values_delegate_other)
+          ? state.values_delegate_other[field.id]
+          : '';
+        const fieldForRender = isChildOnly
+          ? { ...field, can_edit: 0, delegate_other: '' }
+          : { ...field, delegate_other: delegateOther };
         if (!showStudentValues && isChildOnly) {
           if (isTextField(fieldForRender) && String(value || '').trim() !== '') {
             const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;

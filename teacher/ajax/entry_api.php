@@ -1708,6 +1708,7 @@ try {
 
     $values = [];
     $valuesChild = [];
+    $valuesDelegateOther = [];
     if ($reportId > 0 && $studentFieldIds) {
       $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
       $teacherValues = load_teacher_values_for_user(
@@ -1722,6 +1723,25 @@ try {
         $lang
       );
       $values = $teacherValues['own'][(string)$reportId] ?? [];
+      $partsForReport = $teacherValues['parts'][(string)$reportId] ?? [];
+      $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+      foreach ($partsForReport as $fid => $parts) {
+        $fieldId = (int)$fid;
+        if (!isset($studentFieldMap[$fieldId])) continue;
+        $meta = $studentFieldMap[$fieldId]['meta'] ?? [];
+        $type = (string)($studentFieldMap[$fieldId]['field_type'] ?? '');
+        $isMultiline = (int)($studentFieldMap[$fieldId]['is_multiline'] ?? 0);
+        if (!is_free_text_field($type, $isMultiline)) continue;
+        $assigned = (int)($parts['delegate_user_id'] ?? 0);
+        if ($assigned <= 0) continue;
+        $isDelegate = ($assigned === $userId) && !$isClassTeacher;
+        $otherText = $isDelegate
+          ? (string)($parts['class_text'] ?? '')
+          : (string)($parts['delegate_text'] ?? '');
+        if (trim($otherText) !== '') {
+          $valuesDelegateOther[(string)$fieldId] = $otherText;
+        }
+      }
       $valsSystem = load_input_values($pdo, [$reportId], $studentFieldMap, 'system');
       $valuesSystem = $valsSystem[(string)$reportId] ?? [];
       if ($valuesSystem) {
@@ -1754,6 +1774,7 @@ try {
       'fields' => $fields,
       'values' => $values,
       'values_child' => $valuesChild,
+      'values_delegate_other' => $valuesDelegateOther,
     ]);
   }
 
