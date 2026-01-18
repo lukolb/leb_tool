@@ -174,7 +174,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     </div>
     <div class="muted" style="margin-top:6px;">Die Felder werden automatisch gespeichert.</div>
     <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-      <label class="pdf-toggle">
+      <label class="pdf-toggle" title="<?=h(t('teacher.entry.show_student_values_hint', 'Tastenkürzel: Strg+Shift+S'))?>">
         <input type="checkbox" id="toggleStudentValues" />
         <?=h(t('teacher.entry.show_student_values', 'Schülerwerte anzeigen'))?>
       </label>
@@ -544,10 +544,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
-        if (!showStudentValues && Number(field.child_only || 0) === 1) return;
-        const valuesSource = showStudentValues ? state?.values_child : state?.values;
+        const isChildOnly = Number(field.child_only || 0) === 1;
+        if (!showStudentValues && isChildOnly) return;
+        const valuesSource = isChildOnly ? state?.values_child : state?.values;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
-        const fieldForRender = showStudentValues ? { ...field, can_edit: 0 } : field;
+        const fieldForRender = isChildOnly ? { ...field, can_edit: 0 } : field;
         if (shouldUseWidgetRadios(fieldForRender)) {
           const options = Array.isArray(fieldForRender.options) ? fieldForRender.options : [];
           const resolvedValue = resolveOptionValue(fieldForRender, value);
@@ -647,6 +648,16 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       renderPages();
     });
   }
+
+  document.addEventListener('keydown', (event) => {
+    const key = String(event.key || '').toLowerCase();
+    if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || key !== 's') return;
+    if (!toggleStudentValues) return;
+    event.preventDefault();
+    toggleStudentValues.checked = !toggleStudentValues.checked;
+    showStudentValues = toggleStudentValues.checked;
+    renderPages();
+  });
 
   load();
 </script>
