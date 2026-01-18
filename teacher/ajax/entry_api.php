@@ -728,6 +728,35 @@ function format_date_value_for_field(?string $value, array $meta, ?string $field
   return $formatted;
 }
 
+function format_date_value_to_iso(?string $value): ?string {
+  if ($value === null) return null;
+  $raw = trim((string)$value);
+  if ($raw === '') return $value;
+  try {
+    $dt = new DateTimeImmutable($raw);
+  } catch (Throwable $e) {
+    $datePart = substr($raw, 0, 10);
+    try {
+      $dt = new DateTimeImmutable($datePart);
+    } catch (Throwable $e2) {
+      return $value;
+    }
+  }
+  return $dt->format('Y-m-d');
+}
+
+function apply_date_iso_formatting(array $values, array $fieldMap): array {
+  foreach ($values as $fid => $val) {
+    $fieldId = (int)$fid;
+    if (!isset($fieldMap[$fieldId])) continue;
+    $meta = $fieldMap[$fieldId]['meta'] ?? [];
+    $type = $fieldMap[$fieldId]['field_type'] ?? null;
+    if (($type ?? '') !== 'date' && date_format_pattern_from_meta($meta, is_string($type) ? $type : null) === '') continue;
+    $values[$fid] = format_date_value_to_iso($val) ?? $val;
+  }
+  return $values;
+}
+
 function apply_date_formatting(array $values, array $fieldMap): array {
   foreach ($values as $fid => $val) {
     $fieldId = (int)$fid;
@@ -1791,9 +1820,13 @@ try {
       $classVals = $vals[(string)$classReportInstanceId] ?? [];
       $values = array_replace($values, $classVals);
     }
-    if ($values) $values = apply_date_formatting($values, $fieldMapInput);
-    if ($valuesChild) $valuesChild = apply_date_formatting($valuesChild, $fieldMapInput);
-    if ($valuesDelegateOther) $valuesDelegateOther = apply_date_formatting($valuesDelegateOther, $fieldMapInput);
+    if ($values) $values = apply_date_iso_formatting($values, $fieldMapInput);
+    if ($valuesChild) $valuesChild = apply_date_iso_formatting($valuesChild, $fieldMapInput);
+    if ($valuesDelegateOther) $valuesDelegateOther = apply_date_iso_formatting($valuesDelegateOther, $fieldMapInput);
+
+    $valuesDisplay = $values ? apply_date_formatting($values, $fieldMapInput) : [];
+    $valuesChildDisplay = $valuesChild ? apply_date_formatting($valuesChild, $fieldMapInput) : [];
+    $valuesDelegateOtherDisplay = $valuesDelegateOther ? apply_date_formatting($valuesDelegateOther, $fieldMapInput) : [];
 
     json_out([
       'ok' => true,
@@ -1813,6 +1846,9 @@ try {
       'values' => $values,
       'values_child' => $valuesChild,
       'values_delegate_other' => $valuesDelegateOther,
+      'values_display' => $valuesDisplay,
+      'values_child_display' => $valuesChildDisplay,
+      'values_delegate_other_display' => $valuesDelegateOtherDisplay,
     ]);
   }
 

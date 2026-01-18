@@ -119,6 +119,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     line-height: 1.1;
     font-size: 0.9em;
   }
+  .pdf-field__date-display {
+    margin-top: 2px;
+    color: #2b4a77;
+    font-style: italic;
+    white-space: pre-wrap;
+    line-height: 1.1;
+    font-size: 0.85em;
+  }
   .pdf-field textarea {
     resize: none;
   }
@@ -517,6 +525,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     } else if (type === 'multiline' || Number(field.is_multiline || 0) === 1) {
       el = document.createElement('textarea');
       el.value = String(value ?? '');
+    } else if (type === 'date') {
+      el = document.createElement('input');
+      el.type = 'date';
+      el.value = String(value ?? '');
     } else {
       el = document.createElement('input');
       el.type = 'text';
@@ -557,6 +569,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       delegate.className = 'pdf-field__delegate-text';
       delegate.textContent = String(field.delegate_other || '');
       wrapper.appendChild(delegate);
+    }
+    if (String(field.date_display || '').trim() !== '' && String(field.date_display || '') !== String(value ?? '')) {
+      const info = document.createElement('div');
+      info.className = 'pdf-field__date-display';
+      info.textContent = String(field.date_display || '');
+      wrapper.appendChild(info);
     }
     return wrapper;
   }
@@ -604,6 +622,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const extra = Math.min(28, 9 * lines + 2);
       height += extra;
       wrapper.style.setProperty('--delegate-height', `${extra}px`);
+    }
+    if (String(field.date_display || '').trim() !== '' && String(field.date_display || '') !== String(field.value ?? '')) {
+      height += 12;
     }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
@@ -679,19 +700,24 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       fields.forEach((field) => {
         const isChildOnly = Number(field.child_only || 0) === 1;
         const valuesSource = isChildOnly ? state?.values_child : state?.values;
+        const displaySource = isChildOnly ? state?.values_child_display : state?.values_display;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
+        const displayValue = (displaySource && field.id in displaySource) ? displaySource[field.id] : value;
         const delegateOther = (!isChildOnly && state?.values_delegate_other && field.id in state.values_delegate_other)
           ? state.values_delegate_other[field.id]
           : '';
+        const delegateDisplay = (!isChildOnly && state?.values_delegate_other_display && field.id in state.values_delegate_other_display)
+          ? state.values_delegate_other_display[field.id]
+          : delegateOther;
         const fieldForRender = isChildOnly
-          ? { ...field, can_edit: 0, delegate_other: '' }
-          : { ...field, delegate_other: delegateOther };
+          ? { ...field, can_edit: 0, delegate_other: '', date_display: displayValue, value }
+          : { ...field, delegate_other: delegateDisplay, date_display: displayValue, value };
         if (!showStudentValues && isChildOnly) {
-          if (isTextField(fieldForRender) && String(value || '').trim() !== '') {
+          if (isTextField(fieldForRender) && String(displayValue || '').trim() !== '') {
             const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
             if (!rect || rect.length < 4) return;
             const viewRect = viewport.convertToViewportRectangle(rect);
-            const icon = createStudentInfoIcon(value);
+            const icon = createStudentInfoIcon(displayValue);
             positionInfoIcon(icon, viewRect);
             overlay.appendChild(icon);
           }
@@ -699,8 +725,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         }
         if (!showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
           const childFieldId = Number(field.child_field_id || 0);
-          const childValue = childFieldId > 0 && state?.values_child && childFieldId in state.values_child
-            ? state.values_child[childFieldId]
+          const childValue = childFieldId > 0 && state?.values_child_display && childFieldId in state.values_child_display
+            ? state.values_child_display[childFieldId]
             : '';
           if (String(childValue || '').trim() !== '') {
             const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
