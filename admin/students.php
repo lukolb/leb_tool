@@ -53,6 +53,38 @@ function delete_students_cascade(PDO $pdo, array $studentIds): array {
   return ['students_deleted'=>count($studentIds),'reports_deleted'=>$reportsDeleted,'values_deleted'=>$valuesDeleted];
 }
 
+function load_delete_impact(PDO $pdo, array $masterIds): array {
+  $masterIds = array_values(array_unique(array_filter(array_map('intval', $masterIds), fn($x)=>$x>0)));
+  if (!$masterIds) return [];
+
+  $expr = "CASE WHEN s.master_student_id IS NULL OR s.master_student_id=0 THEN s.id ELSE s.master_student_id END";
+  $in = implode(',', array_fill(0, count($masterIds), '?'));
+  $st = $pdo->prepare(
+    "SELECT $expr AS master_id,
+            COUNT(DISTINCT s.id) AS students_total,
+            COUNT(DISTINCT r.id) AS reports_total,
+            COUNT(fv.id) AS values_total
+     FROM students s
+     LEFT JOIN report_instances r ON r.student_id = s.id
+     LEFT JOIN field_values fv ON fv.report_instance_id = r.id
+     WHERE $expr IN ($in)
+     GROUP BY $expr"
+  );
+  $st->execute($masterIds);
+
+  $map = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $mid = (int)($r['master_id'] ?? 0);
+    if ($mid <= 0) continue;
+    $map[$mid] = [
+      'students' => (int)($r['students_total'] ?? 0),
+      'reports' => (int)($r['reports_total'] ?? 0),
+      'values' => (int)($r['values_total'] ?? 0),
+    ];
+  }
+  return $map;
+}
+
 // POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
@@ -135,6 +167,14 @@ $st = $pdo->prepare(
 );
 $st->execute($params);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);
+
+$masterIds = [];
+foreach ($students as $s) {
+  $mid = (int)($s['master_student_id'] ?? 0);
+  if ($mid <= 0) $mid = (int)($s['id'] ?? 0);
+  if ($mid > 0) $masterIds[] = $mid;
+}
+$deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
@@ -291,8 +331,15 @@ render_admin_header('Schüler');
               <div class="panel" style="margin-top:10px;">
                 <?php
                   $must = (string)$s['last_name'] . ', ' . (string)$s['first_name'];
+                  $mid = (int)($s['master_student_id'] ?? 0);
+                  if ($mid <= 0) $mid = (int)($s['id'] ?? 0);
+                  $impact = $deleteImpactMap[$mid] ?? ['students'=>1,'reports'=>0,'values'=>0];
+                  $studentNote = ((int)$impact['students'] > 1) ? ' (inkl. verknüpfter Schüler)' : '';
                 ?>
-                <div class="muted">Löschen entfernt auch alle zugehörigen Berichte/Feldwerte. Bestätige mit: <code><?=h($must)?></code></div>
+                <div class="muted">
+                  Es werden gelöscht: Schüler <?=h((string)$impact['students'])?><?=h($studentNote)?>, Berichte <?=h((string)$impact['reports'])?>, Feldwerte <?=h((string)$impact['values'])?>.
+                </div>
+                <div class="muted">Bestätige mit: <code><?=h($must)?></code></div>
                 <form method="post" onsubmit="return confirm('Wirklich endgültig löschen?');" class="grid" style="grid-template-columns: 1fr auto; gap:10px; align-items:end; margin-top:10px;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="delete_student">
