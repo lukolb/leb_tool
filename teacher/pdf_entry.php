@@ -113,6 +113,19 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-field--radio {
     padding: 4px 6px;
   }
+  .pdf-field--widget {
+    background: transparent;
+    border: none;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pdf-field--widget input[type="radio"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+  }
   .pdf-radio-group {
     display: flex;
     flex-wrap: wrap;
@@ -235,10 +248,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (!fo || typeof fo !== 'object') return;
 
     const tmp = [];
+    const widgetMap = new Map();
     let hasZero = false;
     for (const [name, arr] of Object.entries(fo)) {
       if (!Array.isArray(arr)) continue;
-      for (const it of arr) {
+      arr.forEach((it, index) => {
         let pRaw = it?.page;
         if (pRaw === undefined || pRaw === null) pRaw = it?.pageIndex;
         const pNum = Number(pRaw);
@@ -247,31 +261,93 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         const rect = (Array.isArray(it?.rect) && it.rect.length >= 4) ? it.rect.slice(0, 4) : null;
         if (!rect) continue;
         tmp.push({ name, pNum, rect });
-      }
+        const exportValue = it?.exportValue ?? it?.value ?? it?.buttonValue ?? null;
+        if (!widgetMap.has(name)) widgetMap.set(name, []);
+        widgetMap.get(name).push({ pNum, rect, exportValue, index });
+      });
     }
 
     const numPages = Number(pdfDoc?.numPages || 0);
-    const byName = new Map();
-    tmp.forEach((t) => {
-      let page = t.pNum;
+    const normalizePage = (rawPage) => {
+      let page = Number(rawPage || 0);
       if (hasZero) page = page + 1;
       if (page < 1) page = 1;
       if (numPages && page > numPages) page = numPages;
+      return page;
+    };
+    const byName = new Map();
+    tmp.forEach((t) => {
+      const page = normalizePage(t.pNum);
       if (!byName.has(t.name)) byName.set(t.name, { page, rect: t.rect });
     });
 
     let updated = false;
     state.fields = (state.fields || []).map((f) => {
-      if (f.page && f.rect) return f;
+      const widgets = (widgetMap.get(f.field_name) || []).map((w) => ({
+        page: normalizePage(w.pNum),
+        rect: w.rect,
+        exportValue: w.exportValue,
+        index: w.index
+      }));
+      const withWidgets = widgets.length
+        ? {
+          widget_rects: widgets
+        }
+        : {};
+      if (widgets.length) updated = true;
+      if (f.page && f.rect) return { ...f, ...withWidgets };
       const hit = byName.get(f.field_name);
-      if (!hit) return f;
+      if (!hit) return { ...f, ...withWidgets };
       updated = true;
-      return { ...f, page: hit.page, rect: hit.rect };
+      return { ...f, page: hit.page, rect: hit.rect, ...withWidgets };
     });
 
     if (updated) {
       await renderPages();
     }
+  }
+
+  function resolveOptionValue(field, rawValue){
+    const options = Array.isArray(field.options) ? field.options : [];
+    const valueText = String(rawValue ?? '');
+    if (!options.length) return valueText;
+    const direct = options.find((opt) => String(opt.value ?? '') === valueText);
+    if (direct) return String(direct.value ?? '');
+    const byLabel = options.find((opt) => {
+      const label = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
+      return label === valueText;
+    });
+    return byLabel ? String(byLabel.value ?? '') : valueText;
+  }
+
+  function shouldUseWidgetRadios(field){
+    const type = String(field.field_type || '');
+    const options = Array.isArray(field.options) ? field.options : [];
+    if (!options.length) return false;
+    if (!Array.isArray(field.widget_rects) || !field.widget_rects.length) return false;
+    if (type === 'grade') return false;
+    return type === 'radio' || (type === 'select' && options.length <= 10);
+  }
+
+  function createRadioWidget(field, optionValue, optionLabel, currentValue, groupName){
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-field pdf-field--widget';
+    if (!field.can_edit) wrapper.classList.add('is-readonly');
+
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = groupName;
+    input.value = String(optionValue ?? '');
+    input.checked = String(currentValue ?? '') === String(optionValue ?? '');
+    input.setAttribute('aria-label', String(optionLabel || field.label || field.field_name || ''));
+    if (!field.can_edit) input.disabled = true;
+    input.addEventListener('change', () => {
+      if (!field.can_edit) return;
+      queueSave(field, input.value);
+    });
+
+    wrapper.appendChild(input);
+    return wrapper;
   }
 
   function createFieldInput(field, value){
@@ -283,16 +359,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const type = String(field.field_type || '');
     const rawValue = String(value ?? '');
     const options = Array.isArray(field.options) ? field.options : [];
-    const resolveOptionValue = () => {
-      if (!options.length) return rawValue;
-      const direct = options.find((opt) => String(opt.value ?? '') === rawValue);
-      if (direct) return String(direct.value ?? '');
-      const byLabel = options.find((opt) => {
-        const label = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
-        return label === rawValue;
-      });
-      return byLabel ? String(byLabel.value ?? '') : rawValue;
-    };
+    const resolveOptionValueForField = () => resolveOptionValue(field, rawValue);
     const useRadioGroup = ['radio', 'select'].includes(type) && options.length > 0 && options.length <= 10;
 
     if (type === 'checkbox') {
@@ -304,7 +371,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el = document.createElement('div');
       el.className = 'pdf-radio-group';
       const name = `pdf-radio-${field.id}`;
-      const resolvedValue = resolveOptionValue();
+      const resolvedValue = resolveOptionValueForField();
       const columns = Math.min(4, Math.max(1, options.length));
       const itemWidth = `calc(${100 / columns}% - 10px)`;
       options.forEach((opt) => {
@@ -335,7 +402,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         o.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
         el.appendChild(o);
       });
-      el.value = resolveOptionValue();
+      el.value = resolveOptionValueForField();
     } else if (type === 'multiline' || Number(field.is_multiline || 0) === 1) {
       el = document.createElement('textarea');
       el.value = String(value ?? '');
@@ -355,7 +422,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       let nextVal = '';
       if (type === 'checkbox') {
         nextVal = el.checked ? '1' : '0';
-      } else if (type === 'radio') {
+      } else if (useRadioGroup) {
         const checked = el.querySelector('input[type="radio"]:checked');
         nextVal = checked ? checked.value : '';
       } else {
@@ -400,6 +467,18 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.style.fontSize = `${size}px`;
   }
 
+  function positionWidget(wrapper, rect){
+    const [x1, y1, x2, y2] = rect;
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const height = Math.abs(y2 - y1);
+    wrapper.style.left = `${left}px`;
+    wrapper.style.top = `${top}px`;
+    wrapper.style.width = `${Math.max(width, 12)}px`;
+    wrapper.style.height = `${Math.max(height, 12)}px`;
+  }
+
   async function renderPages(){
     if (!pdfDoc || !state || !preview) return;
     const token = ++renderToken;
@@ -441,10 +520,35 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
+        const value = (state.values && field.id in state.values) ? state.values[field.id] : '';
+        if (shouldUseWidgetRadios(field)) {
+          const options = Array.isArray(field.options) ? field.options : [];
+          const resolvedValue = resolveOptionValue(field, value);
+          const widgets = field.widget_rects || [];
+          const groupName = `pdf-radio-${field.id}`;
+          widgets.forEach((widget) => {
+            let pageNum = Number(widget.page || 0);
+            if (pageNum === 0) pageNum = 1;
+            if (pageNum !== p) return;
+            let optValue = widget.exportValue;
+            if (optValue === null || optValue === undefined || String(optValue) === '') {
+              const idx = Number(widget.index || 0);
+              optValue = options[idx] ? options[idx].value : '';
+            }
+            const matched = options.find((opt) => String(opt.value ?? '') === String(optValue ?? ''));
+            const label = matched ? (matched.label_resolved ?? matched.label ?? matched.value ?? '') : '';
+            const rect = Array.isArray(widget.rect) ? widget.rect : null;
+            if (!rect || rect.length < 4) return;
+            const viewRect = viewport.convertToViewportRectangle(rect);
+            const el = createRadioWidget(field, optValue, label, resolvedValue, groupName);
+            positionWidget(el, viewRect);
+            overlay.appendChild(el);
+          });
+          return;
+        }
         const rect = Array.isArray(field.rect) ? field.rect : null;
         if (!rect || rect.length < 4) return;
         const viewRect = viewport.convertToViewportRectangle(rect);
-        const value = (state.values && field.id in state.values) ? state.values[field.id] : '';
         const el = createFieldInput(field, value);
         positionField(el, viewRect, field);
         overlay.appendChild(el);
