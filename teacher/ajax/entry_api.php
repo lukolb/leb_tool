@@ -704,6 +704,41 @@ function normalize_pdf_rect($rect): ?array {
   return $vals;
 }
 
+function date_format_pattern_from_meta(array $meta, ?string $fieldType = null): string {
+  $mode = (string)($meta['date_format_mode'] ?? '');
+  $preset = trim((string)($meta['date_format_preset'] ?? ''));
+  $custom = trim((string)($meta['date_format_custom'] ?? ''));
+  if ($mode === 'custom') return $custom;
+  if ($preset !== '') return $preset;
+  if (($fieldType ?? '') === 'date') {
+    if ($custom !== '') return $custom;
+    return $preset;
+  }
+  return '';
+}
+
+function format_date_value_for_field(?string $value, array $meta, ?string $fieldType = null): ?string {
+  if ($value === null) return null;
+  $raw = (string)$value;
+  if (trim($raw) === '') return $value;
+  $pattern = date_format_pattern_from_meta($meta, $fieldType);
+  if ($pattern === '') return $value;
+  $formatted = format_date_pattern($raw, $pattern);
+  if ($formatted === '' || $formatted === $raw) return $value;
+  return $formatted;
+}
+
+function apply_date_formatting(array $values, array $fieldMap): array {
+  foreach ($values as $fid => $val) {
+    $fieldId = (int)$fid;
+    if (!isset($fieldMap[$fieldId])) continue;
+    $meta = $fieldMap[$fieldId]['meta'] ?? [];
+    $type = $fieldMap[$fieldId]['field_type'] ?? null;
+    $values[$fid] = format_date_value_for_field($val, $meta, is_string($type) ? $type : null) ?? $val;
+  }
+  return $values;
+}
+
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT t.id, t.name, t.template_version
@@ -1756,6 +1791,9 @@ try {
       $classVals = $vals[(string)$classReportInstanceId] ?? [];
       $values = array_replace($values, $classVals);
     }
+    if ($values) $values = apply_date_formatting($values, $fieldMapInput);
+    if ($valuesChild) $valuesChild = apply_date_formatting($valuesChild, $fieldMapInput);
+    if ($valuesDelegateOther) $valuesDelegateOther = apply_date_formatting($valuesDelegateOther, $fieldMapInput);
 
     json_out([
       'ok' => true,
