@@ -110,6 +110,23 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-field select {
     background: rgba(255,255,255,0.65);
   }
+  .pdf-field--radio {
+    padding: 4px 6px;
+  }
+  .pdf-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pdf-radio-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pdf-radio-item input[type="radio"] {
+    width: 14px;
+    height: 14px;
+  }
   .pdf-field input[type="checkbox"] {
     width: 18px;
     height: 18px;
@@ -221,7 +238,27 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el = document.createElement('input');
       el.type = 'checkbox';
       el.checked = String(value || '').trim() === '1';
-    } else if (type === 'select' || type === 'radio' || type === 'grade') {
+    } else if (type === 'radio') {
+      wrapper.classList.add('pdf-field--radio');
+      el = document.createElement('div');
+      el.className = 'pdf-radio-group';
+      const name = `pdf-radio-${field.id}`;
+      (field.options || []).forEach((opt) => {
+        const item = document.createElement('label');
+        item.className = 'pdf-radio-item';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = name;
+        input.value = String(opt.value ?? '');
+        input.checked = String(value ?? '') === input.value;
+        if (!field.can_edit) input.disabled = true;
+        const text = document.createElement('span');
+        text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
+        item.appendChild(input);
+        item.appendChild(text);
+        el.appendChild(item);
+      });
+    } else if (type === 'select' || type === 'grade') {
       el = document.createElement('select');
       const empty = document.createElement('option');
       empty.value = '';
@@ -243,16 +280,28 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el.value = String(value ?? '');
     }
 
-    el.setAttribute('aria-label', String(field.label || field.field_name || ''));
-    if (!field.can_edit) el.disabled = true;
+    if (el && el.tagName !== 'DIV') {
+      el.setAttribute('aria-label', String(field.label || field.field_name || ''));
+      if (!field.can_edit) el.disabled = true;
+    }
 
     const handler = () => {
       if (!field.can_edit) return;
-      const nextVal = (el.type === 'checkbox') ? (el.checked ? '1' : '0') : el.value;
+      let nextVal = '';
+      if (type === 'checkbox') {
+        nextVal = el.checked ? '1' : '0';
+      } else if (type === 'radio') {
+        const checked = el.querySelector('input[type="radio"]:checked');
+        nextVal = checked ? checked.value : '';
+      } else {
+        nextVal = el.value;
+      }
       queueSave(field, nextVal);
     };
 
-    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    if (type === 'radio') {
+      el.addEventListener('change', handler);
+    } else if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
       el.addEventListener('blur', handler);
     } else {
       el.addEventListener('change', handler);

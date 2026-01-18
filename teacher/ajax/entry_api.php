@@ -851,6 +851,61 @@ function load_raw_values(PDO $pdo, array $reportIds, array $fieldIds, string $so
   return $out;
 }
 
+function load_input_values(PDO $pdo, array $reportIds, array $fieldMap, string $source): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', array_keys($fieldMap)), fn($x)=>$x>0)));
+  if (!$reportIds || !$fieldIds) return [];
+
+  $inR = implode(',', array_fill(0, count($reportIds), '?'));
+  $inF = implode(',', array_fill(0, count($fieldIds), '?'));
+  $params = array_merge($reportIds, $fieldIds, [$source]);
+
+  $st = $pdo->prepare(
+    "SELECT fv.report_instance_id, fv.template_field_id, fv.value_text, fv.value_json
+     FROM field_values fv
+     WHERE fv.report_instance_id IN ($inR)
+       AND fv.template_field_id IN ($inF)
+       AND fv.source=?"
+  );
+  $st->execute($params);
+
+  $listValueCache = [];
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $rid = (string)(int)$r['report_instance_id'];
+    $fid = (int)$r['template_field_id'];
+    if (!isset($fieldMap[$fid])) continue;
+    if (!isset($out[$rid])) $out[$rid] = [];
+
+    $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : '';
+    $valueJsonRaw = $r['value_json'] !== null ? (string)$r['value_json'] : null;
+
+    $meta = $fieldMap[$fid]['meta'] ?? [];
+    $type = (string)($fieldMap[$fid]['field_type'] ?? '');
+    $listId = option_list_id_from_meta($meta);
+
+    if (in_array($type, ['radio','select','grade'], true) && $listId > 0 && $valueJsonRaw) {
+      $decoded = json_decode($valueJsonRaw, true);
+      $optId = is_array($decoded) ? (int)($decoded['option_item_id'] ?? 0) : 0;
+      if ($optId > 0) {
+        if (!isset($listValueCache[$listId])) {
+          $listValueCache[$listId] = [];
+          $stOpt = $pdo->prepare("SELECT id, value FROM option_list_items WHERE list_id=?");
+          $stOpt->execute([$listId]);
+          foreach ($stOpt->fetchAll(PDO::FETCH_ASSOC) as $optRow) {
+            $listValueCache[$listId][(int)$optRow['id']] = (string)($optRow['value'] ?? '');
+          }
+        }
+        $valueText = $listValueCache[$listId][$optId] ?? $valueText;
+      }
+    }
+
+    $out[$rid][(string)$fid] = $valueText;
+  }
+
+  return $out;
+}
+
 function load_teacher_values_for_user(
   PDO $pdo,
   array $reportIds,
@@ -1504,6 +1559,7 @@ try {
     $fields = [];
     $studentFieldIds = [];
     $classFieldIds = [];
+    $fieldMapInput = [];
 
     foreach ($teacherFields as $f) {
       $meta = meta_read($f['meta_json'] ?? null);
@@ -1555,6 +1611,10 @@ try {
 
       $isClassField = is_class_field($meta);
       $fid = (int)($f['id'] ?? 0);
+      $fieldMapInput[$fid] = [
+        'field_type' => $type,
+        'meta' => $meta,
+      ];
       if ($isClassField) {
         $classFieldIds[] = $fid;
       } else {
@@ -1578,11 +1638,13 @@ try {
 
     $values = [];
     if ($reportId > 0 && $studentFieldIds) {
-      $vals = load_raw_values($pdo, [$reportId], $studentFieldIds, 'teacher');
+      $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
+      $vals = load_input_values($pdo, [$reportId], $studentFieldMap, 'teacher');
       $values = $vals[(string)$reportId] ?? [];
     }
     if ($classReportInstanceId > 0 && $classFieldIds) {
-      $vals = load_raw_values($pdo, [$classReportInstanceId], $classFieldIds, 'teacher');
+      $classFieldMap = array_intersect_key($fieldMapInput, array_flip($classFieldIds));
+      $vals = load_input_values($pdo, [$classReportInstanceId], $classFieldMap, 'teacher');
       $classVals = $vals[(string)$classReportInstanceId] ?? [];
       $values = array_replace($values, $classVals);
     }
