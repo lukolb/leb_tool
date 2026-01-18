@@ -43,6 +43,10 @@ function clamp_text_length(?string $text, ?int $maxLen): ?string {
     if (mb_strlen($text) <= $maxLen) return $text;
     return mb_substr($text, 0, $maxLen);
   }
+  if (function_exists('iconv_strlen') && function_exists('iconv_substr')) {
+    if (iconv_strlen($text, 'UTF-8') <= $maxLen) return $text;
+    return iconv_substr($text, 0, $maxLen, 'UTF-8');
+  }
   if (strlen($text) <= $maxLen) return $text;
   return substr($text, 0, $maxLen);
 }
