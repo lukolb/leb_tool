@@ -1565,6 +1565,8 @@ try {
     $templateId = (int)$tpl['id'];
     $schoolYear = class_school_year($pdo, $classId);
     if ($schoolYear === '') $schoolYear = date('Y');
+    $periodLabel = 'Standard';
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
 
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
     $reportId = (int)($ri['id'] ?? 0);
@@ -1665,6 +1667,7 @@ try {
       $fieldMapInput[$fid] = [
         'field_type' => $type,
         'meta' => $meta,
+        'is_multiline' => $isMultiline,
       ];
       if ($isClassField) {
         $classFieldIds[] = $fid;
@@ -1707,8 +1710,18 @@ try {
     $valuesChild = [];
     if ($reportId > 0 && $studentFieldIds) {
       $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
-      $vals = load_input_values($pdo, [$reportId], $studentFieldMap, 'teacher');
-      $values = $vals[(string)$reportId] ?? [];
+      $teacherValues = load_teacher_values_for_user(
+        $pdo,
+        [$reportId],
+        $studentFieldMap,
+        $delegations,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $lang
+      );
+      $values = $teacherValues['own'][(string)$reportId] ?? [];
       $valsSystem = load_input_values($pdo, [$reportId], $studentFieldMap, 'system');
       $valuesSystem = $valsSystem[(string)$reportId] ?? [];
       if ($valuesSystem) {
