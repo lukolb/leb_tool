@@ -535,13 +535,17 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
             let pageNum = Number(widget.page || 0);
             if (pageNum === 0) pageNum = 1;
             if (pageNum !== p) return;
+            const idx = Number(widget.index || 0);
             let optValueRaw = widget.exportValue;
             if (optValueRaw === null || optValueRaw === undefined || String(optValueRaw) === '') {
-              const idx = Number(widget.index || 0);
               optValueRaw = options[idx] ? options[idx].value : '';
             }
-            const optValue = resolveOptionValue(field, optValueRaw);
-            const matched = options.find((opt) => String(opt.value ?? '') === String(optValue ?? ''));
+            let optValue = resolveOptionValue(field, optValueRaw);
+            let matched = options.find((opt) => String(opt.value ?? '') === String(optValue ?? ''));
+            if (!matched && options[idx]) {
+              optValue = String(options[idx].value ?? '');
+              matched = options[idx];
+            }
             const label = matched ? (matched.label_resolved ?? matched.label ?? matched.value ?? '') : '';
             const rect = Array.isArray(widget.rect) ? widget.rect : null;
             if (!rect || rect.length < 4) return;
