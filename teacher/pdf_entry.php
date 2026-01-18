@@ -256,10 +256,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         let pRaw = it?.page;
         if (pRaw === undefined || pRaw === null) pRaw = it?.pageIndex;
         const pNum = Number(pRaw);
-        if (!Number.isFinite(pNum)) continue;
+        if (!Number.isFinite(pNum)) return;
         if (pNum === 0) hasZero = true;
         const rect = (Array.isArray(it?.rect) && it.rect.length >= 4) ? it.rect.slice(0, 4) : null;
-        if (!rect) continue;
+        if (!rect) return;
         tmp.push({ name, pNum, rect });
         const exportValue = it?.exportValue ?? it?.value ?? it?.buttonValue ?? null;
         if (!widgetMap.has(name)) widgetMap.set(name, []);
