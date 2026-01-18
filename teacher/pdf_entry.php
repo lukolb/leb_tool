@@ -804,15 +804,32 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         if (shouldUseWidgetRadios(fieldForRender)) {
           const options = Array.isArray(fieldForRender.options) ? fieldForRender.options : [];
           const resolvedValue = resolveOptionValue(fieldForRender, value);
-          const widgets = fieldForRender.widget_rects || [];
+          const widgets = (fieldForRender.widget_rects || [])
+            .map((widget) => {
+              let pageNum = Number(widget.page || 0);
+              if (pageNum === 0) pageNum = 1;
+              return { ...widget, pageNum };
+            })
+            .filter((widget) => widget.pageNum === p)
+            .sort((a, b) => {
+              const rectA = Array.isArray(a.rect) ? a.rect : [0, 0, 0, 0];
+              const rectB = Array.isArray(b.rect) ? b.rect : [0, 0, 0, 0];
+              const yA = Math.min(rectA[1] ?? 0, rectA[3] ?? 0);
+              const yB = Math.min(rectB[1] ?? 0, rectB[3] ?? 0);
+              if (yA !== yB) return yA - yB;
+              const xA = Math.min(rectA[0] ?? 0, rectA[2] ?? 0);
+              const xB = Math.min(rectB[0] ?? 0, rectB[2] ?? 0);
+              return xA - xB;
+            });
           const groupName = `pdf-radio-${fieldForRender.id}-${showStudentValues ? 'student' : 'teacher'}`;
-          widgets.forEach((widget) => {
-            let pageNum = Number(widget.page || 0);
-            if (pageNum === 0) pageNum = 1;
-            if (pageNum !== p) return;
-            const idx = Number(widget.index || 0);
+          widgets.forEach((widget, idx) => {
             let optValueRaw = widget.exportValue;
-            if (optValueRaw === null || optValueRaw === undefined || String(optValueRaw) === '') {
+            if (
+              optValueRaw === null
+              || optValueRaw === undefined
+              || String(optValueRaw).trim() === ''
+              || String(optValueRaw).trim().toLowerCase() === 'off'
+            ) {
               optValueRaw = options[idx] ? options[idx].value : '';
             }
             let optValue = resolveOptionValue(fieldForRender, optValueRaw);
