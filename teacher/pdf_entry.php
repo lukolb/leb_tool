@@ -519,8 +519,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el.value = String(value ?? '');
     } else if (type === 'date') {
       el = document.createElement('input');
-      el.type = 'text';
-      el.value = String(field.date_display ?? value ?? '');
+      el.type = 'date';
+      el.value = String(value ?? '');
     } else {
       el = document.createElement('input');
       el.type = 'text';
