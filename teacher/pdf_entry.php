@@ -247,7 +247,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       });
       return byLabel ? String(byLabel.value ?? '') : rawValue;
     };
-    const useRadioGroup = ['radio', 'select', 'grade'].includes(type) && options.length > 0 && options.length <= 10;
+    const useRadioGroup = ['radio', 'select'].includes(type) && options.length > 0 && options.length <= 10;
 
     if (type === 'checkbox') {
       el = document.createElement('input');
@@ -336,7 +336,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const top = Math.min(y1, y2);
     const width = Math.abs(x2 - x1);
     let height = Math.abs(y2 - y1);
-    const isRadioLayout = field?.field_type === 'radio' || (['select','grade'].includes(String(field?.field_type || '')) && Array.isArray(field?.options) && field.options.length > 0 && field.options.length <= 10);
+    const isRadioLayout = field?.field_type === 'radio' || (['select'].includes(String(field?.field_type || '')) && Array.isArray(field?.options) && field.options.length > 0 && field.options.length <= 10);
     if (isRadioLayout) {
       const count = Array.isArray(field.options) ? field.options.length : 0;
       if (count > 1) {
@@ -345,6 +345,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         height = Math.max(height, 20 * rows + 12);
       }
     }
+    if (height < 18) height = 18;
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${width}px`;
