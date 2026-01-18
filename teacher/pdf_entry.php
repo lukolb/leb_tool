@@ -311,6 +311,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const options = Array.isArray(field.options) ? field.options : [];
     const valueText = String(rawValue ?? '');
     if (!options.length) return valueText;
+    const asNumber = Number(valueText);
+    if (Number.isFinite(asNumber)) {
+      const byId = options.find((opt) => Number(opt.option_item_id || 0) === asNumber);
+      if (byId) return String(byId.value ?? '');
+    }
     const direct = options.find((opt) => String(opt.value ?? '') === valueText);
     if (direct) return String(direct.value ?? '');
     const byLabel = options.find((opt) => {
