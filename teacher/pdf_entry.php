@@ -530,11 +530,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
             let pageNum = Number(widget.page || 0);
             if (pageNum === 0) pageNum = 1;
             if (pageNum !== p) return;
-            let optValue = widget.exportValue;
-            if (optValue === null || optValue === undefined || String(optValue) === '') {
+            let optValueRaw = widget.exportValue;
+            if (optValueRaw === null || optValueRaw === undefined || String(optValueRaw) === '') {
               const idx = Number(widget.index || 0);
-              optValue = options[idx] ? options[idx].value : '';
+              optValueRaw = options[idx] ? options[idx].value : '';
             }
+            const optValue = resolveOptionValue(field, optValueRaw);
             const matched = options.find((opt) => String(opt.value ?? '') === String(optValue ?? ''));
             const label = matched ? (matched.label_resolved ?? matched.label ?? matched.value ?? '') : '';
             const rect = Array.isArray(widget.rect) ? widget.rect : null;
