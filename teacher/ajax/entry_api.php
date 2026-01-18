@@ -768,6 +768,11 @@ function apply_date_formatting(array $values, array $fieldMap): array {
   return $values;
 }
 
+function should_format_date_field(array $meta, ?string $fieldType = null): bool {
+  if (($fieldType ?? '') === 'date') return true;
+  return date_format_pattern_from_meta($meta, $fieldType) !== '';
+}
+
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT t.id, t.name, t.template_version
@@ -2806,6 +2811,9 @@ if ($action === 'delegations_save') {
       } else {
         $valueText = $valueText !== null ? trim($valueText) : null;
         if ($valueText === '') $valueText = null;
+        if (should_format_date_field($meta, $type)) {
+          $valueText = format_date_value_to_iso($valueText);
+        }
       }
     }
 
@@ -2926,6 +2934,9 @@ if ($action === 'delegations_save') {
       } else {
         $valueText = $valueText !== null ? trim($valueText) : null;
         if ($valueText === '') $valueText = null;
+        if (should_format_date_field($meta, $type)) {
+          $valueText = format_date_value_to_iso($valueText);
+        }
       }
     }
 

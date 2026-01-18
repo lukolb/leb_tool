@@ -119,14 +119,6 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     line-height: 1.1;
     font-size: 0.9em;
   }
-  .pdf-field__date-display {
-    margin-top: 2px;
-    color: #2b4a77;
-    font-style: italic;
-    white-space: pre-wrap;
-    line-height: 1.1;
-    font-size: 0.85em;
-  }
   .pdf-field textarea {
     resize: none;
   }
@@ -527,8 +519,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el.value = String(value ?? '');
     } else if (type === 'date') {
       el = document.createElement('input');
-      el.type = 'date';
-      el.value = String(value ?? '');
+      el.type = 'text';
+      el.value = String(field.date_display ?? value ?? '');
     } else {
       el = document.createElement('input');
       el.type = 'text';
@@ -569,12 +561,6 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       delegate.className = 'pdf-field__delegate-text';
       delegate.textContent = String(field.delegate_other || '');
       wrapper.appendChild(delegate);
-    }
-    if (String(field.date_display || '').trim() !== '' && String(field.date_display || '') !== String(value ?? '')) {
-      const info = document.createElement('div');
-      info.className = 'pdf-field__date-display';
-      info.textContent = String(field.date_display || '');
-      wrapper.appendChild(info);
     }
     return wrapper;
   }
@@ -622,9 +608,6 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const extra = Math.min(28, 9 * lines + 2);
       height += extra;
       wrapper.style.setProperty('--delegate-height', `${extra}px`);
-    }
-    if (String(field.date_display || '').trim() !== '' && String(field.date_display || '') !== String(field.value ?? '')) {
-      height += 12;
     }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
