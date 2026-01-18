@@ -1224,6 +1224,14 @@ try {
           ['value'=>'6','label'=>'6'],
         ];
       }
+      if ($optsTeacher) {
+        $optsTeacher = array_map(function(array $opt) use ($lang) {
+          $label = label_for_lang($opt['label'] ?? null, $opt['label_en'] ?? null, $lang);
+          if ($label === '') $label = trim((string)($opt['value'] ?? ''));
+          $opt['label_resolved'] = $label;
+          return $opt;
+        }, $optsTeacher);
+      }
 
       $base = base_field_key((string)$f['field_name']);
       $child = ($base !== '' && isset($childByBase[$base])) ? $childByBase[$base] : null;
@@ -1521,6 +1529,14 @@ try {
           ['value'=>'5','label'=>'5'],
           ['value'=>'6','label'=>'6'],
         ];
+      }
+      if ($optsTeacher) {
+        $optsTeacher = array_map(function(array $opt) use ($lang) {
+          $label = label_for_lang($opt['label'] ?? null, $opt['label_en'] ?? null, $lang);
+          if ($label === '') $label = trim((string)($opt['value'] ?? ''));
+          $opt['label_resolved'] = $label;
+          return $opt;
+        }, $optsTeacher);
       }
 
       $periodLabel = 'Standard';

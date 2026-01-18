@@ -86,7 +86,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     border: 1px solid rgba(0,0,0,0.15);
     border-radius: 4px;
     padding: 2px 4px;
-    font: 500 12px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: 500 12px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
   }
   .pdf-field.is-readonly {
@@ -105,6 +105,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     outline: none;
     background: transparent;
     font: inherit;
+    line-height: 1.1;
+  }
+  .pdf-field select {
+    background: rgba(255,255,255,0.65);
   }
   .pdf-field input[type="checkbox"] {
     width: 18px;
@@ -226,7 +230,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       (field.options || []).forEach((opt) => {
         const o = document.createElement('option');
         o.value = String(opt.value ?? '');
-        o.textContent = String(opt.label ?? '');
+        o.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
         el.appendChild(o);
       });
       el.value = String(value ?? '');
@@ -268,7 +272,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${width}px`;
     wrapper.style.height = `${height}px`;
-    wrapper.style.fontSize = `${Math.max(10, Math.floor(height * 0.6))}px`;
+    const size = Math.max(9, Math.min(14, Math.floor(height * 0.45)));
+    wrapper.style.fontSize = `${size}px`;
   }
 
   async function renderPages(){
