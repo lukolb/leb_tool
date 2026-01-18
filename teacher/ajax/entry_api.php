@@ -1160,6 +1160,14 @@ try {
       $classFieldIdsEditable[] = (int)$f0['id'];
     }
 
+    // system-bound fields (read-only) should still be visible
+    $systemFieldIds = [];
+    foreach ($teacherFields as $f0) {
+      $m0 = meta_read($f0['meta_json'] ?? null);
+      if (!is_system_bound($m0)) continue;
+      $systemFieldIds[] = (int)$f0['id'];
+    }
+
     $periodLabel = 'Standard';
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $delegationUsers = load_teachers_for_delegation($pdo);
@@ -1199,7 +1207,8 @@ try {
     $classValueByName = [];
     foreach ($teacherFields as $f0) {
       $m0 = meta_read($f0['meta_json'] ?? null);
-      if (!is_class_field($m0) || is_system_bound($m0)) continue;
+      if (!is_class_field($m0)) continue;
+      $isSystemBound = is_system_bound($m0);
       $fid0 = (string)(int)$f0['id'];
       $val0 = '';
       $ridKey = (string)(int)$classReportInstanceId;
@@ -1255,7 +1264,8 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f0['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
-        'can_edit' => $canEditClassField ? 1 : 0,
+        'can_edit' => ($canEditClassField && !$isSystemBound) ? 1 : 0,
+        'is_system_bound' => $isSystemBound ? 1 : 0,
       ];
     }
 
@@ -1264,8 +1274,8 @@ try {
     foreach ($teacherFields as $f) {
       $meta = meta_read($f['meta_json'] ?? null);
 
-      if (is_system_bound($meta)) continue;
       if (is_class_field($meta)) continue;
+      $isSystemBound = is_system_bound($meta);
 
       $gKey = group_key_from_meta($meta);
       if (!isset($groups[$gKey])) {
@@ -1319,6 +1329,7 @@ try {
         (string)($f['field_type'] ?? ''),
         (int)($f['is_multiline'] ?? 0)
       );
+      if ($isSystemBound) $canEditField = false;
 
       $groups[$gKey]['fields'][] = [
         'id' => (int)$f['id'],
@@ -1331,6 +1342,7 @@ try {
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
         'can_edit' => $canEditField ? 1 : 0,
+        'is_system_bound' => $isSystemBound ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],
           'field_name' => (string)($child['field_name'] ?? ''),
@@ -1386,6 +1398,18 @@ try {
     $valuesTeacher = $teacherValues['combined'] ?? [];
     $valuesTeacherOwn = $teacherValues['own'] ?? [];
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
+
+    if ($systemFieldIds) {
+      $systemValues = load_values($pdo, $reportIds, $systemFieldIds, 'system', $lang);
+      foreach ($systemValues as $rid => $fields) {
+        if (!isset($valuesTeacher[$rid])) $valuesTeacher[$rid] = [];
+        if (!isset($valuesTeacherOwn[$rid])) $valuesTeacherOwn[$rid] = [];
+        foreach ($fields as $fid => $val) {
+          $valuesTeacher[$rid][(string)$fid] = $val;
+          $valuesTeacherOwn[$rid][(string)$fid] = $val;
+        }
+      }
+    }
 
     // --- progress (teacher / child / overall) ---
     $teacherProgressIds = [];

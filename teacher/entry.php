@@ -513,11 +513,32 @@ render_teacher_header($pageTitle);
   }
 
   .field{ border:1px solid var(--border); border-radius:14px; padding:12px; background:#fff; margin-bottom:10px; }
-  .field .lbl{ font-weight:800; }
+  .field .lbl{ font-weight:800; display:flex; align-items:center; gap:6px; }
   .field .help{ color:var(--muted); font-size:12px; margin-top:6px; }
   .field .child{ display:none; margin-top:8px; border-top:1px dashed var(--border); padding-top:8px; color:var(--muted); font-size:12px; }
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
+  .child-tip{ display:inline-flex; align-items:center; position:relative; }
+  .child-tip-btn{
+    width:18px; height:18px; min-height:18px;
+    border-radius:50%; border:1px solid var(--border);
+    font-size:11px; font-weight:800; padding:0;
+    line-height:1; display:inline-flex; align-items:center; justify-content:center;
+  }
+  .child-tip-btn:hover{ color:#0b57d0; border-color:rgba(11,87,208,0.4); }
+  .child-tip-bubble{
+    position:absolute; bottom: calc(100% + 6px); left:0;
+    background:#fff; border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px; font-size:12px; color:var(--text);
+    box-shadow:0 8px 24px rgba(0,0,0,0.12);
+    min-width:220px; max-width:320px; z-index:30; display:none;
+  }
+  .child-tip.open .child-tip-bubble{ display:block; }
+  .child-tip-bubble::after{
+    content:""; position:absolute; top:100%; left:10px;
+    border-width:6px; border-style:solid;
+    border-color:#fff transparent transparent transparent;
+  }
 
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
@@ -958,6 +979,22 @@ render_teacher_header($pageTitle);
           <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>Löschen</button>
         </div>
       </div>
+    `;
+  }
+
+  function childInfoTipHtml(f, reportId){
+    if (!f || !f.child || !f.child.id) return '';
+    if (!isFreeTextField(f)) return '';
+    const childId = Number(f.child.id);
+    const rawChild = childVal(reportId, childId);
+    if (!String(rawChild ?? '').trim()) return '';
+    const shownChild = childDisplay(f, rawChild) || rawChild;
+    const html = esc(String(shownChild)).replace(/\n/g, '<br>');
+    return `
+      <span class="child-tip" data-tip="1">
+        <button type="button" class="btn ghost icon child-tip-btn js-child-tip" aria-label="Schülerwert anzeigen">i</button>
+        <span class="child-tip-bubble">${html}</span>
+      </span>
     `;
   }
 
@@ -2747,6 +2784,13 @@ render_teacher_header($pageTitle);
     });
   }
 
+  function closeChildTips(except){
+    document.querySelectorAll('.child-tip.open').forEach(t => {
+      if (except && t === except) return;
+      t.classList.remove('open');
+    });
+  }
+
   document.addEventListener('click', (ev) => {
     const tipBtn = ev.target && ev.target.closest('.js-combined-tip');
     if (tipBtn) {
@@ -2755,6 +2799,18 @@ render_teacher_header($pageTitle);
       if (tipWrap) {
         const open = tipWrap.classList.contains('open');
         closeCombinedTips(open ? null : tipWrap);
+        tipWrap.classList.toggle('open', !open);
+      }
+      return;
+    }
+
+    const childTipBtn = ev.target && ev.target.closest('.js-child-tip');
+    if (childTipBtn) {
+      ev.preventDefault();
+      const tipWrap = childTipBtn.closest('.child-tip');
+      if (tipWrap) {
+        const open = tipWrap.classList.contains('open');
+        closeChildTips(open ? null : tipWrap);
         tipWrap.classList.toggle('open', !open);
       }
       return;
@@ -2787,6 +2843,7 @@ render_teacher_header($pageTitle);
     if (ev.target && ev.target.closest('[data-history-menu="1"]')) return;
     closeHistoryMenus();
     closeCombinedTips();
+    closeChildTips();
 
     if (ev.target && snippetMenu.contains(ev.target)) return;
     hideSnippetMenu();
@@ -3260,6 +3317,7 @@ render_teacher_header($pageTitle);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
         const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
+        const childTip = CHILD_MODE ? '' : childInfoTipHtml(f, reportId);
         const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
         const help = resolveLabelTemplate(String(f.help_text || ''));
         const missingCls = (v === '') ? 'missing' : '';
@@ -3273,7 +3331,7 @@ render_teacher_header($pageTitle);
           : '';
         html += `
           <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-            <div class="lbl">${esc(lbl)}</div>
+            <div class="lbl">${esc(lbl)}${childTip}</div>
             <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
             ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
             ${actionsHtml}
@@ -3572,6 +3630,7 @@ render_teacher_header($pageTitle);
         const locked = (status === 'locked');
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
+        const childTip = CHILD_MODE ? '' : childInfoTipHtml(f, reportId);
 
         const missingCls = (v === '') ? 'missing' : '';
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
@@ -3582,6 +3641,7 @@ render_teacher_header($pageTitle);
           td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
+            ${childTip}
             ${actionsHtml}
             ${(!CHILD_MODE && f.child && f.child.id) ? `<div class="cellChild">${childInfoHtml(f, reportId)}</div>` : ''}
           </div>
