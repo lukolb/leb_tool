@@ -222,10 +222,56 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const map = new Map();
     fields.forEach((f) => {
       const p = Number(f.page || 0);
+      if (!p) return;
       if (!map.has(p)) map.set(p, []);
       map.get(p).push(f);
     });
     return map;
+  }
+
+  async function enrichFieldRectsFromPdf(){
+    if (!pdfDoc || !state || typeof pdfDoc.getFieldObjects !== 'function') return;
+    const fo = await pdfDoc.getFieldObjects();
+    if (!fo || typeof fo !== 'object') return;
+
+    const tmp = [];
+    let hasZero = false;
+    for (const [name, arr] of Object.entries(fo)) {
+      if (!Array.isArray(arr)) continue;
+      for (const it of arr) {
+        let pRaw = it?.page;
+        if (pRaw === undefined || pRaw === null) pRaw = it?.pageIndex;
+        const pNum = Number(pRaw);
+        if (!Number.isFinite(pNum)) continue;
+        if (pNum === 0) hasZero = true;
+        const rect = (Array.isArray(it?.rect) && it.rect.length >= 4) ? it.rect.slice(0, 4) : null;
+        if (!rect) continue;
+        tmp.push({ name, pNum, rect });
+      }
+    }
+
+    const numPages = Number(pdfDoc?.numPages || 0);
+    const byName = new Map();
+    tmp.forEach((t) => {
+      let page = t.pNum;
+      if (hasZero) page = page + 1;
+      if (page < 1) page = 1;
+      if (numPages && page > numPages) page = numPages;
+      if (!byName.has(t.name)) byName.set(t.name, { page, rect: t.rect });
+    });
+
+    let updated = false;
+    state.fields = (state.fields || []).map((f) => {
+      if (f.page && f.rect) return f;
+      const hit = byName.get(f.field_name);
+      if (!hit) return f;
+      updated = true;
+      return { ...f, page: hit.page, rect: hit.rect };
+    });
+
+    if (updated) {
+      await renderPages();
+    }
   }
 
   function createFieldInput(field, value){
@@ -446,6 +492,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       state = data;
       pdfDoc = await pdfjsLib.getDocument({ url: data.template.pdf_url, withCredentials: true }).promise;
       await renderPages();
+      await enrichFieldRectsFromPdf();
       showSaveStatus('Bereit');
     } catch (e) {
       showError(e?.message || 'Laden fehlgeschlagen.');

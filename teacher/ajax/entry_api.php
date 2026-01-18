@@ -689,6 +689,21 @@ function decode_options(?string $json): array {
   return [];
 }
 
+function normalize_pdf_rect($rect): ?array {
+  if (is_string($rect)) {
+    $decoded = json_decode($rect, true);
+    if (is_array($decoded)) $rect = $decoded;
+    if (is_string($rect)) {
+      $parts = array_map('trim', explode(',', $rect));
+      if (count($parts) >= 4) $rect = array_slice($parts, 0, 4);
+    }
+  }
+  if (!is_array($rect) || count($rect) < 4) return null;
+  $vals = array_map('floatval', array_slice($rect, 0, 4));
+  if (count(array_filter($vals, fn($v)=>is_finite($v))) < 4) return null;
+  return $vals;
+}
+
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT t.id, t.name, t.template_version
@@ -1568,9 +1583,9 @@ try {
       $meta = meta_read($f['meta_json'] ?? null);
       if (is_system_bound($meta)) continue;
 
-      $page = $meta['page'] ?? null;
-      $rect = $meta['rect'] ?? null;
-      if ($page === null || !is_array($rect) || count($rect) < 4) continue;
+      $pageRaw = $meta['page'] ?? null;
+      $page = is_numeric($pageRaw) ? (int)$pageRaw : null;
+      $rect = normalize_pdf_rect($meta['rect'] ?? null);
 
       $listIdF = option_list_id_from_meta($meta);
       if ($listIdF > 0) {
@@ -1637,7 +1652,7 @@ try {
         'options' => $optsTeacher,
         'can_edit' => $canEditField ? 1 : 0,
         'page' => $page,
-        'rect' => array_slice($rect, 0, 4),
+        'rect' => $rect,
         'scope' => $isClassField ? 'class' : 'student',
       ];
     }
