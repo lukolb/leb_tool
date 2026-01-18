@@ -1257,7 +1257,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       const grades = String(feedback?.noten_leistungsschnitt || '').trim();
       const support = Array.isArray(feedback?.foerdermoeglichkeiten) ? feedback.foerdermoeglichkeiten : [];
       const focus = Array.isArray(feedback?.schwerpunkte_faecher) ? feedback.schwerpunkte_faecher : [];
-      const levels = Array.isArray(feedback?.kompetenzstufen_erklaerung) ? feedback.kompetenzstufen_erklaerung : [];
       const areas = Array.isArray(feedback?.bereiche) ? feedback.bereiche : [];
 
       let html = '';
@@ -1265,7 +1264,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       if (grades) html += renderAiClassSection('<?=h(t('teacher.students.ai_class_grades', 'Noten- & Leistungsschnitt'))?>', escapeHtml(grades));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_support', 'Fördermöglichkeiten'))?>', renderAiClassList(support));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_focus', 'Fachliche Schwerpunkte'))?>', renderAiClassList(focus));
-      html += renderAiClassSection('<?=h(t('teacher.students.ai_class_levels', 'Kompetenzstufen'))?>', renderAiClassList(levels));
       html += renderAiClassSection('<?=h(t('teacher.students.ai_class_areas', 'Bereichsfeedback'))?>', renderAiClassAreas(areas));
 
       aiClassContent.innerHTML = html;

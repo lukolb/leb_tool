@@ -2028,16 +2028,16 @@ try {
     $contextParts[] = "Bereichsspezifische Zusammenfassung:\n- " . implode("\n- ", $groupContextLines);
 
     $system = "Du bist eine erfahrene Lehrkraft und erstellst eine Klassen-Rückmeldung. Antworte ausschließlich als JSON mit genau diesen Keys:\n"
-      . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), kompetenzstufen_erklaerung (array), bereiche (array).\n"
+      . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), bereiche (array).\n"
       . "Keine weiteren Keys. Keine Markdown-Umrahmung.";
 
     $userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die folgenden aggregierten Informationen und erfinde keine Details. "
       . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler. "
       . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
-      . "Die Fördermöglichkeiten müssen konkret, beobachtungsnah und umsetzbar sein (Material/Übung, Sozialform, Häufigkeit/Dauer). "
-      . "Erkläre zudem die Bedeutung der Kompetenzstufen anhand der genannten Stufenreihenfolge (niedrig → hoch). "
-      . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
-      . "Bei jedem Bereich nenne mindestens zwei konkrete Förderideen (z. B. Übungsformate, Methoden, Differenzierung). "
+      . "Fördermöglichkeiten müssen konkret, beobachtungsnah und umsetzbar sein (Material/Übung, Sozialform, Häufigkeit/Dauer) und immer eine kurze Begründung enthalten, die sich auf die aggregierten Daten bezieht. "
+      . "Fachliche Schwerpunkte müssen ebenfalls immer begründet sein (warum dieser Schwerpunkt aus den Daten hervorgeht). "
+      . "Erstelle zusätzlich pro Bereich eine spezifische Rückmeldung und eine konkrete, begründete Empfehlung zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung. "
+      . "Bei jedem Bereich nenne mindestens zwei konkrete Förderideen mit kurzer Begründung (z. B. Übungsformate, Methoden, Differenzierung). "
       . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
 
     $aiCfg = ai_provider_config();
@@ -2060,13 +2060,12 @@ try {
       'noten_leistungsschnitt' => '',
       'foerdermoeglichkeiten' => [],
       'schwerpunkte_faecher' => [],
-      'kompetenzstufen_erklaerung' => [],
       'bereiche' => [],
     ];
     if (is_array($decoded)) {
       $parsed['rueckmeldung_gesamt'] = trim((string)($decoded['rueckmeldung_gesamt'] ?? ''));
       $parsed['noten_leistungsschnitt'] = trim((string)($decoded['noten_leistungsschnitt'] ?? ''));
-      foreach (['foerdermoeglichkeiten','schwerpunkte_faecher','kompetenzstufen_erklaerung'] as $k) {
+      foreach (['foerdermoeglichkeiten','schwerpunkte_faecher'] as $k) {
         if (isset($decoded[$k]) && is_array($decoded[$k])) {
           $parsed[$k] = array_values(array_filter(array_map(fn($s)=>trim((string)$s), $decoded[$k]), fn($s)=>$s!=='' ));
         }
