@@ -85,18 +85,41 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     background: rgba(255,255,255,0.75);
     border: 1px solid rgba(0,0,0,0.15);
     border-radius: 4px;
-    padding: 2px 4px;
     font: 500 12px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
     --radio-color: #475a70;
   }
   .pdf-field.is-readonly:not(.is-student) {
-    background: #e7f2ff;
-    border-color: #b6d1ff;
     color: #2b4a77;
+    border: none;
+    background-color: transparent;
   }
   .pdf-field.is-student {
     --radio-color: #2e7d32;
+  }
+  .pdf-field.is-student input {
+      background-color: transparent !important;
+  }
+  .pdf-field.is-system {
+    color: #2b4a77;
+    border: none;
+    background-color: transparent;
+  }
+  .pdf-field.has-delegate-other {
+    display: flex;
+    flex-direction: column;
+  }
+  .pdf-field.has-delegate-other input,
+  .pdf-field.has-delegate-other textarea {
+    height: calc(100% - var(--delegate-height, 0px));
+  }
+  .pdf-field__delegate-text {
+    margin-top: 0;
+    color: #2b4a77;
+    font-style: italic;
+    white-space: pre-wrap;
+    line-height: 1.1;
+    font-size: 0.9em;
   }
   .pdf-field textarea {
     resize: none;
@@ -111,6 +134,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     background: transparent;
     font: inherit;
     line-height: 1.1;
+    padding: 1px;
   }
   .pdf-field select {
     background: rgba(255,255,255,0.65);
@@ -145,11 +169,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-radio-item input[type="radio"],
   .pdf-field--widget input[type="radio"] {
     appearance: none;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--radio-color);
+    width: 18px;
+    height: 18px;
     border-radius: 2px;
-    background: #fff;
+    background: aliceblue;
     position: relative;
   }
   .pdf-radio-item input[type="radio"]::before,
@@ -186,9 +209,90 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     width: 14px;
     height: 14px;
   }
+  .pdf-student-info {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid #2e7d32;
+    color: #2e7d32;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .pdf-student-info__tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translate(-50%, -6px);
+    background: #2e7d32;
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: pre-wrap;
+    max-width: 240px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    z-index: 5;
+  }
+  .pdf-student-info:hover .pdf-student-info__tooltip,
+  .pdf-student-info:focus-within .pdf-student-info__tooltip {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .pdf-student-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .pdf-student-nav.left { left: 12px; }
+  .pdf-student-nav.right { right: 12px; }
+  .pdf-student-nav button {
+    pointer-events: auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid #cbd4e1;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .pdf-student-nav button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .pdf-student-nav-label {
+    font-size: 11px;
+    color: #2b4a77;
+    text-align: center;
+  }
 </style>
 
 <div class="pdf-entry-wrap">
+  <div class="pdf-student-nav left">
+    <button type="button" id="prevStudentBtn" title="Vorheriger Schüler" disabled>‹</button>
+    <div class="pdf-student-nav-label" id="prevStudentLabel"></div>
+  </div>
+  <div class="pdf-student-nav right">
+    <button type="button" id="nextStudentBtn" title="Nächster Schüler" disabled>›</button>
+    <div class="pdf-student-nav-label" id="nextStudentLabel"></div>
+  </div>
   <div class="card">
     <div class="row-actions" style="float: right;">
       <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$classId))?>">Zurück zur Klasse</a>
@@ -233,6 +337,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const savePill = document.getElementById('savePill');
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
+  const prevStudentBtn = document.getElementById('prevStudentBtn');
+  const nextStudentBtn = document.getElementById('nextStudentBtn');
+  const prevStudentLabel = document.getElementById('prevStudentLabel');
+  const nextStudentLabel = document.getElementById('nextStudentLabel');
 
   let pdfDoc = null;
   let state = null;
@@ -258,6 +366,32 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function setSaving(active){
     if (!savePill) return;
     savePill.style.display = active ? '' : 'none';
+  }
+
+  function goToStudent(nextId){
+    if (!nextId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('student_id', String(nextId));
+    url.searchParams.set('class_id', String(classId));
+    window.location.href = url.toString();
+  }
+
+  function updateStudentNav(){
+    const nav = state?.student_nav || {};
+    if (prevStudentBtn) {
+      const hasPrev = Boolean(nav.prev_id);
+      prevStudentBtn.disabled = !hasPrev;
+      prevStudentBtn.title = hasPrev ? `Vorheriger Schüler: ${nav.prev_name || ''}` : 'Vorheriger Schüler';
+      if (prevStudentLabel) prevStudentLabel.textContent = hasPrev ? (nav.prev_name || '') : '';
+      prevStudentBtn.onclick = () => goToStudent(nav.prev_id);
+    }
+    if (nextStudentBtn) {
+      const hasNext = Boolean(nav.next_id);
+      nextStudentBtn.disabled = !hasNext;
+      nextStudentBtn.title = hasNext ? `Nächster Schüler: ${nav.next_name || ''}` : 'Nächster Schüler';
+      if (nextStudentLabel) nextStudentLabel.textContent = hasNext ? (nav.next_name || '') : '';
+      nextStudentBtn.onclick = () => goToStudent(nav.next_id);
+    }
   }
 
   async function api(action, payload){
@@ -351,6 +485,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function resolveOptionValue(field, rawValue){
     const options = Array.isArray(field.options) ? field.options : [];
     const valueText = String(rawValue ?? '');
+    if (valueText.trim().toLowerCase() === 'off') return '';
     if (!options.length) return valueText;
     const asNumber = Number(valueText);
     if (Number.isFinite(asNumber)) {
@@ -380,6 +515,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.className = 'pdf-field pdf-field--widget';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
+    if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
     const input = document.createElement('input');
     input.type = 'radio';
@@ -402,6 +538,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.className = 'pdf-field';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
+    if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
     let el = null;
     const type = String(field.field_type || '');
@@ -454,6 +591,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     } else if (type === 'multiline' || Number(field.is_multiline || 0) === 1) {
       el = document.createElement('textarea');
       el.value = String(value ?? '');
+    } else if (type === 'date') {
+      el = document.createElement('input');
+      if (field.can_edit) {
+        el.type = 'date';
+        el.value = String(value ?? '');
+      } else {
+        el.type = 'text';
+        el.value = String(field.date_display ?? value ?? '');
+      }
     } else {
       el = document.createElement('input');
       el.type = 'text';
@@ -488,6 +634,32 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
+    if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
+      wrapper.classList.add('has-delegate-other');
+      const delegate = document.createElement('div');
+      delegate.className = 'pdf-field__delegate-text';
+      delegate.textContent = String(field.delegate_other || '');
+      wrapper.appendChild(delegate);
+    }
+    return wrapper;
+  }
+
+  function isTextField(field){
+    const type = String(field.field_type || '');
+    if (['checkbox', 'radio', 'select', 'grade'].includes(type)) return false;
+    return true;
+  }
+
+  function createStudentInfoIcon(value){
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-student-info';
+    wrapper.setAttribute('tabindex', '0');
+    wrapper.setAttribute('aria-label', 'Schülerwert anzeigen');
+    wrapper.textContent = 'i';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'pdf-student-info__tooltip';
+    tooltip.textContent = String(value ?? '');
+    wrapper.appendChild(tooltip);
     return wrapper;
   }
 
@@ -507,9 +679,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       }
     }
     if (['select', 'grade'].includes(String(field?.field_type || ''))) {
-      width = Math.max(width, 140);
+      width = Math.max(width, 36);
     }
     if (height < 18) height = 18;
+    if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
+      const lines = String(field.delegate_other || '').split(/\r?\n/).length || 1;
+      const extra = Math.min(28, 9 * lines + 2);
+      height += extra;
+      wrapper.style.setProperty('--delegate-height', `${extra}px`);
+    }
     wrapper.style.left = `${left}px`;
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${width}px`;
@@ -530,8 +708,22 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.style.height = `${Math.max(height, 12)}px`;
   }
 
-  async function renderPages(){
+  function positionInfoIcon(wrapper, rect){
+    const [x1, y1, x2, y2] = rect;
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const size = 16;
+    const offset = 2;
+    wrapper.style.left = `${Math.max(left, left + width - size - offset)}px`;
+    wrapper.style.top = `${Math.max(0, top - size * 0.4)}px`;
+  }
+
+  async function renderPages(opts = {}){
     if (!pdfDoc || !state || !preview) return;
+    const preserveScroll = opts?.preserveScroll === true;
+    const scrollY = preserveScroll ? window.scrollY : null;
+    const scrollX = preserveScroll ? window.scrollX : null;
     const token = ++renderToken;
     preview.innerHTML = '';
 
@@ -572,22 +764,74 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
         const isChildOnly = Number(field.child_only || 0) === 1;
-        if (!showStudentValues && isChildOnly) return;
         const valuesSource = isChildOnly ? state?.values_child : state?.values;
+        const displaySource = isChildOnly ? state?.values_child_display : state?.values_display;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
-        const fieldForRender = isChildOnly ? { ...field, can_edit: 0 } : field;
+        const displayValue = (displaySource && field.id in displaySource) ? displaySource[field.id] : value;
+        const delegateOther = (!isChildOnly && state?.values_delegate_other && field.id in state.values_delegate_other)
+          ? state.values_delegate_other[field.id]
+          : '';
+        const delegateDisplay = (!isChildOnly && state?.values_delegate_other_display && field.id in state.values_delegate_other_display)
+          ? state.values_delegate_other_display[field.id]
+          : delegateOther;
+        const fieldForRender = isChildOnly
+          ? { ...field, can_edit: 0, delegate_other: '', date_display: displayValue, value }
+          : { ...field, delegate_other: delegateDisplay, date_display: displayValue, value };
+        if (!showStudentValues && isChildOnly) {
+          if (isTextField(fieldForRender) && String(displayValue || '').trim() !== '') {
+            const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
+            if (!rect || rect.length < 4) return;
+            const viewRect = viewport.convertToViewportRectangle(rect);
+            const icon = createStudentInfoIcon(displayValue);
+            positionInfoIcon(icon, viewRect);
+            overlay.appendChild(icon);
+          }
+          return;
+        }
+        if (!showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
+          const childFieldId = Number(field.child_field_id || 0);
+          const childValue = childFieldId > 0 && state?.values_child_display && childFieldId in state.values_child_display
+            ? state.values_child_display[childFieldId]
+            : '';
+          if (String(childValue || '').trim() !== '') {
+            const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
+            if (rect && rect.length >= 4) {
+              const viewRect = viewport.convertToViewportRectangle(rect);
+              const icon = createStudentInfoIcon(childValue);
+              positionInfoIcon(icon, viewRect);
+              overlay.appendChild(icon);
+            }
+          }
+        }
         if (shouldUseWidgetRadios(fieldForRender)) {
           const options = Array.isArray(fieldForRender.options) ? fieldForRender.options : [];
           const resolvedValue = resolveOptionValue(fieldForRender, value);
-          const widgets = fieldForRender.widget_rects || [];
+          const widgets = (fieldForRender.widget_rects || [])
+            .map((widget) => {
+              let pageNum = Number(widget.page || 0);
+              if (pageNum === 0) pageNum = 1;
+              return { ...widget, pageNum };
+            })
+            .filter((widget) => widget.pageNum === p)
+            .sort((a, b) => {
+              const rectA = Array.isArray(a.rect) ? a.rect : [0, 0, 0, 0];
+              const rectB = Array.isArray(b.rect) ? b.rect : [0, 0, 0, 0];
+              const yA = Math.min(rectA[1] ?? 0, rectA[3] ?? 0);
+              const yB = Math.min(rectB[1] ?? 0, rectB[3] ?? 0);
+              if (yA !== yB) return yA - yB;
+              const xA = Math.min(rectA[0] ?? 0, rectA[2] ?? 0);
+              const xB = Math.min(rectB[0] ?? 0, rectB[2] ?? 0);
+              return xA - xB;
+            });
           const groupName = `pdf-radio-${fieldForRender.id}-${showStudentValues ? 'student' : 'teacher'}`;
-          widgets.forEach((widget) => {
-            let pageNum = Number(widget.page || 0);
-            if (pageNum === 0) pageNum = 1;
-            if (pageNum !== p) return;
-            const idx = Number(widget.index || 0);
+          widgets.forEach((widget, idx) => {
             let optValueRaw = widget.exportValue;
-            if (optValueRaw === null || optValueRaw === undefined || String(optValueRaw) === '') {
+            if (
+              optValueRaw === null
+              || optValueRaw === undefined
+              || String(optValueRaw).trim() === ''
+              || String(optValueRaw).trim().toLowerCase() === 'off'
+            ) {
               optValueRaw = options[idx] ? options[idx].value : '';
             }
             let optValue = resolveOptionValue(fieldForRender, optValueRaw);
@@ -613,6 +857,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         positionField(el, viewRect, fieldForRender);
         overlay.appendChild(el);
       });
+    }
+    if (preserveScroll && token === renderToken) {
+      requestAnimationFrame(() => window.scrollTo(scrollX ?? 0, scrollY ?? 0));
     }
   }
 
@@ -657,6 +904,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       pdfDoc = await pdfjsLib.getDocument({ url: data.template.pdf_url, withCredentials: true }).promise;
       await renderPages();
       await enrichFieldRectsFromPdf();
+      updateStudentNav();
       showSaveStatus('Bereit');
     } catch (e) {
       showError(e?.message || 'Laden fehlgeschlagen.');
@@ -672,7 +920,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentValues) {
     toggleStudentValues.addEventListener('change', () => {
       showStudentValues = toggleStudentValues.checked;
-      renderPages();
+      renderPages({ preserveScroll: true });
     });
   }
 
@@ -683,7 +931,20 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     event.preventDefault();
     toggleStudentValues.checked = !toggleStudentValues.checked;
     showStudentValues = toggleStudentValues.checked;
-    renderPages();
+    renderPages({ preserveScroll: true });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (!event.altKey) return;
+    const active = document.activeElement;
+    if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      goToStudent(state?.student_nav?.prev_id);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      goToStudent(state?.student_nav?.next_id);
+    }
   });
 
   load();

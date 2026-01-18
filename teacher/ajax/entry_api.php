@@ -704,6 +704,75 @@ function normalize_pdf_rect($rect): ?array {
   return $vals;
 }
 
+function date_format_pattern_from_meta(array $meta, ?string $fieldType = null): string {
+  $mode = (string)($meta['date_format_mode'] ?? '');
+  $preset = trim((string)($meta['date_format_preset'] ?? ''));
+  $custom = trim((string)($meta['date_format_custom'] ?? ''));
+  if ($mode === 'custom') return $custom;
+  if ($preset !== '') return $preset;
+  if (($fieldType ?? '') === 'date') {
+    if ($custom !== '') return $custom;
+    return $preset;
+  }
+  return '';
+}
+
+function format_date_value_for_field(?string $value, array $meta, ?string $fieldType = null): ?string {
+  if ($value === null) return null;
+  $raw = (string)$value;
+  if (trim($raw) === '') return $value;
+  $pattern = date_format_pattern_from_meta($meta, $fieldType);
+  if ($pattern === '') return $value;
+  $formatted = format_date_pattern($raw, $pattern);
+  if ($formatted === '' || $formatted === $raw) return $value;
+  return $formatted;
+}
+
+function format_date_value_to_iso(?string $value): ?string {
+  if ($value === null) return null;
+  $raw = trim((string)$value);
+  if ($raw === '') return $value;
+  try {
+    $dt = new DateTimeImmutable($raw);
+  } catch (Throwable $e) {
+    $datePart = substr($raw, 0, 10);
+    try {
+      $dt = new DateTimeImmutable($datePart);
+    } catch (Throwable $e2) {
+      return $value;
+    }
+  }
+  return $dt->format('Y-m-d');
+}
+
+function apply_date_iso_formatting(array $values, array $fieldMap): array {
+  foreach ($values as $fid => $val) {
+    $fieldId = (int)$fid;
+    if (!isset($fieldMap[$fieldId])) continue;
+    $meta = $fieldMap[$fieldId]['meta'] ?? [];
+    $type = $fieldMap[$fieldId]['field_type'] ?? null;
+    if (($type ?? '') !== 'date' && date_format_pattern_from_meta($meta, is_string($type) ? $type : null) === '') continue;
+    $values[$fid] = format_date_value_to_iso($val) ?? $val;
+  }
+  return $values;
+}
+
+function apply_date_formatting(array $values, array $fieldMap): array {
+  foreach ($values as $fid => $val) {
+    $fieldId = (int)$fid;
+    if (!isset($fieldMap[$fieldId])) continue;
+    $meta = $fieldMap[$fieldId]['meta'] ?? [];
+    $type = $fieldMap[$fieldId]['field_type'] ?? null;
+    $values[$fid] = format_date_value_for_field($val, $meta, is_string($type) ? $type : null) ?? $val;
+  }
+  return $values;
+}
+
+function should_format_date_field(array $meta, ?string $fieldType = null): bool {
+  if (($fieldType ?? '') === 'date') return true;
+  return date_format_pattern_from_meta($meta, $fieldType) !== '';
+}
+
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT t.id, t.name, t.template_version
@@ -1560,11 +1629,55 @@ try {
     if (!$stu || (int)($stu['class_id'] ?? 0) !== $classId) {
       throw new RuntimeException('Schüler gehört nicht zur Klasse.');
     }
+    $studentNav = [
+      'prev_id' => null,
+      'next_id' => null,
+      'prev_name' => '',
+      'next_name' => '',
+      'position' => null,
+      'total' => null,
+    ];
+    $stNav = $pdo->prepare(
+      "SELECT id, first_name, last_name
+       FROM students
+       WHERE class_id=? AND is_active=1
+       ORDER BY last_name ASC, first_name ASC"
+    );
+    $stNav->execute([$classId]);
+    $navRows = $stNav->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $navIds = [];
+    $navNames = [];
+    foreach ($navRows as $row) {
+      $sid = (int)($row['id'] ?? 0);
+      if ($sid <= 0) continue;
+      $navIds[] = $sid;
+      $navNames[$sid] = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+    }
+    $navCount = count($navIds);
+    if ($navCount > 0) {
+      $pos = array_search($studentId, $navIds, true);
+      if ($pos !== false) {
+        $studentNav['position'] = $pos + 1;
+        $studentNav['total'] = $navCount;
+        if ($pos > 0) {
+          $prevId = $navIds[$pos - 1];
+          $studentNav['prev_id'] = $prevId;
+          $studentNav['prev_name'] = (string)($navNames[$prevId] ?? '');
+        }
+        if ($pos < $navCount - 1) {
+          $nextId = $navIds[$pos + 1];
+          $studentNav['next_id'] = $nextId;
+          $studentNav['next_name'] = (string)($navNames[$nextId] ?? '');
+        }
+      }
+    }
 
     $tpl = template_for_class($pdo, $classId);
     $templateId = (int)$tpl['id'];
     $schoolYear = class_school_year($pdo, $classId);
     if ($schoolYear === '') $schoolYear = date('Y');
+    $periodLabel = 'Standard';
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
 
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
     $reportId = (int)($ri['id'] ?? 0);
@@ -1574,6 +1687,12 @@ try {
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
     $optCache = [];
     $iconCache = [];
+    $childFieldByBase = [];
+    foreach ($childFields as $childField) {
+      $base = base_field_key((string)($childField['field_name'] ?? ''));
+      if ($base === '' || isset($childFieldByBase[$base])) continue;
+      $childFieldByBase[$base] = (int)($childField['id'] ?? 0);
+    }
 
     $fields = [];
     $fieldsById = [];
@@ -1587,6 +1706,7 @@ try {
       $classId,
       $schoolYear,
       $lang,
+      $childFieldByBase,
       &$optCache,
       &$iconCache,
       &$fields,
@@ -1596,7 +1716,12 @@ try {
       &$fieldMapInput
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
-      if (is_system_bound($meta)) return;
+      $isSystemBound = is_system_bound($meta);
+      $childFieldId = 0;
+      if (!$forceChildOnly) {
+        $base = base_field_key((string)($f['field_name'] ?? ''));
+        if ($base !== '') $childFieldId = (int)($childFieldByBase[$base] ?? 0);
+      }
 
       $pageRaw = $meta['page'] ?? null;
       $page = is_numeric($pageRaw) ? (int)$pageRaw : null;
@@ -1634,22 +1759,26 @@ try {
       $periodLabel = 'Standard';
       $type = (string)($f['field_type'] ?? '');
       $isMultiline = (int)($f['is_multiline'] ?? 0);
-      $canEditField = $canEditOverride ? can_user_edit_field(
-        $pdo,
-        $u,
-        $classId,
-        $schoolYear,
-        $periodLabel,
-        $meta,
-        $type,
-        $isMultiline
-      ) : false;
+      $canEditField = false;
+      if ($canEditOverride && !$isSystemBound) {
+        $canEditField = can_user_edit_field(
+          $pdo,
+          $u,
+          $classId,
+          $schoolYear,
+          $periodLabel,
+          $meta,
+          $type,
+          $isMultiline
+        );
+      }
 
       $isClassField = is_class_field($meta);
       $fid = (int)($f['id'] ?? 0);
       $fieldMapInput[$fid] = [
         'field_type' => $type,
         'meta' => $meta,
+        'is_multiline' => $isMultiline,
       ];
       if ($isClassField) {
         $classFieldIds[] = $fid;
@@ -1670,6 +1799,8 @@ try {
         'rect' => $rect,
         'scope' => $isClassField ? 'class' : 'student',
         'child_only' => $forceChildOnly ? 1 : 0,
+        'system_bound' => $isSystemBound ? 1 : 0,
+        'child_field_id' => $childFieldId,
       ];
       $fieldsById[$fid] = true;
     };
@@ -1688,10 +1819,45 @@ try {
 
     $values = [];
     $valuesChild = [];
+    $valuesDelegateOther = [];
     if ($reportId > 0 && $studentFieldIds) {
       $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
-      $vals = load_input_values($pdo, [$reportId], $studentFieldMap, 'teacher');
-      $values = $vals[(string)$reportId] ?? [];
+      $teacherValues = load_teacher_values_for_user(
+        $pdo,
+        [$reportId],
+        $studentFieldMap,
+        $delegations,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $lang
+      );
+      $values = $teacherValues['own'][(string)$reportId] ?? [];
+      $partsForReport = $teacherValues['parts'][(string)$reportId] ?? [];
+      $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+      foreach ($partsForReport as $fid => $parts) {
+        $fieldId = (int)$fid;
+        if (!isset($studentFieldMap[$fieldId])) continue;
+        $meta = $studentFieldMap[$fieldId]['meta'] ?? [];
+        $type = (string)($studentFieldMap[$fieldId]['field_type'] ?? '');
+        $isMultiline = (int)($studentFieldMap[$fieldId]['is_multiline'] ?? 0);
+        if (!is_free_text_field($type, $isMultiline)) continue;
+        $assigned = (int)($parts['delegate_user_id'] ?? 0);
+        if ($assigned <= 0) continue;
+        $isDelegate = ($assigned === $userId) && !$isClassTeacher;
+        $otherText = $isDelegate
+          ? (string)($parts['class_text'] ?? '')
+          : (string)($parts['delegate_text'] ?? '');
+        if (trim($otherText) !== '') {
+          $valuesDelegateOther[(string)$fieldId] = $otherText;
+        }
+      }
+      $valsSystem = load_input_values($pdo, [$reportId], $studentFieldMap, 'system');
+      $valuesSystem = $valsSystem[(string)$reportId] ?? [];
+      if ($valuesSystem) {
+        $values = array_replace($values, $valuesSystem);
+      }
       $valsChild = load_input_values($pdo, [$reportId], $studentFieldMap, 'child');
       $valuesChild = $valsChild[(string)$reportId] ?? [];
     }
@@ -1701,6 +1867,13 @@ try {
       $classVals = $vals[(string)$classReportInstanceId] ?? [];
       $values = array_replace($values, $classVals);
     }
+    if ($values) $values = apply_date_iso_formatting($values, $fieldMapInput);
+    if ($valuesChild) $valuesChild = apply_date_iso_formatting($valuesChild, $fieldMapInput);
+    if ($valuesDelegateOther) $valuesDelegateOther = apply_date_iso_formatting($valuesDelegateOther, $fieldMapInput);
+
+    $valuesDisplay = $values ? apply_date_formatting($values, $fieldMapInput) : [];
+    $valuesChildDisplay = $valuesChild ? apply_date_formatting($valuesChild, $fieldMapInput) : [];
+    $valuesDelegateOtherDisplay = $valuesDelegateOther ? apply_date_formatting($valuesDelegateOther, $fieldMapInput) : [];
 
     json_out([
       'ok' => true,
@@ -1715,10 +1888,15 @@ try {
         'name' => trim((string)($stu['first_name'] ?? '') . ' ' . (string)($stu['last_name'] ?? '')),
         'report_instance_id' => $reportId,
       ],
+      'student_nav' => $studentNav,
       'class_report_instance_id' => $classReportInstanceId,
       'fields' => $fields,
       'values' => $values,
       'values_child' => $valuesChild,
+      'values_delegate_other' => $valuesDelegateOther,
+      'values_display' => $valuesDisplay,
+      'values_child_display' => $valuesChildDisplay,
+      'values_delegate_other_display' => $valuesDelegateOtherDisplay,
     ]);
   }
 
@@ -2676,6 +2854,9 @@ if ($action === 'delegations_save') {
       } else {
         $valueText = $valueText !== null ? trim($valueText) : null;
         if ($valueText === '') $valueText = null;
+        if (should_format_date_field($meta, $type)) {
+          $valueText = format_date_value_to_iso($valueText);
+        }
       }
     }
 
@@ -2796,6 +2977,9 @@ if ($action === 'delegations_save') {
       } else {
         $valueText = $valueText !== null ? trim($valueText) : null;
         if ($valueText === '') $valueText = null;
+        if (should_format_date_field($meta, $type)) {
+          $valueText = format_date_value_to_iso($valueText);
+        }
       }
     }
 
