@@ -85,23 +85,25 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     background: rgba(255,255,255,0.75);
     border: 1px solid rgba(0,0,0,0.15);
     border-radius: 4px;
-    padding: 2px 4px;
     font: 500 12px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
     --radio-color: #475a70;
   }
   .pdf-field.is-readonly:not(.is-student) {
-    background: #e7f2ff;
-    border-color: #b6d1ff;
     color: #2b4a77;
+    border: none;
+    background-color: transparent;
   }
   .pdf-field.is-student {
     --radio-color: #2e7d32;
   }
+  .pdf-field.is-student input {
+      background-color: transparent !important;
+  }
   .pdf-field.is-system {
-    background: #eef6ff;
-    border-color: #9dbcf2;
     color: #2b4a77;
+    border: none;
+    background-color: transparent;
   }
   .pdf-field.has-delegate-other {
     display: flex;
@@ -132,6 +134,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     background: transparent;
     font: inherit;
     line-height: 1.1;
+    padding: 1px;
   }
   .pdf-field select {
     background: rgba(255,255,255,0.65);
@@ -166,11 +169,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-radio-item input[type="radio"],
   .pdf-field--widget input[type="radio"] {
     appearance: none;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--radio-color);
+    width: 18px;
+    height: 18px;
     border-radius: 2px;
-    background: #fff;
+    background: aliceblue;
     position: relative;
   }
   .pdf-radio-item input[type="radio"]::before,
@@ -677,7 +679,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       }
     }
     if (['select', 'grade'].includes(String(field?.field_type || ''))) {
-      width = Math.max(width, 140);
+      width = Math.max(width, 36);
     }
     if (height < 18) height = 18;
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
