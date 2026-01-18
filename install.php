@@ -546,7 +546,7 @@ CREATE TABLE IF NOT EXISTS `option_list_templates` (
   `name` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text COLLATE utf8mb4_unicode_ci,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_by_user_id` int DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -577,7 +577,7 @@ CREATE TABLE IF NOT EXISTS `icon_library` (
   `file_ext` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,
   `mime_type` varchar(80) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `sha256` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_by_user_id` int DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_icon_storage_path` (`storage_path`),
@@ -658,15 +658,92 @@ CREATE TABLE IF NOT EXISTS `class_child_group_unlocks` (
 ALTER TABLE `classes`
   ADD CONSTRAINT `fk_classes_template_id` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
+ALTER TABLE `students`
+  ADD CONSTRAINT `fk_students_master_student` FOREIGN KEY (`master_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_students_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `student_field_values`
+  ADD CONSTRAINT `fk_sfv_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_sfv_field` FOREIGN KEY (`field_id`) REFERENCES `student_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `templates`
+  ADD CONSTRAINT `fk_templates_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `template_fields`
+  ADD CONSTRAINT `fk_template_fields_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `report_instances`
+  ADD CONSTRAINT `fk_report_instances_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_report_instances_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_report_instances_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_report_instances_locked_by` FOREIGN KEY (`locked_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `field_values`
+  ADD CONSTRAINT `fk_field_values_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_field_values_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_field_values_updated_by_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_field_values_updated_by_student` FOREIGN KEY (`updated_by_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `field_value_history`
+  ADD CONSTRAINT `fk_fvh_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_fvh_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_fvh_updated_by_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_fvh_updated_by_student` FOREIGN KEY (`updated_by_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `report_collaborators`
+  ADD CONSTRAINT `fk_report_collab_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_report_collab_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `qr_tokens`
+  ADD CONSTRAINT `fk_qr_tokens_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_qr_tokens_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `parent_portal_links`
+  ADD CONSTRAINT `fk_parent_portal_links_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_portal_links_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_portal_links_requested_by` FOREIGN KEY (`requested_by_user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_portal_links_approved_by` FOREIGN KEY (`approved_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `parent_feedback`
+  ADD CONSTRAINT `fk_parent_feedback_link` FOREIGN KEY (`link_id`) REFERENCES `parent_portal_links` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_feedback_reviewed_by` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `audit_log`
+  ADD CONSTRAINT `fk_audit_log_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_audit_log_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_audit_log_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_audit_log_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `option_list_templates`
+  ADD CONSTRAINT `fk_option_list_templates_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+          
 ALTER TABLE `option_list_items`
-  ADD CONSTRAINT `fk_option_list_items_list` FOREIGN KEY (`list_id`) REFERENCES `option_list_templates` (`id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `fk_option_list_items_list` FOREIGN KEY (`list_id`) REFERENCES `option_list_templates` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_option_list_items_icon` FOREIGN KEY (`icon_id`) REFERENCES `icon_library` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `icon_library`
+  ADD CONSTRAINT `fk_icon_library_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE `password_reset_tokens`
   ADD CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
+ALTER TABLE `text_snippets`
+  ADD CONSTRAINT `fk_text_snippets_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
 ALTER TABLE `user_class_assignments`
   ADD CONSTRAINT `fk_uca_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_uca_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `class_group_delegations`
+  ADD CONSTRAINT `fk_class_group_delegations_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_class_group_delegations_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_class_group_delegations_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_class_group_delegations_updated_by` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `class_child_group_unlocks`
+  ADD CONSTRAINT `fk_class_child_group_unlocks_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_class_child_group_unlocks_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_class_child_group_unlocks_updated_by` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
           
 CREATE TRIGGER `delete_old_password_tokens` BEFORE INSERT ON `audit_log` FOR EACH ROW DELETE FROM password_reset_tokens WHERE expires_at < NOW();
           
