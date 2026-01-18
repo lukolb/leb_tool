@@ -1371,7 +1371,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                   <button class="btn danger" type="submit"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
                 </form>
               <?php else: ?>
-                <span class="muted small"><?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?></span>
+              <button class="btn danger" type="submit" disabled title="<?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?>"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
               <?php endif; ?>
               <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
             </td>
