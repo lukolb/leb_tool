@@ -1574,6 +1574,12 @@ try {
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
     $optCache = [];
     $iconCache = [];
+    $childFieldByBase = [];
+    foreach ($childFields as $childField) {
+      $base = base_field_key((string)($childField['field_name'] ?? ''));
+      if ($base === '' || isset($childFieldByBase[$base])) continue;
+      $childFieldByBase[$base] = (int)($childField['id'] ?? 0);
+    }
 
     $fields = [];
     $fieldsById = [];
@@ -1587,6 +1593,7 @@ try {
       $classId,
       $schoolYear,
       $lang,
+      $childFieldByBase,
       &$optCache,
       &$iconCache,
       &$fields,
@@ -1596,7 +1603,12 @@ try {
       &$fieldMapInput
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
-      if (is_system_bound($meta)) return;
+      $isSystemBound = is_system_bound($meta);
+      $childFieldId = 0;
+      if (!$forceChildOnly) {
+        $base = base_field_key((string)($f['field_name'] ?? ''));
+        if ($base !== '') $childFieldId = (int)($childFieldByBase[$base] ?? 0);
+      }
 
       $pageRaw = $meta['page'] ?? null;
       $page = is_numeric($pageRaw) ? (int)$pageRaw : null;
@@ -1634,16 +1646,19 @@ try {
       $periodLabel = 'Standard';
       $type = (string)($f['field_type'] ?? '');
       $isMultiline = (int)($f['is_multiline'] ?? 0);
-      $canEditField = $canEditOverride ? can_user_edit_field(
-        $pdo,
-        $u,
-        $classId,
-        $schoolYear,
-        $periodLabel,
-        $meta,
-        $type,
-        $isMultiline
-      ) : false;
+      $canEditField = false;
+      if ($canEditOverride && !$isSystemBound) {
+        $canEditField = can_user_edit_field(
+          $pdo,
+          $u,
+          $classId,
+          $schoolYear,
+          $periodLabel,
+          $meta,
+          $type,
+          $isMultiline
+        );
+      }
 
       $isClassField = is_class_field($meta);
       $fid = (int)($f['id'] ?? 0);
@@ -1670,6 +1685,8 @@ try {
         'rect' => $rect,
         'scope' => $isClassField ? 'class' : 'student',
         'child_only' => $forceChildOnly ? 1 : 0,
+        'system_bound' => $isSystemBound ? 1 : 0,
+        'child_field_id' => $childFieldId,
       ];
       $fieldsById[$fid] = true;
     };
@@ -1692,6 +1709,11 @@ try {
       $studentFieldMap = array_intersect_key($fieldMapInput, array_flip($studentFieldIds));
       $vals = load_input_values($pdo, [$reportId], $studentFieldMap, 'teacher');
       $values = $vals[(string)$reportId] ?? [];
+      $valsSystem = load_input_values($pdo, [$reportId], $studentFieldMap, 'system');
+      $valuesSystem = $valsSystem[(string)$reportId] ?? [];
+      if ($valuesSystem) {
+        $values = array_replace($values, $valuesSystem);
+      }
       $valsChild = load_input_values($pdo, [$reportId], $studentFieldMap, 'child');
       $valuesChild = $valsChild[(string)$reportId] ?? [];
     }

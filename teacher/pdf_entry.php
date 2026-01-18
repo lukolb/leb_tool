@@ -98,6 +98,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-field.is-student {
     --radio-color: #2e7d32;
   }
+  .pdf-field.is-system {
+    background: #eef6ff;
+    border-color: #9dbcf2;
+    color: #2b4a77;
+  }
   .pdf-field textarea {
     resize: none;
   }
@@ -185,6 +190,46 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-toggle input {
     width: 14px;
     height: 14px;
+  }
+  .pdf-student-info {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid #2e7d32;
+    color: #2e7d32;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+  .pdf-student-info__tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translate(-50%, -6px);
+    background: #2e7d32;
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: pre-wrap;
+    max-width: 240px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    z-index: 5;
+  }
+  .pdf-student-info:hover .pdf-student-info__tooltip,
+  .pdf-student-info:focus-within .pdf-student-info__tooltip {
+    opacity: 1;
+    pointer-events: auto;
   }
 </style>
 
@@ -380,6 +425,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.className = 'pdf-field pdf-field--widget';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
+    if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
     const input = document.createElement('input');
     input.type = 'radio';
@@ -402,6 +448,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.className = 'pdf-field';
     if (!field.can_edit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
+    if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
     let el = null;
     const type = String(field.field_type || '');
@@ -491,6 +538,25 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return wrapper;
   }
 
+  function isTextField(field){
+    const type = String(field.field_type || '');
+    if (['checkbox', 'radio', 'select', 'grade'].includes(type)) return false;
+    return true;
+  }
+
+  function createStudentInfoIcon(value){
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-student-info';
+    wrapper.setAttribute('tabindex', '0');
+    wrapper.setAttribute('aria-label', 'Schülerwert anzeigen');
+    wrapper.textContent = 'i';
+    const tooltip = document.createElement('div');
+    tooltip.className = 'pdf-student-info__tooltip';
+    tooltip.textContent = String(value ?? '');
+    wrapper.appendChild(tooltip);
+    return wrapper;
+  }
+
   function positionField(wrapper, rect, field){
     const [x1, y1, x2, y2] = rect;
     const left = Math.min(x1, x2);
@@ -528,6 +594,17 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     wrapper.style.top = `${top}px`;
     wrapper.style.width = `${Math.max(width, 12)}px`;
     wrapper.style.height = `${Math.max(height, 12)}px`;
+  }
+
+  function positionInfoIcon(wrapper, rect){
+    const [x1, y1, x2, y2] = rect;
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.abs(x2 - x1);
+    const size = 16;
+    const offset = 2;
+    wrapper.style.left = `${Math.max(left, left + width - size - offset)}px`;
+    wrapper.style.top = `${Math.max(0, top - size * 0.4)}px`;
   }
 
   async function renderPages(){
@@ -572,10 +649,35 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const fields = fieldsByPage.get(p) || [];
       fields.forEach((field) => {
         const isChildOnly = Number(field.child_only || 0) === 1;
-        if (!showStudentValues && isChildOnly) return;
         const valuesSource = isChildOnly ? state?.values_child : state?.values;
         const value = (valuesSource && field.id in valuesSource) ? valuesSource[field.id] : '';
         const fieldForRender = isChildOnly ? { ...field, can_edit: 0 } : field;
+        if (!showStudentValues && isChildOnly) {
+          if (isTextField(fieldForRender) && String(value || '').trim() !== '') {
+            const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
+            if (!rect || rect.length < 4) return;
+            const viewRect = viewport.convertToViewportRectangle(rect);
+            const icon = createStudentInfoIcon(value);
+            positionInfoIcon(icon, viewRect);
+            overlay.appendChild(icon);
+          }
+          return;
+        }
+        if (!showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
+          const childFieldId = Number(field.child_field_id || 0);
+          const childValue = childFieldId > 0 && state?.values_child && childFieldId in state.values_child
+            ? state.values_child[childFieldId]
+            : '';
+          if (String(childValue || '').trim() !== '') {
+            const rect = Array.isArray(fieldForRender.rect) ? fieldForRender.rect : null;
+            if (rect && rect.length >= 4) {
+              const viewRect = viewport.convertToViewportRectangle(rect);
+              const icon = createStudentInfoIcon(childValue);
+              positionInfoIcon(icon, viewRect);
+              overlay.appendChild(icon);
+            }
+          }
+        }
         if (shouldUseWidgetRadios(fieldForRender)) {
           const options = Array.isArray(fieldForRender.options) ? fieldForRender.options : [];
           const resolvedValue = resolveOptionValue(fieldForRender, value);
