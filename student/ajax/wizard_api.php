@@ -293,7 +293,7 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
-     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label=?
+     WHERE template_id=? AND student_id IS NULL AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );

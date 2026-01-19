@@ -373,7 +373,7 @@ CREATE TABLE IF NOT EXISTS `template_fields` (
 CREATE TABLE IF NOT EXISTS `report_instances` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `template_id` bigint UNSIGNED NOT NULL,
-  `student_id` bigint UNSIGNED NOT NULL,
+  `student_id` bigint UNSIGNED DEFAULT NULL,
   `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `status` enum('draft','submitted','locked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',

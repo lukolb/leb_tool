@@ -245,12 +245,12 @@ function is_class_field_export(array $meta): bool {
 
 function find_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): ?int {
   // Class-wide values are stored in a dedicated report instance:
-  // student_id = 0, period_label = class_report_period_label(class_id), school_year = class school year.
+  // student_id IS NULL, period_label = class_report_period_label(class_id), school_year = class school year.
   $periodLabel = class_report_period_label($classId);
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
-     WHERE template_id=? AND student_id=0 AND school_year=? AND period_label=?
+     WHERE template_id=? AND student_id IS NULL AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
