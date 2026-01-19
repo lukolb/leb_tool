@@ -274,6 +274,15 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_column($pdo, 'students', 'qr_token')) {
       $pdo->exec("ALTER TABLE students ADD COLUMN qr_token VARCHAR(80) NULL AFTER external_ref");
     }
+    if (!db_has_column($pdo, 'students', 'email_student')) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN email_student VARCHAR(255) NULL AFTER external_ref");
+    }
+    if (!db_has_column($pdo, 'students', 'email_parent1')) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN email_parent1 VARCHAR(255) NULL AFTER email_student");
+    }
+    if (!db_has_column($pdo, 'students', 'email_parent2')) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN email_parent2 VARCHAR(255) NULL AFTER email_parent1");
+    }
     if (!db_has_column($pdo, 'students', 'login_code')) {
       $pdo->exec("ALTER TABLE students ADD COLUMN login_code VARCHAR(20) NULL AFTER qr_token");
     }

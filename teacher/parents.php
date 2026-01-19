@@ -32,6 +32,29 @@ function latest_report_for_student(PDO $pdo, int $studentId): ?array {
   return $row ?: null;
 }
 
+function sanitize_email(?string $email): ?string {
+  $email = trim((string)$email);
+  if ($email === '') return null;
+  return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+}
+
+function build_parent_mail_html(string $template, array $student, string $link): string {
+  $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+  $safeName = h($studentName);
+  $safeFirst = h((string)($student['first_name'] ?? ''));
+  $safeLast = h((string)($student['last_name'] ?? ''));
+  $safeLink = h($link);
+  $escaped = nl2br(h($template));
+  $linkHtml = '<a href="' . $safeLink . '">' . $safeLink . '</a>';
+  return strtr($escaped, [
+    '{{student_name}}' => $safeName,
+    '{{first_name}}' => $safeFirst,
+    '{{last_name}}' => $safeLast,
+    '{{parent_link}}' => $linkHtml,
+    '{{link}}' => $linkHtml,
+  ]);
+}
+
 // --- classes for teacher/admin ---
 if ($role === 'admin') {
   $classes = $pdo->query(
@@ -56,13 +79,133 @@ if ($classId <= 0 && $classes) {
 
 $alerts = [];
 $errors = [];
+$mailForm = [
+  'mode' => 'class',
+  'class_id' => $classId > 0 ? $classId : 0,
+  'student_id' => 0,
+  'subject' => '',
+  'body' => "Hallo,\n\nhier ist der Elternlink für {{student_name}}:\n{{parent_link}}\n\nViele Grüße\n",
+];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
+    $accessibleClassIds = array_values(array_filter(array_map(fn($c)=>(int)($c['id'] ?? 0), $classes), fn($id)=>$id>0));
 
-    if ($action === 'request_all') {
+    if ($action === 'send_parent_email') {
+      $mailForm = [
+        'mode' => (string)($_POST['send_mode'] ?? 'class'),
+        'class_id' => (string)($_POST['mail_class_id'] ?? ''),
+        'student_id' => (int)($_POST['mail_student_id'] ?? 0),
+        'subject' => (string)($_POST['mail_subject'] ?? ''),
+        'body' => (string)($_POST['mail_body'] ?? ''),
+      ];
+      $sendMode = $mailForm['mode'] === 'single' ? 'single' : 'class';
+      $subjectTemplate = trim((string)$mailForm['subject']);
+      $bodyTemplate = trim((string)$mailForm['body']);
+      if ($subjectTemplate === '' || $bodyTemplate === '') {
+        throw new RuntimeException('Betreff und Nachricht sind erforderlich.');
+      }
+
+      $studentsToSend = [];
+      if ($sendMode === 'single') {
+        $studentId = $mailForm['student_id'];
+        if ($studentId <= 0) throw new RuntimeException('Schüler fehlt.');
+        $stStudent = $pdo->prepare(
+          "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
+          "FROM students WHERE id=? LIMIT 1"
+        );
+        $stStudent->execute([$studentId]);
+        $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
+        if (!$studentRow) throw new RuntimeException('Schüler nicht gefunden.');
+        $studentClassId = (int)($studentRow['class_id'] ?? 0);
+        if ($role !== 'admin' && !in_array($studentClassId, $accessibleClassIds, true)) {
+          throw new RuntimeException('Keine Berechtigung.');
+        }
+        $studentsToSend = [$studentRow];
+      } else {
+        $targetClassId = (string)$mailForm['class_id'];
+        $classIds = [];
+        if ($targetClassId === 'all') {
+          $classIds = $accessibleClassIds;
+        } else {
+          $cid = (int)$targetClassId;
+          if ($cid <= 0) throw new RuntimeException('Klasse fehlt.');
+          if ($role !== 'admin' && !in_array($cid, $accessibleClassIds, true)) {
+            throw new RuntimeException('Keine Berechtigung.');
+          }
+          $classIds = [$cid];
+        }
+
+        if (!$classIds) throw new RuntimeException('Keine Klassen verfügbar.');
+        $in = implode(',', array_fill(0, count($classIds), '?'));
+        $stStudents = $pdo->prepare(
+          "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
+          "FROM students WHERE class_id IN ($in) AND is_active=1\n" .
+          "ORDER BY last_name ASC, first_name ASC"
+        );
+        $stStudents->execute($classIds);
+        $studentsToSend = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      }
+
+      if (!$studentsToSend) throw new RuntimeException('Keine Schüler gefunden.');
+
+      $linkStmt = $pdo->prepare(
+        "SELECT token\n" .
+        "FROM parent_portal_links\n" .
+        "WHERE student_id=? AND status='approved' AND (expires_at IS NULL OR expires_at > NOW())\n" .
+        "ORDER BY updated_at DESC, id DESC LIMIT 1"
+      );
+
+      $sent = 0;
+      $failed = 0;
+      $skippedNoEmail = 0;
+      $skippedNoLink = 0;
+
+      foreach ($studentsToSend as $student) {
+        $sid = (int)($student['id'] ?? 0);
+        if ($sid <= 0) continue;
+        $linkStmt->execute([$sid]);
+        $token = $linkStmt->fetchColumn();
+        if (!$token) {
+          $skippedNoLink++;
+          continue;
+        }
+        $link = absolute_url('parent/portal.php?token=' . urlencode((string)$token));
+
+        $emails = array_filter([
+          sanitize_email($student['email_parent1'] ?? null),
+          sanitize_email($student['email_parent2'] ?? null),
+        ]);
+        $emails = array_values(array_unique($emails));
+        if (!$emails) {
+          $skippedNoEmail++;
+          continue;
+        }
+
+        $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
+        $subject = strtr($subjectTemplate, [
+          '{{student_name}}' => $studentName,
+          '{{first_name}}' => (string)($student['first_name'] ?? ''),
+          '{{last_name}}' => (string)($student['last_name'] ?? ''),
+          '{{parent_link}}' => $link,
+          '{{link}}' => $link,
+        ]);
+        $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link);
+
+        foreach ($emails as $email) {
+          $ok = send_email((string)$email, $subject, $bodyHtml);
+          if ($ok) $sent++;
+          else $failed++;
+        }
+      }
+
+      $alerts[] = 'Serienmail versendet: ' . $sent . ' E-Mails. Ohne Link: ' . $skippedNoLink . ', ohne E-Mail: ' . $skippedNoEmail . '.';
+      if ($failed > 0) {
+        $errors[] = $failed . ' E-Mails konnten nicht versendet werden.';
+      }
+    } elseif ($action === 'request_all') {
       $targetClassId = (int)($_POST['class_id'] ?? 0);
       if ($targetClassId <= 0) throw new RuntimeException('Klasse fehlt.');
       if ($role !== 'admin' && !user_can_access_class($pdo, $userId, $targetClassId)) throw new RuntimeException('Keine Berechtigung.');
@@ -267,6 +410,80 @@ render_teacher_header($pageTitle);
     </div>
   </form>
 </div>
+
+<div class="card" style="margin-bottom:14px;">
+  <h2><?=h(t('teacher.parents.mail_merge_title', 'Serienmail an Eltern'))?></h2>
+  <p class="muted" style="max-width:820px;">
+    <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
+  </p>
+  <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="send_parent_email">
+
+    <div style="grid-column: 1 / -1;">
+      <label style="display:flex; gap:18px; flex-wrap:wrap;">
+        <span><input type="radio" name="send_mode" value="class" <?= ($mailForm['mode'] ?? '') !== 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_class', 'Ganze Klasse'))?></span>
+        <span><input type="radio" name="send_mode" value="single" <?= ($mailForm['mode'] ?? '') === 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_single', 'Einzeln'))?></span>
+      </label>
+    </div>
+
+    <div>
+      <label><?=h(t('teacher.parents.mail_class', 'Klasse'))?></label>
+      <select name="mail_class_id" id="mailClassSelect">
+        <?php if (count($classes) > 1): ?>
+          <option value="all" <?= ($mailForm['class_id'] ?? '') === 'all' ? 'selected' : '' ?>><?=h(t('teacher.parents.mail_class_all', 'Alle Klassen'))?></option>
+        <?php endif; ?>
+        <?php foreach ($classes as $c): ?>
+          <option value="<?= (int)$c['id'] ?>" <?= (string)($mailForm['class_id'] ?? '') === (string)$c['id'] ? 'selected' : '' ?>>
+            <?=h((string)$c['school_year'])?> · <?=h(parent_class_display($c))?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+      <div class="muted" style="font-size:12px; margin-top:4px;">
+        <?=h(t('teacher.parents.mail_class_hint', 'Für andere Klassen bitte oben die Klasse wechseln.'))?>
+      </div>
+    </div>
+
+    <div id="mailStudentWrap">
+      <label><?=h(t('teacher.parents.mail_student', 'Schüler (einzeln)'))?></label>
+      <select name="mail_student_id">
+        <option value=""><?=h(t('teacher.parents.mail_student_choose', '— wählen —'))?></option>
+        <?php foreach ($students as $s): ?>
+          <option value="<?= (int)$s['id'] ?>" <?= (int)($mailForm['student_id'] ?? 0) === (int)$s['id'] ? 'selected' : '' ?>>
+            <?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div style="grid-column: 1 / -1;">
+      <label><?=h(t('teacher.parents.mail_subject', 'Betreff'))?></label>
+      <input name="mail_subject" type="text" required value="<?=h((string)($mailForm['subject'] ?? ''))?>">
+    </div>
+
+    <div style="grid-column: 1 / -1;">
+      <label><?=h(t('teacher.parents.mail_body', 'Nachricht'))?></label>
+      <textarea name="mail_body" rows="6" required><?=h((string)($mailForm['body'] ?? ''))?></textarea>
+    </div>
+
+    <div class="actions" style="justify-content:flex-start; grid-column: 1 / -1;">
+      <button class="btn primary" type="submit"><?=h(t('teacher.parents.mail_send', 'Serienmail senden'))?></button>
+    </div>
+  </form>
+</div>
+
+<script>
+  const mailModeRadios = document.querySelectorAll('input[name="send_mode"]');
+  const mailStudentWrap = document.getElementById('mailStudentWrap');
+  function updateMailMode(){
+    const mode = Array.from(mailModeRadios).find(r => r.checked)?.value || 'class';
+    if (mailStudentWrap) {
+      mailStudentWrap.style.display = mode === 'single' ? 'block' : 'none';
+    }
+  }
+  mailModeRadios.forEach(radio => radio.addEventListener('change', updateMailMode));
+  updateMailMode();
+</script>
 
 <?php if ($classId > 0 && $students): ?>
 <div class="card" style="margin-bottom:14px;">

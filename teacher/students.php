@@ -226,6 +226,9 @@ $addFormValues = [
   'first_name' => '',
   'last_name' => '',
   'date_of_birth' => '',
+  'email_student' => '',
+  'email_parent1' => '',
+  'email_parent2' => '',
   'custom' => [],
 ];
 
@@ -256,6 +259,23 @@ function normalize_date(?string $s): ?string {
     return $m[3] . '-' . $mo . '-' . $d;
   }
   throw new RuntimeException(t('teacher.students.error_dob_format', 'Geburtsdatum Format: YYYY-MM-DD oder DD.MM.YYYY'));
+}
+
+function read_email_input(?string $value, string $label): ?string {
+  $email = trim((string)$value);
+  if ($email === '') return null;
+  if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    throw new RuntimeException(strtr(t('teacher.students.error_invalid_email', 'Ungültige E-Mail in {field}.'), [
+      '{field}' => $label,
+    ]));
+  }
+  return $email;
+}
+
+function sanitize_import_email(?string $value): ?string {
+  $email = trim((string)$value);
+  if ($email === '') return null;
+  return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
 }
 
 function parse_blackbaud_date(?string $s): ?string {
@@ -697,11 +717,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'first_name' => trim((string)($_POST['first_name'] ?? '')),
         'last_name' => trim((string)($_POST['last_name'] ?? '')),
         'date_of_birth' => (string)($_POST['date_of_birth'] ?? ''),
+        'email_student' => (string)($_POST['email_student'] ?? ''),
+        'email_parent1' => (string)($_POST['email_parent1'] ?? ''),
+        'email_parent2' => (string)($_POST['email_parent2'] ?? ''),
         'custom' => is_array($_POST['custom'] ?? null) ? $_POST['custom'] : [],
       ];
       $first = normalize_name((string)($addFormValues['first_name'] ?? ''));
       $last  = normalize_name((string)($addFormValues['last_name'] ?? ''));
       $dob   = normalize_date($addFormValues['date_of_birth'] ?? null);
+      $emailStudent = read_email_input($addFormValues['email_student'] ?? null, t('teacher.students.label_email_student', 'E-Mail Kind'));
+      $emailParent1 = read_email_input($addFormValues['email_parent1'] ?? null, t('teacher.students.label_email_parent1', 'E-Mail Parent 1'));
+      $emailParent2 = read_email_input($addFormValues['email_parent2'] ?? null, t('teacher.students.label_email_parent2', 'E-Mail Parent 2'));
       $customInput = read_custom_field_input($customFields, $addFormValues['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
@@ -711,10 +737,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $ins = $pdo->prepare(
-        "INSERT INTO students (class_id, first_name, last_name, date_of_birth, is_active)
-         VALUES (?, ?, ?, ?, 1)"
+        "INSERT INTO students (class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
       );
-      $ins->execute([$classId, $first, $last, $dob]);
+      $ins->execute([$classId, $first, $last, $dob, $emailStudent, $emailParent1, $emailParent2]);
       $newId = (int)$pdo->lastInsertId();
       // master_student_id defaults to NULL; set to itself
       $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$newId, $newId]);
@@ -727,6 +753,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'first_name' => '',
           'last_name' => '',
           'date_of_birth' => '',
+          'email_student' => '',
+          'email_parent1' => '',
+          'email_parent2' => '',
           'custom' => [],
         ];
     }
@@ -813,6 +842,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $created = 0;
       $skipped = 0;
+      $updated = 0;
       $importSkippedDetails = [];
 
       $pdo->beginTransaction();
@@ -830,6 +860,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $first = normalize_name((string)($r['Student First Name'] ?? $r['First Name'] ?? $r['Student Firstname'] ?? ''));
         $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
         $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
+        $emailStudent = sanitize_import_email($r['Student Email'] ?? $r['E-Mail Student'] ?? $r['E-Mail Schüler'] ?? $r['Email Student'] ?? null);
+        $emailParent1 = sanitize_import_email($r['E-Mail Parent 1'] ?? $r['Parent 1 Email'] ?? $r['Parent Email 1'] ?? $r['Email Parent 1'] ?? null);
+        $emailParent2 = sanitize_import_email($r['E-Mail Parent 2'] ?? $r['Parent 2 Email'] ?? $r['Parent Email 2'] ?? $r['Email Parent 2'] ?? null);
 
         $customInput = [];
         foreach ($customHeaderMap as $col => $fieldKey) {
@@ -856,12 +889,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $check->execute([$first, $last, $dob]);
-        if ($check->fetch()) {
-          $skipped++;
-          $importSkippedDetails[] = [
-            'name' => trim($first . ' ' . $last),
-            'reason' => t('teacher.students.import_duplicate', 'Schüler existiert bereits.'),
-          ];
+        $existingId = $check->fetchColumn();
+        if ($existingId) {
+          $updates = [];
+          $params = [];
+          if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
+          if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
+          if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
+          if ($updates) {
+            $params[] = (int)$existingId;
+            $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
+            $updated++;
+          } else {
+            $skipped++;
+            $importSkippedDetails[] = [
+              'name' => trim($first . ' ' . $last),
+              'reason' => t('teacher.students.import_duplicate', 'Schüler existiert bereits.'),
+            ];
+          }
           continue;
         }
 
@@ -870,6 +915,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newId = (int)$pdo->lastInsertId();
         if (!$master) {
           $setSelfMaster->execute([$newId, $newId]);
+        }
+        if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
+          $pdo->prepare(
+            "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
+          )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
         }
         if ($master) {
           $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
@@ -886,9 +936,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->commit();
 
-        audit('teacher_students_import_csv', $userId, ['class_id'=>$classId,'created'=>$created,'skipped'=>$skipped]);
-        $ok = strtr(t('teacher.students.ok_import', 'CSV-Import: angelegt {created}, übersprungen {skipped}.'), [
+        audit('teacher_students_import_csv', $userId, ['class_id'=>$classId,'created'=>$created,'skipped'=>$skipped,'updated'=>$updated]);
+        $ok = strtr(t('teacher.students.ok_import', 'CSV-Import: angelegt {created}, aktualisiert {updated}, übersprungen {skipped}.'), [
           '{created}' => (string)$created,
+          '{updated}' => (string)$updated,
           '{skipped}' => (string)$skipped,
         ]);
     }
@@ -978,7 +1029,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $st = $pdo->prepare(
-        "SELECT id, master_student_id, first_name, last_name, date_of_birth
+        "SELECT id, master_student_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2
          FROM students
          WHERE class_id=? AND is_active=1
          ORDER BY last_name ASC, first_name ASC"
@@ -991,8 +1042,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->beginTransaction();
       $ins = $pdo->prepare(
-        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
       );
 
       $copied = 0;
@@ -1011,7 +1062,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $q->execute([$classId, $master]);
         if ($q->fetch()) continue;
 
-        $ins->execute([$master, $classId, $s['first_name'], $s['last_name'], $s['date_of_birth']]);
+        $ins->execute([
+          $master,
+          $classId,
+          $s['first_name'],
+          $s['last_name'],
+          $s['date_of_birth'],
+          $s['email_student'] ?? null,
+          $s['email_parent1'] ?? null,
+          $s['email_parent2'] ?? null,
+        ]);
         $newId = (int)$pdo->lastInsertId();
         $copiedCustom = copy_student_custom_values($pdo, $sid, $newId);
         if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
@@ -1033,6 +1093,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $first = normalize_name((string)($_POST['first_name'] ?? ''));
       $last  = normalize_name((string)($_POST['last_name'] ?? ''));
       $dob   = normalize_date($_POST['date_of_birth'] ?? null);
+      $emailStudent = read_email_input($_POST['email_student'] ?? null, t('teacher.students.label_email_student', 'E-Mail Kind'));
+      $emailParent1 = read_email_input($_POST['email_parent1'] ?? null, t('teacher.students.label_email_parent1', 'E-Mail Parent 1'));
+      $emailParent2 = read_email_input($_POST['email_parent2'] ?? null, t('teacher.students.label_email_parent2', 'E-Mail Parent 2'));
       $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
@@ -1041,8 +1104,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Schüler mit gleichem Namen und Geburtsdatum existiert bereits.'));
       }
 
-      $upd = $pdo->prepare("UPDATE students SET first_name=?, last_name=?, date_of_birth=? WHERE id=?");
-      $upd->execute([$first, $last, $dob, $studentId]);
+      $upd = $pdo->prepare(
+        "UPDATE students
+         SET first_name=?, last_name=?, date_of_birth=?, email_student=?, email_parent1=?, email_parent2=?
+         WHERE id=?"
+      );
+      $upd->execute([$first, $last, $dob, $emailStudent, $emailParent1, $emailParent2, $studentId]);
       save_student_custom_values($pdo, $studentId, $customInput, false);
 
       audit('teacher_student_update', $userId, ['class_id'=>$classId,'student_id'=>$studentId]);
@@ -1057,7 +1124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Load students in this class
 $st = $pdo->prepare(
-  "SELECT id, first_name, last_name, date_of_birth, is_active
+  "SELECT id, first_name, last_name, date_of_birth, is_active, email_student, email_parent1, email_parent2
    FROM students
    WHERE class_id=?
    ORDER BY last_name ASC, first_name ASC"
@@ -1082,6 +1149,9 @@ foreach ($students as $s) {
     'first_name' => (string)($s['first_name'] ?? ''),
     'last_name' => (string)($s['last_name'] ?? ''),
     'date_of_birth' => (string)($s['date_of_birth'] ?? ''),
+    'email_student' => (string)($s['email_student'] ?? ''),
+    'email_parent1' => (string)($s['email_parent1'] ?? ''),
+    'email_parent2' => (string)($s['email_parent2'] ?? ''),
     'custom' => $studentCustomValues[$sid] ?? [],
   ];
 }
@@ -1450,6 +1520,18 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
           <input name="date_of_birth" id="edit_date_of_birth" type="date">
         </div>
+        <div>
+          <label><?=h(t('teacher.students.label_email_student', 'E-Mail Kind'))?></label>
+          <input name="email_student" id="edit_email_student" type="email" autocomplete="email">
+        </div>
+        <div>
+          <label><?=h(t('teacher.students.label_email_parent1', 'E-Mail Parent 1'))?></label>
+          <input name="email_parent1" id="edit_email_parent1" type="email" autocomplete="email">
+        </div>
+        <div>
+          <label><?=h(t('teacher.students.label_email_parent2', 'E-Mail Parent 2'))?></label>
+          <input name="email_parent2" id="edit_email_parent2" type="email" autocomplete="email">
+        </div>
 
         <?php if ($customFields): ?>
           <div style="grid-column: 1 / -1; margin-top:6px;">
@@ -1541,6 +1623,9 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       document.getElementById('edit_first_name').value = s.first_name || '';
       document.getElementById('edit_last_name').value = s.last_name || '';
       document.getElementById('edit_date_of_birth').value = s.date_of_birth || '';
+      document.getElementById('edit_email_student').value = s.email_student || '';
+      document.getElementById('edit_email_parent1').value = s.email_parent1 || '';
+      document.getElementById('edit_email_parent2').value = s.email_parent2 || '';
       customFieldKeys.forEach(key => {
         if (!key) return;
         const input = editForm.querySelector('[data-custom-key="' + key + '"]');
@@ -1901,6 +1986,18 @@ aiSupportLoading = true;
       <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
       <input name="date_of_birth" type="date" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>" value="<?=h((string)($addFormValues['date_of_birth'] ?? ''))?>">
     </div>
+    <div>
+      <label><?=h(t('teacher.students.label_email_student', 'E-Mail Kind'))?></label>
+      <input name="email_student" type="email" autocomplete="email" value="<?=h((string)($addFormValues['email_student'] ?? ''))?>">
+    </div>
+    <div>
+      <label><?=h(t('teacher.students.label_email_parent1', 'E-Mail Parent 1'))?></label>
+      <input name="email_parent1" type="email" autocomplete="email" value="<?=h((string)($addFormValues['email_parent1'] ?? ''))?>">
+    </div>
+    <div>
+      <label><?=h(t('teacher.students.label_email_parent2', 'E-Mail Parent 2'))?></label>
+      <input name="email_parent2" type="email" autocomplete="email" value="<?=h((string)($addFormValues['email_parent2'] ?? ''))?>">
+    </div>
     <?php if ($customFields): ?>
       <div style="grid-column: 1 / span 3; margin-top:6px;">
         <h3 style="margin:10px 0 0 0;"><?=h(t('teacher.students.additional_fields', 'Zusätzliche Felder'))?></h3>
@@ -1921,7 +2018,7 @@ aiSupportLoading = true;
 
 <div class="card">
   <h2><?=h(t('teacher.students.import_title', 'Schüler per Blackbaud-CSV importieren'))?></h2>
-  <p class="muted"><?=t('teacher.students.import_hint', 'CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>. Zusätzliche Felder werden per Spaltenname (Feld-Schlüssel oder Beschriftung, optional mit Präfix „Custom:“) zugeordnet.')?></p>
+  <p class="muted"><?=t('teacher.students.import_hint', 'CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>. E-Mail-Spalten (optional): <code>Student Email</code>, <code>E-Mail Parent 1</code>, <code>E-Mail Parent 2</code>. Zusätzliche Felder werden per Spaltenname (Feld-Schlüssel oder Beschriftung, optional mit Präfix „Custom:“) zugeordnet.')?></p>
 
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
