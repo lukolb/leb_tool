@@ -303,6 +303,17 @@ function read_csv_assoc(string $path): array {
   if ($rawHeader === false) { fclose($fh); return []; }
   $rawHeader = preg_replace('/^\xEF\xBB\xBF/', '', $rawHeader);
 
+  $delimiterCounts = [
+    ',' => substr_count($rawHeader, ','),
+    ';' => substr_count($rawHeader, ';'),
+    "\t" => substr_count($rawHeader, "\t"),
+  ];
+  arsort($delimiterCounts);
+  $delimiter = array_key_first($delimiterCounts);
+  if ($delimiter === null || $delimiterCounts[$delimiter] === 0) {
+    $delimiter = ',';
+  }
+
   // Put header line back into a temp stream so we can use fgetcsv consistently
   $tmp = fopen('php://temp', 'wb+');
   fwrite($tmp, $rawHeader);
@@ -310,7 +321,7 @@ function read_csv_assoc(string $path): array {
   fclose($fh);
   rewind($tmp);
 
-  $header = fgetcsv($tmp, 0, ',', '"');
+  $header = fgetcsv($tmp, 0, $delimiter, '"');
   if (!$header) { fclose($tmp); return []; }
 
   $header = array_map(static function($h) {
@@ -321,7 +332,7 @@ function read_csv_assoc(string $path): array {
   }, $header);
 
   $rows = [];
-  while (($row = fgetcsv($tmp, 0, ',', '"')) !== false) {
+  while (($row = fgetcsv($tmp, 0, $delimiter, '"')) !== false) {
     if (!$row) continue;
     $assoc = [];
     foreach ($header as $i => $h) {
