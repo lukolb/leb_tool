@@ -310,8 +310,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         <input type="checkbox" id="toggleStudentValues" />
         <?=h(t('teacher.entry.show_student_values', 'Schülerwerte anzeigen'))?>
       </label>
+      <label class="pdf-toggle">
+        <input type="checkbox" id="toggleStudentEdit" />
+        <?=h(t('teacher.entry.edit_student_values', 'Schülereinträge bearbeiten'))?>
+      </label>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
+    </div>
+    <div id="studentEditWarning" class="alert warning" style="display:none; margin-top:10px;">
+      <?=h(t('teacher.entry.edit_student_values_warning', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.'))?>
     </div>
   </div>
 
@@ -340,6 +347,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const savePill = document.getElementById('savePill');
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
+  const toggleStudentEdit = document.getElementById('toggleStudentEdit');
+  const studentEditWarning = document.getElementById('studentEditWarning');
+  const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.\n\nMöchtest du fortfahren?'))?>;
   const prevStudentBtn = document.getElementById('prevStudentBtn');
   const nextStudentBtn = document.getElementById('nextStudentBtn');
   const prevStudentLabel = document.getElementById('prevStudentLabel');
@@ -351,6 +361,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let saveTimer = null;
   let renderTimer = null;
   let showStudentValues = false;
+  let allowStudentEdit = false;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -778,7 +789,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           ? state.values_delegate_other_display[field.id]
           : delegateOther;
         const fieldForRender = isChildOnly
-          ? { ...field, can_edit: 0, delegate_other: '', date_display: displayValue, value }
+          ? {
+            ...field,
+            can_edit: allowStudentEdit ? 1 : 0,
+            delegate_other: '',
+            date_display: displayValue,
+            value
+          }
           : { ...field, delegate_other: delegateDisplay, date_display: displayValue, value };
         if (!showStudentValues && isChildOnly) {
           if (isTextField(fieldForRender) && String(displayValue || '').trim() !== '') {
@@ -868,8 +885,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
   function queueSave(field, value){
     if (!state) return;
-    state.values = state.values || {};
-    state.values[field.id] = value;
+    const isChildOnly = Number(field.child_only || 0) === 1;
+    const target = isChildOnly ? (state.values_child = state.values_child || {}) : (state.values = state.values || {});
+    target[field.id] = value;
     setSaving(true);
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveField(field, value), 250);
@@ -878,7 +896,19 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   async function saveField(field, value){
     try {
       if (!state) return;
-      if (field.scope === 'class') {
+      if (Number(field.child_only || 0) === 1) {
+        const res = await api('child_value_update', {
+          report_instance_id: state.student.report_instance_id,
+          child_field_id: field.id,
+          value_text: value
+        });
+        state.values_child = state.values_child || {};
+        state.values_child[field.id] = res?.raw_value_text ?? value;
+        state.values_child_display = state.values_child_display || {};
+        if (Object.prototype.hasOwnProperty.call(res || {}, 'value_text')) {
+          state.values_child_display[field.id] = res.value_text;
+        }
+      } else if (field.scope === 'class') {
         await api('save_class', {
           class_id: classId,
           report_instance_id: state.class_report_instance_id,
@@ -923,6 +953,24 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentValues) {
     toggleStudentValues.addEventListener('change', () => {
       showStudentValues = toggleStudentValues.checked;
+      renderPages({ preserveScroll: true });
+    });
+  }
+
+  if (toggleStudentEdit) {
+    toggleStudentEdit.addEventListener('change', () => {
+      if (toggleStudentEdit.checked) {
+        const ok = window.confirm(studentEditConfirmText);
+        if (!ok) {
+          toggleStudentEdit.checked = false;
+          return;
+        }
+        allowStudentEdit = true;
+        if (studentEditWarning) studentEditWarning.style.display = '';
+      } else {
+        allowStudentEdit = false;
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+      }
       renderPages({ preserveScroll: true });
     });
   }
