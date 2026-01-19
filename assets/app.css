@@ -251,13 +251,14 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
 .action-menu{position:relative; display:inline-flex; align-items:center}
 .action-menu .action-menu-toggle{white-space:nowrap}
 .action-menu:hover .action-dropdown-menu,
-.action-menu:focus-within .action-dropdown-menu{
+.action-menu:focus-within .action-dropdown-menu,
+.action-menu.open .action-dropdown-menu{
   display:block;
 }
 .action-dropdown-menu{
   left:auto;
   right:0;
-  top:calc(100% + 6px);
+  top: 100%;
 }
 .action-dropdown-menu{
   display:none;
@@ -269,6 +270,25 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
 }
 .action-dropdown-menu .btn{
   justify-content:flex-start;
+  background:transparent;
+  border:0;
+  border-radius:10px;
+  color:inherit;
+  font-size:14px;
+  font-weight:600;
+  padding:10px 10px;
+}
+.action-dropdown-menu .btn.secondary{ color:#0f172a; }
+.action-dropdown-menu .btn.primary{ color:var(--primary); }
+.action-dropdown-menu .btn.danger{ color:var(--danger); }
+.action-dropdown-menu .btn:hover{
+  background:rgba(0,0,0,.05);
+}
+.action-dropdown-menu .btn:disabled,
+.action-dropdown-menu .btn[disabled]{
+  background:transparent;
+  color:var(--muted);
+  cursor:not-allowed;
 }
 
 /* Admin/Lehrkraft-Link dezent */
