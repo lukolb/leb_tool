@@ -162,14 +162,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $failed = 0;
       $skippedNoEmail = 0;
       $skippedNoLink = 0;
+      $skippedNoEmailNames = [];
+      $skippedNoLinkNames = [];
+      $failedStudentNames = [];
 
       foreach ($studentsToSend as $student) {
         $sid = (int)($student['id'] ?? 0);
         if ($sid <= 0) continue;
         $linkStmt->execute([$sid]);
         $token = $linkStmt->fetchColumn();
+        $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
         if (!$token) {
           $skippedNoLink++;
+          $skippedNoLinkNames[] = $studentName;
           continue;
         }
         $link = absolute_url('parent/portal.php?token=' . urlencode((string)$token));
@@ -181,10 +186,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $emails = array_values(array_unique($emails));
         if (!$emails) {
           $skippedNoEmail++;
+          $skippedNoEmailNames[] = $studentName;
           continue;
         }
 
-        $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
         $subject = strtr($subjectTemplate, [
           '{{student_name}}' => $studentName,
           '{{first_name}}' => (string)($student['first_name'] ?? ''),
@@ -194,14 +199,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link);
 
+        $studentSent = 0;
         foreach ($emails as $email) {
           $ok = send_email((string)$email, $subject, $bodyHtml);
-          if ($ok) $sent++;
-          else $failed++;
+          if ($ok) {
+            $sent++;
+            $studentSent++;
+          } else {
+            $failed++;
+          }
+        }
+        if ($studentSent === 0) {
+          $failedStudentNames[] = $studentName;
         }
       }
 
-      $alerts[] = 'Serienmail versendet: ' . $sent . ' E-Mails. Ohne Link: ' . $skippedNoLink . ', ohne E-Mail: ' . $skippedNoEmail . '.';
+      $alertMsg = 'Serienmail versendet: ' . $sent . ' E-Mails. Ohne Link: ' . $skippedNoLink . ', ohne E-Mail: ' . $skippedNoEmail . '.';
+      $missingNames = array_values(array_filter(array_unique(array_merge($skippedNoLinkNames, $skippedNoEmailNames, $failedStudentNames))));
+      if ($missingNames) {
+        $alertMsg .= ' Keine Mail an: ' . implode(', ', $missingNames) . '.';
+      }
+      $alerts[] = $alertMsg;
       if ($failed > 0) {
         $errors[] = $failed . ' E-Mails konnten nicht versendet werden.';
       }
@@ -411,80 +429,6 @@ render_teacher_header($pageTitle);
   </form>
 </div>
 
-<div class="card" style="margin-bottom:14px;">
-  <h2><?=h(t('teacher.parents.mail_merge_title', 'Serienmail an Eltern'))?></h2>
-  <p class="muted" style="max-width:820px;">
-    <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
-  </p>
-  <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end;">
-    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-    <input type="hidden" name="action" value="send_parent_email">
-
-    <div style="grid-column: 1 / -1;">
-      <label style="display:flex; gap:18px; flex-wrap:wrap;">
-        <span><input type="radio" name="send_mode" value="class" <?= ($mailForm['mode'] ?? '') !== 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_class', 'Ganze Klasse'))?></span>
-        <span><input type="radio" name="send_mode" value="single" <?= ($mailForm['mode'] ?? '') === 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_single', 'Einzeln'))?></span>
-      </label>
-    </div>
-
-    <div>
-      <label><?=h(t('teacher.parents.mail_class', 'Klasse'))?></label>
-      <select name="mail_class_id" id="mailClassSelect">
-        <?php if (count($classes) > 1): ?>
-          <option value="all" <?= ($mailForm['class_id'] ?? '') === 'all' ? 'selected' : '' ?>><?=h(t('teacher.parents.mail_class_all', 'Alle Klassen'))?></option>
-        <?php endif; ?>
-        <?php foreach ($classes as $c): ?>
-          <option value="<?= (int)$c['id'] ?>" <?= (string)($mailForm['class_id'] ?? '') === (string)$c['id'] ? 'selected' : '' ?>>
-            <?=h((string)$c['school_year'])?> · <?=h(parent_class_display($c))?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-      <div class="muted" style="font-size:12px; margin-top:4px;">
-        <?=h(t('teacher.parents.mail_class_hint', 'Für andere Klassen bitte oben die Klasse wechseln.'))?>
-      </div>
-    </div>
-
-    <div id="mailStudentWrap">
-      <label><?=h(t('teacher.parents.mail_student', 'Schüler (einzeln)'))?></label>
-      <select name="mail_student_id">
-        <option value=""><?=h(t('teacher.parents.mail_student_choose', '— wählen —'))?></option>
-        <?php foreach ($students as $s): ?>
-          <option value="<?= (int)$s['id'] ?>" <?= (int)($mailForm['student_id'] ?? 0) === (int)$s['id'] ? 'selected' : '' ?>>
-            <?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-
-    <div style="grid-column: 1 / -1;">
-      <label><?=h(t('teacher.parents.mail_subject', 'Betreff'))?></label>
-      <input name="mail_subject" type="text" required value="<?=h((string)($mailForm['subject'] ?? ''))?>">
-    </div>
-
-    <div style="grid-column: 1 / -1;">
-      <label><?=h(t('teacher.parents.mail_body', 'Nachricht'))?></label>
-      <textarea name="mail_body" rows="6" required><?=h((string)($mailForm['body'] ?? ''))?></textarea>
-    </div>
-
-    <div class="actions" style="justify-content:flex-start; grid-column: 1 / -1;">
-      <button class="btn primary" type="submit"><?=h(t('teacher.parents.mail_send', 'Serienmail senden'))?></button>
-    </div>
-  </form>
-</div>
-
-<script>
-  const mailModeRadios = document.querySelectorAll('input[name="send_mode"]');
-  const mailStudentWrap = document.getElementById('mailStudentWrap');
-  function updateMailMode(){
-    const mode = Array.from(mailModeRadios).find(r => r.checked)?.value || 'class';
-    if (mailStudentWrap) {
-      mailStudentWrap.style.display = mode === 'single' ? 'block' : 'none';
-    }
-  }
-  mailModeRadios.forEach(radio => radio.addEventListener('change', updateMailMode));
-  updateMailMode();
-</script>
-
 <?php if ($classId > 0 && $students): ?>
 <div class="card" style="margin-bottom:14px;">
     <h2>Klassen-Freischaltung</h2>
@@ -649,8 +593,86 @@ render_teacher_header($pageTitle);
     </div>
   <?php endif; ?>
 </div>
+
+<div class="card" style="margin-top:18px; border:1px solid var(--border); background:linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);">
+  <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+    <div>
+      <h2 style="margin-bottom:6px;"><?=h(t('teacher.parents.mail_merge_title', 'Serienmail an Eltern'))?></h2>
+      <p class="muted" style="max-width:820px; margin-top:0;">
+        <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
+      </p>
+    </div>
+    <div class="pill" style="background:#eef2ff; border:1px solid #d9e2ff; color:#2d3a8c;">
+      <?=h(t('teacher.parents.mail_merge_chip', 'Serienmail'))?>
+    </div>
+  </div>
+  <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="send_parent_email">
+
+    <div style="grid-column: 1 / -1;">
+      <label style="display:flex; gap:18px; flex-wrap:wrap;">
+        <span><input type="radio" name="send_mode" value="class" <?= ($mailForm['mode'] ?? '') !== 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_class', 'Ganze Klasse'))?></span>
+        <span><input type="radio" name="send_mode" value="single" <?= ($mailForm['mode'] ?? '') === 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_single', 'Einzeln'))?></span>
+      </label>
+    </div>
+
+    <div>
+      <label><?=h(t('teacher.parents.mail_class', 'Klasse'))?></label>
+      <select name="mail_class_id" id="mailClassSelect">
+        <?php if (count($classes) > 1): ?>
+          <option value="all" <?= ($mailForm['class_id'] ?? '') === 'all' ? 'selected' : '' ?>><?=h(t('teacher.parents.mail_class_all', 'Alle Klassen'))?></option>
+        <?php endif; ?>
+        <?php foreach ($classes as $c): ?>
+          <option value="<?= (int)$c['id'] ?>" <?= (string)($mailForm['class_id'] ?? '') === (string)$c['id'] ? 'selected' : '' ?>>
+            <?=h((string)$c['school_year'])?> · <?=h(parent_class_display($c))?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+      <div class="muted" style="font-size:12px; margin-top:4px;">
+        <?=h(t('teacher.parents.mail_class_hint', 'Für andere Klassen bitte oben die Klasse wechseln.'))?>
+      </div>
+    </div>
+
+    <div id="mailStudentWrap">
+      <label><?=h(t('teacher.parents.mail_student', 'Schüler (einzeln)'))?></label>
+      <select name="mail_student_id">
+        <option value=""><?=h(t('teacher.parents.mail_student_choose', '— wählen —'))?></option>
+        <?php foreach ($students as $s): ?>
+          <option value="<?= (int)$s['id'] ?>" <?= (int)($mailForm['student_id'] ?? 0) === (int)$s['id'] ? 'selected' : '' ?>>
+            <?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div style="grid-column: 1 / -1;">
+      <label><?=h(t('teacher.parents.mail_subject', 'Betreff'))?></label>
+      <input name="mail_subject" type="text" required value="<?=h((string)($mailForm['subject'] ?? ''))?>">
+    </div>
+
+    <div style="grid-column: 1 / -1;">
+      <label><?=h(t('teacher.parents.mail_body', 'Nachricht'))?></label>
+      <textarea name="mail_body" rows="6" required><?=h((string)($mailForm['body'] ?? ''))?></textarea>
+    </div>
+
+    <div class="actions" style="justify-content:flex-start; grid-column: 1 / -1;">
+      <button class="btn primary" type="submit"><?=h(t('teacher.parents.mail_send', 'Serienmail senden'))?></button>
+    </div>
+  </form>
+</div>
   
   <script>
+  const mailModeRadios = document.querySelectorAll('input[name="send_mode"]');
+  const mailStudentWrap = document.getElementById('mailStudentWrap');
+  function updateMailMode(){
+    const mode = Array.from(mailModeRadios).find(r => r.checked)?.value || 'class';
+    if (mailStudentWrap) {
+      mailStudentWrap.style.display = mode === 'single' ? 'block' : 'none';
+    }
+  }
+  mailModeRadios.forEach(radio => radio.addEventListener('change', updateMailMode));
+  updateMailMode();
 
   async function copyToClipboard(text){
     if (!text) return;
