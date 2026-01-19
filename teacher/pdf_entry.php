@@ -223,7 +223,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     border-radius: 50%;
     background: #fff;
     border: 1px solid #2e7d32;
-    color: #2e7d32;
+    color: forestgreen;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -232,20 +232,22 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     cursor: pointer;
     pointer-events: auto;
     box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    z-index: 100;
   }
   .pdf-student-info__tooltip {
     position: absolute;
     bottom: 100%;
     left: 50%;
     transform: translate(-50%, -6px);
-    background: #2e7d32;
+    background: forestgreen;
     color: #fff;
     padding: 6px 8px;
     border-radius: 6px;
     font-size: 11px;
     line-height: 1.2;
     white-space: pre-wrap;
-    max-width: 240px;
+    max-width: 400px;
+    min-width: 200px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s ease-in-out;
@@ -930,7 +932,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           }
           return;
         }
-        if (!showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
+        if (showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
           const childFieldId = Number(field.child_field_id || 0);
           const childValue = childFieldId > 0 && state?.values_child_display && childFieldId in state.values_child_display
             ? state.values_child_display[childFieldId]
