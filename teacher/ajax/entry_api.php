@@ -1705,6 +1705,9 @@ try {
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
     $reportId = (int)($ri['id'] ?? 0);
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+    if ($reportId > 0) {
+      apply_system_bindings($pdo, $reportId);
+    }
 
     $teacherFields = load_teacher_fields($pdo, $templateId);
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
