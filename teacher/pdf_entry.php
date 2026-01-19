@@ -817,7 +817,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       }
     }
     if (['select', 'grade'].includes(String(field?.field_type || ''))) {
-      width = Math.max(width, 36);
+      width = Math.max(width, 45);
     }
     if (height < 18) height = 18;
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
