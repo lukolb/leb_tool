@@ -953,6 +953,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentValues) {
     toggleStudentValues.addEventListener('change', () => {
       showStudentValues = toggleStudentValues.checked;
+      if (!showStudentValues) {
+        allowStudentEdit = false;
+        if (toggleStudentEdit) toggleStudentEdit.checked = false;
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+      }
       renderPages({ preserveScroll: true });
     });
   }
@@ -960,6 +965,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentEdit) {
     toggleStudentEdit.addEventListener('change', () => {
       if (toggleStudentEdit.checked) {
+        if (toggleStudentValues && !toggleStudentValues.checked) {
+          toggleStudentValues.checked = true;
+          showStudentValues = true;
+        }
         const ok = window.confirm(studentEditConfirmText);
         if (!ok) {
           toggleStudentEdit.checked = false;
