@@ -2149,13 +2149,14 @@ render_teacher_header($pageTitle);
 
       const val = String(card.getAttribute('data-value') || '');
       const select = () => {
+        if (card.classList.contains('selected')) {
+          const merged = saveMerged('');
+          updateOptionCardGroup(wrap, null);
+          syncMissingClass(card, merged);
+          return;
+        }
         const merged = saveMerged(val);
-        wrap.querySelectorAll('[data-option-card="1"]').forEach(btn => {
-          const match = String(btn.getAttribute('data-value') || '') === val;
-          btn.classList.toggle('selected', match);
-          btn.setAttribute('aria-pressed', match ? 'true' : 'false');
-          btn.setAttribute('tabindex', match ? '0' : '-1');
-        });
+        updateOptionCardGroup(wrap, val);
         syncMissingClass(card, merged);
       };
 
@@ -2334,13 +2335,14 @@ render_teacher_header($pageTitle);
       const val = String(card.getAttribute('data-value') || '');
 
       const select = () => {
+        if (card.classList.contains('selected')) {
+          scheduleChildSave(reportId, fieldId, '', labelText);
+          updateOptionCardGroup(wrap, null);
+          syncMissingClass(card, '');
+          return;
+        }
         scheduleChildSave(reportId, fieldId, val, labelText);
-        wrap.querySelectorAll('[data-option-card="1"]').forEach(btn => {
-          const match = String(btn.getAttribute('data-value') || '') === val;
-          btn.classList.toggle('selected', match);
-          btn.setAttribute('aria-pressed', match ? 'true' : 'false');
-          btn.setAttribute('tabindex', match ? '0' : '-1');
-        });
+        updateOptionCardGroup(wrap, val);
         syncMissingClass(card, val);
       };
 
@@ -3043,6 +3045,20 @@ render_teacher_header($pageTitle);
     }
     if (!studentGroupSelect.value) studentGroupSelect.value = 'ALL';
     ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+  }
+
+  function updateOptionCardGroup(wrap, selectedValue){
+    const cards = Array.from(wrap.querySelectorAll('[data-option-card="1"]'));
+    cards.forEach(btn => {
+      const match = selectedValue !== null && String(btn.getAttribute('data-value') || '') === selectedValue;
+      btn.classList.toggle('selected', match);
+      btn.setAttribute('aria-pressed', match ? 'true' : 'false');
+      btn.setAttribute('tabindex', match ? '0' : '-1');
+    });
+    if (selectedValue === null) {
+      const first = cards.find(btn => !btn.disabled && isVisibleElement(btn)) || cards[0];
+      if (first) first.setAttribute('tabindex', '0');
+    }
   }
 
   function renderClassFields(){
