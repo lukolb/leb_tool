@@ -66,6 +66,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/de.js" defer></script>
 
 <style>
   .pdf-entry-wrap { max-width: 1200px; margin: 0 auto; }
@@ -343,6 +344,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const classId = <?=json_encode($classId)?>;
   const studentId = <?=json_encode($studentId)?>;
   const csrf = <?=json_encode(csrf_token())?>;
+  const UI_LANG = <?=json_encode(ui_lang())?>;
 
   const preview = document.getElementById('pdfEntryPreview');
   const errBox = document.getElementById('errBox');
@@ -478,10 +480,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (typeof window.flatpickr !== 'function') return;
     const pattern = String(field.date_format || '').trim();
     const altFormat = pattern ? flatpickrFormatFromPattern(pattern) : '';
+    const locale = (UI_LANG === 'de' && window.flatpickr?.l10ns?.de)
+      ? window.flatpickr.l10ns.de
+      : undefined;
     window.flatpickr(el, {
       dateFormat: 'Y-m-d',
       altInput: altFormat !== '' && altFormat !== 'Y-m-d',
       altFormat: altFormat || 'Y-m-d',
+      locale,
       allowInput: true,
       onChange: (selectedDates, dateStr, instance) => {
         const next = selectedDates && selectedDates.length
