@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
+import os
 import sys
+
+VENDOR_DIR = os.path.join(os.path.dirname(__file__), "vendor", "pypdf")
+if VENDOR_DIR not in sys.path:
+    sys.path.insert(0, VENDOR_DIR)
 
 from pypdf import PdfReader, PdfWriter
 
