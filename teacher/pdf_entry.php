@@ -87,7 +87,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     border-radius: 4px;
     font: 500 12px/1.1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     pointer-events: auto;
-    --radio-color: #475a70;
+    --radio-color: royalblue;
   }
   .pdf-field.is-readonly:not(.is-student) {
     color: #2b4a77;
@@ -95,10 +95,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     background-color: transparent;
   }
   .pdf-field.is-student {
-    --radio-color: #2e7d32;
+    --radio-color: forestgreen;
   }
-  .pdf-field.is-student input {
+  .pdf-field.is-readonly input {
       background-color: transparent !important;
+  }
+  .pdf-field.is-readonly:not(.is-student) {
+    --radio-color: lightsteelblue;
   }
   .pdf-field.is-system {
     color: #2b4a77;
@@ -260,7 +263,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     pointer-events: none;
   }
   .pdf-student-nav.left { left: 12px; }
-  .pdf-student-nav.right { right: 12px; }
+  .pdf-student-nav.right { right: 12px; align-items: end; }
   .pdf-student-nav button {
     pointer-events: auto;
     width: 40px;
@@ -925,27 +928,26 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   }
 
   document.addEventListener('keydown', (event) => {
-    const key = String(event.key || '').toLowerCase();
-    if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || key !== 's') return;
-    if (!toggleStudentValues) return;
+  if (!event.altKey) return;
+
+  const active = document.activeElement;
+  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return;
+
+  if (event.key === 'ArrowLeft') {
     event.preventDefault();
+    goToStudent(state?.student_nav?.prev_id);
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    goToStudent(state?.student_nav?.next_id);
+  } else if (event.code === 'KeyS') {
+    event.preventDefault();
+    if (!toggleStudentValues) return;
     toggleStudentValues.checked = !toggleStudentValues.checked;
     showStudentValues = toggleStudentValues.checked;
     renderPages({ preserveScroll: true });
-  });
+  }
+}, { capture: true });
 
-  document.addEventListener('keydown', (event) => {
-    if (!event.altKey) return;
-    const active = document.activeElement;
-    if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return;
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      goToStudent(state?.student_nav?.prev_id);
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      goToStudent(state?.student_nav?.next_id);
-    }
-  });
 
   load();
 </script>
