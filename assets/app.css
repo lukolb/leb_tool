@@ -248,25 +248,20 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
     cursor: not-allowed;
 }
 .actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px}
-.action-dropdown{position:relative; display:inline-block}
-.action-dropdown summary{list-style:none}
-.action-dropdown summary::-webkit-details-marker{display:none}
-.action-dropdown-menu{
-  position:absolute;
-  z-index:20;
-  top:calc(100% + 6px);
-  right:0;
-  min-width:220px;
-  padding:10px;
-  background:#fff;
-  border:1px solid var(--border);
-  border-radius:12px;
-  box-shadow:0 10px 24px rgba(15,23,42,0.15);
-  display:none;
-  flex-direction:column;
-  gap:8px;
+.action-menu{position:relative; display:inline-flex; align-items:center}
+.action-menu .action-menu-toggle{white-space:nowrap}
+.action-menu:hover .action-dropdown-menu,
+.action-menu:focus-within .action-dropdown-menu{
+  display:block;
 }
-.action-dropdown[open] .action-dropdown-menu{display:flex}
+.action-dropdown-menu{
+  left:auto;
+  right:0;
+  top:calc(100% + 6px);
+}
+.action-dropdown-menu{
+  display:none;
+}
 .action-dropdown-menu .btn,
 .action-dropdown-menu form,
 .action-dropdown-menu a{

@@ -1347,9 +1347,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
               <?php endif; ?>
             </td>
             <td>
-              <details class="action-dropdown">
-                <summary class="btn secondary"><?=h(t('teacher.students.actions', 'Aktionen'))?></summary>
-                <div class="action-dropdown-menu" role="menu">
+              <div class="action-menu">
+                <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="true">
+                  <?=h(t('teacher.students.actions', 'Aktionen'))?> <span aria-hidden="true">▾</span>
+                </button>
+                <div class="nav-dropdown action-dropdown-menu" role="menu">
                   <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
 
                   <?php if ($ai_enabled) : ?>
@@ -1379,7 +1381,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                   <?php endif; ?>
                   <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
                 </div>
-              </details>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
