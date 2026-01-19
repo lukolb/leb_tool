@@ -1222,71 +1222,77 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;"><?=h(t('teacher.students.child_group_card', 'Kategorien für Schüler'))?></h2>
+  <details>
+    <summary>
+      <h2 style="margin:0;"><?=h(t('teacher.students.child_group_card', 'Kategorien für Schüler'))?></h2>
+    </summary>
 
-  <?php if (!$activeTpl): ?>
-    <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kategorien können nicht gesteuert werden.'))?></div>
-  <?php elseif (!$childGroups): ?>
-    <div class="alert"><?=h(t('teacher.students.no_child_groups', 'Keine Schülerfelder mit Kategorien gefunden.'))?></div>
-  <?php else: ?>
-    <p class="muted" style="margin:0 0 10px 0;">
-      <?=h(t('teacher.students.child_group_hint', 'Wähle aus, welche Kategorien die Schüler aktuell bearbeiten dürfen. Nicht ausgewählte Kategorien bleiben gesperrt.'))?>
-    </p>
-
-    <div class="row-actions" style="margin-bottom:10px;">
-      <?php if ($groupUnlockInfo['active']): ?>
-        <span class="pill"><?=h(t('teacher.students.child_group_mode_selected', 'Auswahl aktiv'))?></span>
+    <div style="margin-top:12px;">
+      <?php if (!$activeTpl): ?>
+        <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kategorien können nicht gesteuert werden.'))?></div>
+      <?php elseif (!$childGroups): ?>
+        <div class="alert"><?=h(t('teacher.students.no_child_groups', 'Keine Schülerfelder mit Kategorien gefunden.'))?></div>
       <?php else: ?>
-        <span class="pill"><?=h(t('teacher.students.child_group_mode_all', 'Alle Kategorien freigegeben'))?></span>
+        <p class="muted" style="margin:0 0 10px 0;">
+          <?=h(t('teacher.students.child_group_hint', 'Wähle aus, welche Kategorien die Schüler aktuell bearbeiten dürfen. Nicht ausgewählte Kategorien bleiben gesperrt.'))?>
+        </p>
+
+        <div class="row-actions" style="margin-bottom:10px;">
+          <?php if ($groupUnlockInfo['active']): ?>
+            <span class="pill"><?=h(t('teacher.students.child_group_mode_selected', 'Auswahl aktiv'))?></span>
+          <?php else: ?>
+            <span class="pill"><?=h(t('teacher.students.child_group_mode_all', 'Alle Kategorien freigegeben'))?></span>
+          <?php endif; ?>
+        </div>
+
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="child_group_unlocks">
+
+          <table class="table">
+            <thead>
+              <tr>
+                <th><?=h(t('teacher.students.child_group_col_name', 'Kategorie'))?></th>
+                <th><?=h(t('teacher.students.child_group_col_unlock', 'Freigabe'))?></th>
+                <th><?=h(t('teacher.students.child_group_col_progress', 'Bearbeitungsstand'))?></th>
+                <th><?=h(t('teacher.students.child_group_col_fields', 'Felder'))?></th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($childGroups as $gKey => $gData): ?>
+                <?php
+                  $isUnlocked = $groupUnlockInfo['active']
+                    ? (bool)($groupUnlockInfo['map'][$gKey] ?? false)
+                    : true;
+                  $prog = $groupProgress[$gKey] ?? ['students_done'=>0,'students_total'=>0,'fields_total'=>count($gData['field_ids'] ?? []),'students_percent'=>null];
+                  $pct = $prog['students_percent'] !== null ? (string)$prog['students_percent'] : '–';
+                ?>
+                <tr>
+                  <td><?=h((string)($gData['title'] ?? $gKey))?></td>
+                  <td>
+                    <label style="display:flex; align-items:center; gap:8px;">
+                      <input type="checkbox" name="group_unlocks[]" value="<?=h((string)$gKey)?>" <?= $isUnlocked ? 'checked' : '' ?>>
+                      <span><?= $isUnlocked ? h(t('teacher.students.child_group_unlocked', 'freigegeben')) : h(t('teacher.students.child_group_locked', 'gesperrt')) ?></span>
+                    </label>
+                  </td>
+                  <td>
+                    <?=h((string)($prog['students_done'] ?? 0))?> / <?=h((string)($prog['students_total'] ?? 0))?>
+                    <span class="muted small">(<?=h($pct)?> %)</span>
+                  </td>
+                  <td><?=h((string)($prog['fields_total'] ?? 0))?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+
+          <div class="actions" style="justify-content:flex-start; margin-top:12px;">
+            <button class="btn primary" type="submit"><?=h(t('teacher.students.child_group_save', 'Kategorien speichern'))?></button>
+          </div>
+        </form>
       <?php endif; ?>
     </div>
-
-    <form method="post">
-      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-      <input type="hidden" name="action" value="child_group_unlocks">
-
-      <table class="table">
-        <thead>
-          <tr>
-            <th><?=h(t('teacher.students.child_group_col_name', 'Kategorie'))?></th>
-            <th><?=h(t('teacher.students.child_group_col_unlock', 'Freigabe'))?></th>
-            <th><?=h(t('teacher.students.child_group_col_progress', 'Bearbeitungsstand'))?></th>
-            <th><?=h(t('teacher.students.child_group_col_fields', 'Felder'))?></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($childGroups as $gKey => $gData): ?>
-            <?php
-              $isUnlocked = $groupUnlockInfo['active']
-                ? (bool)($groupUnlockInfo['map'][$gKey] ?? false)
-                : true;
-              $prog = $groupProgress[$gKey] ?? ['students_done'=>0,'students_total'=>0,'fields_total'=>count($gData['field_ids'] ?? []),'students_percent'=>null];
-              $pct = $prog['students_percent'] !== null ? (string)$prog['students_percent'] : '–';
-            ?>
-            <tr>
-              <td><?=h((string)($gData['title'] ?? $gKey))?></td>
-              <td>
-                <label style="display:flex; align-items:center; gap:8px;">
-                  <input type="checkbox" name="group_unlocks[]" value="<?=h((string)$gKey)?>" <?= $isUnlocked ? 'checked' : '' ?>>
-                  <span><?= $isUnlocked ? h(t('teacher.students.child_group_unlocked', 'freigegeben')) : h(t('teacher.students.child_group_locked', 'gesperrt')) ?></span>
-                </label>
-              </td>
-              <td>
-                <?=h((string)($prog['students_done'] ?? 0))?> / <?=h((string)($prog['students_total'] ?? 0))?>
-                <span class="muted small">(<?=h($pct)?> %)</span>
-              </td>
-              <td><?=h((string)($prog['fields_total'] ?? 0))?></td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-
-      <div class="actions" style="justify-content:flex-start; margin-top:12px;">
-        <button class="btn primary" type="submit"><?=h(t('teacher.students.child_group_save', 'Kategorien speichern'))?></button>
-      </div>
-    </form>
-  <?php endif; ?>
+  </details>
 </div>
 
 
