@@ -446,6 +446,54 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return data;
   }
 
+  function queryRadioGroupInputs(name){
+    if (!name) return [];
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return Array.from(document.querySelectorAll(`input[name="${CSS.escape(name)}"]`));
+    }
+    const safe = String(name).replace(/"/g, '\\"');
+    return Array.from(document.querySelectorAll(`input[name="${safe}"]`));
+  }
+
+  function updateRadioWasChecked(groupName, active){
+    const inputs = queryRadioGroupInputs(groupName);
+    inputs.forEach((el) => {
+      el.dataset.waschecked = (active && el === active && el.checked) ? '1' : '0';
+    });
+  }
+
+  function resetRadioWasChecked(groupName){
+    const inputs = queryRadioGroupInputs(groupName);
+    inputs.forEach((el) => {
+      el.dataset.waschecked = '0';
+    });
+  }
+
+  function bindRadioToggle(input, field, groupName){
+    input.dataset.waschecked = input.checked ? '1' : '0';
+    input.addEventListener('click', () => {
+      if (!field.can_edit) return;
+      if (input.checked && input.dataset.waschecked === '1') {
+        input.checked = false;
+        input.dataset.waschecked = '0';
+        resetRadioWasChecked(groupName);
+        queueSave(field, '');
+        return;
+      }
+      if (input.checked) {
+        updateRadioWasChecked(groupName, input);
+        queueSave(field, input.value);
+      }
+    });
+    input.addEventListener('change', () => {
+      if (!field.can_edit) return;
+      if (input.checked) {
+        updateRadioWasChecked(groupName, input);
+        queueSave(field, input.value);
+      }
+    });
+  }
+
   function groupFieldsByPage(fields){
     const map = new Map();
     fields.forEach((f) => {
@@ -564,10 +612,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     input.checked = String(currentValue ?? '') === String(optionValue ?? '');
     input.setAttribute('aria-label', String(optionLabel || field.label || field.field_name || ''));
     if (!field.can_edit) input.disabled = true;
-    input.addEventListener('change', () => {
-      if (!field.can_edit) return;
-      queueSave(field, input.value);
-    });
+    bindRadioToggle(input, field, groupName);
 
     wrapper.appendChild(input);
     return wrapper;
@@ -609,6 +654,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         input.value = String(opt.value ?? '');
         input.checked = resolvedValue === input.value;
         if (!field.can_edit) input.disabled = true;
+        bindRadioToggle(input, field, name);
         const text = document.createElement('span');
         text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
         item.appendChild(input);
@@ -665,11 +711,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       queueSave(field, nextVal);
     };
 
-    if (useRadioGroup) {
-      el.addEventListener('change', handler);
-    } else if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    if (!useRadioGroup && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) {
       el.addEventListener('blur', handler);
-    } else {
+    } else if (!useRadioGroup) {
       el.addEventListener('change', handler);
     }
 
