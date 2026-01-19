@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import importlib.util
 import os
 import sys
 
@@ -32,12 +31,11 @@ def main() -> int:
             | UserAccessPermissions.PRINT_TO_REPRESENTATION
             | UserAccessPermissions.EXTRACT_TEXT_AND_GRAPHICS
         )
-        algorithm = "AES-256" if importlib.util.find_spec("cryptography") else None
         writer.encrypt(
             user_password="",
             owner_password=password,
             permissions_flag=permissions,
-            algorithm=algorithm,
+            use_128bit=True,
         )
 
         with open(output_path, "wb") as f:
