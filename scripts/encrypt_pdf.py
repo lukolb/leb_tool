@@ -19,10 +19,9 @@ def main() -> int:
     password = sys.argv[3]
 
     try:
-        reader = PdfReader(input_path)
+        reader = PdfReader(input_path, strict=False)
         writer = PdfWriter()
-        for page in reader.pages:
-            writer.add_page(page)
+        writer.append_pages_from_reader(reader)
         if reader.metadata:
             writer.add_metadata(reader.metadata)
 
