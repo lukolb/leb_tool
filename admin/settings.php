@@ -155,6 +155,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
       if (!isset($cfg['parent']) || !is_array($cfg['parent'])) $cfg['parent'] = [];
       $cfg['parent']['download_enabled'] = isset($_POST['parent_download_enabled']);
+      if (isset($_POST['parent_download_password_present'])) {
+        $newPassword = trim((string)($_POST['parent_download_password'] ?? ''));
+        $shouldClear = isset($_POST['parent_download_password_clear']);
+        if ($newPassword !== '') {
+          $cfg['parent']['download_password'] = $newPassword;
+        } elseif ($shouldClear) {
+          $cfg['parent']['download_password'] = '';
+        }
+      }
     }
 
     // ---- Logo actions ----
@@ -245,6 +254,7 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
+$parentDownloadPassword = (string)($parentCfg['download_password'] ?? '');
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -441,11 +451,22 @@ render_admin_header('Admin – Settings');
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="parent_download_enabled_present" value="1">
+    <input type="hidden" name="parent_download_password_present" value="1">
 
     <label class="chk">
       <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>> Download-Button in der Elternansicht anzeigen
     </label>
     <p class="muted">Der Download erzeugt eine signierte, nicht bearbeitbare PDF-Version.</p>
+
+    <label>Download-Passwort (PDF-Schutz)</label>
+    <input name="parent_download_password" type="password" value="" placeholder="z.B. Elternmodus-2025">
+    <p class="muted">
+      Das Passwort schützt die PDF vor Änderungen (auch in Acrobat). Es wird nicht an Eltern weitergegeben.
+      <?= $parentDownloadPassword !== '' ? 'Aktuell gesetzt.' : 'Noch nicht gesetzt.' ?>
+    </p>
+    <label class="chk" style="margin-top:6px;">
+      <input type="checkbox" name="parent_download_password_clear" value="1"> Passwort löschen
+    </label>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>

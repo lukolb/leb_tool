@@ -45,6 +45,8 @@ return [
   'parent' => [
     // Eltern dürfen eine signierte, schreibgeschützte PDF herunterladen.
     'download_enabled' => false,
+    // Passwort zum Schutz der PDF vor Änderungen.
+    'download_password' => '',
   ],
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über

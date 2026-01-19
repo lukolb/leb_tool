@@ -384,7 +384,9 @@ $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
 $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
-$allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
+$downloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
+$downloadPassword = trim((string)($parentCfg['download_password'] ?? ''));
+$allowDownload = $downloadEnabled && $downloadPassword !== '';
 $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
 ?>
@@ -527,6 +529,8 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const preview = document.getElementById('pdfPreview');
     const downloadBtn = document.getElementById('downloadPdfBtn');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    const downloadUrl = <?= json_encode(url('parent/download.php?token=' . urlencode($token))) ?>;
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -835,6 +839,24 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       renderPages(bytes);
     }
 
+    async function requestEncryptedDownload(bytes){
+      const formData = new FormData();
+      formData.append('csrf_token', csrfToken);
+      formData.append('pdf', new Blob([bytes], { type: 'application/pdf' }), downloadName || 'bericht.pdf');
+
+      const resp = await fetch(downloadUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(msg || 'Download fehlgeschlagen.');
+      }
+      return await resp.blob();
+    }
+
     if (downloadBtn) {
       downloadBtn.addEventListener('click', async () => {
         if (!downloadBtn) return;
@@ -843,7 +865,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         downloadBtn.textContent = 'PDF wird erstellt…';
         try {
           const bytes = await buildPdfBytes({ flatten: true });
-          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const blob = await requestEncryptedDownload(bytes);
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
