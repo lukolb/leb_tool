@@ -64,6 +64,10 @@ render_teacher_header($pageTitle);
 $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
 ?>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/de.js" defer></script>
+
 <style>
   .pdf-entry-wrap { max-width: 1200px; margin: 0 auto; }
   #pdfEntryPreview { position: relative; }
@@ -219,7 +223,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     border-radius: 50%;
     background: #fff;
     border: 1px solid #2e7d32;
-    color: #2e7d32;
+    color: forestgreen;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -228,20 +232,22 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     cursor: pointer;
     pointer-events: auto;
     box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    z-index: 100;
   }
   .pdf-student-info__tooltip {
     position: absolute;
     bottom: 100%;
     left: 50%;
     transform: translate(-50%, -6px);
-    background: #2e7d32;
+    background: forestgreen;
     color: #fff;
     padding: 6px 8px;
     border-radius: 6px;
     font-size: 11px;
     line-height: 1.2;
     white-space: pre-wrap;
-    max-width: 240px;
+    max-width: 400px;
+    min-width: 200px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.15s ease-in-out;
@@ -310,8 +316,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         <input type="checkbox" id="toggleStudentValues" />
         <?=h(t('teacher.entry.show_student_values', 'Schülerwerte anzeigen'))?>
       </label>
+      <label class="pdf-toggle">
+        <input type="checkbox" id="toggleStudentEdit" />
+        <?=h(t('teacher.entry.edit_student_values', 'Schülereinträge bearbeiten'))?>
+      </label>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
+    </div>
+    <div id="studentEditWarning" class="alert warning" style="display:none; margin-top:10px;">
+      <?=h(t('teacher.entry.edit_student_values_warning', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.'))?>
     </div>
   </div>
 
@@ -333,6 +346,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const classId = <?=json_encode($classId)?>;
   const studentId = <?=json_encode($studentId)?>;
   const csrf = <?=json_encode(csrf_token())?>;
+  const UI_LANG = <?=json_encode(ui_lang())?>;
 
   const preview = document.getElementById('pdfEntryPreview');
   const errBox = document.getElementById('errBox');
@@ -340,10 +354,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const savePill = document.getElementById('savePill');
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
+  const toggleStudentEdit = document.getElementById('toggleStudentEdit');
+  const studentEditWarning = document.getElementById('studentEditWarning');
+  const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.\n\nMöchtest du fortfahren?'))?>;
   const prevStudentBtn = document.getElementById('prevStudentBtn');
   const nextStudentBtn = document.getElementById('nextStudentBtn');
   const prevStudentLabel = document.getElementById('prevStudentLabel');
   const nextStudentLabel = document.getElementById('nextStudentLabel');
+  const prefStorageKey = 'pdf_entry_prefs';
 
   let pdfDoc = null;
   let state = null;
@@ -351,6 +369,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let saveTimer = null;
   let renderTimer = null;
   let showStudentValues = false;
+  let allowStudentEdit = false;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -364,6 +383,31 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     saveStatus.style.display = '';
     saveStatus.style.background = isError ? '#ffe5e5' : '#f1f3f7';
     saveStatus.style.color = isError ? '#a40000' : '#111';
+  }
+
+  function loadPrefs(){
+    try {
+      const raw = window.localStorage.getItem(prefStorageKey);
+      if (!raw) return { showStudentValues: false, allowStudentEdit: false };
+      const parsed = JSON.parse(raw);
+      return {
+        showStudentValues: Boolean(parsed?.showStudentValues),
+        allowStudentEdit: Boolean(parsed?.allowStudentEdit),
+      };
+    } catch {
+      return { showStudentValues: false, allowStudentEdit: false };
+    }
+  }
+
+  function savePrefs(){
+    try {
+      window.localStorage.setItem(prefStorageKey, JSON.stringify({
+        showStudentValues,
+        allowStudentEdit,
+      }));
+    } catch {
+      // ignore storage errors
+    }
   }
 
   function setSaving(active){
@@ -407,6 +451,98 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
+  }
+
+  function queryRadioGroupInputs(name){
+    if (!name) return [];
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return Array.from(document.querySelectorAll(`input[name="${CSS.escape(name)}"]`));
+    }
+    const safe = String(name).replace(/"/g, '\\"');
+    return Array.from(document.querySelectorAll(`input[name="${safe}"]`));
+  }
+
+  function flatpickrFormatFromPattern(pattern){
+    if (!pattern) return '';
+    const map = {
+      'MMMM': 'F',
+      'MMM': 'M',
+      'YYYY': 'Y',
+      'YY': 'y',
+      'DD': 'd',
+      'D': 'j',
+      'MM': 'm',
+      'M': 'n'
+    };
+    return pattern.replace(/MMMM|MMM|YYYY|YY|DD|MM|D|M/g, (tok) => map[tok] || tok);
+  }
+
+  function initDatePicker(el, field){
+    if (!el || !field || !field.can_edit) return;
+    if (typeof window.flatpickr !== 'function') return;
+    const pattern = String(field.date_format || '').trim();
+    const altFormat = pattern ? flatpickrFormatFromPattern(pattern) : '';
+    const locale = (UI_LANG === 'de' && window.flatpickr?.l10ns?.de)
+      ? window.flatpickr.l10ns.de
+      : undefined;
+    window.flatpickr(el, {
+      dateFormat: 'Y-m-d',
+      altInput: altFormat !== '' && altFormat !== 'Y-m-d',
+      altFormat: altFormat || 'Y-m-d',
+      locale,
+      allowInput: true,
+      onChange: (selectedDates, dateStr, instance) => {
+        const next = selectedDates && selectedDates.length
+          ? instance.formatDate(selectedDates[0], 'Y-m-d')
+          : '';
+        queueSave(field, next);
+      },
+      onClose: (selectedDates, dateStr, instance) => {
+        const next = selectedDates && selectedDates.length
+          ? instance.formatDate(selectedDates[0], 'Y-m-d')
+          : (dateStr || '');
+        queueSave(field, next);
+      }
+    });
+  }
+
+  function updateRadioWasChecked(groupName, active){
+    const inputs = queryRadioGroupInputs(groupName);
+    inputs.forEach((el) => {
+      el.dataset.waschecked = (active && el === active && el.checked) ? '1' : '0';
+    });
+  }
+
+  function resetRadioWasChecked(groupName){
+    const inputs = queryRadioGroupInputs(groupName);
+    inputs.forEach((el) => {
+      el.dataset.waschecked = '0';
+    });
+  }
+
+  function bindRadioToggle(input, field, groupName){
+    input.dataset.waschecked = input.checked ? '1' : '0';
+    input.addEventListener('click', () => {
+      if (!field.can_edit) return;
+      if (input.checked && input.dataset.waschecked === '1') {
+        input.checked = false;
+        input.dataset.waschecked = '0';
+        resetRadioWasChecked(groupName);
+        queueSave(field, '');
+        return;
+      }
+      if (input.checked) {
+        updateRadioWasChecked(groupName, input);
+        queueSave(field, input.value);
+      }
+    });
+    input.addEventListener('change', () => {
+      if (!field.can_edit) return;
+      if (input.checked) {
+        updateRadioWasChecked(groupName, input);
+        queueSave(field, input.value);
+      }
+    });
   }
 
   function groupFieldsByPage(fields){
@@ -527,10 +663,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     input.checked = String(currentValue ?? '') === String(optionValue ?? '');
     input.setAttribute('aria-label', String(optionLabel || field.label || field.field_name || ''));
     if (!field.can_edit) input.disabled = true;
-    input.addEventListener('change', () => {
-      if (!field.can_edit) return;
-      queueSave(field, input.value);
-    });
+    bindRadioToggle(input, field, groupName);
 
     wrapper.appendChild(input);
     return wrapper;
@@ -572,6 +705,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         input.value = String(opt.value ?? '');
         input.checked = resolvedValue === input.value;
         if (!field.can_edit) input.disabled = true;
+        bindRadioToggle(input, field, name);
         const text = document.createElement('span');
         text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
         item.appendChild(input);
@@ -597,7 +731,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     } else if (type === 'date') {
       el = document.createElement('input');
       if (field.can_edit) {
-        el.type = 'date';
+        el.type = 'text';
         el.value = String(value ?? '');
       } else {
         el.type = 'text';
@@ -628,15 +762,16 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       queueSave(field, nextVal);
     };
 
-    if (useRadioGroup) {
-      el.addEventListener('change', handler);
-    } else if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+    if (!useRadioGroup && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) {
       el.addEventListener('blur', handler);
-    } else {
+    } else if (!useRadioGroup) {
       el.addEventListener('change', handler);
     }
 
     wrapper.appendChild(el);
+    if (type === 'date' && field.can_edit) {
+      initDatePicker(el, field);
+    }
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
       wrapper.classList.add('has-delegate-other');
       const delegate = document.createElement('div');
@@ -778,7 +913,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           ? state.values_delegate_other_display[field.id]
           : delegateOther;
         const fieldForRender = isChildOnly
-          ? { ...field, can_edit: 0, delegate_other: '', date_display: displayValue, value }
+          ? {
+            ...field,
+            can_edit: allowStudentEdit ? 1 : 0,
+            delegate_other: '',
+            date_display: displayValue,
+            value
+          }
           : { ...field, delegate_other: delegateDisplay, date_display: displayValue, value };
         if (!showStudentValues && isChildOnly) {
           if (isTextField(fieldForRender) && String(displayValue || '').trim() !== '') {
@@ -791,7 +932,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           }
           return;
         }
-        if (!showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
+        if (showStudentValues && !isChildOnly && isTextField(fieldForRender)) {
           const childFieldId = Number(field.child_field_id || 0);
           const childValue = childFieldId > 0 && state?.values_child_display && childFieldId in state.values_child_display
             ? state.values_child_display[childFieldId]
@@ -868,8 +1009,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
   function queueSave(field, value){
     if (!state) return;
-    state.values = state.values || {};
-    state.values[field.id] = value;
+    const isChildOnly = Number(field.child_only || 0) === 1;
+    const target = isChildOnly ? (state.values_child = state.values_child || {}) : (state.values = state.values || {});
+    target[field.id] = value;
     setSaving(true);
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveField(field, value), 250);
@@ -878,7 +1020,19 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   async function saveField(field, value){
     try {
       if (!state) return;
-      if (field.scope === 'class') {
+      if (Number(field.child_only || 0) === 1) {
+        const res = await api('child_value_update', {
+          report_instance_id: state.student.report_instance_id,
+          child_field_id: field.id,
+          value_text: value
+        });
+        state.values_child = state.values_child || {};
+        state.values_child[field.id] = res?.raw_value_text ?? value;
+        state.values_child_display = state.values_child_display || {};
+        if (Object.prototype.hasOwnProperty.call(res || {}, 'value_text')) {
+          state.values_child_display[field.id] = res.value_text;
+        }
+      } else if (field.scope === 'class') {
         await api('save_class', {
           class_id: classId,
           report_instance_id: state.class_report_instance_id,
@@ -923,8 +1077,55 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   if (toggleStudentValues) {
     toggleStudentValues.addEventListener('change', () => {
       showStudentValues = toggleStudentValues.checked;
+      if (!showStudentValues) {
+        allowStudentEdit = false;
+        if (toggleStudentEdit) toggleStudentEdit.checked = false;
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+      }
+      savePrefs();
       renderPages({ preserveScroll: true });
     });
+  }
+
+  if (toggleStudentEdit) {
+    toggleStudentEdit.addEventListener('change', () => {
+      const wasShowStudentValues = showStudentValues;
+      if (toggleStudentEdit.checked) {
+        if (toggleStudentValues && !toggleStudentValues.checked) {
+          toggleStudentValues.checked = true;
+          showStudentValues = true;
+        }
+        const ok = window.confirm(studentEditConfirmText);
+        if (!ok) {
+          toggleStudentEdit.checked = false;
+          showStudentValues = wasShowStudentValues;
+          if (toggleStudentValues) toggleStudentValues.checked = showStudentValues;
+          if (studentEditWarning) studentEditWarning.style.display = 'none';
+          savePrefs();
+          renderPages({ preserveScroll: true });
+          return;
+        }
+        allowStudentEdit = true;
+        if (studentEditWarning) studentEditWarning.style.display = '';
+      } else {
+        allowStudentEdit = false;
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+      }
+      savePrefs();
+      renderPages({ preserveScroll: true });
+    });
+  }
+
+  const prefs = loadPrefs();
+  if (prefs.allowStudentEdit) {
+    showStudentValues = true;
+    allowStudentEdit = true;
+    if (toggleStudentValues) toggleStudentValues.checked = true;
+    if (toggleStudentEdit) toggleStudentEdit.checked = true;
+    if (studentEditWarning) studentEditWarning.style.display = '';
+  } else if (prefs.showStudentValues) {
+    showStudentValues = true;
+    if (toggleStudentValues) toggleStudentValues.checked = true;
   }
 
   document.addEventListener('keydown', (event) => {
@@ -944,6 +1145,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (!toggleStudentValues) return;
     toggleStudentValues.checked = !toggleStudentValues.checked;
     showStudentValues = toggleStudentValues.checked;
+    if (!showStudentValues) {
+      allowStudentEdit = false;
+      if (toggleStudentEdit) toggleStudentEdit.checked = false;
+      if (studentEditWarning) studentEditWarning.style.display = 'none';
+    }
+    savePrefs();
     renderPages({ preserveScroll: true });
   }
 }, { capture: true });

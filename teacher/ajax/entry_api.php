@@ -1818,6 +1818,7 @@ try {
         'is_multiline' => $isMultiline,
         'options' => $optsTeacher,
         'can_edit' => $canEditField ? 1 : 0,
+        'date_format' => date_format_pattern_from_meta($meta, $type),
         'page' => $page,
         'rect' => $rect,
         'scope' => $isClassField ? 'class' : 'student',
