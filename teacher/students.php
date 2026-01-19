@@ -1222,12 +1222,38 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 </div>
 
 <div class="card">
-  <details>
+  <style>
+    .collapsible-details summary {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      cursor:pointer;
+      list-style:none;
+      padding:6px 2px;
+    }
+    .collapsible-details summary::-webkit-details-marker { display:none; }
+    .collapsible-details .chevron {
+      display:inline-block;
+      transition:transform 0.2s ease;
+      font-size:18px;
+      line-height:1;
+      color:#6b7280;
+    }
+    .collapsible-details[open] .chevron { transform:rotate(90deg); }
+    .collapsible-details .collapsible-content {
+      overflow:hidden;
+      max-height:0;
+      transition:max-height 0.25s ease;
+    }
+    .collapsible-details[open] .collapsible-content { max-height:2000px; }
+  </style>
+  <details class="collapsible-details">
     <summary>
       <h2 style="margin:0;"><?=h(t('teacher.students.child_group_card', 'Kategorien für Schüler'))?></h2>
+      <span class="chevron" aria-hidden="true">▸</span>
     </summary>
 
-    <div style="margin-top:12px;">
+    <div class="collapsible-content" style="margin-top:12px;">
       <?php if (!$activeTpl): ?>
         <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kategorien können nicht gesteuert werden.'))?></div>
       <?php elseif (!$childGroups): ?>
