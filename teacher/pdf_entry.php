@@ -482,7 +482,19 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       dateFormat: 'Y-m-d',
       altInput: altFormat !== '' && altFormat !== 'Y-m-d',
       altFormat: altFormat || 'Y-m-d',
-      allowInput: true
+      allowInput: true,
+      onChange: (selectedDates, dateStr, instance) => {
+        const next = selectedDates && selectedDates.length
+          ? instance.formatDate(selectedDates[0], 'Y-m-d')
+          : '';
+        queueSave(field, next);
+      },
+      onClose: (selectedDates, dateStr, instance) => {
+        const next = selectedDates && selectedDates.length
+          ? instance.formatDate(selectedDates[0], 'Y-m-d')
+          : (dateStr || '');
+        queueSave(field, next);
+      }
     });
   }
 
