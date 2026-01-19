@@ -436,6 +436,9 @@ render_teacher_header($pageTitle);
         <div class="row-actions" style="justify-content:space-between;">
             <div class="pill-mini" id="studentBadge" style="font-weight: bold">—</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn secondary" type="button" id="btnPdfEntry">
+              <?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?>
+            </button>
             <button class="btn secondary" type="button" id="btnPrevStudent">← Vorherige</button>
             <button class="btn secondary" type="button" id="btnNextStudent">Nächste →</button>
           </div>
@@ -690,6 +693,7 @@ render_teacher_header($pageTitle);
   const studentList = document.getElementById('studentList');
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
+  const btnPdfEntry = document.getElementById('btnPdfEntry');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
   const studentMissingOnly = document.getElementById('studentMissingOnly');
@@ -723,6 +727,7 @@ render_teacher_header($pageTitle);
   const MERGE_STORAGE_KEY = 'leb_merge_memory_v1';
   const OPTION_STYLE_KEY = 'leb_option_style';
   const VIEW_STORAGE_KEY = CHILD_MODE ? 'leb_view_mode_child' : 'leb_view_mode';
+  const pdfEntryBase = <?=json_encode(url('teacher/pdf_entry.php'))?>;
 
   let state = {
     class_id: 0,
@@ -805,6 +810,18 @@ render_teacher_header($pageTitle);
   let aiLoading = false;
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
+
+  if (btnPdfEntry) {
+    btnPdfEntry.addEventListener('click', () => {
+      const sid = Number(btnPdfEntry.dataset.studentId || 0);
+      const cid = Number(state.class_id || 0);
+      if (!sid || !cid) return;
+      const url = new URL(pdfEntryBase, window.location.origin);
+      url.searchParams.set('class_id', String(cid));
+      url.searchParams.set('student_id', String(sid));
+      window.location.href = url.toString();
+    });
+  }
 
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
@@ -1840,6 +1857,15 @@ render_teacher_header($pageTitle);
     const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     studentBadge.textContent = `${s.name} · Lehrer: ${tDone}/${tTotal} · Schüler: ${cDone}/${cTotal} · offen: ${oMissing} ${chk}`.trim();
+  }
+
+  function updatePdfEntryButton(student){
+    if (!btnPdfEntry) return;
+    const sid = Number(student?.id || 0);
+    const cid = Number(state.class_id || 0);
+    const active = !!sid && !!cid;
+    btnPdfEntry.disabled = !active;
+    btnPdfEntry.dataset.studentId = active ? String(sid) : '';
   }
 
   function onTeacherValueChanged(reportId, fieldId){
@@ -3202,8 +3228,10 @@ render_teacher_header($pageTitle);
     if (!s) {
       studentBadge.textContent = 'Keine Treffer';
       studentForm.innerHTML = '<div class="alert">Keine Schüler gefunden.</div>';
+      updatePdfEntryButton(null);
       return;
     }
+    updatePdfEntryButton(s);
     updateActiveStudentBadge();
 
     const reportId = s.report_instance_id;
