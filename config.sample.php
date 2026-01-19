@@ -45,8 +45,23 @@ return [
   'parent' => [
     // Eltern dürfen eine signierte, schreibgeschützte PDF herunterladen.
     'download_enabled' => false,
-    // Passwort zum Schutz der PDF vor Änderungen.
-    'download_password' => '',
+    // PDF-Verschlüsselung/Permissions
+    'encrypt_enabled' => true,
+    'encrypt_user_password' => '',
+    'encrypt_owner_password' => '',
+    'perm_modify' => false,
+    'perm_copy' => false,
+    'perm_annotate' => false,
+    'perm_fill' => false,
+    'perm_print' => 'high', // none|low|high
+    // Digitale Signatur
+    'sign_enabled' => false,
+    'sign_visible' => false,
+    'sign_reason' => '',
+    'sign_location' => '',
+    'signer_name' => '',
+    'sign_position' => 'bottom-right',
+    'sign_margin' => 12,
   ],
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über

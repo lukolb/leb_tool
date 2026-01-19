@@ -155,15 +155,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
       if (!isset($cfg['parent']) || !is_array($cfg['parent'])) $cfg['parent'] = [];
       $cfg['parent']['download_enabled'] = isset($_POST['parent_download_enabled']);
-      if (isset($_POST['parent_download_password_present'])) {
-        $newPassword = trim((string)($_POST['parent_download_password'] ?? ''));
-        $shouldClear = isset($_POST['parent_download_password_clear']);
-        if ($newPassword !== '') {
-          $cfg['parent']['download_password'] = $newPassword;
-        } elseif ($shouldClear) {
-          $cfg['parent']['download_password'] = '';
-        }
-      }
+      $cfg['parent']['encrypt_enabled'] = isset($_POST['parent_encrypt_enabled']);
+      $cfg['parent']['encrypt_user_password'] = trim((string)($_POST['parent_encrypt_user_password'] ?? ''));
+      $cfg['parent']['encrypt_owner_password'] = trim((string)($_POST['parent_encrypt_owner_password'] ?? ''));
+      $cfg['parent']['perm_modify'] = isset($_POST['parent_perm_modify']);
+      $cfg['parent']['perm_copy'] = isset($_POST['parent_perm_copy']);
+      $cfg['parent']['perm_annotate'] = isset($_POST['parent_perm_annotate']);
+      $cfg['parent']['perm_fill'] = isset($_POST['parent_perm_fill']);
+      $cfg['parent']['perm_print'] = (string)($_POST['parent_perm_print'] ?? 'high');
+      $cfg['parent']['sign_enabled'] = isset($_POST['parent_sign_enabled']);
+      $cfg['parent']['sign_visible'] = isset($_POST['parent_sign_visible']);
+      $cfg['parent']['sign_reason'] = trim((string)($_POST['parent_sign_reason'] ?? ''));
+      $cfg['parent']['sign_location'] = trim((string)($_POST['parent_sign_location'] ?? ''));
+      $cfg['parent']['signer_name'] = trim((string)($_POST['parent_signer_name'] ?? ''));
+      $cfg['parent']['sign_position'] = (string)($_POST['parent_sign_position'] ?? 'bottom-right');
+      $cfg['parent']['sign_margin'] = (int)($_POST['parent_sign_margin'] ?? 12);
     }
 
     // ---- Logo actions ----
@@ -254,7 +260,21 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
-$parentDownloadPassword = (string)($parentCfg['download_password'] ?? '');
+$parentEncryptEnabled = (bool)($parentCfg['encrypt_enabled'] ?? true);
+$parentEncryptUserPassword = (string)($parentCfg['encrypt_user_password'] ?? '');
+$parentEncryptOwnerPassword = (string)($parentCfg['encrypt_owner_password'] ?? '');
+$parentPermModify = (bool)($parentCfg['perm_modify'] ?? false);
+$parentPermCopy = (bool)($parentCfg['perm_copy'] ?? false);
+$parentPermAnnotate = (bool)($parentCfg['perm_annotate'] ?? false);
+$parentPermFill = (bool)($parentCfg['perm_fill'] ?? false);
+$parentPermPrint = (string)($parentCfg['perm_print'] ?? 'high');
+$parentSignEnabled = (bool)($parentCfg['sign_enabled'] ?? false);
+$parentSignVisible = (bool)($parentCfg['sign_visible'] ?? false);
+$parentSignReason = (string)($parentCfg['sign_reason'] ?? '');
+$parentSignLocation = (string)($parentCfg['sign_location'] ?? '');
+$parentSignerName = (string)($parentCfg['signer_name'] ?? '');
+$parentSignPosition = (string)($parentCfg['sign_position'] ?? 'bottom-right');
+$parentSignMargin = (int)($parentCfg['sign_margin'] ?? 12);
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -451,22 +471,85 @@ render_admin_header('Admin – Settings');
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="parent_download_enabled_present" value="1">
-    <input type="hidden" name="parent_download_password_present" value="1">
-
     <label class="chk">
       <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>> Download-Button in der Elternansicht anzeigen
     </label>
     <p class="muted">Der Download erzeugt eine signierte, nicht bearbeitbare PDF-Version.</p>
 
-    <label>Download-Passwort (PDF-Schutz)</label>
-    <input name="parent_download_password" type="password" value="" placeholder="z.B. Elternmodus-2025">
-    <p class="muted">
-      Das Passwort schützt die PDF vor Änderungen (auch in Acrobat), ohne dass es zum Öffnen benötigt wird.
-      <?= $parentDownloadPassword !== '' ? 'Aktuell gesetzt.' : 'Noch nicht gesetzt.' ?>
-    </p>
-    <label class="chk" style="margin-top:6px;">
-      <input type="checkbox" name="parent_download_password_clear" value="1"> Passwort löschen
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="parent_encrypt_enabled" value="1" <?=$parentEncryptEnabled ? 'checked' : ''?>> PDF verschlüsseln
     </label>
+    <p class="muted">Aktiviert die PDF-Verschlüsselung und setzt die unten definierten Rechte.</p>
+
+    <div class="grid">
+      <div>
+        <label>Passwort zum Öffnen (optional)</label>
+        <input name="parent_encrypt_user_password" value="<?=h($parentEncryptUserPassword)?>" autocomplete="new-password">
+      </div>
+      <div>
+        <label>Owner-Passwort (Pflicht)</label>
+        <input name="parent_encrypt_owner_password" value="<?=h($parentEncryptOwnerPassword)?>" autocomplete="new-password" placeholder="Wenn leer, wird serverseitig erzeugt">
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:repeat(2, minmax(0,1fr));">
+      <label class="chk">
+        <input type="checkbox" name="parent_perm_modify" value="1" <?=$parentPermModify ? 'checked' : ''?>> Ändern erlauben
+      </label>
+      <label class="chk">
+        <input type="checkbox" name="parent_perm_copy" value="1" <?=$parentPermCopy ? 'checked' : ''?>> Kopieren erlauben
+      </label>
+      <label class="chk">
+        <input type="checkbox" name="parent_perm_annotate" value="1" <?=$parentPermAnnotate ? 'checked' : ''?>> Kommentieren/Annotieren
+      </label>
+      <label class="chk">
+        <input type="checkbox" name="parent_perm_fill" value="1" <?=$parentPermFill ? 'checked' : ''?>> Formulare ausfüllen
+      </label>
+    </div>
+    <label>Drucken</label>
+    <select name="parent_perm_print">
+      <option value="none" <?=$parentPermPrint==='none' ? 'selected' : ''?>>Nicht erlauben</option>
+      <option value="low" <?=$parentPermPrint==='low' ? 'selected' : ''?>>Niedrige Qualität</option>
+      <option value="high" <?=$parentPermPrint==='high' ? 'selected' : ''?>>Hohe Qualität</option>
+    </select>
+
+    <hr style="border:none; border-top:1px solid var(--border); margin:12px 0;">
+    <label class="chk">
+      <input type="checkbox" name="parent_sign_enabled" value="1" <?=$parentSignEnabled ? 'checked' : ''?>> Digital signieren (Adobe/PAdES)
+    </label>
+    <p class="muted">Benötigt ein PKCS#12-Zertifikat auf dem Server (PDF_SIGN_P12_PATH/PDF_SIGN_P12_PASS).</p>
+
+    <label class="chk" style="margin-top:6px;">
+      <input type="checkbox" name="parent_sign_visible" value="1" <?=$parentSignVisible ? 'checked' : ''?>> Signatur sichtbar
+    </label>
+
+    <div class="grid">
+      <div>
+        <label>Signer Name (optional)</label>
+        <input name="parent_signer_name" value="<?=h($parentSignerName)?>">
+      </div>
+      <div>
+        <label>Reason</label>
+        <input name="parent_sign_reason" value="<?=h($parentSignReason)?>">
+      </div>
+    </div>
+    <div class="grid">
+      <div>
+        <label>Location</label>
+        <input name="parent_sign_location" value="<?=h($parentSignLocation)?>">
+      </div>
+      <div>
+        <label>Position</label>
+        <select name="parent_sign_position">
+          <option value="bottom-right" <?=$parentSignPosition==='bottom-right' ? 'selected' : ''?>>Unten rechts</option>
+          <option value="bottom-left" <?=$parentSignPosition==='bottom-left' ? 'selected' : ''?>>Unten links</option>
+          <option value="top-right" <?=$parentSignPosition==='top-right' ? 'selected' : ''?>>Oben rechts</option>
+          <option value="top-left" <?=$parentSignPosition==='top-left' ? 'selected' : ''?>>Oben links</option>
+        </select>
+      </div>
+    </div>
+    <label>Margin (px)</label>
+    <input name="parent_sign_margin" type="number" min="0" max="60" value="<?=h((string)$parentSignMargin)?>">
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>

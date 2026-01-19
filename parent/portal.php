@@ -385,8 +385,7 @@ $secondary = $b['secondary'] ?? '#111111';
 $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
 $downloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
-$downloadPassword = trim((string)($parentCfg['download_password'] ?? ''));
-$allowDownload = $downloadEnabled && $downloadPassword !== '';
+$allowDownload = $downloadEnabled;
 $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
 ?>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Encrypts a filled PDF (posted from parent portal) with admin-defined password.
 
 require __DIR__ . '/../bootstrap.php';
+require_once __DIR__ . '/../shared/pdf_finalize.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   http_response_code(405);
@@ -29,9 +30,7 @@ try {
 $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
 $downloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
-$downloadPassword = trim((string)($parentCfg['download_password'] ?? ''));
-
-if (!$downloadEnabled || $downloadPassword === '') {
+if (!$downloadEnabled) {
   http_response_code(403);
   echo 'Download ist nicht verfügbar.';
   exit;
@@ -87,24 +86,60 @@ if ($outputPath === false) {
   exit;
 }
 
-$script = __DIR__ . '/../scripts/encrypt_pdf.py';
-if (!is_file($script)) {
+$encryptEnabled = (bool)($parentCfg['encrypt_enabled'] ?? true);
+$userPassword = trim((string)($parentCfg['encrypt_user_password'] ?? ''));
+$ownerPassword = trim((string)($parentCfg['encrypt_owner_password'] ?? ''));
+if ($ownerPassword === '') {
+  $ownerPassword = bin2hex(random_bytes(16));
+}
+$permissions = [
+  'modify' => (bool)($parentCfg['perm_modify'] ?? false),
+  'copy' => (bool)($parentCfg['perm_copy'] ?? false),
+  'annotate' => (bool)($parentCfg['perm_annotate'] ?? false),
+  'fill' => (bool)($parentCfg['perm_fill'] ?? false),
+  'print' => (string)($parentCfg['perm_print'] ?? 'high'),
+];
+$signEnabled = (bool)($parentCfg['sign_enabled'] ?? false);
+$signVisible = (bool)($parentCfg['sign_visible'] ?? false);
+$signerName = trim((string)($parentCfg['signer_name'] ?? ''));
+$signReason = trim((string)($parentCfg['sign_reason'] ?? ''));
+$signLocation = trim((string)($parentCfg['sign_location'] ?? ''));
+$signPosition = (string)($parentCfg['sign_position'] ?? 'bottom-right');
+$signMargin = (int)($parentCfg['sign_margin'] ?? 12);
+
+$pdfBytes = (string)file_get_contents($inputPath);
+if ($pdfBytes === '') {
   @unlink($outputPath);
   http_response_code(500);
-  echo 'Encrypt-Skript fehlt.';
+  echo 'PDF konnte nicht gelesen werden.';
   exit;
 }
 
-$cmd = 'python3 ' . escapeshellarg($script) . ' ' . escapeshellarg($inputPath) . ' ' .
-  escapeshellarg($outputPath) . ' ' . escapeshellarg($downloadPassword);
-
-$output = [];
-$code = 0;
-@exec($cmd . ' 2>&1', $output, $code);
-if ($code !== 0 || !is_file($outputPath)) {
+try {
+  $finalBytes = finalize_pdf($pdfBytes, [
+    'encrypt' => $encryptEnabled,
+    'user_password' => $userPassword,
+    'owner_password' => $ownerPassword,
+    'permissions' => $permissions,
+    'sign' => $signEnabled,
+    'sign_visible' => $signVisible,
+    'signer_name' => $signerName,
+    'sign_reason' => $signReason,
+    'sign_location' => $signLocation,
+    'sign_position' => $signPosition,
+    'sign_margin' => $signMargin,
+  ]);
+} catch (Throwable $e) {
   @unlink($outputPath);
   http_response_code(500);
-  echo 'PDF konnte nicht geschützt werden: ' . htmlspecialchars(implode("\n", $output));
+  echo 'PDF konnte nicht geschützt werden: ' . htmlspecialchars($e->getMessage());
+  exit;
+}
+
+if (file_put_contents($outputPath, $finalBytes, LOCK_EX) === false) {
+  @unlink($outputPath);
+  http_response_code(500);
+  echo 'PDF konnte nicht gespeichert werden.';
   exit;
 }
 
