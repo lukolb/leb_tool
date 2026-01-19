@@ -304,7 +304,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   </div>
   <div class="card">
     <div class="row-actions" style="float: right;">
-      <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$classId))?>">Zurück zur Klasse</a>
+      <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId))?>">Zurück zur Eingabe</a>
     </div>
     <h1 style="margin-bottom:4px;"><?=h(t('teacher.entry.heading_fill', 'Eingaben ausfüllen'))?></h1>
     <div class="muted">
@@ -323,7 +323,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
-    <div id="studentEditWarning" class="alert warning" style="display:none; margin-top:10px;">
+    <div id="studentEditWarning" class="alert danger" style="display:none; margin-top:10px;">
       <?=h(t('teacher.entry.edit_student_values_warning', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.'))?>
     </div>
   </div>

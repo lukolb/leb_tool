@@ -136,12 +136,10 @@ render_teacher_header($pageTitle);
 </div>
 
 <?php if ($childMode): ?>
-  <div class="card">
     <div class="alert danger">
       <strong><?=h(t('teacher.child_entry.warning_title', 'Achtung:'))?></strong>
       <?=h(t('teacher.child_entry.warning_text', 'Diese Eingaben sind für die Schüler bestimmt. Schüler können diese Einträge in ihrem Bereich sehen.'))?>
     </div>
-  </div>
 <?php endif; ?>
 
 <div class="card">

@@ -47,8 +47,8 @@ function nav_items_for_role(string $role): array {
 
   return [
     ['label'=>t('nav.dashboard'), 'href'=>'teacher/index.php', 'files'=>['index.php']],
-    ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php', 'class_intro.php']],
-    ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php']],
+    ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php', 'class_intro.php', 'students.php']],
+    ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php']],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
 
     // Berichte
