@@ -83,8 +83,8 @@ $mailForm = [
   'mode' => 'class',
   'class_id' => $classId > 0 ? $classId : 0,
   'student_id' => 0,
-  'subject' => '',
-  'body' => "Hallo,\n\nhier ist der Elternlink für {{student_name}}:\n{{parent_link}}\n\nViele Grüße\n",
+  'subject' => 'Lernentwicklungsbericht für {{student_name}} - Student Progress Report for {{student_name}}',
+  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist 14 Tage gültig. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid for 14 days. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -602,22 +602,19 @@ render_teacher_header($pageTitle);
         <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
       </p>
     </div>
-    <div class="pill" style="background:#eef2ff; border:1px solid #d9e2ff; color:#2d3a8c;">
-      <?=h(t('teacher.parents.mail_merge_chip', 'Serienmail'))?>
-    </div>
   </div>
   <form method="post" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="send_parent_email">
 
     <div style="grid-column: 1 / -1;">
-      <label style="display:flex; gap:18px; flex-wrap:wrap;">
+      <label style="display:flex; gap:18px; flex-wrap:wrap; text-align: center;">
         <span><input type="radio" name="send_mode" value="class" <?= ($mailForm['mode'] ?? '') !== 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_class', 'Ganze Klasse'))?></span>
         <span><input type="radio" name="send_mode" value="single" <?= ($mailForm['mode'] ?? '') === 'single' ? 'checked' : '' ?>> <?=h(t('teacher.parents.mail_mode_single', 'Einzeln'))?></span>
       </label>
     </div>
 
-    <div>
+    <div style="display: none;">
       <label><?=h(t('teacher.parents.mail_class', 'Klasse'))?></label>
       <select name="mail_class_id" id="mailClassSelect">
         <?php if (count($classes) > 1): ?>
@@ -629,9 +626,6 @@ render_teacher_header($pageTitle);
           </option>
         <?php endforeach; ?>
       </select>
-      <div class="muted" style="font-size:12px; margin-top:4px;">
-        <?=h(t('teacher.parents.mail_class_hint', 'Für andere Klassen bitte oben die Klasse wechseln.'))?>
-      </div>
     </div>
 
     <div id="mailStudentWrap">
@@ -653,7 +647,7 @@ render_teacher_header($pageTitle);
 
     <div style="grid-column: 1 / -1;">
       <label><?=h(t('teacher.parents.mail_body', 'Nachricht'))?></label>
-      <textarea name="mail_body" rows="6" required><?=h((string)($mailForm['body'] ?? ''))?></textarea>
+      <textarea name="mail_body" rows="15" style="width: 100%; max-width: 100%; min-width: 100%;" required><?=h((string)($mailForm['body'] ?? ''))?></textarea>
     </div>
 
     <div class="actions" style="justify-content:flex-start; grid-column: 1 / -1;">
