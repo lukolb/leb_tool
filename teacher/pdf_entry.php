@@ -354,6 +354,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const nextStudentBtn = document.getElementById('nextStudentBtn');
   const prevStudentLabel = document.getElementById('prevStudentLabel');
   const nextStudentLabel = document.getElementById('nextStudentLabel');
+  const prefStorageKey = 'pdf_entry_prefs';
 
   let pdfDoc = null;
   let state = null;
@@ -375,6 +376,31 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     saveStatus.style.display = '';
     saveStatus.style.background = isError ? '#ffe5e5' : '#f1f3f7';
     saveStatus.style.color = isError ? '#a40000' : '#111';
+  }
+
+  function loadPrefs(){
+    try {
+      const raw = window.localStorage.getItem(prefStorageKey);
+      if (!raw) return { showStudentValues: false, allowStudentEdit: false };
+      const parsed = JSON.parse(raw);
+      return {
+        showStudentValues: Boolean(parsed?.showStudentValues),
+        allowStudentEdit: Boolean(parsed?.allowStudentEdit),
+      };
+    } catch {
+      return { showStudentValues: false, allowStudentEdit: false };
+    }
+  }
+
+  function savePrefs(){
+    try {
+      window.localStorage.setItem(prefStorageKey, JSON.stringify({
+        showStudentValues,
+        allowStudentEdit,
+      }));
+    } catch {
+      // ignore storage errors
+    }
   }
 
   function setSaving(active){
@@ -958,12 +984,14 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         if (toggleStudentEdit) toggleStudentEdit.checked = false;
         if (studentEditWarning) studentEditWarning.style.display = 'none';
       }
+      savePrefs();
       renderPages({ preserveScroll: true });
     });
   }
 
   if (toggleStudentEdit) {
     toggleStudentEdit.addEventListener('change', () => {
+      const wasShowStudentValues = showStudentValues;
       if (toggleStudentEdit.checked) {
         if (toggleStudentValues && !toggleStudentValues.checked) {
           toggleStudentValues.checked = true;
@@ -972,6 +1000,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         const ok = window.confirm(studentEditConfirmText);
         if (!ok) {
           toggleStudentEdit.checked = false;
+          showStudentValues = wasShowStudentValues;
+          if (toggleStudentValues) toggleStudentValues.checked = showStudentValues;
+          if (studentEditWarning) studentEditWarning.style.display = 'none';
+          savePrefs();
+          renderPages({ preserveScroll: true });
           return;
         }
         allowStudentEdit = true;
@@ -980,8 +1013,21 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         allowStudentEdit = false;
         if (studentEditWarning) studentEditWarning.style.display = 'none';
       }
+      savePrefs();
       renderPages({ preserveScroll: true });
     });
+  }
+
+  const prefs = loadPrefs();
+  if (prefs.allowStudentEdit) {
+    showStudentValues = true;
+    allowStudentEdit = true;
+    if (toggleStudentValues) toggleStudentValues.checked = true;
+    if (toggleStudentEdit) toggleStudentEdit.checked = true;
+    if (studentEditWarning) studentEditWarning.style.display = '';
+  } else if (prefs.showStudentValues) {
+    showStudentValues = true;
+    if (toggleStudentValues) toggleStudentValues.checked = true;
   }
 
   document.addEventListener('keydown', (event) => {
@@ -1001,6 +1047,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (!toggleStudentValues) return;
     toggleStudentValues.checked = !toggleStudentValues.checked;
     showStudentValues = toggleStudentValues.checked;
+    if (!showStudentValues) {
+      allowStudentEdit = false;
+      if (toggleStudentEdit) toggleStudentEdit.checked = false;
+      if (studentEditWarning) studentEditWarning.style.display = 'none';
+    }
+    savePrefs();
     renderPages({ preserveScroll: true });
   }
 }, { capture: true });
