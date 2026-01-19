@@ -1346,35 +1346,42 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 <?= child_status_badge($childStatusMap[$sid] ?? null) ?>
               <?php endif; ?>
             </td>
-            <td style="display: flex; gap: 5px;">
-              <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;" style="margin-right:6px;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
-              
-              <?php if ($ai_enabled) : ?>
-              <a class="btn secondary ai-btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;' style="margin-right:6px;"><svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg> <?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
-              
-              <?php endif; ?>
-              
-              <form method="post" style="display:inline;">
-                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-                <input type="hidden" name="action" value="toggle_active">
-                <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
-                <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
-                  <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
-              </form>
-              <a class="btn secondary" href="<?=h(url('teacher/pdf_entry.php?class_id=' . (int)$classId . '&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?></a>
-              <?php if ($formValueCount === 0): ?>
-                <form method="post" style="display:inline;" onsubmit="return confirm('<?=h(t('teacher.students.confirm_delete', 'Schüler wirklich löschen?'))?>');">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-                  <input type="hidden" name="action" value="delete_student">
-                  <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
-                  <button class="btn danger" type="submit"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
-                </form>
-              <?php else: ?>
-              <button class="btn danger" type="submit" disabled title="<?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?>"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
-              <?php endif; ?>
-              <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
+            <td>
+              <div class="action-menu">
+                <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="true">
+                  <?=h(t('teacher.students.actions', 'Aktionen'))?> <span aria-hidden="true">▾</span>
+                </button>
+                <div class="nav-dropdown action-dropdown-menu" role="menu">
+                  <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
+
+                  <?php if ($ai_enabled) : ?>
+                  <a class="btn secondary ai-btn" type="button" onclick='openAiSupportModal(<?=h((string)$sid)?>, <?=json_encode(trim((string)($s['first_name'] ?? '').' '.(string)($s['last_name'] ?? '')))?>); return false;'><svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg> <?=h(t('teacher.students.btn_support', 'Förderideen'))?></a>
+
+                  <?php endif; ?>
+
+                  <form method="post">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+                    <input type="hidden" name="action" value="toggle_active">
+                    <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
+                    <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
+                      <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
+                  </form>
+                  <a class="btn secondary" href="<?=h(url('teacher/pdf_entry.php?class_id=' . (int)$classId . '&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?></a>
+                  <?php if ($formValueCount === 0): ?>
+                    <form method="post" onsubmit="return confirm('<?=h(t('teacher.students.confirm_delete', 'Schüler wirklich löschen?'))?>');">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+                      <input type="hidden" name="action" value="delete_student">
+                      <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
+                      <button class="btn danger" type="submit"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
+                    </form>
+                  <?php else: ?>
+                  <button class="btn danger" type="submit" disabled title="<?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?>"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
+                  <?php endif; ?>
+                  <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
+                </div>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
