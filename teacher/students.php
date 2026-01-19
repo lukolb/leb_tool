@@ -577,6 +577,32 @@ function load_report_instance_map(PDO $pdo, array $studentIds): array {
   return $map;
 }
 
+function load_student_form_value_counts(PDO $pdo, array $studentIds): array {
+  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  if (!$studentIds) return [];
+
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $sql =
+    "SELECT r.student_id,
+            SUM(CASE
+                  WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
+                  ELSE 0
+                END) AS value_count
+     FROM report_instances r
+     LEFT JOIN field_values fv ON fv.report_instance_id = r.id
+     WHERE r.student_id IN ($in)
+     GROUP BY r.student_id";
+  $q = $pdo->prepare($sql);
+  $q->execute($studentIds);
+
+  $map = [];
+  foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $sid = (int)$r['student_id'];
+    $map[$sid] = (int)($r['value_count'] ?? 0);
+  }
+  return $map;
+}
+
 function child_status_badge(?string $status): string {
   $status = (string)$status;
   if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
@@ -717,9 +743,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $new = ((int)$row['is_active'] === 1) ? 0 : 1;
       $pdo->prepare("UPDATE students SET is_active=? WHERE id=?")->execute([$new, $studentId]);
       audit('teacher_student_toggle_active', $userId, ['class_id'=>$classId,'student_id'=>$studentId,'is_active'=>$new]);
-        $ok = $new
+      $ok = $new
           ? t('teacher.students.ok_reactivated', 'Schüler wurde reaktiviert.')
           : t('teacher.students.ok_deactivated', 'Schüler wurde deaktiviert.');
+    }
+
+    elseif ($action === 'delete_student') {
+      $studentId = (int)($_POST['student_id'] ?? 0);
+      if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
+
+      $q = $pdo->prepare("SELECT id FROM students WHERE id=? AND class_id=? LIMIT 1");
+      $q->execute([$studentId, $classId]);
+      if (!$q->fetch()) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
+
+      $q = $pdo->prepare(
+        "SELECT SUM(CASE
+                      WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
+                      ELSE 0
+                    END) AS value_count
+         FROM report_instances r
+         LEFT JOIN field_values fv ON fv.report_instance_id = r.id
+         WHERE r.student_id=?"
+      );
+      $q->execute([$studentId]);
+      $valueCount = (int)($q->fetch(PDO::FETCH_ASSOC)['value_count'] ?? 0);
+      if ($valueCount > 0) {
+        throw new RuntimeException(t(
+          'teacher.students.error_delete_has_data',
+          'Schüler kann nicht gelöscht werden, da bereits Formular-Daten gespeichert sind. Bitte an den Admin wenden.'
+        ));
+      }
+
+      $pdo->beginTransaction();
+      $st = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=?");
+      $st->execute([$studentId]);
+      $reportIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+      if ($reportIds) {
+        $in = implode(',', array_fill(0, count($reportIds), '?'));
+        $pdo->prepare("DELETE FROM field_values WHERE report_instance_id IN ($in)")->execute($reportIds);
+        $pdo->prepare("DELETE FROM report_instances WHERE id IN ($in)")->execute($reportIds);
+      }
+      $pdo->prepare("DELETE FROM students WHERE id=? AND class_id=?")->execute([$studentId, $classId]);
+      $pdo->commit();
+
+      audit('teacher_student_delete', $userId, [
+        'class_id' => $classId,
+        'student_id' => $studentId,
+        'reports_deleted' => count($reportIds),
+        'values_deleted' => 0,
+      ]);
+
+      $ok = t('teacher.students.ok_deleted', 'Schüler wurde gelöscht.');
     }
 
     elseif ($action === 'import_csv') {
@@ -1041,6 +1115,7 @@ $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
 $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds) : [];
 
 $reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds) : [];
+$studentFormValueCounts = $students ? load_student_form_value_counts($pdo, $studentIds) : [];
 
 $groupProgress = [];
 $childGroups = $tplIdForUi ? load_child_groups_for_template($pdo, $tplIdForUi, ui_lang()) : [];
@@ -1255,7 +1330,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       </thead>
       <tbody>
         <?php foreach ($students as $s): ?>
-          <?php $sid = (int)($s['id'] ?? 0); $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0); ?>
+          <?php
+            $sid = (int)($s['id'] ?? 0);
+            $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0);
+            $formValueCount = (int)($studentFormValueCounts[$sid] ?? 0);
+          ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)((new DateTime($s['date_of_birth']))->format('d.m.Y') ?? ''))?></td>
@@ -1284,6 +1363,17 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                   <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
               </form>
               <a class="btn secondary" href="<?=h(url('teacher/pdf_entry.php?class_id=' . (int)$classId . '&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?></a>
+              <?php if ($formValueCount === 0): ?>
+                <form method="post" style="display:inline;" onsubmit="return confirm('<?=h(t('teacher.students.confirm_delete', 'Schüler wirklich löschen?'))?>');">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+                  <input type="hidden" name="action" value="delete_student">
+                  <input type="hidden" name="student_id" value="<?=h((string)$sid)?>">
+                  <button class="btn danger" type="submit"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
+                </form>
+              <?php else: ?>
+              <button class="btn danger" type="submit" disabled title="<?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?>"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
+              <?php endif; ?>
               <a class="btn primary" style="margin-left:6px;" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF'))?></a>
             </td>
           </tr>

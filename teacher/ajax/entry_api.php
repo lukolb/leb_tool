@@ -28,6 +28,29 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
+function pdf_max_len_from_meta(array $meta): ?int {
+  $raw = $meta['pdf_max_len'] ?? null;
+  if ($raw === null || $raw === '') return null;
+  if (!is_numeric($raw)) return null;
+  $n = (int)$raw;
+  return $n > 0 ? $n : null;
+}
+
+function clamp_text_length(?string $text, ?int $maxLen): ?string {
+  if ($text === null) return null;
+  if (!$maxLen || $maxLen <= 0) return $text;
+  if (function_exists('mb_strlen')) {
+    if (mb_strlen($text) <= $maxLen) return $text;
+    return mb_substr($text, 0, $maxLen);
+  }
+  if (function_exists('iconv_strlen') && function_exists('iconv_substr')) {
+    if (iconv_strlen($text, 'UTF-8') <= $maxLen) return $text;
+    return iconv_substr($text, 0, $maxLen, 'UTF-8');
+  }
+  if (strlen($text) <= $maxLen) return $text;
+  return substr($text, 0, $maxLen);
+}
+
 function option_list_id_from_meta(array $meta): int {
   $tid = $meta['option_list_template_id'] ?? null;
   if ($tid === null || $tid === '') return 0;
@@ -2798,6 +2821,7 @@ if ($action === 'delegations_save') {
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
 
     $meta = meta_read($frow['meta_json'] ?? null);
+    $maxLen = pdf_max_len_from_meta($meta);
     if (!is_class_field($meta)) throw new RuntimeException('Dieses Feld ist kein Klassenfeld.');
     if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
@@ -2818,6 +2842,7 @@ if ($action === 'delegations_save') {
 
     if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
+      $inputText = clamp_text_length($inputText, $maxLen) ?? '';
       $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
@@ -2922,6 +2947,7 @@ if ($action === 'delegations_save') {
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
 
     $meta = meta_read($frow['meta_json'] ?? null);
+    $maxLen = pdf_max_len_from_meta($meta);
     if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
     // ✅ Delegation serverseitig erzwingen
@@ -2941,6 +2967,7 @@ if ($action === 'delegations_save') {
 
     if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
+      $inputText = clamp_text_length($inputText, $maxLen) ?? '';
       $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
@@ -3037,6 +3064,7 @@ if ($action === 'delegations_save') {
     if ($reportTplId !== $classTplId) throw new RuntimeException('Vorlagenkonflikt: Der Bericht gehört zu einer anderen Vorlage als der Klasse zugeordnet ist.');
 
     $meta = meta_read($row['meta_json'] ?? null);
+    $maxLen = pdf_max_len_from_meta($meta);
     if (is_system_bound($meta)) throw new RuntimeException('Dieses Feld wird automatisch befüllt und kann nicht bearbeitet werden.');
 
     $type = (string)($row['field_type'] ?? '');
@@ -3061,7 +3089,11 @@ if ($action === 'delegations_save') {
       $valueText = ($valueText === '1' || $valueText === 'true' || $valueText === 'on') ? '1' : '0';
     } else {
       $valueText = $valueText !== null ? trim($valueText) : null;
-      if ($valueText === '') $valueText = null;
+      if ($valueText === '') {
+        $valueText = null;
+      } else {
+        $valueText = clamp_text_length($valueText, $maxLen);
+      }
     }
 
     $up = $pdo->prepare(
