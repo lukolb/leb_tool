@@ -64,6 +64,9 @@ render_teacher_header($pageTitle);
 $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
 ?>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js" defer></script>
+
 <style>
   .pdf-entry-wrap { max-width: 1200px; margin: 0 auto; }
   #pdfEntryPreview { position: relative; }
@@ -455,6 +458,34 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return Array.from(document.querySelectorAll(`input[name="${safe}"]`));
   }
 
+  function flatpickrFormatFromPattern(pattern){
+    if (!pattern) return '';
+    const map = {
+      'MMMM': 'F',
+      'MMM': 'M',
+      'YYYY': 'Y',
+      'YY': 'y',
+      'DD': 'd',
+      'D': 'j',
+      'MM': 'm',
+      'M': 'n'
+    };
+    return pattern.replace(/MMMM|MMM|YYYY|YY|DD|MM|D|M/g, (tok) => map[tok] || tok);
+  }
+
+  function initDatePicker(el, field){
+    if (!el || !field || !field.can_edit) return;
+    if (typeof window.flatpickr !== 'function') return;
+    const pattern = String(field.date_format || '').trim();
+    const altFormat = pattern ? flatpickrFormatFromPattern(pattern) : '';
+    window.flatpickr(el, {
+      dateFormat: 'Y-m-d',
+      altInput: altFormat !== '' && altFormat !== 'Y-m-d',
+      altFormat: altFormat || 'Y-m-d',
+      allowInput: true
+    });
+  }
+
   function updateRadioWasChecked(groupName, active){
     const inputs = queryRadioGroupInputs(groupName);
     inputs.forEach((el) => {
@@ -680,7 +711,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     } else if (type === 'date') {
       el = document.createElement('input');
       if (field.can_edit) {
-        el.type = 'date';
+        el.type = 'text';
         el.value = String(value ?? '');
       } else {
         el.type = 'text';
@@ -718,6 +749,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
+    if (type === 'date' && field.can_edit) {
+      initDatePicker(el, field);
+    }
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
       wrapper.classList.add('has-delegate-other');
       const delegate = document.createElement('div');
