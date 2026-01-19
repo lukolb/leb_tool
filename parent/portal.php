@@ -263,6 +263,10 @@ $status = (string)($link['status'] ?? '');
 $allowResponses = ($status === 'approved' && !$isExpired);
 $canPreview = ($status === 'approved');
 
+if ($canPreview) {
+  apply_system_bindings($pdo, (int)$link['report_instance_id']);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   try {
     csrf_verify();
