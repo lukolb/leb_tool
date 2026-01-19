@@ -848,7 +848,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->beginTransaction();
 
       $check = $pdo->prepare(
-        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? LIMIT 1"
+        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? AND class_id=? LIMIT 1"
       );
       $ins = $pdo->prepare(
         "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
@@ -888,7 +888,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           continue;
         }
 
-        $check->execute([$first, $last, $dob]);
+        $check->execute([$first, $last, $dob, $classId]);
         $existingId = $check->fetchColumn();
         if ($existingId) {
           $updates = [];
