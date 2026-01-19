@@ -205,16 +205,23 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                 </form>
               </td>
 
-              <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.students', 'Schüler verwalten'))?></a>
-                <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.entries', 'Eingaben'))?></a>
-                <a class="btn secondary" href="<?=h(url('teacher/class_intro.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.intro', 'Intro bearbeiten'))?></a>
-                <form id="classActiveForm" method="post" style="display:inline;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="toggle_active">
-                  <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
-                </form>
+              <td>
+                <div class="action-menu">
+                  <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="true" aria-expanded="false">
+                    <?=h(t('teacher.classes.actions', 'Aktionen'))?> <span aria-hidden="true">▾</span>
+                  </button>
+                  <div class="nav-dropdown action-dropdown-menu" role="menu">
+                    <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.students', 'Schüler verwalten'))?></a>
+                    <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.entries', 'Eingaben'))?></a>
+                    <a class="btn secondary" href="<?=h(url('teacher/class_intro.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.intro', 'Intro bearbeiten'))?></a>
+                    <form id="classActiveForm" method="post">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="toggle_active">
+                      <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                      <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
+                    </form>
+                  </div>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
