@@ -461,7 +461,7 @@ render_admin_header('Admin – Settings');
     <label>Download-Passwort (PDF-Schutz)</label>
     <input name="parent_download_password" type="password" value="" placeholder="z.B. Elternmodus-2025">
     <p class="muted">
-      Das Passwort wird zum Öffnen benötigt und schützt die PDF vor Änderungen (auch in Acrobat).
+      Das Passwort schützt die PDF vor Änderungen (auch in Acrobat), ohne dass es zum Öffnen benötigt wird.
       <?= $parentDownloadPassword !== '' ? 'Aktuell gesetzt.' : 'Noch nicht gesetzt.' ?>
     </p>
     <label class="chk" style="margin-top:6px;">

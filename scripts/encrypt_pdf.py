@@ -32,9 +32,10 @@ def main() -> int:
             | UserAccessPermissions.EXTRACT_TEXT_AND_GRAPHICS
         )
         writer.encrypt(
-            user_password=password,
+            user_password="",
             owner_password=password,
             permissions_flag=permissions,
+            algorithm="AES-256",
         )
 
         with open(output_path, "wb") as f:
