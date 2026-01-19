@@ -1235,7 +1235,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     .collapsible-details .chevron {
       display:inline-block;
       transition:transform 0.2s ease;
-      font-size:18px;
+      font-size:1.5em;
       line-height:1;
       color:#6b7280;
     }
