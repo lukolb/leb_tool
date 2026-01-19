@@ -32,7 +32,7 @@ def main() -> int:
             | UserAccessPermissions.EXTRACT_TEXT_AND_GRAPHICS
         )
         writer.encrypt(
-            user_password="",
+            user_password=password,
             owner_password=password,
             permissions_flag=permissions,
         )
