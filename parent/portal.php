@@ -382,6 +382,11 @@ $org = $b['org_name'] ?? 'LEG Tool';
 $logo = $b['logo_path'] ?? '';
 $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
+$cfg = app_config();
+$parentCfg = $cfg['parent'] ?? [];
+$allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
+$downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
+  preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
 ?>
 <!doctype html>
 <html lang="<?=h($lang)?>">
@@ -476,6 +481,14 @@ $secondary = $b['secondary'] ?? '#111111';
         <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
       <?php endif; ?>
 
+      <?php if ($allowDownload): ?>
+        <div class="actions" style="margin-bottom:12px;">
+          <button class="btn secondary" type="button" id="downloadPdfBtn">
+            <?=h(t('parent.portal.download', 'PDF herunterladen (schreibgeschützt)'))?>
+          </button>
+        </div>
+      <?php endif; ?>
+
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
            oncontextmenu="return false;">
@@ -512,6 +525,8 @@ $secondary = $b['secondary'] ?? '#111111';
 
     const payload = <?= json_encode($previewPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
     const preview = document.getElementById('pdfPreview');
+    const downloadBtn = document.getElementById('downloadPdfBtn');
+    const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -760,7 +775,7 @@ $secondary = $b['secondary'] ?? '#111111';
       return out || raw;
     }
 
-    async function fillPdf(){
+    async function buildPdfBytes({ flatten } = { flatten: false }){
       await ensurePdfLib();
       const tpl = await loadTemplate();
 
@@ -808,8 +823,42 @@ $secondary = $b['secondary'] ?? '#111111';
 
       try { form.updateFieldAppearances(); } catch(e) {}
 
-      const bytes = await pdfDoc.save();
+      if (flatten) {
+        try { form.flatten(); } catch (e) {}
+      }
+
+      return await pdfDoc.save();
+    }
+
+    async function fillPdf(){
+      const bytes = await buildPdfBytes({ flatten: false });
       renderPages(bytes);
+    }
+
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', async () => {
+        if (!downloadBtn) return;
+        const label = downloadBtn.textContent;
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = 'PDF wird erstellt…';
+        try {
+          const bytes = await buildPdfBytes({ flatten: true });
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = downloadName || 'bericht.pdf';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (e) {
+          showError(e?.message || String(e));
+        } finally {
+          downloadBtn.disabled = false;
+          downloadBtn.textContent = label;
+        }
+      });
     }
 
     fillPdf().catch(e => showError(e?.message || String(e)));

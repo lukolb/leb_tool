@@ -42,6 +42,10 @@ return [
     'tts_voice' => '', // legacy fallback (Deutsch)
     'tts_rate' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
   ],
+  'parent' => [
+    // Eltern dürfen eine signierte, schreibgeschützte PDF herunterladen.
+    'download_enabled' => false,
+  ],
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über
     // die Umgebungsvariable OPENAI_API_KEY gesetzt werden.

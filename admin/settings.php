@@ -151,6 +151,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['student']['tts_voice'] = $ttsVoiceDe;
     $cfg['student']['tts_rate'] = max(0.5, min(1.5, $ttsRate));
 
+    // ---- Parent portal settings ----
+    if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
+      if (!isset($cfg['parent']) || !is_array($cfg['parent'])) $cfg['parent'] = [];
+      $cfg['parent']['download_enabled'] = isset($_POST['parent_download_enabled']);
+    }
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -236,6 +242,9 @@ $aiStudentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['studen
 $aiProvider = $ai['provider'] ?? 'openai';
 $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
+
+$parentCfg = $cfg['parent'] ?? [];
+$parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -417,6 +426,26 @@ render_admin_header('Admin – Settings');
     <label>Modell</label>
     <input name="ai_model" value="<?=h((string)$aiModel)?>" placeholder="z.B. gpt-4o-mini">
     <p class="muted">Bezeichnung muss zu deinem Provider passen.</p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Speichern</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Elternmodus</h2>
+  <p class="muted">Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen.</p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="parent_download_enabled_present" value="1">
+
+    <label class="chk">
+      <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>> Download-Button in der Elternansicht anzeigen
+    </label>
+    <p class="muted">Der Download erzeugt eine signierte, nicht bearbeitbare PDF-Version.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>
