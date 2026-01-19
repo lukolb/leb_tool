@@ -1362,6 +1362,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;">
                   <?=((int)$s['is_active']===1?h(t('teacher.students.btn_deactivate', 'Deaktivieren')):h(t('teacher.students.btn_activate', 'Aktivieren')))?></a>
               </form>
+              <a class="btn secondary" href="<?=h(url('teacher/pdf_entry.php?class_id=' . (int)$classId . '&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?></a>
               <?php if ($formValueCount === 0): ?>
                 <form method="post" style="display:inline;" onsubmit="return confirm('<?=h(t('teacher.students.confirm_delete', 'Schüler wirklich löschen?'))?>');">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
