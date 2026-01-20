@@ -386,7 +386,7 @@ async function finalizeExport(payload){
     let data = null;
     try { data = JSON.parse(raw); } catch (e) { data = null; }
     const msg = data?.error ? String(data.error) : raw.slice(0, 300);
-    throw new Error(msg || ('HTTP ' + resp.status));
+    throw new Error(msg || resp.statusText || ('HTTP ' + resp.status));
   }
 
   const blob = await resp.blob();
