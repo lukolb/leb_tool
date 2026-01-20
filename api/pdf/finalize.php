@@ -4,7 +4,6 @@ declare(strict_types=1);
 use setasign\Fpdi\Tcpdf\Fpdi;
 
 require __DIR__ . '/../../bootstrap.php';
-require __DIR__ . '/../../lib/pdf_vendor.php';
 
 function pdf_read_json_body(): array {
   $raw = file_get_contents('php://input');
@@ -397,6 +396,7 @@ function pdf_add_template_pages(Fpdi $pdf, string $templatePath, array $fieldsBy
 }
 
 try {
+  require __DIR__ . '/../../lib/pdf_vendor.php';
   $data = pdf_read_json_body();
   if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
   if (!isset($_POST['csrf_token']) && isset($_SERVER['HTTP_X_CSRF_TOKEN'])) $_POST['csrf_token'] = (string)$_SERVER['HTTP_X_CSRF_TOKEN'];
