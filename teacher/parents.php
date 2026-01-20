@@ -57,9 +57,9 @@ function build_parent_mail_html(string $template, array $student, string $link):
 
 function build_feedback_reply_mailto(array $emails, string $studentName, string $message, string $createdAt): ?string {
   if (!$emails) return null;
-  $subject = 'Re: Eltern-Rückmeldung von ' . $studentName;
+  $subject = 'Re: Eltern-Rückmeldung zum Lernentwicklungsbericht von ' . $studentName;
   $replyText = trim($message) !== '' ? $message : '—';
-  $body = "Hallo,\n\n\n\n---\nRückmeldung von {$studentName} am {$createdAt}:\n" . $replyText;
+  $body = "Hallo,\n\n\n\n---\nIhre Rückmeldung vom {$createdAt}:\n" . $replyText;
   $recipients = implode(',', $emails);
   $query = 'subject=' . rawurlencode($subject) . '&body=' . rawurlencode($body);
   return 'mailto:' . $recipients . '?' . $query;
