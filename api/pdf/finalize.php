@@ -387,34 +387,38 @@ function pdf_add_template_pages(Fpdi $pdf, string $templatePath, array $fieldsBy
         [$x, $y, $w, $h] = pdf_rect_to_tcpdf($field['rect'], $size['height']);
         if ($type === 'checkbox') {
           pdf_draw_box_with_x($pdf, $x, $y, $w, $h, pdf_bool_checked($value));
-        } elseif ($type === 'radio') {
-          $options = $field['options'];
-          $positions = pdf_layout_radio_positions([$x, $y, $w, $h], count($options));
-          $selected = (string)$value;
-          $didDraw = false;
-          foreach ($options as $idx => $opt) {
-            $pos = $positions[$idx] ?? null;
-            if (!$pos) continue;
-            if (pdf_radio_matches($selected, $opt)) {
-              pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
-              $didDraw = true;
-            }
-          }
-          if (!$didDraw && trim($selected) !== '') {
-            if ($positions) {
-              $pos = $positions[0];
-              pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
-            } else {
-              pdf_draw_box_with_x($pdf, $x, $y, $w, $h, true);
-            }
-          }
-        } elseif ($type === 'select' || $type === 'grade') {
-          pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], false);
-        } elseif ($type === 'signature') {
-          pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], false);
         } else {
-          $multiline = (bool)$field['multiline'];
-          pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], $multiline);
+          $options = $field['options'] ?? [];
+          $optionCount = is_array($options) ? count($options) : 0;
+          $radioLike = ($type === 'radio') || ($type === 'select' && $optionCount > 0 && $optionCount <= 10);
+          if ($radioLike) {
+            $positions = pdf_layout_radio_positions([$x, $y, $w, $h], $optionCount);
+            $selected = (string)$value;
+            $didDraw = false;
+            foreach ($options as $idx => $opt) {
+              $pos = $positions[$idx] ?? null;
+              if (!$pos) continue;
+              if (pdf_radio_matches($selected, $opt)) {
+                pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
+                $didDraw = true;
+              }
+            }
+            if (!$didDraw && trim($selected) !== '') {
+              if ($positions) {
+                $pos = $positions[0];
+                pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
+              } else {
+                pdf_draw_box_with_x($pdf, $x, $y, $w, $h, true);
+              }
+            }
+          } elseif ($type === 'select' || $type === 'grade') {
+          pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], false);
+          } elseif ($type === 'signature') {
+            pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], false);
+          } else {
+            $multiline = (bool)$field['multiline'];
+            pdf_draw_text($pdf, (string)$value, [$x, $y, $w, $h], $multiline);
+          }
         }
       }
     }
