@@ -128,8 +128,8 @@ Dieser rendert die PDF vollständig neu: die Vorlage wird via FPDI importiert un
 **Setup (Shared Hosting, ohne Composer):**
 
 1. Lege die Libraries im Repo ab:
-   - `/lib/tcpdf/` (TCPDF)
-   - `/lib/fpdi/` (setasign/fpdi)
+   - `/assets/tcpdf/` (TCPDF)
+   - `/assets/fpdi/` (setasign/fpdi)
 2. Loader-Datei ist bereits vorbereitet: `/lib/pdf_vendor.php`
 
 **Signatur-Konfiguration (PKCS#12):**
