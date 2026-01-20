@@ -451,7 +451,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         <?php if ($allowDownload): ?>
         <div class="row-actions" style="float: right;">
           <button class="btn primary" type="button" id="downloadPdfBtn">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="#fff" d="M352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 306.7L246.6 265.3C234.1 252.8 213.8 252.8 201.3 265.3C188.8 277.8 188.8 298.1 201.3 310.6L297.3 406.6C309.8 419.1 330.1 419.1 342.6 406.6L438.6 310.6C451.1 298.1 451.1 277.8 438.6 265.3C426.1 252.8 405.8 252.8 393.3 265.3L352 306.7L352 96zM160 384C124.7 384 96 412.7 96 448L96 480C96 515.3 124.7 544 160 544L480 544C515.3 544 544 515.3 544 480L544 448C544 412.7 515.3 384 480 384L433.1 384L376.5 440.6C345.3 471.8 294.6 471.8 263.4 440.6L206.9 384L160 384zM464 440C477.3 440 488 450.7 488 464C488 477.3 477.3 488 464 488C450.7 488 440 477.3 440 464C440 450.7 450.7 440 464 440z"/></svg> <?=h(t('parent.portal.download', 'PDF herunterladen'))?>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="#fff" d="M352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 306.7L246.6 265.3C234.1 252.8 213.8 252.8 201.3 265.3C188.8 277.8 188.8 298.1 201.3 310.6L297.3 406.6C309.8 419.1 330.1 419.1 342.6 406.6L438.6 310.6C451.1 298.1 451.1 277.8 438.6 265.3C426.1 252.8 405.8 252.8 393.3 265.3L352 306.7L352 96zM160 384C124.7 384 96 412.7 96 448L96 480C96 515.3 124.7 544 160 544L480 544C515.3 544 544 515.3 544 480L544 448C544 412.7 515.3 384 480 384L433.1 384L376.5 440.6C345.3 471.8 294.6 471.8 263.4 440.6L206.9 384L160 384zM464 440C477.3 440 488 450.7 488 464C488 477.3 477.3 488 464 488C450.7 488 440 477.3 440 464C440 450.7 450.7 440 464 440z"/></svg> <span id="downloadPdfBtnText"><?=h(t('parent.portal.download', 'PDF herunterladen'))?></span>
           </button>
         </div>
         <?php endif; ?>
@@ -525,6 +525,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const payload = <?= json_encode($previewPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
     const preview = document.getElementById('pdfPreview');
     const downloadBtn = document.getElementById('downloadPdfBtn');
+    const downloadBtnText = document.getElementById('downloadPdfBtnText');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
 
     if (preview) {
@@ -779,7 +780,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       const tpl = await loadTemplate();
 
       const PDFLib = window.PDFLib;
-      const { PDFDocument, PDFName, PDFBool } = PDFLib;
+      const { PDFDocument } = PDFLib;
 
       const pdfDoc = await PDFDocument.load(tpl);
       const form = pdfDoc.getForm();
@@ -813,14 +814,29 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         } catch (e) {}
       });
 
+      let defaultFont = null;
       try {
-        const acro = form.acroForm;
-        if (acro && acro.dict && PDFName && PDFBool) {
-          acro.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+        if (typeof form.getDefaultFont === 'function') {
+          defaultFont = form.getDefaultFont();
+        }
+        if (!defaultFont && PDFLib?.StandardFonts && typeof pdfDoc.embedFont === 'function') {
+          defaultFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
         }
       } catch (e) {}
 
-      try { form.updateFieldAppearances(); } catch(e) {}
+      try {
+        form.getFields().forEach((field) => {
+          if (PDFLib?.PDFRadioGroup && field instanceof PDFLib.PDFRadioGroup) return;
+          if (!(PDFLib?.PDFTextField && field instanceof PDFLib.PDFTextField)) return;
+          if (typeof field.updateAppearances === 'function') {
+            try {
+              defaultFont ? field.updateAppearances(defaultFont) : field.updateAppearances();
+            } catch (e) {}
+          } else if (defaultFont && typeof field.defaultUpdateAppearances === 'function') {
+            try { field.defaultUpdateAppearances(defaultFont); } catch (e) {}
+          }
+        });
+      } catch (e) {}
 
       if (flatten) {
         try { form.flatten(); } catch (e) {}
@@ -839,7 +855,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         if (!downloadBtn) return;
         const label = downloadBtn.textContent;
         downloadBtn.disabled = true;
-        downloadBtn.textContent = 'PDF wird erstellt…';
+        downloadBtnText.textContent = 'wird erstellt…';
         try {
           const bytes = await buildPdfBytes({ flatten: true });
           const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -855,7 +871,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           showError(e?.message || String(e));
         } finally {
           downloadBtn.disabled = false;
-          downloadBtn.textContent = label;
+          downloadBtnText.textContent = label;
         }
       });
     }
