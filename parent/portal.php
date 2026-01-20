@@ -542,7 +542,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       if (window.PDFLib) return;
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+        s.src = '<?=h(url('assets/pdf-lib.min.js'))?>';
         s.onload = resolve;
         s.onerror = () => reject(new Error('PDF-Bibliothek konnte nicht geladen werden.'));
         document.head.appendChild(s);
@@ -780,7 +780,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       const tpl = await loadTemplate();
 
       const PDFLib = window.PDFLib;
-      const { PDFDocument, PDFName, PDFBool } = PDFLib;
+      const { PDFDocument, PDFName, PDFBool, PDFRadioGroup } = PDFLib;
 
       const pdfDoc = await PDFDocument.load(tpl);
       const form = pdfDoc.getForm();
@@ -821,10 +821,21 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         }
       } catch (e) {}
 
-      try { form.updateFieldAppearances(); } catch(e) {}
+      try {
+        form.getFields().forEach((field) => {
+          if (PDFRadioGroup && field instanceof PDFRadioGroup) return;
+          if (typeof field.updateAppearances === 'function') {
+            try { field.updateAppearances(); } catch (e) {}
+          }
+        });
+      } catch (e) {}
 
       if (flatten) {
-        try { form.flatten(); } catch (e) {}
+        try {
+          form.flatten({ updateFieldAppearances: false });
+        } catch (e) {
+          try { form.flatten(); } catch (err) {}
+        }
       }
 
       return await pdfDoc.save();

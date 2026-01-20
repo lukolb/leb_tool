@@ -317,7 +317,7 @@ async function loadLibsIfNeeded(needZip){
   if (!window.PDFLib){
     await new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+      s.src = '<?=h(url('assets/pdf-lib.min.js'))?>';
       s.onload = resolve;
       s.onerror = () => reject(new Error('pdf-lib konnte nicht geladen werden.'));
       document.head.appendChild(s);
