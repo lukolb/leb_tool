@@ -70,6 +70,9 @@ function pdf_load_field_options(PDO $pdo, array $field, array $meta): array {
   if ($listId > 0) {
     return pdf_load_option_list($pdo, $listId);
   }
+  if (isset($meta['options']) && is_array($meta['options'])) {
+    return $meta['options'];
+  }
   $optionsRaw = $field['options_json'] ?? null;
   if ($optionsRaw) {
     $decoded = json_decode((string)$optionsRaw, true);
@@ -388,11 +391,21 @@ function pdf_add_template_pages(Fpdi $pdf, string $templatePath, array $fieldsBy
           $options = $field['options'];
           $positions = pdf_layout_radio_positions([$x, $y, $w, $h], count($options));
           $selected = (string)$value;
+          $didDraw = false;
           foreach ($options as $idx => $opt) {
             $pos = $positions[$idx] ?? null;
             if (!$pos) continue;
             if (pdf_radio_matches($selected, $opt)) {
               pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
+              $didDraw = true;
+            }
+          }
+          if (!$didDraw && trim($selected) !== '') {
+            if ($positions) {
+              $pos = $positions[0];
+              pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
+            } else {
+              pdf_draw_box_with_x($pdf, $x, $y, $w, $h, true);
             }
           }
         } elseif ($type === 'select' || $type === 'grade') {
