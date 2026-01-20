@@ -55,6 +55,24 @@ function build_parent_mail_html(string $template, array $student, string $link):
   ]);
 }
 
+function quote_mail_text(string $text): string {
+  $lines = preg_split('/\r\n|\r|\n/', $text);
+  if (!$lines) return '> ';
+  return implode("\n", array_map(fn($line) => '> ' . $line, $lines));
+}
+
+function build_feedback_reply_mailto(array $emails, string $studentName, string $message, string $createdAt): ?string {
+  if (!$emails) return null;
+  $subject = 'Re: Eltern-Rückmeldung von ' . $studentName;
+  $replyText = trim($message) !== '' ? $message : '—';
+  $body = "Hallo,\n\n\n\n---\nRückmeldung von {$studentName} am {$createdAt}:\n" . quote_mail_text($replyText);
+  $recipients = implode(',', array_map('rawurlencode', $emails));
+  return 'mailto:' . $recipients . '?' . http_build_query([
+    'subject' => $subject,
+    'body' => $body,
+  ]);
+}
+
 // --- classes for teacher/admin ---
 if ($role === 'admin') {
   $classes = $pdo->query(
@@ -384,8 +402,8 @@ if ($linkIds) {
 // Feedback moderation list for this class
 $feedbackList = [];
 if ($classId > 0) {
-  $stFb = $pdo->prepare(
-    "SELECT pf.*, s.first_name, s.last_name, ppl.status AS link_status, ppl.student_id\n" .
+$stFb = $pdo->prepare(
+    "SELECT pf.*, s.first_name, s.last_name, s.email_parent1, s.email_parent2, ppl.status AS link_status, ppl.student_id\n" .
     "FROM parent_feedback pf\n" .
     "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
     "JOIN students s ON s.id=ppl.student_id\n" .
@@ -556,8 +574,17 @@ render_teacher_header($pageTitle);
         </thead>
         <tbody>
           <?php foreach ($feedbackList as $fb): ?>
+            <?php
+              $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
+              $feedbackDate = date_format(date_create((string)$fb['created_at']),"d.m.Y H:i");
+              $feedbackEmails = array_values(array_unique(array_filter([
+                sanitize_email($fb['email_parent1'] ?? null),
+                sanitize_email($fb['email_parent2'] ?? null),
+              ])));
+              $replyLink = build_feedback_reply_mailto($feedbackEmails, $feedbackStudent, (string)($fb['message'] ?? ''), $feedbackDate);
+            ?>
             <tr>
-              <td><strong><?=h((string)$fb['first_name'] . ' ' . (string)$fb['last_name'])?></strong></td>
+              <td><strong><?=h($feedbackStudent)?></strong></td>
               <td>
                 <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
                   <span class="muted">–</span>
@@ -565,7 +592,7 @@ render_teacher_header($pageTitle);
                   <?= nl2br(h((string)$fb['message'])) ?>
                 <?php endif; ?>
               </td>
-              <td><?=h(date_format(date_create((string)$fb['created_at']),"d.m.Y H:i"))?></td>
+              <td><?=h($feedbackDate)?></td>
               <td>
                 <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
                   <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
@@ -574,17 +601,22 @@ render_teacher_header($pageTitle);
                 <?php endif; ?>
               </td>
               <td>
-                <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
-                  <form method="post" style="margin:0;">
-                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                    <input type="hidden" name="action" value="mark_feedback_reviewed">
-                    <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
-                    <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
-                    <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
-                  </form>
-                <?php else: ?>
-                  <span class="muted">–</span>
-                <?php endif; ?>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <?php if ($replyLink): ?>
+                    <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
+                  <?php else: ?>
+                    <span class="muted">–</span>
+                  <?php endif; ?>
+                  <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
+                    <form method="post" style="margin:0;">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="mark_feedback_reviewed">
+                      <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
+                      <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
+                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
+                    </form>
+                  <?php endif; ?>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
