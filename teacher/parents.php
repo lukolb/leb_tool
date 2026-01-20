@@ -55,17 +55,11 @@ function build_parent_mail_html(string $template, array $student, string $link):
   ]);
 }
 
-function quote_mail_text(string $text): string {
-  $lines = preg_split('/\r\n|\r|\n/', $text);
-  if (!$lines) return '> ';
-  return implode("\n", array_map(fn($line) => '> ' . $line, $lines));
-}
-
 function build_feedback_reply_mailto(array $emails, string $studentName, string $message, string $createdAt): ?string {
   if (!$emails) return null;
   $subject = 'Re: Eltern-Rückmeldung von ' . $studentName;
   $replyText = trim($message) !== '' ? $message : '—';
-  $body = "Hallo,\n\n\n\n---\nRückmeldung von {$studentName} am {$createdAt}:\n" . quote_mail_text($replyText);
+  $body = "Hallo,\n\n\n\n---\nRückmeldung von {$studentName} am {$createdAt}:\n" . $replyText;
   $recipients = implode(',', array_map('rawurlencode', $emails));
   return 'mailto:' . $recipients . '?' . http_build_query([
     'subject' => $subject,
