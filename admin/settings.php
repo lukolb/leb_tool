@@ -155,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
       if (!isset($cfg['parent']) || !is_array($cfg['parent'])) $cfg['parent'] = [];
       $cfg['parent']['download_enabled'] = isset($_POST['parent_download_enabled']);
+      $cfg['parent']['auto_approve_requests'] = isset($_POST['parent_auto_approve_requests']);
     }
 
     // ---- Logo actions ----
@@ -245,6 +246,7 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
+$parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -435,7 +437,7 @@ render_admin_header('Admin – Settings');
 
 <div class="card">
   <h2>Elternmodus</h2>
-  <p class="muted">Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen.</p>
+  <p class="muted">Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen und ob Anfragen automatisch freigegeben werden.</p>
 
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -446,6 +448,10 @@ render_admin_header('Admin – Settings');
       <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>> Download-Button in der Elternansicht anzeigen
     </label>
     <p class="muted">Der Download erzeugt eine signierte, nicht bearbeitbare PDF-Version.</p>
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="parent_auto_approve_requests" value="1" <?=$parentAutoApprove ? 'checked' : ''?>> Anfragen automatisch freigeben (keine Admin-Bestätigung erforderlich)
+    </label>
+    <p class="muted">Wenn aktiviert, werden neue Elternzugänge direkt freigeschaltet.</p>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>

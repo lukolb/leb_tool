@@ -11,6 +11,9 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 $role = (string)($u['role'] ?? '');
+$cfg = app_config();
+$parentCfg = $cfg['parent'] ?? [];
+$parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
 
 function parent_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -242,6 +245,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($days < 1) $days = 1;
       if ($days > 90) $days = 90;
       $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $status = $parentAutoApprove ? 'approved' : 'requested';
+      $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
+      $publishedAt = $parentAutoApprove ? $approvedAt : null;
 
       $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name ASC, first_name ASC");
       $stStudents->execute([$targetClassId]);
@@ -249,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $stLatestLink = $pdo->prepare("SELECT status, expires_at FROM parent_portal_links WHERE student_id=? ORDER BY updated_at DESC, id DESC LIMIT 1");
       $ins = $pdo->prepare(
         "INSERT INTO parent_portal_links (student_id, report_instance_id, token, status, requested_by_user_id, preferred_lang, expires_at, published_at, approved_by_user_id, approved_at)\n" .
-        "VALUES (?, ?, ?, 'requested', ?, 'de', ?, NULL, NULL, NULL)"
+        "VALUES (?, ?, ?, ?, ?, 'de', ?, ?, ?, ?)"
       );
       foreach ($stStudents->fetchAll(PDO::FETCH_ASSOC) as $stuRow) {
         $sid = (int)$stuRow['id'];
@@ -266,10 +272,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$report) { $skippedReport++; continue; }
 
         $token = bin2hex(random_bytes(32));
-        $ins->execute([$sid, (int)$report['id'], $token, $userId, $expiresAt]);
+        $ins->execute([
+          $sid,
+          (int)$report['id'],
+          $token,
+          $status,
+          $userId,
+          $expiresAt,
+          $publishedAt,
+          null,
+          $approvedAt,
+        ]);
         $created++;
       }
-      $alerts[] = 'Sammelanfrage erstellt: ' . $created . ' neu, ' . $skippedActive . ' bereits aktiv, ' . $skippedReport . ' ohne Bericht.';
+      $prefix = $parentAutoApprove ? 'Sammelfreischaltung' : 'Sammelanfrage';
+      $alerts[] = $prefix . ' erstellt: ' . $created . ' neu, ' . $skippedActive . ' bereits aktiv, ' . $skippedReport . ' ohne Bericht.';
     } else {
       $studentId = (int)($_POST['student_id'] ?? 0);
 
@@ -297,15 +314,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($days < 1) $days = 1;
         if ($days > 90) $days = 90;
         $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+        $status = $parentAutoApprove ? 'approved' : 'requested';
+        $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
+        $publishedAt = $parentAutoApprove ? $approvedAt : null;
 
         $token = bin2hex(random_bytes(32));
 
         $ins = $pdo->prepare(
           "INSERT INTO parent_portal_links (student_id, report_instance_id, token, status, requested_by_user_id, preferred_lang, expires_at, published_at, approved_by_user_id, approved_at)\n" .
-          "VALUES (?, ?, ?, 'requested', ?, 'de', ?, NULL, NULL, NULL)"
+          "VALUES (?, ?, ?, ?, ?, 'de', ?, ?, ?, ?)"
         );
-        $ins->execute([$studentId, (int)$report['id'], $token, $userId, $expiresAt]);
-        $alerts[] = 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
+        $ins->execute([
+          $studentId,
+          (int)$report['id'],
+          $token,
+          $status,
+          $userId,
+          $expiresAt,
+          $publishedAt,
+          null,
+          $approvedAt,
+        ]);
+        $alerts[] = $parentAutoApprove
+          ? 'Elternmodus wurde freigeschaltet.'
+          : 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
       }
 
     }
@@ -409,11 +441,14 @@ $stFb = $pdo->prepare(
 
 $pageTitle = t('teacher.parents.title', 'Elternmodus');
 render_teacher_header($pageTitle);
+$introText = $parentAutoApprove
+  ? 'Elternmodus wird automatisch freigeschaltet und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'
+  : 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.';
 ?>
 <div class="card">
   <h1><?=h($pageTitle)?></h1>
   <p class="muted" style="max-width:760px;">
-    <?=h(t('teacher.parents.intro', 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'))?>
+    <?=h(t('teacher.parents.intro', $introText))?>
   </p>
 </div>
 
