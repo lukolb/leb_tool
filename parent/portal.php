@@ -867,7 +867,8 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
             let data = null;
             try { data = JSON.parse(raw); } catch (e) { data = null; }
             const msg = data?.error ? String(data.error) : raw.slice(0, 300);
-            throw new Error(msg || resp.statusText || ('HTTP ' + resp.status));
+            const fallback = resp.status >= 500 ? 'Serverfehler beim PDF-Export.' : (resp.statusText || 'Export fehlgeschlagen.');
+            throw new Error(msg || fallback);
           }
           const blob = await resp.blob();
           const disposition = resp.headers.get('content-disposition') || '';
