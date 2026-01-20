@@ -839,7 +839,7 @@ function normalizeDateIfNeeded(rawValue, expectedFmt){
   return out || raw;
 }
 
-// --------- PDF fill: keep form editable + render X via viewer (NeedAppearances) ----------
+// --------- PDF fill: keep form editable + render X with generated appearances ----------
 let __didDump = false;
 
 /**
@@ -847,7 +847,7 @@ let __didDump = false;
  */
 async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   const PDFLib = window.PDFLib;
-  const { PDFDocument, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, PDFName, PDFBool } = PDFLib;
+  const { PDFDocument, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, PDFName, PDFBool, StandardFonts } = PDFLib;
 
   const pdfDoc = await PDFDocument.load(templateBytes);
   const form = pdfDoc.getForm();
@@ -997,13 +997,23 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
     else if (typeof f.setText === 'function') setText(f, v);
   }
 
+  let appearanceFont = null;
   try {
-    const acro = form.acroForm;
-    if (acro && acro.dict && PDFName && PDFBool) {
-      acro.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
+    if (StandardFonts) {
+      appearanceFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     }
   } catch (e) {}
-  try { form.updateFieldAppearances(); } catch (e) {}
+  try {
+    form.updateFieldAppearances(appearanceFont || undefined);
+  } catch (e) {}
+  try {
+    const acro = form.acroForm;
+    if (acro && acro.dict && PDFName) {
+      const key = PDFName.of('NeedAppearances');
+      try { acro.dict.delete(key); } catch (e) {}
+      if (PDFBool) acro.dict.set(key, PDFBool.False);
+    }
+  } catch (e) {}
 
   return await pdfDoc.save();
 }
