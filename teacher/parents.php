@@ -60,11 +60,9 @@ function build_feedback_reply_mailto(array $emails, string $studentName, string 
   $subject = 'Re: Eltern-Rückmeldung von ' . $studentName;
   $replyText = trim($message) !== '' ? $message : '—';
   $body = "Hallo,\n\n\n\n---\nRückmeldung von {$studentName} am {$createdAt}:\n" . $replyText;
-  $recipients = implode(',', array_map('rawurlencode', $emails));
-  return 'mailto:' . $recipients . '?' . http_build_query([
-    'subject' => $subject,
-    'body' => $body,
-  ]);
+  $recipients = implode(',', $emails);
+  $query = 'subject=' . rawurlencode($subject) . '&body=' . rawurlencode($body);
+  return 'mailto:' . $recipients . '?' . $query;
 }
 
 // --- classes for teacher/admin ---
