@@ -239,6 +239,22 @@ function pdf_draw_box_with_x(Fpdi $pdf, float $x, float $y, float $w, float $h, 
   }
 }
 
+function pdf_norm_str(string $value): string {
+  return strtolower(trim($value));
+}
+
+function pdf_radio_matches(string $selected, array $option): bool {
+  $sel = pdf_norm_str($selected);
+  if ($sel === '') return false;
+  $value = pdf_norm_str((string)($option['value'] ?? ''));
+  $label = pdf_norm_str((string)($option['label'] ?? ''));
+  $labelEn = pdf_norm_str((string)($option['label_en'] ?? ''));
+  if ($value !== '' && $sel === $value) return true;
+  if ($label !== '' && $sel === $label) return true;
+  if ($labelEn !== '' && $sel === $labelEn) return true;
+  return false;
+}
+
 function pdf_layout_radio_positions(array $rect, int $count): array {
   if ($count <= 0) return [];
   [$x, $y, $w, $h] = $rect;
@@ -375,9 +391,7 @@ function pdf_add_template_pages(Fpdi $pdf, string $templatePath, array $fieldsBy
           foreach ($options as $idx => $opt) {
             $pos = $positions[$idx] ?? null;
             if (!$pos) continue;
-            $optVal = (string)($opt['value'] ?? '');
-            $checked = ($optVal !== '' && $optVal === $selected);
-            if ($checked) {
+            if (pdf_radio_matches($selected, $opt)) {
               pdf_draw_box_with_x($pdf, $pos[0], $pos[1], $pos[2], $pos[3], true);
             }
           }
