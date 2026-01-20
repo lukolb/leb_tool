@@ -382,8 +382,11 @@ async function finalizeExport(payload){
   }
 
   if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || ('HTTP ' + resp.status));
+    const raw = await resp.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch (e) { data = null; }
+    const msg = data?.error ? String(data.error) : raw.slice(0, 300);
+    throw new Error(msg || ('HTTP ' + resp.status));
   }
 
   const blob = await resp.blob();

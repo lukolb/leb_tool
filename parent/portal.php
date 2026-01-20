@@ -863,8 +863,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
             body: JSON.stringify({ token: portalToken, mode: 'single', download_name: downloadName })
           });
           if (!resp.ok) {
-            const text = await resp.text();
-            throw new Error(text || 'PDF konnte nicht erstellt werden.');
+            const raw = await resp.text();
+            let data = null;
+            try { data = JSON.parse(raw); } catch (e) { data = null; }
+            const msg = data?.error ? String(data.error) : raw.slice(0, 300);
+            throw new Error(msg || 'PDF konnte nicht erstellt werden.');
           }
           const blob = await resp.blob();
           const disposition = resp.headers.get('content-disposition') || '';
