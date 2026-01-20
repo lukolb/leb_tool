@@ -820,7 +820,28 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         }
       } catch (e) {}
 
-      try { form.updateFieldAppearances(); } catch(e) {}
+      let defaultFont = null;
+      try {
+        if (typeof form.getDefaultFont === 'function') {
+          defaultFont = form.getDefaultFont();
+        }
+        if (!defaultFont && PDFLib?.StandardFonts && typeof pdfDoc.embedFont === 'function') {
+          defaultFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+        }
+      } catch (e) {}
+
+      try {
+        form.getFields().forEach((field) => {
+          if (PDFLib?.PDFRadioGroup && field instanceof PDFLib.PDFRadioGroup) return;
+          if (typeof field.updateAppearances === 'function') {
+            try {
+              defaultFont ? field.updateAppearances(defaultFont) : field.updateAppearances();
+            } catch (e) {}
+          } else if (defaultFont && typeof field.defaultUpdateAppearances === 'function') {
+            try { field.defaultUpdateAppearances(defaultFont); } catch (e) {}
+          }
+        });
+      } catch (e) {}
 
       if (flatten) {
         try { form.flatten(); } catch (e) {}
