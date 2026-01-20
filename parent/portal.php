@@ -779,7 +779,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       const tpl = await loadTemplate();
 
       const PDFLib = window.PDFLib;
-      const { PDFDocument, PDFName, PDFBool } = PDFLib;
+      const { PDFDocument } = PDFLib;
 
       const pdfDoc = await PDFDocument.load(tpl);
       const form = pdfDoc.getForm();
@@ -813,13 +813,6 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         } catch (e) {}
       });
 
-      try {
-        const acro = form.acroForm;
-        if (acro && acro.dict && PDFName && PDFBool) {
-          acro.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
-        }
-      } catch (e) {}
-
       let defaultFont = null;
       try {
         if (typeof form.getDefaultFont === 'function') {
@@ -833,6 +826,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       try {
         form.getFields().forEach((field) => {
           if (PDFLib?.PDFRadioGroup && field instanceof PDFLib.PDFRadioGroup) return;
+          if (!(PDFLib?.PDFTextField && field instanceof PDFLib.PDFTextField)) return;
           if (typeof field.updateAppearances === 'function') {
             try {
               defaultFont ? field.updateAppearances(defaultFont) : field.updateAppearances();
