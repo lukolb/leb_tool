@@ -43,6 +43,7 @@ $debugPdf = (int)($_GET['debug_pdf'] ?? 0) === 1;
 $pageTitle = t('teacher.export.title', 'PDF-Export');
 $backUrl = url('teacher/index.php');
 $exportApiUrl = url('teacher/ajax/export_api.php');
+$finalizeUrl = url('api/pdf/finalize.php');
 
 render_teacher_header($pageTitle);
 

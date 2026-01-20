@@ -527,6 +527,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const preview = document.getElementById('pdfPreview');
     const downloadBtn = document.getElementById('downloadPdfBtn');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
+    const finalizeUrl = <?= json_encode(url('api/pdf/finalize.php')) ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    const portalToken = <?= json_encode($token) ?>;
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -853,12 +856,24 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         downloadBtn.disabled = true;
         downloadBtn.textContent = 'PDF wird erstellt…';
         try {
-          const bytes = await buildPdfBytes({ flatten: true });
-          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const resp = await fetch(finalizeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+            credentials: 'same-origin',
+            body: JSON.stringify({ token: portalToken, mode: 'single', download_name: downloadName })
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(text || 'PDF konnte nicht erstellt werden.');
+          }
+          const blob = await resp.blob();
+          const disposition = resp.headers.get('content-disposition') || '';
+          const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+          const filename = match ? decodeURIComponent(match[1]) : null;
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = downloadName || 'bericht.pdf';
+          a.download = filename || downloadName || 'bericht.pdf';
           document.body.appendChild(a);
           a.click();
           a.remove();

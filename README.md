@@ -118,6 +118,28 @@ Der Parent-Bereich ist **optional** und klar vom System getrennt.
 
 - Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
 - Platzhalter-System, z. B.:
+
+### Serverseitiger PDF-Finalizer (TCPDF + FPDI)
+
+Für finale, nicht bearbeitbare PDFs (inkl. optionaler Verschlüsselung und Signatur) gibt es einen serverseitigen Finalizer unter `/api/pdf/finalize.php`.
+Dieser rendert die PDF vollständig neu: die Vorlage wird via FPDI importiert und alle Feldwerte als statischer Text bzw. Kreuz-Markierungen gezeichnet
+(Radiobuttons werden **immer als Kästchen mit X** gerendert). Die PDF-Formfelder selbst werden dabei nicht übernommen.
+
+**Setup (Shared Hosting, ohne Composer):**
+
+1. Lege die Libraries im Repo ab:
+   - `/lib/tcpdf/` (TCPDF)
+   - `/lib/fpdi/` (setasign/fpdi)
+2. Loader-Datei ist bereits vorbereitet: `/lib/pdf_vendor.php`
+
+**Signatur-Konfiguration (PKCS#12):**
+
+Die Signaturdaten werden **nicht** im Repo gespeichert. Setze die Pfade über ENV (oder außerhalb des Webroots in einer config):
+
+- `PDF_SIGN_P12_PATH=/pfad/zu/zertifikat.p12`
+- `PDF_SIGN_P12_PASS=passwort`
+
+**Hinweis:** Falls OpenSSL im PHP deaktiviert ist, kann keine digitale Signatur erstellt werden.
 {{student.firstname}}
 {{student.lastname}}
 {{class.label}}

@@ -15,7 +15,7 @@ declare(strict_types=1);
  *   - $debugPdf (bool)
  */
 
-if (!isset($exportApiUrl, $backUrl, $pageTitle, $classId, $classes, $csrf, $debugPdf)) {
+if (!isset($exportApiUrl, $finalizeUrl, $backUrl, $pageTitle, $classId, $classes, $csrf, $debugPdf)) {
   throw new RuntimeException('shared/export_page.php missing required variables.');
 }
 
@@ -223,6 +223,7 @@ const CSRF = <?= json_encode($csrf) ?>;
 const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
 
 const EXPORT_API_URL = <?= json_encode($exportApiUrl) ?>;
+const FINALIZE_URL = <?= json_encode($finalizeUrl) ?>;
 
 const elClass = document.getElementById('classId');
 const elStudentWrap = document.getElementById('singleStudentWrap');
@@ -313,25 +314,8 @@ if (elClass) {
   });
 }
 
-async function loadLibsIfNeeded(needZip){
-  if (!window.PDFLib){
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = '<?=h(url('assets/pdf-lib.min.js'))?>';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('pdf-lib konnte nicht geladen werden.'));
-      document.head.appendChild(s);
-    });
-  }
-  if (needZip && !window.JSZip){
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('JSZip konnte nicht geladen werden.'));
-      document.head.appendChild(s);
-    });
-  }
+function ensureFinalizeUrl(){
+  if (!FINALIZE_URL) throw new Error('FINALIZE_URL ist leer (Wrapper setzt $finalizeUrl nicht).');
 }
 
 function isNonFatalBusinessError(msg){
@@ -381,6 +365,32 @@ async function apiFetch(payload){
   }
 
   return data;
+}
+
+async function finalizeExport(payload){
+  ensureFinalizeUrl();
+  let resp;
+  try {
+    resp = await fetch(FINALIZE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    throw new Error('Netzwerkfehler beim PDF-Export: ' + (e?.message || e));
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(text || ('HTTP ' + resp.status));
+  }
+
+  const blob = await resp.blob();
+  const disposition = resp.headers.get('content-disposition') || '';
+  const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+  const filename = match ? decodeURIComponent(match[1]) : null;
+  return { blob, filename };
 }
 
 function fillStudentSelect(students, keepId){
@@ -839,174 +849,7 @@ function normalizeDateIfNeeded(rawValue, expectedFmt){
   return out || raw;
 }
 
-// --------- PDF fill: keep form editable + render X via viewer (NeedAppearances) ----------
-let __didDump = false;
-
-/**
- * ✅ NEW: pass fieldMetaMap so we can normalize dates before filling
- */
-async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
-  const PDFLib = window.PDFLib;
-  const { PDFDocument, PDFCheckBox, PDFRadioGroup, PDFDropdown, PDFOptionList, PDFName, PDFBool } = PDFLib;
-
-  const pdfDoc = await PDFDocument.load(templateBytes);
-  const form = pdfDoc.getForm();
-  const values = student.values || {};
-  const metaMap = (fieldMetaMap && typeof fieldMetaMap === 'object') ? fieldMetaMap : {};
-
-  const norm = (s) => (s ?? '').toString().trim();
-  const normLoose = (s) => norm(s).toLowerCase().replace(/\s+/g,'');
-
-  const fieldsByName = new Map();
-  const fieldsByLoose = new Map();
-
-  const addToMap = (map, key, field) => {
-    if (!key) return;
-    const arr = map.get(key);
-    if (arr) arr.push(field); else map.set(key, [field]);
-  };
-
-  const allFields = form.getFields();
-  for (const f of allFields){
-    let name = '';
-    try { name = f.getName(); } catch (e) { name = ''; }
-    name = norm(name);
-    if (!name) continue;
-
-    addToMap(fieldsByName, name, f);
-    addToMap(fieldsByLoose, normLoose(name), f);
-    addToMap(fieldsByLoose, normLoose(name.replace(/\.+$/,'')), f);
-    addToMap(fieldsByLoose, normLoose(name.replace(/\[0\]$/,'')), f);
-    addToMap(fieldsByLoose, normLoose(name.replace(/\s+/g,'')), f);
-  }
-
-  const getFieldList = (key) => {
-    const k = norm(key);
-    if (!k) return [];
-    const exact = fieldsByName.get(k);
-    if (exact && exact.length) return exact;
-    const loose = fieldsByLoose.get(normLoose(k));
-    if (loose && loose.length) return loose;
-    return [];
-  };
-
-  const isCheckBox = (f) => (PDFCheckBox && f instanceof PDFCheckBox) || (typeof f?.check === 'function' && typeof f?.uncheck === 'function');
-  const isRadioGroup = (f) => (PDFRadioGroup && f instanceof PDFRadioGroup) || (typeof f?.select === 'function' && typeof f?.getOptions === 'function' && !isCheckBox(f));
-  const isDropdown = (f) => (PDFDropdown && f instanceof PDFDropdown) || (typeof f?.select === 'function' && typeof f?.getOptions === 'function' && !isRadioGroup(f) && !isCheckBox(f));
-  const isOptionList = (f) => (PDFOptionList && f instanceof PDFOptionList);
-
-  const getOnValue = (cb) => {
-    try {
-      const af = cb?.acroField;
-      if (af && typeof af.getOnValue === 'function') {
-        const on = af.getOnValue();
-        if (on && typeof on.key === 'string') return on.key;
-        const s = String(on);
-        return s.startsWith('/') ? s.slice(1) : s;
-      }
-    } catch (e) {}
-    try {
-      const af = cb?.acroField;
-      if (af && typeof af.getWidgets === 'function') {
-        const ws = af.getWidgets();
-        if (ws && ws.length && typeof ws[0].getOnValue === 'function') {
-          const on = ws[0].getOnValue();
-          if (on && typeof on.key === 'string') return on.key;
-          const s = String(on);
-          return s.startsWith('/') ? s.slice(1) : s;
-        }
-      }
-    } catch (e) {}
-    return '';
-  };
-
-  const pickOption = (field, value) => {
-    const v = norm(value);
-    if (!v || typeof field?.getOptions !== 'function') return v;
-    try {
-      const opts = field.getOptions() || [];
-      const vL = normLoose(v);
-      const found = opts.find(o => normLoose(o) === vL);
-      return found || v;
-    } catch (e) {
-      return v;
-    }
-  };
-
-  const setText = (f, v) => { try { if (typeof f?.setText === 'function') f.setText(norm(v)); } catch(e) {} };
-  const setSelect = (f, v) => { try { if (v !== '') f.select(pickOption(f, v)); } catch(e) {} };
-
-  const setCheckGroupByOnValue = (checkboxes, desired) => {
-    const d = norm(desired);
-    const dL = normLoose(d);
-    for (const cb of checkboxes){
-      const on = getOnValue(cb);
-      const onL = normLoose(on);
-      try {
-        if (on && onL === dL) cb.check();
-        else cb.uncheck();
-      } catch(e) {}
-    }
-  };
-
-  if (DEBUG_PDF && !__didDump) {
-    __didDump = true;
-    try {
-      console.log('[PDF DEBUG] Field inventory:', allFields.map(f => {
-        let n = ''; try { n = f.getName(); } catch(e) {}
-        return {
-          name: n,
-          isCheckBox: isCheckBox(f),
-          isRadioGroup: isRadioGroup(f),
-          isDropdown: isDropdown(f),
-          ctor: (f?.constructor?.name || ''),
-          onValue: isCheckBox(f) ? getOnValue(f) : null,
-          options: (typeof f?.getOptions === 'function') ? (f.getOptions?.() || null) : null
-        };
-      }));
-      console.log('[PDF DEBUG] field_meta keys:', Object.keys(metaMap || {}).slice(0, 20));
-    } catch(e) {}
-  }
-
-  for (const [key, raw] of Object.entries(values)){
-    const list = getFieldList(key);
-    if (!list.length) continue;
-
-    const checkboxes = list.filter(isCheckBox);
-    if (checkboxes.length) {
-      const v = norm(raw);
-      setCheckGroupByOnValue(checkboxes, v);
-      continue;
-    }
-
-    const f = list[0];
-
-    // ✅ NEW: normalize dates only if necessary
-    const meta = metaMap[key] || null;
-    const fieldType = (meta?.field_type || '').toString().toLowerCase();
-    const expectedFmt = (meta?.date_format || '').toString().trim();
-
-    let v = norm(raw);
-    if (v && (fieldType === 'date' || expectedFmt)) {
-      const normed = normalizeDateIfNeeded(v, expectedFmt);
-      v = norm(normed);
-    }
-
-    if (isRadioGroup(f)) setSelect(f, v);
-    else if (isDropdown(f) || isOptionList(f)) setSelect(f, v);
-    else if (typeof f.setText === 'function') setText(f, v);
-  }
-
-  try {
-    const acro = form.acroForm;
-    if (acro && acro.dict && PDFName && PDFBool) {
-      acro.dict.set(PDFName.of('NeedAppearances'), PDFBool.True);
-    }
-  } catch (e) {}
-  try { form.updateFieldAppearances(); } catch (e) {}
-
-  return await pdfDoc.save();
-}
+// PDF finalize happens server-side via /api/pdf/finalize.php
 
 async function exportNow(){
   hideProgress();
@@ -1047,77 +890,26 @@ async function exportNow(){
   const students = data.students || [];
   if (!students.length) throw new Error('Keine Schüler gefunden (Filter?).');
 
-  const needZip = (mode === 'zip');
-  setStatus('Lade Bibliotheken …');
-  showProgress('Lade Bibliotheken …', 0, 1);
-  await loadLibsIfNeeded(needZip);
-  showProgress('Bibliotheken geladen', 1, 1);
-
-  setStatus('Lade PDF-Vorlage …');
-  showProgress('Lade PDF-Vorlage …', 0, 1);
-  const tplResp = await fetch(data.pdf_url, { credentials: 'same-origin' });
-  if (!tplResp.ok) throw new Error('PDF-Vorlage konnte nicht geladen werden.');
-  const templateBytes = new Uint8Array(await tplResp.arrayBuffer());
-  showProgress('PDF-Vorlage geladen', 1, 1);
-
-  const baseName = safeFilename((data.class?.display || 'Klasse') + ' ' + (data.class?.school_year || ''));
-  const suffix = onlySubmittedFlag() ? ' - nur abgegebene' : '';
-
-  if (mode === 'zip') {
-    setStatus('Erzeuge PDFs …');
-    showProgress('Erzeuge PDFs …', 0, students.length);
-    const zip = new window.JSZip();
-    let done = 0;
-    for (const s of students){
-      const bytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const fn = safeFilename(s.name) || ('Schueler-' + s.id);
-      zip.file(fn + '.pdf', bytes);
-      done++;
-      setStatus(`Erzeuge PDFs … ${done}/${students.length}`);
-      showProgress('Erzeuge PDFs …', done, students.length);
-    }
-    setStatus('ZIP packen …');
-    showProgress('ZIP packen …', students.length, students.length);
-    const out = await zip.generateAsync({ type: 'uint8array' });
-    downloadBytes(out, baseName + suffix + '.zip', 'application/zip');
-    setStatus('Fertig. ZIP wurde heruntergeladen.');
-    showProgress('Fertig', students.length, students.length);
-    return;
-  }
-
-  if (mode === 'merged') {
-    setStatus('Erzeuge eine zusammengeführte PDF …');
-    showProgress('Zusammenführen …', 0, students.length);
-    const { PDFDocument } = window.PDFLib;
-    const merged = await PDFDocument.create();
-    let done = 0;
-    for (const s of students){
-      const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const src = await PDFDocument.load(filledBytes);
-      const pages = await merged.copyPages(src, src.getPageIndices());
-      pages.forEach(p => merged.addPage(p));
-      done++;
-      setStatus(`Zusammenführen … ${done}/${students.length}`);
-      showProgress('Zusammenführen …', done, students.length);
-    }
-    const out = await merged.save();
-    downloadBytes(out, baseName + suffix + '.pdf', 'application/pdf');
-    setStatus('Fertig. PDF wurde heruntergeladen.');
-    showProgress('Fertig', students.length, students.length);
-    return;
-  }
-
   setStatus('Erzeuge PDF …');
   showProgress('Erzeuge PDF …', 0, 1);
   const chosenId = elStudent?.value;
-  let s = students[0];
-  if (chosenId) {
-    const found = students.find(x => String(x.id) === String(chosenId));
-    if (found) s = found;
-  }
-  const out = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-  const fn = safeFilename(s.name) || ('Schueler-' + s.id);
-  downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
+  const payload = {
+    class_id: classId,
+    mode,
+    only_submitted: onlySubmittedFlag(),
+  };
+  if (mode === 'single' && chosenId) payload.student_id = Number(chosenId);
+  const { blob, filename } = await finalizeExport(payload);
+  const fallbackName = mode === 'zip' ? 'export.zip' : 'export.pdf';
+  const downloadName = filename || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = downloadName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
   setStatus('Fertig. PDF wurde heruntergeladen.');
   showProgress('Fertig', 1, 1);
 }

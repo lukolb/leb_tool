@@ -20,6 +20,7 @@ $debugPdf = (int)($_GET['debug_pdf'] ?? 0) === 1;
 $pageTitle = 'PDF-Export';
 $backUrl = url('admin/index.php');
 $exportApiUrl = url('admin/ajax/export_api.php');
+$finalizeUrl = url('api/pdf/finalize.php');
 
 render_admin_header($pageTitle);
 
