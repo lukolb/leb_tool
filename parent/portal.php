@@ -7,6 +7,11 @@ $pdo = db();
 $token = (string)($_GET['token'] ?? '');
 $alerts = [];
 $errors = [];
+$cfg = app_config();
+$parentCfg = $cfg['parent'] ?? [];
+$signaturePurpose = 'parent_export';
+$signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
+$signatureConfigured = $signatureEnabled && signature_configured();
 
 function parent_meta_read(?string $json): array {
   if (!$json) return [];
@@ -375,6 +380,13 @@ if ($canPreview) {
   }
 
   $previewPayload['student']['values'] = $values;
+
+  if ($signatureConfigured) {
+    $sigPayload = signature_get_active_payload($pdo, (int)($link['requested_by_user_id'] ?? 0), $signaturePurpose);
+    if ($sigPayload) {
+      $previewPayload['teacher_signature'] = $sigPayload;
+    }
+  }
 }
 
 $b = brand();
@@ -382,8 +394,6 @@ $org = $b['org_name'] ?? 'LEG Tool';
 $logo = $b['logo_path'] ?? '';
 $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
-$cfg = app_config();
-$parentCfg = $cfg['parent'] ?? [];
 $allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
 $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
@@ -1032,6 +1042,95 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       }
     }
 
+    function collectSignatureFields(fieldMeta){
+      if (!fieldMeta || typeof fieldMeta !== 'object') return [];
+      return Object.entries(fieldMeta)
+        .filter(([, meta]) => (meta?.field_type || '').toString().toLowerCase() === 'signature')
+        .map(([name]) => name);
+    }
+
+    function signatureBounds(strokes){
+      let minX = 1, maxX = 0, minY = 1, maxY = 0;
+      let has = false;
+      for (const stroke of strokes) {
+        if (!Array.isArray(stroke)) continue;
+        for (const pt of stroke) {
+          if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') continue;
+          const x = pt.x;
+          const y = 1 - pt.y;
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+          has = true;
+        }
+      }
+      return has ? { minX, maxX, minY, maxY } : null;
+    }
+
+    function drawSignatureOverlay(pdfDoc, form, signature, fieldMeta){
+      if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return;
+      const fields = collectSignatureFields(fieldMeta);
+      if (!fields.length) return;
+      const bounds = signatureBounds(signature.strokes);
+      if (!bounds) return;
+
+      const PDFLib = window.PDFLib;
+      const { rgb } = PDFLib;
+      const color = rgb(0.06, 0.18, 0.45);
+      const pages = pdfDoc.getPages();
+
+      for (const name of fields) {
+        let field;
+        try { field = form.getField(name); } catch (e) { field = null; }
+        if (!field) continue;
+        const widgets = field?.acroField?.getWidgets?.() || [];
+        for (const widget of widgets) {
+          const rect = widget.getRectangle();
+          if (!rect || !rect.width || !rect.height) continue;
+          const page = widget.getPage?.() || pages[0];
+          if (!page) continue;
+
+          const margin = Math.max(6, Math.min(12, rect.height * 0.35));
+          const boxHeight = Math.max(rect.height * 1.1, rect.height + 6);
+          let boxY = rect.y + rect.height + margin;
+          const pageHeight = page.getHeight?.() || 0;
+          if (pageHeight && boxY + boxHeight > pageHeight - 4) {
+            boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
+          }
+          const box = { x: rect.x, y: boxY, width: rect.width, height: boxHeight };
+
+          const strokeWidth = Math.max(0.01, bounds.maxX - bounds.minX);
+          const strokeHeight = Math.max(0.01, bounds.maxY - bounds.minY);
+          const scale = Math.min(box.width / strokeWidth, box.height / strokeHeight);
+          const drawWidth = strokeWidth * scale;
+          const drawHeight = strokeHeight * scale;
+          const offsetX = box.x + (box.width - drawWidth) / 2;
+          const offsetY = box.y + (box.height - drawHeight) / 2;
+          const lineWidth = Math.max(0.9, rect.height * 0.08);
+
+          for (const stroke of signature.strokes) {
+            if (!Array.isArray(stroke) || stroke.length < 2) continue;
+            for (let i = 1; i < stroke.length; i++) {
+              const prev = stroke[i - 1];
+              const curr = stroke[i];
+              if (!prev || !curr) continue;
+              const x0 = offsetX + (prev.x - bounds.minX) * scale;
+              const y0 = offsetY + ((1 - prev.y) - bounds.minY) * scale;
+              const x1 = offsetX + (curr.x - bounds.minX) * scale;
+              const y1 = offsetY + ((1 - curr.y) - bounds.minY) * scale;
+              page.drawLine({
+                start: { x: x0, y: y0 },
+                end: { x: x1, y: y1 },
+                thickness: lineWidth,
+                color,
+              });
+            }
+          }
+        }
+      }
+    }
+
     async function buildPdfBytes({ flatten } = { flatten: false }){
       await ensurePdfLib();
       const tpl = await loadTemplate();
@@ -1097,6 +1196,10 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
 
       try {
         applyRadioCrossAppearances(pdfDoc, form, { debug: false });
+      } catch (e) {}
+
+      try {
+        drawSignatureOverlay(pdfDoc, form, payload.teacher_signature || null, fieldMeta);
       } catch (e) {}
 
       try {
