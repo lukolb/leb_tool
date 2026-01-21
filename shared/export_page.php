@@ -1007,9 +1007,6 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
     form.updateFieldAppearances(appearanceFont || undefined);
   } catch (e) {}
   try {
-    form.flatten();
-  } catch (e) {}
-  try {
     const acro = form.acroForm;
     if (acro && acro.dict && PDFName) {
       const key = PDFName.of('NeedAppearances');
