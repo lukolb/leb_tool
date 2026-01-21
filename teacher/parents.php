@@ -131,6 +131,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $alerts[] = 'Grafische Signatur gespeichert.';
     }
+    if ($action === 'load_signature') {
+      if (!$signatureConfigured) {
+        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+      }
+      $payload = signature_get_active_payload($pdo, $userId, $signaturePurpose);
+      header('Content-Type: application/json');
+      echo json_encode(['ok' => true, 'payload' => $payload]);
+      exit;
+    }
 
     $signatureUse = (string)($_POST['signature_use'] ?? '') === '1';
     $signaturePayload = null;
@@ -540,16 +549,13 @@ $introText = $parentAutoApprove
         <div class="row" style="gap:8px; margin-top:8px; align-items:center;">
           <button class="btn secondary" type="button" id="signatureClearBtn">Löschen</button>
           <button class="btn primary" type="button" id="signatureApplyBtn">Übernehmen</button>
-          <button class="btn secondary" type="button" id="signatureSkipBtn">Überspringen</button>
           <span id="signatureStatus" class="muted" style="font-size:12px;"></span>
         </div>
       </div>
       <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
-        <?php if ($signatureActive): ?>
-          <span class="pill green">Aktive Signatur gespeichert</span>
-        <?php else: ?>
-          <span class="pill" style="background:#f1f3f5;">Keine Signatur gespeichert</span>
-        <?php endif; ?>
+        <span id="signatureSavedPill" class="pill <?= $signatureActive ? 'green' : '' ?>" style="<?= $signatureActive ? '' : 'background:#f1f3f5;' ?>">
+          <?= $signatureActive ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert' ?>
+        </span>
         <form method="post" style="margin:0;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="delete_signature">
@@ -823,9 +829,9 @@ $introText = $parentAutoApprove
     .signature-pad::before {
       content: '';
       position: absolute;
-      left: 16px;
+      left: 44px;
       right: 16px;
-      bottom: 28px;
+      bottom: 30px;
       height: 1px;
       background: #d4d9e2;
       pointer-events: none;
@@ -833,10 +839,10 @@ $introText = $parentAutoApprove
     .signature-pad::after {
       content: '×';
       position: absolute;
-      right: 18px;
-      bottom: 10px;
-      color: #b4bac5;
-      font-size: 20px;
+      left: 16px;
+      bottom: 16px;
+      color: #b0b6c2;
+      font-size: 28px;
       font-weight: 600;
       pointer-events: none;
     }
@@ -901,14 +907,19 @@ $introText = $parentAutoApprove
     const canvas = document.getElementById('signatureCanvas');
     const clearBtn = document.getElementById('signatureClearBtn');
     const applyBtn = document.getElementById('signatureApplyBtn');
-    const skipBtn = document.getElementById('signatureSkipBtn');
     const statusEl = document.getElementById('signatureStatus');
+    const savedPill = document.getElementById('signatureSavedPill');
     const useInputs = Array.from(document.querySelectorAll('.signature-use-input'));
     const payloadInputs = Array.from(document.querySelectorAll('.signature-payload-input'));
     const hasActiveSignature = <?= $signatureActive ? 'true' : 'false' ?>;
     const csrfToken = <?= json_encode(csrf_token()) ?>;
 
     if (!toggle || !canvas) return;
+
+    if (hasActiveSignature) {
+      toggle.checked = true;
+      if (padWrap) padWrap.style.display = '';
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -922,6 +933,18 @@ $introText = $parentAutoApprove
       const useVal = toggle.checked ? '1' : '0';
       useInputs.forEach(input => input.value = useVal);
       payloadInputs.forEach(input => input.value = payload || '');
+    }
+
+    function setSavedState(saved){
+      if (!savedPill) return;
+      savedPill.textContent = saved ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert';
+      if (saved) {
+        savedPill.classList.add('green');
+        savedPill.style.background = '';
+      } else {
+        savedPill.classList.remove('green');
+        savedPill.style.background = '#f1f3f5';
+      }
     }
 
     function resizeCanvas(){
@@ -997,7 +1020,7 @@ $introText = $parentAutoApprove
 
     async function applyPad(){
       if (!state.strokes.length) {
-        setStatus('Bitte zuerst unterschreiben oder überspringen.');
+        setStatus('Bitte zuerst unterschreiben.');
         return;
       }
       const payload = JSON.stringify({ strokes: state.strokes });
@@ -1017,16 +1040,32 @@ $introText = $parentAutoApprove
         if (!data || data.ok !== true) throw new Error('Signatur konnte nicht gespeichert werden.');
         setFormPayload('');
         setStatus('Signatur gespeichert.');
+        setSavedState(true);
       } catch (e) {
         setStatus(e?.message || 'Signatur konnte nicht gespeichert werden.');
       }
     }
 
-    function skipPad(){
-      toggle.checked = false;
-      padWrap.style.display = 'none';
-      setFormPayload('');
-      setStatus(hasActiveSignature ? 'Aktive Signatur bleibt gespeichert.' : 'Signatur übersprungen.');
+    async function loadSavedSignature(){
+      if (!hasActiveSignature) return;
+      const body = new URLSearchParams();
+      body.set('csrf_token', csrfToken);
+      body.set('action', 'load_signature');
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body,
+        });
+        if (!resp.ok) return;
+        const data = await resp.json().catch(() => null);
+        const strokes = data?.payload?.strokes;
+        if (Array.isArray(strokes) && strokes.length) {
+          state.strokes = strokes;
+          redraw();
+        }
+      } catch (e) {}
     }
 
     toggle.addEventListener('change', () => {
@@ -1048,10 +1087,11 @@ $introText = $parentAutoApprove
 
     clearBtn?.addEventListener('click', clearPad);
     applyBtn?.addEventListener('click', applyPad);
-    skipBtn?.addEventListener('click', skipPad);
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+    loadSavedSignature();
+    setSavedState(hasActiveSignature);
     setFormPayload('');
   })();
   <?php endif; ?>

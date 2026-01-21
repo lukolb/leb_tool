@@ -1092,20 +1092,20 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           if (!page) continue;
 
           const margin = Math.max(6, Math.min(12, rect.height * 0.35));
-          const boxHeight = Math.max(rect.height * 1.1, rect.height + 6);
+          const strokeWidth = Math.max(0.01, bounds.maxX - bounds.minX);
+          const strokeHeight = Math.max(0.01, bounds.maxY - bounds.minY);
+          const boxWidth = rect.width;
+          const scale = boxWidth / strokeWidth;
+          const drawWidth = boxWidth;
+          const drawHeight = strokeHeight * scale;
+          const boxHeight = Math.max(rect.height + 6, drawHeight);
           let boxY = rect.y + rect.height + margin;
           const pageHeight = page.getHeight?.() || 0;
           if (pageHeight && boxY + boxHeight > pageHeight - 4) {
             boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
           }
-          const box = { x: rect.x, y: boxY, width: rect.width, height: boxHeight };
-
-          const strokeWidth = Math.max(0.01, bounds.maxX - bounds.minX);
-          const strokeHeight = Math.max(0.01, bounds.maxY - bounds.minY);
-          const scale = Math.min(box.width / strokeWidth, box.height / strokeHeight);
-          const drawWidth = strokeWidth * scale;
-          const drawHeight = strokeHeight * scale;
-          const offsetX = box.x + (box.width - drawWidth) / 2;
+          const box = { x: rect.x, y: boxY, width: boxWidth, height: boxHeight };
+          const offsetX = box.x;
           const offsetY = box.y + (box.height - drawHeight) / 2;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
 
