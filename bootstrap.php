@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/shared/translations.php';
+require_once __DIR__ . '/shared/signatures.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
 define('APP_CONFIG_PATH', $configPath);
@@ -420,6 +421,30 @@ function ensure_schema(PDO $pdo): void {
         "  PRIMARY KEY (id),\n" .
         "  KEY idx_parent_feedback_link (link_id),\n" .
         "  KEY idx_parent_feedback_state (feedback_type, is_reviewed)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+    // --- teacher_signatures: encrypted vector signatures for parent export
+    if (!db_has_table($pdo, 'teacher_signatures')) {
+      $pdo->exec(
+        "CREATE TABLE teacher_signatures (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  user_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  purpose VARCHAR(60) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  enc_key VARBINARY(255) NOT NULL,\n" .
+        "  enc_key_iv VARBINARY(32) NOT NULL,\n" .
+        "  enc_key_tag VARBINARY(32) NOT NULL,\n" .
+        "  iv VARBINARY(32) NOT NULL,\n" .
+        "  tag VARBINARY(32) NOT NULL,\n" .
+        "  ciphertext LONGBLOB NOT NULL,\n" .
+        "  is_active TINYINT(1) NOT NULL DEFAULT 1,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_teacher_signatures_user_purpose (user_id, purpose),\n" .
+        "  KEY idx_teacher_signatures_active (user_id, purpose, is_active),\n" .
+        "  CONSTRAINT fk_teacher_signatures_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
     }

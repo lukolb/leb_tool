@@ -156,6 +156,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!isset($cfg['parent']) || !is_array($cfg['parent'])) $cfg['parent'] = [];
       $cfg['parent']['download_enabled'] = isset($_POST['parent_download_enabled']);
       $cfg['parent']['auto_approve_requests'] = isset($_POST['parent_auto_approve_requests']);
+      $cfg['parent']['signature_enabled'] = isset($_POST['parent_signature_enabled']);
+
+      if (!isset($cfg['signature']) || !is_array($cfg['signature'])) $cfg['signature'] = [];
+      $sigKeyInput = trim((string)($_POST['parent_signature_master_key'] ?? ''));
+      $sigKeyClear = isset($_POST['parent_signature_master_key_clear']);
+      if ($sigKeyClear) {
+        $cfg['signature']['master_key'] = '';
+      } elseif ($sigKeyInput !== '') {
+        $cfg['signature']['master_key'] = $sigKeyInput;
+      }
     }
 
     // ---- Logo actions ----
@@ -247,6 +257,9 @@ $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
 $parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
+$parentSignatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
+$signatureCfg = $cfg['signature'] ?? [];
+$signatureMasterKeySet = trim((string)($signatureCfg['master_key'] ?? '')) !== '';
 
 $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
@@ -437,7 +450,7 @@ render_admin_header('Admin – Settings');
 
 <div class="card">
   <h2>Elternmodus</h2>
-  <p class="muted">Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen und ob Anfragen automatisch freigegeben werden.</p>
+  <p class="muted">Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen, ob Anfragen automatisch freigegeben werden und ob eine grafische Lehrkraft-Signatur genutzt wird.</p>
 
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -452,6 +465,50 @@ render_admin_header('Admin – Settings');
       <input type="checkbox" name="parent_auto_approve_requests" value="1" <?=$parentAutoApprove ? 'checked' : ''?>> Anfragen automatisch freigeben (keine Admin-Bestätigung erforderlich)
     </label>
     <p class="muted">Wenn aktiviert, werden neue Elternzugänge direkt freigeschaltet.</p>
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="parent_signature_enabled" value="1" <?=$parentSignatureEnabled ? 'checked' : ''?>> Grafische Lehrkraft-Unterschrift aktivieren
+    </label>
+    <p class="muted">Lehrkräfte können dann eine handschriftliche Signatur erfassen, die im Eltern-PDF über dem Unterschriftenfeld platziert wird.</p>
+
+    <label style="margin-top:10px;">SIGNATURE_MASTER_KEY (32 Byte, Hex/Base64 möglich)</label>
+    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+      <input id="signatureMasterKeyInput" name="parent_signature_master_key" type="password" value="" placeholder="<?= $signatureMasterKeySet ? 'Vorhanden (leer lassen zum Beibehalten)' : 'z.B. 64-stelliges Hex oder Base64' ?>" style="min-width:260px;">
+      <button class="btn secondary" type="button" id="signatureMasterKeyGenerate">Neu generieren</button>
+    </div>
+    <label class="chk" style="margin-top:6px;">
+      <input type="checkbox" name="parent_signature_master_key_clear" value="1" id="signatureMasterKeyClear"> Master-Key löschen
+    </label>
+    <p class="muted">Der Schlüssel wird in der config.php gespeichert. Beim Löschen oder Neu-Generieren können gespeicherte Signaturen nicht mehr entschlüsselt werden.</p>
+
+    <script>
+      (function(){
+        const input = document.getElementById('signatureMasterKeyInput');
+        const btn = document.getElementById('signatureMasterKeyGenerate');
+        const clear = document.getElementById('signatureMasterKeyClear');
+        if (btn) {
+          btn.addEventListener('click', () => {
+            if (!confirm('Neuen Master-Key erzeugen? Vorhandene Signaturen können danach nicht mehr entschlüsselt werden.')) return;
+            if (!window.crypto || !window.crypto.getRandomValues) {
+              alert('Sicherer Zufall ist im Browser nicht verfügbar.');
+              return;
+            }
+            const bytes = new Uint8Array(32);
+            window.crypto.getRandomValues(bytes);
+            const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            if (input) input.value = hex;
+            if (clear) clear.checked = false;
+          });
+        }
+        if (clear) {
+          clear.addEventListener('change', () => {
+            if (clear.checked) {
+              const ok = confirm('Master-Key wirklich löschen? Gespeicherte Signaturen können danach nicht mehr entschlüsselt werden.');
+              if (!ok) clear.checked = false;
+            }
+          });
+        }
+      })();
+    </script>
 
     <div class="actions">
       <button class="btn primary" type="submit">Speichern</button>

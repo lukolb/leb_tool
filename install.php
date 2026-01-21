@@ -490,6 +490,24 @@ CREATE TABLE IF NOT EXISTS `parent_feedback` (
   KEY `idx_parent_feedback_state` (`feedback_type`,`is_reviewed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `teacher_signatures` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` bigint UNSIGNED NOT NULL,
+  `purpose` varchar(60) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `enc_key` varbinary(255) NOT NULL,
+  `enc_key_iv` varbinary(32) NOT NULL,
+  `enc_key_tag` varbinary(32) NOT NULL,
+  `iv` varbinary(32) NOT NULL,
+  `tag` varbinary(32) NOT NULL,
+  `ciphertext` longblob NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_teacher_signatures_user_purpose` (`user_id`,`purpose`),
+  KEY `idx_teacher_signatures_active` (`user_id`,`purpose`,`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `audit_log` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `event_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -710,6 +728,9 @@ ALTER TABLE `parent_portal_links`
 ALTER TABLE `parent_feedback`
   ADD CONSTRAINT `fk_parent_feedback_link` FOREIGN KEY (`link_id`) REFERENCES `parent_portal_links` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_parent_feedback_reviewed_by` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `teacher_signatures`
+  ADD CONSTRAINT `fk_teacher_signatures_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `audit_log`
   ADD CONSTRAINT `fk_audit_log_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,

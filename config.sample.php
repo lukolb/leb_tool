@@ -47,6 +47,12 @@ return [
     'download_enabled' => false,
     // Elternzugänge werden ohne Admin-Bestätigung automatisch freigegeben.
     'auto_approve_requests' => false,
+    // Grafische Lehrkraft-Unterschrift für den Parent-Export.
+    'signature_enabled' => true,
+  ],
+  'signature' => [
+    // 32-Byte Master-Key (hex/base64 oder raw). Kann auch via SIGNATURE_MASTER_KEY gesetzt werden.
+    'master_key' => '',
   ],
   'ai' => [
     // Optional: API-Schlüssel für KI-Vorschläge (z.B. OpenAI). Kann auch über

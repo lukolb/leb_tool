@@ -14,6 +14,9 @@ $role = (string)($u['role'] ?? '');
 $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
 $parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
+$signaturePurpose = 'parent_export';
+$signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
+$signatureConfigured = $signatureEnabled && signature_configured();
 
 function parent_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -39,6 +42,12 @@ function sanitize_email(?string $email): ?string {
   $email = trim((string)$email);
   if ($email === '') return null;
   return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+}
+
+function read_signature_payload_from_post(): ?array {
+  $raw = $_POST['signature_payload'] ?? '';
+  if (!is_string($raw) || trim($raw) === '') return null;
+  return signature_sanitize_payload($raw);
 }
 
 function build_parent_mail_html(string $template, array $student, string $link): string {
@@ -106,7 +115,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
     $accessibleClassIds = array_values(array_filter(array_map(fn($c)=>(int)($c['id'] ?? 0), $classes), fn($id)=>$id>0));
 
-    if ($action === 'send_parent_email') {
+    if ($action === 'save_signature') {
+      if (!$signatureConfigured) {
+        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+      }
+      $signaturePayload = read_signature_payload_from_post();
+      if (!$signaturePayload) {
+        throw new RuntimeException('Signaturdaten fehlen.');
+      }
+      signature_store_payload($pdo, $userId, $signaturePurpose, $signaturePayload);
+      if (is_ajax_request()) {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true]);
+        exit;
+      }
+      $alerts[] = 'Grafische Signatur gespeichert.';
+    }
+    if ($action === 'load_signature') {
+      if (!$signatureConfigured) {
+        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+      }
+      $payload = signature_get_active_payload($pdo, $userId, $signaturePurpose);
+      header('Content-Type: application/json');
+      echo json_encode(['ok' => true, 'payload' => $payload]);
+      exit;
+    }
+
+    $signatureUse = (string)($_POST['signature_use'] ?? '') === '1';
+    $signaturePayload = null;
+    if ($signatureUse && $signatureConfigured && in_array($action, ['request_all','request_link'], true)) {
+      $signaturePayload = read_signature_payload_from_post();
+      if ($signaturePayload) {
+        signature_store_payload($pdo, $userId, $signaturePurpose, $signaturePayload);
+        $alerts[] = 'Grafische Signatur gespeichert.';
+      }
+    }
+
+    if ($action === 'delete_signature') {
+      if (!$signatureConfigured) {
+        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+      }
+      signature_deactivate($pdo, $userId, $signaturePurpose);
+      $alerts[] = 'Grafische Signatur wurde gelöscht.';
+    } elseif ($action === 'save_signature') {
+      // handled above
+    } elseif ($action === 'send_parent_email') {
       $mailForm = [
         'mode' => (string)($_POST['send_mode'] ?? 'class'),
         'class_id' => (string)($_POST['mail_class_id'] ?? ''),
@@ -367,9 +420,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
   } catch (Throwable $e) {
+    if (is_ajax_request()) {
+      header('Content-Type: application/json', true, 400);
+      echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+      exit;
+    }
     $errors[] = $e->getMessage();
   }
 }
+
+$signatureActive = $signatureConfigured ? signature_has_active($pdo, $userId, $signaturePurpose) : false;
 
 // Students in selected class
 $students = [];
@@ -474,13 +534,54 @@ $introText = $parentAutoApprove
   </form>
 </div>
 
+<?php if ($signatureEnabled): ?>
+  <div class="card" style="margin-bottom:14px;">
+    <h2>Grafische Lehrkraft-Unterschrift</h2>
+    <?php if (!$signatureConfigured): ?>
+      <div class="alert warn">Die Signatur-Funktion ist nicht konfiguriert. Bitte SIGNATURE_MASTER_KEY setzen.</div>
+    <?php else: ?>
+      <p class="muted" style="max-width:760px;">
+        Optional kann eine handschriftliche Unterschrift im Eltern-PDF angezeigt werden. Die Signatur wird als Vektordaten gespeichert und beim nächsten Export verwendet.
+      </p>
+      <label style="display:flex; gap:8px; align-items:center;">
+        <input type="checkbox" id="signatureToggle" <?= $signatureActive ? 'checked' : '' ?>>
+        <span>Grafische Unterschrift hinzufügen</span>
+      </label>
+      <div id="signaturePadWrap" style="<?= $signatureActive ? '' : 'display:none;' ?>">
+        <div class="signature-pad">
+          <canvas id="signatureCanvas" aria-label="Unterschrift"></canvas>
+        </div>
+        <div class="row" style="gap:8px; margin-top:8px; align-items:center;">
+          <button class="btn secondary" type="button" id="signatureClearBtn">Löschen</button>
+          <button class="btn primary" type="button" id="signatureApplyBtn">Übernehmen</button>
+          <span id="signatureStatus" class="muted" style="font-size:12px;"></span>
+        </div>
+      </div>
+      <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
+        <span id="signatureSavedPill" class="pill <?= $signatureActive ? 'green' : '' ?>" style="<?= $signatureActive ? '' : 'background:#f1f3f5;' ?>">
+          <?= $signatureActive ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert' ?>
+        </span>
+        <form method="post" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="action" value="delete_signature">
+          <button class="btn danger" type="submit" onclick="return confirm('Grafische Signatur wirklich löschen?');">Signatur löschen</button>
+        </form>
+      </div>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
+
 <?php if ($classId > 0 && $students): ?>
 <div class="card" style="margin-bottom:14px;">
     <h2>Klassen-Freischaltung</h2>
-  <form method="post" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+  <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="request_all">
     <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+    <?php if ($signatureEnabled && $signatureConfigured): ?>
+      <input type="hidden" name="signature_use" value="0" class="signature-use-input">
+      <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
+    <?php endif; ?>
     <div>
       <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days', 'Freischalten für'))?></label>
     </div>
@@ -560,10 +661,14 @@ $introText = $parentAutoApprove
               <?php elseif ($status === 'requested'): ?>
                 <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
               <?php else: ?>
-                <form method="post" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="request_link">
                   <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                  <?php if ($signatureEnabled && $signatureConfigured): ?>
+                    <input type="hidden" name="signature_use" value="0" class="signature-use-input">
+                    <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
+                  <?php endif; ?>
                   <div>
                     <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
                   </div>
@@ -715,6 +820,47 @@ $introText = $parentAutoApprove
   </form>
 </div>
   
+  <?php if ($signatureEnabled && $signatureConfigured): ?>
+  <style>
+    .signature-pad {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      height: 170px;
+      position: relative;
+      overflow: hidden;
+    }
+    .signature-pad::before {
+      content: '';
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 30px;
+      height: 1px;
+      background: #d4d9e2;
+      pointer-events: none;
+    }
+    .signature-pad::after {
+      content: 'X';
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      color: #b0b6c2;
+      font-size: 103px;
+      font-weight: 300;
+      pointer-events: none;
+    }
+    .signature-pad canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+  </style>
+  <?php endif; ?>
+
   <script>
   const mailModeRadios = document.querySelectorAll('input[name="send_mode"]');
   const mailStudentWrap = document.getElementById('mailStudentWrap');
@@ -758,6 +904,298 @@ $introText = $parentAutoApprove
       document.body.removeChild(ta);
     }
   }
+
+  <?php if ($signatureEnabled && $signatureConfigured): ?>
+  (function(){
+    const toggle = document.getElementById('signatureToggle');
+    const padWrap = document.getElementById('signaturePadWrap');
+    const canvas = document.getElementById('signatureCanvas');
+    const clearBtn = document.getElementById('signatureClearBtn');
+    const applyBtn = document.getElementById('signatureApplyBtn');
+    const statusEl = document.getElementById('signatureStatus');
+    const savedPill = document.getElementById('signatureSavedPill');
+    const useInputs = Array.from(document.querySelectorAll('.signature-use-input'));
+    const payloadInputs = Array.from(document.querySelectorAll('.signature-payload-input'));
+    const hasActiveSignature = <?= $signatureActive ? 'true' : 'false' ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+
+    if (!toggle || !canvas) return;
+
+    if (hasActiveSignature) {
+      toggle.checked = true;
+      if (padWrap) padWrap.style.display = '';
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const state = { strokes: [], current: null, drawing: false };
+
+    function setStatus(msg){
+      if (statusEl) statusEl.textContent = msg || '';
+    }
+
+    function setFormPayload(payload){
+      const useVal = toggle.checked ? '1' : '0';
+      useInputs.forEach(input => input.value = useVal);
+      payloadInputs.forEach(input => input.value = payload || '');
+    }
+
+    function setSavedState(saved){
+      if (!savedPill) return;
+      savedPill.textContent = saved ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert';
+      if (saved) {
+        savedPill.classList.add('green');
+        savedPill.style.background = '';
+      } else {
+        savedPill.classList.remove('green');
+        savedPill.style.background = '#f1f3f5';
+      }
+    }
+
+    function resizeCanvas(){
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = rect.width * ratio;
+      canvas.height = rect.height * ratio;
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#0b3d91';
+      redraw();
+    }
+
+    function redraw(){
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        if (!state.strokes.length) return;
+
+        // etwas Innenabstand, damit nichts abgeschnitten wird
+        const pad = Math.max(8, rect.height * 0.08);
+        const availW = Math.max(1, rect.width - 2 * pad);
+        const availH = Math.max(1, rect.height - 2 * pad);
+
+        // Bounds in "width-units" berechnen
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const stroke of state.strokes) {
+          if (!Array.isArray(stroke)) continue;
+          for (const pt of stroke) {
+            if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') continue;
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          }
+        }
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return;
+
+        const bw = Math.max(0.001, maxX - minX); // width-units
+        const bh = Math.max(0.001, maxY - minY); // width-units
+
+        // Umrechnung der Bounds in Pixel (weil width-units * rect.width)
+        const rawWpx = bw * rect.width;
+        const rawHpx = bh * rect.width;
+
+        // Proportionaler Fit in availW/availH
+        const scale = Math.max(0.0001, Math.min(availW / rawWpx, availH / rawHpx));
+
+        const drawW = rawWpx * scale;
+        const drawH = rawHpx * scale;
+
+        // Zentriert innerhalb des Canvas (mit Padding)
+        const originX = pad + (availW - drawW) / 2 - (minX * rect.width * scale);
+        const originY = pad + (availH - drawH) / 2 - (minY * rect.width * scale);
+
+        for (const stroke of state.strokes) {
+          if (!stroke.length) continue;
+          ctx.beginPath();
+          stroke.forEach((pt, idx) => {
+            const x = originX + (pt.x * rect.width * scale);
+            const y = originY + (pt.y * rect.width * scale);
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
+      }
+
+    function pointFromEvent(e){
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+
+        const pad = Math.max(6, rect.height * 0.06);
+
+        // x/y in width-units, aber mit Innenrand
+        const xWU = (e.clientX - rect.left) / rect.width;
+        const yWU = (e.clientY - rect.top)  / rect.width;
+
+        // Innenrand in width-units umrechnen
+        const padWU = pad / rect.width;
+
+        const maxX = 1 - padWU;
+        const maxY = (rect.height / rect.width) - padWU;
+
+        return {
+          x: Math.max(padWU, Math.min(maxX, xWU)),
+          y: Math.max(padWU, Math.min(maxY, yWU)),
+        };
+      }
+
+    function startStroke(e){
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      canvas.setPointerCapture(e.pointerId);
+      state.drawing = true;
+      state.current = [];
+      const pt = pointFromEvent(e);
+      state.current.push(pt);
+      state.strokes.push(state.current);
+      redraw();
+    }
+
+    function moveStroke(e){
+      if (!state.drawing || !state.current) return;
+      e.preventDefault();
+      const pt = pointFromEvent(e);
+      state.current.push(pt);
+      redraw();
+    }
+
+    function endStroke(e){
+      if (!state.drawing) return;
+      e.preventDefault();
+      state.drawing = false;
+      state.current = null;
+    }
+
+    function clearPad(){
+      state.strokes = [];
+      state.current = null;
+      redraw();
+      setStatus('Signatur gelöscht.');
+      setFormPayload('');
+    }
+
+    async function applyPad(){
+      if (!state.strokes.length) {
+        setStatus('Bitte zuerst unterschreiben.');
+        return;
+      }
+      let rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        resizeCanvas();
+        rect = canvas.getBoundingClientRect();
+      }
+      if (!rect.width || !rect.height) {
+        setStatus('Signaturfeld ist nicht bereit.');
+        return;
+      }
+      let ratio = rect.height > 0 ? (rect.width / rect.height) : null;
+        if (typeof ratio === 'number') {
+          // breitere Range zulassen (dein Canvas kann z.B. 2232/336 = 6.64 haben)
+          if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.2 || ratio > 50) {
+            ratio = null;
+          }
+        }
+        const payload = JSON.stringify({ v: 2, strokes: state.strokes, ratio });
+      const body = new URLSearchParams();
+      body.set('csrf_token', csrfToken);
+      body.set('action', 'save_signature');
+      body.set('signature_payload', payload);
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body,
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const errMsg = data?.error || data?.message || 'Speichern fehlgeschlagen.';
+          throw new Error(errMsg);
+        }
+        if (!data || data.ok !== true) throw new Error(data?.error || 'Signatur konnte nicht gespeichert werden.');
+        setFormPayload('');
+        setStatus('Signatur gespeichert.');
+        setSavedState(true);
+      } catch (e) {
+        setStatus(e?.message || 'Signatur konnte nicht gespeichert werden.');
+      }
+    }
+
+    async function loadSavedSignature(){
+      if (!hasActiveSignature) return;
+      const body = new URLSearchParams();
+      body.set('csrf_token', csrfToken);
+      body.set('action', 'load_signature');
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body,
+        });
+        if (!resp.ok) return;
+        const data = await resp.json().catch(() => null);
+        const payload = data?.payload;
+        const strokes = payload?.strokes;
+        if (Array.isArray(strokes) && strokes.length) {
+          const v = Number(payload?.v || 1);
+          const savedRatio = (typeof payload?.ratio === 'number' && isFinite(payload.ratio) && payload.ratio > 0) ? payload.ratio : null;
+
+          if (v >= 2) {
+            // neue Daten sind bereits in width-units
+            state.strokes = strokes;
+          } else {
+            // alte Daten (y relativ zur Höhe) -> in width-units konvertieren
+            // y_new = y_old / ratio
+            const rect = canvas.getBoundingClientRect();
+            const ratio = savedRatio || (rect.height > 0 ? (rect.width / rect.height) : 1);
+
+            state.strokes = strokes.map(stroke => {
+              if (!Array.isArray(stroke)) return [];
+              return stroke.map(pt => {
+                const x = typeof pt?.x === 'number' ? pt.x : 0;
+                const yOld = typeof pt?.y === 'number' ? pt.y : 0;
+                const yNew = ratio ? (yOld / ratio) : yOld; // convert to width-units
+                return { x, y: yNew };
+              });
+            });
+          }
+
+          resizeCanvas();
+        }
+      } catch (e) {}
+    }
+
+    toggle.addEventListener('change', () => {
+      if (toggle.checked) {
+        padWrap.style.display = '';
+        resizeCanvas();
+        setStatus(hasActiveSignature ? 'Vorhandene Signatur bleibt aktiv (neu aufnehmen überschreibt).' : '');
+      } else {
+        padWrap.style.display = 'none';
+        setFormPayload('');
+        setStatus(hasActiveSignature ? 'Aktive Signatur bleibt gespeichert.' : '');
+      }
+    });
+
+    canvas.addEventListener('pointerdown', startStroke);
+    canvas.addEventListener('pointermove', moveStroke);
+    canvas.addEventListener('pointerup', endStroke);
+    canvas.addEventListener('pointercancel', endStroke);
+
+    clearBtn?.addEventListener('click', clearPad);
+    applyBtn?.addEventListener('click', applyPad);
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    loadSavedSignature();
+    setSavedState(hasActiveSignature);
+    setFormPayload('');
+  })();
+  <?php endif; ?>
   </script>
 
 <?php render_teacher_footer(); ?>

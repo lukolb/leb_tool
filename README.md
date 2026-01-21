@@ -114,6 +114,32 @@ Der Parent-Bereich ist **optional** und klar vom System getrennt.
 
 ---
 
+## Grafische Lehrkraft-Unterschrift (Parent-Export)
+
+Optional kann beim Beantragen der Elternzugänge eine handschriftliche Signatur erfasst werden. Diese wird **als Vektordaten verschlüsselt** gespeichert und beim Eltern-PDF über dem Unterschriften-Textfeld platziert.
+
+**Einrichtung:**
+- Migration ausführen: `migrations/2025_09_15_teacher_signatures.sql`
+- Master-Key setzen (32 Bytes):
+  - per ENV: `SIGNATURE_MASTER_KEY` (Hex mit 64 Zeichen **oder** Base64 mit 32 Byte Nutzlast)
+  - oder in den Admin-Einstellungen → Elternmodus (empfohlen):
+    ```php
+    'signature' => [
+      'master_key' => '...',
+    ],
+    ```
+- Feature-Flag (optional) in `config.php`:
+  ```php
+  'parent' => [
+    'signature_enabled' => true,
+  ],
+  ```
+
+**Deaktivieren:**
+- `signature_enabled` auf `false` setzen. Der Eltern-PDF-Export bleibt dann unverändert.
+
+---
+
 ## PDF- & Export-System
 
 - Unterstützung ausfüllbarer PDF-Formulare (AcroForms)
