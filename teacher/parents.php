@@ -973,7 +973,7 @@ $introText = $parentAutoApprove
         ctx.beginPath();
         stroke.forEach((pt, idx) => {
           const x = pt.x * rect.width;
-          const y = pt.y * rect.height;
+          const y = pt.y * rect.width;
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
@@ -984,8 +984,9 @@ $introText = $parentAutoApprove
     function pointFromEvent(e){
       const rect = canvas.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.height;
-      return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+      const y = (e.clientY - rect.top) / rect.width;
+      const yMax = rect.height > 0 ? (rect.height / rect.width) : 0;
+      return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(yMax, y)) };
     }
 
     function startStroke(e){
@@ -1028,14 +1029,22 @@ $introText = $parentAutoApprove
         setStatus('Bitte zuerst unterschreiben.');
         return;
       }
-      const rect = canvas.getBoundingClientRect();
+      let rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        resizeCanvas();
+        rect = canvas.getBoundingClientRect();
+      }
+      if (!rect.width || !rect.height) {
+        setStatus('Signaturfeld ist nicht bereit.');
+        return;
+      }
       let ratio = rect.height > 0 ? (rect.width / rect.height) : null;
       if (typeof ratio === 'number') {
-        if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.5 || ratio > 5) {
+        if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.1 || ratio > 50) {
           ratio = null;
         }
       }
-      const payload = JSON.stringify({ strokes: state.strokes, ratio });
+      const payload = JSON.stringify({ strokes: state.strokes, ratio, v: 2 });
       const body = new URLSearchParams();
       body.set('csrf_token', csrfToken);
       body.set('action', 'save_signature');

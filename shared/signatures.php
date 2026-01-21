@@ -38,7 +38,7 @@ function signature_configured(): bool {
 }
 
 function signature_payload_version(): int {
-  return 1;
+  return 2;
 }
 
 function signature_aad(int $userId, string $purpose, int $version): string {
@@ -59,6 +59,8 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   if (!is_array($raw)) {
     throw new RuntimeException('Signaturdaten fehlen.');
   }
+  $version = (int)($raw['v'] ?? ($raw['version'] ?? 1));
+  if ($version < 1) $version = 1;
   $ratio = $raw['ratio'] ?? null;
   $ratioSource = null;
   if (is_numeric($ratio)) {
@@ -81,6 +83,10 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   $maxX = 0.0;
   $minY = 1.0;
   $maxY = 0.0;
+  $yMax = 1.0;
+  if ($version >= 2 && $ratio !== null && $ratio > 0) {
+    $yMax = min(1.0, 1 / $ratio);
+  }
   foreach ($strokes as $stroke) {
     if (!is_array($stroke)) continue;
     if (count($clean) >= $maxStrokes) break;
@@ -94,7 +100,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
       $y = (float)$y;
       if (!is_finite($x) || !is_finite($y)) continue;
       $x = max(0.0, min(1.0, $x));
-      $y = max(0.0, min(1.0, $y));
+      $y = max(0.0, min($yMax, $y));
       $pts[] = ['x' => $x, 'y' => $y];
       $minX = min($minX, $x);
       $maxX = max($maxX, $x);
@@ -141,14 +147,14 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     }
   }
   if ($ratio !== null) {
-    $ratio = max(0.5, min(5.0, $ratio));
+    $ratio = max(0.1, min(50.0, $ratio));
   }
   if ($ratio === null) {
     throw new RuntimeException('Signatur-Seitenverhältnis fehlt.');
   }
 
   return [
-    'v' => signature_payload_version(),
+    'v' => $version,
     'ratio' => $ratio,
     'ratio_source' => $ratioSource,
     'strokes' => $clean,
@@ -199,6 +205,10 @@ function signature_decrypt_payload(array $row): ?array {
   $aad = signature_aad($userId, $purpose, signature_payload_version());
 
   $dataKey = openssl_decrypt($row['enc_key'], 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $row['enc_key_iv'], $row['enc_key_tag'], $aad);
+  if ($dataKey === false) {
+    $aad = signature_aad($userId, $purpose, 1);
+    $dataKey = openssl_decrypt($row['enc_key'], 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $row['enc_key_iv'], $row['enc_key_tag'], $aad);
+  }
   if ($dataKey === false) {
     $legacyAad = signature_aad_legacy($userId, $purpose);
     $dataKey = openssl_decrypt($row['enc_key'], 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $row['enc_key_iv'], $row['enc_key_tag'], $legacyAad);

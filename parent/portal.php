@@ -1063,6 +1063,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return null;
       const ratio = Number.isFinite(signature?.ratio) && signature.ratio > 0 ? signature.ratio : null;
       if (!ratio) return null;
+      const version = Number.isFinite(signature?.v) ? signature.v : (Number.isFinite(signature?.version) ? signature.version : 1);
       const targetCssW = opts.targetWidth || 900;
       let targetCssH = Math.round(targetCssW / ratio);
       const minHeight = Math.max(180, Math.round(targetCssW * 0.2));
@@ -1090,7 +1091,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         stroke.forEach((pt, idx) => {
           if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
           const x = pt.x * targetCssW;
-          const y = pt.y * targetCssH;
+          const y = version >= 2 ? (pt.y * targetCssW) : (pt.y * targetCssH);
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
