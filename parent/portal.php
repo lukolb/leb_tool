@@ -1098,24 +1098,24 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const baseAspect = Number.isFinite(signature?.ratio) && signature.ratio > 0
             ? signature.ratio
             : (strokeWidth / strokeHeight);
-          const targetHeight = boxWidth / baseAspect;
-          let scale = Math.min(boxWidth / strokeWidth, targetHeight / strokeHeight);
+          const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
+          const desiredBoxHeight = boxWidth / baseAspect;
+          const boxHeight = Math.max(rect.height + 6, Math.min(maxHeight, desiredBoxHeight));
+          let scale = boxWidth / strokeWidth;
           let drawWidth = strokeWidth * scale;
           let drawHeight = strokeHeight * scale;
-          const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
-          if (drawHeight > maxHeight) {
-            scale = maxHeight / strokeHeight;
+          if (drawHeight > boxHeight) {
+            scale = boxHeight / strokeHeight;
             drawHeight = strokeHeight * scale;
             drawWidth = strokeWidth * scale;
           }
-          const boxHeight = Math.max(rect.height + 6, drawHeight);
           let boxY = rect.y + rect.height + margin;
           const pageHeight = page.getHeight?.() || 0;
           if (pageHeight && boxY + boxHeight > pageHeight - 4) {
             boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
           }
           const box = { x: rect.x, y: boxY, width: boxWidth, height: boxHeight };
-          const offsetX = box.x;
+          const offsetX = box.x + (box.width - drawWidth) / 2;
           const offsetY = box.y + (box.height - drawHeight) / 2;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
 
