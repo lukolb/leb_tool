@@ -1063,30 +1063,34 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return null;
       const ratio = Number.isFinite(signature?.ratio) && signature.ratio > 0 ? signature.ratio : null;
       if (!ratio) return null;
-      const targetWidth = opts.targetWidth || 1200;
-      let targetHeight = Math.round(targetWidth / ratio);
-      const minHeight = Math.max(180, Math.round(targetWidth * 0.2));
-      const maxHeight = Math.round(targetWidth * 1.8);
-      targetHeight = Math.max(minHeight, Math.min(maxHeight, targetHeight));
+      const targetCssW = opts.targetWidth || 900;
+      let targetCssH = Math.round(targetCssW / ratio);
+      const minHeight = Math.max(180, Math.round(targetCssW * 0.2));
+      const maxHeight = Math.round(targetCssW * 1.8);
+      targetCssH = Math.max(minHeight, Math.min(maxHeight, targetCssH));
 
       const canvas = document.createElement('canvas');
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.style.width = `${targetCssW}px`;
+      canvas.style.height = `${targetCssH}px`;
+      canvas.width = Math.round(targetCssW * dpr);
+      canvas.height = Math.round(targetCssH * dpr);
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, targetCssW, targetCssH);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.strokeStyle = '#0b3d91';
-      ctx.lineWidth = Math.max(2, targetWidth * 0.008);
+      ctx.lineWidth = Math.max(2, targetCssW * 0.008);
 
       for (const stroke of signature.strokes) {
         if (!Array.isArray(stroke) || stroke.length < 2) continue;
         ctx.beginPath();
         stroke.forEach((pt, idx) => {
           if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
-          const x = pt.x * canvas.width;
-          const y = pt.y * canvas.height;
+          const x = pt.x * targetCssW;
+          const y = pt.y * targetCssH;
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
