@@ -37,7 +37,15 @@ function signature_configured(): bool {
   }
 }
 
-function signature_aad(int $userId, string $purpose): string {
+function signature_payload_version(): int {
+  return 1;
+}
+
+function signature_aad(int $userId, string $purpose, int $version): string {
+  return 'teacher:' . $userId . '|purpose:' . $purpose . '|v:' . $version;
+}
+
+function signature_aad_legacy(int $userId, string $purpose): string {
   return 'teacher:' . $userId . '|purpose:' . $purpose;
 }
 
@@ -52,13 +60,16 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     throw new RuntimeException('Signaturdaten fehlen.');
   }
   $ratio = $raw['ratio'] ?? null;
+  $ratioSource = null;
   if (is_numeric($ratio)) {
     $ratio = (float)$ratio;
     if (!is_finite($ratio) || $ratio <= 0) {
-      $ratio = null;
-    } else {
-      $ratio = max(0.2, min(5.0, $ratio));
+      throw new RuntimeException('Signatur-Seitenverhältnis ist ungültig.');
     }
+    if ($ratio < 0.5 || $ratio > 5.0) {
+      throw new RuntimeException('Signatur-Seitenverhältnis ist außerhalb des erlaubten Bereichs.');
+    }
+    $ratioSource = 'client';
   } else {
     $ratio = null;
   }
@@ -69,6 +80,10 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
 
   $clean = [];
   $totalPoints = 0;
+  $minX = 1.0;
+  $maxX = 0.0;
+  $minY = 1.0;
+  $maxY = 0.0;
   foreach ($strokes as $stroke) {
     if (!is_array($stroke)) continue;
     if (count($clean) >= $maxStrokes) break;
@@ -84,6 +99,10 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
       $x = max(0.0, min(1.0, $x));
       $y = max(0.0, min(1.0, $y));
       $pts[] = ['x' => $x, 'y' => $y];
+      $minX = min($minX, $x);
+      $maxX = max($maxX, $x);
+      $minY = min($minY, $y);
+      $maxY = max($maxY, $y);
       $totalPoints++;
       if ($totalPoints >= $maxPoints) break 2;
     }
@@ -96,9 +115,27 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     throw new RuntimeException('Signatur ist leer.');
   }
 
+  if ($ratio === null) {
+    $width = $maxX - $minX;
+    $height = $maxY - $minY;
+    if ($width > 0 && $height > 0) {
+      $ratio = $width / $height;
+      if (!is_finite($ratio) || $ratio <= 0) {
+        $ratio = null;
+      } else {
+        $ratio = max(0.5, min(5.0, $ratio));
+        $ratioSource = 'bounds';
+      }
+    }
+  }
+  if ($ratio === null) {
+    throw new RuntimeException('Signatur-Seitenverhältnis fehlt.');
+  }
+
   return [
-    'version' => 1,
+    'v' => signature_payload_version(),
     'ratio' => $ratio,
+    'ratio_source' => $ratioSource,
     'strokes' => $clean,
   ];
 }
@@ -106,7 +143,8 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
 function signature_encrypt_payload(array $payload, int $userId, string $purpose): array {
   $master = signature_master_key();
   $dataKey = random_bytes(32);
-  $aad = signature_aad($userId, $purpose);
+  $version = (int)($payload['v'] ?? signature_payload_version());
+  $aad = signature_aad($userId, $purpose, $version);
 
   $iv = random_bytes(12);
   $plaintext = json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -143,16 +181,24 @@ function signature_decrypt_payload(array $row): ?array {
   if ($userId <= 0 || $purpose === '') return null;
 
   $master = signature_master_key();
-  $aad = signature_aad($userId, $purpose);
+  $aad = signature_aad($userId, $purpose, signature_payload_version());
 
   $dataKey = openssl_decrypt($row['enc_key'], 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $row['enc_key_iv'], $row['enc_key_tag'], $aad);
-  if ($dataKey === false) return null;
+  if ($dataKey === false) {
+    $legacyAad = signature_aad_legacy($userId, $purpose);
+    $dataKey = openssl_decrypt($row['enc_key'], 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $row['enc_key_iv'], $row['enc_key_tag'], $legacyAad);
+    if ($dataKey === false) return null;
+    $aad = $legacyAad;
+  }
 
   $plaintext = openssl_decrypt($row['ciphertext'], 'aes-256-gcm', $dataKey, OPENSSL_RAW_DATA, $row['iv'], $row['tag'], $aad);
   if ($plaintext === false) return null;
 
   $decoded = json_decode($plaintext, true);
   if (!is_array($decoded)) return null;
+  if (isset($decoded['version']) && !isset($decoded['v'])) {
+    $decoded['v'] = (int)$decoded['version'];
+  }
   return $decoded;
 }
 

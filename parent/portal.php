@@ -1072,8 +1072,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return;
       const fields = collectSignatureFields(fieldMeta);
       if (!fields.length) return;
-      const bounds = signatureBounds(signature.strokes);
-      if (!bounds) return;
+      const padRatio = Number.isFinite(signature?.ratio) && signature.ratio > 0
+        ? signature.ratio
+        : null;
+      const bounds = padRatio ? null : signatureBounds(signature.strokes);
+      if (!padRatio && !bounds) return;
 
       const PDFLib = window.PDFLib;
       const { rgb } = PDFLib;
@@ -1092,12 +1095,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           if (!page) continue;
 
           const margin = Math.max(6, Math.min(12, rect.height * 0.35));
-          const strokeWidth = Math.max(0.01, bounds.maxX - bounds.minX);
-          const strokeHeight = Math.max(0.01, bounds.maxY - bounds.minY);
+          const strokeWidth = bounds ? Math.max(0.01, bounds.maxX - bounds.minX) : 1;
+          const strokeHeight = bounds ? Math.max(0.01, bounds.maxY - bounds.minY) : 1;
           const boxWidth = rect.width;
-          const padRatio = Number.isFinite(signature?.ratio) && signature.ratio > 0
-            ? signature.ratio
-            : null;
           const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
 
           let drawWidth = boxWidth;
