@@ -1109,17 +1109,17 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const page = widget.getPage?.() || pages[0];
           if (!page) continue;
 
-          const margin = Math.max(6, Math.min(12, rect.height * 0.35));
+          const margin = 0;
           const boxWidth = rect.width;
           const drawHeight = boxWidth / boxHeightRatio;
-          const boxHeight = Math.max(rect.height + 6, drawHeight);
+          const boxHeight = drawHeight;
           let boxY = rect.y + rect.height + margin;
           const pageHeight = page.getHeight?.() || 0;
           if (pageHeight && boxY + boxHeight > pageHeight - 4) {
             boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
           }
           const offsetX = rect.x;
-          const offsetY = boxY + (boxHeight - drawHeight) / 2;
+          const offsetY = boxY;
           const scale = boxWidth / boundsW;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
 
