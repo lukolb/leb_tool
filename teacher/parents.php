@@ -420,6 +420,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
   } catch (Throwable $e) {
+    if (is_ajax_request()) {
+      header('Content-Type: application/json', true, 400);
+      echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+      exit;
+    }
     $errors[] = $e->getMessage();
   }
 }
