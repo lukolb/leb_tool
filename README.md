@@ -122,7 +122,7 @@ Optional kann beim Beantragen der Elternzugänge eine handschriftliche Signatur 
 - Migration ausführen: `migrations/2025_09_15_teacher_signatures.sql`
 - Master-Key setzen (32 Bytes):
   - per ENV: `SIGNATURE_MASTER_KEY` (Hex mit 64 Zeichen **oder** Base64 mit 32 Byte Nutzlast)
-  - oder in `config.php`:
+  - oder in den Admin-Einstellungen → Elternmodus (empfohlen):
     ```php
     'signature' => [
       'master_key' => '...',
