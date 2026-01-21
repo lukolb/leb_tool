@@ -1049,57 +1049,102 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         .map(([name]) => name);
     }
 
-    function dataUrlToBytes(dataUrl){
-      const [, base64] = dataUrl.split(',');
-      const binary = atob(base64 || '');
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
+    function signatureBounds(strokes, version, ratio){
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let has = false;
+      for (const stroke of strokes) {
+        if (!Array.isArray(stroke)) continue;
+        for (const pt of stroke) {
+          if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') continue;
+          const x = pt.x;
+          const y = version >= 2 ? pt.y : (1 - pt.y);
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+          has = true;
+        }
       }
-      return bytes;
+      if (!has) return null;
+      if (version >= 2 && ratio && ratio > 0) {
+        minY = Math.max(0, minY);
+        maxY = Math.min(1 / ratio, maxY);
+      } else {
+        minY = Math.max(0, minY);
+        maxY = Math.min(1, maxY);
+      }
+      minX = Math.max(0, minX);
+      maxX = Math.min(1, maxX);
+      return { minX, maxX, minY, maxY };
     }
 
-    function renderSignatureToPngBytes(signature, opts = {}){
-      if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return null;
+    function drawSignatureOverlay(pdfDoc, form, signature, fieldMeta){
+      if (!signature || !Array.isArray(signature.strokes) || !signature.strokes.length) return;
+      const fields = collectSignatureFields(fieldMeta);
+      if (!fields.length) return;
       const ratio = Number.isFinite(signature?.ratio) && signature.ratio > 0 ? signature.ratio : null;
-      if (!ratio) return null;
+      if (!ratio) return;
       const version = Number.isFinite(signature?.v) ? signature.v : (Number.isFinite(signature?.version) ? signature.version : 1);
-      const targetCssW = opts.targetWidth || 900;
-      let targetCssH = Math.round(targetCssW / ratio);
-      const minHeight = Math.max(180, Math.round(targetCssW * 0.2));
-      const maxHeight = Math.round(targetCssW * 1.8);
-      targetCssH = Math.max(minHeight, Math.min(maxHeight, targetCssH));
+      const bounds = signatureBounds(signature.strokes, version, ratio);
+      if (!bounds) return;
 
-      const canvas = document.createElement('canvas');
-      const dpr = window.devicePixelRatio || 1;
-      canvas.style.width = `${targetCssW}px`;
-      canvas.style.height = `${targetCssH}px`;
-      canvas.width = Math.round(targetCssW * dpr);
-      canvas.height = Math.round(targetCssH * dpr);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, targetCssW, targetCssH);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = '#0b3d91';
-      ctx.lineWidth = Math.max(2, targetCssW * 0.008);
+      const PDFLib = window.PDFLib;
+      const { rgb } = PDFLib;
+      const color = rgb(0.06, 0.18, 0.45);
+      const pages = pdfDoc.getPages();
 
-      for (const stroke of signature.strokes) {
-        if (!Array.isArray(stroke) || stroke.length < 2) continue;
-        ctx.beginPath();
-        stroke.forEach((pt, idx) => {
-          if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') return;
-          const x = pt.x * targetCssW;
-          const y = version >= 2 ? (pt.y * targetCssW) : (pt.y * targetCssH);
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+      const boundsW = Math.max(0.0001, bounds.maxX - bounds.minX);
+      const boundsH = Math.max(0.0001, bounds.maxY - bounds.minY);
+      const boundsRatio = boundsW / boundsH;
+      const boxHeightRatio = boundsRatio * ratio;
+
+      for (const name of fields) {
+        let field;
+        try { field = form.getField(name); } catch (e) { field = null; }
+        if (!field) continue;
+        const widgets = field?.acroField?.getWidgets?.() || [];
+        for (const widget of widgets) {
+          const rect = widget.getRectangle();
+          if (!rect || !rect.width || !rect.height) continue;
+          const page = widget.getPage?.() || pages[0];
+          if (!page) continue;
+
+          const margin = Math.max(6, Math.min(12, rect.height * 0.35));
+          const boxWidth = rect.width;
+          const drawHeight = boxWidth / boxHeightRatio;
+          const boxHeight = Math.max(rect.height + 6, drawHeight);
+          let boxY = rect.y + rect.height + margin;
+          const pageHeight = page.getHeight?.() || 0;
+          if (pageHeight && boxY + boxHeight > pageHeight - 4) {
+            boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
+          }
+          const offsetX = rect.x;
+          const offsetY = boxY + (boxHeight - drawHeight) / 2;
+          const scale = boxWidth / boundsW;
+          const lineWidth = Math.max(0.9, rect.height * 0.08);
+
+          for (const stroke of signature.strokes) {
+            if (!Array.isArray(stroke) || stroke.length < 2) continue;
+            for (let i = 1; i < stroke.length; i++) {
+              const prev = stroke[i - 1];
+              const curr = stroke[i];
+              if (!prev || !curr) continue;
+              const prevY = version >= 2 ? prev.y : (1 - prev.y);
+              const currY = version >= 2 ? curr.y : (1 - curr.y);
+              const x0 = offsetX + (prev.x - bounds.minX) * scale;
+              const y0 = offsetY + (prevY - bounds.minY) * scale;
+              const x1 = offsetX + (curr.x - bounds.minX) * scale;
+              const y1 = offsetY + (currY - bounds.minY) * scale;
+              page.drawLine({
+                start: { x: x0, y: y0 },
+                end: { x: x1, y: y1 },
+                thickness: lineWidth,
+                color,
+              });
+            }
+          }
+        }
       }
-
-      const dataUrl = canvas.toDataURL('image/png');
-      return dataUrlToBytes(dataUrl);
     }
 
     async function buildPdfBytes({ flatten } = { flatten: false }){
@@ -1170,47 +1215,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       } catch (e) {}
 
       try {
-        const signature = payload.teacher_signature || null;
-        const sigFields = collectSignatureFields(fieldMeta);
-        if (signature && sigFields.length) {
-          const pngBytes = renderSignatureToPngBytes(signature);
-          if (pngBytes) {
-            const sigImg = await pdfDoc.embedPng(pngBytes);
-            const padRatio = Number.isFinite(signature?.ratio) && signature.ratio > 0 ? signature.ratio : null;
-            if (padRatio) {
-              const pages = pdfDoc.getPages();
-              for (const name of sigFields) {
-                let field;
-                try { field = form.getField(name); } catch (e) { field = null; }
-                if (!field) continue;
-                const widgets = field?.acroField?.getWidgets?.() || [];
-                for (const widget of widgets) {
-                  const rect = widget.getRectangle();
-                  if (!rect || !rect.width || !rect.height) continue;
-                  const page = widget.getPage?.() || pages[0];
-                  if (!page) continue;
-                  const margin = Math.max(6, Math.min(12, rect.height * 0.35));
-                  const boxWidth = rect.width;
-                  const boxHeight = boxWidth / padRatio;
-                  let boxY = rect.y + rect.height + margin;
-                  const pageHeight = page.getHeight?.() || 0;
-                  const padding = 4;
-                  let drawWidth = boxWidth;
-                  let drawHeight = boxHeight;
-                  if (pageHeight && boxY + drawHeight > pageHeight - padding) {
-                    const availableHeight = Math.max(0, pageHeight - padding - boxY);
-                    const scale = availableHeight > 0 ? Math.min(1, availableHeight / drawHeight) : 1;
-                    drawWidth = boxWidth * scale;
-                    drawHeight = boxHeight * scale;
-                  }
-                  const x = rect.x + (boxWidth - drawWidth) / 2;
-                  const y = boxY;
-                  page.drawImage(sigImg, { x, y, width: drawWidth, height: drawHeight, opacity: 1 });
-                }
-              }
-            }
-          }
-        }
+        drawSignatureOverlay(pdfDoc, form, payload.teacher_signature || null, fieldMeta);
       } catch (e) {}
 
       try {
