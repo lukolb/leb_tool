@@ -834,7 +834,7 @@ $introText = $parentAutoApprove
     .signature-pad::before {
       content: '';
       position: absolute;
-      left: 44px;
+      left: 16px;
       right: 16px;
       bottom: 30px;
       height: 1px;
@@ -842,13 +842,13 @@ $introText = $parentAutoApprove
       pointer-events: none;
     }
     .signature-pad::after {
-      content: '×';
+      content: 'X';
       position: absolute;
       left: 16px;
       bottom: 16px;
       color: #b0b6c2;
-      font-size: 28px;
-      font-weight: 600;
+      font-size: 103px;
+      font-weight: 300;
       pointer-events: none;
     }
     .signature-pad canvas {
@@ -966,28 +966,81 @@ $introText = $parentAutoApprove
     }
 
     function redraw(){
-      const rect = canvas.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      for (const stroke of state.strokes) {
-        if (!stroke.length) continue;
-        ctx.beginPath();
-        stroke.forEach((pt, idx) => {
-          const x = pt.x * rect.width;
-          const y = pt.y * rect.width;
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+        const rect = canvas.getBoundingClientRect();
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        if (!state.strokes.length) return;
+
+        // etwas Innenabstand, damit nichts abgeschnitten wird
+        const pad = Math.max(8, rect.height * 0.08);
+        const availW = Math.max(1, rect.width - 2 * pad);
+        const availH = Math.max(1, rect.height - 2 * pad);
+
+        // Bounds in "width-units" berechnen
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const stroke of state.strokes) {
+          if (!Array.isArray(stroke)) continue;
+          for (const pt of stroke) {
+            if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') continue;
+            if (pt.x < minX) minX = pt.x;
+            if (pt.x > maxX) maxX = pt.x;
+            if (pt.y < minY) minY = pt.y;
+            if (pt.y > maxY) maxY = pt.y;
+          }
+        }
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return;
+
+        const bw = Math.max(0.001, maxX - minX); // width-units
+        const bh = Math.max(0.001, maxY - minY); // width-units
+
+        // Umrechnung der Bounds in Pixel (weil width-units * rect.width)
+        const rawWpx = bw * rect.width;
+        const rawHpx = bh * rect.width;
+
+        // Proportionaler Fit in availW/availH
+        const scale = Math.max(0.0001, Math.min(availW / rawWpx, availH / rawHpx));
+
+        const drawW = rawWpx * scale;
+        const drawH = rawHpx * scale;
+
+        // Zentriert innerhalb des Canvas (mit Padding)
+        const originX = pad + (availW - drawW) / 2 - (minX * rect.width * scale);
+        const originY = pad + (availH - drawH) / 2 - (minY * rect.width * scale);
+
+        for (const stroke of state.strokes) {
+          if (!stroke.length) continue;
+          ctx.beginPath();
+          stroke.forEach((pt, idx) => {
+            const x = originX + (pt.x * rect.width * scale);
+            const y = originY + (pt.y * rect.width * scale);
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
       }
-    }
 
     function pointFromEvent(e){
-      const rect = canvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = (e.clientY - rect.top) / rect.width;
-      const yMax = rect.height > 0 ? (rect.height / rect.width) : 0;
-      return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(yMax, y)) };
-    }
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+
+        const pad = Math.max(6, rect.height * 0.06);
+
+        // x/y in width-units, aber mit Innenrand
+        const xWU = (e.clientX - rect.left) / rect.width;
+        const yWU = (e.clientY - rect.top)  / rect.width;
+
+        // Innenrand in width-units umrechnen
+        const padWU = pad / rect.width;
+
+        const maxX = 1 - padWU;
+        const maxY = (rect.height / rect.width) - padWU;
+
+        return {
+          x: Math.max(padWU, Math.min(maxX, xWU)),
+          y: Math.max(padWU, Math.min(maxY, yWU)),
+        };
+      }
 
     function startStroke(e){
       if (e.button !== undefined && e.button !== 0) return;
@@ -1039,12 +1092,13 @@ $introText = $parentAutoApprove
         return;
       }
       let ratio = rect.height > 0 ? (rect.width / rect.height) : null;
-      if (typeof ratio === 'number') {
-        if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.1 || ratio > 50) {
-          ratio = null;
+        if (typeof ratio === 'number') {
+          // breitere Range zulassen (dein Canvas kann z.B. 2232/336 = 6.64 haben)
+          if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.2 || ratio > 50) {
+            ratio = null;
+          }
         }
-      }
-      const payload = JSON.stringify({ strokes: state.strokes, ratio, v: 2 });
+        const payload = JSON.stringify({ v: 2, strokes: state.strokes, ratio });
       const body = new URLSearchParams();
       body.set('csrf_token', csrfToken);
       body.set('action', 'save_signature');
@@ -1084,10 +1138,33 @@ $introText = $parentAutoApprove
         });
         if (!resp.ok) return;
         const data = await resp.json().catch(() => null);
-        const strokes = data?.payload?.strokes;
+        const payload = data?.payload;
+        const strokes = payload?.strokes;
         if (Array.isArray(strokes) && strokes.length) {
-          state.strokes = strokes;
-          redraw();
+          const v = Number(payload?.v || 1);
+          const savedRatio = (typeof payload?.ratio === 'number' && isFinite(payload.ratio) && payload.ratio > 0) ? payload.ratio : null;
+
+          if (v >= 2) {
+            // neue Daten sind bereits in width-units
+            state.strokes = strokes;
+          } else {
+            // alte Daten (y relativ zur Höhe) -> in width-units konvertieren
+            // y_new = y_old / ratio
+            const rect = canvas.getBoundingClientRect();
+            const ratio = savedRatio || (rect.height > 0 ? (rect.width / rect.height) : 1);
+
+            state.strokes = strokes.map(stroke => {
+              if (!Array.isArray(stroke)) return [];
+              return stroke.map(pt => {
+                const x = typeof pt?.x === 'number' ? pt.x : 0;
+                const yOld = typeof pt?.y === 'number' ? pt.y : 0;
+                const yNew = ratio ? (yOld / ratio) : yOld; // convert to width-units
+                return { x, y: yNew };
+              });
+            });
+          }
+
+          resizeCanvas();
         }
       } catch (e) {}
     }

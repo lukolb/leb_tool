@@ -1109,23 +1109,38 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const page = widget.getPage?.() || pages[0];
           if (!page) continue;
 
-          const margin = 0;
-          const boxWidth = rect.width;
-          let drawHeight = boxWidth / boxHeightRatio;
-          const maxHeight = rect.height * 3.5;
-          if (drawHeight > maxHeight) {
-            drawHeight = maxHeight;
-          }
-          const boxHeight = drawHeight;
-          let boxY = rect.y + rect.height + margin;
-          const pageHeight = page.getHeight?.() || 0;
-          if (pageHeight && boxY + boxHeight > pageHeight - 4) {
-            boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
-          }
-          const offsetX = rect.x + (boxWidth - (boundsW * (drawHeight / boundsH))) / 2;
-          const offsetY = boxY;
-          const scale = drawHeight / boundsH;
-          const lineWidth = Math.max(0.9, rect.height * 0.08);
+          const margin = 2;
+
+            // Constraints:
+            const maxW = rect.width;         // max so breit wie Textfeld
+            let maxH = rect.height * 2;      // max doppelt so hoch wie Textfeld
+
+            // Position: über dem Textfeld
+            let boxY = rect.y + rect.height + margin;
+
+            // Wenn Seitenrand oben knapp ist: Höhe proportional begrenzen (statt verzerren/verschieben)
+            const pageHeight = page.getHeight?.() || 0;
+            if (pageHeight) {
+              const availableH = Math.max(0, (pageHeight - 4) - boxY);
+              maxH = Math.min(maxH, availableH);
+            }
+
+            if (maxW <= 0 || maxH <= 0) continue;
+
+            // Proportionaler Fit-in-Box Scale (W + H gleichzeitig beachten)
+            let scale = Math.min(maxW / boundsW, maxH / boundsH);
+            scale = Math.max(0.0001, scale);
+
+            const drawW = boundsW * scale;
+            const drawH = boundsH * scale;
+
+            // Horizontal mittig über dem Feld (Anforderung)
+            const offsetX = rect.x + (rect.width - drawW) / 2;
+
+            const offsetY = boxY;
+
+            // Linienbreite wie bisher
+            const lineWidth = Math.max(0.9, rect.height * 0.08);
 
           for (const stroke of signature.strokes) {
             if (!Array.isArray(stroke) || stroke.length < 2) continue;
