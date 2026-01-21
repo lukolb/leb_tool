@@ -1029,7 +1029,12 @@ $introText = $parentAutoApprove
         return;
       }
       const rect = canvas.getBoundingClientRect();
-      const ratio = rect.height > 0 ? (rect.width / rect.height) : null;
+      let ratio = rect.height > 0 ? (rect.width / rect.height) : null;
+      if (typeof ratio === 'number') {
+        if (!Number.isFinite(ratio) || ratio <= 0 || ratio < 0.5 || ratio > 5) {
+          ratio = null;
+        }
+      }
       const payload = JSON.stringify({ strokes: state.strokes, ratio });
       const body = new URLSearchParams();
       body.set('csrf_token', csrfToken);
