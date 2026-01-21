@@ -1111,7 +1111,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
 
           const margin = 0;
           const boxWidth = rect.width;
-          const drawHeight = boxWidth / boxHeightRatio;
+          let drawHeight = boxWidth / boxHeightRatio;
+          const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
+          if (drawHeight > maxHeight) {
+            drawHeight = maxHeight;
+          }
           const boxHeight = drawHeight;
           let boxY = rect.y + rect.height + margin;
           const pageHeight = page.getHeight?.() || 0;
@@ -1120,7 +1124,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           }
           const offsetX = rect.x;
           const offsetY = boxY;
-          const scale = boxWidth / boundsW;
+          const scale = drawHeight / boundsH;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
 
           for (const stroke of signature.strokes) {
