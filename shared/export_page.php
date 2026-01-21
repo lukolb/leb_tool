@@ -839,7 +839,7 @@ function normalizeDateIfNeeded(rawValue, expectedFmt){
   return out || raw;
 }
 
-// --------- PDF fill: keep form editable + render X with generated appearances ----------
+// --------- PDF fill: render appearances and flatten for consistent viewers ----------
 let __didDump = false;
 
 /**
@@ -1005,6 +1005,9 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   } catch (e) {}
   try {
     form.updateFieldAppearances(appearanceFont || undefined);
+  } catch (e) {}
+  try {
+    form.flatten();
   } catch (e) {}
   try {
     const acro = form.acroForm;
