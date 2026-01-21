@@ -1099,11 +1099,19 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const strokeHeight = bounds ? Math.max(0.01, bounds.maxY - bounds.minY) : 1;
           const boxWidth = rect.width;
           const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
+          const minHeight = Math.max(rect.height * 0.6, rect.height + 2);
 
           let drawWidth = boxWidth;
           let drawHeight = padRatio ? (boxWidth / padRatio) : (strokeHeight * (boxWidth / strokeWidth));
           if (drawHeight > maxHeight) {
             drawHeight = maxHeight;
+            if (padRatio) {
+              drawWidth = drawHeight * padRatio;
+            } else {
+              drawWidth = strokeWidth * (drawHeight / strokeHeight);
+            }
+          } else if (drawHeight < minHeight) {
+            drawHeight = minHeight;
             if (padRatio) {
               drawWidth = drawHeight * padRatio;
             } else {
@@ -1120,6 +1128,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const offsetX = box.x + (box.width - drawWidth) / 2;
           const offsetY = box.y + (box.height - drawHeight) / 2;
           const usePadRatio = Boolean(padRatio);
+          const inset = usePadRatio ? 0.02 : 0;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
 
           for (const stroke of signature.strokes) {
@@ -1128,10 +1137,10 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
               const prev = stroke[i - 1];
               const curr = stroke[i];
               if (!prev || !curr) continue;
-              const x0 = offsetX + (usePadRatio ? prev.x * drawWidth : (prev.x - bounds.minX) * (drawWidth / strokeWidth));
-              const y0 = offsetY + (usePadRatio ? (1 - prev.y) * drawHeight : ((1 - prev.y) - bounds.minY) * (drawHeight / strokeHeight));
-              const x1 = offsetX + (usePadRatio ? curr.x * drawWidth : (curr.x - bounds.minX) * (drawWidth / strokeWidth));
-              const y1 = offsetY + (usePadRatio ? (1 - curr.y) * drawHeight : ((1 - curr.y) - bounds.minY) * (drawHeight / strokeHeight));
+              const x0 = offsetX + (usePadRatio ? (inset + prev.x * (1 - 2 * inset)) * drawWidth : (prev.x - bounds.minX) * (drawWidth / strokeWidth));
+              const y0 = offsetY + (usePadRatio ? (inset + (1 - prev.y) * (1 - 2 * inset)) * drawHeight : ((1 - prev.y) - bounds.minY) * (drawHeight / strokeHeight));
+              const x1 = offsetX + (usePadRatio ? (inset + curr.x * (1 - 2 * inset)) * drawWidth : (curr.x - bounds.minX) * (drawWidth / strokeWidth));
+              const y1 = offsetY + (usePadRatio ? (inset + (1 - curr.y) * (1 - 2 * inset)) * drawHeight : ((1 - curr.y) - bounds.minY) * (drawHeight / strokeHeight));
               page.drawLine({
                 start: { x: x0, y: y0 },
                 end: { x: x1, y: y1 },
