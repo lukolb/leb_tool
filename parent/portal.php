@@ -1112,7 +1112,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const margin = 0;
           const boxWidth = rect.width;
           let drawHeight = boxWidth / boxHeightRatio;
-          const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
+          const maxHeight = Math.max(rect.height * 1.5, rect.height + 6);
           if (drawHeight > maxHeight) {
             drawHeight = maxHeight;
           }
@@ -1122,7 +1122,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           if (pageHeight && boxY + boxHeight > pageHeight - 4) {
             boxY = Math.max(rect.y + rect.height + 2, pageHeight - 4 - boxHeight);
           }
-          const offsetX = rect.x;
+          const offsetX = rect.x + (boxWidth - (boundsW * (drawHeight / boundsH))) / 2;
           const offsetY = boxY;
           const scale = drawHeight / boundsH;
           const lineWidth = Math.max(0.9, rect.height * 0.08);
