@@ -1108,6 +1108,10 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         }
       } catch (e) {}
 
+      if (flatten) {
+        try { form.flatten(); } catch (e) {}
+      }
+
       return await pdfDoc.save();
     }
 
@@ -1123,7 +1127,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         downloadBtn.disabled = true;
         downloadBtnText.textContent = 'wird erstellt…';
         try {
-          const bytes = await buildPdfBytes({ flatten: false });
+          const bytes = await buildPdfBytes({ flatten: true });
           const blob = new Blob([bytes], { type: 'application/pdf' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
