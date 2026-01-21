@@ -66,9 +66,6 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     if (!is_finite($ratio) || $ratio <= 0) {
       throw new RuntimeException('Signatur-Seitenverhältnis ist ungültig.');
     }
-    if ($ratio < 0.5 || $ratio > 5.0) {
-      throw new RuntimeException('Signatur-Seitenverhältnis ist außerhalb des erlaubten Bereichs.');
-    }
     $ratioSource = 'client';
   } else {
     $ratio = null;
@@ -115,6 +112,22 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     throw new RuntimeException('Signatur ist leer.');
   }
 
+  $boundsRatio = null;
+  $boundsWidth = $maxX - $minX;
+  $boundsHeight = $maxY - $minY;
+  if ($boundsWidth > 0 && $boundsHeight > 0) {
+    $boundsRatio = $boundsWidth / $boundsHeight;
+  }
+
+  if ($ratio !== null && $ratioSource === 'client' && $boundsRatio !== null && is_finite($boundsRatio) && $boundsRatio > 0) {
+    $logDiff = abs(log($ratio / $boundsRatio));
+    $logDiffInv = abs(log((1 / $ratio) / $boundsRatio));
+    if ($logDiff > 0.4 && $logDiffInv + 0.05 < $logDiff) {
+      $ratio = 1 / $ratio;
+      $ratioSource = 'client_inverted_fix';
+    }
+  }
+
   if ($ratio === null) {
     $width = $maxX - $minX;
     $height = $maxY - $minY;
@@ -123,10 +136,12 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
       if (!is_finite($ratio) || $ratio <= 0) {
         $ratio = null;
       } else {
-        $ratio = max(0.5, min(5.0, $ratio));
         $ratioSource = 'bounds';
       }
     }
+  }
+  if ($ratio !== null) {
+    $ratio = max(0.5, min(5.0, $ratio));
   }
   if ($ratio === null) {
     throw new RuntimeException('Signatur-Seitenverhältnis fehlt.');
