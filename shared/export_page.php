@@ -1019,6 +1019,15 @@ function getRadioGroupOptions(radioField, PDFName){
   return [];
 }
 
+function getWidgetAppearanceState(widget, PDFName){
+  try {
+    const as = widget?.dict?.lookup?.(PDFName.of('AS'));
+    const name = pdfNameToString(as);
+    return name && name.toLowerCase() !== 'off' ? name : '';
+  } catch (e) {}
+  return '';
+}
+
 function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
   const PDFLib = window.PDFLib;
   const { PDFName, PDFDict, PDFArray, PDFNumber } = PDFLib;
@@ -1028,9 +1037,18 @@ function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
   for (const field of fields) {
     if (!(field instanceof PDFLib.PDFRadioGroup)) continue;
 
-    const selectedValue = getRadioGroupValue(field, PDFName);
+    let selectedValue = getRadioGroupValue(field, PDFName);
     const widgets = field?.acroField?.getWidgets?.() || [];
     const options = getRadioGroupOptions(field, PDFName);
+    if (!selectedValue) {
+      for (const widget of widgets) {
+        const widgetSelected = getWidgetAppearanceState(widget, PDFName);
+        if (widgetSelected) {
+          selectedValue = widgetSelected;
+          break;
+        }
+      }
+    }
     for (let i = 0; i < widgets.length; i++) {
       const widget = widgets[i];
       const rect = widget.getRectangle();
@@ -1066,6 +1084,8 @@ function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
     if (selectedValue) {
       try {
         field.acroField?.setValue?.(PDFName.of(pdfNameToString(selectedValue)));
+        field.acroField?.dict?.set?.(PDFName.of('V'), PDFName.of(pdfNameToString(selectedValue)));
+        field.acroField?.dict?.set?.(PDFName.of('DV'), PDFName.of(pdfNameToString(selectedValue)));
       } catch (e) {}
     }
 
