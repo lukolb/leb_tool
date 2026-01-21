@@ -115,6 +115,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
     $accessibleClassIds = array_values(array_filter(array_map(fn($c)=>(int)($c['id'] ?? 0), $classes), fn($id)=>$id>0));
 
+    if ($action === 'save_signature') {
+      if (!$signatureConfigured) {
+        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+      }
+      $signaturePayload = read_signature_payload_from_post();
+      if (!$signaturePayload) {
+        throw new RuntimeException('Signaturdaten fehlen.');
+      }
+      signature_store_payload($pdo, $userId, $signaturePurpose, $signaturePayload);
+      if (is_ajax_request()) {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true]);
+        exit;
+      }
+      $alerts[] = 'Grafische Signatur gespeichert.';
+    }
+
     $signatureUse = (string)($_POST['signature_use'] ?? '') === '1';
     $signaturePayload = null;
     if ($signatureUse && $signatureConfigured && in_array($action, ['request_all','request_link'], true)) {
@@ -131,6 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       signature_deactivate($pdo, $userId, $signaturePurpose);
       $alerts[] = 'Grafische Signatur wurde gelöscht.';
+    } elseif ($action === 'save_signature') {
+      // handled above
     } elseif ($action === 'send_parent_email') {
       $mailForm = [
         'mode' => (string)($_POST['send_mode'] ?? 'class'),
@@ -801,6 +820,26 @@ $introText = $parentAutoApprove
       position: relative;
       overflow: hidden;
     }
+    .signature-pad::before {
+      content: '';
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 28px;
+      height: 1px;
+      background: #d4d9e2;
+      pointer-events: none;
+    }
+    .signature-pad::after {
+      content: '×';
+      position: absolute;
+      right: 18px;
+      bottom: 10px;
+      color: #b4bac5;
+      font-size: 20px;
+      font-weight: 600;
+      pointer-events: none;
+    }
     .signature-pad canvas {
       width: 100%;
       height: 100%;
@@ -867,10 +906,12 @@ $introText = $parentAutoApprove
     const useInputs = Array.from(document.querySelectorAll('.signature-use-input'));
     const payloadInputs = Array.from(document.querySelectorAll('.signature-payload-input'));
     const hasActiveSignature = <?= $signatureActive ? 'true' : 'false' ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
 
     if (!toggle || !canvas) return;
 
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const state = { strokes: [], current: null, drawing: false };
 
     function setStatus(msg){
@@ -885,6 +926,7 @@ $introText = $parentAutoApprove
 
     function resizeCanvas(){
       const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
       const ratio = window.devicePixelRatio || 1;
       canvas.width = rect.width * ratio;
       canvas.height = rect.height * ratio;
@@ -919,6 +961,7 @@ $introText = $parentAutoApprove
     }
 
     function startStroke(e){
+      if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
       state.drawing = true;
@@ -952,14 +995,31 @@ $introText = $parentAutoApprove
       setFormPayload('');
     }
 
-    function applyPad(){
+    async function applyPad(){
       if (!state.strokes.length) {
         setStatus('Bitte zuerst unterschreiben oder überspringen.');
         return;
       }
       const payload = JSON.stringify({ strokes: state.strokes });
-      setFormPayload(payload);
-      setStatus('Signatur übernommen.');
+      const body = new URLSearchParams();
+      body.set('csrf_token', csrfToken);
+      body.set('action', 'save_signature');
+      body.set('signature_payload', payload);
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body,
+        });
+        if (!resp.ok) throw new Error('Speichern fehlgeschlagen.');
+        const data = await resp.json().catch(() => ({}));
+        if (!data || data.ok !== true) throw new Error('Signatur konnte nicht gespeichert werden.');
+        setFormPayload('');
+        setStatus('Signatur gespeichert.');
+      } catch (e) {
+        setStatus(e?.message || 'Signatur konnte nicht gespeichert werden.');
+      }
     }
 
     function skipPad(){
@@ -972,6 +1032,7 @@ $introText = $parentAutoApprove
     toggle.addEventListener('change', () => {
       if (toggle.checked) {
         padWrap.style.display = '';
+        resizeCanvas();
         setStatus(hasActiveSignature ? 'Vorhandene Signatur bleibt aktiv (neu aufnehmen überschreibt).' : '');
       } else {
         padWrap.style.display = 'none';
