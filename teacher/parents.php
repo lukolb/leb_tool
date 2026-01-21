@@ -1042,9 +1042,12 @@ $introText = $parentAutoApprove
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
           body,
         });
-        if (!resp.ok) throw new Error('Speichern fehlgeschlagen.');
         const data = await resp.json().catch(() => ({}));
-        if (!data || data.ok !== true) throw new Error('Signatur konnte nicht gespeichert werden.');
+        if (!resp.ok) {
+          const errMsg = data?.error || data?.message || 'Speichern fehlgeschlagen.';
+          throw new Error(errMsg);
+        }
+        if (!data || data.ok !== true) throw new Error(data?.error || 'Signatur konnte nicht gespeichert werden.');
         setFormPayload('');
         setStatus('Signatur gespeichert.');
         setSavedState(true);
