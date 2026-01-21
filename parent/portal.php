@@ -1095,11 +1095,19 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const strokeWidth = Math.max(0.01, bounds.maxX - bounds.minX);
           const strokeHeight = Math.max(0.01, bounds.maxY - bounds.minY);
           const boxWidth = rect.width;
-          const scale = boxWidth / strokeWidth;
-          const drawWidth = boxWidth;
-          const rawDrawHeight = strokeHeight * scale;
+          const baseAspect = Number.isFinite(signature?.ratio) && signature.ratio > 0
+            ? signature.ratio
+            : (strokeWidth / strokeHeight);
+          const targetHeight = boxWidth / baseAspect;
+          let scale = Math.min(boxWidth / strokeWidth, targetHeight / strokeHeight);
+          let drawWidth = strokeWidth * scale;
+          let drawHeight = strokeHeight * scale;
           const maxHeight = Math.max(rect.height * 2.1, rect.height + 10);
-          const drawHeight = Math.min(rawDrawHeight, maxHeight);
+          if (drawHeight > maxHeight) {
+            scale = maxHeight / strokeHeight;
+            drawHeight = strokeHeight * scale;
+            drawWidth = strokeWidth * scale;
+          }
           const boxHeight = Math.max(rect.height + 6, drawHeight);
           let boxY = rect.y + rect.height + margin;
           const pageHeight = page.getHeight?.() || 0;

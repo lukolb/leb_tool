@@ -1023,7 +1023,9 @@ $introText = $parentAutoApprove
         setStatus('Bitte zuerst unterschreiben.');
         return;
       }
-      const payload = JSON.stringify({ strokes: state.strokes });
+      const rect = canvas.getBoundingClientRect();
+      const ratio = rect.height > 0 ? (rect.width / rect.height) : null;
+      const payload = JSON.stringify({ strokes: state.strokes, ratio });
       const body = new URLSearchParams();
       body.set('csrf_token', csrfToken);
       body.set('action', 'save_signature');

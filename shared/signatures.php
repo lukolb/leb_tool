@@ -51,6 +51,17 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   if (!is_array($raw)) {
     throw new RuntimeException('Signaturdaten fehlen.');
   }
+  $ratio = $raw['ratio'] ?? null;
+  if (is_numeric($ratio)) {
+    $ratio = (float)$ratio;
+    if (!is_finite($ratio) || $ratio <= 0) {
+      $ratio = null;
+    } else {
+      $ratio = max(0.2, min(5.0, $ratio));
+    }
+  } else {
+    $ratio = null;
+  }
   $strokes = $raw['strokes'] ?? null;
   if (!is_array($strokes)) {
     throw new RuntimeException('Signaturdaten sind ungültig.');
@@ -87,6 +98,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
 
   return [
     'version' => 1,
+    'ratio' => $ratio,
     'strokes' => $clean,
   ];
 }
