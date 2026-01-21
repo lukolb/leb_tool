@@ -1057,7 +1057,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         for (const pt of stroke) {
           if (!pt || typeof pt.x !== 'number' || typeof pt.y !== 'number') continue;
           const x = pt.x;
-          const y = version >= 2 ? pt.y : (1 - pt.y);
+          const y = version >= 2 ? ((1 / ratio) - pt.y) : (1 - pt.y);
           minX = Math.min(minX, x);
           maxX = Math.max(maxX, x);
           minY = Math.min(minY, y);
@@ -1129,8 +1129,8 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
               const prev = stroke[i - 1];
               const curr = stroke[i];
               if (!prev || !curr) continue;
-              const prevY = version >= 2 ? prev.y : (1 - prev.y);
-              const currY = version >= 2 ? curr.y : (1 - curr.y);
+              const prevY = version >= 2 ? ((1 / ratio) - prev.y) : (1 - prev.y);
+              const currY = version >= 2 ? ((1 / ratio) - curr.y) : (1 - curr.y);
               const x0 = offsetX + (prev.x - bounds.minX) * scale;
               const y0 = offsetY + (prevY - bounds.minY) * scale;
               const x1 = offsetX + (curr.x - bounds.minX) * scale;
