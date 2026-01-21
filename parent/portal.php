@@ -1112,7 +1112,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const margin = 0;
           const boxWidth = rect.width;
           let drawHeight = boxWidth / boxHeightRatio;
-          const maxHeight = rect.height * 2.5;
+          const maxHeight = rect.height * 3.5;
           if (drawHeight > maxHeight) {
             drawHeight = maxHeight;
           }
