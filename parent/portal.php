@@ -492,6 +492,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         </div>
         <?php endif; ?>
       <h1><?=h(t('parent.portal.heading', 'Lernentwicklungsbericht'))?></h1>
+      <?php if ($hasAck): ?>
+        <div class="pill green" style="margin-top:8px; width:fit-content;">
+          <?=h(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet'))?>
+        </div>
+      <?php endif; ?>
       <p class="muted" style="max-width:820px;">
         <?=h(t('parent.portal.readonly_hint', 'Der Abruf ist zeitlich begrenzt.'))?>
       </p>
@@ -537,11 +542,6 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     <div class="card">
       <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
       <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Bitte bestätigen Sie den Empfang des Dokuments. Sie können zusätzlich eine Rückmeldung / Frage hinterlassen.'))?></p>
-      <?php if ($hasAck): ?>
-        <div class="pill green" style="margin:0 0 8px 0; width:fit-content;">
-          <?=h(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet'))?>
-        </div>
-      <?php endif; ?>
 
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
@@ -551,7 +551,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           <input type="hidden" name="action" value="send_feedback">
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
           <div class="actions" style="margin-top:8px;">
-            <a class="btn primary" type="submit" onclick="this.closest('form').submit();"><?=h(t('parent.portal.feedback_send', 'Empfang bestätigen'))?></a>
+            <a class="btn primary" type="submit" onclick="this.closest('form').submit();">
+              <?=h($hasAck ? t('parent.portal.feedback_send_msg', 'Nachricht senden') : t('parent.portal.feedback_send', 'Empfang bestätigen'))?>
+            </a>
           </div>
         </form>
       <?php endif; ?>
