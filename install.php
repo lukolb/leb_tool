@@ -637,7 +637,7 @@ CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_class_group_deleg` (`class_id`,`school_year`,`period_label`,`group_key`),
+  UNIQUE KEY `uq_class_group_deleg` (`class_id`,`school_year`,`period_label`,`group_key`,`user_id`),
   KEY `idx_class_group_deleg_user` (`user_id`),
   KEY `idx_class_group_deleg_class` (`class_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

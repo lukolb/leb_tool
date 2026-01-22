@@ -133,16 +133,33 @@ try {
 
       $uid = (int)($r['user_id'] ?? 0);
 
-      $byClass[$cid]['groups'][] = [
-        'group_key' => $gk,
-        'group_title' => group_title_override($gk),
-        'user_id' => $uid,
-        'user_name' => trim((string)($r['display_name'] ?? '')),
-        'is_mine' => ($uid > 0 && $uid === $userId),
-        'status' => (string)($r['status'] ?? 'open'),
-        'note' => (string)($r['note'] ?? ''),
-        'updated_at' => (string)($r['updated_at'] ?? ''),
-      ];
+      if (!isset($byClass[$cid]['groups'][$gk])) {
+        $byClass[$cid]['groups'][$gk] = [
+          'group_key' => $gk,
+          'group_title' => group_title_override($gk),
+          'user_ids' => [],
+          'users' => [],
+          'is_mine' => false,
+          'status' => (string)($r['status'] ?? 'open'),
+          'note' => (string)($r['note'] ?? ''),
+          'updated_at' => (string)($r['updated_at'] ?? ''),
+        ];
+      }
+
+      if ($uid > 0 && !in_array($uid, $byClass[$cid]['groups'][$gk]['user_ids'], true)) {
+        $byClass[$cid]['groups'][$gk]['user_ids'][] = $uid;
+        $byClass[$cid]['groups'][$gk]['users'][] = [
+          'user_id' => $uid,
+          'user_name' => trim((string)($r['display_name'] ?? '')),
+        ];
+      }
+      if ($uid > 0 && $uid === $userId) {
+        $byClass[$cid]['groups'][$gk]['is_mine'] = true;
+      }
+    }
+
+    foreach ($byClass as $cid => $info) {
+      $byClass[$cid]['groups'] = array_values($info['groups']);
     }
 
     json_out(['ok'=>true, 'items'=>array_values($byClass), 'users'=>$users]);
@@ -154,6 +171,7 @@ try {
     $groupKey = trim((string)($data['group_key'] ?? ''));
     $periodLabel = normalize_period_label((string)($data['period_label'] ?? 'Standard'));
     $targetUserId = (int)($data['user_id'] ?? 0);
+    $userIds = $data['user_ids'] ?? null;
     $status = trim((string)($data['status'] ?? 'open'));
     $note = trim((string)($data['note'] ?? ''));
 
@@ -164,10 +182,16 @@ try {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
-    // validate target user (unless clearing)
-    if ($targetUserId > 0) {
+    if (is_array($userIds)) {
+      $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($x)=>$x>0)));
+    } else {
+      $userIds = $targetUserId > 0 ? [$targetUserId] : [];
+    }
+
+    // validate target users (unless clearing)
+    foreach ($userIds as $uid) {
       $stU = $pdo->prepare("SELECT id FROM users WHERE id=? AND is_active=1 AND deleted_at IS NULL AND role IN ('teacher','admin') LIMIT 1");
-      $stU->execute([$targetUserId]);
+      $stU->execute([$uid]);
       if (!$stU->fetchColumn()) throw new RuntimeException('Ungültiger Kollege.');
     }
 
@@ -179,7 +203,7 @@ try {
 
     if ($status !== 'done') $status = 'open';
 
-    if ($targetUserId <= 0) {
+    if (!$userIds) {
       // clear delegation
       $del = $pdo->prepare(
         "DELETE FROM class_group_delegations
@@ -194,22 +218,27 @@ try {
       json_out(['ok'=>true]);
     }
 
-    // upsert
     $pdo->prepare(
+      "DELETE FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+
+    $ins = $pdo->prepare(
       "INSERT INTO class_group_delegations
         (class_id, school_year, period_label, group_key, user_id, status, note, created_by_user_id, updated_by_user_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
        ON DUPLICATE KEY UPDATE
-         user_id=VALUES(user_id),
          status=VALUES(status),
          note=VALUES(note),
          updated_by_user_id=VALUES(updated_by_user_id),
          updated_at=NOW()"
-    )->execute([$classId, $schoolYear, $periodLabel, $groupKey, $targetUserId, $status, $note, $userId, $userId]);
-
-    audit('class_group_delegation_upsert', $userId, [
-      'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$targetUserId,'status'=>$status
-    ]);
+    );
+    foreach ($userIds as $uid) {
+      $ins->execute([$classId, $schoolYear, $periodLabel, $groupKey, $uid, $status, $note, $userId, $userId]);
+      audit('class_group_delegation_upsert', $userId, [
+        'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$uid,'status'=>$status
+      ]);
+    }
 
     json_out(['ok'=>true]);
   }

@@ -62,7 +62,7 @@ render_teacher_header($pageTitle);
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:280px;">
         <label class="label"><?=h($modalDelegatedTo)?></label>
-        <select class="input" id="dlgUser" style="width:100%;"></select>
+        <select class="input" id="dlgUsers" style="width:100%;" multiple size="6"></select>
         <div class="muted" style="font-size:12px; margin-top:4px;"><?=h($modalClearNote)?></div>
       </div>
 
@@ -125,7 +125,7 @@ render_teacher_header($pageTitle);
 
   const dlg = document.getElementById('dlgEdit');
   const dlgMeta = document.getElementById('dlgMeta');
-  const dlgUser = document.getElementById('dlgUser');
+  const dlgUsers = document.getElementById('dlgUsers');
   const dlgSt = document.getElementById('dlgSt');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
@@ -149,26 +149,23 @@ render_teacher_header($pageTitle);
   let users = [];
   let editCtx = null; // class_id, period_label, group_key, ...
 
-  function buildUsersSelect(selectedUserId){
-    dlgUser.innerHTML = '';
-    const optNone = document.createElement('option');
-    optNone.value = '0';
-    optNone.textContent = '— ' + clearShort + ' —';
-    dlgUser.appendChild(optNone);
-
+  function buildUsersSelect(selectedUserIds){
+    dlgUsers.innerHTML = '';
     users.forEach(u => {
       const opt = document.createElement('option');
       opt.value = String(u.id);
       opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
-      dlgUser.appendChild(opt);
+      dlgUsers.appendChild(opt);
     });
-
-    dlgUser.value = String(selectedUserId || 0);
+    const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
+    Array.from(dlgUsers.options).forEach(opt => {
+      opt.selected = ids.includes(Number(opt.value || 0));
+    });
   }
 
   function syncDisableIfClearing(){
-    const uid = Number(dlgUser.value || '0');
-    const dis = (uid <= 0);
+    const ids = Array.from(dlgUsers.selectedOptions || []).map(opt => Number(opt.value || 0)).filter(v => v > 0);
+    const dis = (ids.length === 0);
     dlgSt.disabled = dis;
     dlgNote.disabled = dis;
     if (dis) {
@@ -180,7 +177,7 @@ render_teacher_header($pageTitle);
   function openModal(ctx){
     editCtx = ctx;
     dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
-    buildUsersSelect(ctx.user_id || 0);
+    buildUsersSelect(ctx.user_ids || []);
     dlgSt.value = String(ctx.status || 'open');
     dlgNote.value = String(ctx.note || '');
     syncDisableIfClearing();
@@ -200,7 +197,7 @@ render_teacher_header($pageTitle);
       if ((c.school_year||'').toLowerCase().includes(f)) return true;
       return (c.groups||[]).some(g => {
         const a = (g.group_title||g.group_key||'').toLowerCase();
-        const b = (g.user_name||'').toLowerCase();
+        const b = (g.users || []).map(u => u.user_name || '').join(' ').toLowerCase();
         return a.includes(f) || b.includes(f);
       });
     });
@@ -215,7 +212,7 @@ render_teacher_header($pageTitle);
       const gHtml = (c.groups||[]).map(g => {
         const st = String(g.status||'open');
         const note = String(g.note||'').trim();
-        const who = String(g.user_name||'').trim();
+        const who = (g.users || []).map(u => u.user_name || ('#'+u.user_id)).filter(Boolean).join(', ');
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
@@ -239,8 +236,7 @@ render_teacher_header($pageTitle);
                 data-class-title="${esc(c.class_title||'')}"
                 data-group-key="${esc(g.group_key||'')}"
                 data-group-title="${esc(g.group_title||g.group_key||'')}"
-                data-user-id="${esc(g.user_id||'')}"
-                data-user-name="${esc(g.user_name||'')}"
+                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
                 data-status="${esc(st)}"
                 data-note="${esc(note)}"
               ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>
@@ -269,8 +265,7 @@ render_teacher_header($pageTitle);
           class_title: String(btn.getAttribute('data-class-title')||''),
           group_key: String(btn.getAttribute('data-group-key')||''),
           group_title: String(btn.getAttribute('data-group-title')||''),
-          user_id: Number(btn.getAttribute('data-user-id')||'0'),
-          user_name: String(btn.getAttribute('data-user-name')||''),
+          user_ids: (() => { try { return JSON.parse(btn.getAttribute('data-user-ids')||'[]'); } catch (e){ return []; } })(),
           status: String(btn.getAttribute('data-status')||'open'),
           note: String(btn.getAttribute('data-note')||''),
         });
@@ -283,20 +278,20 @@ render_teacher_header($pageTitle);
   if (dlg) {
     dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', closeModal));
   }
-  if (dlgUser) dlgUser.addEventListener('change', syncDisableIfClearing);
+  if (dlgUsers) dlgUsers.addEventListener('change', syncDisableIfClearing);
 
   if (dlgSave) {
     dlgSave.addEventListener('click', async () => {
       if (!editCtx) return;
       try {
-        const uid = Number(dlgUser.value || '0');
+        const userIds = Array.from(dlgUsers.selectedOptions || []).map(opt => Number(opt.value || 0)).filter(v => v > 0);
         await api('save', {
           class_id: editCtx.class_id,
           period_label: editCtx.period_label,
           group_key: editCtx.group_key,
-          user_id: uid,
-          status: uid > 0 ? String(dlgSt.value || 'open') : 'open',
-          note: uid > 0 ? String(dlgNote.value || '') : ''
+          user_ids: userIds,
+          status: userIds.length > 0 ? String(dlgSt.value || 'open') : 'open',
+          note: userIds.length > 0 ? String(dlgNote.value || '') : ''
         });
 
         const j = await api('load', {});

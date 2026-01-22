@@ -463,12 +463,12 @@ function load_teachers_for_delegation(PDO $pdo): array {
 function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
   $periodLabel = normalize_period_label($periodLabel);
   $st = $pdo->prepare(
-    "SELECT d.group_key, d.user_id, d.status, d.note,
+    "SELECT d.group_key, d.user_id, d.status, d.note, d.updated_at,
             u.display_name
      FROM class_group_delegations d
      LEFT JOIN users u ON u.id=d.user_id
      WHERE d.class_id=? AND d.school_year=? AND d.period_label=?
-     ORDER BY d.group_key ASC"
+     ORDER BY d.group_key ASC, d.updated_at DESC, d.id DESC"
   );
   $st->execute([$classId, $schoolYear, $periodLabel]);
 
@@ -476,13 +476,23 @@ function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $g = trim((string)($r['group_key'] ?? ''));
     if ($g === '') continue;
-    $out[$g] = [
-      'group_key' => $g,
-      'user_id' => (int)($r['user_id'] ?? 0),
-      'user_name' => trim((string)($r['display_name'] ?? '')),
-      'status' => (string)($r['status'] ?? 'open'),
-      'note' => (string)($r['note'] ?? ''),
-    ];
+    if (!isset($out[$g])) {
+      $out[$g] = [
+        'group_key' => $g,
+        'user_ids' => [],
+        'users' => [],
+        'status' => (string)($r['status'] ?? 'open'),
+        'note' => (string)($r['note'] ?? ''),
+      ];
+    }
+    $uid = (int)($r['user_id'] ?? 0);
+    if ($uid > 0 && !in_array($uid, $out[$g]['user_ids'], true)) {
+      $out[$g]['user_ids'][] = $uid;
+      $out[$g]['users'][] = [
+        'user_id' => $uid,
+        'user_name' => trim((string)($r['display_name'] ?? '')),
+      ];
+    }
   }
   return $out;
 }
@@ -518,18 +528,23 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   audit('class_group_delegation_upsert', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status]);
 }
 
-function delegated_user_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey): int {
+function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey): array {
   $groupKey = trim($groupKey);
-  if ($groupKey === '') return 0;
+  if ($groupKey === '') return [];
   $periodLabel = normalize_period_label($periodLabel);
   $st = $pdo->prepare(
     "SELECT user_id
      FROM class_group_delegations
      WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?
-     LIMIT 1"
+     ORDER BY user_id ASC"
   );
   $st->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
-  return (int)($st->fetchColumn() ?: 0);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $uid = (int)($r['user_id'] ?? 0);
+    if ($uid > 0 && !in_array($uid, $out, true)) $out[] = $uid;
+  }
+  return $out;
 }
 
 function user_is_class_teacher(PDO $pdo, int $userId, int $classId): bool {
@@ -543,9 +558,9 @@ function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string 
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
-  $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
-  if ($assigned <= 0) return true;        // not delegated => anyone with class access may edit
-  return $assigned === $uid;              // delegated => only that teacher
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  if (!$assigned) return true;        // not delegated => anyone with class access may edit
+  return in_array($uid, $assigned, true);              // delegated => only delegates
 }
 
 function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, array $meta, string $fieldType, int $isMultiline): bool {
@@ -554,14 +569,14 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
   if ($uid <= 0) return false;
 
   $groupKey = group_key_from_meta($meta);
-  $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
-  if ($assigned <= 0) return true;
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  if (!$assigned) return true;
 
   if (is_free_text_field($fieldType, $isMultiline)) {
-    return ($assigned === $uid) || user_is_class_teacher($pdo, $uid, $classId);
+    return in_array($uid, $assigned, true) || user_is_class_teacher($pdo, $uid, $classId);
   }
 
-  return $assigned === $uid;
+  return in_array($uid, $assigned, true);
 }
 
 function is_free_text_field(string $fieldType, int $isMultiline): bool {
@@ -1060,19 +1075,19 @@ function load_teacher_values_for_user(
 
     $groupKey = group_key_from_meta($meta);
     $del = $groupKey !== '' ? ($delegations[$groupKey] ?? null) : null;
-    $assigned = $del ? (int)($del['user_id'] ?? 0) : 0;
+    $assignedUsers = $del && isset($del['user_ids']) && is_array($del['user_ids']) ? array_map('intval', $del['user_ids']) : [];
+    $hasDelegates = !empty($assignedUsers);
 
     $valueTextRaw = $r['value_text'] !== null ? (string)$r['value_text'] : '';
     $valueJsonRaw = $r['value_json'] !== null ? (string)$r['value_json'] : null;
 
-    if ($assigned > 0 && is_free_text_field($fieldType, $isMultiline)) {
+    if ($hasDelegates && is_free_text_field($fieldType, $isMultiline)) {
       $free = free_text_parts_from_json($valueJsonRaw);
       if ($free['has_free_text']) {
-        $delegateMatches = ((int)$free['delegate_user_id'] === $assigned);
         $classText = (string)$free['class_text'];
-        $delegateText = $delegateMatches ? (string)$free['delegate_text'] : '';
+        $delegateText = (string)$free['delegate_text'];
         $textCombined = combine_free_text($classText, $delegateText);
-        $isDelegate = ($assigned === $uid);
+        $isDelegate = in_array($uid, $assignedUsers, true);
         $textOwn = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
         $combined[$rid][(string)$fid] = $textCombined;
         $own[$rid][(string)$fid] = $textOwn;
@@ -1080,7 +1095,8 @@ function load_teacher_values_for_user(
         $parts[$rid][(string)$fid] = [
           'class_text' => $classText,
           'delegate_text' => $delegateText,
-          'delegate_user_id' => $assigned,
+          'delegate_user_id' => count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0,
+          'delegate_user_ids' => $assignedUsers,
         ];
         continue;
       }
@@ -1870,9 +1886,13 @@ try {
         $type = (string)($studentFieldMap[$fieldId]['field_type'] ?? '');
         $isMultiline = (int)($studentFieldMap[$fieldId]['is_multiline'] ?? 0);
         if (!is_free_text_field($type, $isMultiline)) continue;
-        $assigned = (int)($parts['delegate_user_id'] ?? 0);
-        if ($assigned <= 0) continue;
-        $isDelegate = ($assigned === $userId) && !$isClassTeacher;
+        $gKey = group_key_from_meta($meta);
+        $delMeta = $gKey !== '' ? ($delegations[$gKey] ?? null) : null;
+        $assignedUsers = $delMeta && isset($delMeta['user_ids']) && is_array($delMeta['user_ids'])
+          ? array_map('intval', $delMeta['user_ids'])
+          : [];
+        if (!$assignedUsers) continue;
+        $isDelegate = in_array($userId, $assignedUsers, true) && !$isClassTeacher;
         $otherText = $isDelegate
           ? (string)($parts['class_text'] ?? '')
           : (string)($parts['delegate_text'] ?? '');
@@ -2707,11 +2727,20 @@ if ($action === 'delegations_save') {
         $gk = trim((string)($it['group_key'] ?? ''));
         if ($gk === '') continue;
 
-        $uid = (int)($it['user_id'] ?? 0);
         $status = (string)($it['status'] ?? 'open');
         $note = (string)($it['note'] ?? '');
+        $userIds = $it['user_ids'] ?? null;
+        if (is_array($userIds)) {
+          $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($x)=>$x>0)));
+        } else {
+          $uid = (int)($it['user_id'] ?? 0);
+          $userIds = $uid > 0 ? [$uid] : [];
+        }
 
-        upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, $uid, $status, $note, $userId);
+        upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, 0, $status, $note, $userId);
+        foreach ($userIds as $uid) {
+          upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, $uid, $status, $note, $userId);
+        }
       }
 
       $pdo->commit();
@@ -2750,13 +2779,16 @@ if ($action === 'delegations_save') {
     // current delegations
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $cur = $delegations[$groupKey] ?? null;
-    if (!$cur || (int)($cur['user_id'] ?? 0) <= 0) {
+    $assignedUsers = $cur && isset($cur['user_ids']) && is_array($cur['user_ids'])
+      ? array_map('intval', $cur['user_ids'])
+      : [];
+    if (!$assignedUsers) {
       throw new RuntimeException('Keine Delegation für diese Gruppe vorhanden.');
     }
 
     // only delegate themselves (admins can do anything)
     if (($u['role'] ?? '') !== 'admin') {
-      if ((int)$cur['user_id'] !== $userId) {
+      if (!in_array($userId, $assignedUsers, true)) {
         throw new RuntimeException('Nicht deine Delegation.');
       }
     }
@@ -2764,18 +2796,19 @@ if ($action === 'delegations_save') {
     if ($status !== 'open' && $status !== 'done') $status = 'open';
     $note = trim($note);
 
-    // upsert with same user_id (NO reassignment)
-    upsert_class_group_delegation(
-      $pdo,
-      $classId,
-      $schoolYear,
-      $periodLabel,
-      $groupKey,
-      (int)$cur['user_id'],
-      $status,
-      $note,
-      $userId
-    );
+    foreach ($assignedUsers as $uid) {
+      upsert_class_group_delegation(
+        $pdo,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $groupKey,
+        (int)$uid,
+        $status,
+        $note,
+        $userId
+      );
+    }
 
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
@@ -2842,12 +2875,13 @@ if ($action === 'delegations_save') {
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     $valueJson = null;
-    $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabelDeleg, $gKey);
+    $assignedUsers = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabelDeleg, $gKey);
+    $delegateUserId = count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0;
 
-    if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
+    if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 
@@ -2857,7 +2891,7 @@ if ($action === 'delegations_save') {
         $fieldId,
         $classText,
         $delegateText,
-        $assigned,
+        $delegateUserId,
         $isDelegate,
         $userId
       );
@@ -2889,7 +2923,7 @@ if ($action === 'delegations_save') {
       }
     }
 
-    if (!($assigned > 0 && is_free_text_field($type, $isMultiline))) {
+    if (!($assignedUsers && is_free_text_field($type, $isMultiline))) {
       $up = $pdo->prepare(
         "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
          VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
@@ -2967,12 +3001,13 @@ if ($action === 'delegations_save') {
 
     // ✅ immer initialisieren (sonst Undefined variable)
     $valueJson = null;
-    $assigned = delegated_user_for_group($pdo, $classId, $schoolYear, $periodLabel, $gKey);
+    $assignedUsers = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $gKey);
+    $delegateUserId = count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0;
 
-    if ($assigned > 0 && is_free_text_field($type, $isMultiline)) {
+    if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = ($assigned === $userId) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 
@@ -2982,7 +3017,7 @@ if ($action === 'delegations_save') {
         $fieldId,
         $classText,
         $delegateText,
-        $assigned,
+        $delegateUserId,
         $isDelegate,
         $userId
       );
@@ -3014,7 +3049,7 @@ if ($action === 'delegations_save') {
       }
     }
 
-    if (!($assigned > 0 && is_free_text_field($type, $isMultiline))) {
+    if (!($assignedUsers && is_free_text_field($type, $isMultiline))) {
       $up = $pdo->prepare(
         "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
          VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
