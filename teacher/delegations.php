@@ -230,7 +230,11 @@ render_teacher_header($pageTitle);
       const gHtml = (c.groups||[]).map(g => {
         const st = String(g.status||'open');
         const note = String(g.note||'').trim();
-        const who = (g.users || []).map(u => u.user_name || ('#'+u.user_id)).filter(Boolean).join(', ');
+        const who = (g.users || []).map(u => {
+          const nm = u.user_name || ('#'+u.user_id);
+          if (!nm) return '';
+          return (u.status === 'done') ? `${nm} ✓` : nm;
+        }).filter(Boolean).join(', ');
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
