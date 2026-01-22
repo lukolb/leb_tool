@@ -295,7 +295,6 @@ render_admin_header('Feld-Editor');
         <div class="muted2">Setzt options_json + merkt <code>meta.option_list_template_id</code>.</div>
       </div>
       <div class="actions" style="justify-content:flex-start; gap:8px;">
-        <button class="btn secondary" type="button" id="btnGrade16">Noten 1–6</button>
         <button class="btn secondary" type="button" id="btnClearOptions">Leeren</button>
       </div>
     </div>
@@ -654,7 +653,6 @@ const optionsModal = document.getElementById('optionsModal');
 const optSubtitle = document.getElementById('optSubtitle');
 const optTpl = document.getElementById('optTpl');
 const optJson = document.getElementById('optJson');
-const btnGrade16 = document.getElementById('btnGrade16');
 const btnClearOptions = document.getElementById('btnClearOptions');
 
 const dateModal = document.getElementById('dateModal');
@@ -790,10 +788,6 @@ function flashRow(tr){
 
 function escapeHtml(s){
   return String(s ?? '').replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
-}
-
-function grade16Options(){
-  return { options: ['1','2','3','4','5','6'].map(v => ({ value: v, label: v })) };
 }
 
 /** Convert option_list_items -> template_fields.options JSON */
@@ -1452,7 +1446,6 @@ function computeExtras(f){
     if (count) badges.push(`☰ ${count} Optionen`);
     else badges.push('☰ — Optionen');
 
-    if (f.type === 'grade') badges.push('🎓 1–6 verfügbar');
   }
 
   if (f.type === 'multiline' || f.multiline) badges.push('↵ multiline');
@@ -1834,11 +1827,6 @@ function renderTable(){
       e.stopPropagation();
       fields[idx].type = selT.value;
       if (selT.value === 'multiline') fields[idx].multiline = 1;
-      if (selT.value === 'grade' && (!fields[idx].options || !fields[idx].options.options)) {
-        fields[idx].options = grade16Options();
-        fields[idx].meta = fields[idx].meta || {};
-        delete fields[idx].meta.option_list_template_id;
-      }
       markDirty(f.id);
       renderTable();
       scanForSplitCandidate();
@@ -2035,15 +2023,6 @@ function renderTable(){
       btnOpt.addEventListener('click', (e)=>{ e.stopPropagation(); openOptionsModal(f.id); });
       wrap.appendChild(btnOpt);
 
-      if (f.type === 'grade') {
-        const btnG = document.createElement('button');
-        btnG.type = 'button';
-        btnG.className = 'btn secondary';
-        btnG.textContent = 'Noten 1–6';
-        btnG.title = 'Setzt Standard-Notenskala (1–6).';
-        btnG.addEventListener('click', (e)=>{ e.stopPropagation(); setGrade16(f.id); });
-        wrap.appendChild(btnG);
-      }
     }
 
     const badges = document.createElement('div');
@@ -2209,11 +2188,6 @@ async function applyBulk(targetIds){
     if (patch.type) {
       nf.type = patch.type;
       if (nf.type === 'multiline') nf.multiline = 1;
-      if (nf.type === 'grade' && (!nf.options || !nf.options.options)) {
-        nf.options = grade16Options();
-        nf.meta = nf.meta || {};
-        delete nf.meta.option_list_template_id;
-      }
     }
 
     if (patch.hasOwnProperty('can_child_edit')) nf.can_child_edit = patch.can_child_edit;
@@ -2341,18 +2315,6 @@ async function save(){
 }
 
 /* ---------- Options dialog ---------- */
-function setGrade16(fieldId){
-  const idx = fields.findIndex(x => x.id === fieldId);
-  if (idx < 0) return;
-  fields[idx].options = grade16Options();
-  fields[idx].meta = fields[idx].meta || {};
-  delete fields[idx].meta.option_list_template_id;
-  markDirty(fieldId);
-  renderTable();
-  scanForSplitCandidate();
-  updateMeta();
-}
-
 function openOptionsModal(fieldId){
   modalFieldId = fieldId;
   const f = fields.find(x=>x.id===fieldId);
@@ -2363,10 +2325,6 @@ function openOptionsModal(fieldId){
   optionsModal.showModal();
 }
 
-btnGrade16.addEventListener('click', ()=>{
-  optJson.value = JSON.stringify(grade16Options(), null, 2);
-  optTpl.value = '';
-});
 btnClearOptions.addEventListener('click', ()=>{ optJson.value = ''; optTpl.value=''; });
 
 optTpl.addEventListener('change', async ()=>{

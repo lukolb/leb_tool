@@ -117,7 +117,7 @@ render_admin_header('Admin – Icon & Options');
 
   <div id="tab-lists" class="tabpanel active">
     <h2 style="margin-top:0;">Option-Listen Vorlagen</h2>
-    <p class="muted">Erstelle hier Auswahllisten (z.B. Skala 1–6, Ja/Nein, Smileys). Diese Vorlagen nutzt du später in <code>template_fields.php</code> für Radio/Select-Felder.</p>
+    <p class="muted">Erstelle hier Auswahllisten (z.B. Skala, Ja/Nein, Smileys). Diese Vorlagen nutzt du später in <code>template_fields.php</code> für Radio/Select-Felder.</p>
 
     <div class="grid2">
       <div class="card" style="margin:0;">
@@ -126,7 +126,7 @@ render_admin_header('Admin – Icon & Options');
         <div class="grid" style="gap:12px; align-items:end;">
           <div>
             <label>Neue Vorlage</label>
-            <input id="newListName" placeholder="z.B. Skala 1–6">
+            <input id="newListName" placeholder="z.B. Skala, Ja/Nein">
           </div>
           <div class="actions" style="justify-content:flex-start;">
             <button class="btn primary" id="btnCreateList" type="button">Erstellen</button>
