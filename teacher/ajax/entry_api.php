@@ -695,6 +695,125 @@ function base_field_key(string $fieldName): string {
   return trim($s);
 }
 
+function load_teacher_values_raw(PDO $pdo, array $reportIds, array $fieldIds): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($x)=>$x>0)));
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
+  if (!$reportIds || !$fieldIds) return [];
+
+  $inR = implode(',', array_fill(0, count($reportIds), '?'));
+  $inF = implode(',', array_fill(0, count($fieldIds), '?'));
+  $params = array_merge($reportIds, $fieldIds);
+
+  $st = $pdo->prepare(
+    "SELECT report_instance_id, template_field_id, value_text, value_json
+     FROM field_values
+     WHERE report_instance_id IN ($inR)
+       AND template_field_id IN ($inF)
+       AND source='teacher'"
+  );
+  $st->execute($params);
+
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $rid = (string)(int)$r['report_instance_id'];
+    $fid = (int)$r['template_field_id'];
+    if (!isset($out[$rid])) $out[$rid] = [];
+    $out[$rid][$fid] = [
+      'text' => $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      'json' => $r['value_json'] !== null ? (string)$r['value_json'] : null,
+    ];
+  }
+  return $out;
+}
+
+function option_list_lock_map(PDO $pdo, int $listId, array &$cache): array {
+  if ($listId <= 0) return ['by_id' => [], 'by_value' => []];
+  if (isset($cache[$listId])) return $cache[$listId];
+  $st = $pdo->prepare(
+    "SELECT id, value, meta_json
+     FROM option_list_items
+     WHERE list_id=?"
+  );
+  $st->execute([$listId]);
+  $byId = [];
+  $byValue = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $id = (int)($r['id'] ?? 0);
+    $value = trim((string)($r['value'] ?? ''));
+    $meta = meta_read($r['meta_json'] ?? null);
+    $lock = !empty($meta['lock_child']);
+    $byId[$id] = [
+      'value' => $value,
+      'lock_child' => $lock,
+    ];
+    if ($value !== '' && !isset($byValue[$value])) $byValue[$value] = $id;
+  }
+  $cache[$listId] = ['by_id' => $byId, 'by_value' => $byValue];
+  return $cache[$listId];
+}
+
+function teacher_value_locks_child(PDO $pdo, array $teacherField, ?array $teacherValue, array &$cache): bool {
+  if (!$teacherValue) return false;
+  $type = (string)($teacherField['field_type'] ?? '');
+  if (!in_array($type, ['radio','select','grade'], true)) return false;
+  $meta = meta_read($teacherField['meta_json'] ?? null);
+  $listId = option_list_id_from_meta($meta);
+  if ($listId <= 0) return false;
+  $map = option_list_lock_map($pdo, $listId, $cache);
+  $optId = 0;
+  if (!empty($teacherValue['json'])) {
+    $decoded = json_decode((string)$teacherValue['json'], true);
+    if (is_array($decoded) && isset($decoded['option_item_id'])) {
+      $optId = (int)$decoded['option_item_id'];
+    }
+  }
+  if ($optId <= 0) {
+    $txt = trim((string)($teacherValue['text'] ?? ''));
+    if ($txt !== '' && isset($map['by_value'][$txt])) {
+      $optId = (int)$map['by_value'][$txt];
+    }
+  }
+  if ($optId <= 0) return false;
+  return !empty($map['by_id'][$optId]['lock_child']);
+}
+
+function locked_child_field_ids_for_reports(PDO $pdo, array $teacherFields, array $childFields, array $reportIds): array {
+  if (!$reportIds) return [];
+  $teacherByBase = [];
+  $teacherFieldIds = [];
+  foreach ($teacherFields as $f) {
+    $fid = (int)($f['id'] ?? 0);
+    if ($fid <= 0) continue;
+    $teacherFieldIds[] = $fid;
+    $base = base_field_key((string)($f['field_name'] ?? ''));
+    if ($base !== '' && !isset($teacherByBase[$base])) $teacherByBase[$base] = $f;
+  }
+  if (!$teacherFieldIds || !$teacherByBase) return [];
+  $teacherValues = load_teacher_values_raw($pdo, $reportIds, $teacherFieldIds);
+  if (!$teacherValues) return [];
+
+  $lockCache = [];
+  $out = [];
+  foreach ($reportIds as $rid) {
+    $ridKey = (string)(int)$rid;
+    $reportTeacherValues = $teacherValues[$ridKey] ?? [];
+    if (!$reportTeacherValues) continue;
+    foreach ($childFields as $cf) {
+      $cfId = (int)($cf['id'] ?? 0);
+      if ($cfId <= 0) continue;
+      $base = base_field_key((string)($cf['field_name'] ?? ''));
+      if ($base === '') continue;
+      $teacherField = $teacherByBase[$base] ?? null;
+      if (!$teacherField) continue;
+      $teacherValue = $reportTeacherValues[(int)($teacherField['id'] ?? 0)] ?? null;
+      if (!teacher_value_locks_child($pdo, $teacherField, $teacherValue, $lockCache)) continue;
+      if (!isset($out[$ridKey])) $out[$ridKey] = [];
+      $out[$ridKey][$cfId] = true;
+    }
+  }
+  return $out;
+}
+
 function is_system_bound(array $meta): bool {
   $tpl = $meta['system_binding_tpl'] ?? null;
   if (is_string($tpl) && trim($tpl) !== '') return true;
@@ -1524,9 +1643,12 @@ try {
     $overallTotal = $teacherTotal + $childTotal;
 
     $completeForms = 0;
+    $lockedChildIdsByReport = locked_child_field_ids_for_reports($pdo, $teacherFields, $childFieldsAll, $reportIds);
     foreach ($students as &$srow) {
       $rid = (int)($srow['report_instance_id'] ?? 0);
       $ridKey = (string)$rid;
+      $lockedChildIds = $lockedChildIdsByReport[$ridKey] ?? [];
+      $childTotalForStudent = max(0, $childTotal - count($lockedChildIds));
 
       $tDone = 0;
       if ($teacherTotal > 0) {
@@ -1538,8 +1660,9 @@ try {
 
       $cDone = 0;
       $missingChildLabels = [];
-      if ($childTotal > 0) {
+      if ($childTotalForStudent > 0) {
         foreach ($childProgressIds as $fid) {
+          if (!empty($lockedChildIds[$fid])) continue;
           $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
           $trimmed = trim((string)$v);
           if ($trimmed !== '') {
@@ -1551,21 +1674,22 @@ try {
         }
       }
 
+      $overallTotalForStudent = $teacherTotal + $childTotalForStudent;
       $oDone = $tDone + $cDone;
-      $oMissing = max(0, $overallTotal - $oDone);
-      $isComplete = ($overallTotal > 0 && $oMissing === 0);
+      $oMissing = max(0, $overallTotalForStudent - $oDone);
+      $isComplete = ($overallTotalForStudent > 0 && $oMissing === 0);
       if ($isComplete) $completeForms++;
 
       $srow['progress_teacher_total'] = $teacherTotal;
       $srow['progress_teacher_done'] = $tDone;
       $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone);
 
-      $srow['progress_child_total'] = $childTotal;
+      $srow['progress_child_total'] = $childTotalForStudent;
       $srow['progress_child_done'] = $cDone;
-      $srow['progress_child_missing'] = max(0, $childTotal - $cDone);
+      $srow['progress_child_missing'] = max(0, $childTotalForStudent - $cDone);
       $srow['child_missing_fields'] = $missingChildLabels;
 
-      $srow['progress_overall_total'] = $overallTotal;
+      $srow['progress_overall_total'] = $overallTotalForStudent;
       $srow['progress_overall_done'] = $oDone;
       $srow['progress_overall_missing'] = $oMissing;
       $srow['progress_is_complete'] = $isComplete;
@@ -1620,6 +1744,7 @@ try {
       'values_teacher_parts' => $teacherValues['parts'] ?? [],
       'values_child' => $valuesChild,
       'value_history' => $valueHistory,
+      'locked_child_fields' => $lockedChildIdsByReport,
       'progress_summary' => $progressSummary,
       'class_report_instance_id' => $classReportInstanceId,
       'class_fields' => [

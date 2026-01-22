@@ -173,7 +173,7 @@ try {
 
     // NEW: label_en
     $it = $pdo->prepare("
-      SELECT id, list_id, value, label, label_en, icon_id, sort_order
+      SELECT id, list_id, value, label, label_en, icon_id, sort_order, meta_json
       FROM option_list_items
       WHERE list_id=?
       ORDER BY sort_order ASC, id ASC
@@ -218,11 +218,11 @@ try {
     // NEW: label_en
     $ins = $pdo->prepare("
       INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json)
-      VALUES (?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
     $upd = $pdo->prepare("
       UPDATE option_list_items
-      SET value=?, label=?, label_en=?, icon_id=?, sort_order=?, updated_at=CURRENT_TIMESTAMP
+      SET value=?, label=?, label_en=?, icon_id=?, sort_order=?, meta_json=?, updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND list_id=?
     ");
 
@@ -236,15 +236,17 @@ try {
       $labelEn = trim((string)($row['label_en'] ?? '')); // NEW (optional)
       $iconId = isset($row['icon_id']) && $row['icon_id'] !== null && $row['icon_id'] !== '' ? (int)$row['icon_id'] : null;
       $sort = (int)($row['sort_order'] ?? $i);
+      $lockChild = !empty($row['lock_child']);
+      $metaJson = $lockChild ? json_encode(['lock_child' => 1], JSON_UNESCAPED_UNICODE) : null;
 
       // Require value + DE label
       if ($value === '' || $label === '') { $i++; continue; }
 
       if ($itemId > 0 && in_array($itemId, $existingIds, true)) {
-        $upd->execute([$value, $label, $labelEn, $iconId, $sort, $itemId, $id]);
+        $upd->execute([$value, $label, $labelEn, $iconId, $sort, $metaJson, $itemId, $id]);
         $keepIds[] = $itemId;
       } else {
-        $ins->execute([$id, $value, $label, $labelEn, $iconId, $sort]);
+        $ins->execute([$id, $value, $label, $labelEn, $iconId, $sort, $metaJson]);
         $keepIds[] = (int)$pdo->lastInsertId();
       }
 
