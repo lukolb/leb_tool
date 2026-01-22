@@ -60,6 +60,22 @@ function parent_portal_class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
 
+function parent_feedback_ack_exists(PDO $pdo, int $linkId): bool {
+  $st = $pdo->prepare("SELECT 1 FROM parent_feedback WHERE link_id=? AND feedback_type='ack' LIMIT 1");
+  $st->execute([$linkId]);
+  return (bool)$st->fetchColumn();
+}
+
+function parent_feedback_insert_ack(PDO $pdo, int $linkId, string $lang): bool {
+  if (parent_feedback_ack_exists($pdo, $linkId)) return false;
+  $ins = $pdo->prepare(
+    "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
+    "VALUES (?, 'ack', NULL, ?, 0, NOW())"
+  );
+  $ins->execute([$linkId, $lang]);
+  return true;
+}
+
 /**
  * Extract expected date format from meta_json
  */
@@ -267,6 +283,7 @@ if ($expiresAt) {
 $status = (string)($link['status'] ?? '');
 $allowResponses = ($status === 'approved' && !$isExpired);
 $canPreview = ($status === 'approved');
+$hasAck = $allowResponses ? parent_feedback_ack_exists($pdo, (int)$link['id']) : false;
 
 if ($canPreview) {
   apply_system_bindings($pdo, (int)$link['report_instance_id']);
@@ -280,13 +297,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
-      $type = 'question';
-      $ins = $pdo->prepare(
-        "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
-        "VALUES (?, ?, ?, ?, 0, NOW())"
-      );
-      $ins->execute([(int)$link['id'], $type, $message, 'de']);
+      if ($message === '') {
+        parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
+        $hasAck = true;
+      } else {
+        $ins = $pdo->prepare(
+          "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
+          "VALUES (?, 'question', ?, ?, 0, NOW())"
+        );
+        $ins->execute([(int)$link['id'], $message, $lang]);
+        if (parent_feedback_insert_ack($pdo, (int)$link['id'], $lang)) {
+          $hasAck = true;
+        }
+      }
       $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.');
+    }
+
+    if ($action === 'confirm_receipt') {
+      parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
+      $hasAck = true;
     }
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
@@ -466,6 +495,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         </div>
         <?php endif; ?>
       <h1><?=h(t('parent.portal.heading', 'Lernentwicklungsbericht'))?></h1>
+      <?php if ($hasAck): ?>
+        <div class="pill green" style="margin-top:8px; width:fit-content;">
+          <?=h(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet'))?>
+        </div>
+      <?php endif; ?>
       <p class="muted" style="max-width:820px;">
         <?=h(t('parent.portal.readonly_hint', 'Der Abruf ist zeitlich begrenzt.'))?>
       </p>
@@ -474,7 +508,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         <?=h(t('parent.portal.class', 'Klasse'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
       </div>
       <div class="muted" style="margin-top:12px;">
-        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : t('parent.portal.no_expiry', 'ohne Enddatum'))?>
+        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?= $expiresAt ? render_local_datetime($expiresAt, 'd.m.Y H:i') : h(t('parent.portal.no_expiry', 'ohne Enddatum')) ?>
       </div>
       <?php if ($status === 'requested'): ?>
         <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.waiting', 'Freigabe wird noch durch die Schule bestätigt.'))?></div>
@@ -491,12 +525,14 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       </div>
     <?php else: ?>
 
-      <?php if ($errors): ?>
-        <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
-      <?php endif; ?>
-      <?php if ($alerts): ?>
-        <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
-      <?php endif; ?>
+      <div id="parentAlerts">
+        <?php if ($errors): ?>
+          <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
+        <?php endif; ?>
+        <?php if ($alerts): ?>
+          <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
+        <?php endif; ?>
+      </div>
 
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
@@ -515,12 +551,14 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
       <?php else: ?>
-        <form method="post" style="margin:0; display:flex; flex-direction:column; gap:8px;">
+        <form method="post" id="parentFeedbackForm" style="margin:0; display:flex; flex-direction:column; gap:8px;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="send_feedback">
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
           <div class="actions" style="margin-top:8px;">
-            <a class="btn primary" type="submit" onclick="this.closest('form').submit();"><?=h(t('parent.portal.feedback_send', 'Empfang bestätigen'))?></a>
+            <button class="btn primary" type="submit">
+              <?=h($hasAck ? t('parent.portal.feedback_send_msg', 'Nachricht senden') : t('parent.portal.feedback_send', 'Empfang bestätigen'))?>
+            </button>
           </div>
         </form>
       <?php endif; ?>
@@ -537,6 +575,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const downloadBtn = document.getElementById('downloadPdfBtn');
     const downloadBtnText = document.getElementById('downloadPdfBtnText');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    let receiptConfirmed = <?= $hasAck ? 'true' : 'false' ?>;
+    const feedbackForm = document.getElementById('parentFeedbackForm');
+    const alertsWrap = document.getElementById('parentAlerts');
+    const feedbackButton = feedbackForm?.querySelector('.btn.primary');
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -546,6 +589,74 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     function showError(msg){
       if (!preview) return;
       preview.innerHTML = `<div class="alert danger">${msg}</div>`;
+    }
+
+    function pushAlert(type, text){
+      if (!alertsWrap) return;
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = text;
+      alertsWrap.innerHTML = '';
+      alertsWrap.appendChild(alert);
+      alertsWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function ensureAckPill(){
+      if (receiptConfirmed) return;
+      receiptConfirmed = true;
+      const headerCard = document.querySelector('.container .card');
+      if (!headerCard || headerCard.querySelector('.pill.green')) return;
+      const pill = document.createElement('div');
+      pill.className = 'pill green';
+      pill.style.marginTop = '8px';
+      pill.style.width = 'fit-content';
+      pill.textContent = <?= json_encode(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet')) ?>;
+      const heading = headerCard.querySelector('h1');
+      heading?.insertAdjacentElement('afterend', pill);
+      if (feedbackButton) {
+        feedbackButton.textContent = <?= json_encode(t('parent.portal.feedback_send_msg', 'Nachricht senden')) ?>;
+      }
+    }
+
+    async function confirmReceipt(){
+      if (receiptConfirmed) return;
+      receiptConfirmed = true;
+      if (!csrfToken) return;
+      const fd = new FormData();
+      fd.append('csrf_token', csrfToken);
+      fd.append('action', 'confirm_receipt');
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          keepalive: true,
+        });
+        if (!resp.ok) receiptConfirmed = false;
+      } catch (e) {
+        receiptConfirmed = false;
+      }
+    }
+
+    if (feedbackForm) {
+      feedbackForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const formData = new FormData(feedbackForm);
+        const message = String(formData.get('message') || '').trim();
+        try {
+          const resp = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+          });
+          if (!resp.ok) throw new Error('request_failed');
+          pushAlert('success', <?= json_encode(t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.')) ?>);
+          ensureAckPill();
+          feedbackForm.reset();
+        } catch (e) {
+          pushAlert('danger', <?= json_encode('Rückmeldung konnte nicht gesendet werden.') ?>);
+        }
+      });
     }
 
     async function ensurePdfLib(){
@@ -1268,6 +1379,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const bytes = await buildPdfBytes({ flatten: true });
           const blob = new Blob([bytes], { type: 'application/pdf' });
           const url = URL.createObjectURL(blob);
+          confirmReceipt();
           const a = document.createElement('a');
           a.href = url;
           a.download = downloadName || 'bericht.pdf';
@@ -1287,6 +1399,34 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     fillPdf().catch(e => showError(e?.message || String(e)));
   </script>
   <?php endif; ?>
+  <script>
+    (function(){
+      const formatLocal = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        try {
+          return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+        } catch (e) {
+          return date.toLocaleString();
+        }
+      };
+
+      const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tzName) {
+        document.cookie = `user_tz=${encodeURIComponent(tzName)}; path=/; max-age=31536000; samesite=lax`;
+      }
+
+      document.querySelectorAll('[data-dt]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dt || '');
+        if (formatted) el.textContent = formatted;
+      });
+
+      document.querySelectorAll('[data-dt-title]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dtTitle || '');
+        if (formatted) el.setAttribute('title', formatted);
+      });
+    })();
+  </script>
 <?php render_history_replace_state_script(); ?>
 </body>
 </html>

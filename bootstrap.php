@@ -219,6 +219,52 @@ function db(): PDO {
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', string $empty = '–'): string {
+  if (!$value) return h($empty);
+  try {
+    $dt = new DateTimeImmutable($value);
+  } catch (Throwable $e) {
+    return h($empty);
+  }
+  $iso = $dt->format('c');
+  $fallback = $dt->format($format);
+  return '<time data-dt="' . h($iso) . '">' . h($fallback) . '</time>';
+}
+
+function render_local_datetime_title_attr(?string $value, string $format = 'd.m.Y H:i'): string {
+  if (!$value) return '';
+  try {
+    $dt = new DateTimeImmutable($value);
+  } catch (Throwable $e) {
+    return '';
+  }
+  $iso = $dt->format('c');
+  $fallback = $dt->format($format);
+  return ' data-dt-title="' . h($iso) . '" title="' . h($fallback) . '"';
+}
+
+function user_timezone(): DateTimeZone {
+  $tz = $_POST['user_tz'] ?? $_COOKIE['user_tz'] ?? '';
+  if (is_string($tz)) {
+    $tz = trim($tz);
+  } else {
+    $tz = '';
+  }
+  if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
+    return new DateTimeZone($tz);
+  }
+  return new DateTimeZone(date_default_timezone_get());
+}
+
+function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): string {
+  if ($days < 0) $days = 0;
+  $tz = user_timezone();
+  $base = $base ? $base->setTimezone($tz) : new DateTimeImmutable('today', $tz);
+  $start = $base->setTime(0, 0, 0);
+  $target = $start->modify('+' . $days . ' days')->setTime(23, 59, 59);
+  return $target->format('Y-m-d H:i:s');
+}
+
 function render_history_replace_state_script(): void {
   echo "\n  <script data-history-replace-state>\n";
   echo "    if (window.history && window.history.replaceState) {\n";
