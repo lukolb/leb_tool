@@ -153,7 +153,8 @@ render_teacher_header($pageTitle);
   function buildUsersSelect(selectedUserIds, disabled){
     dlgUsers.innerHTML = '';
     const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
-    users.forEach(u => {
+    const list = disabled ? users.filter(u => ids.includes(Number(u.id))) : users;
+    list.forEach(u => {
       const wrap = document.createElement('label');
       wrap.style.display = 'flex';
       wrap.style.alignItems = 'center';
