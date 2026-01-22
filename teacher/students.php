@@ -24,14 +24,30 @@ function meta_read(?string $json): array {
   return is_array($a) ? $a : [];
 }
 
-function group_key_from_meta(array $meta): string {
-  $g = (string)($meta['group'] ?? '');
-  $g = trim($g);
-  if ($g !== '' && strpos($g, '-') !== false) {
-    $g = explode('-', $g, 2)[0];
-    $g = trim($g);
+function group_parts_from_meta(array $meta): array {
+  $raw = trim((string)($meta['group'] ?? ''));
+  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
+  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $group = $parts[0];
+  if ($group !== '' && strpos($group, '-') !== false) {
+    $group = explode('-', $group, 2)[0];
+    $group = trim($group);
   }
-  return $g !== '' ? $g : 'Allgemein';
+
+  $subgroup = '';
+  if (count($parts) > 1) {
+    $subgroup = implode(' / ', array_slice($parts, 1));
+  }
+
+  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+}
+
+function group_key_from_meta(array $meta): string {
+  $parts = group_parts_from_meta($meta);
+  return $parts['group'];
 }
 
 function group_title_override_lang(string $groupKey, string $lang): string {

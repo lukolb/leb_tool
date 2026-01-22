@@ -404,10 +404,30 @@ function resolve_label_placeholders(string $tpl, array $classValueByName): strin
   return $out === null ? $s : (string)$out;
 }
 
+function group_parts_from_meta(array $meta): array {
+  $raw = trim((string)($meta['group'] ?? ''));
+  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
+  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $group = $parts[0];
+  if ($group !== '' && strpos($group, '-') !== false) {
+    $group = explode('-', $group, 2)[0];
+    $group = trim($group);
+  }
+
+  $subgroup = '';
+  if (count($parts) > 1) {
+    $subgroup = implode(' / ', array_slice($parts, 1));
+  }
+
+  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+}
+
 function group_key_from_meta(array $meta): string {
-  $g = (string)($meta['group'] ?? '');
-  $g = trim($g);
-  return $g !== '' ? $g : 'Allgemein';
+  $parts = group_parts_from_meta($meta);
+  return $parts['group'];
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): string {
@@ -1392,7 +1412,8 @@ try {
       if (is_system_bound($meta)) continue;
       if (is_class_field($meta)) continue;
 
-      $gKey = group_key_from_meta($meta);
+      $gParts = group_parts_from_meta($meta);
+      $gKey = $gParts['group'];
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = [
           'key' => $gKey,
@@ -1455,6 +1476,8 @@ try {
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
+        'subgroup' => $gParts['subgroup'],
+        'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
         'can_edit' => $canEditField ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],

@@ -279,6 +279,7 @@ render_admin_header('Feld-Editor');
 </div>
 
 <datalist id="groupList"></datalist>
+<datalist id="subgroupList"></datalist>
 
 <!-- OPTIONS MODAL -->
 <dialog id="optionsModal">
@@ -433,7 +434,9 @@ render_admin_header('Feld-Editor');
       <div class="block">
         <label>Gruppe setzen</label>
         <input id="bulkGroup" list="groupList" placeholder="z.B. Social / Math / German">
-        <div class="muted2">Leer lassen → Gruppe entfernen.</div>
+        <label class="muted2" style="margin-top:6px;">Untergruppe setzen</label>
+        <input id="bulkSubgroup" list="subgroupList" placeholder="z.B. Algebra / Grammatik">
+        <div class="muted2">Leer lassen → Untergruppe entfernen (nur Gruppe bleibt).</div>
       </div>
 
       <div class="block">
@@ -525,7 +528,9 @@ render_admin_header('Feld-Editor');
           <tr>
             <th class="sticky-col-0" style="width:46px;">✓</th>
             <th class="sticky-col-1">Feldname</th>
-            <th style="min-width:220px;">Gruppe</th>
+            <th style="min-width:200px;">Gruppe</th>
+            <th style="min-width:200px;">Untergruppe</th>
+            <th style="min-width:220px;">Untergruppe (EN)</th>
             <th style="min-width:220px;">Gruppentitel (EN)</th>
             <th style="min-width:160px;">Typ</th>
             <th style="min-width:260px;">Label</th>
@@ -597,6 +602,7 @@ const btnSplitDismiss = document.getElementById('btnSplitDismiss');
 let splitCandidate = null; // { fieldId, idx, de, en, inpDE, inpEN }
 
 const groupList = document.getElementById('groupList');
+const subgroupList = document.getElementById('subgroupList');
 const groupsBar = document.getElementById('groupsBar');
 const btnShowAllGroups = document.getElementById('btnShowAllGroups');
 const btnClearGroupFilter = document.getElementById('btnClearGroupFilter');
@@ -610,6 +616,7 @@ const btnSave = document.getElementById('btnSave');
 const btnSaveTop = document.getElementById('btnSaveTop');
 
 const bulkGroup = document.getElementById('bulkGroup');
+const bulkSubgroup = document.getElementById('bulkSubgroup');
 const bulkType = document.getElementById('bulkType');
 const bulkChild = document.getElementById('bulkChild');
 const bulkTeacher = document.getElementById('bulkTeacher');
@@ -1122,9 +1129,41 @@ async function syncPdfPositionsWithFields(opts={}){
   return { updated, missing: missing.length, missingNames: missing, added: imported, renamed: renameApplied.length, deleted };
 }
 
+function parseGroupParts(raw){
+  const cleaned = String(raw ?? '').trim();
+  if (!cleaned) return { group: '', subgroup: '' };
+  const parts = cleaned.split('/').map(p => String(p).trim()).filter(Boolean);
+  if (!parts.length) return { group: '', subgroup: '' };
+  const group = parts[0];
+  const subgroup = parts.length > 1 ? parts.slice(1).join(' / ') : '';
+  return { group, subgroup };
+}
+
+function buildGroupPath(group, subgroup){
+  const g = String(group || '').trim();
+  const sub = String(subgroup || '').trim();
+  if (!g) return '';
+  return sub ? `${g}/${sub}` : g;
+}
+
 function getGroupPath(f){
   const g = f?.meta?.group;
   return (g && String(g).trim()) ? String(g).trim() : '—';
+}
+
+function getGroupKey(f){
+  const path = getGroupPath(f);
+  if (path === '—') return '—';
+  const parts = parseGroupParts(path);
+  return parts.group || '—';
+}
+
+function getSubgroupMatchKey(f){
+  const path = getGroupPath(f);
+  if (path === '—') return '';
+  const parts = parseGroupParts(path);
+  if (!parts.group || !parts.subgroup) return '';
+  return `${parts.group}||${parts.subgroup}`;
 }
 
 function markDirty(id){
@@ -1365,13 +1404,19 @@ function isVisibleByFilter(f){
 }
 
 function rebuildGroupDatalist(){
-  const set = new Set();
+  const groupSet = new Set();
+  const subgroupSet = new Set();
   for (const f of fields) {
     const g = getGroupPath(f);
-    if (g && g !== '—') set.add(g);
+    if (!g || g === '—') continue;
+    const parts = parseGroupParts(g);
+    if (parts.group) groupSet.add(parts.group);
+    if (parts.subgroup) subgroupSet.add(parts.subgroup);
   }
-  const arr = [...set].sort((a,b)=>a.localeCompare(b, undefined, { sensitivity:'base' }));
-  groupList.innerHTML = arr.map(g=>`<option value="${escapeHtml(g)}"></option>`).join('');
+  const groups = [...groupSet].sort((a,b)=>a.localeCompare(b, undefined, { sensitivity:'base' }));
+  const subs = [...subgroupSet].sort((a,b)=>a.localeCompare(b, undefined, { sensitivity:'base' }));
+  groupList.innerHTML = groups.map(g=>`<option value="${escapeHtml(g)}"></option>`).join('');
+  subgroupList.innerHTML = subs.map(g=>`<option value="${escapeHtml(g)}"></option>`).join('');
 }
 
 function updateMeta(){
@@ -1528,7 +1573,7 @@ function renderTable(){
         // Linke, sticky Zelle: deckt ✓ + Feldname ab
         const tdLeft = document.createElement('td');
         tdLeft.className = 'group-sticky';
-        tdLeft.colSpan = 3;
+        tdLeft.colSpan = 5;
         tdLeft.innerHTML = html;
 
         // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
@@ -1667,22 +1712,77 @@ function renderTable(){
     tdN.appendChild(fnWrap);
 
     const tdG = document.createElement('td');
+    const tdSub = document.createElement('td');
+    const tdSubEn = document.createElement('td');
     const inpG = document.createElement('input');
+    const inpSub = document.createElement('input');
+    const inpSubEn = document.createElement('input');
+    const gParts = parseGroupParts(f.meta?.group);
     inpG.type = 'text';
-    inpG.value = (f.meta && f.meta.group) ? String(f.meta.group) : '';
+    inpG.value = gParts.group;
     inpG.setAttribute('list','groupList');
-    inpG.addEventListener('click', (e)=>e.stopPropagation());
-    inpG.addEventListener('input', (e)=>{
-      e.stopPropagation();
+    inpSub.type = 'text';
+    inpSub.value = gParts.subgroup;
+    inpSub.setAttribute('list','subgroupList');
+    inpSubEn.dataset.role = 'subgroup_title_en';
+    inpSubEn.dataset.fieldId = String(f.id);
+    inpSubEn.type = 'text';
+    inpSubEn.placeholder = 'z. B. Grammar';
+    inpSubEn.value = (f.meta && f.meta.subgroup_title_en) ? String(f.meta.subgroup_title_en) : '';
+
+    function syncGroupMeta(){
+      const groupVal = inpG.value.trim();
+      const subVal = inpSub.value.trim();
+      const merged = buildGroupPath(groupVal, subVal);
       fields[idx].meta = fields[idx].meta || {};
-      const v = inpG.value.trim();
-      if (v) fields[idx].meta.group = v; else delete fields[idx].meta.group;
+      if (merged) fields[idx].meta.group = merged;
+      else delete fields[idx].meta.group;
       markDirty(f.id);
       rebuildGroupDatalist();
       renderGroupsBar();
       updateMeta();
+    }
+
+    inpG.addEventListener('click', (e)=>e.stopPropagation());
+    inpSub.addEventListener('click', (e)=>e.stopPropagation());
+    inpG.addEventListener('input', (e)=>{
+      e.stopPropagation();
+      syncGroupMeta();
+    });
+    inpSub.addEventListener('input', (e)=>{
+      e.stopPropagation();
+      syncGroupMeta();
     });
     tdG.appendChild(inpG);
+    tdSub.appendChild(inpSub);
+    tdSubEn.appendChild(inpSubEn);
+
+    // Untergruppe (EN) – wird in meta gespeichert und auf alle Felder derselben Untergruppe angewendet
+    inpSubEn.addEventListener('click', (e)=>e.stopPropagation());
+    inpSubEn.addEventListener('input', (e)=>{
+      e.stopPropagation();
+      fields[idx].meta = fields[idx].meta || {};
+      const v = inpSubEn.value;
+      if (String(v).trim()) fields[idx].meta.subgroup_title_en = String(v).trim();
+      else delete fields[idx].meta.subgroup_title_en;
+      markDirty(f.id);
+    });
+    inpSubEn.addEventListener('blur', (e)=>{
+      e.stopPropagation();
+      const v = String(inpSubEn.value || '').trim();
+      const sgCur = getSubgroupMatchKey(fields[idx]);
+      if (!sgCur) return;
+      for (let i=0; i<fields.length; i++){
+        if (getSubgroupMatchKey(fields[i]) !== sgCur) continue;
+        fields[i].meta = fields[i].meta || {};
+        if (v) fields[i].meta.subgroup_title_en = v;
+        else delete fields[i].meta.subgroup_title_en;
+        markDirty(fields[i].id);
+      }
+      syncSubgroupTitleEnDom(sgCur, v);
+      renderGroupsBar();
+      updateMeta();
+    });
 
     // Gruppentitel (EN) – wird in meta gespeichert und auf alle Felder derselben Gruppe angewendet
     // Wichtig: NICHT bei jedem Tastendruck renderTable() (sonst Fokusverlust).
@@ -1707,9 +1807,9 @@ function renderTable(){
       // Beim Verlassen einmalig auf die gesamte Gruppe übertragen (ohne Re-Render während der Eingabe)
       e.stopPropagation();
       const v = String(inpGE.value || '').trim();
-      const gCur = getGroupPath(fields[idx]);
+      const gCur = getGroupKey(fields[idx]);
       for (let i=0; i<fields.length; i++){
-        if (getGroupPath(fields[i]) !== gCur) continue;
+        if (getGroupKey(fields[i]) !== gCur) continue;
         fields[i].meta = fields[i].meta || {};
         if (v) fields[i].meta.group_title_en = v;
         else delete fields[i].meta.group_title_en;
@@ -1952,13 +2052,13 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Untergruppe | Untergruppe EN | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdSub, tdSubEn, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
 
-function syncGroupTitleEnDom(groupPath, value){
+function syncGroupTitleEnDom(groupKey, value){
   const v = String(value || '');
   const inputs = tbody.querySelectorAll('input[data-role="group_title_en"][data-field-id]');
   for (const el of inputs) {
@@ -1966,7 +2066,20 @@ function syncGroupTitleEnDom(groupPath, value){
     if (!fid) continue;
     const ff = fields.find(x => x.id === fid);
     if (!ff) continue;
-    if (getGroupPath(ff) !== groupPath) continue;
+    if (getGroupKey(ff) !== groupKey) continue;
+    if (el.value !== v) el.value = v;
+  }
+}
+
+function syncSubgroupTitleEnDom(matchKey, value){
+  const v = String(value || '');
+  const inputs = tbody.querySelectorAll('input[data-role="subgroup_title_en"][data-field-id]');
+  for (const el of inputs) {
+    const fid = Number(el.dataset.fieldId || 0);
+    if (!fid) continue;
+    const ff = fields.find(x => x.id === fid);
+    if (!ff) continue;
+    if (getSubgroupMatchKey(ff) !== matchKey) continue;
     if (el.value !== v) el.value = v;
   }
 }
@@ -2055,8 +2168,9 @@ async function applyOptionTemplateToField(fieldId, listId){
 function buildBulkPatch(){
   const patch = {};
   const g = bulkGroup.value.trim();
+  const sub = bulkSubgroup.value.trim();
   patch.meta_merge = {};
-  if (g) patch.meta_merge.group = g;
+  if (g) patch.meta_merge.group = buildGroupPath(g, sub);
 
   if (bulkType.value) patch.type = bulkType.value;
 
@@ -2130,6 +2244,7 @@ async function applyBulk(targetIds){
   scanForSplitCandidate();
   updateMeta();
   bulkGroup.value = '';
+  bulkSubgroup.value = '';
 }
 
 /* ---------- Auto group ---------- */

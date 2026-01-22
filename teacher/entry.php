@@ -471,6 +471,11 @@ render_teacher_header($pageTitle);
 </div>
 
 <style>
+  <?php if ($childMode): ?>
+  body.page{
+    background: #fdecec;
+  }
+  <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
   @keyframes s{ to{ transform: rotate(360deg); } }
   .srow{ border:1px solid var(--border); border-radius:14px; padding:10px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -519,6 +524,15 @@ render_teacher_header($pageTitle);
   .field .child{ display:none; margin-top:8px; border-top:1px dashed var(--border); padding-top:8px; color:var(--muted); font-size:12px; }
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
+  .subgroup-h{
+    margin:12px 0 8px;
+    font-weight:700;
+    color: rgba(0,0,0,0.82);
+    border-left:4px solid rgba(0,122,51,0.4);
+    background: rgba(0,122,51,0.06);
+    padding:6px 10px;
+    border-radius:10px;
+  }
 
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
@@ -617,6 +631,15 @@ render_teacher_header($pageTitle);
   .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
+  .section-h{
+    border-left:10px solid rgba(0,122,51,0.85);
+    background: rgba(0,122,51,0.16);
+    padding:10px 14px;
+    border-radius:14px;
+    box-shadow: 0 8px 18px rgba(0,122,51,0.12);
+    font-weight:900;
+  }
+  .subgroup-label{ color: rgba(0,0,0,0.7); font-size:12px; }
 </style>
 
 <script>
@@ -825,6 +848,53 @@ render_teacher_header($pageTitle);
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
+
+  function groupFilterValue(groupKey, subgroup){
+    const sub = String(subgroup || '').trim();
+    return sub ? `${groupKey}::${sub}` : String(groupKey || '');
+  }
+
+  function subgroupLabelForLang(subgroupKey, subgroupTitleEn){
+    const key = String(subgroupKey || '').trim();
+    if (!key) return '';
+    if (UI_LANG === 'en') {
+      const titleEn = String(subgroupTitleEn || '').trim();
+      if (titleEn) return titleEn;
+    }
+    return key;
+  }
+
+  function parseGroupFilterValue(value){
+    const raw = String(value || '').trim();
+    if (!raw || raw === 'ALL') return { groupKey: 'ALL', subgroup: '' };
+    const parts = raw.split('::');
+    if (parts.length > 1) {
+      return { groupKey: parts[0] || 'ALL', subgroup: parts.slice(1).join('::') };
+    }
+    return { groupKey: raw, subgroup: '' };
+  }
+
+  function collectGroupFilterOptions(){
+    const out = [];
+    activeGroups().forEach(g => {
+      const groupTitle = g.title || g.key;
+      const subgroupLabels = new Map();
+      (g.fields || []).forEach(f => {
+        const sub = String(f.subgroup || '').trim();
+        if (sub) {
+          const label = subgroupLabelForLang(sub, f.subgroup_title_en);
+          if (!subgroupLabels.has(sub)) subgroupLabels.set(sub, label);
+        }
+      });
+      out.push({ value: String(g.key), label: String(groupTitle) });
+      const subgroups = Array.from(subgroupLabels.entries())
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+      subgroups.forEach(([sub, label]) => {
+        out.push({ value: groupFilterValue(g.key, sub), label: `${groupTitle} / ${label}` });
+      });
+    });
+    return out;
+  }
 
   function activeProgressFieldIds(){
     const ids = [];
@@ -1188,6 +1258,8 @@ render_teacher_header($pageTitle);
           help_text: String(child.help_text || ''),
           is_multiline: Number(child.is_multiline || 0),
           options: Array.isArray(child.options) ? child.options : [],
+          subgroup: String(f.subgroup || ''),
+          subgroup_title_en: String(f.subgroup_title_en || ''),
           can_edit: (canEditField && groupEditable) ? 1 : 0,
         });
       });
@@ -3039,20 +3111,39 @@ render_teacher_header($pageTitle);
   }
 
   function ensureSelect(selectEl){
+    if (!selectEl) return;
     if (!selectEl.options.length) {
       selectEl.innerHTML = '';
+
       const optAll = document.createElement('option');
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       selectEl.appendChild(optAll);
-      activeGroups().forEach(g => {
+
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        const del = g.delegation;
-        const delNames = delegationNames(del);
-        const delTxt = delNames ? ` → ${delNames}` : '';
-        const lockTxt = (g.can_edit === 0) ? ' 🔒' : '';
-        opt.textContent = (g.title || g.key) + delTxt + lockTxt;
+
+        // Subgroup/Sorting beibehalten
+        opt.value = optData.value;
+
+        // Gruppe zum Optionseintrag finden (value kann z.B. "groupKey::subKey" sein)
+        const groupKey = String(optData.value).split('::')[0];
+        const g = activeGroups().find(x => String(x.key) === groupKey);
+
+        // Delegation-Text: bevorzugt master-Logik, sonst Fallback
+        const del = g?.delegation;
+        const delNames = del ? delegationNames(del) : '';
+        const delTxt = delNames
+          ? ` → ${delNames}`
+          : (del && del.user_id ? ` → ${del.user_name || ('#' + del.user_id)}` : '');
+
+        // Lock beibehalten
+        const lockTxt = (g && g.can_edit === 0) ? ' 🔒' : '';
+
+        // Label aus optData (damit Subgroup-Labels korrekt bleiben)
+        opt.textContent = (optData.label || (g?.title || g?.key || String(optData.value))) + delTxt + lockTxt;
+
         selectEl.appendChild(opt);
       });
     }
@@ -3066,10 +3157,11 @@ render_teacher_header($pageTitle);
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       groupSelect.appendChild(optAll);
-      activeGroups().forEach(g => {
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
+        opt.value = optData.value;
+        opt.textContent = optData.label;
         groupSelect.appendChild(opt);
       });
     }
@@ -3085,10 +3177,11 @@ render_teacher_header($pageTitle);
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       studentGroupSelect.appendChild(optAll);
-      activeGroups().forEach(g => {
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
+        opt.value = optData.value;
+        opt.textContent = optData.label;
         studentGroupSelect.appendChild(opt);
       });
     }
@@ -3108,6 +3201,52 @@ render_teacher_header($pageTitle);
       const first = cards.find(btn => !btn.disabled && isVisibleElement(btn)) || cards[0];
       if (first) first.setAttribute('tabindex', '0');
     }
+  }
+
+  function filterFieldsBySubgroup(list, subgroup){
+    const sub = String(subgroup || '').trim();
+    if (!sub) return list || [];
+    return (list || []).filter(f => String(f.subgroup || '').trim() === sub);
+  }
+
+  function renderStudentFields(fields, reportId, locked){
+    let html = '';
+    let currentSubKey = '';
+    (fields || []).forEach(f => {
+      const subKey = String(f.subgroup || '').trim();
+      const subLabel = subgroupLabelForLang(subKey, f.subgroup_title_en);
+      if (subKey && subKey !== currentSubKey) {
+        html += `<div class="subgroup-h">${esc(subLabel)}</div>`;
+        currentSubKey = subKey;
+      } else if (!subKey) {
+        currentSubKey = '';
+      }
+
+      const v = activeFieldValue(reportId, f.id);
+      const canEditField = (Number(f.can_edit || 0) === 1);
+      const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
+      const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
+      const help = resolveLabelTemplate(String(f.help_text || ''));
+      const missingCls = (v === '') ? 'missing' : '';
+      const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
+      const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
+      const clearBtn = CHILD_MODE
+        ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
+        : '';
+      const actionsHtml = (combinedHtml || historyHtml || clearBtn)
+        ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
+        : '';
+      html += `
+        <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
+          <div class="lbl">${esc(lbl)}</div>
+          <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
+          ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
+          ${actionsHtml}
+          ${childInfo}
+        </div>
+      `;
+    });
+    return html;
   }
 
   function renderClassFields(){
@@ -3199,6 +3338,7 @@ render_teacher_header($pageTitle);
 
   function renderStudentView(){
     ensureStudentGroupsSelect();
+    const groupFilter = parseGroupFilterValue(ui.studentGroupKey);
     const list = currentStudents();
     const hasPrev = ui.activeStudentIndex > 0;
     const hasNext = ui.activeStudentIndex < list.length - 1;
@@ -3307,10 +3447,11 @@ render_teacher_header($pageTitle);
     }
 
     activeGroups().forEach(g => {
-      if (ui.studentGroupKey !== 'ALL' && String(g.key) !== String(ui.studentGroupKey)) return;
-      const fields = ui.studentMissingOnly
-        ? (g.fields || []).filter(f => isActiveFieldMissing(reportId, f.id))
-        : (g.fields || []);
+      if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
+      let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
+      fields = ui.studentMissingOnly
+        ? fields.filter(f => isActiveFieldMissing(reportId, f.id))
+        : fields;
 
       if (!fields.length) return;
 
@@ -3340,31 +3481,7 @@ render_teacher_header($pageTitle);
           </div>
         `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
-      fields.forEach(f => {
-        const v = activeFieldValue(reportId, f.id);
-        const canEditField = (Number(f.can_edit || 0) === 1);
-        const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
-        const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
-        const help = resolveLabelTemplate(String(f.help_text || ''));
-        const missingCls = (v === '') ? 'missing' : '';
-        const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
-        const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
-        const clearBtn = CHILD_MODE
-          ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
-          : '';
-        const actionsHtml = (combinedHtml || historyHtml || clearBtn)
-          ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
-          : '';
-        html += `
-          <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-            <div class="lbl">${esc(lbl)}</div>
-            <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-            ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
-            ${actionsHtml}
-            ${childInfo}
-          </div>
-        `;
-      });
+      html += renderStudentFields(fields, reportId, locked);
     });
 
     studentForm.innerHTML = html || '<div class="alert">Keine offenen Felder gefunden.</div>';
@@ -3451,10 +3568,12 @@ render_teacher_header($pageTitle);
     }
 
     ui.gradeGroupKey = gradeGroupSelect.value || 'ALL';
+    const groupFilter = parseGroupFilterValue(ui.gradeGroupKey);
     const filter = normalize(ui.gradeFilter);
 
     let fields = gradeFields(activeGroups());
-    if (ui.gradeGroupKey !== 'ALL') fields = fields.filter(f => f._group_key === ui.gradeGroupKey);
+    if (groupFilter.groupKey !== 'ALL') fields = fields.filter(f => f._group_key === groupFilter.groupKey);
+    fields = filterFieldsBySubgroup(fields, groupFilter.subgroup);
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
     const sCols = filterStudentsForMissing(state.students);
@@ -3607,11 +3726,13 @@ render_teacher_header($pageTitle);
   function renderItemView(){
     ensureGroupsSelect();
     ui.groupKey = groupSelect.value || 'ALL';
+    const groupFilter = parseGroupFilterValue(ui.groupKey);
 
     const filter = normalize(ui.itemFilter);
-    const groups = (ui.groupKey === 'ALL') ? activeGroups() : activeGroups().filter(g => g.key === ui.groupKey);
+    const groups = (groupFilter.groupKey === 'ALL') ? activeGroups() : activeGroups().filter(g => g.key === groupFilter.groupKey);
     let fields = [];
     groups.forEach(g => fields.push(...g.fields.map(f => ({...f, _group_title:g.title, _group_key:g.key}))));
+    fields = filterFieldsBySubgroup(fields, groupFilter.subgroup);
 
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
@@ -3646,7 +3767,10 @@ render_teacher_header($pageTitle);
       const tdLabel = document.createElement('td');
       tdLabel.className = 'sticky';
       const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>`;
+      const subgroupKey = String(f.subgroup || '').trim();
+      const subgroupLabel = subgroupLabelForLang(subgroupKey, f.subgroup_title_en);
+      const subgroupHtml = subgroupLabel ? `<div class="subgroup-label">${esc(subgroupLabel)}</div>` : '';
+      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>${subgroupHtml}`;
       row.appendChild(tdLabel);
 
       sCols.forEach(s => {
