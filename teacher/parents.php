@@ -526,6 +526,16 @@ $stFb = $pdo->prepare(
 }
 
 $pageTitle = t('teacher.parents.title', 'Elternmodus');
+$missingTx = [
+  'missing_title' => t('teacher.parents.missing_title', 'Fehlende Einträge gefunden'),
+  'missing_search' => t('teacher.parents.missing_search', 'Suchen (Schüler oder Feld) …'),
+  'expand_all' => t('teacher.parents.missing_expand_all', 'Alle ausklappen'),
+  'collapse_all' => t('teacher.parents.missing_collapse_all', 'Alle einklappen'),
+  'cancel' => t('teacher.parents.missing_cancel', 'Abbrechen'),
+  'continue' => t('teacher.parents.missing_continue', 'Trotzdem freigeben'),
+  'summary' => t('teacher.parents.missing_summary', 'Insgesamt {total} fehlende Einträge bei {students} Schüler(n).'),
+  'check_failed' => t('teacher.parents.missing_check_failed', 'Prüfung fehlgeschlagen. Trotzdem fortfahren?'),
+];
 render_teacher_header($pageTitle);
 $introText = $parentAutoApprove
   ? 'Elternmodus wird automatisch freigeschaltet und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'
@@ -861,7 +871,32 @@ $introText = $parentAutoApprove
     </div>
   </form>
 </div>
-  
+
+<!-- missing fields modal -->
+<div id="missingModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:9999;">
+  <div style="max-width:920px; margin:6vh auto; background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.25); overflow:hidden;">
+    <div style="padding:16px 18px; border-bottom:1px solid #eee;">
+      <div style="font-size:18px; font-weight:700;"><?=h($missingTx['missing_title'])?></div>
+      <div class="muted" id="missingModalSummary" style="margin-top:4px;"></div>
+
+      <div class="row" style="gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center;">
+        <input id="missingSearch" class="input" style="flex:1; min-width:260px; margin-bottom: 10px;" placeholder="<?=h($missingTx['missing_search'])?>">
+        <button class="btn secondary" id="btnExpandAll" type="button"><?=h($missingTx['expand_all'])?></button>
+        <button class="btn secondary" id="btnCollapseAll" type="button"><?=h($missingTx['collapse_all'])?></button>
+      </div>
+    </div>
+
+    <div style="padding:14px 18px; max-height:58vh; overflow:auto;">
+      <div id="missingModalList"></div>
+    </div>
+
+    <div style="padding:14px 18px; border-top:1px solid #eee; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn secondary" id="btnMissingCancel" type="button"><?=h($missingTx['cancel'])?></button>
+      <button class="btn" id="btnMissingContinue" type="button"><?=h($missingTx['continue'])?></button>
+    </div>
+  </div>
+</div>
+
   <?php if ($signatureEnabled && $signatureConfigured): ?>
   <style>
     .signature-pad {
@@ -904,6 +939,187 @@ $introText = $parentAutoApprove
   <?php endif; ?>
 
   <script>
+  const EXPORT_API_URL = <?= json_encode(url('teacher/ajax/export_api.php')) ?>;
+  const CSRF = <?= json_encode(csrf_token()) ?>;
+  const MISSING_TX = <?= json_encode($missingTx, JSON_UNESCAPED_UNICODE) ?>;
+  const CURRENT_CLASS_ID = <?= (int)$classId ?>;
+
+  const missingModal = document.getElementById('missingModal');
+  const missingModalSummary = document.getElementById('missingModalSummary');
+  const missingModalList = document.getElementById('missingModalList');
+  const btnMissingCancel = document.getElementById('btnMissingCancel');
+  const btnMissingContinue = document.getElementById('btnMissingContinue');
+  const missingSearch = document.getElementById('missingSearch');
+  const btnExpandAll = document.getElementById('btnExpandAll');
+  const btnCollapseAll = document.getElementById('btnCollapseAll');
+
+  let __missingRenderSource = null;
+
+  function escapeHtml(s){
+    return (s ?? '').toString()
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'",'&#039;');
+  }
+
+  async function apiFetch(payload){
+    const resp = await fetch(EXPORT_API_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-Token': CSRF,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data?.ok !== true) {
+      const msg = data?.error || data?.message || 'Request failed';
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function buildMissingHtml(preview, q){
+    const sum = preview?.warnings_summary || {};
+    const byStudent = Array.isArray(sum.by_student) ? sum.by_student : [];
+    const query = (q||'').toString().trim().toLowerCase();
+
+    const parts = [];
+    for (const s of byStudent) {
+      const studentName = (s.student_name || ('ID ' + s.student_id)).toString();
+      const fields = Array.isArray(s.missing_fields) ? s.missing_fields : [];
+      if (!fields.length) continue;
+
+      const filteredFields = !query ? fields : fields.filter(f => {
+        const label = ((f.label || f.field_name || '') + '').toLowerCase();
+        return studentName.toLowerCase().includes(query) || label.includes(query);
+      });
+      if (!filteredFields.length) continue;
+
+      const showN = 60;
+      const items = filteredFields.slice(0, showN).map(f => {
+        const label = (f.label || f.field_name || '').toString();
+        const req = Number(f.is_required || 0) === 1 ? ' (Pflicht)' : '';
+        return `<li style="margin:2px 0;">${escapeHtml(label)}${req}</li>`;
+      }).join('');
+
+      const moreCount = filteredFields.length - showN;
+      const more = moreCount > 0
+        ? `<div class="muted" style="margin-top:6px;">… und ${moreCount} weitere</div>`
+        : '';
+
+      parts.push(`
+        <details data-student="${escapeHtml(studentName)}" open>
+          <summary style="cursor:pointer; padding:8px 10px; border:1px solid #eee; border-radius:10px; margin:8px 0; background:#fafafa;">
+            <strong>${escapeHtml(studentName)}</strong>
+            <span class="muted"> – ${filteredFields.length} fehlend</span>
+          </summary>
+          <div style="padding:4px 10px 10px 10px;">
+            <ul style="margin:6px 0 0 18px; padding:0;">${items}</ul>
+            ${more}
+          </div>
+        </details>
+      `);
+    }
+    return parts.join('') || '<div class="muted">Keine passenden Treffer.</div>';
+  }
+
+  function formatMissingSummary(total, students){
+    const tpl = MISSING_TX?.summary || 'Insgesamt {total} fehlende Einträge bei {students} Schüler(n).';
+    return tpl.replace('{total}', String(total)).replace('{students}', String(students));
+  }
+
+  function openMissingModal(preview){
+    return new Promise((resolve) => {
+      const sum = preview?.warnings_summary || {};
+      const total = Number(sum.total_missing || 0);
+      const studentsWith = Number(sum.students_with_missing || 0);
+
+      __missingRenderSource = preview;
+
+      if (missingModalSummary) missingModalSummary.textContent = formatMissingSummary(total, studentsWith);
+
+      if (missingSearch) missingSearch.value = '';
+      if (missingModalList) missingModalList.innerHTML = buildMissingHtml(preview, '');
+
+      function cleanup(){
+        if (btnMissingCancel) btnMissingCancel.onclick = null;
+        if (btnMissingContinue) btnMissingContinue.onclick = null;
+        if (missingModal) missingModal.style.display = 'none';
+      }
+
+      if (btnMissingCancel) btnMissingCancel.onclick = () => { cleanup(); resolve(false); };
+      if (btnMissingContinue) btnMissingContinue.onclick = () => { cleanup(); resolve(true); };
+
+      if (missingModal) missingModal.style.display = '';
+    });
+  }
+
+  if (missingSearch) {
+    missingSearch.addEventListener('input', () => {
+      if (!__missingRenderSource || !missingModalList) return;
+      missingModalList.innerHTML = buildMissingHtml(__missingRenderSource, missingSearch.value);
+    });
+  }
+  if (btnExpandAll) {
+    btnExpandAll.addEventListener('click', () => {
+      document.querySelectorAll('#missingModalList details').forEach(d => d.open = true);
+    });
+  }
+  if (btnCollapseAll) {
+    btnCollapseAll.addEventListener('click', () => {
+      document.querySelectorAll('#missingModalList details').forEach(d => d.open = false);
+    });
+  }
+
+  async function checkMissingBeforeSubmit(form){
+    const action = form.querySelector('input[name="action"]')?.value || '';
+    if (action !== 'request_all' && action !== 'request_link') return true;
+
+    const classId = Number(form.querySelector('input[name="class_id"]')?.value || CURRENT_CLASS_ID || 0);
+    if (!classId) return true;
+
+    const studentId = Number(form.querySelector('input[name="student_id"]')?.value || 0);
+
+    const payload = {
+      action: 'preview',
+      class_id: classId,
+      only_submitted: 0,
+      csrf_token: CSRF,
+    };
+    if (studentId > 0) payload.student_id = studentId;
+
+    const preview = await apiFetch(payload);
+    const sum = preview?.warnings_summary || {};
+    const totalMissing = Number(sum.total_missing || 0);
+
+    if (totalMissing > 0) {
+      const proceed = await openMissingModal(preview);
+      return Boolean(proceed);
+    }
+    return true;
+  }
+
+  document.querySelectorAll('form.parent-request-form').forEach(form => {
+    form.addEventListener('submit', async (ev) => {
+      if (form.dataset.missingCheck === '1') return;
+      ev.preventDefault();
+      try {
+        const proceed = await checkMissingBeforeSubmit(form);
+        if (!proceed) return;
+      } catch (err) {
+        const ok = window.confirm(MISSING_TX?.check_failed || 'Prüfung fehlgeschlagen. Trotzdem fortfahren?');
+        if (!ok) return;
+      }
+      form.dataset.missingCheck = '1';
+      form.submit();
+    });
+  });
+
   const mailModeRadios = document.querySelectorAll('input[name="send_mode"]');
   const mailStudentWrap = document.getElementById('mailStudentWrap');
   function updateMailMode(){
