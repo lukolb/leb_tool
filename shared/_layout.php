@@ -166,6 +166,16 @@ function render_role_footer(): void {
       const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (tzName) {
         document.cookie = `user_tz=${encodeURIComponent(tzName)}; path=/; max-age=31536000; samesite=lax`;
+        document.querySelectorAll('form').forEach((form) => {
+          let input = form.querySelector('input[name="user_tz"]');
+          if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'user_tz';
+            form.appendChild(input);
+          }
+          input.value = tzName;
+        });
       }
       const formatLocal = (value) => {
         const date = new Date(value);

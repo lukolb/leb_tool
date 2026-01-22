@@ -244,7 +244,7 @@ function render_local_datetime_title_attr(?string $value, string $format = 'd.m.
 }
 
 function user_timezone(): DateTimeZone {
-  $tz = $_COOKIE['user_tz'] ?? '';
+  $tz = $_POST['user_tz'] ?? $_COOKIE['user_tz'] ?? '';
   if (is_string($tz)) {
     $tz = trim($tz);
   } else {
