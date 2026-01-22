@@ -421,7 +421,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($days > 120) $days = 120;
 
         $stLink = $pdo->prepare(
-          "SELECT expires_at\n" .
+          "SELECT status, expires_at\n" .
           "FROM parent_portal_links\n" .
           "WHERE id=? AND student_id=?\n" .
           "LIMIT 1"
@@ -429,12 +429,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stLink->execute([$linkId, $studentId]);
         $linkRow = $stLink->fetch(PDO::FETCH_ASSOC);
         if (!$linkRow) throw new RuntimeException('Freigabe nicht gefunden.');
+        $linkStatus = (string)($linkRow['status'] ?? '');
+        if (!in_array($linkStatus, ['approved', 'expired'], true)) {
+          throw new RuntimeException('Freigabe kann nicht verlängert werden.');
+        }
 
         $base = $linkRow['expires_at'] ?? null;
         $start = $base ? new DateTimeImmutable((string)$base) : new DateTimeImmutable('today');
         $newExpiry = end_of_day_after_days($days, $start);
-        $upd = $pdo->prepare("UPDATE parent_portal_links SET expires_at=?, updated_at=NOW() WHERE id=?");
-        $upd->execute([$newExpiry, $linkId]);
+        $nextStatus = $linkStatus === 'expired' ? 'approved' : $linkStatus;
+        $upd = $pdo->prepare("UPDATE parent_portal_links SET status=?, expires_at=?, updated_at=NOW() WHERE id=?");
+        $upd->execute([$nextStatus, $newExpiry, $linkId]);
         $alerts[] = 'Gültigkeit wurde verlängert.';
       }
 
@@ -736,6 +741,15 @@ $introText = $parentAutoApprove
                 <div class="muted" style="font-size:12px; margin-top:4px;">
                   <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
                 </div>
+              <?php elseif ($status === 'expired'): ?>
+                <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="extend_link">
+                  <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                  <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                  <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
+                  <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                </form>
               <?php elseif ($status === 'requested'): ?>
                 <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
               <?php else: ?>
