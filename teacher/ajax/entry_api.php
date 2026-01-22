@@ -1800,6 +1800,7 @@ try {
       'values_teacher_parts' => $teacherValues['parts'] ?? [],
       'values_child' => $valuesChild,
       'value_history' => $valueHistory,
+      'locked_child_fields' => $lockedChildIdsByReport,
       'progress_summary' => $progressSummary,
       'class_report_instance_id' => $classReportInstanceId,
       'class_fields' => [

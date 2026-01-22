@@ -764,6 +764,7 @@ render_teacher_header($pageTitle);
     values_teacher_own: {},
     values_teacher_parts: {},
     values_child: {},
+    locked_child_fields: {},
     value_history: {},
     class_report_instance_id: 0,
     class_fields: null,
@@ -896,16 +897,17 @@ render_teacher_header($pageTitle);
     return out;
   }
 
-  function activeProgressFieldIds(){
+  function activeProgressFieldIds(reportId){
     const ids = [];
-    activeGroups().forEach(g => {
+    const groups = CHILD_MODE ? activeGroupsForReport(reportId) : activeGroups();
+    groups.forEach(g => {
       (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
     });
     return ids;
   }
 
   function activeProgressForStudent(reportId){
-    const ids = activeProgressFieldIds();
+    const ids = activeProgressFieldIds(reportId);
     const total = ids.length;
     let done = 0;
     ids.forEach(fid => {
@@ -1010,8 +1012,31 @@ render_teacher_header($pageTitle);
     return v;
   }
 
+  function lockedChildFieldMap(reportId){
+    const key = String(reportId || '');
+    const raw = (state.locked_child_fields && state.locked_child_fields[key]) ? state.locked_child_fields[key] : {};
+    return raw && typeof raw === 'object' ? raw : {};
+  }
+
+  function isChildFieldLocked(reportId, fieldId){
+    if (!CHILD_MODE) return false;
+    const locked = lockedChildFieldMap(reportId);
+    const key = String(fieldId || '');
+    return !!(locked[key] || locked[fieldId]);
+  }
+
   function activeGroups(){
     return CHILD_MODE ? (state.child_groups || []) : (state.groups || []);
+  }
+
+  function activeGroupsForReport(reportId){
+    if (!CHILD_MODE) return activeGroups();
+    const locked = lockedChildFieldMap(reportId);
+    return (state.child_groups || []).map(g => {
+      const fields = (g.fields || []).filter(f => !locked[String(f.id)] && !locked[f.id]);
+      if (!fields.length) return null;
+      return { ...g, fields };
+    }).filter(Boolean);
   }
 
   function activeFieldValue(reportId, fieldId){
@@ -1023,6 +1048,7 @@ render_teacher_header($pageTitle);
   }
 
   function isActiveFieldMissing(reportId, fieldId){
+    if (isChildFieldLocked(reportId, fieldId)) return false;
     return String(activeFieldValue(reportId, fieldId) ?? '').trim() === '';
   }
 
@@ -3403,7 +3429,7 @@ render_teacher_header($pageTitle);
     let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
     if (CHILD_MODE) {
       childMissingFields = [];
-      activeGroups().forEach(g => {
+      activeGroupsForReport(reportId).forEach(g => {
         (g.fields || []).forEach(f => {
           const v = activeFieldValue(reportId, f.id);
           if (String(v ?? '').trim() === '') {
@@ -3446,7 +3472,7 @@ render_teacher_header($pageTitle);
       `;
     }
 
-    activeGroups().forEach(g => {
+    activeGroupsForReport(reportId).forEach(g => {
       if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
       fields = ui.studentMissingOnly
@@ -3844,6 +3870,7 @@ render_teacher_header($pageTitle);
       state.values_teacher_own = j.values_teacher_own || {};
       state.values_teacher_parts = j.values_teacher_parts || {};
       state.values_child = j.values_child || {};
+      state.locked_child_fields = j.locked_child_fields || {};
       state.value_history = j.value_history || {};
       state.class_report_instance_id = j.class_report_instance_id || 0;
       state.class_fields = j.class_fields || null;
