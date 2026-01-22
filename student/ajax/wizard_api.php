@@ -598,6 +598,7 @@ try {
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,
         'group' => $gKey,
         'subgroup' => $gParts['subgroup'],
+        'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
         'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
         'max_length' => pdf_max_len_from_meta($meta),

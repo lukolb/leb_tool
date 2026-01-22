@@ -1444,6 +1444,7 @@ try {
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
         'options' => $optsTeacher,
         'subgroup' => $gParts['subgroup'],
+        'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
         'can_edit' => $canEditField ? 1 : 0,
         'child' => $child ? [
           'id' => (int)$child['id'],

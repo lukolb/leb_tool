@@ -849,6 +849,16 @@ render_teacher_header($pageTitle);
     return sub ? `${groupKey}::${sub}` : String(groupKey || '');
   }
 
+  function subgroupLabelForLang(subgroupKey, subgroupTitleEn){
+    const key = String(subgroupKey || '').trim();
+    if (!key) return '';
+    if (UI_LANG === 'en') {
+      const titleEn = String(subgroupTitleEn || '').trim();
+      if (titleEn) return titleEn;
+    }
+    return key;
+  }
+
   function parseGroupFilterValue(value){
     const raw = String(value || '').trim();
     if (!raw || raw === 'ALL') return { groupKey: 'ALL', subgroup: '' };
@@ -863,15 +873,19 @@ render_teacher_header($pageTitle);
     const out = [];
     activeGroups().forEach(g => {
       const groupTitle = g.title || g.key;
-      const subgroupSet = new Set();
+      const subgroupLabels = new Map();
       (g.fields || []).forEach(f => {
         const sub = String(f.subgroup || '').trim();
-        if (sub) subgroupSet.add(sub);
+        if (sub) {
+          const label = subgroupLabelForLang(sub, f.subgroup_title_en);
+          if (!subgroupLabels.has(sub)) subgroupLabels.set(sub, label);
+        }
       });
       out.push({ value: String(g.key), label: String(groupTitle) });
-      const subgroups = Array.from(subgroupSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-      subgroups.forEach(sub => {
-        out.push({ value: groupFilterValue(g.key, sub), label: `${groupTitle} / ${sub}` });
+      const subgroups = Array.from(subgroupLabels.entries())
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+      subgroups.forEach(([sub, label]) => {
+        out.push({ value: groupFilterValue(g.key, sub), label: `${groupTitle} / ${label}` });
       });
     });
     return out;
@@ -1240,6 +1254,7 @@ render_teacher_header($pageTitle);
           is_multiline: Number(child.is_multiline || 0),
           options: Array.isArray(child.options) ? child.options : [],
           subgroup: String(f.subgroup || ''),
+          subgroup_title_en: String(f.subgroup_title_en || ''),
           can_edit: (canEditField && groupEditable) ? 1 : 0,
         });
       });
@@ -3151,14 +3166,15 @@ render_teacher_header($pageTitle);
 
   function renderStudentFields(fields, reportId, locked){
     let html = '';
-    let currentSub = '';
+    let currentSubKey = '';
     (fields || []).forEach(f => {
-      const sub = String(f.subgroup || '').trim();
-      if (sub && sub !== currentSub) {
-        html += `<div class="subgroup-h">${esc(sub)}</div>`;
-        currentSub = sub;
-      } else if (!sub) {
-        currentSub = '';
+      const subKey = String(f.subgroup || '').trim();
+      const subLabel = subgroupLabelForLang(subKey, f.subgroup_title_en);
+      if (subKey && subKey !== currentSubKey) {
+        html += `<div class="subgroup-h">${esc(subLabel)}</div>`;
+        currentSubKey = subKey;
+      } else if (!subKey) {
+        currentSubKey = '';
       }
 
       const v = activeFieldValue(reportId, f.id);
@@ -3704,8 +3720,9 @@ render_teacher_header($pageTitle);
       const tdLabel = document.createElement('td');
       tdLabel.className = 'sticky';
       const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-      const subgroup = String(f.subgroup || '').trim();
-      const subgroupHtml = subgroup ? `<div class="subgroup-label">${esc(subgroup)}</div>` : '';
+      const subgroupKey = String(f.subgroup || '').trim();
+      const subgroupLabel = subgroupLabelForLang(subgroupKey, f.subgroup_title_en);
+      const subgroupHtml = subgroupLabel ? `<div class="subgroup-label">${esc(subgroupLabel)}</div>` : '';
       tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>${subgroupHtml}`;
       row.appendChild(tdLabel);
 

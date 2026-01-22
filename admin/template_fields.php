@@ -530,6 +530,7 @@ render_admin_header('Feld-Editor');
             <th class="sticky-col-1">Feldname</th>
             <th style="min-width:200px;">Gruppe</th>
             <th style="min-width:200px;">Untergruppe</th>
+            <th style="min-width:220px;">Untergruppe (EN)</th>
             <th style="min-width:220px;">Gruppentitel (EN)</th>
             <th style="min-width:160px;">Typ</th>
             <th style="min-width:260px;">Label</th>
@@ -1157,6 +1158,14 @@ function getGroupKey(f){
   return parts.group || '—';
 }
 
+function getSubgroupMatchKey(f){
+  const path = getGroupPath(f);
+  if (path === '—') return '';
+  const parts = parseGroupParts(path);
+  if (!parts.group || !parts.subgroup) return '';
+  return `${parts.group}||${parts.subgroup}`;
+}
+
 function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
@@ -1564,7 +1573,7 @@ function renderTable(){
         // Linke, sticky Zelle: deckt ✓ + Feldname ab
         const tdLeft = document.createElement('td');
         tdLeft.className = 'group-sticky';
-        tdLeft.colSpan = 4;
+        tdLeft.colSpan = 5;
         tdLeft.innerHTML = html;
 
         // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
@@ -1704,8 +1713,10 @@ function renderTable(){
 
     const tdG = document.createElement('td');
     const tdSub = document.createElement('td');
+    const tdSubEn = document.createElement('td');
     const inpG = document.createElement('input');
     const inpSub = document.createElement('input');
+    const inpSubEn = document.createElement('input');
     const gParts = parseGroupParts(f.meta?.group);
     inpG.type = 'text';
     inpG.value = gParts.group;
@@ -1713,6 +1724,11 @@ function renderTable(){
     inpSub.type = 'text';
     inpSub.value = gParts.subgroup;
     inpSub.setAttribute('list','subgroupList');
+    inpSubEn.dataset.role = 'subgroup_title_en';
+    inpSubEn.dataset.fieldId = String(f.id);
+    inpSubEn.type = 'text';
+    inpSubEn.placeholder = 'z. B. Grammar';
+    inpSubEn.value = (f.meta && f.meta.subgroup_title_en) ? String(f.meta.subgroup_title_en) : '';
 
     function syncGroupMeta(){
       const groupVal = inpG.value.trim();
@@ -1739,6 +1755,34 @@ function renderTable(){
     });
     tdG.appendChild(inpG);
     tdSub.appendChild(inpSub);
+    tdSubEn.appendChild(inpSubEn);
+
+    // Untergruppe (EN) – wird in meta gespeichert und auf alle Felder derselben Untergruppe angewendet
+    inpSubEn.addEventListener('click', (e)=>e.stopPropagation());
+    inpSubEn.addEventListener('input', (e)=>{
+      e.stopPropagation();
+      fields[idx].meta = fields[idx].meta || {};
+      const v = inpSubEn.value;
+      if (String(v).trim()) fields[idx].meta.subgroup_title_en = String(v).trim();
+      else delete fields[idx].meta.subgroup_title_en;
+      markDirty(f.id);
+    });
+    inpSubEn.addEventListener('blur', (e)=>{
+      e.stopPropagation();
+      const v = String(inpSubEn.value || '').trim();
+      const sgCur = getSubgroupMatchKey(fields[idx]);
+      if (!sgCur) return;
+      for (let i=0; i<fields.length; i++){
+        if (getSubgroupMatchKey(fields[i]) !== sgCur) continue;
+        fields[i].meta = fields[i].meta || {};
+        if (v) fields[i].meta.subgroup_title_en = v;
+        else delete fields[i].meta.subgroup_title_en;
+        markDirty(fields[i].id);
+      }
+      syncSubgroupTitleEnDom(sgCur, v);
+      renderGroupsBar();
+      updateMeta();
+    });
 
     // Gruppentitel (EN) – wird in meta gespeichert und auf alle Felder derselben Gruppe angewendet
     // Wichtig: NICHT bei jedem Tastendruck renderTable() (sonst Fokusverlust).
@@ -2008,8 +2052,8 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdSub, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Untergruppe | Untergruppe EN | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdSub, tdSubEn, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
@@ -2023,6 +2067,19 @@ function syncGroupTitleEnDom(groupKey, value){
     const ff = fields.find(x => x.id === fid);
     if (!ff) continue;
     if (getGroupKey(ff) !== groupKey) continue;
+    if (el.value !== v) el.value = v;
+  }
+}
+
+function syncSubgroupTitleEnDom(matchKey, value){
+  const v = String(value || '');
+  const inputs = tbody.querySelectorAll('input[data-role="subgroup_title_en"][data-field-id]');
+  for (const el of inputs) {
+    const fid = Number(el.dataset.fieldId || 0);
+    if (!fid) continue;
+    const ff = fields.find(x => x.id === fid);
+    if (!ff) continue;
+    if (getSubgroupMatchKey(ff) !== matchKey) continue;
     if (el.value !== v) el.value = v;
   }
 }
