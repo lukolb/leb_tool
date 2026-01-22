@@ -62,7 +62,7 @@ render_teacher_header($pageTitle);
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:280px;">
         <label class="label"><?=h($modalDelegatedTo)?></label>
-        <select class="input" id="dlgUser" style="width:100%;"></select>
+        <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
         <div class="muted" style="font-size:12px; margin-top:4px;"><?=h($modalClearNote)?></div>
       </div>
 
@@ -77,6 +77,7 @@ render_teacher_header($pageTitle);
       <div style="flex:1; min-width:240px;">
         <label class="label"><?=h($modalComment)?></label>
         <input class="input" id="dlgNote" type="text" placeholder="<?=h($modalCommentPlaceholder)?>" style="width:100%;">
+        <div class="muted" style="font-size:12px; margin-top:4px;" id="dlgNotesAll">—</div>
       </div>
 
       <div style="display:flex; gap:8px; margin-top: 10px;">
@@ -108,6 +109,7 @@ render_teacher_header($pageTitle);
   const apiUrl = <?=json_encode(url('teacher/ajax/delegations_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
+  const currentUserId = <?=json_encode((int)(current_user()['id'] ?? 0))?>;
   const emptyText = <?=json_encode($emptyText)?>;
   const statusOpen = <?=json_encode($statusOpen)?>;
   const statusDone = <?=json_encode($statusDone)?>;
@@ -125,10 +127,11 @@ render_teacher_header($pageTitle);
 
   const dlg = document.getElementById('dlgEdit');
   const dlgMeta = document.getElementById('dlgMeta');
-  const dlgUser = document.getElementById('dlgUser');
+  const dlgUsers = document.getElementById('dlgUsers');
   const dlgSt = document.getElementById('dlgSt');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
+  const dlgNotesAll = document.getElementById('dlgNotesAll');
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function showErr(msg){ errMsg.textContent = msg; errBox.style.display='block'; }
@@ -149,26 +152,38 @@ render_teacher_header($pageTitle);
   let users = [];
   let editCtx = null; // class_id, period_label, group_key, ...
 
-  function buildUsersSelect(selectedUserId){
-    dlgUser.innerHTML = '';
-    const optNone = document.createElement('option');
-    optNone.value = '0';
-    optNone.textContent = '— ' + clearShort + ' —';
-    dlgUser.appendChild(optNone);
+  function buildUsersSelect(selectedUserIds, disabled){
+    dlgUsers.innerHTML = '';
+    const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
+    const list = disabled ? users.filter(u => ids.includes(Number(u.id))) : users;
+    list.forEach(u => {
+      const wrap = document.createElement('label');
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '8px';
+      wrap.style.padding = '4px 2px';
 
-    users.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = String(u.id);
-      opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
-      dlgUser.appendChild(opt);
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = String(u.id);
+      cb.checked = ids.includes(Number(u.id));
+      cb.dataset.userCheckbox = '1';
+      cb.disabled = !!disabled;
+
+      const txt = document.createElement('span');
+      txt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+
+      wrap.appendChild(cb);
+      wrap.appendChild(txt);
+      dlgUsers.appendChild(wrap);
     });
-
-    dlgUser.value = String(selectedUserId || 0);
   }
 
   function syncDisableIfClearing(){
-    const uid = Number(dlgUser.value || '0');
-    const dis = (uid <= 0);
+    const ids = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+      .map(cb => Number(cb.value || 0))
+      .filter(v => v > 0);
+    const dis = (ids.length === 0);
     dlgSt.disabled = dis;
     dlgNote.disabled = dis;
     if (dis) {
@@ -180,9 +195,20 @@ render_teacher_header($pageTitle);
   function openModal(ctx){
     editCtx = ctx;
     dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
-    buildUsersSelect(ctx.user_id || 0);
-    dlgSt.value = String(ctx.status || 'open');
-    dlgNote.value = String(ctx.note || '');
+    buildUsersSelect(ctx.user_ids || [], !ctx.can_assign);
+    const notes = (ctx.users || []).map(u => {
+      const note = String(u.note || '').trim();
+      if (!note) return '';
+      const name = String(u.user_name || ('#' + (u.user_id || ''))).trim();
+      return name ? `${name}: ${note}` : note;
+    }).filter(Boolean);
+    const statusValue = ctx.can_assign ? ctx.status : ctx.my_status;
+    const noteValue = ctx.can_assign ? ctx.note : ctx.my_note;
+    dlgSt.value = String(statusValue || 'open');
+    dlgNote.value = String(noteValue || '');
+    if (dlgNotesAll) {
+      dlgNotesAll.textContent = notes.length ? notes.join(' · ') : '—';
+    }
     syncDisableIfClearing();
     dlg.style.display = 'block';
   }
@@ -200,7 +226,7 @@ render_teacher_header($pageTitle);
       if ((c.school_year||'').toLowerCase().includes(f)) return true;
       return (c.groups||[]).some(g => {
         const a = (g.group_title||g.group_key||'').toLowerCase();
-        const b = (g.user_name||'').toLowerCase();
+        const b = (g.users || []).map(u => u.user_name || '').join(' ').toLowerCase();
         return a.includes(f) || b.includes(f);
       });
     });
@@ -212,13 +238,56 @@ render_teacher_header($pageTitle);
     }
 
     const html = filtered.map(c => {
+      const canAssign = !!c.can_assign;
       const gHtml = (c.groups||[]).map(g => {
-        const st = String(g.status||'open');
+        const allDone = (g.users || []).length > 0 && (g.users || []).every(u => String(u.status || 'open') === 'done');
+        const st = allDone ? 'done' : 'open';
         const note = String(g.note||'').trim();
-        const who = String(g.user_name||'').trim();
+        const who = (g.users || []).map(u => {
+          const nm = u.user_name || ('#'+u.user_id);
+          if (!nm) return '';
+          return (u.status === 'done') ? `${nm} ✓` : nm;
+        }).filter(Boolean).join(', ');
+        const notes = (g.users || []).map(u => {
+          const note = String(u.note || '').trim();
+          if (!note) return '';
+          const name = String(u.user_name || ('#' + (u.user_id || ''))).trim();
+          return name ? `${name}: ${note}` : note;
+        }).filter(Boolean);
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
+        const mine = (g.users || []).find(u => Number(u.user_id || 0) === currentUserId) || {};
+        const flowLabel = g.is_mine ? 'eingehend' : 'ausgehend';
+        const editBtn = canAssign
+          ? `<a class="btn primary" type="button"
+                data-edit="1"
+                data-class-id="${esc(c.class_id)}"
+                data-period-label="${esc(c.period_label||'')}"
+                data-class-title="${esc(c.class_title||'')}"
+                data-group-key="${esc(g.group_key||'')}"
+                data-group-title="${esc(g.group_title||g.group_key||'')}"
+                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-users="${esc(JSON.stringify(g.users || []))}"
+                data-status="${esc(st)}"
+                data-note="${esc(note)}"
+                data-my-status="${esc(String(mine.status || 'open'))}"
+                data-my-note="${esc(String(mine.note || ''))}"
+                data-can-assign="1"
+              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>`
+          : (g.is_mine ? `<a class="btn secondary" type="button"
+                data-edit="1"
+                data-class-id="${esc(c.class_id)}"
+                data-period-label="${esc(c.period_label||'')}"
+                data-class-title="${esc(c.class_title||'')}"
+                data-group-key="${esc(g.group_key||'')}"
+                data-group-title="${esc(g.group_title||g.group_key||'')}"
+                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-users="${esc(JSON.stringify(g.users || []))}"
+                data-my-status="${esc(String(mine.status || 'open'))}"
+                data-my-note="${esc(String(mine.note || ''))}"
+                data-can-assign="0"
+              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>` : '');
 
         return `
           <div class="inbox-row">
@@ -226,24 +295,14 @@ render_teacher_header($pageTitle);
               <div class="t">${esc(g.group_title || g.group_key)}</div>
               <div class="s">
                 <span class="${badgeCls}">${esc(badgeTxt)}</span>
+                <span class="badge-who">${esc(flowLabel)}</span>
                 <span class="badge-who">→ ${who ? esc(badgeAssigned.replace('{who}', who)) : '—'}</span>
-                ${note ? ('<span>· ' + esc(note) + '</span>') : ''}
+                ${notes.length ? ('<span class="badge-who">💬 ' + esc(notes.join(' · ')) + '</span>') : ''}
               </div>
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
               ${g.is_mine ? `<a class="btn secondary" href="${openUrl}"><?=h(t('teacher.delegations.open', 'Öffnen'))?></a>` : ``}
-              <a class="btn primary" type="button"
-                data-edit="1"
-                data-class-id="${esc(c.class_id)}"
-                data-period-label="${esc(c.period_label||'')}"
-                data-class-title="${esc(c.class_title||'')}"
-                data-group-key="${esc(g.group_key||'')}"
-                data-group-title="${esc(g.group_title||g.group_key||'')}"
-                data-user-id="${esc(g.user_id||'')}"
-                data-user-name="${esc(g.user_name||'')}"
-                data-status="${esc(st)}"
-                data-note="${esc(note)}"
-              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>
+              ${editBtn}
             </div>
           </div>
         `;
@@ -269,10 +328,13 @@ render_teacher_header($pageTitle);
           class_title: String(btn.getAttribute('data-class-title')||''),
           group_key: String(btn.getAttribute('data-group-key')||''),
           group_title: String(btn.getAttribute('data-group-title')||''),
-          user_id: Number(btn.getAttribute('data-user-id')||'0'),
-          user_name: String(btn.getAttribute('data-user-name')||''),
+          user_ids: (() => { try { return JSON.parse(btn.getAttribute('data-user-ids')||'[]'); } catch (e){ return []; } })(),
+          users: (() => { try { return JSON.parse(btn.getAttribute('data-users')||'[]'); } catch (e){ return []; } })(),
           status: String(btn.getAttribute('data-status')||'open'),
           note: String(btn.getAttribute('data-note')||''),
+          my_status: String(btn.getAttribute('data-my-status')||'open'),
+          my_note: String(btn.getAttribute('data-my-note')||''),
+          can_assign: (btn.getAttribute('data-can-assign') === '1'),
         });
       });
     });
@@ -283,21 +345,33 @@ render_teacher_header($pageTitle);
   if (dlg) {
     dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', closeModal));
   }
-  if (dlgUser) dlgUser.addEventListener('change', syncDisableIfClearing);
+  if (dlgUsers) dlgUsers.addEventListener('change', syncDisableIfClearing);
 
   if (dlgSave) {
     dlgSave.addEventListener('click', async () => {
       if (!editCtx) return;
       try {
-        const uid = Number(dlgUser.value || '0');
-        await api('save', {
-          class_id: editCtx.class_id,
-          period_label: editCtx.period_label,
-          group_key: editCtx.group_key,
-          user_id: uid,
-          status: uid > 0 ? String(dlgSt.value || 'open') : 'open',
-          note: uid > 0 ? String(dlgNote.value || '') : ''
-        });
+        if (!editCtx.can_assign) {
+          await api('mark', {
+            class_id: editCtx.class_id,
+            period_label: editCtx.period_label,
+            group_key: editCtx.group_key,
+            status: String(dlgSt.value || 'open'),
+            note: String(dlgNote.value || '')
+          });
+        } else {
+          const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+            .map(cb => Number(cb.value || 0))
+            .filter(v => v > 0);
+          await api('save', {
+            class_id: editCtx.class_id,
+            period_label: editCtx.period_label,
+            group_key: editCtx.group_key,
+            user_ids: userIds,
+            status: userIds.length > 0 ? String(dlgSt.value || 'open') : 'open',
+            note: userIds.length > 0 ? String(dlgNote.value || '') : ''
+          });
+        }
 
         const j = await api('load', {});
         data = j.items || [];
