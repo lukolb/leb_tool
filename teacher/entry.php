@@ -3880,6 +3880,7 @@ function closeDelegations(){
     (state.groups||[]).forEach(g => {
       const del = g.delegation || null;
       const mine = delegationSelfEntry(del);
+      const delNames = delegationNames(del);
       const statusLbl = (mine && mine.status === 'done') ? 'fertig' : 'offen';
       const note = String(mine?.note || '').trim();
 
@@ -3887,7 +3888,7 @@ function closeDelegations(){
         <div class="del-row">
           <div class="l">
             <div class="t">${esc(g.title || g.key)}</div>
-            <div class="s">${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
+            <div class="s">${delNames ? '→ ' + esc(delNames) + ' · ' : ''}${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
           </div>
           <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">Bearbeiten</button>
         </div>
