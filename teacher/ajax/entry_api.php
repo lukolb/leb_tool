@@ -481,8 +481,8 @@ function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear
         'group_key' => $g,
         'user_ids' => [],
         'users' => [],
-        'status' => (string)($r['status'] ?? 'open'),
-        'note' => (string)($r['note'] ?? ''),
+        'status' => 'open',
+        'note' => '',
       ];
     }
     $uid = (int)($r['user_id'] ?? 0);
@@ -491,8 +491,25 @@ function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear
       $out[$g]['users'][] = [
         'user_id' => $uid,
         'user_name' => trim((string)($r['display_name'] ?? '')),
+        'status' => (string)($r['status'] ?? 'open'),
+        'note' => (string)($r['note'] ?? ''),
       ];
     }
+  }
+  foreach ($out as $gk => $entry) {
+    $allDone = true;
+    $singleNote = '';
+    if (count($entry['users']) === 1) {
+      $singleNote = (string)($entry['users'][0]['note'] ?? '');
+    }
+    foreach ($entry['users'] as $user) {
+      if ((string)($user['status'] ?? 'open') !== 'done') {
+        $allDone = false;
+        break;
+      }
+    }
+    $out[$gk]['status'] = $entry['users'] ? ($allDone ? 'done' : 'open') : 'open';
+    $out[$gk]['note'] = $singleNote;
   }
   return $out;
 }
@@ -2796,19 +2813,17 @@ if ($action === 'delegations_save') {
     if ($status !== 'open' && $status !== 'done') $status = 'open';
     $note = trim($note);
 
-    foreach ($assignedUsers as $uid) {
-      upsert_class_group_delegation(
-        $pdo,
-        $classId,
-        $schoolYear,
-        $periodLabel,
-        $groupKey,
-        (int)$uid,
-        $status,
-        $note,
-        $userId
-      );
-    }
+    upsert_class_group_delegation(
+      $pdo,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $groupKey,
+      (int)$userId,
+      $status,
+      $note,
+      $userId
+    );
 
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);

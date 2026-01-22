@@ -62,7 +62,7 @@ render_teacher_header($pageTitle);
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:280px;">
         <label class="label"><?=h($modalDelegatedTo)?></label>
-        <select class="input" id="dlgUsers" style="width:100%;" multiple size="6"></select>
+        <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
         <div class="muted" style="font-size:12px; margin-top:4px;"><?=h($modalClearNote)?></div>
       </div>
 
@@ -151,20 +151,33 @@ render_teacher_header($pageTitle);
 
   function buildUsersSelect(selectedUserIds){
     dlgUsers.innerHTML = '';
-    users.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = String(u.id);
-      opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
-      dlgUsers.appendChild(opt);
-    });
     const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
-    Array.from(dlgUsers.options).forEach(opt => {
-      opt.selected = ids.includes(Number(opt.value || 0));
+    users.forEach(u => {
+      const wrap = document.createElement('label');
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '8px';
+      wrap.style.padding = '4px 2px';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = String(u.id);
+      cb.checked = ids.includes(Number(u.id));
+      cb.dataset.userCheckbox = '1';
+
+      const txt = document.createElement('span');
+      txt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+
+      wrap.appendChild(cb);
+      wrap.appendChild(txt);
+      dlgUsers.appendChild(wrap);
     });
   }
 
   function syncDisableIfClearing(){
-    const ids = Array.from(dlgUsers.selectedOptions || []).map(opt => Number(opt.value || 0)).filter(v => v > 0);
+    const ids = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+      .map(cb => Number(cb.value || 0))
+      .filter(v => v > 0);
     const dis = (ids.length === 0);
     dlgSt.disabled = dis;
     dlgNote.disabled = dis;
@@ -209,6 +222,7 @@ render_teacher_header($pageTitle);
     }
 
     const html = filtered.map(c => {
+      const canAssign = !!c.can_assign;
       const gHtml = (c.groups||[]).map(g => {
         const st = String(g.status||'open');
         const note = String(g.note||'').trim();
@@ -216,6 +230,19 @@ render_teacher_header($pageTitle);
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
+        const editBtn = canAssign
+          ? `<a class="btn primary" type="button"
+                data-edit="1"
+                data-class-id="${esc(c.class_id)}"
+                data-period-label="${esc(c.period_label||'')}"
+                data-class-title="${esc(c.class_title||'')}"
+                data-group-key="${esc(g.group_key||'')}"
+                data-group-title="${esc(g.group_title||g.group_key||'')}"
+                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-status="${esc(st)}"
+                data-note="${esc(note)}"
+              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>`
+          : '';
 
         return `
           <div class="inbox-row">
@@ -229,17 +256,7 @@ render_teacher_header($pageTitle);
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
               ${g.is_mine ? `<a class="btn secondary" href="${openUrl}"><?=h(t('teacher.delegations.open', 'Öffnen'))?></a>` : ``}
-              <a class="btn primary" type="button"
-                data-edit="1"
-                data-class-id="${esc(c.class_id)}"
-                data-period-label="${esc(c.period_label||'')}"
-                data-class-title="${esc(c.class_title||'')}"
-                data-group-key="${esc(g.group_key||'')}"
-                data-group-title="${esc(g.group_title||g.group_key||'')}"
-                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
-                data-status="${esc(st)}"
-                data-note="${esc(note)}"
-              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>
+              ${editBtn}
             </div>
           </div>
         `;
@@ -284,7 +301,9 @@ render_teacher_header($pageTitle);
     dlgSave.addEventListener('click', async () => {
       if (!editCtx) return;
       try {
-        const userIds = Array.from(dlgUsers.selectedOptions || []).map(opt => Number(opt.value || 0)).filter(v => v > 0);
+        const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+          .map(cb => Number(cb.value || 0))
+          .filter(v => v > 0);
         await api('save', {
           class_id: editCtx.class_id,
           period_label: editCtx.period_label,

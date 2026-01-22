@@ -107,6 +107,13 @@ try {
       $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    $assignedClassIds = [];
+    if (($u['role'] ?? '') !== 'admin') {
+      $stAssign = $pdo->prepare("SELECT class_id FROM user_class_assignments WHERE user_id=?");
+      $stAssign->execute([$userId]);
+      $assignedClassIds = array_map('intval', $stAssign->fetchAll(PDO::FETCH_COLUMN));
+    }
+
     $byClass = [];
     foreach ($rows as $r) {
       $cid = (int)($r['class_id'] ?? 0);
@@ -124,6 +131,7 @@ try {
             'label' => (string)($r['label'] ?? ''),
             'name' => (string)($r['name'] ?? ''),
           ]),
+          'can_assign' => (($u['role'] ?? '') === 'admin') ? true : in_array($cid, $assignedClassIds, true),
           'groups' => [],
         ];
       }
@@ -140,8 +148,8 @@ try {
           'user_ids' => [],
           'users' => [],
           'is_mine' => false,
-          'status' => (string)($r['status'] ?? 'open'),
-          'note' => (string)($r['note'] ?? ''),
+          'status' => 'open',
+          'note' => '',
           'updated_at' => (string)($r['updated_at'] ?? ''),
         ];
       }
@@ -151,6 +159,8 @@ try {
         $byClass[$cid]['groups'][$gk]['users'][] = [
           'user_id' => $uid,
           'user_name' => trim((string)($r['display_name'] ?? '')),
+          'status' => (string)($r['status'] ?? 'open'),
+          'note' => (string)($r['note'] ?? ''),
         ];
       }
       if ($uid > 0 && $uid === $userId) {
@@ -159,7 +169,24 @@ try {
     }
 
     foreach ($byClass as $cid => $info) {
-      $byClass[$cid]['groups'] = array_values($info['groups']);
+      $groups = [];
+      foreach ($info['groups'] as $group) {
+        $allDone = true;
+        $singleNote = '';
+        if (count($group['users']) === 1) {
+          $singleNote = (string)($group['users'][0]['note'] ?? '');
+        }
+        foreach ($group['users'] as $user) {
+          if ((string)($user['status'] ?? 'open') !== 'done') {
+            $allDone = false;
+            break;
+          }
+        }
+        $group['status'] = $group['users'] ? ($allDone ? 'done' : 'open') : 'open';
+        $group['note'] = $singleNote;
+        $groups[] = $group;
+      }
+      $byClass[$cid]['groups'] = $groups;
     }
 
     json_out(['ok'=>true, 'items'=>array_values($byClass), 'users'=>$users]);
@@ -177,9 +204,13 @@ try {
 
     if ($classId <= 0 || $groupKey === '') throw new RuntimeException('Ungültige Parameter.');
 
-    // permission: must be able to access class (admin ok; teacher must be assigned)
-    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-      throw new RuntimeException('Keine Berechtigung.');
+    // permission: must be able to access class; only admins or class-assigned teachers may change delegates
+    if (($u['role'] ?? '') !== 'admin') {
+      $stAssign = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+      $stAssign->execute([$userId, $classId]);
+      if (!$stAssign->fetchColumn()) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
     }
 
     if (is_array($userIds)) {

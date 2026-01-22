@@ -304,7 +304,7 @@ render_teacher_header($pageTitle);
           </div>
           <div style="min-width:280px;">
             <label class="label">Kollegen</label>
-            <select class="input" id="dlgUsers" style="width:100%;" multiple size="6"></select>
+            <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
             <div class="muted" style="font-size:12px; margin-top:4px;">Keine Auswahl = Delegation aufheben</div>
           </div>
           <div style="min-width:160px;">
@@ -3027,6 +3027,11 @@ render_teacher_header($pageTitle);
     return users.map(u => u.user_name || ('#' + u.user_id)).filter(Boolean).join(', ');
   }
 
+  function delegationSelfEntry(del){
+    const users = Array.isArray(del?.users) ? del.users : [];
+    return users.find(u => Number(u.user_id || 0) === CURRENT_USER_ID) || null;
+  }
+
   function ensureSelect(selectEl){
     if (!selectEl.options.length) {
       selectEl.innerHTML = '';
@@ -3797,10 +3802,23 @@ function openDelegations(preselectGroupKey){
   // users dropdown
   dlgUsers.innerHTML = '';
   (state.delegation_users||[]).forEach(u => {
-    const opt = document.createElement('option');
-    opt.value = String(u.id);
-    opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
-    dlgUsers.appendChild(opt);
+    const wrap = document.createElement('label');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    wrap.style.padding = '4px 2px';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = String(u.id);
+    cb.dataset.userCheckbox = '1';
+
+    const txt = document.createElement('span');
+    txt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+
+    wrap.appendChild(cb);
+    wrap.appendChild(txt);
+    dlgUsers.appendChild(wrap);
   });
 
   // sync form with selected group
@@ -3842,9 +3860,10 @@ function closeDelegations(){
     const gk = String(dlgDoneGroup.value || '');
     const g = (state.groups||[]).find(x => String(x.key) === gk);
     const del = g && g.delegation ? g.delegation : null;
+    const mine = delegationSelfEntry(del);
 
-    dlgDoneStatus.value = (del && del.status) ? String(del.status) : 'open';
-    dlgDoneNote.value = (del && del.note) ? String(del.note) : '';
+    dlgDoneStatus.value = (mine && mine.status) ? String(mine.status) : 'open';
+    dlgDoneNote.value = (mine && mine.note) ? String(mine.note) : '';
   }
 
   function renderDoneList(){
@@ -3853,8 +3872,9 @@ function closeDelegations(){
 
     (state.groups||[]).forEach(g => {
       const del = g.delegation || null;
-      const statusLbl = (del && del.status === 'done') ? 'fertig' : 'offen';
-      const note = String(del?.note || '').trim();
+      const mine = delegationSelfEntry(del);
+      const statusLbl = (mine && mine.status === 'done') ? 'fertig' : 'offen';
+      const note = String(mine?.note || '').trim();
 
       rows.push(`
         <div class="del-row">
@@ -3883,8 +3903,8 @@ function syncDelegationForm(){
   const del = g && g.delegation ? g.delegation : null;
 
   const ids = Array.isArray(del?.user_ids) ? del.user_ids.map(x => Number(x)).filter(x => x > 0) : [];
-  Array.from(dlgUsers.options).forEach(opt => {
-    opt.selected = ids.includes(Number(opt.value || 0));
+  dlgUsers.querySelectorAll('input[data-user-checkbox="1"]').forEach(cb => {
+    cb.checked = ids.includes(Number(cb.value || 0));
   });
   dlgStatus.value = (del && del.status) ? String(del.status) : 'open';
   dlgNote.value = (del && del.note) ? String(del.note) : '';
@@ -3970,7 +3990,9 @@ if (dlgSave) {
   dlgSave.addEventListener('click', async () => {
     const gk = String(dlgGroup.value || '').trim();
     if (!gk) return;
-    const userIds = Array.from(dlgUsers.selectedOptions || []).map(opt => Number(opt.value || 0)).filter(v => v > 0);
+    const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+      .map(cb => Number(cb.value || 0))
+      .filter(v => v > 0);
     const status = String(dlgStatus.value || 'open');
     const note = String(dlgNote.value || '');
 
