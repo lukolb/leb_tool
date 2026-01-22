@@ -556,9 +556,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           <input type="hidden" name="action" value="send_feedback">
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
           <div class="actions" style="margin-top:8px;">
-            <a class="btn primary" type="submit" onclick="this.closest('form').submit();">
+            <button class="btn primary" type="submit">
               <?=h($hasAck ? t('parent.portal.feedback_send_msg', 'Nachricht senden') : t('parent.portal.feedback_send', 'Empfang bestätigen'))?>
-            </a>
+            </button>
           </div>
         </form>
       <?php endif; ?>
