@@ -77,6 +77,7 @@ render_teacher_header($pageTitle);
       <div style="flex:1; min-width:240px;">
         <label class="label"><?=h($modalComment)?></label>
         <input class="input" id="dlgNote" type="text" placeholder="<?=h($modalCommentPlaceholder)?>" style="width:100%;">
+        <div class="muted" style="font-size:12px; margin-top:4px;" id="dlgNotesAll">—</div>
       </div>
 
       <div style="display:flex; gap:8px; margin-top: 10px;">
@@ -130,6 +131,7 @@ render_teacher_header($pageTitle);
   const dlgSt = document.getElementById('dlgSt');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
+  const dlgNotesAll = document.getElementById('dlgNotesAll');
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function showErr(msg){ errMsg.textContent = msg; errBox.style.display='block'; }
@@ -194,10 +196,19 @@ render_teacher_header($pageTitle);
     editCtx = ctx;
     dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
     buildUsersSelect(ctx.user_ids || [], !ctx.can_assign);
+    const notes = (ctx.users || []).map(u => {
+      const note = String(u.note || '').trim();
+      if (!note) return '';
+      const name = String(u.user_name || ('#' + (u.user_id || ''))).trim();
+      return name ? `${name}: ${note}` : note;
+    }).filter(Boolean);
     const statusValue = ctx.can_assign ? ctx.status : ctx.my_status;
     const noteValue = ctx.can_assign ? ctx.note : ctx.my_note;
     dlgSt.value = String(statusValue || 'open');
     dlgNote.value = String(noteValue || '');
+    if (dlgNotesAll) {
+      dlgNotesAll.textContent = notes.length ? notes.join(' · ') : '—';
+    }
     syncDisableIfClearing();
     dlg.style.display = 'block';
   }
@@ -237,6 +248,12 @@ render_teacher_header($pageTitle);
           if (!nm) return '';
           return (u.status === 'done') ? `${nm} ✓` : nm;
         }).filter(Boolean).join(', ');
+        const notes = (g.users || []).map(u => {
+          const note = String(u.note || '').trim();
+          if (!note) return '';
+          const name = String(u.user_name || ('#' + (u.user_id || ''))).trim();
+          return name ? `${name}: ${note}` : note;
+        }).filter(Boolean);
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
@@ -251,6 +268,7 @@ render_teacher_header($pageTitle);
                 data-group-key="${esc(g.group_key||'')}"
                 data-group-title="${esc(g.group_title||g.group_key||'')}"
                 data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-users="${esc(JSON.stringify(g.users || []))}"
                 data-status="${esc(st)}"
                 data-note="${esc(note)}"
                 data-my-status="${esc(String(mine.status || 'open'))}"
@@ -265,6 +283,7 @@ render_teacher_header($pageTitle);
                 data-group-key="${esc(g.group_key||'')}"
                 data-group-title="${esc(g.group_title||g.group_key||'')}"
                 data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-users="${esc(JSON.stringify(g.users || []))}"
                 data-my-status="${esc(String(mine.status || 'open'))}"
                 data-my-note="${esc(String(mine.note || ''))}"
                 data-can-assign="0"
@@ -278,7 +297,7 @@ render_teacher_header($pageTitle);
                 <span class="${badgeCls}">${esc(badgeTxt)}</span>
                 <span class="badge-who">${esc(flowLabel)}</span>
                 <span class="badge-who">→ ${who ? esc(badgeAssigned.replace('{who}', who)) : '—'}</span>
-                ${note ? ('<span>· ' + esc(note) + '</span>') : ''}
+                ${notes.length ? ('<span class="badge-who">💬 ' + esc(notes.join(' · ')) + '</span>') : ''}
               </div>
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
@@ -310,6 +329,7 @@ render_teacher_header($pageTitle);
           group_key: String(btn.getAttribute('data-group-key')||''),
           group_title: String(btn.getAttribute('data-group-title')||''),
           user_ids: (() => { try { return JSON.parse(btn.getAttribute('data-user-ids')||'[]'); } catch (e){ return []; } })(),
+          users: (() => { try { return JSON.parse(btn.getAttribute('data-users')||'[]'); } catch (e){ return []; } })(),
           status: String(btn.getAttribute('data-status')||'open'),
           note: String(btn.getAttribute('data-note')||''),
           my_status: String(btn.getAttribute('data-my-status')||'open'),
