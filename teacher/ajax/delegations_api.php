@@ -59,6 +59,37 @@ function load_teachers_for_delegation(PDO $pdo): array {
   return $out;
 }
 
+function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey, int $userId, string $status, string $note, int $actorUserId): void {
+  $groupKey = trim($groupKey);
+  if ($groupKey === '') throw new RuntimeException('group_key fehlt.');
+  $periodLabel = normalize_period_label($periodLabel);
+  $status = ($status === 'done') ? 'done' : 'open';
+
+  if ($userId <= 0) {
+    $pdo->prepare(
+      "DELETE FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey]);
+    return;
+  }
+
+  $pdo->prepare(
+    "INSERT INTO class_group_delegations
+      (class_id, school_year, period_label, group_key, user_id, status, note, created_by_user_id, updated_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       status=VALUES(status),
+       note=VALUES(note),
+       updated_by_user_id=VALUES(updated_by_user_id),
+       updated_at=NOW()"
+  )->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $actorUserId, $actorUserId]);
+
+  audit('class_group_delegation_upsert', $actorUserId, [
+    'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status
+  ]);
+}
+
 try {
   $data = read_json_body();
 
