@@ -222,11 +222,11 @@ function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8')
 function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', string $empty = '–'): string {
   if (!$value) return h($empty);
   try {
-    $dt = new DateTimeImmutable($value, new DateTimeZone('UTC'));
+    $dt = new DateTimeImmutable($value);
   } catch (Throwable $e) {
     return h($empty);
   }
-  $iso = $dt->setTimezone(new DateTimeZone('UTC'))->format('c');
+  $iso = $dt->format('c');
   $fallback = $dt->format($format);
   return '<time data-dt="' . h($iso) . '">' . h($fallback) . '</time>';
 }
@@ -234,11 +234,11 @@ function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', str
 function render_local_datetime_title_attr(?string $value, string $format = 'd.m.Y H:i'): string {
   if (!$value) return '';
   try {
-    $dt = new DateTimeImmutable($value, new DateTimeZone('UTC'));
+    $dt = new DateTimeImmutable($value);
   } catch (Throwable $e) {
     return '';
   }
-  $iso = $dt->setTimezone(new DateTimeZone('UTC'))->format('c');
+  $iso = $dt->format('c');
   $fallback = $dt->format($format);
   return ' data-dt-title="' . h($iso) . '" title="' . h($fallback) . '"';
 }
