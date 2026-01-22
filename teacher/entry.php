@@ -1239,6 +1239,7 @@ render_teacher_header($pageTitle);
           help_text: String(child.help_text || ''),
           is_multiline: Number(child.is_multiline || 0),
           options: Array.isArray(child.options) ? child.options : [],
+          subgroup: String(f.subgroup || ''),
           can_edit: (canEditField && groupEditable) ? 1 : 0,
         });
       });
