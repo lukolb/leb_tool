@@ -1477,10 +1477,10 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             </td>
             <td>
               <div class="action-menu">
-                <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="true">
+                <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false">
                   <?=h(t('teacher.students.actions', 'Aktionen'))?> <span aria-hidden="true">▾</span>
                 </button>
-                <div class="nav-dropdown action-dropdown-menu" role="menu">
+                <template class="action-menu-template">
                   <a class="btn secondary" type="button" onclick="openEditModal(<?=h((string)$sid)?>); return false;"><?=h(t('teacher.students.btn_edit', 'Bearbeiten…'))?></a>
 
                   <?php if ($ai_enabled) : ?>
@@ -1509,7 +1509,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                   <button class="btn danger" type="submit" disabled title="<?=h(t('teacher.students.delete_admin_only', 'Löschen nur durch Admin möglich (Formular-Daten vorhanden).'))?>"><?=h(t('teacher.students.btn_delete', 'Löschen'))?></button>
                   <?php endif; ?>
                   <a class="btn primary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=single&student_id=' . (int)$sid))?>"><?=h(t('teacher.students.btn_pdf', 'PDF exportieren'))?></a>
-                </div>
+                </template>
               </div>
             </td>
           </tr>
@@ -2163,5 +2163,79 @@ aiSupportLoading = true;
     </script>
   <?php endif; ?>
 </div>
+
+<div id="rowActionMenu" class="nav-dropdown action-dropdown-menu hidden" role="menu" aria-hidden="true"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const menu = document.getElementById('rowActionMenu');
+  if (!menu) return;
+
+  let currentButton = null;
+
+  const closeMenu = () => {
+    if (!currentButton) return;
+    currentButton.setAttribute('aria-expanded', 'false');
+    currentButton = null;
+    menu.classList.add('hidden');
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    menu.innerHTML = '';
+  };
+
+  const positionMenu = () => {
+    if (!currentButton) return;
+    const rect = currentButton.getBoundingClientRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const maxLeft = scrollX + document.documentElement.clientWidth - menu.offsetWidth - 8;
+    const left = Math.max(scrollX + 8, Math.min(rect.right + scrollX - menu.offsetWidth, maxLeft));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${rect.bottom + scrollY}px`;
+  };
+
+  const openMenu = (button, template) => {
+    if (currentButton === button) {
+      closeMenu();
+      return;
+    }
+    if (currentButton) {
+      currentButton.setAttribute('aria-expanded', 'false');
+    }
+    menu.innerHTML = '';
+    if (template && template.content) {
+      menu.appendChild(template.content.cloneNode(true));
+    }
+    menu.classList.remove('hidden');
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    button.setAttribute('aria-expanded', 'true');
+    currentButton = button;
+    positionMenu();
+  };
+
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.action-menu-toggle');
+    if (button) {
+      event.preventDefault();
+      const wrapper = button.closest('.action-menu');
+      const template = wrapper ? wrapper.querySelector('.action-menu-template') : null;
+      openMenu(button, template);
+      return;
+    }
+    if (menu.contains(event.target)) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      closeMenu();
+    }
+  });
+
+  window.addEventListener('resize', closeMenu);
+  window.addEventListener('scroll', closeMenu, true);
+});
+</script>
 
 <?php render_teacher_footer(); ?>

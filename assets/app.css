@@ -250,11 +250,6 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
 .actions{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px}
 .action-menu{position:relative; display:inline-flex; align-items:center}
 .action-menu .action-menu-toggle{white-space:nowrap}
-.action-menu:hover .action-dropdown-menu,
-.action-menu:focus-within .action-dropdown-menu,
-.action-menu.open .action-dropdown-menu{
-  display:block;
-}
 .action-dropdown-menu{
   left:auto;
   right:0;
@@ -262,10 +257,14 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
 }
 .action-dropdown-menu{
   display:none;
-  backface-visibility:hidden;
-  contain:paint;
-  transform:translateZ(0);
-  will-change:transform;
+  position:absolute;
+  z-index:2000;
+}
+.action-dropdown-menu.open{
+  display:block;
+}
+.hidden{
+  display:none;
 }
 .action-dropdown-menu .btn,
 .action-dropdown-menu form,
