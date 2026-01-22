@@ -41,7 +41,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{03.01.2026}
+\newcommand{\HandbuchStand}{22.01.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -234,15 +234,24 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \ScreenshotFigure{screenshots/admin_extract.png}{Feldliste nach Extraktion}
 
+\subsection*{Verbesserte Feldprüfung \& Mapping}
+Beim Austausch einer PDF erkennt das System fehlende und neue Felder, damit Daten nicht unbemerkt verloren gehen.
+\begin{itemize}
+  \item Fehlende Felder werden sichtbar markiert und können gezielt zugeordnet werden.
+  \item Neue PDF-Felder können bestehenden Feldern zugewiesen werden (Mapping), um Inhalte zu erhalten.
+  \item Beim Klick auf Felder werden die zugehörigen Zeilen in der Liste hervorgehoben.
+\end{itemize}
+
 \subsection{Felder gruppieren \& Reihenfolge festlegen}
 \begin{enumerate}
   \item Hauptgruppen anlegen (z.\,B. Deutsch, Mathematik, Sozialverhalten).
   \item Felder per Auswahl/Batch zuordnen.
+  \item Optional Untergruppen vergeben, um große Gruppen in Abschnitte zu gliedern.
   \item Filter nutzen, um Varianten sauber zu trennen.
   \item Reihenfolge speichern und in der Lehreransicht testen.
 \end{enumerate}
 
-\HintBox{Die Gruppen bestimmen UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
+\HintBox{Gruppen und Untergruppen bestimmen die UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften und Schülern, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
 
 \ScreenshotFigure{screenshots/admin_template_fields.png}{Gruppierung \& Filter}
 
@@ -254,7 +263,7 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
   \item Speichern und testen.
 \end{enumerate}
 
-\HintBox{Labels dürfen angepasst werden. Values bleiben stabil. Bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}
+\HintBox{Noten-/Skalenfelder greifen ausschließlich auf Optionslisten zu. Wenn Auswertungen nach numerischen Noten erfolgen sollen, tragen Sie die Zahl als Value ein (z.\,B. \enquote{1}, \enquote{2}, \enquote{3}). Labels dürfen angepasst werden. Values bleiben stabil; bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}
 
 \ScreenshotFigure{screenshots/admin_options.png}{Optionslisten-Editor}
 
@@ -266,6 +275,14 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/admin_optionuse.png}{Zuordnung Optionsliste → Feld}
+
+\subsection*{Abhängigkeiten \& Formularlogik}
+Felder können in Abhängigkeit von anderen Feldern oder Gruppen gesteuert werden.
+\begin{itemize}
+  \item Abhängigkeiten sauber dokumentieren (z.\,B. nur anzeigen, wenn Option gesetzt ist).
+  \item Änderungen an Abhängigkeiten nach Template-Updates testen.
+  \item Bei Unsicherheit Testklasse nutzen, bevor produktive Klassen umgestellt werden.
+\end{itemize}
 
 \subsection*{Änderungen im laufenden Zeugnisprozess \textendash{} Warnhinweise}
 \WarnBox{Nach Beginn der Eingaben sollten Sie keine Template-Wechsel, erneute Feldextraktionen oder Value-Änderungen in Optionslisten vornehmen. Dies kann zu Zuordnungsverlusten oder fehlerhaften Exporten führen.}
@@ -284,6 +301,8 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 \end{enumerate}
 
 \HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie daher neue Vorlagen zunächst an einer Testklasse, bevor Sie produktive Klassen umstellen.}
+
+\HintBox{Feldzuordnungen können klassen- oder templatebezogen abweichen. Prüfen Sie nach Umstellungen, ob alle Klassen die korrekten Felder und Gruppen verwenden.}
 
 \ScreenshotFigure{screenshots/admin_newclass.png}{Klasse anlegen}
 
@@ -322,6 +341,8 @@ Systemweite Parameter werden hier gepflegt.
 \begin{itemize}
   \item Sprachen, Formatierungen und verfügbare Features (z.\,B. Elternzugang) aktivieren oder deaktivieren.
   \item Export- und Ablagepfade prüfen; Sicherstellen, dass Schreibrechte für den PDF-Export vorhanden sind.
+  \item Elternmodus konfigurieren: automatische Freigabe, Download-Button in der Elternansicht, grafische Lehrkraft-Unterschrift (Master-Key) nach Bedarf aktivieren.
+  \item KI-Funktionen steuern: Schüler-KI kann durch Admin global aktiviert oder deaktiviert werden.
   \item Rollenrechte nach Bedarf anpassen, ohne die fachliche Reihenfolge zu verletzen.
 \end{itemize}
 
@@ -376,6 +397,7 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 \begin{enumerate}
   \item Schüler auswählen.
   \item Fach/Gruppe wählen (z.\,B. Deutsch).
+  \item Untergruppen nutzen, um innerhalb einer Gruppe schnell zu springen.
   \item Textfelder ausfüllen, Optionsfelder setzen, speichern.
 \end{enumerate}
 
@@ -386,12 +408,15 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 \subsection*{Delegationen und Teamarbeit}
 \begin{itemize}
   \item Fachbereiche oder Gruppen können an Kollegen delegiert werden; delegierte Bereiche erscheinen im Posteingang der Empfängerin.
+  \item Delegationen können an mehrere Lehrkräfte vergeben werden.
+  \item Lehrkräfte mit Delegation können Eingaben überschreiben, falls dies freigegeben ist.
   \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen. Status kann bei Bedarf zurückgesetzt werden.
   \item Delegationen sind klassen- und gruppenbezogen, nicht schülerbezogen; sie entlasten beim arbeitsteiligen Schreiben.
 \end{itemize}
 
 \subsection{Schüler-Eingabe freigeben (kontrolliert)}\index{Freigabe}
 \begin{enumerate}
+  \item Neue Schülerberichte starten grundsätzlich im Status \enquote{gesperrt}.
   \item Freigabe aktivieren und Zeitfenster festlegen.
   \item Hinweistext für Schüler hinterlegen (kurz, klar).
   \item Nach Ablauf Freigabe schließen; danach kein Schüler-Schreibzugriff.
@@ -399,11 +424,57 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \ScreenshotFigure{screenshots/teacher_students.png}{Lehrerbereich – Freigabe}
 
+\subsection{Schüler-Kategorien gezielt freigeben}
+Neben der globalen Freigabe kann die Lehrkraft steuern, welche Kategorien (Gruppen) für die Schüler-Eingabe geöffnet sind.
+\begin{enumerate}
+  \item In der Klasse den Abschnitt \enquote{Kategorien für Schüler} öffnen.
+  \item Gewünschte Kategorien per Checkbox freigeben.
+  \item Änderungen speichern; gesperrte Kategorien sind für Schüler nicht sichtbar.
+\end{enumerate}
+
+\HintBox{Gesperrte Kategorien werden in der Fortschrittsanzeige nicht als fehlend gewertet. Nutzen Sie diese Funktion, wenn einzelne Bereiche später oder gar nicht von Schülern bearbeitet werden sollen.}
+
+\subsection{Schülerdaten verwalten \& Aktionen}
+Im Schüler-Tab stehen Aktionen gesammelt im Dropdown-Menü zur Verfügung.
+\begin{itemize}
+  \item Schülerdaten bearbeiten, aktivieren/deaktivieren und PDF-Formular öffnen.
+  \item Schüler löschen ist möglich, wenn noch keine Daten hinterlegt wurden.
+  \item Schüler-Eingaben können je nach Berechtigung bearbeitet oder zurückgesetzt werden (mit Warnhinweis).
+  \item CSV-Import unterstützt E-Mail-Adressen für Eltern/Schüler.
+  \item Änderungen an personenbezogenen Daten werden korrekt übernommen.
+  \item Beim Löschen von Schülern bleiben vorhandene Berichtsdaten nachvollziehbar (Report-Instanzen werden anonymisiert).
+\end{itemize}
+
+\subsection{PDF-Formular (Lehrkraft)}
+Lehrkräfte können ein PDF-Formular je Schüler öffnen, um Inhalte direkt zu prüfen oder zu ergänzen.
+\begin{itemize}
+  \item Read-only Felder werden als nicht editierbar angezeigt.
+  \item Eingabelängen werden begrenzt, um PDF-Validität zu sichern.
+  \item Bei neuen Formularen können Werte manuell ergänzt werden.
+\end{itemize}
+
+\subsection{KI-Unterstützung (optional)}
+Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
+\begin{itemize}
+  \item KI-Rückmeldung auf Klassenebene (Zusammenfassung/Feedback).
+  \item Schüler-KI ist durch Admin steuerbar (aktivieren/deaktivieren).
+  \item KI-Vorschläge werden nie automatisch gespeichert.
+\end{itemize}
+
+\subsection{Formular-Bedienung \& Stabilität}
+\begin{itemize}
+  \item Aktionen sind als Dropdown gebündelt; das verbessert die Übersicht und verhindert Rendering-Probleme.
+  \item Schutz vor Doppel-Übermittlung bei Seiten-Reload.
+  \item Verbesserte Tastaturnavigation in der Eingabemaske.
+  \item Button-Optionen in der Eingabeansicht unterstützen Schnellaktionen.
+\end{itemize}
+
 \section{Schüler: Eingaben machen}
 Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. Standardzustand ist gesperrt.
 
 \begin{itemize}
   \item Zugriff erfolgt je nach Schule per QR-Code oder Login-Daten; es werden ausschließlich eigene Felder angezeigt.
+  \item Untergruppen strukturieren größere Bereiche; nicht freigegebene Kategorien bleiben unsichtbar.
   \item Optional kann eine Vorlesefunktion (TTS) aktiv sein; prüfen Sie Browser-Kompatibilität im Vorfeld.
   \item Bei Fragen oder Unsicherheiten sollen Schüler die Lehrkraft ansprechen, bevor sie absenden.
 \end{itemize}
@@ -415,15 +486,50 @@ Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. 
 
 \HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
+\subsection{Struktur \& Übersicht}
+\begin{itemize}
+  \item Kategorien können einklappbar dargestellt werden, um lange Listen übersichtlich zu halten.
+  \item Gesperrte Kategorien werden nicht angezeigt und zählen nicht als fehlend.
+\end{itemize}
+
+\subsection{Login-Optimierungen}
+\begin{itemize}
+  \item Der Fokus liegt beim Login automatisch im Eingabefeld (schneller Start).
+  \item QR-Code-Scanning unterstützt den Zugang ohne manuelle Eingabe.
+  \item iPad-spezifische Eingabeprobleme wurden behoben.
+\end{itemize}
+
+\subsection{Vorlesefunktion \& Leseanfänger}
+\begin{itemize}
+  \item Text-to-Speech (VITS) kann für Schülertexte aktiviert werden.
+  \item Stimmeinstellungen sind je Sprache getrennt konfigurierbar.
+  \item Optionaler Leseanfänger-Wizard unterstützt Erstklässler.
+\end{itemize}
+
 \section{Elternzugang (optional)}
 Falls freigeschaltet, können Eltern fertige Berichte lesen und ggf. Feedback geben.
 \begin{itemize}
-  \item Eltern erhalten einen Link oder Zugangscode, der nur Lesezugriff auf den Bericht ermöglicht; Schreibrechte bestehen nicht.
+  \item Eltern erhalten einen zeitlich begrenzten Link mit Lesezugriff; Schreibrechte bestehen nicht.
+  \item Freigaben werden durch Lehrkraft angefragt und (je nach Einstellung) vom Admin bestätigt oder automatisch freigegeben.
+  \item Vor der Freigabe prüft das System fehlende Einträge und zeigt sie als Liste an, damit Lehrkräfte bewusste Entscheidungen treffen können.
+  \item Links können verlängert oder beendet werden; abgelaufene Freigaben lassen sich reaktivieren.
+  \item Optional kann ein Download-Button angezeigt werden; standardmäßig ist die Ansicht als Vorschau gedacht.
   \item Optionales Feedback-Feld kann aktiviert werden; Rückmeldungen sind für Lehrkräfte sichtbar. \textbf{TODO: Schulinterne Regelung zur Nutzung des Feedbacks ergänzen.}
+  \item Lehrkräfte können direkt per E-Mail auf Eltern-Feedback antworten.
+  \item Grafische Lehrkraft-Unterschrift kann im Eltern-PDF angezeigt werden (konfigurationsabhängig).
   \item Datenschutz beachten: Links nicht öffentlich teilen; idealerweise mit Ablaufdatum oder Schutzmechanismus ausliefern.
 \end{itemize}
 
 \ScreenshotFigure{screenshots/parent_view.png}{Elternansicht (Platzhalter)}
+
+\subsection{Admin: Elternfreigaben verwalten}
+\begin{itemize}
+  \item Offene Freigaben prüfen, freigeben oder beenden.
+  \item Gültigkeitsdauer verlängern oder abgelaufene Links reaktivieren.
+  \item Filter nutzen (z.\,B. Status oder Klasse), um Freigaben schnell zu finden.
+\end{itemize}
+
+\HintBox{Wenn der Elternmodus auf automatische Freigabe gestellt ist, werden Anfragen ohne Admin-Schritt aktiviert.}
 
 \section{PDF-Export \& Archivierung}\index{Export}
 Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führend.
@@ -442,6 +548,13 @@ Alle Exporte basieren auf Template + gespeicherten Daten; die PDF bleibt führen
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/teacher_export.png}{Export im Lehrerbereich}
+
+\subsection*{Export-Optimierungen}
+\begin{itemize}
+  \item PDF-Export ohne unnötige Speicher-Dialoge; Downloads laufen stabiler.
+  \item Schriftarten werden korrekt in Feld-Appearance übernommen.
+  \item Downloadbestätigung kann genutzt werden, um den Empfang zu protokollieren.
+\end{itemize}
 
 \subsection{Export durch Admin (alle Klassen)}
 \begin{enumerate}
@@ -509,6 +622,54 @@ Nach Optionslisten-Änderung stimmen Werte nicht & Values wurden geändert; neue
 Admin-Export leer & Prüfen, ob Klassen Templates zugeordnet sind und ob die Exportrolle korrekt ist.\\
 \hline
 \end{longtable}
+
+\section{Anhang: Überblick über Funktionsänderungen (Codex-Aufgaben)}
+Die folgenden Punkte fassen die seit früheren Dokumentständen umgesetzten Codex-Aufgaben zusammen, damit die Dokumentation den tatsächlichen Funktionsumfang abbildet. Details finden sich in den jeweiligen Kapiteln dieses Handbuchs.
+
+\begin{itemize}
+  \item Hardcodierte Notenskalen entfernt; Noten/Skalen werden ausschließlich über Optionslisten gepflegt.
+  \item Stabileres Rendern von Aktionsmenüs (verhindert Browser-Abstürze bei grafischen Fehlern).
+  \item Elternzugänge können von Lehrkräften und Admins verlängert werden.
+  \item Vor Elternfreigaben erfolgt eine Prüfung auf fehlende Einträge (mit Übersicht).
+  \item Lehrkräfte können Schülerfelder je Kategorie gezielt sperren/freigeben.
+  \item Untergruppen werden in der Sortierung und Darstellung berücksichtigt.
+  \item Delegationen können an mehrere Lehrkräfte vergeben werden.
+  \item Downloadbestätigung im PDF-Export (Empfang bestätigen).
+  \item Optionale grafische Lehrkraft-Unterschrift im Elternexport.
+  \item Optimierter PDF-Export ohne Speicher-Prompt.
+  \item Schriftart wird beim Aktualisieren der PDF-Feld-Appearance berücksichtigt.
+  \item Automatische Freigabe von Elternanfragen (optional).
+  \item Antwort per E-Mail auf Eltern-Feedback möglich.
+  \item Import von Eltern-/Schüler-E-Mail-Adressen aus CSV.
+  \item Schüler-Kategorien sind einklappbar.
+  \item Korrekte Aktualisierung personenbezogener Schülerdaten.
+  \item Aktionen als Dropdown-Menü statt Einzelbuttons.
+  \item Report-Instanzen behalten Daten bei gelöschten Schülern (student\_id auf NULL).
+  \item Separate Seite für editierbare Schüler-Eingaben mit Warnhinweis.
+  \item Lehrkräfte können in neuen PDF-Formularen Werte manuell eingeben.
+  \item Read-only Felder im PDF-Formular berücksichtigt.
+  \item Abhängigkeiten/Verknüpfungen korrekt hinterlegt.
+  \item Eingabelängen in PDF-Feldern werden begrenzt.
+  \item Lehrkräfte können Schüler löschen, wenn keine Daten vorhanden sind.
+  \item KI-Rückmeldung zum Klassenstand (Klassenfeedback).
+  \item Schutz vor Doppel-Formular-Übermittlung beim Reload.
+  \item Kategorien-Freigabe für Schüler-Eingaben.
+  \item Fokus auf Eingabefeld beim Login.
+  \item Admin-Steuerung der KI-Funktion für Schüler.
+  \item Initialer Status der Kinder-Eingaben ist \enquote{gesperrt}.
+  \item Delegierte Eingaben mit Lehrkraft-Override möglich.
+  \item QR-Code-Scanning auf der Login-Seite.
+  \item Verbesserte PDF-Feldextraktion (inkl. Prüfungen/Reporting).
+  \item Verbesserte Tastaturnavigation für Lehrkräfte.
+  \item Hervorhebung der Feldzeile bei PDF-Feldklick.
+  \item Text-to-Speech via VITS (Vorlesefunktion).
+  \item iPad-Fix für Schüler-Zugangscode-Eingabe.
+  \item Klassen-spezifische Feldzuordnung korrigiert.
+  \item Leseanfänger-Wizard für Erstklässler.
+  \item Separate Stimmeinstellungen je Sprache.
+  \item Button-Optionen in der Eingabeansicht.
+  \item Schüler-Eingaben löschen oder bearbeiten.
+\end{itemize}
 
 \HintBox{Checkliste vor dem Zeugnisdruck: Klassenfelder vollständig, zwei Schülerberichte stichprobenartig geprüft, Schüler-Freigabe geschlossen, PDF-Export (ein Schüler + Klasse) getestet, Ablage-/Archivordner vorbereitet.}
 
