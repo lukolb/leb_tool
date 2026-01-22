@@ -108,6 +108,7 @@ render_teacher_header($pageTitle);
   const apiUrl = <?=json_encode(url('teacher/ajax/delegations_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
+  const currentUserId = <?=json_encode((int)(current_user()['id'] ?? 0))?>;
   const emptyText = <?=json_encode($emptyText)?>;
   const statusOpen = <?=json_encode($statusOpen)?>;
   const statusDone = <?=json_encode($statusDone)?>;
@@ -149,7 +150,7 @@ render_teacher_header($pageTitle);
   let users = [];
   let editCtx = null; // class_id, period_label, group_key, ...
 
-  function buildUsersSelect(selectedUserIds){
+  function buildUsersSelect(selectedUserIds, disabled){
     dlgUsers.innerHTML = '';
     const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
     users.forEach(u => {
@@ -164,6 +165,7 @@ render_teacher_header($pageTitle);
       cb.value = String(u.id);
       cb.checked = ids.includes(Number(u.id));
       cb.dataset.userCheckbox = '1';
+      cb.disabled = !!disabled;
 
       const txt = document.createElement('span');
       txt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
@@ -190,9 +192,11 @@ render_teacher_header($pageTitle);
   function openModal(ctx){
     editCtx = ctx;
     dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
-    buildUsersSelect(ctx.user_ids || []);
-    dlgSt.value = String(ctx.status || 'open');
-    dlgNote.value = String(ctx.note || '');
+    buildUsersSelect(ctx.user_ids || [], !ctx.can_assign);
+    const statusValue = ctx.can_assign ? ctx.status : ctx.my_status;
+    const noteValue = ctx.can_assign ? ctx.note : ctx.my_note;
+    dlgSt.value = String(statusValue || 'open');
+    dlgNote.value = String(noteValue || '');
     syncDisableIfClearing();
     dlg.style.display = 'block';
   }
@@ -230,6 +234,7 @@ render_teacher_header($pageTitle);
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
+        const mine = (g.users || []).find(u => Number(u.user_id || 0) === currentUserId) || {};
         const editBtn = canAssign
           ? `<a class="btn primary" type="button"
                 data-edit="1"
@@ -241,8 +246,22 @@ render_teacher_header($pageTitle);
                 data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
                 data-status="${esc(st)}"
                 data-note="${esc(note)}"
+                data-my-status="${esc(String(mine.status || 'open'))}"
+                data-my-note="${esc(String(mine.note || ''))}"
+                data-can-assign="1"
               ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>`
-          : '';
+          : (g.is_mine ? `<a class="btn secondary" type="button"
+                data-edit="1"
+                data-class-id="${esc(c.class_id)}"
+                data-period-label="${esc(c.period_label||'')}"
+                data-class-title="${esc(c.class_title||'')}"
+                data-group-key="${esc(g.group_key||'')}"
+                data-group-title="${esc(g.group_title||g.group_key||'')}"
+                data-user-ids="${esc(JSON.stringify(g.user_ids || []))}"
+                data-my-status="${esc(String(mine.status || 'open'))}"
+                data-my-note="${esc(String(mine.note || ''))}"
+                data-can-assign="0"
+              ><?=h(t('teacher.delegations.edit', 'Bearbeiten…'))?></a>` : '');
 
         return `
           <div class="inbox-row">
@@ -285,6 +304,9 @@ render_teacher_header($pageTitle);
           user_ids: (() => { try { return JSON.parse(btn.getAttribute('data-user-ids')||'[]'); } catch (e){ return []; } })(),
           status: String(btn.getAttribute('data-status')||'open'),
           note: String(btn.getAttribute('data-note')||''),
+          my_status: String(btn.getAttribute('data-my-status')||'open'),
+          my_note: String(btn.getAttribute('data-my-note')||''),
+          can_assign: (btn.getAttribute('data-can-assign') === '1'),
         });
       });
     });
@@ -301,17 +323,27 @@ render_teacher_header($pageTitle);
     dlgSave.addEventListener('click', async () => {
       if (!editCtx) return;
       try {
-        const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
-          .map(cb => Number(cb.value || 0))
-          .filter(v => v > 0);
-        await api('save', {
-          class_id: editCtx.class_id,
-          period_label: editCtx.period_label,
-          group_key: editCtx.group_key,
-          user_ids: userIds,
-          status: userIds.length > 0 ? String(dlgSt.value || 'open') : 'open',
-          note: userIds.length > 0 ? String(dlgNote.value || '') : ''
-        });
+        if (!editCtx.can_assign) {
+          await api('mark', {
+            class_id: editCtx.class_id,
+            period_label: editCtx.period_label,
+            group_key: editCtx.group_key,
+            status: String(dlgSt.value || 'open'),
+            note: String(dlgNote.value || '')
+          });
+        } else {
+          const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+            .map(cb => Number(cb.value || 0))
+            .filter(v => v > 0);
+          await api('save', {
+            class_id: editCtx.class_id,
+            period_label: editCtx.period_label,
+            group_key: editCtx.group_key,
+            user_ids: userIds,
+            status: userIds.length > 0 ? String(dlgSt.value || 'open') : 'open',
+            note: userIds.length > 0 ? String(dlgNote.value || '') : ''
+          });
+        }
 
         const j = await api('load', {});
         data = j.items || [];

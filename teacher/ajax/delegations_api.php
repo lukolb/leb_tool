@@ -274,6 +274,39 @@ try {
     json_out(['ok'=>true]);
   }
 
+  if ($action === 'mark') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $groupKey = trim((string)($data['group_key'] ?? ''));
+    $periodLabel = normalize_period_label((string)($data['period_label'] ?? 'Standard'));
+    $status = trim((string)($data['status'] ?? 'open'));
+    $note = trim((string)($data['note'] ?? ''));
+
+    if ($classId <= 0 || $groupKey === '') throw new RuntimeException('Ungültige Parameter.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $stc = $pdo->prepare("SELECT school_year FROM classes WHERE id=? LIMIT 1");
+    $stc->execute([$classId]);
+    $schoolYear = (string)($stc->fetchColumn() ?: '');
+    if ($schoolYear === '') throw new RuntimeException('Klasse nicht gefunden.');
+
+    if ($status !== 'open' && $status !== 'done') $status = 'open';
+
+    $st = $pdo->prepare(
+      "SELECT 1
+       FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=? AND user_id=?
+       LIMIT 1"
+    );
+    $st->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId]);
+    if (!$st->fetchColumn()) throw new RuntimeException('Nicht deine Delegation.');
+
+    upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $userId);
+    json_out(['ok'=>true]);
+  }
+
   throw new RuntimeException('Unbekannte action.');
 } catch (Throwable $e) {
   json_out(['ok'=>false, 'error'=>$e->getMessage()], 400);
