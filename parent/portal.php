@@ -306,6 +306,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
           "VALUES (?, 'question', ?, ?, 0, NOW())"
         );
         $ins->execute([(int)$link['id'], $message, $lang]);
+        if (parent_feedback_insert_ack($pdo, (int)$link['id'], $lang)) {
+          $hasAck = true;
+        }
       }
       $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.');
     }
@@ -647,7 +650,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           });
           if (!resp.ok) throw new Error('request_failed');
           pushAlert('success', <?= json_encode(t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.')) ?>);
-          if (message === '') ensureAckPill();
+          ensureAckPill();
           feedbackForm.reset();
         } catch (e) {
           pushAlert('danger', <?= json_encode('Rückmeldung konnte nicht gesendet werden.') ?>);
