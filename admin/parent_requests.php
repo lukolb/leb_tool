@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
       if ($days > 120) $days = 120;
-      $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $expiresAt = end_of_day_after_days($days);
       $sql = "UPDATE parent_portal_links ppl\n"
         . "JOIN students s ON s.id=ppl.student_id\n"
         . "SET ppl.status='approved', ppl.approved_by_user_id=?, ppl.approved_at=NOW(), ppl.published_at=NOW(), ppl.expires_at=?, ppl.updated_at=NOW()\n"
@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
       if ($days > 120) $days = 120;
-      $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $expiresAt = end_of_day_after_days($days);
 
       $upd = $pdo->prepare(
         "UPDATE parent_portal_links\n" .
@@ -93,8 +93,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($days < 1) $days = 1;
       if ($days > 120) $days = 120;
       $base = $link['expires_at'] ?? null;
-      $start = $base ? new DateTimeImmutable((string)$base) : new DateTimeImmutable('now');
-      $newExpiry = $start->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $start = $base ? new DateTimeImmutable((string)$base) : new DateTimeImmutable('today');
+      $newExpiry = end_of_day_after_days($days, $start);
       $upd = $pdo->prepare("UPDATE parent_portal_links SET expires_at=?, updated_at=NOW() WHERE id=?");
       $upd->execute([$newExpiry, $linkId]);
       $alerts[] = 'Gültigkeit wurde verlängert.';

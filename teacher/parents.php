@@ -50,12 +50,24 @@ function read_signature_payload_from_post(): ?array {
   return signature_sanitize_payload($raw);
 }
 
-function build_parent_mail_html(string $template, array $student, string $link): string {
+function format_parent_link_expiry(?string $expiresAt, string $format): string {
+  if (!$expiresAt) return '';
+  try {
+    $dt = new DateTimeImmutable((string)$expiresAt);
+  } catch (Throwable $e) {
+    return '';
+  }
+  return $dt->format($format);
+}
+
+function build_parent_mail_html(string $template, array $student, string $link, ?string $expiresAt): string {
   $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
   $safeName = h($studentName);
   $safeFirst = h((string)($student['first_name'] ?? ''));
   $safeLast = h((string)($student['last_name'] ?? ''));
   $safeLink = h($link);
+  $expiryDe = h(format_parent_link_expiry($expiresAt, 'd.m.Y'));
+  $expiryUs = h(format_parent_link_expiry($expiresAt, 'm/d/Y'));
   $escaped = nl2br(h($template));
   $linkHtml = '<a href="' . $safeLink . '">' . $safeLink . '</a>';
   return strtr($escaped, [
@@ -64,6 +76,8 @@ function build_parent_mail_html(string $template, array $student, string $link):
     '{{last_name}}' => $safeLast,
     '{{parent_link}}' => $linkHtml,
     '{{link}}' => $linkHtml,
+    '{{link_expires_de}}' => $expiryDe,
+    '{{link_expires_us}}' => $expiryUs,
   ]);
 }
 
@@ -106,7 +120,7 @@ $mailForm = [
   'class_id' => $classId > 0 ? $classId : 0,
   'student_id' => 0,
   'subject' => 'Lernentwicklungsbericht für {{student_name}} - Student Progress Report for {{student_name}}',
-  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist 14 Tage gültig. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid for 14 days. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
+  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist gültig bis {{link_expires_de}}. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid until {{link_expires_us}}. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -218,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$studentsToSend) throw new RuntimeException('Keine Schüler gefunden.');
 
       $linkStmt = $pdo->prepare(
-        "SELECT token\n" .
+        "SELECT token, expires_at\n" .
         "FROM parent_portal_links\n" .
         "WHERE student_id=? AND status='approved' AND (expires_at IS NULL OR expires_at > NOW())\n" .
         "ORDER BY updated_at DESC, id DESC LIMIT 1"
@@ -236,7 +250,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = (int)($student['id'] ?? 0);
         if ($sid <= 0) continue;
         $linkStmt->execute([$sid]);
-        $token = $linkStmt->fetchColumn();
+        $linkRow = $linkStmt->fetch(PDO::FETCH_ASSOC);
+        $token = $linkRow['token'] ?? null;
         $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
         if (!$token) {
           $skippedNoLink++;
@@ -244,6 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           continue;
         }
         $link = absolute_url('parent/portal.php?token=' . urlencode((string)$token));
+        $expiresAt = $linkRow['expires_at'] ?? null;
+        $expiresDe = format_parent_link_expiry($expiresAt, 'd.m.Y');
+        $expiresUs = format_parent_link_expiry($expiresAt, 'm/d/Y');
 
         $emails = array_filter([
           sanitize_email($student['email_parent1'] ?? null),
@@ -262,8 +280,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           '{{last_name}}' => (string)($student['last_name'] ?? ''),
           '{{parent_link}}' => $link,
           '{{link}}' => $link,
+          '{{link_expires_de}}' => $expiresDe,
+          '{{link_expires_us}}' => $expiresUs,
         ]);
-        $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link);
+        $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link, $expiresAt);
 
         $studentSent = 0;
         foreach ($emails as $email) {
@@ -297,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
       if ($days > 90) $days = 90;
-      $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $expiresAt = end_of_day_after_days($days);
       $status = $parentAutoApprove ? 'approved' : 'requested';
       $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
       $publishedAt = $parentAutoApprove ? $approvedAt : null;
@@ -366,7 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $days = (int)($_POST['valid_days'] ?? 14);
         if ($days < 1) $days = 1;
         if ($days > 90) $days = 90;
-        $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+        $expiresAt = end_of_day_after_days($days);
         $status = $parentAutoApprove ? 'approved' : 'requested';
         $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
         $publishedAt = $parentAutoApprove ? $approvedAt : null;
@@ -785,7 +805,7 @@ $introText = $parentAutoApprove
     <div>
       <h2 style="margin-bottom:6px;"><?=h(t('teacher.parents.mail_merge_title', 'Serienmail an Eltern'))?></h2>
       <p class="muted" style="max-width:820px; margin-top:0;">
-        <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
+        <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}, {{link_expires_de}}, {{link_expires_us}}.'))?>
       </p>
     </div>
   </div>

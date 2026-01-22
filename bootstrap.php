@@ -243,6 +243,14 @@ function render_local_datetime_title_attr(?string $value, string $format = 'd.m.
   return ' data-dt-title="' . h($iso) . '" title="' . h($fallback) . '"';
 }
 
+function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): string {
+  if ($days < 0) $days = 0;
+  $base = $base ?? new DateTimeImmutable('today');
+  $start = $base->setTime(0, 0, 0);
+  $target = $start->modify('+' . $days . ' days')->setTime(23, 59, 59);
+  return $target->format('Y-m-d H:i:s');
+}
+
 function render_history_replace_state_script(): void {
   echo "\n  <script data-history-replace-state>\n";
   echo "    if (window.history && window.history.replaceState) {\n";
