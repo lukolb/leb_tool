@@ -224,7 +224,7 @@ render_admin_header($pageTitle);
             <td><strong><?=h((string)$r['first_name'] . ' ' . (string)$r['last_name'])?></strong></td>
             <td><?=h((string)$r['school_year'])?> · <?=h(parent_admin_class_display($r))?></td>
             <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
-            <td><?=h(date_format(date_create($r['expires_at']),"d.m.Y H:i") ?? '–')?></td>
+            <td><?= render_local_datetime((string)$r['expires_at'], 'd.m.Y H:i') ?></td>
             <td><?=h($r['requested_by_name'] ?? t('admin.parent_requests.unknown', 'unbekannt'))?></td>
             <td>
               <?php if ($pendingFb > 0): ?>

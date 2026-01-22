@@ -635,16 +635,15 @@ $introText = $parentAutoApprove
           $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
           $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
           $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
-          $ackLabel = $ackLatest ? date_format(date_create((string)$ackLatest), "d.m.Y H:i") : '';
           $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
         ?>
           <tr>
             <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
             <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
-            <td><?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : '–')?></td>
+            <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
             <td>
               <?php if ($totalAcks > 0): ?>
-                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= $ackLabel ? ' title="' . h($ackLabel) . '"' : '' ?>>
+                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
                   <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
                 </span>
               <?php endif; ?>
@@ -724,7 +723,14 @@ $introText = $parentAutoApprove
           <?php foreach ($feedbackList as $fb): ?>
             <?php
               $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-              $feedbackDate = date_format(date_create((string)$fb['created_at']),"d.m.Y H:i");
+              $feedbackDate = '';
+              if (!empty($fb['created_at'])) {
+                try {
+                  $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
+                } catch (Throwable $e) {
+                  $feedbackDate = '';
+                }
+              }
               $feedbackEmails = array_values(array_unique(array_filter([
                 sanitize_email($fb['email_parent1'] ?? null),
                 sanitize_email($fb['email_parent2'] ?? null),
@@ -740,7 +746,7 @@ $introText = $parentAutoApprove
                   <?= nl2br(h((string)$fb['message'])) ?>
                 <?php endif; ?>
               </td>
-              <td><?=h($feedbackDate)?></td>
+              <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
               <td>
                 <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
                   <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>

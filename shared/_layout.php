@@ -160,6 +160,31 @@ function render_role_header(string $title): void {
 
 function render_role_footer(): void {
   echo "</div>";
+  ?>
+  <script>
+    (function(){
+      const formatLocal = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        try {
+          return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+        } catch (e) {
+          return date.toLocaleString();
+        }
+      };
+
+      document.querySelectorAll('[data-dt]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dt || '');
+        if (formatted) el.textContent = formatted;
+      });
+
+      document.querySelectorAll('[data-dt-title]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dtTitle || '');
+        if (formatted) el.setAttribute('title', formatted);
+      });
+    })();
+  </script>
+  <?php
   render_history_replace_state_script();
   echo "</body></html>";
 }

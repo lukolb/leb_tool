@@ -508,7 +508,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         <?=h(t('parent.portal.class', 'Klasse'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
       </div>
       <div class="muted" style="margin-top:12px;">
-        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : t('parent.portal.no_expiry', 'ohne Enddatum'))?>
+        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?= $expiresAt ? render_local_datetime($expiresAt, 'd.m.Y H:i') : h(t('parent.portal.no_expiry', 'ohne Enddatum')) ?>
       </div>
       <?php if ($status === 'requested'): ?>
         <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.waiting', 'Freigabe wird noch durch die Schule bestätigt.'))?></div>
@@ -1399,6 +1399,29 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     fillPdf().catch(e => showError(e?.message || String(e)));
   </script>
   <?php endif; ?>
+  <script>
+    (function(){
+      const formatLocal = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        try {
+          return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
+        } catch (e) {
+          return date.toLocaleString();
+        }
+      };
+
+      document.querySelectorAll('[data-dt]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dt || '');
+        if (formatted) el.textContent = formatted;
+      });
+
+      document.querySelectorAll('[data-dt-title]').forEach((el) => {
+        const formatted = formatLocal(el.dataset.dtTitle || '');
+        if (formatted) el.setAttribute('title', formatted);
+      });
+    })();
+  </script>
 <?php render_history_replace_state_script(); ?>
 </body>
 </html>
