@@ -634,6 +634,7 @@ render_teacher_header($pageTitle);
     box-shadow: 0 8px 18px rgba(0,122,51,0.12);
     font-weight:900;
   }
+  .subgroup-label{ color: rgba(0,0,0,0.7); font-size:12px; }
 </style>
 
 <script>
@@ -3702,7 +3703,9 @@ render_teacher_header($pageTitle);
       const tdLabel = document.createElement('td');
       tdLabel.className = 'sticky';
       const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>`;
+      const subgroup = String(f.subgroup || '').trim();
+      const subgroupHtml = subgroup ? `<div class="subgroup-label">${esc(subgroup)}</div>` : '';
+      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>${subgroupHtml}`;
       row.appendChild(tdLabel);
 
       sCols.forEach(s => {
