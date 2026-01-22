@@ -150,6 +150,13 @@ function group_key_from_meta(array $meta): string {
   return $parts['group'];
 }
 
+function base_field_key(string $fieldName): string {
+  $s = strtolower(trim($fieldName));
+  $s = explode('-', $s, 2)[0];
+  $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+  return trim($s);
+}
+
 function student_wizard_display_mode_from_class(array $classRow): string {
   $mode = (string)($classRow['student_wizard_display'] ?? 'groups');
   $mode = strtolower(trim($mode));
@@ -426,6 +433,16 @@ function load_child_fields(PDO $pdo, int $templateId): array {
   return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+function load_teacher_fields(PDO $pdo, int $templateId): array {
+  $st = $pdo->prepare(
+    "SELECT id, field_name, field_type, meta_json
+     FROM template_fields
+     WHERE template_id=? AND can_teacher_edit=1"
+  );
+  $st->execute([$templateId]);
+  return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
 function load_child_values(PDO $pdo, int $reportInstanceId): array {
   $st = $pdo->prepare(
     "SELECT template_field_id, value_text, value_json
@@ -433,6 +450,28 @@ function load_child_values(PDO $pdo, int $reportInstanceId): array {
      WHERE report_instance_id=? AND source='child'"
   );
   $st->execute([$reportInstanceId]);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $fid = (int)$r['template_field_id'];
+    $out[$fid] = [
+      'text' => $r['value_text'] !== null ? (string)$r['value_text'] : null,
+      'json' => $r['value_json'] !== null ? $r['value_json'] : null,
+    ];
+  }
+  return $out;
+}
+
+function load_teacher_values(PDO $pdo, int $reportInstanceId, array $fieldIds): array {
+  $fieldIds = array_values(array_unique(array_filter(array_map('intval', $fieldIds), fn($x)=>$x>0)));
+  if (!$fieldIds) return [];
+  $in = implode(',', array_fill(0, count($fieldIds), '?'));
+  $params = array_merge([$reportInstanceId], $fieldIds);
+  $st = $pdo->prepare(
+    "SELECT template_field_id, value_text, value_json
+     FROM field_values
+     WHERE report_instance_id=? AND source='teacher' AND template_field_id IN ($in)"
+  );
+  $st->execute($params);
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $fid = (int)$r['template_field_id'];
@@ -457,13 +496,95 @@ function resolve_icon_urls(PDO $pdo, array $iconIds): array {
   return $map;
 }
 
-function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId): bool {
+function option_list_lock_map(PDO $pdo, int $listId, array &$cache): array {
+  if ($listId <= 0) return ['by_id' => [], 'by_value' => []];
+  if (isset($cache[$listId])) return $cache[$listId];
+  $st = $pdo->prepare(
+    "SELECT id, value, meta_json
+     FROM option_list_items
+     WHERE list_id=?"
+  );
+  $st->execute([$listId]);
+  $byId = [];
+  $byValue = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $id = (int)($r['id'] ?? 0);
+    $value = trim((string)($r['value'] ?? ''));
+    $meta = meta_read($r['meta_json'] ?? null);
+    $lock = !empty($meta['lock_child']);
+    $byId[$id] = [
+      'value' => $value,
+      'lock_child' => $lock,
+    ];
+    if ($value !== '' && !isset($byValue[$value])) $byValue[$value] = $id;
+  }
+  $cache[$listId] = ['by_id' => $byId, 'by_value' => $byValue];
+  return $cache[$listId];
+}
+
+function teacher_value_locks_child(PDO $pdo, array $teacherField, ?array $teacherValue, array &$cache): bool {
+  if (!$teacherValue) return false;
+  $type = (string)($teacherField['field_type'] ?? '');
+  if (!in_array($type, ['radio','select','grade'], true)) return false;
+  $meta = meta_read($teacherField['meta_json'] ?? null);
+  $listId = option_list_id_from_meta($meta);
+  if ($listId <= 0) return false;
+  $map = option_list_lock_map($pdo, $listId, $cache);
+  $optId = 0;
+  if (!empty($teacherValue['json'])) {
+    $decoded = json_decode((string)$teacherValue['json'], true);
+    if (is_array($decoded) && isset($decoded['option_item_id'])) {
+      $optId = (int)$decoded['option_item_id'];
+    }
+  }
+  if ($optId <= 0) {
+    $txt = trim((string)($teacherValue['text'] ?? ''));
+    if ($txt !== '' && isset($map['by_value'][$txt])) {
+      $optId = (int)$map['by_value'][$txt];
+    }
+  }
+  if ($optId <= 0) return false;
+  return !empty($map['by_id'][$optId]['lock_child']);
+}
+
+function child_field_locked_by_teacher(PDO $pdo, array $childField, array &$context): bool {
+  $base = base_field_key((string)($childField['field_name'] ?? ''));
+  if ($base === '') return false;
+  $teacherField = $context['teacher_by_base'][$base] ?? null;
+  if (!$teacherField) return false;
+  $teacherValue = $context['teacher_values'][(int)($teacherField['id'] ?? 0)] ?? null;
+  return teacher_value_locks_child($pdo, $teacherField, $teacherValue, $context['option_cache']);
+}
+
+function child_lock_context(PDO $pdo, int $templateId, int $reportId): array {
+  $teacherFields = load_teacher_fields($pdo, $templateId);
+  $teacherByBase = [];
+  $teacherFieldIds = [];
+  foreach ($teacherFields as $f) {
+    $fid = (int)($f['id'] ?? 0);
+    if ($fid <= 0) continue;
+    $teacherFieldIds[] = $fid;
+    $base = base_field_key((string)($f['field_name'] ?? ''));
+    if ($base !== '' && !isset($teacherByBase[$base])) {
+      $teacherByBase[$base] = $f;
+    }
+  }
+  $teacherValues = $teacherFieldIds ? load_teacher_values($pdo, $reportId, $teacherFieldIds) : [];
+  return [
+    'teacher_by_base' => $teacherByBase,
+    'teacher_values' => $teacherValues,
+    'option_cache' => [],
+  ];
+}
+
+function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId, array $lockedFieldIds = []): bool {
   $fields = load_child_fields($pdo, $templateId);
   if (!$fields) return true;
 
   $vals = load_child_values($pdo, $reportId);
   foreach ($fields as $f) {
     $fid = (int)$f['id'];
+    if (!empty($lockedFieldIds[$fid])) continue;
     $v = $vals[$fid]['text'] ?? null;
     if (trim((string)$v) === '') return false;
   }
@@ -547,9 +668,15 @@ try {
     $groups = [];
     $iconIds = [];
     $optCache = []; // listId => options array
+    $lockedFieldIds = [];
+    $lockContext = child_lock_context($pdo, $templateId, $reportId);
 
     foreach ($fieldsRaw as $r) {
       $fid = (int)$r['id'];
+      if (child_field_locked_by_teacher($pdo, $r, $lockContext)) {
+        $lockedFieldIds[$fid] = true;
+        continue;
+      }
       $meta = meta_read($r['meta_json'] ?? null);
 
       $gParts = group_parts_from_meta($meta);
@@ -670,7 +797,7 @@ try {
     if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
 
     $st = $pdo->prepare(
-      "SELECT id, field_type, meta_json
+      "SELECT id, field_name, field_type, meta_json
        FROM template_fields
        WHERE id=? AND template_id=? AND can_child_edit=1
        LIMIT 1"
@@ -678,6 +805,11 @@ try {
     $st->execute([$fieldId, $templateId]);
     $frow = $st->fetch(PDO::FETCH_ASSOC);
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
+
+    $lockContext = child_lock_context($pdo, $templateId, $reportId);
+    if (child_field_locked_by_teacher($pdo, $frow, $lockContext)) {
+      throw new RuntimeException('Feld ist gesperrt.');
+    }
 
     $type = (string)$frow['field_type'];
     $meta = meta_read($frow['meta_json'] ?? null);
@@ -737,7 +869,15 @@ try {
 
   // submit
   ensure_editable_or_throw($pdo, $reportId);
-  if (!all_child_fields_filled($pdo, $templateId, $reportId)) {
+  $lockContext = child_lock_context($pdo, $templateId, $reportId);
+  $lockedFieldIds = [];
+  foreach (load_child_fields($pdo, $templateId) as $f) {
+    $fid = (int)($f['id'] ?? 0);
+    if ($fid > 0 && child_field_locked_by_teacher($pdo, $f, $lockContext)) {
+      $lockedFieldIds[$fid] = true;
+    }
+  }
+  if (!all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds)) {
     throw new RuntimeException('Bitte fülle zuerst alle Felder aus.');
   }
 

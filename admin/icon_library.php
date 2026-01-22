@@ -185,8 +185,9 @@ render_admin_header('Admin – Icon & Options');
                   <th class="col-sort">Value</th>
                   <th>Label (DE)</th>
                   <th>Label (EN)</th>
-                  <th class="col-ico">Icon</th>
-                  <th style="width:90px; min-width:90px;">Aktion</th>
+                <th class="col-ico">Icon</th>
+                <th style="width:150px; min-width:150px;">Schülerfeld sperren</th>
+                <th style="width:90px; min-width:90px;">Aktion</th>
                 </tr>
               </thead>
               <tbody id="itemsTbody"></tbody>
@@ -353,7 +354,7 @@ render_admin_header('Admin – Icon & Options');
 
   let listsCache = [];
   let activeListId = 0;
-  let activeItems = []; // [{id?, sort_order, value,label,label_en,icon_id}]
+  let activeItems = []; // [{id?, sort_order, value,label,label_en,icon_id,lock_child}]
   let iconsForPicker = []; // from iconsCache
 
   function renderLists(){
@@ -399,6 +400,12 @@ render_admin_header('Admin – Icon & Options');
             <span class="muted small">Preview</span>
           </div>
         </td>
+        <td style="text-align:center;">
+          <label style="display:inline-flex; align-items:center; gap:6px;">
+            <input type="checkbox" ${it.lock_child ? 'checked' : ''}>
+            <span class="muted small">sperrt</span>
+          </label>
+        </td>
         <td>
           <button class="btn secondary js-del" type="button">Entfernen</button>
         </td>
@@ -410,6 +417,7 @@ render_admin_header('Admin – Icon & Options');
       const inpLabel = tr.querySelectorAll('td input[type="text"]')[1];
       const inpLabelEn = tr.querySelectorAll('td input[type="text"]')[2];
       const selIcon = tr.querySelector('select');
+      const lockToggle = tr.querySelector('input[type="checkbox"]');
       const delBtn = tr.querySelector('.js-del');
       const prevSpan = tr.querySelector('.js-icon-preview');
 
@@ -425,6 +433,7 @@ render_admin_header('Admin – Icon & Options');
       inpLabel.addEventListener('input', ()=> { activeItems[idx].label = inpLabel.value; });
       inpLabelEn.addEventListener('input', ()=> { activeItems[idx].label_en = inpLabelEn.value; });
       selIcon.addEventListener('change', ()=> { activeItems[idx].icon_id = selIcon.value ? parseInt(selIcon.value,10) : null; updatePreview(); });
+      lockToggle.addEventListener('change', ()=> { activeItems[idx].lock_child = lockToggle.checked; });
 
       delBtn.addEventListener('click', ()=> {
         activeItems.splice(idx, 1);
@@ -464,7 +473,15 @@ render_admin_header('Admin – Icon & Options');
       value: x.value,
       label: x.label,
       label_en: x.label_en, // NEW
-      icon_id: x.icon_id
+      icon_id: x.icon_id,
+      lock_child: (() => {
+        try {
+          const meta = x.meta_json ? JSON.parse(x.meta_json) : null;
+          return !!(meta && meta.lock_child);
+        } catch(e) {
+          return false;
+        }
+      })()
     }));
 
     noListSelected.style.display = 'none';
@@ -499,7 +516,7 @@ render_admin_header('Admin – Icon & Options');
   });
 
   btnAddItem.addEventListener('click', () => {
-    activeItems.push({ sort_order: activeItems.length, value:'', label:'', label_en:'', icon_id:null }); // NEW
+    activeItems.push({ sort_order: activeItems.length, value:'', label:'', label_en:'', icon_id:null, lock_child:false }); // NEW
     renderItems();
   });
 
@@ -517,7 +534,8 @@ render_admin_header('Admin – Icon & Options');
           value: String(x.value || '').trim(),
           label: String(x.label || '').trim(),
           label_en: String(x.label_en || '').trim(), // NEW
-          icon_id: x.icon_id ? Number(x.icon_id) : null
+          icon_id: x.icon_id ? Number(x.icon_id) : null,
+          lock_child: x.lock_child ? 1 : 0
         }))
         .filter(x => x.value !== '' && x.label !== '');
 
