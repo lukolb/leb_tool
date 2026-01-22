@@ -413,6 +413,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           : 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
       }
 
+      if ($action === 'extend_link') {
+        $linkId = (int)($_POST['link_id'] ?? 0);
+        if ($linkId <= 0) throw new RuntimeException('Link fehlt.');
+        $days = (int)($_POST['extend_days'] ?? 7);
+        if ($days < 1) $days = 1;
+        if ($days > 120) $days = 120;
+
+        $stLink = $pdo->prepare(
+          "SELECT expires_at\n" .
+          "FROM parent_portal_links\n" .
+          "WHERE id=? AND student_id=?\n" .
+          "LIMIT 1"
+        );
+        $stLink->execute([$linkId, $studentId]);
+        $linkRow = $stLink->fetch(PDO::FETCH_ASSOC);
+        if (!$linkRow) throw new RuntimeException('Freigabe nicht gefunden.');
+
+        $base = $linkRow['expires_at'] ?? null;
+        $start = $base ? new DateTimeImmutable((string)$base) : new DateTimeImmutable('today');
+        $newExpiry = end_of_day_after_days($days, $start);
+        $upd = $pdo->prepare("UPDATE parent_portal_links SET expires_at=?, updated_at=NOW() WHERE id=?");
+        $upd->execute([$newExpiry, $linkId]);
+        $alerts[] = 'Gültigkeit wurde verlängert.';
+      }
+
     }
 
     if ($action === 'revoke_link') {
@@ -692,6 +717,14 @@ $introText = $parentAutoApprove
                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                   <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
                   <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
+                  <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="action" value="extend_link">
+                    <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                    <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                    <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
+                    <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                  </form>
                   <form method="post" style="margin:0;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="revoke_link">
