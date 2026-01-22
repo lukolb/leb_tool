@@ -36,6 +36,7 @@ Der Administrator hat **vollständigen Systemzugriff**.
   - Feldtypen (Text, Option, Datum, Systembindung usw.)
   - Optionslisten & Optionslisten-Vorlagen
   - Gruppen & Filterbarkeit
+- Noten-/Skalenfelder über Optionslisten (keine feste Skala im System)
 - Globale Einstellungen & Feature-Flags
 - **Audit-Log**:
   - Filter (User, Event, Zeitraum)
@@ -69,9 +70,12 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - **Delegationen**:
   - Fachbereiche an andere Lehrkräfte delegieren
   - Status einsehen (offen / in Bearbeitung / abgeschlossen)
-  - Delegationen ändern oder zurücknehmen
+- Delegationen ändern oder zurücknehmen
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
+- Schüler-Eingabe freigeben/sperren (optional pro Kategorie)
+- Elternmodus anfragen/freigeben inkl. fehlender Einträge prüfen
+- Elternlinks verlängern oder beenden
 
 **Besonderheiten:**
 - Lehrkräfte sehen nur **eigene Klassen und delegierte Inhalte**
@@ -103,13 +107,14 @@ Der Schülerbereich ist **passwortlos** und **stark reduziert**.
 Der Parent-Bereich ist **optional** und klar vom System getrennt.
 
 **Aktueller Stand:**
-- Eltern-Feedback-Formular
-- CSRF-geschützt
-- Eigenes Routing
-- Keine Einsicht in Verwaltungs- oder Schülerdaten
+- Lesender Zugriff per zeitlich begrenztem Link (Freigabe durch Lehrkraft/Admin, optional auto-approve)
+- Prüfung fehlender Einträge vor Freigabe mit Übersicht
+- Verlängerung/Beenden von Elternlinks durch Lehrkraft oder Admin
+- Eltern-Feedback-Formular (moderiert)
+- Optionaler Download-Button (konfigurationsabhängig)
+- CSRF-geschützt und vom Admin-/Lehrkräftebereich getrennt
 
 **In Arbeit:**
-- Eigene Elternansicht der Berichte
 - separates **Unterschriftenfeld mit Lehrkraftname (nur Elternansicht)**
 
 ---
