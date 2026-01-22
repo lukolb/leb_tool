@@ -241,6 +241,7 @@ render_teacher_header($pageTitle);
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
         const mine = (g.users || []).find(u => Number(u.user_id || 0) === currentUserId) || {};
+        const flowLabel = g.is_mine ? 'eingehend' : 'ausgehend';
         const editBtn = canAssign
           ? `<a class="btn primary" type="button"
                 data-edit="1"
@@ -275,6 +276,7 @@ render_teacher_header($pageTitle);
               <div class="t">${esc(g.group_title || g.group_key)}</div>
               <div class="s">
                 <span class="${badgeCls}">${esc(badgeTxt)}</span>
+                <span class="badge-who">${esc(flowLabel)}</span>
                 <span class="badge-who">→ ${who ? esc(badgeAssigned.replace('{who}', who)) : '—'}</span>
                 ${note ? ('<span>· ' + esc(note) + '</span>') : ''}
               </div>
