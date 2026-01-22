@@ -471,6 +471,11 @@ render_teacher_header($pageTitle);
 </div>
 
 <style>
+  <?php if ($childMode): ?>
+  body.page{
+    background: #fdecec;
+  }
+  <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
   @keyframes s{ to{ transform: rotate(360deg); } }
   .srow{ border:1px solid var(--border); border-radius:14px; padding:10px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; }
