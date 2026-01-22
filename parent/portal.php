@@ -522,12 +522,14 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       </div>
     <?php else: ?>
 
-      <?php if ($errors): ?>
-        <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
-      <?php endif; ?>
-      <?php if ($alerts): ?>
-        <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
-      <?php endif; ?>
+      <div id="parentAlerts">
+        <?php if ($errors): ?>
+          <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
+        <?php endif; ?>
+        <?php if ($alerts): ?>
+          <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
+        <?php endif; ?>
+      </div>
 
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
@@ -546,7 +548,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
       <?php else: ?>
-        <form method="post" style="margin:0; display:flex; flex-direction:column; gap:8px;">
+        <form method="post" id="parentFeedbackForm" style="margin:0; display:flex; flex-direction:column; gap:8px;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="send_feedback">
           <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
@@ -572,6 +574,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
     const csrfToken = <?= json_encode(csrf_token()) ?>;
     let receiptConfirmed = <?= $hasAck ? 'true' : 'false' ?>;
+    const feedbackForm = document.getElementById('parentFeedbackForm');
+    const alertsWrap = document.getElementById('parentAlerts');
+    const feedbackButton = feedbackForm?.querySelector('.btn.primary');
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -581,6 +586,32 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     function showError(msg){
       if (!preview) return;
       preview.innerHTML = `<div class="alert danger">${msg}</div>`;
+    }
+
+    function pushAlert(type, text){
+      if (!alertsWrap) return;
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = text;
+      alertsWrap.innerHTML = '';
+      alertsWrap.appendChild(alert);
+    }
+
+    function ensureAckPill(){
+      if (receiptConfirmed) return;
+      receiptConfirmed = true;
+      const headerCard = document.querySelector('.container .card');
+      if (!headerCard || headerCard.querySelector('.pill.green')) return;
+      const pill = document.createElement('div');
+      pill.className = 'pill green';
+      pill.style.marginTop = '8px';
+      pill.style.width = 'fit-content';
+      pill.textContent = <?= json_encode(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet')) ?>;
+      const heading = headerCard.querySelector('h1');
+      heading?.insertAdjacentElement('afterend', pill);
+      if (feedbackButton) {
+        feedbackButton.textContent = <?= json_encode(t('parent.portal.feedback_send_msg', 'Nachricht senden')) ?>;
+      }
     }
 
     async function confirmReceipt(){
@@ -601,6 +632,27 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       } catch (e) {
         receiptConfirmed = false;
       }
+    }
+
+    if (feedbackForm) {
+      feedbackForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const formData = new FormData(feedbackForm);
+        const message = String(formData.get('message') || '').trim();
+        try {
+          const resp = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+          });
+          if (!resp.ok) throw new Error('request_failed');
+          pushAlert('success', <?= json_encode(t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.')) ?>);
+          if (message === '') ensureAckPill();
+          feedbackForm.reset();
+        } catch (e) {
+          pushAlert('danger', <?= json_encode('Rückmeldung konnte nicht gesendet werden.') ?>);
+        }
+      });
     }
 
     async function ensurePdfLib(){
