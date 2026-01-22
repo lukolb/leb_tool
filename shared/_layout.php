@@ -163,6 +163,10 @@ function render_role_footer(): void {
   ?>
   <script>
     (function(){
+      const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tzName) {
+        document.cookie = `user_tz=${encodeURIComponent(tzName)}; path=/; max-age=31536000; samesite=lax`;
+      }
       const formatLocal = (value) => {
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return null;

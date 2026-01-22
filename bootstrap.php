@@ -243,9 +243,22 @@ function render_local_datetime_title_attr(?string $value, string $format = 'd.m.
   return ' data-dt-title="' . h($iso) . '" title="' . h($fallback) . '"';
 }
 
+function user_timezone(): DateTimeZone {
+  $tz = $_COOKIE['user_tz'] ?? '';
+  if (is_string($tz)) {
+    $tz = trim($tz);
+  } else {
+    $tz = '';
+  }
+  if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
+    return new DateTimeZone($tz);
+  }
+  return new DateTimeZone(date_default_timezone_get());
+}
+
 function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): string {
   if ($days < 0) $days = 0;
-  $tz = new DateTimeZone(date_default_timezone_get());
+  $tz = user_timezone();
   $base = $base ? $base->setTimezone($tz) : new DateTimeImmutable('today', $tz);
   $start = $base->setTime(0, 0, 0);
   $target = $start->modify('+' . $days . ' days')->setTime(23, 59, 59);
