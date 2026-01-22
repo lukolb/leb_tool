@@ -522,9 +522,9 @@ render_teacher_header($pageTitle);
   .subgroup-h{
     margin:12px 0 8px;
     font-weight:700;
-    color: rgba(0,0,0,0.7);
-    border-left:4px solid rgba(11,87,208,0.35);
-    background: rgba(11,87,208,0.05);
+    color: rgba(0,0,0,0.82);
+    border-left:4px solid rgba(11,87,208,0.4);
+    background: rgba(11,87,208,0.06);
     padding:6px 10px;
     border-radius:10px;
   }
@@ -627,11 +627,12 @@ render_teacher_header($pageTitle);
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
   .section-h{
-    border-left:10px solid rgba(11,87,208,0.8);
-    background: rgba(11,87,208,0.14);
+    border-left:10px solid rgba(11,87,208,0.85);
+    background: rgba(11,87,208,0.16);
     padding:10px 14px;
     border-radius:14px;
     box-shadow: 0 8px 18px rgba(11,87,208,0.12);
+    font-weight:900;
   }
 </style>
 
