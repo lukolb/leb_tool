@@ -283,6 +283,7 @@ if ($expiresAt) {
 $status = (string)($link['status'] ?? '');
 $allowResponses = ($status === 'approved' && !$isExpired);
 $canPreview = ($status === 'approved');
+$hasAck = $allowResponses ? parent_feedback_ack_exists($pdo, (int)$link['id']) : false;
 
 if ($canPreview) {
   apply_system_bindings($pdo, (int)$link['report_instance_id']);
@@ -298,6 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
       $message = trim((string)($_POST['message'] ?? ''));
       if ($message === '') {
         parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
+        $hasAck = true;
       } else {
         $ins = $pdo->prepare(
           "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
@@ -310,6 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'confirm_receipt') {
       parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
+      $hasAck = true;
     }
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
@@ -534,6 +537,11 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     <div class="card">
       <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
       <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Bitte bestätigen Sie den Empfang des Dokuments. Sie können zusätzlich eine Rückmeldung / Frage hinterlassen.'))?></p>
+      <?php if ($hasAck): ?>
+        <div class="pill green" style="margin:0 0 8px 0; width:fit-content;">
+          <?=h(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet'))?>
+        </div>
+      <?php endif; ?>
 
       <?php if (!$allowResponses): ?>
         <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
@@ -561,7 +569,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const downloadBtnText = document.getElementById('downloadPdfBtnText');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
     const csrfToken = <?= json_encode(csrf_token()) ?>;
-    let receiptConfirmed = false;
+    let receiptConfirmed = <?= $hasAck ? 'true' : 'false' ?>;
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());

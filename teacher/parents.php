@@ -471,14 +471,18 @@ $feedbackCounts = [];
 if ($linkIds) {
   $in = implode(',', array_fill(0, count($linkIds), '?'));
   $stFbCount = $pdo->prepare(
-    "SELECT link_id, SUM(CASE WHEN is_reviewed=0 THEN 1 ELSE 0 END) AS pending, COUNT(*) AS total\n" .
+    "SELECT link_id,\n" .
+    "  SUM(CASE WHEN feedback_type='question' AND is_reviewed=0 THEN 1 ELSE 0 END) AS pending_questions,\n" .
+    "  SUM(CASE WHEN feedback_type='question' THEN 1 ELSE 0 END) AS total_questions,\n" .
+    "  SUM(CASE WHEN feedback_type='ack' THEN 1 ELSE 0 END) AS total_acks\n" .
     "FROM parent_feedback WHERE link_id IN ($in) GROUP BY link_id"
   );
   $stFbCount->execute($linkIds);
   foreach ($stFbCount->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $feedbackCounts[(int)$row['link_id']] = [
-      'pending' => (int)($row['pending'] ?? 0),
-      'total' => (int)($row['total'] ?? 0),
+      'pending_questions' => (int)($row['pending_questions'] ?? 0),
+      'total_questions' => (int)($row['total_questions'] ?? 0),
+      'total_acks' => (int)($row['total_acks'] ?? 0),
     ];
   }
 }
@@ -491,7 +495,7 @@ $stFb = $pdo->prepare(
     "FROM parent_feedback pf\n" .
     "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
     "JOIN students s ON s.id=ppl.student_id\n" .
-    "WHERE s.class_id=?\n" .
+    "WHERE s.class_id=? AND pf.feedback_type='question'\n" .
     "ORDER BY pf.is_reviewed ASC, pf.created_at DESC\n" .
     "LIMIT 40"
   );
@@ -625,8 +629,9 @@ $introText = $parentAutoApprove
             if ($status === 'revoked') $statusColor = 'red';
             if ($status === 'expired') $statusColor = 'red';
           $expiresAt = $link['expires_at'] ?? null;
-          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending'] : 0;
-          $totalFb = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total'] : 0;
+          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
+          $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
+          $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
           $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
         ?>
           <tr>
@@ -634,12 +639,19 @@ $introText = $parentAutoApprove
             <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
             <td><?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : '–')?></td>
             <td>
-              <?php if ($totalFb > 0): ?>
+              <?php if ($totalAcks > 0): ?>
+                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);">
+                  <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
+                </span>
+              <?php endif; ?>
+              <?php if ($totalQuestions > 0): ?>
                 <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
-                  <?=h($pending . ' / ' . $totalFb)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
+                  <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
                 </span>
               <?php else: ?>
-                <span class="muted">–</span>
+                <?php if ($totalAcks === 0): ?>
+                  <span class="muted">–</span>
+                <?php endif; ?>
               <?php endif; ?>
             </td>
             <td>
