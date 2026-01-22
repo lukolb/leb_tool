@@ -3917,7 +3917,11 @@ function renderDelegationsList(){
     const del = g.delegation;
     const users = Array.isArray(del?.users) ? del.users : [];
     if (!users.length) return;
-    const names = users.map(u => u.user_name || ('#'+u.user_id)).filter(Boolean).join(', ');
+    const names = users.map(u => {
+      const nm = u.user_name || ('#'+u.user_id);
+      if (!nm) return '';
+      return (u.status === 'done') ? `${nm} ✓` : nm;
+    }).filter(Boolean).join(', ');
     const statusLbl = (del.status === 'done') ? 'fertig' : 'offen';
     const note = String(del.note || '').trim();
     rows.push(`
