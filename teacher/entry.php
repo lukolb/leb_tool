@@ -626,6 +626,12 @@ render_teacher_header($pageTitle);
   .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
+  .section-h{
+    border-left:8px solid rgba(11,87,208,0.6);
+    background: rgba(11,87,208,0.08);
+    padding:8px 12px;
+    border-radius:12px;
+  }
 </style>
 
 <script>
