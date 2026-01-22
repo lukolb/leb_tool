@@ -245,7 +245,8 @@ function render_local_datetime_title_attr(?string $value, string $format = 'd.m.
 
 function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): string {
   if ($days < 0) $days = 0;
-  $base = $base ?? new DateTimeImmutable('today');
+  $tz = new DateTimeZone(date_default_timezone_get());
+  $base = $base ? $base->setTimezone($tz) : new DateTimeImmutable('today', $tz);
   $start = $base->setTime(0, 0, 0);
   $target = $start->modify('+' . $days . ' days')->setTime(23, 59, 59);
   return $target->format('Y-m-d H:i:s');
