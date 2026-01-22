@@ -122,17 +122,32 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
-function group_key_from_meta(array $meta): string {
-  $g = (string)($meta['group'] ?? '');
-  $g = trim($g);
+function group_parts_from_meta(array $meta): array {
+  $raw = trim((string)($meta['group'] ?? ''));
+  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
+  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
+
+  $group = $parts[0];
 
   // Normalize: ignore suffix after '-' (e.g. "Ger1-T" -> "Ger1")
-  if ($g !== '' && strpos($g, '-') !== false) {
-    $g = explode('-', $g, 2)[0];
-    $g = trim($g);
+  if ($group !== '' && strpos($group, '-') !== false) {
+    $group = explode('-', $group, 2)[0];
+    $group = trim($group);
   }
 
-  return $g !== '' ? $g : 'Allgemein';
+  $subgroup = '';
+  if (count($parts) > 1) {
+    $subgroup = implode(' / ', array_slice($parts, 1));
+  }
+
+  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+}
+
+function group_key_from_meta(array $meta): string {
+  $parts = group_parts_from_meta($meta);
+  return $parts['group'];
 }
 
 function student_wizard_display_mode_from_class(array $classRow): string {
@@ -537,7 +552,8 @@ try {
       $fid = (int)$r['id'];
       $meta = meta_read($r['meta_json'] ?? null);
 
-      $gKey = group_key_from_meta($meta);
+      $gParts = group_parts_from_meta($meta);
+      $gKey = $gParts['group'];
       $gTitle = group_title_from_meta($meta, $gKey, $lang);
 
       if (!isset($groups[$gKey])) {
@@ -581,6 +597,7 @@ try {
         'required' => true,
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,
         'group' => $gKey,
+        'subgroup' => $gParts['subgroup'],
         'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
         'max_length' => pdf_max_len_from_meta($meta),

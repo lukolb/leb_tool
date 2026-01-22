@@ -519,6 +519,7 @@ render_teacher_header($pageTitle);
   .field .child{ display:none; margin-top:8px; border-top:1px dashed var(--border); padding-top:8px; color:var(--muted); font-size:12px; }
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
+  .subgroup-h{ margin:16px 0 8px; font-weight:800; color: rgba(0,0,0,0.75); }
 
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
@@ -825,6 +826,39 @@ render_teacher_header($pageTitle);
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
+
+  function groupFilterValue(groupKey, subgroup){
+    const sub = String(subgroup || '').trim();
+    return sub ? `${groupKey}::${sub}` : String(groupKey || '');
+  }
+
+  function parseGroupFilterValue(value){
+    const raw = String(value || '').trim();
+    if (!raw || raw === 'ALL') return { groupKey: 'ALL', subgroup: '' };
+    const parts = raw.split('::');
+    if (parts.length > 1) {
+      return { groupKey: parts[0] || 'ALL', subgroup: parts.slice(1).join('::') };
+    }
+    return { groupKey: raw, subgroup: '' };
+  }
+
+  function collectGroupFilterOptions(){
+    const out = [];
+    activeGroups().forEach(g => {
+      const groupTitle = g.title || g.key;
+      const subgroupSet = new Set();
+      (g.fields || []).forEach(f => {
+        const sub = String(f.subgroup || '').trim();
+        if (sub) subgroupSet.add(sub);
+      });
+      out.push({ value: String(g.key), label: String(groupTitle) });
+      const subgroups = Array.from(subgroupSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      subgroups.forEach(sub => {
+        out.push({ value: groupFilterValue(g.key, sub), label: `${groupTitle} / ${sub}` });
+      });
+    });
+    return out;
+  }
 
   function activeProgressFieldIds(){
     const ids = [];
@@ -3015,19 +3049,23 @@ render_teacher_header($pageTitle);
   }
 
   function ensureSelect(selectEl){
+    if (!selectEl) return;
     if (!selectEl.options.length) {
       selectEl.innerHTML = '';
       const optAll = document.createElement('option');
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       selectEl.appendChild(optAll);
-      activeGroups().forEach(g => {
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        const del = g.delegation;
+        opt.value = optData.value;
+        const groupKey = String(optData.value).split('::')[0];
+        const g = activeGroups().find(x => String(x.key) === groupKey);
+        const del = g?.delegation;
         const delTxt = del && del.user_id ? ` → ${del.user_name || ('#'+del.user_id)}` : '';
-        const lockTxt = (g.can_edit === 0) ? ' 🔒' : '';
-        opt.textContent = (g.title || g.key) + delTxt + lockTxt;
+        const lockTxt = (g && g.can_edit === 0) ? ' 🔒' : '';
+        opt.textContent = optData.label + delTxt + lockTxt;
         selectEl.appendChild(opt);
       });
     }
@@ -3041,10 +3079,11 @@ render_teacher_header($pageTitle);
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       groupSelect.appendChild(optAll);
-      activeGroups().forEach(g => {
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
+        opt.value = optData.value;
+        opt.textContent = optData.label;
         groupSelect.appendChild(opt);
       });
     }
@@ -3060,10 +3099,11 @@ render_teacher_header($pageTitle);
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       studentGroupSelect.appendChild(optAll);
-      activeGroups().forEach(g => {
+      const options = collectGroupFilterOptions();
+      options.forEach(optData => {
         const opt = document.createElement('option');
-        opt.value = g.key;
-        opt.textContent = g.title;
+        opt.value = optData.value;
+        opt.textContent = optData.label;
         studentGroupSelect.appendChild(opt);
       });
     }
@@ -3083,6 +3123,51 @@ render_teacher_header($pageTitle);
       const first = cards.find(btn => !btn.disabled && isVisibleElement(btn)) || cards[0];
       if (first) first.setAttribute('tabindex', '0');
     }
+  }
+
+  function filterFieldsBySubgroup(list, subgroup){
+    const sub = String(subgroup || '').trim();
+    if (!sub) return list || [];
+    return (list || []).filter(f => String(f.subgroup || '').trim() === sub);
+  }
+
+  function renderStudentFields(fields, reportId, locked){
+    let html = '';
+    let currentSub = '';
+    (fields || []).forEach(f => {
+      const sub = String(f.subgroup || '').trim();
+      if (sub && sub !== currentSub) {
+        html += `<div class="subgroup-h">${esc(sub)}</div>`;
+        currentSub = sub;
+      } else if (!sub) {
+        currentSub = '';
+      }
+
+      const v = activeFieldValue(reportId, f.id);
+      const canEditField = (Number(f.can_edit || 0) === 1);
+      const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
+      const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
+      const help = resolveLabelTemplate(String(f.help_text || ''));
+      const missingCls = (v === '') ? 'missing' : '';
+      const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
+      const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
+      const clearBtn = CHILD_MODE
+        ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
+        : '';
+      const actionsHtml = (combinedHtml || historyHtml || clearBtn)
+        ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
+        : '';
+      html += `
+        <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
+          <div class="lbl">${esc(lbl)}</div>
+          <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
+          ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
+          ${actionsHtml}
+          ${childInfo}
+        </div>
+      `;
+    });
+    return html;
   }
 
   function renderClassFields(){
@@ -3174,6 +3259,7 @@ render_teacher_header($pageTitle);
 
   function renderStudentView(){
     ensureStudentGroupsSelect();
+    const groupFilter = parseGroupFilterValue(ui.studentGroupKey);
     const list = currentStudents();
     const hasPrev = ui.activeStudentIndex > 0;
     const hasNext = ui.activeStudentIndex < list.length - 1;
@@ -3282,10 +3368,11 @@ render_teacher_header($pageTitle);
     }
 
     activeGroups().forEach(g => {
-      if (ui.studentGroupKey !== 'ALL' && String(g.key) !== String(ui.studentGroupKey)) return;
-      const fields = ui.studentMissingOnly
-        ? (g.fields || []).filter(f => isActiveFieldMissing(reportId, f.id))
-        : (g.fields || []);
+      if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
+      let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
+      fields = ui.studentMissingOnly
+        ? fields.filter(f => isActiveFieldMissing(reportId, f.id))
+        : fields;
 
       if (!fields.length) return;
 
@@ -3313,31 +3400,7 @@ render_teacher_header($pageTitle);
           </div>
         `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
-      fields.forEach(f => {
-        const v = activeFieldValue(reportId, f.id);
-        const canEditField = (Number(f.can_edit || 0) === 1);
-        const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
-        const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
-        const help = resolveLabelTemplate(String(f.help_text || ''));
-        const missingCls = (v === '') ? 'missing' : '';
-        const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
-        const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
-        const clearBtn = CHILD_MODE
-          ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
-          : '';
-        const actionsHtml = (combinedHtml || historyHtml || clearBtn)
-          ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
-          : '';
-        html += `
-          <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-            <div class="lbl">${esc(lbl)}</div>
-            <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
-            ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
-            ${actionsHtml}
-            ${childInfo}
-          </div>
-        `;
-      });
+      html += renderStudentFields(fields, reportId, locked);
     });
 
     studentForm.innerHTML = html || '<div class="alert">Keine offenen Felder gefunden.</div>';
@@ -3424,10 +3487,12 @@ render_teacher_header($pageTitle);
     }
 
     ui.gradeGroupKey = gradeGroupSelect.value || 'ALL';
+    const groupFilter = parseGroupFilterValue(ui.gradeGroupKey);
     const filter = normalize(ui.gradeFilter);
 
     let fields = gradeFields(activeGroups());
-    if (ui.gradeGroupKey !== 'ALL') fields = fields.filter(f => f._group_key === ui.gradeGroupKey);
+    if (groupFilter.groupKey !== 'ALL') fields = fields.filter(f => f._group_key === groupFilter.groupKey);
+    fields = filterFieldsBySubgroup(fields, groupFilter.subgroup);
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
     const sCols = filterStudentsForMissing(state.students);
@@ -3580,11 +3645,13 @@ render_teacher_header($pageTitle);
   function renderItemView(){
     ensureGroupsSelect();
     ui.groupKey = groupSelect.value || 'ALL';
+    const groupFilter = parseGroupFilterValue(ui.groupKey);
 
     const filter = normalize(ui.itemFilter);
-    const groups = (ui.groupKey === 'ALL') ? activeGroups() : activeGroups().filter(g => g.key === ui.groupKey);
+    const groups = (groupFilter.groupKey === 'ALL') ? activeGroups() : activeGroups().filter(g => g.key === groupFilter.groupKey);
     let fields = [];
     groups.forEach(g => fields.push(...g.fields.map(f => ({...f, _group_title:g.title, _group_key:g.key}))));
+    fields = filterFieldsBySubgroup(fields, groupFilter.subgroup);
 
     if (filter) fields = fields.filter(f => normalize(f.label || f.field_name).includes(filter) || normalize(f.field_name).includes(filter));
 
