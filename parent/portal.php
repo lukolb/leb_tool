@@ -598,6 +598,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       alert.textContent = text;
       alertsWrap.innerHTML = '';
       alertsWrap.appendChild(alert);
+      alertsWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     function ensureAckPill(){
