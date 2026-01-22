@@ -520,11 +520,11 @@ render_teacher_header($pageTitle);
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
   .subgroup-h{
-    margin:16px 0 8px;
-    font-weight:800;
-    color: rgba(0,0,0,0.78);
-    border-left:6px solid rgba(11,87,208,0.5);
-    background: rgba(11,87,208,0.08);
+    margin:12px 0 8px;
+    font-weight:700;
+    color: rgba(0,0,0,0.7);
+    border-left:4px solid rgba(11,87,208,0.35);
+    background: rgba(11,87,208,0.05);
     padding:6px 10px;
     border-radius:10px;
   }
@@ -627,10 +627,11 @@ render_teacher_header($pageTitle);
   .snippet-save textarea{ width:100%; min-height:80px; }
   .snippet-save .row{ gap:6px; flex-wrap:wrap; }
   .section-h{
-    border-left:8px solid rgba(11,87,208,0.6);
-    background: rgba(11,87,208,0.08);
-    padding:8px 12px;
-    border-radius:12px;
+    border-left:10px solid rgba(11,87,208,0.8);
+    background: rgba(11,87,208,0.14);
+    padding:10px 14px;
+    border-radius:14px;
+    box-shadow: 0 8px 18px rgba(11,87,208,0.12);
   }
 </style>
 
