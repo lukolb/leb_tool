@@ -258,10 +258,12 @@ code{background:#f1f2f6; padding:2px 6px; border-radius:6px}
 .action-dropdown-menu{
   display:none;
   position:absolute;
+  width:max-content;
+  max-width:90vw;
   z-index:2000;
 }
 .action-dropdown-menu.open{
-  display:block;
+  display:inline-block;
 }
 .hidden{
   display:none;
