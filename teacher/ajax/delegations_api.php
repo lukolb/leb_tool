@@ -59,6 +59,37 @@ function load_teachers_for_delegation(PDO $pdo): array {
   return $out;
 }
 
+function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey, int $userId, string $status, string $note, int $actorUserId): void {
+  $groupKey = trim($groupKey);
+  if ($groupKey === '') throw new RuntimeException('group_key fehlt.');
+  $periodLabel = normalize_period_label($periodLabel);
+  $status = ($status === 'done') ? 'done' : 'open';
+
+  if ($userId <= 0) {
+    $pdo->prepare(
+      "DELETE FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey]);
+    return;
+  }
+
+  $pdo->prepare(
+    "INSERT INTO class_group_delegations
+      (class_id, school_year, period_label, group_key, user_id, status, note, created_by_user_id, updated_by_user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       status=VALUES(status),
+       note=VALUES(note),
+       updated_by_user_id=VALUES(updated_by_user_id),
+       updated_at=NOW()"
+  )->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $actorUserId, $actorUserId]);
+
+  audit('class_group_delegation_upsert', $actorUserId, [
+    'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status
+  ]);
+}
+
 try {
   $data = read_json_body();
 
@@ -99,12 +130,19 @@ try {
          WHERE c.is_active=1
            AND (
              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
-             OR d.user_id=?
+             OR EXISTS (SELECT 1 FROM class_group_delegations dx WHERE dx.class_id=c.id AND dx.user_id=?)
            )
          ORDER BY d.updated_at DESC, d.class_id DESC, d.group_key ASC"
       );
       $st->execute([$userId, $userId]);
       $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $assignedClassIds = [];
+    if (($u['role'] ?? '') !== 'admin') {
+      $stAssign = $pdo->prepare("SELECT class_id FROM user_class_assignments WHERE user_id=?");
+      $stAssign->execute([$userId]);
+      $assignedClassIds = array_map('intval', $stAssign->fetchAll(PDO::FETCH_COLUMN));
     }
 
     $byClass = [];
@@ -124,6 +162,7 @@ try {
             'label' => (string)($r['label'] ?? ''),
             'name' => (string)($r['name'] ?? ''),
           ]),
+          'can_assign' => (($u['role'] ?? '') === 'admin') ? true : in_array($cid, $assignedClassIds, true),
           'groups' => [],
         ];
       }
@@ -133,16 +172,52 @@ try {
 
       $uid = (int)($r['user_id'] ?? 0);
 
-      $byClass[$cid]['groups'][] = [
-        'group_key' => $gk,
-        'group_title' => group_title_override($gk),
-        'user_id' => $uid,
-        'user_name' => trim((string)($r['display_name'] ?? '')),
-        'is_mine' => ($uid > 0 && $uid === $userId),
-        'status' => (string)($r['status'] ?? 'open'),
-        'note' => (string)($r['note'] ?? ''),
-        'updated_at' => (string)($r['updated_at'] ?? ''),
-      ];
+      if (!isset($byClass[$cid]['groups'][$gk])) {
+        $byClass[$cid]['groups'][$gk] = [
+          'group_key' => $gk,
+          'group_title' => group_title_override($gk),
+          'user_ids' => [],
+          'users' => [],
+          'is_mine' => false,
+          'status' => 'open',
+          'note' => '',
+          'updated_at' => (string)($r['updated_at'] ?? ''),
+        ];
+      }
+
+      if ($uid > 0 && !in_array($uid, $byClass[$cid]['groups'][$gk]['user_ids'], true)) {
+        $byClass[$cid]['groups'][$gk]['user_ids'][] = $uid;
+        $byClass[$cid]['groups'][$gk]['users'][] = [
+          'user_id' => $uid,
+          'user_name' => trim((string)($r['display_name'] ?? '')),
+          'status' => (string)($r['status'] ?? 'open'),
+          'note' => (string)($r['note'] ?? ''),
+        ];
+      }
+      if ($uid > 0 && $uid === $userId) {
+        $byClass[$cid]['groups'][$gk]['is_mine'] = true;
+      }
+    }
+
+    foreach ($byClass as $cid => $info) {
+      $groups = [];
+      foreach ($info['groups'] as $group) {
+        $allDone = true;
+        $singleNote = '';
+        if (count($group['users']) === 1) {
+          $singleNote = (string)($group['users'][0]['note'] ?? '');
+        }
+        foreach ($group['users'] as $user) {
+          if ((string)($user['status'] ?? 'open') !== 'done') {
+            $allDone = false;
+            break;
+          }
+        }
+        $group['status'] = $group['users'] ? ($allDone ? 'done' : 'open') : 'open';
+        $group['note'] = $singleNote;
+        $groups[] = $group;
+      }
+      $byClass[$cid]['groups'] = $groups;
     }
 
     json_out(['ok'=>true, 'items'=>array_values($byClass), 'users'=>$users]);
@@ -154,20 +229,31 @@ try {
     $groupKey = trim((string)($data['group_key'] ?? ''));
     $periodLabel = normalize_period_label((string)($data['period_label'] ?? 'Standard'));
     $targetUserId = (int)($data['user_id'] ?? 0);
+    $userIds = $data['user_ids'] ?? null;
     $status = trim((string)($data['status'] ?? 'open'));
     $note = trim((string)($data['note'] ?? ''));
 
     if ($classId <= 0 || $groupKey === '') throw new RuntimeException('Ungültige Parameter.');
 
-    // permission: must be able to access class (admin ok; teacher must be assigned)
-    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-      throw new RuntimeException('Keine Berechtigung.');
+    // permission: must be able to access class; only admins or class-assigned teachers may change delegates
+    if (($u['role'] ?? '') !== 'admin') {
+      $stAssign = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+      $stAssign->execute([$userId, $classId]);
+      if (!$stAssign->fetchColumn()) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
     }
 
-    // validate target user (unless clearing)
-    if ($targetUserId > 0) {
+    if (is_array($userIds)) {
+      $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($x)=>$x>0)));
+    } else {
+      $userIds = $targetUserId > 0 ? [$targetUserId] : [];
+    }
+
+    // validate target users (unless clearing)
+    foreach ($userIds as $uid) {
       $stU = $pdo->prepare("SELECT id FROM users WHERE id=? AND is_active=1 AND deleted_at IS NULL AND role IN ('teacher','admin') LIMIT 1");
-      $stU->execute([$targetUserId]);
+      $stU->execute([$uid]);
       if (!$stU->fetchColumn()) throw new RuntimeException('Ungültiger Kollege.');
     }
 
@@ -179,7 +265,7 @@ try {
 
     if ($status !== 'done') $status = 'open';
 
-    if ($targetUserId <= 0) {
+    if (!$userIds) {
       // clear delegation
       $del = $pdo->prepare(
         "DELETE FROM class_group_delegations
@@ -194,23 +280,61 @@ try {
       json_out(['ok'=>true]);
     }
 
-    // upsert
     $pdo->prepare(
+      "DELETE FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+
+    $ins = $pdo->prepare(
       "INSERT INTO class_group_delegations
         (class_id, school_year, period_label, group_key, user_id, status, note, created_by_user_id, updated_by_user_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
        ON DUPLICATE KEY UPDATE
-         user_id=VALUES(user_id),
          status=VALUES(status),
          note=VALUES(note),
          updated_by_user_id=VALUES(updated_by_user_id),
          updated_at=NOW()"
-    )->execute([$classId, $schoolYear, $periodLabel, $groupKey, $targetUserId, $status, $note, $userId, $userId]);
+    );
+    foreach ($userIds as $uid) {
+      $ins->execute([$classId, $schoolYear, $periodLabel, $groupKey, $uid, $status, $note, $userId, $userId]);
+      audit('class_group_delegation_upsert', $userId, [
+        'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$uid,'status'=>$status
+      ]);
+    }
 
-    audit('class_group_delegation_upsert', $userId, [
-      'class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$targetUserId,'status'=>$status
-    ]);
+    json_out(['ok'=>true]);
+  }
 
+  if ($action === 'mark') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $groupKey = trim((string)($data['group_key'] ?? ''));
+    $periodLabel = normalize_period_label((string)($data['period_label'] ?? 'Standard'));
+    $status = trim((string)($data['status'] ?? 'open'));
+    $note = trim((string)($data['note'] ?? ''));
+
+    if ($classId <= 0 || $groupKey === '') throw new RuntimeException('Ungültige Parameter.');
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $stc = $pdo->prepare("SELECT school_year FROM classes WHERE id=? LIMIT 1");
+    $stc->execute([$classId]);
+    $schoolYear = (string)($stc->fetchColumn() ?: '');
+    if ($schoolYear === '') throw new RuntimeException('Klasse nicht gefunden.');
+
+    if ($status !== 'open' && $status !== 'done') $status = 'open';
+
+    $st = $pdo->prepare(
+      "SELECT 1
+       FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=? AND user_id=?
+       LIMIT 1"
+    );
+    $st->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId]);
+    if (!$st->fetchColumn()) throw new RuntimeException('Nicht deine Delegation.');
+
+    upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $userId);
     json_out(['ok'=>true]);
   }
 

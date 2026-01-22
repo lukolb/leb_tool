@@ -293,7 +293,7 @@ render_teacher_header($pageTitle);
           <h3 style="margin:0;">Fachbereiche delegieren</h3>
         </div>
         <div class="muted" style="margin-top:6px;">
-          Hier kannst du pro <strong>Fach/Gruppe</strong> einen Kollegen als Bearbeiter festlegen.
+          Hier kannst du pro <strong>Fach/Gruppe</strong> mehrere Kollegen als Bearbeiter festlegen.
           Delegierte Gruppen sind für andere Lehrkräfte <strong>schreibgeschützt</strong> (Admin darf immer).
         </div>
 
@@ -303,9 +303,9 @@ render_teacher_header($pageTitle);
             <select class="input" id="dlgGroup" style="width:100%;"></select>
           </div>
           <div style="min-width:280px;">
-            <label class="label">Kollege</label>
-            <select class="input" id="dlgUser" style="width:100%;"></select>
-            <div class="muted" style="font-size:12px; margin-top:4px;">Leer = Delegation aufheben</div>
+            <label class="label">Kollegen</label>
+            <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
+            <div class="muted" style="font-size:12px; margin-top:4px;">Keine Auswahl = Delegation aufheben</div>
           </div>
           <div style="min-width:160px;">
             <label class="label">Status</label>
@@ -680,7 +680,7 @@ render_teacher_header($pageTitle);
   const elSaveStatus = document.getElementById('saveStatus');
   const dlg = document.getElementById('dlgDelegations');
   const dlgGroup = document.getElementById('dlgGroup');
-  const dlgUser = document.getElementById('dlgUser');
+  const dlgUsers = document.getElementById('dlgUsers');
   const dlgStatus = document.getElementById('dlgStatus');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
@@ -1279,8 +1279,10 @@ render_teacher_header($pageTitle);
     const map = {};
     const groups = activeGroups();
     groups.forEach(g => {
-      const delegatedUserId = Number(g?.delegation?.user_id || 0);
-      (g.fields || []).forEach(f => { map[String(f.id)] = { ...f, _group_key: g.key, _delegated_user_id: delegatedUserId }; });
+      const delegatedUserIds = Array.isArray(g?.delegation?.user_ids)
+        ? g.delegation.user_ids.map(x => Number(x)).filter(x => x > 0)
+        : [];
+      (g.fields || []).forEach(f => { map[String(f.id)] = { ...f, _group_key: g.key, _delegated_user_ids: delegatedUserIds }; });
     });
     if (!CHILD_MODE) {
       // class fields are NOT in groups (by design), so add them too:
@@ -1453,9 +1455,11 @@ render_teacher_header($pageTitle);
     const f = state.fieldMap?.[String(fieldId)];
     if (!f) return null;
     if (!isFreeTextField(f)) return null;
-    const delegatedUserId = Number(f._delegated_user_id || 0);
-    if (!delegatedUserId) return null;
-    const isDelegate = delegatedUserId === CURRENT_USER_ID && !state.is_class_teacher;
+    const delegatedUserIds = Array.isArray(f._delegated_user_ids)
+      ? f._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
+      : [];
+    if (!delegatedUserIds.length) return null;
+    const isDelegate = delegatedUserIds.includes(CURRENT_USER_ID) && !state.is_class_teacher;
     return isDelegate ? 'delegate' : 'class';
   }
 
@@ -1467,7 +1471,10 @@ render_teacher_header($pageTitle);
     const fidKey = String(fieldId);
     if (!state.values_teacher_parts[ridKey]) state.values_teacher_parts[ridKey] = {};
     const existing = state.values_teacher_parts[ridKey][fidKey] || {};
-    const delegatedUserId = Number(state.fieldMap?.[String(fieldId)]?._delegated_user_id || 0);
+    const delegatedUserIds = Array.isArray(state.fieldMap?.[String(fieldId)]?._delegated_user_ids)
+      ? state.fieldMap[String(fieldId)]._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
+      : [];
+    const delegatedUserId = delegatedUserIds.length === 1 ? delegatedUserIds[0] : 0;
     const next = {
       class_text: existing.class_text ?? '',
       delegate_text: existing.delegate_text ?? '',
@@ -1494,12 +1501,12 @@ render_teacher_header($pageTitle);
   function combinedPreviewHtml(reportId, field){
     if (!field) return '';
     if (!isFreeTextField(field)) return '';
-    const delegatedUserId = Number(
-      field._delegated_user_id
-      || state.fieldMap?.[String(field.id)]?._delegated_user_id
-      || 0
-    );
-    if (!delegatedUserId) return '';
+    const delegatedUserIds = Array.isArray(field._delegated_user_ids)
+      ? field._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
+      : (Array.isArray(state.fieldMap?.[String(field.id)]?._delegated_user_ids)
+        ? state.fieldMap[String(field.id)]._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
+        : []);
+    if (!delegatedUserIds.length) return '';
     const combined = teacherVal(reportId, field.id);
     const html = combined
       ? esc(String(combined)).replace(/\n/g, '<br>')
@@ -3086,24 +3093,57 @@ render_teacher_header($pageTitle);
     return out;
   }
 
+  function delegationNames(del){
+    const users = Array.isArray(del?.users) ? del.users : [];
+    if (!users.length) return '';
+    return users.map(u => u.user_name || ('#' + u.user_id)).filter(Boolean).join(', ');
+  }
+
+  function delegationAllDone(del){
+    const users = Array.isArray(del?.users) ? del.users : [];
+    if (!users.length) return false;
+    return users.every(u => String(u.status || 'open') === 'done');
+  }
+
+  function delegationSelfEntry(del){
+    const users = Array.isArray(del?.users) ? del.users : [];
+    return users.find(u => Number(u.user_id || 0) === CURRENT_USER_ID) || null;
+  }
+
   function ensureSelect(selectEl){
     if (!selectEl) return;
     if (!selectEl.options.length) {
       selectEl.innerHTML = '';
+
       const optAll = document.createElement('option');
       optAll.value = 'ALL';
       optAll.textContent = 'Alle';
       selectEl.appendChild(optAll);
+
       const options = collectGroupFilterOptions();
       options.forEach(optData => {
         const opt = document.createElement('option');
+
+        // Subgroup/Sorting beibehalten
         opt.value = optData.value;
+
+        // Gruppe zum Optionseintrag finden (value kann z.B. "groupKey::subKey" sein)
         const groupKey = String(optData.value).split('::')[0];
         const g = activeGroups().find(x => String(x.key) === groupKey);
+
+        // Delegation-Text: bevorzugt master-Logik, sonst Fallback
         const del = g?.delegation;
-        const delTxt = del && del.user_id ? ` → ${del.user_name || ('#'+del.user_id)}` : '';
+        const delNames = del ? delegationNames(del) : '';
+        const delTxt = delNames
+          ? ` → ${delNames}`
+          : (del && del.user_id ? ` → ${del.user_name || ('#' + del.user_id)}` : '');
+
+        // Lock beibehalten
         const lockTxt = (g && g.can_edit === 0) ? ' 🔒' : '';
-        opt.textContent = optData.label + delTxt + lockTxt;
+
+        // Label aus optData (damit Subgroup-Labels korrekt bleiben)
+        opt.textContent = (optData.label || (g?.title || g?.key || String(optData.value))) + delTxt + lockTxt;
+
         selectEl.appendChild(opt);
       });
     }
@@ -3422,8 +3462,10 @@ render_teacher_header($pageTitle);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
       const del = g.delegation;
-      const delBadge = (del && del.user_id)
-        ? `<span class="badge-del">Delegiert: ${esc(del.user_name || ('#'+del.user_id))}${del.status==='done' ? ' · fertig' : ''}</span>`
+      const delNames = delegationNames(del);
+      const delDone = delegationAllDone(del);
+      const delBadge = delNames
+        ? `<span class="badge-del">Delegiert: ${esc(delNames)}${delDone ? ' · fertig' : ''}</span>`
         : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = (!CHILD_MODE && CAN_DELEGATE)
@@ -3780,8 +3822,10 @@ render_teacher_header($pageTitle);
       if (DELEGATED_MODE) {
         const uid = CURRENT_USER_ID;
         state.groups = (state.groups || []).filter(g => {
-          const delUid = Number(g?.delegation?.user_id || 0);
-          return (delUid > 0 && delUid === uid);
+          const delUids = Array.isArray(g?.delegation?.user_ids)
+            ? g.delegation.user_ids.map(x => Number(x)).filter(x => x > 0)
+            : [];
+          return delUids.includes(uid);
         });
       }
 
@@ -3887,16 +3931,25 @@ function openDelegations(preselectGroupKey){
   if (!dlgGroup.value && dlgGroup.options.length) dlgGroup.value = dlgGroup.options[0].value;
 
   // users dropdown
-  dlgUser.innerHTML = '';
-  const optNone = document.createElement('option');
-  optNone.value = '';
-  optNone.textContent = '— (Delegation aufheben) —';
-  dlgUser.appendChild(optNone);
+  dlgUsers.innerHTML = '';
   (state.delegation_users||[]).forEach(u => {
-    const opt = document.createElement('option');
-    opt.value = String(u.id);
-    opt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
-    dlgUser.appendChild(opt);
+    const wrap = document.createElement('label');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    wrap.style.padding = '4px 2px';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = String(u.id);
+    cb.dataset.userCheckbox = '1';
+
+    const txt = document.createElement('span');
+    txt.textContent = `${u.name}${u.role==='admin' ? ' (Admin)' : ''}`;
+
+    wrap.appendChild(cb);
+    wrap.appendChild(txt);
+    dlgUsers.appendChild(wrap);
   });
 
   // sync form with selected group
@@ -3938,9 +3991,10 @@ function closeDelegations(){
     const gk = String(dlgDoneGroup.value || '');
     const g = (state.groups||[]).find(x => String(x.key) === gk);
     const del = g && g.delegation ? g.delegation : null;
+    const mine = delegationSelfEntry(del);
 
-    dlgDoneStatus.value = (del && del.status) ? String(del.status) : 'open';
-    dlgDoneNote.value = (del && del.note) ? String(del.note) : '';
+    dlgDoneStatus.value = (mine && mine.status) ? String(mine.status) : 'open';
+    dlgDoneNote.value = (mine && mine.note) ? String(mine.note) : '';
   }
 
   function renderDoneList(){
@@ -3949,14 +4003,16 @@ function closeDelegations(){
 
     (state.groups||[]).forEach(g => {
       const del = g.delegation || null;
-      const statusLbl = (del && del.status === 'done') ? 'fertig' : 'offen';
-      const note = String(del?.note || '').trim();
+      const mine = delegationSelfEntry(del);
+      const delNames = delegationNames(del);
+      const statusLbl = (mine && mine.status === 'done') ? 'fertig' : 'offen';
+      const note = String(mine?.note || '').trim();
 
       rows.push(`
         <div class="del-row">
           <div class="l">
             <div class="t">${esc(g.title || g.key)}</div>
-            <div class="s">${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
+            <div class="s">${delNames ? '→ ' + esc(delNames) + ' · ' : ''}${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
           </div>
           <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">Bearbeiten</button>
         </div>
@@ -3978,7 +4034,10 @@ function syncDelegationForm(){
   const g = (state.groups||[]).find(x => String(x.key) === gk);
   const del = g && g.delegation ? g.delegation : null;
 
-  dlgUser.value = (del && del.user_id) ? String(del.user_id) : '';
+  const ids = Array.isArray(del?.user_ids) ? del.user_ids.map(x => Number(x)).filter(x => x > 0) : [];
+  dlgUsers.querySelectorAll('input[data-user-checkbox="1"]').forEach(cb => {
+    cb.checked = ids.includes(Number(cb.value || 0));
+  });
   dlgStatus.value = (del && del.status) ? String(del.status) : 'open';
   dlgNote.value = (del && del.note) ? String(del.note) : '';
 }
@@ -3988,14 +4047,20 @@ function renderDelegationsList(){
   const rows = [];
   (state.groups||[]).forEach(g => {
     const del = g.delegation;
-    if (!del || !del.user_id) return;
-    const statusLbl = (del.status === 'done') ? 'fertig' : 'offen';
+    const users = Array.isArray(del?.users) ? del.users : [];
+    if (!users.length) return;
+    const names = users.map(u => {
+      const nm = u.user_name || ('#'+u.user_id);
+      if (!nm) return '';
+      return (u.status === 'done') ? `${nm} ✓` : nm;
+    }).filter(Boolean).join(', ');
+    const statusLbl = delegationAllDone(del) ? 'fertig' : 'offen';
     const note = String(del.note || '').trim();
     rows.push(`
       <div class="del-row">
         <div class="l">
           <div class="t">${esc(g.title || g.key)}</div>
-          <div class="s">→ ${esc(del.user_name || ('#'+del.user_id))} · ${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
+          <div class="s">→ ${esc(names)} · ${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
         </div>
         <button class="btn secondary" type="button" data-clear-deleg="${esc(g.key)}">Aufheben</button>
       </div>
@@ -4061,14 +4126,16 @@ if (dlgSave) {
   dlgSave.addEventListener('click', async () => {
     const gk = String(dlgGroup.value || '').trim();
     if (!gk) return;
-    const uid = dlgUser.value ? Number(dlgUser.value) : 0;
+    const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
+      .map(cb => Number(cb.value || 0))
+      .filter(v => v > 0);
     const status = String(dlgStatus.value || 'open');
     const note = String(dlgNote.value || '');
 
     await api('delegations_save', {
       class_id: state.class_id,
       period_label: state.period_label,
-      delegations: [{ group_key: gk, user_id: uid, status, note }]
+      delegations: [{ group_key: gk, user_ids: userIds, status, note }]
     });
 
     await loadClass(state.class_id);

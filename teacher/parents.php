@@ -50,12 +50,24 @@ function read_signature_payload_from_post(): ?array {
   return signature_sanitize_payload($raw);
 }
 
-function build_parent_mail_html(string $template, array $student, string $link): string {
+function format_parent_link_expiry(?string $expiresAt, string $format): string {
+  if (!$expiresAt) return '';
+  try {
+    $dt = new DateTimeImmutable((string)$expiresAt);
+  } catch (Throwable $e) {
+    return '';
+  }
+  return $dt->format($format);
+}
+
+function build_parent_mail_html(string $template, array $student, string $link, ?string $expiresAt): string {
   $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
   $safeName = h($studentName);
   $safeFirst = h((string)($student['first_name'] ?? ''));
   $safeLast = h((string)($student['last_name'] ?? ''));
   $safeLink = h($link);
+  $expiryDe = h(format_parent_link_expiry($expiresAt, 'd.m.Y'));
+  $expiryUs = h(format_parent_link_expiry($expiresAt, 'm/d/Y'));
   $escaped = nl2br(h($template));
   $linkHtml = '<a href="' . $safeLink . '">' . $safeLink . '</a>';
   return strtr($escaped, [
@@ -64,6 +76,8 @@ function build_parent_mail_html(string $template, array $student, string $link):
     '{{last_name}}' => $safeLast,
     '{{parent_link}}' => $linkHtml,
     '{{link}}' => $linkHtml,
+    '{{link_expires_de}}' => $expiryDe,
+    '{{link_expires_us}}' => $expiryUs,
   ]);
 }
 
@@ -106,7 +120,7 @@ $mailForm = [
   'class_id' => $classId > 0 ? $classId : 0,
   'student_id' => 0,
   'subject' => 'Lernentwicklungsbericht für {{student_name}} - Student Progress Report for {{student_name}}',
-  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist 14 Tage gültig. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid for 14 days. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
+  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist gültig bis {{link_expires_de}}. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid until {{link_expires_us}}. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -218,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$studentsToSend) throw new RuntimeException('Keine Schüler gefunden.');
 
       $linkStmt = $pdo->prepare(
-        "SELECT token\n" .
+        "SELECT token, expires_at\n" .
         "FROM parent_portal_links\n" .
         "WHERE student_id=? AND status='approved' AND (expires_at IS NULL OR expires_at > NOW())\n" .
         "ORDER BY updated_at DESC, id DESC LIMIT 1"
@@ -236,7 +250,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sid = (int)($student['id'] ?? 0);
         if ($sid <= 0) continue;
         $linkStmt->execute([$sid]);
-        $token = $linkStmt->fetchColumn();
+        $linkRow = $linkStmt->fetch(PDO::FETCH_ASSOC);
+        $token = $linkRow['token'] ?? null;
         $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
         if (!$token) {
           $skippedNoLink++;
@@ -244,6 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           continue;
         }
         $link = absolute_url('parent/portal.php?token=' . urlencode((string)$token));
+        $expiresAt = $linkRow['expires_at'] ?? null;
+        $expiresDe = format_parent_link_expiry($expiresAt, 'd.m.Y');
+        $expiresUs = format_parent_link_expiry($expiresAt, 'm/d/Y');
 
         $emails = array_filter([
           sanitize_email($student['email_parent1'] ?? null),
@@ -262,8 +280,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           '{{last_name}}' => (string)($student['last_name'] ?? ''),
           '{{parent_link}}' => $link,
           '{{link}}' => $link,
+          '{{link_expires_de}}' => $expiresDe,
+          '{{link_expires_us}}' => $expiresUs,
         ]);
-        $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link);
+        $bodyHtml = build_parent_mail_html($bodyTemplate, $student, $link, $expiresAt);
 
         $studentSent = 0;
         foreach ($emails as $email) {
@@ -297,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
       if ($days > 90) $days = 90;
-      $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+      $expiresAt = end_of_day_after_days($days);
       $status = $parentAutoApprove ? 'approved' : 'requested';
       $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
       $publishedAt = $parentAutoApprove ? $approvedAt : null;
@@ -366,7 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $days = (int)($_POST['valid_days'] ?? 14);
         if ($days < 1) $days = 1;
         if ($days > 90) $days = 90;
-        $expiresAt = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+        $expiresAt = end_of_day_after_days($days);
         $status = $parentAutoApprove ? 'approved' : 'requested';
         $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
         $publishedAt = $parentAutoApprove ? $approvedAt : null;
@@ -471,14 +491,20 @@ $feedbackCounts = [];
 if ($linkIds) {
   $in = implode(',', array_fill(0, count($linkIds), '?'));
   $stFbCount = $pdo->prepare(
-    "SELECT link_id, SUM(CASE WHEN is_reviewed=0 THEN 1 ELSE 0 END) AS pending, COUNT(*) AS total\n" .
+    "SELECT link_id,\n" .
+    "  SUM(CASE WHEN feedback_type='question' AND is_reviewed=0 THEN 1 ELSE 0 END) AS pending_questions,\n" .
+    "  SUM(CASE WHEN feedback_type='question' THEN 1 ELSE 0 END) AS total_questions,\n" .
+    "  SUM(CASE WHEN feedback_type='ack' THEN 1 ELSE 0 END) AS total_acks,\n" .
+    "  MAX(CASE WHEN feedback_type='ack' THEN created_at END) AS ack_latest\n" .
     "FROM parent_feedback WHERE link_id IN ($in) GROUP BY link_id"
   );
   $stFbCount->execute($linkIds);
   foreach ($stFbCount->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $feedbackCounts[(int)$row['link_id']] = [
-      'pending' => (int)($row['pending'] ?? 0),
-      'total' => (int)($row['total'] ?? 0),
+      'pending_questions' => (int)($row['pending_questions'] ?? 0),
+      'total_questions' => (int)($row['total_questions'] ?? 0),
+      'total_acks' => (int)($row['total_acks'] ?? 0),
+      'ack_latest' => $row['ack_latest'] ?? null,
     ];
   }
 }
@@ -491,7 +517,7 @@ $stFb = $pdo->prepare(
     "FROM parent_feedback pf\n" .
     "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
     "JOIN students s ON s.id=ppl.student_id\n" .
-    "WHERE s.class_id=?\n" .
+    "WHERE s.class_id=? AND pf.feedback_type='question'\n" .
     "ORDER BY pf.is_reviewed ASC, pf.created_at DESC\n" .
     "LIMIT 40"
   );
@@ -625,21 +651,30 @@ $introText = $parentAutoApprove
             if ($status === 'revoked') $statusColor = 'red';
             if ($status === 'expired') $statusColor = 'red';
           $expiresAt = $link['expires_at'] ?? null;
-          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending'] : 0;
-          $totalFb = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total'] : 0;
+          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
+          $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
+          $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
+          $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
           $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
         ?>
           <tr>
             <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
             <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
-            <td><?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : '–')?></td>
+            <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
             <td>
-              <?php if ($totalFb > 0): ?>
+              <?php if ($totalAcks > 0): ?>
+                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
+                  <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
+                </span>
+              <?php endif; ?>
+              <?php if ($totalQuestions > 0): ?>
                 <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
-                  <?=h($pending . ' / ' . $totalFb)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
+                  <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
                 </span>
               <?php else: ?>
-                <span class="muted">–</span>
+                <?php if ($totalAcks === 0): ?>
+                  <span class="muted">–</span>
+                <?php endif; ?>
               <?php endif; ?>
             </td>
             <td>
@@ -708,7 +743,14 @@ $introText = $parentAutoApprove
           <?php foreach ($feedbackList as $fb): ?>
             <?php
               $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-              $feedbackDate = date_format(date_create((string)$fb['created_at']),"d.m.Y H:i");
+              $feedbackDate = '';
+              if (!empty($fb['created_at'])) {
+                try {
+                  $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
+                } catch (Throwable $e) {
+                  $feedbackDate = '';
+                }
+              }
               $feedbackEmails = array_values(array_unique(array_filter([
                 sanitize_email($fb['email_parent1'] ?? null),
                 sanitize_email($fb['email_parent2'] ?? null),
@@ -724,7 +766,7 @@ $introText = $parentAutoApprove
                   <?= nl2br(h((string)$fb['message'])) ?>
                 <?php endif; ?>
               </td>
-              <td><?=h($feedbackDate)?></td>
+              <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
               <td>
                 <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
                   <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
@@ -763,7 +805,7 @@ $introText = $parentAutoApprove
     <div>
       <h2 style="margin-bottom:6px;"><?=h(t('teacher.parents.mail_merge_title', 'Serienmail an Eltern'))?></h2>
       <p class="muted" style="max-width:820px; margin-top:0;">
-        <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}.'))?>
+        <?=h(t('teacher.parents.mail_merge_hint', 'Verwendbare Platzhalter: {{student_name}}, {{first_name}}, {{last_name}}, {{parent_link}}, {{link_expires_de}}, {{link_expires_us}}.'))?>
       </p>
     </div>
   </div>
