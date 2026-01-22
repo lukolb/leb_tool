@@ -3027,6 +3027,12 @@ render_teacher_header($pageTitle);
     return users.map(u => u.user_name || ('#' + u.user_id)).filter(Boolean).join(', ');
   }
 
+  function delegationAllDone(del){
+    const users = Array.isArray(del?.users) ? del.users : [];
+    if (!users.length) return false;
+    return users.every(u => String(u.status || 'open') === 'done');
+  }
+
   function delegationSelfEntry(del){
     const users = Array.isArray(del?.users) ? del.users : [];
     return users.find(u => Number(u.user_id || 0) === CURRENT_USER_ID) || null;
@@ -3316,8 +3322,9 @@ render_teacher_header($pageTitle);
       const canEditGroup = (Number(g.can_edit||0) === 1);
       const del = g.delegation;
       const delNames = delegationNames(del);
+      const delDone = delegationAllDone(del);
       const delBadge = delNames
-        ? `<span class="badge-del">Delegiert: ${esc(delNames)}${del.status==='done' ? ' · fertig' : ''}</span>`
+        ? `<span class="badge-del">Delegiert: ${esc(delNames)}${delDone ? ' · fertig' : ''}</span>`
         : '';
       const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
       const delegBtn = (!CHILD_MODE && CAN_DELEGATE)
@@ -3922,7 +3929,7 @@ function renderDelegationsList(){
       if (!nm) return '';
       return (u.status === 'done') ? `${nm} ✓` : nm;
     }).filter(Boolean).join(', ');
-    const statusLbl = (del.status === 'done') ? 'fertig' : 'offen';
+    const statusLbl = delegationAllDone(del) ? 'fertig' : 'offen';
     const note = String(del.note || '').trim();
     rows.push(`
       <div class="del-row">

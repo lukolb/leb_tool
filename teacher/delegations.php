@@ -228,7 +228,8 @@ render_teacher_header($pageTitle);
     const html = filtered.map(c => {
       const canAssign = !!c.can_assign;
       const gHtml = (c.groups||[]).map(g => {
-        const st = String(g.status||'open');
+        const allDone = (g.users || []).length > 0 && (g.users || []).every(u => String(u.status || 'open') === 'done');
+        const st = allDone ? 'done' : 'open';
         const note = String(g.note||'').trim();
         const who = (g.users || []).map(u => {
           const nm = u.user_name || ('#'+u.user_id);
