@@ -474,7 +474,8 @@ if ($linkIds) {
     "SELECT link_id,\n" .
     "  SUM(CASE WHEN feedback_type='question' AND is_reviewed=0 THEN 1 ELSE 0 END) AS pending_questions,\n" .
     "  SUM(CASE WHEN feedback_type='question' THEN 1 ELSE 0 END) AS total_questions,\n" .
-    "  SUM(CASE WHEN feedback_type='ack' THEN 1 ELSE 0 END) AS total_acks\n" .
+    "  SUM(CASE WHEN feedback_type='ack' THEN 1 ELSE 0 END) AS total_acks,\n" .
+    "  MAX(CASE WHEN feedback_type='ack' THEN created_at END) AS ack_latest\n" .
     "FROM parent_feedback WHERE link_id IN ($in) GROUP BY link_id"
   );
   $stFbCount->execute($linkIds);
@@ -483,6 +484,7 @@ if ($linkIds) {
       'pending_questions' => (int)($row['pending_questions'] ?? 0),
       'total_questions' => (int)($row['total_questions'] ?? 0),
       'total_acks' => (int)($row['total_acks'] ?? 0),
+      'ack_latest' => $row['ack_latest'] ?? null,
     ];
   }
 }
@@ -632,6 +634,8 @@ $introText = $parentAutoApprove
           $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
           $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
           $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
+          $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
+          $ackLabel = $ackLatest ? date_format(date_create((string)$ackLatest), "d.m.Y H:i") : '';
           $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
         ?>
           <tr>
@@ -640,7 +644,7 @@ $introText = $parentAutoApprove
             <td><?=h($expiresAt ? date_format(date_create($expiresAt),"d.m.Y H:i") : '–')?></td>
             <td>
               <?php if ($totalAcks > 0): ?>
-                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);">
+                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= $ackLabel ? ' title="' . h($ackLabel) . '"' : '' ?>>
                   <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
                 </span>
               <?php endif; ?>
