@@ -519,7 +519,15 @@ render_teacher_header($pageTitle);
   .field .child{ display:none; margin-top:8px; border-top:1px dashed var(--border); padding-top:8px; color:var(--muted); font-size:12px; }
   .field .child strong{ color: rgba(0,0,0,0.75); }
   .field.show-child .child{ display:block; }
-  .subgroup-h{ margin:16px 0 8px; font-weight:800; color: rgba(0,0,0,0.75); }
+  .subgroup-h{
+    margin:16px 0 8px;
+    font-weight:800;
+    color: rgba(0,0,0,0.78);
+    border-left:6px solid rgba(11,87,208,0.5);
+    background: rgba(11,87,208,0.08);
+    padding:6px 10px;
+    border-radius:10px;
+  }
 
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
