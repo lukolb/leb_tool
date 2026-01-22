@@ -60,6 +60,22 @@ function parent_portal_class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
 
+function parent_feedback_ack_exists(PDO $pdo, int $linkId): bool {
+  $st = $pdo->prepare("SELECT 1 FROM parent_feedback WHERE link_id=? AND feedback_type='ack' LIMIT 1");
+  $st->execute([$linkId]);
+  return (bool)$st->fetchColumn();
+}
+
+function parent_feedback_insert_ack(PDO $pdo, int $linkId, string $lang): bool {
+  if (parent_feedback_ack_exists($pdo, $linkId)) return false;
+  $ins = $pdo->prepare(
+    "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
+    "VALUES (?, 'ack', NULL, ?, 0, NOW())"
+  );
+  $ins->execute([$linkId, $lang]);
+  return true;
+}
+
 /**
  * Extract expected date format from meta_json
  */
@@ -280,13 +296,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
-      $type = 'question';
-      $ins = $pdo->prepare(
-        "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
-        "VALUES (?, ?, ?, ?, 0, NOW())"
-      );
-      $ins->execute([(int)$link['id'], $type, $message, 'de']);
+      if ($message === '') {
+        parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
+      } else {
+        $ins = $pdo->prepare(
+          "INSERT INTO parent_feedback (link_id, feedback_type, message, language, auto_translated, created_at)\n" .
+          "VALUES (?, 'question', ?, ?, 0, NOW())"
+        );
+        $ins->execute([(int)$link['id'], $message, $lang]);
+      }
       $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.');
+    }
+
+    if ($action === 'confirm_receipt') {
+      parent_feedback_insert_ack($pdo, (int)$link['id'], $lang);
     }
   } catch (Throwable $e) {
     $errors[] = $e->getMessage();
@@ -537,6 +560,8 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     const downloadBtn = document.getElementById('downloadPdfBtn');
     const downloadBtnText = document.getElementById('downloadPdfBtnText');
     const downloadName = <?= json_encode($downloadFilename, JSON_UNESCAPED_UNICODE) ?>;
+    const csrfToken = <?= json_encode(csrf_token()) ?>;
+    let receiptConfirmed = false;
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -546,6 +571,26 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
     function showError(msg){
       if (!preview) return;
       preview.innerHTML = `<div class="alert danger">${msg}</div>`;
+    }
+
+    async function confirmReceipt(){
+      if (receiptConfirmed) return;
+      receiptConfirmed = true;
+      if (!csrfToken) return;
+      const fd = new FormData();
+      fd.append('csrf_token', csrfToken);
+      fd.append('action', 'confirm_receipt');
+      try {
+        const resp = await fetch(window.location.href, {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          keepalive: true,
+        });
+        if (!resp.ok) receiptConfirmed = false;
+      } catch (e) {
+        receiptConfirmed = false;
+      }
     }
 
     async function ensurePdfLib(){
@@ -1268,6 +1313,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           const bytes = await buildPdfBytes({ flatten: true });
           const blob = new Blob([bytes], { type: 'application/pdf' });
           const url = URL.createObjectURL(blob);
+          confirmReceipt();
           const a = document.createElement('a');
           a.href = url;
           a.download = downloadName || 'bericht.pdf';
