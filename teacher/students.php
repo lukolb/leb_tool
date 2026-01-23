@@ -1618,11 +1618,21 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
         <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
           <button class="btn" type="button" id="btnAiClassRefresh"><?=h(t('teacher.students.ai_class_refresh', 'Neu berechnen'))?></button>
+          <button class="btn secondary" type="button" id="btnAiClassPrompt"><?=h(t('teacher.students.ai_class_prompt_btn', 'Prompt anzeigen'))?></button>
           <span class="muted" id="aiClassMetaInline"></span>
         </div>
 
         <div id="aiClassStatus" class="alert" style="display:none; margin-top:10px;"></div>
         <div id="aiClassContent" style="margin-top:12px;"></div>
+        <details id="aiClassPromptWrap" class="collapsible-details" style="margin-top:12px; display:none;">
+          <summary>
+            <span><?=h(t('teacher.students.ai_class_prompt_title', 'Prompt an die KI'))?></span>
+            <span class="chevron">▶</span>
+          </summary>
+          <div class="collapsible-content">
+            <pre id="aiClassPromptContent" class="ai-prompt"></pre>
+          </div>
+        </details>
       </div>
     </div>
   <?php endif; ?>
@@ -1635,6 +1645,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     
     .ai-icon{ width:16px; height:16px; display:inline-block; vertical-align:middle; fill: dodgerblue; }
   .ai-btn{ display:inline-flex; align-items:center; gap:6px; }
+  .ai-prompt{ margin:0; padding:12px; background:#0f172a; color:#e2e8f0; border-radius:8px; white-space:pre-wrap; font-size:12px; line-height:1.4; }
   </style>
   <script>
     const studentData = <?=json_encode($studentsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
@@ -1698,10 +1709,15 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     const aiClassStatus = document.getElementById('aiClassStatus');
     const aiClassContent = document.getElementById('aiClassContent');
     const btnAiClassRefresh = document.getElementById('btnAiClassRefresh');
+    const btnAiClassPrompt = document.getElementById('btnAiClassPrompt');
+    const aiClassPromptWrap = document.getElementById('aiClassPromptWrap');
+    const aiClassPromptContent = document.getElementById('aiClassPromptContent');
 
     let aiSupport = { studentId: 0, studentName: '' };
     let aiSupportLoading = false;
     let aiClassLoading = false;
+    let aiClassPromptLoading = false;
+    let aiClassPromptLoaded = false;
 
     function escapeHtml(s){
       return String(s ?? '').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -1828,10 +1844,20 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       aiClassStatus.textContent = '';
     }
 
+    function resetAiClassPrompt(){
+      aiClassPromptLoaded = false;
+      if (aiClassPromptWrap) {
+        aiClassPromptWrap.style.display = 'none';
+        aiClassPromptWrap.open = false;
+      }
+      if (aiClassPromptContent) aiClassPromptContent.textContent = '';
+    }
+
     async function loadAiClassFeedback(force){
       if (aiClassLoading) return;
       aiClassLoading = true;
       clearAiClassStatus();
+      resetAiClassPrompt();
       if (aiClassMeta) aiClassMeta.textContent = '<?=h(t('teacher.students.ai_class_loading', 'Rückmeldung wird geladen…'))?>';
       if (aiClassMetaInline) aiClassMetaInline.textContent = '';
       if (aiClassContent) aiClassContent.innerHTML = '<div class="muted"><?=h(t('teacher.students.ai_class_loading2', 'KI erstellt eine Rückmeldung…'))?></div>';
@@ -1876,6 +1902,53 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       } finally {
         aiClassLoading = false;
         if (btnAiClassRefresh) btnAiClassRefresh.disabled = false;
+      }
+    }
+
+    async function loadAiClassPrompt(){
+      if (aiClassPromptLoading) return;
+      aiClassPromptLoading = true;
+      clearAiClassStatus();
+      if (btnAiClassPrompt) btnAiClassPrompt.disabled = true;
+      if (aiClassPromptWrap) aiClassPromptWrap.style.display = 'block';
+      if (aiClassPromptContent) aiClassPromptContent.textContent = '<?=h(t('teacher.students.ai_class_prompt_loading', 'Prompt wird geladen…'))?>';
+
+      try {
+        const res = await fetch(aiClassApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({
+            action: 'ai_class_feedback_prompt',
+            class_id: classIdForAi
+          })
+        });
+        const json = await res.json();
+        if (!res.ok || !json || json.ok !== true) {
+          throw new Error((json && (json.error || json.message)) ? (json.error || json.message) : ('HTTP ' + res.status));
+        }
+        const prompt = json.prompt || {};
+        const systemText = String(prompt.system || '').trim();
+        const userText = String(prompt.user || '').trim();
+        const parts = [];
+        if (systemText) parts.push('SYSTEM:\n' + systemText);
+        if (userText) parts.push('USER:\n' + userText);
+        const combined = parts.join('\n\n');
+        if (aiClassPromptContent) {
+          aiClassPromptContent.textContent = combined || '<?=h(t('teacher.students.ai_class_prompt_empty', 'Kein Prompt verfügbar.'))?>';
+        }
+        if (aiClassPromptWrap) aiClassPromptWrap.open = true;
+        aiClassPromptLoaded = true;
+      } catch (e) {
+        showAiClassStatus('<?=h(t('teacher.students.ai_class_prompt_error', 'Konnte Prompt nicht laden:'))?> ' + (e && e.message ? e.message : String(e)), 'danger');
+        if (aiClassPromptContent) {
+          aiClassPromptContent.textContent = '<?=h(t('teacher.students.ai_class_prompt_empty', 'Kein Prompt verfügbar.'))?>';
+        }
+      } finally {
+        aiClassPromptLoading = false;
+        if (btnAiClassPrompt) btnAiClassPrompt.disabled = false;
       }
     }
 
@@ -1974,6 +2047,7 @@ aiSupportLoading = true;
       if (!aiClassModal) return;
       aiClassModal.style.display = 'flex';
       aiClassModal.setAttribute('aria-hidden', 'false');
+      resetAiClassPrompt();
       loadAiClassFeedback(false);
     }
 
@@ -1991,6 +2065,17 @@ aiSupportLoading = true;
     }
     if (btnAiClassFeedback) btnAiClassFeedback.addEventListener('click', openAiClassModal);
     if (btnAiClassRefresh) btnAiClassRefresh.addEventListener('click', ()=>loadAiClassFeedback(true));
+    if (btnAiClassPrompt) btnAiClassPrompt.addEventListener('click', ()=>{
+      if (!aiClassPromptLoaded) {
+        loadAiClassPrompt();
+        return;
+      }
+      if (aiClassPromptWrap) {
+        const visible = aiClassPromptWrap.style.display !== 'none';
+        aiClassPromptWrap.style.display = visible ? 'none' : 'block';
+        aiClassPromptWrap.open = !visible;
+      }
+    });
   </script>
 <?php endif; ?>
 
