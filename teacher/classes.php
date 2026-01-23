@@ -232,7 +232,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
   <?php endif; ?>
 </div>
 
-<div id="rowActionMenu" class="nav-dropdown action-dropdown-menu hidden" role="menu" aria-hidden="true"></div>
+<div id="rowActionMenu" class="action-dropdown-menu hidden" role="menu" aria-hidden="true"></div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
