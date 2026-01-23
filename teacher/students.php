@@ -1343,6 +1343,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       transition:max-height 0.25s ease;
     }
     .collapsible-details[open] .collapsible-content { max-height:2000px; }
+    .collapsible-details.ai-prompt-details .collapsible-content {
+      max-height:none;
+      overflow:auto;
+      transition:none;
+    }
   </style>
   <details class="collapsible-details">
     <summary>
@@ -1624,7 +1629,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
         <div id="aiClassStatus" class="alert" style="display:none; margin-top:10px;"></div>
         <div id="aiClassContent" style="margin-top:12px;"></div>
-        <details id="aiClassPromptWrap" class="collapsible-details" style="margin-top:12px; display:none;">
+        <details id="aiClassPromptWrap" class="collapsible-details ai-prompt-details" style="margin-top:12px; display:none;">
           <summary>
             <span><?=h(t('teacher.students.ai_class_prompt_title', 'Prompt an die KI'))?></span>
             <span class="chevron">▶</span>
