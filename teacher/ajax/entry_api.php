@@ -325,6 +325,8 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
   $groupGrades = [];
   $performanceValues = [];
   $groupStats = [];
+  $itemDistributions = [];
+  $studentStructured = [];
   $studentSummaries = [];
   $studentIndex = [];
   foreach ($studentIds as $idx => $sid) {
@@ -332,6 +334,7 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
     $studentSummaries[$sid] = [
       'groups' => [],
     ];
+    $studentStructured[$sid] = [];
   }
 
   foreach ($values as $row) {
@@ -368,6 +371,16 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
         $studentSummaries[$sid]['groups'][$group] = [];
       }
       $studentSummaries[$sid]['groups'][$group][] = $entry;
+
+      // Strukturierte Daten für zuverlässige Zählungen / Vergleiche (nur Skalen-/Notenfelder)
+      if ($field['field_type'] === 'select' || $field['field_type'] === 'radio' || $field['field_type'] === 'grade') {
+        if (!isset($studentStructured[$sid][$group])) $studentStructured[$sid][$group] = [];
+        $studentStructured[$sid][$group][$label] = $text;
+
+        if (!isset($itemDistributions[$group])) $itemDistributions[$group] = [];
+        if (!isset($itemDistributions[$group][$label])) $itemDistributions[$group][$label] = [];
+        $itemDistributions[$group][$label][$text] = ($itemDistributions[$group][$label][$text] ?? 0) + 1;
+      }
     }
 
     $numeric = parse_numeric_value($text);
@@ -481,7 +494,7 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
     if (empty($summary['groups'])) continue;
     $lines = [];
     foreach ($summary['groups'] as $group => $items) {
-      $items = array_slice($items, 0, 20);
+      // $items bleibt vollständig (keine Kürzung), damit die KI korrekt pro Item zählen kann.
       $lines[] = $group . ': ' . implode('; ', $items);
     }
     if ($lines) {
@@ -493,6 +506,9 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
   $contextParts[] = 'Klassenstufe: ' . ($gradeLevel !== null ? (string)$gradeLevel : '—');
   $contextParts[] = 'Schuljahr: ' . ($schoolYear !== '' ? $schoolYear : '—');
   $contextParts[] = 'Aktive Schüler: ' . $studentCount;
+  $contextParts[] = 'WICHTIG: Alle Häufigkeiten/Anzahlen ausschließlich aus ITEM_VERTEILUNG_JSON ableiten. Niemals mehr als ' . $studentCount . ' Schüler nennen.';
+  $contextParts[] = 'ITEM_VERTEILUNG_JSON: ' . json_encode($itemDistributions, JSON_UNESCAPED_UNICODE);
+  $contextParts[] = 'SCHUELER_JSON: ' . json_encode($studentStructured, JSON_UNESCAPED_UNICODE);
   $contextParts[] = 'Schülerdaten (anonymisiert, pro Schüler gruppiert):' . ($studentContextLines ? "\n- " . implode("\n- ", $studentContextLines) : ' Keine Schülerdaten verfügbar.');
   $contextParts[] = 'Notenfelder (numerisch, Lehrkraft): ' . ($gradeAvg !== null ? ('Notenschnitt Ø ' . number_format($gradeAvg, 2, ',', '') . ' aus ' . count($gradeValues) . ' Werten') : 'Keine numerischen Notenwerte verfügbar.');
   if ($gradeDistributionTxt !== '') $contextParts[] = 'Notenverteilung (alle Notenfelder): ' . $gradeDistributionTxt;
@@ -501,19 +517,71 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
   $contextParts[] = "Kompetenzstufen (geordnet niedrig → hoch):\n- " . implode("\n- ", $competencyLines);
   $contextParts[] = "Bereichsspezifische Zusammenfassung:\n- " . implode("\n- ", $groupContextLines);
 
-  $system = "Du bist eine erfahrene Lehrkraft und erstellst eine Klassen-Rückmeldung. Antworte ausschließlich als JSON mit genau diesen Keys:\n"
-    . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array), schwerpunkte_faecher (array), bereiche (array).\n"
-    . "Keine weiteren Keys. Keine Markdown-Umrahmung.";
+  $system = "Du bist eine erfahrene Lehrkraft und erstellst eine Klassen-Rückmeldung. "
+    . "Antworte ausschließlich als JSON. Top-Level-Keys exakt so: "
+    . "rueckmeldung_gesamt (string), noten_leistungsschnitt (string), foerdermoeglichkeiten (array of strings), schwerpunkte_faecher (array of strings), bereiche (array of objects).\n"
+    . "Struktur von bereiche: jedes Element ist ein Objekt mit genau diesen Keys: bereich (string), rueckmeldung (string), foerderung (string).\n"
+    . "Keine weiteren Top-Level-Keys. Keine Markdown-Umrahmung. Keine personenbezogenen Daten.\n\n"
 
-  $userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die folgenden aggregierten Informationen und erfinde keine Details. "
-    . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler. "
-    . "Gib Fördermöglichkeiten und fachliche Schwerpunkte an (je Fach als kurzer Stichpunkt „Fach: …“). "
-    . "Fördermöglichkeiten müssen konkret, beobachtungsnah und umsetzbar sein (Material/Übung, Sozialform, Häufigkeit/Dauer) und immer eine kurze Begründung enthalten, die sich auf die aggregierten Daten bezieht. "
-    . "Fachliche Schwerpunkte müssen ebenfalls immer begründet sein (warum dieser Schwerpunkt aus den Daten hervorgeht). "
-    . "Erstelle zusätzlich pro Bereich eine ausführliche Rückmeldung und konkrete, begründete Empfehlungen zur weiteren Förderung; nutze dafür die bereichsspezifische Zusammenfassung und die nach Schülern gruppierten Daten. "
-    . "Bei jedem Bereich nenne mindestens drei konkrete Förderideen mit kurzer Begründung (z. B. Übungsformate, Methoden, Differenzierung). "
-    . "Alle Einträge in foerdermoeglichkeiten und schwerpunkte_faecher müssen reine Strings sein (keine Objekte). "
-    . "Wenn Daten fehlen, erwähne das knapp in der Ausgabe.\n\nKONTEXT:\n" . implode("\n", $contextParts);
+    // HARTES VERBOT: „Schüler“-Zählungen in Noten/Items
+    . "HARTES VERBOT (wörtlich einhalten):\n"
+    . "- Verwende in der gesamten Antwort NICHT die Formulierung 'x Schüler'.\n"
+    . "- Verwende für Noten/Verteilungen ausschließlich die Begriffe 'Notenfelder' oder 'Einträge'.\n"
+    . "- Es ist verboten, Notenhäufigkeiten als Schüleranzahlen darzustellen.\n\n"
+
+    // Förderlogik streng
+    . "FÖRDERLOGIK (zwingend):\n"
+    . "- Nenne Förderideen NUR für Kompetenz-Items mit echtem Bedarf:\n"
+    . "  Bedarf := (niedriger als Meistern >= 3) ODER (Meistern-Anteil < 50%).\n"
+    . "- Wenn ein Item überwiegend 'Meistern' ist (>= 50%), darf dazu KEINE Förderung genannt werden.\n"
+    . "- Wenn insgesamt zu wenig Bedarfs-Items vorhanden sind, schreibe explizit: 'Aktuell kein Förderbedarf erkennbar' "
+    . "und fülle die restlichen Förderideen mit allgemeinen Ausbau-/Enrichment-Formaten, aber NUR wenn sie NICHT als Förderung "
+    . "für ein Meistern-Item behauptet werden.\n\n"
+
+    // Begründungspflicht für jede Förderidee
+    . "BEGRÜNDUNGSPFLICHT (zwingend):\n"
+    . "- Jede Förderidee muss mindestens ein konkretes Item aus ITEM_VERTEILUNG_JSON nennen "
+    . "und dessen Stufen-Zahlen im selben String enthalten.\n"
+    . "- Keine allgemeinen Förderfloskeln ohne Item+Zahlen.\n\n"
+
+    // VALIDIERUNG vor Ausgabe (der entscheidende Hebel)
+    . "VALIDIERUNG VOR AUSGABE (intern durchführen, NICHT ausgeben):\n"
+    . "1) Prüfe, dass nirgendwo 'x Schüler' steht.\n"
+    . "2) Prüfe, dass Notenverteilungen nur als 'Notenfelder/Einträge' beschrieben sind.\n"
+    . "3) Prüfe, dass jede genannte Anzahl aus ITEM_VERTEILUNG_JSON stammt und nicht größer als 'Aktive Schüler' ist.\n"
+    . "4) Prüfe jede Förderidee: sie darf nur Bedarfs-Items adressieren (Regel FÖRDERLOGIK).\n"
+    . "Wenn eine Prüfung fehlschlägt: Korrigiere den Text und prüfe erneut, bis alle Regeln erfüllt sind.\n";
+
+$userPrompt = "Erstelle eine KI-Rückmeldung zur Klasse insgesamt. Nutze ausschließlich die bereitgestellten Daten und erfinde keine Details. "
+    . "Keine personenbezogenen Daten oder Hinweise auf einzelne Schüler.\n\n"
+    . "WICHTIG (Zählen/Zuordnung):\n"
+    . "- Verwende für Häufigkeiten/Anzahlen ausschließlich ITEM_VERTEILUNG_JSON.\n"
+    . "- Prüfe bei jeder genannten Anzahl: sie darf niemals größer als 'Aktive Schüler' sein.\n"
+    . "- Analysiere zuerst itemweise (pro Kompetenz-Item) über alle Schüler und leite daraus Ausreißer/Bedarfe ab.\n"
+    . "- Erst danach fasse fach- und untergruppenweise zusammen "
+    . "(z. B. Lesen/Schreiben, Listening/Speaking/Writing, Sachunterricht).\n\n"
+    . "Inhalte der Ausgabe:\n"
+    . "1) rueckmeldung_gesamt: knappe Gesamtzusammenfassung "
+    . "(Stärken + 2–3 Entwicklungsfelder, ohne Namen).\n"
+    . "2) noten_leistungsschnitt: ein kurzer Text mit den gelieferten "
+    . "Noten-/Leistungskennzahlen (Ø, Spannweiten, ggf. Verteilung) – "
+    . "keine neuen Zahlen erfinden.\n"
+    . "3) foerdermoeglichkeiten: 6–10 konkrete, beobachtungsnahe und "
+    . "umsetzbare Förderideen (Material/Übung, Sozialform, Häufigkeit/Dauer), "
+    . "jeweils mit kurzer Begründung aus den Daten. (Strings)\n"
+    . "4) schwerpunkte_faecher: je Fach 1 kurzer Schwerpunkt als String "
+    . "im Format 'Fach: … (Begründung: …)'.\n"
+    . "5) bereiche: für jeden Bereich "
+    . "(Sozialverhalten, Arbeitsverhalten, Deutsch, Englisch, Mathematik, "
+    . "Sachunterricht, Musik, Kunst, Sport, Ethik, Zielvereinbarungen) "
+    . "ein Objekt mit:\n"
+    . "   - bereich: Name\n"
+    . "   - rueckmeldung: 4–8 Sätze, die sich auf ITEM_VERTEILUNG_JSON "
+    . "+ Bereichszusammenfassung stützen\n"
+    . "   - foerderung: mindestens 3 konkrete Förderideen in Fließtext "
+    . "(kurz durch Semikolon getrennt), jeweils begründet\n\n"
+    . "Wenn Daten fehlen oder ein Bereich kaum Werte enthält, erwähne das knapp.\n\n"
+    . "KONTEXT:\n" . implode("\n", $contextParts);
 
   return [
     'system' => $system,
