@@ -207,10 +207,10 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
 
               <td>
                 <div class="action-menu">
-                  <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="true" aria-expanded="false">
+                  <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false">
                     <?=h(t('teacher.classes.actions', 'Aktionen'))?> <span aria-hidden="true">▾</span>
                   </button>
-                  <div class="nav-dropdown action-dropdown-menu" role="menu">
+                  <template class="action-menu-template">
                     <a class="btn primary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.students', 'Schüler verwalten'))?></a>
                     <a class="btn primary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.entries', 'Eingaben'))?></a>
                     <a class="btn secondary" href="<?=h(url('teacher/class_intro.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.classes.action.intro', 'Intro bearbeiten'))?></a>
@@ -220,7 +220,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                       <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
                       <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?h(t('teacher.classes.action.toggle_inactive', 'Inaktiv setzen')):h(t('teacher.classes.action.toggle_active', 'Aktivieren'))?></a>
                     </form>
-                  </div>
+                  </template>
                 </div>
               </td>
             </tr>
@@ -231,6 +231,80 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
     <?php endforeach; ?>
   <?php endif; ?>
 </div>
+
+<div id="rowActionMenu" class="action-dropdown-menu hidden" role="menu" aria-hidden="true"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const menu = document.getElementById('rowActionMenu');
+  if (!menu) return;
+
+  let currentButton = null;
+
+  const closeMenu = () => {
+    if (!currentButton) return;
+    currentButton.setAttribute('aria-expanded', 'false');
+    currentButton = null;
+    menu.classList.add('hidden');
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    menu.innerHTML = '';
+  };
+
+  const positionMenu = () => {
+    if (!currentButton) return;
+    const rect = currentButton.getBoundingClientRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const maxLeft = scrollX + document.documentElement.clientWidth - menu.offsetWidth - 8;
+    const left = Math.max(scrollX + 8, Math.min(rect.right + scrollX - menu.offsetWidth, maxLeft));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${rect.bottom + scrollY}px`;
+  };
+
+  const openMenu = (button, template) => {
+    if (currentButton === button) {
+      closeMenu();
+      return;
+    }
+    if (currentButton) {
+      currentButton.setAttribute('aria-expanded', 'false');
+    }
+    menu.innerHTML = '';
+    if (template && template.content) {
+      menu.appendChild(template.content.cloneNode(true));
+    }
+    menu.classList.remove('hidden');
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    button.setAttribute('aria-expanded', 'true');
+    currentButton = button;
+    positionMenu();
+  };
+
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.action-menu-toggle');
+    if (button) {
+      event.preventDefault();
+      const wrapper = button.closest('.action-menu');
+      const template = wrapper ? wrapper.querySelector('.action-menu-template') : null;
+      openMenu(button, template);
+      return;
+    }
+    if (menu.contains(event.target)) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      closeMenu();
+    }
+  });
+
+  window.addEventListener('resize', closeMenu);
+  window.addEventListener('scroll', closeMenu, true);
+});
+</script>
 
 <?php
 render_teacher_footer();
