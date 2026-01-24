@@ -704,7 +704,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           <?php if ($meetingFeedbackAnonymous): ?>
             <p class="muted" style="margin-top:6px;"><?=h(t('parent.portal.meeting_feedback_anonymous_hint'))?></p>
           <?php endif; ?>
-          <form method="post" id="meetingFeedbackForm" style="margin-top:12px; <?= (!$meetingFeedbackRequired && !$meetingFeedbackCompleted) ? 'display:none;' : '' ?>">
+          <form method="post" id="meetingFeedbackForm" style="margin-top:12px;">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="action" value="submit_meeting_feedback">
             <table class="meeting-feedback-table">
