@@ -709,7 +709,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
               <thead>
                 <tr>
                   <th><?=h(t('parent.portal.meeting_feedback_title'))?></th>
-                  <?php foreach ([4,3,2,1] as $opt): ?>
+                  <?php foreach ([1,2,3,4] as $opt): ?>
                     <?php
                       $label = t('parent.portal.meeting_feedback_option_' . $opt);
                       $parts = array_map('trim', explode('/', $label, 2));
@@ -731,7 +731,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                     <strong>1. <?=h(t('parent.portal.meeting_feedback_q1'))?></strong>
                     <div class="muted"><?=h(t('parent.portal.meeting_feedback_q1_en'))?></div>
                   </td>
-                  <?php foreach ([4,3,2,1] as $opt): ?>
+                  <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q1" value="<?= $opt ?>" <?= ($meetingForm['q1'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
                     </td>
@@ -742,7 +742,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                     <strong>2. <?=h(t('parent.portal.meeting_feedback_q2'))?></strong>
                     <div class="muted"><?=h(t('parent.portal.meeting_feedback_q2_en'))?></div>
                   </td>
-                  <?php foreach ([4,3,2,1] as $opt): ?>
+                  <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q2" value="<?= $opt ?>" <?= ($meetingForm['q2'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
                     </td>
@@ -753,7 +753,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                     <strong>3. <?=h(t('parent.portal.meeting_feedback_q3'))?></strong>
                     <div class="muted"><?=h(t('parent.portal.meeting_feedback_q3_en'))?></div>
                   </td>
-                  <?php foreach ([4,3,2,1] as $opt): ?>
+                  <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q3" value="<?= $opt ?>" <?= ($meetingForm['q3'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
                     </td>
