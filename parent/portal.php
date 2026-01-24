@@ -238,7 +238,7 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
 
   return array_map(function($row) {
     $val = (string)($row['value'] ?? '');
-    if ($val === '') $val = t('parent.portal.empty', '–');
+    if ($val === '') $val = t('parent.portal.empty');
     return [
       'label' => (string)($row['label'] ?? ''),
       'value' => $val,
@@ -249,7 +249,7 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
 
 if ($token === '') {
   http_response_code(400);
-  echo h(t('parent.portal.token_missing', 'Token fehlt.'));
+  echo h(t('parent.portal.token_missing'));
   exit;
 }
 
@@ -268,7 +268,7 @@ $link = $st->fetch(PDO::FETCH_ASSOC);
 
 if (!$link) {
   http_response_code(404);
-  echo h(t('parent.portal.link_not_found', 'Freigabe nicht gefunden.'));
+  echo h(t('parent.portal.link_not_found'));
   exit;
 }
 
@@ -297,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   try {
     csrf_verify();
     $action = (string)$_POST['action'];
-    if (!$allowResponses) throw new RuntimeException(t('parent.portal.responses_unavailable', 'Rückmeldungen sind aktuell nicht möglich.'));
+    if (!$allowResponses) throw new RuntimeException(t('parent.portal.responses_unavailable'));
 
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
@@ -314,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
           $hasAck = true;
         }
       }
-      $alerts[] = t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.');
+      $alerts[] = t('parent.portal.feedback_ok');
     }
 
     if ($action === 'confirm_receipt') {
@@ -428,7 +428,7 @@ $logo = $b['logo_path'] ?? '';
 $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
 $allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
-$downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklungsbericht') . '_' .
+$downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
 ?>
@@ -437,7 +437,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?=h(t('parent.portal.title', 'Elternmodus – Vorschau'))?></title>
+  <title><?=h(t('parent.portal.title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>:root{--primary:<?=h($primary)?>;--secondary:<?=h($secondary)?>;}</style>
@@ -485,11 +485,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
       <?php if ($logo): ?><img src="<?=h(url($logo))?>" alt="<?=h($org)?>"><?php endif; ?>
       <div>
         <div class="brand-title"><?=h($org)?></div>
-        <div class="brand-subtitle"><?=h(t('parent.portal.subtitle', 'Elternmodus – nur Lesen'))?></div>
+        <div class="brand-subtitle"><?=h(t('parent.portal.subtitle'))?></div>
       </div>
-      <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria', 'Sprache wechseln'))?>">
-        <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
-        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇬🇧</a>
+      <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria'))?>">
+        <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de'))?>">🇩🇪</a>
+        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en'))?>">🇬🇧</a>
       </div>
     </div>
   </div>
@@ -499,38 +499,38 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
         <?php if ($allowDownload): ?>
         <div class="row-actions" style="float: right;">
           <button class="btn primary" type="button" id="downloadPdfBtn">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="#fff" d="M352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 306.7L246.6 265.3C234.1 252.8 213.8 252.8 201.3 265.3C188.8 277.8 188.8 298.1 201.3 310.6L297.3 406.6C309.8 419.1 330.1 419.1 342.6 406.6L438.6 310.6C451.1 298.1 451.1 277.8 438.6 265.3C426.1 252.8 405.8 252.8 393.3 265.3L352 306.7L352 96zM160 384C124.7 384 96 412.7 96 448L96 480C96 515.3 124.7 544 160 544L480 544C515.3 544 544 515.3 544 480L544 448C544 412.7 515.3 384 480 384L433.1 384L376.5 440.6C345.3 471.8 294.6 471.8 263.4 440.6L206.9 384L160 384zM464 440C477.3 440 488 450.7 488 464C488 477.3 477.3 488 464 488C450.7 488 440 477.3 440 464C440 450.7 450.7 440 464 440z"/></svg> <span id="downloadPdfBtnText"><?=h(t('parent.portal.download', 'PDF herunterladen'))?></span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="#fff" d="M352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 306.7L246.6 265.3C234.1 252.8 213.8 252.8 201.3 265.3C188.8 277.8 188.8 298.1 201.3 310.6L297.3 406.6C309.8 419.1 330.1 419.1 342.6 406.6L438.6 310.6C451.1 298.1 451.1 277.8 438.6 265.3C426.1 252.8 405.8 252.8 393.3 265.3L352 306.7L352 96zM160 384C124.7 384 96 412.7 96 448L96 480C96 515.3 124.7 544 160 544L480 544C515.3 544 544 515.3 544 480L544 448C544 412.7 515.3 384 480 384L433.1 384L376.5 440.6C345.3 471.8 294.6 471.8 263.4 440.6L206.9 384L160 384zM464 440C477.3 440 488 450.7 488 464C488 477.3 477.3 488 464 488C450.7 488 440 477.3 440 464C440 450.7 450.7 440 464 440z"/></svg> <span id="downloadPdfBtnText"><?=h(t('parent.portal.download'))?></span>
           </button>
         </div>
         <?php endif; ?>
-      <h1><?=h(t('parent.portal.heading', 'Lernentwicklungsbericht'))?></h1>
+      <h1><?=h(t('parent.portal.heading'))?></h1>
       <?php if ($hasAck): ?>
         <div class="pill green" style="margin-top:8px; width:fit-content;">
-          <?=h(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet'))?>
+          <?=h(t('parent.portal.feedback_ack_sent'))?>
         </div>
       <?php endif; ?>
       <p class="muted" style="max-width:820px;">
-        <?=h(t('parent.portal.readonly_hint', 'Der Abruf ist zeitlich begrenzt.'))?>
+        <?=h(t('parent.portal.readonly_hint'))?>
       </p>
       <div class="pill"><?=h((string)$link['first_name'] . ' ' . (string)$link['last_name'])?></div>
       <div class="muted" style="margin-top:4px;">
-        <?=h(t('parent.portal.class', 'Klasse'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
+        <?=h(t('parent.portal.class'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
       </div>
       <div class="muted" style="margin-top:12px;">
-        <?=h(t('parent.portal.valid_until', 'Gültig bis'))?>: <?= $expiresAt ? render_local_datetime($expiresAt, 'd.m.Y H:i') : h(t('parent.portal.no_expiry', 'ohne Enddatum')) ?>
+        <?=h(t('parent.portal.valid_until'))?>: <?= $expiresAt ? render_local_datetime($expiresAt, 'd.m.Y H:i') : h(t('parent.portal.no_expiry')) ?>
       </div>
       <?php if ($status === 'requested'): ?>
-        <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.waiting', 'Freigabe wird noch durch die Schule bestätigt.'))?></div>
+        <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.waiting'))?></div>
       <?php elseif ($status === 'revoked'): ?>
-        <div class="alert danger" style="margin-top:10px;"><?=h(t('parent.portal.revoked', 'Dieser Zugang wurde deaktiviert.'))?></div>
+        <div class="alert danger" style="margin-top:10px;"><?=h(t('parent.portal.revoked'))?></div>
       <?php elseif ($isExpired): ?>
-        <div class="alert danger" style="margin-top:10px;"><?=h(t('parent.portal.expired', 'Dieser Zugang ist abgelaufen.'))?></div>
+        <div class="alert danger" style="margin-top:10px;"><?=h(t('parent.portal.expired'))?></div>
       <?php endif; ?>
     </div>
 
     <?php if (!$canPreview): ?>
       <div class="alert warn" style="margin-top:10px;">
-        <?=h(t('parent.portal.preview_blocked', 'Die Freigabe ist noch nicht aktiv oder bereits beendet.'))?>
+        <?=h(t('parent.portal.preview_blocked'))?>
       </div>
     <?php else: ?>
 
@@ -546,27 +546,27 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
            oncontextmenu="return false;">
-        <div class="pdf-loader" aria-label="<?=h(t('parent.portal.loader_aria', 'Lädt…'))?>" role="status">
+        <div class="pdf-loader" aria-label="<?=h(t('parent.portal.loader_aria'))?>" role="status">
           <span class="spinner"></span>
-          <span class="txt"><?=h(t('parent.portal.loader_text', 'PDF wird geladen…'))?></span>
+          <span class="txt"><?=h(t('parent.portal.loader_text'))?></span>
         </div>
       </div>
     <?php endif; ?>
 
     <div class="card">
-      <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title', 'Rückmeldung'))?></h2>
-      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint', 'Bitte bestätigen Sie den Empfang des Dokuments. Sie können zusätzlich eine Rückmeldung / Frage hinterlassen.'))?></p>
+      <h2 style="margin-top:0;"><?=h(t('parent.portal.feedback_title'))?></h2>
+      <p class="muted" style="margin-top:0;"><?=h(t('parent.portal.feedback_hint'))?></p>
 
       <?php if (!$allowResponses): ?>
-        <p class="muted"><?=h(t('parent.portal.responses_closed', 'Rückmeldungen sind derzeit nicht möglich.'))?></p>
+        <p class="muted"><?=h(t('parent.portal.responses_closed'))?></p>
       <?php else: ?>
         <form method="post" id="parentFeedbackForm" style="margin:0; display:flex; flex-direction:column; gap:8px;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="send_feedback">
-          <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder', 'Ihre Rückmeldung ...'))?>"></textarea>
+          <textarea name="message" rows="4" placeholder="<?=h(t('parent.portal.feedback_placeholder'))?>"></textarea>
           <div class="actions" style="margin-top:8px;">
             <button class="btn primary" type="submit">
-              <?=h($hasAck ? t('parent.portal.feedback_send_msg', 'Nachricht senden') : t('parent.portal.feedback_send', 'Empfang bestätigen'))?>
+              <?=h($hasAck ? t('parent.portal.feedback_send_msg') : t('parent.portal.feedback_send'))?>
             </button>
           </div>
         </form>
@@ -619,11 +619,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
       pill.className = 'pill green';
       pill.style.marginTop = '8px';
       pill.style.width = 'fit-content';
-      pill.textContent = <?= json_encode(t('parent.portal.feedback_ack_sent', 'Lesebestätigung gesendet')) ?>;
+      pill.textContent = <?= json_encode(t('parent.portal.feedback_ack_sent')) ?>;
       const heading = headerCard.querySelector('h1');
       heading?.insertAdjacentElement('afterend', pill);
       if (feedbackButton) {
-        feedbackButton.textContent = <?= json_encode(t('parent.portal.feedback_send_msg', 'Nachricht senden')) ?>;
+        feedbackButton.textContent = <?= json_encode(t('parent.portal.feedback_send_msg')) ?>;
       }
     }
 
@@ -659,11 +659,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
             credentials: 'same-origin',
           });
           if (!resp.ok) throw new Error('request_failed');
-          pushAlert('success', <?= json_encode(t('parent.portal.feedback_ok', 'Danke für Ihre Rückmeldung! Wir werden diese baldmöglichst bearbeiten.')) ?>);
+          pushAlert('success', <?= json_encode(t('parent.portal.feedback_ok')) ?>);
           ensureAckPill();
           feedbackForm.reset();
         } catch (e) {
-          pushAlert('danger', <?= json_encode(t('parent.portal.feedback_send_error', 'Rückmeldung konnte nicht gesendet werden.')) ?>);
+          pushAlert('danger', <?= json_encode(t('parent.portal.feedback_send_error')) ?>);
         }
       });
     }
@@ -674,7 +674,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
         const s = document.createElement('script');
         s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
         s.onload = resolve;
-        s.onerror = () => reject(new Error(<?= json_encode(t('parent.portal.pdf_lib_load_error', 'PDF-Bibliothek konnte nicht geladen werden.')) ?>));
+        s.onerror = () => reject(new Error(<?= json_encode(t('parent.portal.pdf_lib_load_error')) ?>));
         document.head.appendChild(s);
       });
     }
@@ -708,7 +708,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
 
     async function loadTemplate(){
       const resp = await fetch(payload.template_url, { credentials:'same-origin' });
-      if (!resp.ok) throw new Error(<?= json_encode(t('parent.portal.pdf_template_load_error', 'PDF-Vorlage konnte nicht geladen werden.')) ?>));
+      if (!resp.ok) throw new Error(<?= json_encode(t('parent.portal.pdf_template_load_error')) ?>));
       return new Uint8Array(await resp.arrayBuffer());
     }
 
@@ -1383,7 +1383,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
         if (!downloadBtn) return;
         const label = downloadBtn.textContent;
         downloadBtn.disabled = true;
-        downloadBtnText.textContent = 'wird erstellt…';
+        downloadBtnText.textContent = <?= json_encode(t('parent.portal.download_creating')) ?>;
         try {
           const bytes = await buildPdfBytes({ flatten: true });
           const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -1391,7 +1391,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklung
           confirmReceipt();
           const a = document.createElement('a');
           a.href = url;
-          a.download = downloadName || 'bericht.pdf';
+          a.download = downloadName || <?= json_encode(t('parent.portal.download_fallback_name')) ?>;
           document.body.appendChild(a);
           a.click();
           a.remove();
