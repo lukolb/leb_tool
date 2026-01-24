@@ -49,6 +49,10 @@ return [
     'auto_approve_requests' => false,
     // Grafische Lehrkraft-Unterschrift für den Parent-Export.
     'signature_enabled' => true,
+    // Feedbackbogen nach dem Lernentwicklungsgespräch aktivieren.
+    'meeting_feedback_enabled' => false,
+    // Feedbackbogen ist verpflichtend, bevor der Bericht angezeigt wird.
+    'meeting_feedback_required' => false,
   ],
   'signature' => [
     // 32-Byte Master-Key (hex/base64 oder raw). Kann auch via SIGNATURE_MASTER_KEY gesetzt werden.

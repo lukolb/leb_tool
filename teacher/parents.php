@@ -17,6 +17,7 @@ $parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
 $signaturePurpose = 'parent_export';
 $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
+$meetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 
 function parent_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -91,6 +92,72 @@ function build_feedback_reply_mailto(array $emails, string $studentName, string 
   return 'mailto:' . $recipients . '?' . $query;
 }
 
+function meeting_feedback_stats(PDO $pdo, string $whereSql, array $params): array {
+  $sql = "SELECT\n" .
+    "  COUNT(*) AS total,\n" .
+    "  SUM(q1=4) AS q1_4,\n" .
+    "  SUM(q1=3) AS q1_3,\n" .
+    "  SUM(q1=2) AS q1_2,\n" .
+    "  SUM(q1=1) AS q1_1,\n" .
+    "  SUM(q2=4) AS q2_4,\n" .
+    "  SUM(q2=3) AS q2_3,\n" .
+    "  SUM(q2=2) AS q2_2,\n" .
+    "  SUM(q2=1) AS q2_1,\n" .
+    "  SUM(q3=4) AS q3_4,\n" .
+    "  SUM(q3=3) AS q3_3,\n" .
+    "  SUM(q3=2) AS q3_2,\n" .
+    "  SUM(q3=1) AS q3_1\n" .
+    "FROM parent_meeting_feedback";
+  if ($whereSql !== '') {
+    $sql .= " WHERE " . $whereSql;
+  }
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($row as $k => $v) {
+    $out[$k] = (int)$v;
+  }
+  return $out;
+}
+
+function meeting_feedback_option_labels(): array {
+  return [
+    4 => 'Stimme völlig zu / Strongly agree',
+    3 => 'Stimme eher zu / Agree',
+    2 => 'Stimme eher nicht zu / Disagree',
+    1 => 'Stimme nicht zu / Strongly disagree',
+  ];
+}
+
+function render_meeting_feedback_chart(array $stats, string $questionKey, string $questionText, string $questionTextEn): void {
+  $total = (int)($stats['total'] ?? 0);
+  $labels = meeting_feedback_option_labels();
+  echo '<div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+  echo '<div style="font-weight:600; margin-bottom:6px;">' . h($questionText) . '</div>';
+  echo '<div class="muted" style="margin-bottom:10px;">' . h($questionTextEn) . '</div>';
+  if ($total <= 0) {
+    echo '<div class="muted">Keine Rückmeldungen vorhanden.</div>';
+    echo '</div>';
+    return;
+  }
+  foreach ($labels as $score => $label) {
+    $count = (int)($stats[$questionKey . '_' . $score] ?? 0);
+    $pct = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+    echo '<div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">';
+    echo '<div style="flex:1;">';
+    echo '<div style="font-size:13px; margin-bottom:4px;">' . h($label) . '</div>';
+    echo '<div style="background:#eef1f6; height:8px; border-radius:6px; overflow:hidden;">';
+    echo '<div style="width:' . h((string)$pct) . '%; height:8px; background:var(--primary);"></div>';
+    echo '</div>';
+    echo '</div>';
+    echo '<div class="muted" style="min-width:70px; text-align:right;">' . h((string)$count) . '</div>';
+    echo '</div>';
+  }
+  echo '<div class="muted" style="margin-top:8px;">Gesamt: ' . h((string)$total) . '</div>';
+  echo '</div>';
+}
+
 // --- classes for teacher/admin ---
 if ($role === 'admin') {
   $classes = $pdo->query(
@@ -111,6 +178,33 @@ if ($role === 'admin') {
 $classId = (int)($_GET['class_id'] ?? 0);
 if ($classId <= 0 && $classes) {
   $classId = (int)($classes[0]['id'] ?? 0);
+}
+$selectedClassGradeLevel = null;
+$availableGrades = [];
+foreach ($classes as $c) {
+  if ($c['grade_level'] !== null) $availableGrades[] = (int)$c['grade_level'];
+  if ((int)($c['id'] ?? 0) === $classId) {
+    $selectedClassGradeLevel = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  }
+}
+$availableGrades = array_values(array_unique($availableGrades));
+sort($availableGrades);
+$gradeLevel = null;
+$selectedClassLabel = '';
+$selectedClassYear = '';
+foreach ($classes as $c) {
+  if ((int)($c['id'] ?? 0) === $classId) {
+    $selectedClassLabel = parent_class_display($c);
+    $selectedClassYear = (string)($c['school_year'] ?? '');
+    break;
+  }
+}
+if ($role === 'admin') {
+  if (isset($_GET['grade_level']) && $_GET['grade_level'] !== '') {
+    $gradeLevel = (int)$_GET['grade_level'];
+  } elseif ($selectedClassGradeLevel !== null) {
+    $gradeLevel = (int)$selectedClassGradeLevel;
+  }
 }
 
 $alerts = [];
@@ -555,6 +649,21 @@ $stFb = $pdo->prepare(
   $feedbackList = $stFb->fetchAll(PDO::FETCH_ASSOC);
 }
 
+$meetingStatsClass = null;
+$meetingStatsGrade = null;
+$meetingStatsOverall = null;
+if ($meetingFeedbackEnabled) {
+  if ($classId > 0) {
+    $meetingStatsClass = meeting_feedback_stats($pdo, 'class_id=?', [$classId]);
+  }
+  if ($role === 'admin') {
+    if ($gradeLevel !== null) {
+      $meetingStatsGrade = meeting_feedback_stats($pdo, 'grade_level=?', [$gradeLevel]);
+    }
+    $meetingStatsOverall = meeting_feedback_stats($pdo, '', []);
+  }
+}
+
 $pageTitle = t('teacher.parents.title', 'Elternmodus');
 $missingTx = [
   'missing_title' => t('teacher.parents.missing_title', 'Fehlende Einträge gefunden'),
@@ -856,6 +965,111 @@ $introText = $parentAutoApprove
     </div>
   <?php endif; ?>
 </div>
+
+<?php if ($meetingFeedbackEnabled): ?>
+  <div class="card" style="margin-top:14px;">
+    <h2>Feedback zum Lernentwicklungsgespräch</h2>
+    <p class="muted" style="margin-top:0;">Auswertung des Feedbackbogens für Eltern. Jede Rückmeldung kann nur einmal pro Kind abgegeben werden.</p>
+
+    <?php if ($classId <= 0): ?>
+      <p class="muted">Keine Klasse ausgewählt.</p>
+    <?php else: ?>
+      <h3 style="margin-top:10px;">Klasse <?=h(trim($selectedClassYear . ' · ' . $selectedClassLabel))?></h3>
+      <?php if (!$meetingStatsClass || (int)($meetingStatsClass['total'] ?? 0) === 0): ?>
+        <p class="muted">Noch keine Rückmeldungen für diese Klasse.</p>
+      <?php else: ?>
+        <?php
+          render_meeting_feedback_chart(
+            $meetingStatsClass,
+            'q1',
+            '1. Das Gespräch war verständlich und informativ.',
+            'The conference was clear and informative.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsClass,
+            'q2',
+            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+            'I now understand how I can further support my child at home.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsClass,
+            'q3',
+            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+            'The next steps discussed are clear to me.'
+          );
+        ?>
+      <?php endif; ?>
+    <?php endif; ?>
+
+    <?php if ($role === 'admin'): ?>
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Klassenstufe</h3>
+      <form method="get" class="row" style="gap:12px; align-items:center;">
+        <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+        <label class="muted" style="font-size:12px;">Stufe auswählen</label>
+        <select name="grade_level" class="input" onchange="this.form.submit();">
+          <option value="">—</option>
+          <?php foreach ($availableGrades as $g): ?>
+            <option value="<?= (int)$g ?>" <?= ($gradeLevel !== null && (int)$gradeLevel === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
+          <?php endforeach; ?>
+        </select>
+      </form>
+      <?php if ($gradeLevel === null): ?>
+        <p class="muted">Keine Klassenstufe ausgewählt.</p>
+      <?php elseif (!$meetingStatsGrade || (int)($meetingStatsGrade['total'] ?? 0) === 0): ?>
+        <p class="muted">Noch keine Rückmeldungen für diese Klassenstufe.</p>
+      <?php else: ?>
+        <?php
+          render_meeting_feedback_chart(
+            $meetingStatsGrade,
+            'q1',
+            '1. Das Gespräch war verständlich und informativ.',
+            'The conference was clear and informative.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsGrade,
+            'q2',
+            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+            'I now understand how I can further support my child at home.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsGrade,
+            'q3',
+            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+            'The next steps discussed are clear to me.'
+          );
+        ?>
+      <?php endif; ?>
+
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Gesamt</h3>
+      <?php if (!$meetingStatsOverall || (int)($meetingStatsOverall['total'] ?? 0) === 0): ?>
+        <p class="muted">Noch keine Rückmeldungen vorhanden.</p>
+      <?php else: ?>
+        <?php
+          render_meeting_feedback_chart(
+            $meetingStatsOverall,
+            'q1',
+            '1. Das Gespräch war verständlich und informativ.',
+            'The conference was clear and informative.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsOverall,
+            'q2',
+            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+            'I now understand how I can further support my child at home.'
+          );
+          render_meeting_feedback_chart(
+            $meetingStatsOverall,
+            'q3',
+            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+            'The next steps discussed are clear to me.'
+          );
+        ?>
+      <?php endif; ?>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <div class="card" style="margin-top:18px; border:1px solid var(--border); background:linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);">
   <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">

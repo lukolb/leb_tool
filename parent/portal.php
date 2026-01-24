@@ -12,6 +12,8 @@ $parentCfg = $cfg['parent'] ?? [];
 $signaturePurpose = 'parent_export';
 $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
+$meetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
+$meetingFeedbackRequired = (bool)($parentCfg['meeting_feedback_required'] ?? false);
 
 function parent_meta_read(?string $json): array {
   if (!$json) return [];
@@ -74,6 +76,30 @@ function parent_feedback_insert_ack(PDO $pdo, int $linkId, string $lang): bool {
   );
   $ins->execute([$linkId, $lang]);
   return true;
+}
+
+function parent_meeting_feedback_exists(PDO $pdo, int $studentId): bool {
+  $st = $pdo->prepare("SELECT 1 FROM parent_meeting_feedback WHERE student_id=? LIMIT 1");
+  $st->execute([$studentId]);
+  return (bool)$st->fetchColumn();
+}
+
+function parent_meeting_feedback_insert(PDO $pdo, array $payload): void {
+  $ins = $pdo->prepare(
+    "INSERT INTO parent_meeting_feedback (student_id, class_id, school_year, grade_level, link_id, q1, q2, q3, message, created_at)\n" .
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+  );
+  $ins->execute([
+    (int)$payload['student_id'],
+    (int)$payload['class_id'],
+    (string)$payload['school_year'],
+    $payload['grade_level'] === null ? null : (int)$payload['grade_level'],
+    (int)$payload['link_id'],
+    (int)$payload['q1'],
+    (int)$payload['q2'],
+    (int)$payload['q3'],
+    $payload['message'],
+  ]);
 }
 
 /**
@@ -286,8 +312,19 @@ if ($expiresAt) {
 
 $status = (string)($link['status'] ?? '');
 $allowResponses = ($status === 'approved' && !$isExpired);
-$canPreview = ($status === 'approved');
+$meetingFeedbackRequired = $meetingFeedbackEnabled && $meetingFeedbackRequired;
+$meetingFeedbackCompleted = $meetingFeedbackEnabled
+  ? parent_meeting_feedback_exists($pdo, (int)($link['student_id'] ?? 0))
+  : false;
+$meetingFeedbackBlocking = $meetingFeedbackRequired && !$meetingFeedbackCompleted;
+$canPreview = ($status === 'approved') && !$meetingFeedbackBlocking;
 $hasAck = $allowResponses ? parent_feedback_ack_exists($pdo, (int)$link['id']) : false;
+$meetingForm = [
+  'q1' => '',
+  'q2' => '',
+  'q3' => '',
+  'message' => '',
+];
 
 if ($canPreview) {
   apply_system_bindings($pdo, (int)$link['report_instance_id']);
@@ -315,6 +352,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
       }
       $alerts[] = t('parent.portal.feedback_ok');
+    }
+
+    if ($action === 'submit_meeting_feedback') {
+      if (!$meetingFeedbackEnabled) {
+        throw new RuntimeException(t('parent.portal.meeting_feedback_unavailable'));
+      }
+      if (!$allowResponses) {
+        throw new RuntimeException(t('parent.portal.responses_unavailable'));
+      }
+      if ($meetingFeedbackCompleted) {
+        throw new RuntimeException(t('parent.portal.meeting_feedback_already'));
+      }
+      $meetingForm = [
+        'q1' => (string)($_POST['q1'] ?? ''),
+        'q2' => (string)($_POST['q2'] ?? ''),
+        'q3' => (string)($_POST['q3'] ?? ''),
+        'message' => trim((string)($_POST['message'] ?? '')),
+      ];
+
+      $q1 = (int)$meetingForm['q1'];
+      $q2 = (int)$meetingForm['q2'];
+      $q3 = (int)$meetingForm['q3'];
+      $valid = [1, 2, 3, 4];
+      if (!in_array($q1, $valid, true) || !in_array($q2, $valid, true) || !in_array($q3, $valid, true)) {
+        throw new RuntimeException(t('parent.portal.meeting_feedback_missing'));
+      }
+
+      parent_meeting_feedback_insert($pdo, [
+        'student_id' => (int)$link['student_id'],
+        'class_id' => (int)($link['class_id'] ?? 0),
+        'school_year' => (string)($link['school_year'] ?? ''),
+        'grade_level' => $link['grade_level'] !== null ? (int)$link['grade_level'] : null,
+        'link_id' => (int)$link['id'],
+        'q1' => $q1,
+        'q2' => $q2,
+        'q3' => $q3,
+        'message' => $meetingForm['message'],
+      ]);
+
+      $meetingFeedbackCompleted = true;
+      $meetingFeedbackBlocking = $meetingFeedbackRequired && !$meetingFeedbackCompleted;
+      $canPreview = ($status === 'approved') && !$meetingFeedbackBlocking;
+      $meetingForm = [
+        'q1' => '',
+        'q2' => '',
+        'q3' => '',
+        'message' => '',
+      ];
+      $alerts[] = t('parent.portal.meeting_feedback_ok');
     }
 
     if ($action === 'confirm_receipt') {
@@ -428,6 +514,7 @@ $logo = $b['logo_path'] ?? '';
 $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
 $allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
+$showDownload = $allowDownload && $canPreview;
 $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
@@ -477,6 +564,36 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     #pdfPreview .txt { font-size: 13px; color: rgba(0,0,0,.65); }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .meeting-feedback-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .meeting-feedback-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr);
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .meeting-feedback-options label {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+    .meeting-feedback-options label + label {
+      margin-top: 6px;
+    }
+    @media (max-width: 720px) {
+      .meeting-feedback-row {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body class="page">
@@ -496,7 +613,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
   <div class="container" style="max-width:960px;">
     <div class="card">
-        <?php if ($allowDownload): ?>
+        <?php if ($showDownload): ?>
         <div class="row-actions" style="float: right;">
           <button class="btn primary" type="button" id="downloadPdfBtn">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path fill="#fff" d="M352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 306.7L246.6 265.3C234.1 252.8 213.8 252.8 201.3 265.3C188.8 277.8 188.8 298.1 201.3 310.6L297.3 406.6C309.8 419.1 330.1 419.1 342.6 406.6L438.6 310.6C451.1 298.1 451.1 277.8 438.6 265.3C426.1 252.8 405.8 252.8 393.3 265.3L352 306.7L352 96zM160 384C124.7 384 96 412.7 96 448L96 480C96 515.3 124.7 544 160 544L480 544C515.3 544 544 515.3 544 480L544 448C544 412.7 515.3 384 480 384L433.1 384L376.5 440.6C345.3 471.8 294.6 471.8 263.4 440.6L206.9 384L160 384zM464 440C477.3 440 488 450.7 488 464C488 477.3 477.3 488 464 488C450.7 488 440 477.3 440 464C440 450.7 450.7 440 464 440z"/></svg> <span id="downloadPdfBtnText"><?=h(t('parent.portal.download'))?></span>
@@ -528,21 +645,104 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       <?php endif; ?>
     </div>
 
+    <div id="parentAlerts">
+      <?php if ($errors): ?>
+        <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
+      <?php endif; ?>
+      <?php if ($alerts): ?>
+        <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
+      <?php endif; ?>
+    </div>
+
+    <?php if ($meetingFeedbackEnabled): ?>
+      <div class="card" id="meetingFeedbackCard">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+          <div>
+            <h2 style="margin-top:0;"><?=h(t('parent.portal.meeting_feedback_title'))?></h2>
+            <div class="muted"><?=h(t('parent.portal.meeting_feedback_subtitle'))?></div>
+          </div>
+          <?php if (!$meetingFeedbackCompleted && !$meetingFeedbackRequired && $allowResponses): ?>
+            <button class="btn secondary" type="button" id="meetingFeedbackToggle"><?=h(t('parent.portal.meeting_feedback_open'))?></button>
+          <?php endif; ?>
+        </div>
+        <?php if ($meetingFeedbackCompleted): ?>
+          <div class="pill green" style="margin-top:8px; width:fit-content;">
+            <?=h(t('parent.portal.meeting_feedback_thanks'))?>
+          </div>
+        <?php elseif (!$allowResponses): ?>
+          <p class="muted" style="margin-top:8px;"><?=h(t('parent.portal.meeting_feedback_closed'))?></p>
+        <?php else: ?>
+          <?php if ($meetingFeedbackRequired): ?>
+            <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_required_hint'))?></div>
+          <?php else: ?>
+            <p class="muted" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_optional_hint'))?></p>
+          <?php endif; ?>
+          <form method="post" id="meetingFeedbackForm" style="margin-top:12px; <?= (!$meetingFeedbackRequired && !$meetingFeedbackCompleted) ? 'display:none;' : '' ?>">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="action" value="submit_meeting_feedback">
+            <div class="meeting-feedback-grid">
+              <div class="meeting-feedback-row">
+                <div class="meeting-feedback-question">
+                  <strong>1. <?=h(t('parent.portal.meeting_feedback_q1'))?></strong>
+                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q1_en'))?></div>
+                </div>
+                <div class="meeting-feedback-options">
+                  <?php foreach ([4,3,2,1] as $opt): ?>
+                    <label>
+                      <input type="radio" name="q1" value="<?= $opt ?>" <?= ($meetingForm['q1'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
+                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+              <div class="meeting-feedback-row">
+                <div class="meeting-feedback-question">
+                  <strong>2. <?=h(t('parent.portal.meeting_feedback_q2'))?></strong>
+                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q2_en'))?></div>
+                </div>
+                <div class="meeting-feedback-options">
+                  <?php foreach ([4,3,2,1] as $opt): ?>
+                    <label>
+                      <input type="radio" name="q2" value="<?= $opt ?>" <?= ($meetingForm['q2'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
+                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+              <div class="meeting-feedback-row">
+                <div class="meeting-feedback-question">
+                  <strong>3. <?=h(t('parent.portal.meeting_feedback_q3'))?></strong>
+                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q3_en'))?></div>
+                </div>
+                <div class="meeting-feedback-options">
+                  <?php foreach ([4,3,2,1] as $opt): ?>
+                    <label>
+                      <input type="radio" name="q3" value="<?= $opt ?>" <?= ($meetingForm['q3'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
+                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
+                    </label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+            </div>
+            <label style="margin-top:12px; display:block;">
+              <strong><?=h(t('parent.portal.meeting_feedback_message_label'))?></strong>
+              <div class="muted"><?=h(t('parent.portal.meeting_feedback_message_label_en'))?></div>
+              <textarea name="message" rows="4" style="margin-top:6px;"><?=h((string)$meetingForm['message'])?></textarea>
+            </label>
+            <div class="actions" style="margin-top:12px;">
+              <button class="btn primary" type="submit"><?=h(t('parent.portal.meeting_feedback_submit'))?></button>
+            </div>
+            <div class="muted" style="margin-top:8px;"><?=h(t('parent.portal.meeting_feedback_thanks_note'))?></div>
+          </form>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
+
     <?php if (!$canPreview): ?>
       <div class="alert warn" style="margin-top:10px;">
-        <?=h(t('parent.portal.preview_blocked'))?>
+        <?=h($meetingFeedbackBlocking ? t('parent.portal.preview_blocked_feedback') : t('parent.portal.preview_blocked'))?>
       </div>
     <?php else: ?>
-
-      <div id="parentAlerts">
-        <?php if ($errors): ?>
-          <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
-        <?php endif; ?>
-        <?php if ($alerts): ?>
-          <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
-        <?php endif; ?>
-      </div>
-
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
            oncontextmenu="return false;">
@@ -589,6 +789,8 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     const feedbackForm = document.getElementById('parentFeedbackForm');
     const alertsWrap = document.getElementById('parentAlerts');
     const feedbackButton = feedbackForm?.querySelector('.btn.primary');
+    const meetingToggle = document.getElementById('meetingFeedbackToggle');
+    const meetingForm = document.getElementById('meetingFeedbackForm');
 
     if (preview) {
       preview.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -664,6 +866,16 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           feedbackForm.reset();
         } catch (e) {
           pushAlert('danger', <?= json_encode(t('parent.portal.feedback_send_error')) ?>);
+        }
+      });
+    }
+
+    if (meetingToggle && meetingForm) {
+      meetingToggle.addEventListener('click', () => {
+        const isHidden = meetingForm.style.display === 'none' || meetingForm.style.display === '';
+        meetingForm.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+          meetingForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       });
     }

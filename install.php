@@ -490,6 +490,25 @@ CREATE TABLE IF NOT EXISTS `parent_feedback` (
   KEY `idx_parent_feedback_state` (`feedback_type`,`is_reviewed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `parent_meeting_feedback` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `student_id` bigint UNSIGNED NOT NULL,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `grade_level` int DEFAULT NULL,
+  `link_id` bigint UNSIGNED NOT NULL,
+  `q1` tinyint UNSIGNED NOT NULL,
+  `q2` tinyint UNSIGNED NOT NULL,
+  `q3` tinyint UNSIGNED NOT NULL,
+  `message` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_parent_meeting_feedback_student` (`student_id`),
+  KEY `idx_parent_meeting_feedback_class` (`class_id`),
+  KEY `idx_parent_meeting_feedback_grade` (`grade_level`),
+  KEY `idx_parent_meeting_feedback_year` (`school_year`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `teacher_signatures` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` bigint UNSIGNED NOT NULL,
@@ -728,6 +747,11 @@ ALTER TABLE `parent_portal_links`
 ALTER TABLE `parent_feedback`
   ADD CONSTRAINT `fk_parent_feedback_link` FOREIGN KEY (`link_id`) REFERENCES `parent_portal_links` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_parent_feedback_reviewed_by` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `parent_meeting_feedback`
+  ADD CONSTRAINT `fk_parent_meeting_feedback_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_meeting_feedback_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_parent_meeting_feedback_link` FOREIGN KEY (`link_id`) REFERENCES `parent_portal_links` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `teacher_signatures`
   ADD CONSTRAINT `fk_teacher_signatures_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
