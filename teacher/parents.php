@@ -131,7 +131,7 @@ function meeting_feedback_option_labels(): array {
 }
 
 function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): array {
-  $sql = "SELECT pmf.message, pmf.created_at, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  $sql = "SELECT pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
     "FROM parent_meeting_feedback pmf\n" .
     "JOIN students s ON s.id=pmf.student_id\n" .
     "JOIN classes c ON c.id=pmf.class_id";
@@ -667,6 +667,7 @@ $meetingStatsOverall = null;
 $meetingTextsClass = [];
 $meetingTextsAdmin = [];
 $meetingTextScope = $role === 'admin' ? (string)($_GET['feedback_scope'] ?? 'class') : 'class';
+$meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 if ($meetingFeedbackEnabled) {
   if ($classId > 0) {
     $meetingStatsClass = meeting_feedback_stats($pdo, 'class_id=?', [$classId]);
@@ -1140,7 +1141,10 @@ $introText = $parentAutoApprove
             <tbody>
               <?php foreach ($meetingTextsAdmin as $row): ?>
                 <?php
-                  $studentName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+                  $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
+                  $studentName = $isAnonymous
+                    ? 'Anonym'
+                    : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
                   $classLabel = parent_class_display($row);
                 ?>
                 <tr>
@@ -1172,7 +1176,12 @@ $introText = $parentAutoApprove
           </thead>
           <tbody>
             <?php foreach ($meetingTextsClass as $row): ?>
-              <?php $studentName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')); ?>
+              <?php
+                $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
+                $studentName = $isAnonymous
+                  ? 'Anonym'
+                  : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+              ?>
               <tr>
                 <td><strong><?=h($studentName)?></strong></td>
                 <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>

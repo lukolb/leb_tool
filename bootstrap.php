@@ -484,6 +484,7 @@ function ensure_schema(PDO $pdo): void {
         "  q1 TINYINT UNSIGNED NOT NULL,\n" .
         "  q2 TINYINT UNSIGNED NOT NULL,\n" .
         "  q3 TINYINT UNSIGNED NOT NULL,\n" .
+        "  is_anonymous TINYINT(1) NOT NULL DEFAULT 0,\n" .
         "  message TEXT COLLATE utf8mb4_unicode_ci,\n" .
         "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
         "  PRIMARY KEY (id),\n" .
@@ -493,6 +494,8 @@ function ensure_schema(PDO $pdo): void {
         "  KEY idx_parent_meeting_feedback_year (school_year)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
+    } elseif (!db_has_column($pdo, 'parent_meeting_feedback', 'is_anonymous')) {
+      $pdo->exec("ALTER TABLE parent_meeting_feedback ADD COLUMN is_anonymous TINYINT(1) NOT NULL DEFAULT 0");
     }
 
     // --- teacher_signatures: encrypted vector signatures for parent export

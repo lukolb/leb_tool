@@ -87,8 +87,8 @@ function parent_meeting_feedback_exists(PDO $pdo, int $studentId): bool {
 
 function parent_meeting_feedback_insert(PDO $pdo, array $payload): void {
   $ins = $pdo->prepare(
-    "INSERT INTO parent_meeting_feedback (student_id, class_id, school_year, grade_level, link_id, q1, q2, q3, message, created_at)\n" .
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+    "INSERT INTO parent_meeting_feedback (student_id, class_id, school_year, grade_level, link_id, q1, q2, q3, is_anonymous, message, created_at)\n" .
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
   );
   $ins->execute([
     (int)$payload['student_id'],
@@ -99,6 +99,7 @@ function parent_meeting_feedback_insert(PDO $pdo, array $payload): void {
     (int)$payload['q1'],
     (int)$payload['q2'],
     (int)$payload['q3'],
+    (int)$payload['is_anonymous'],
     $payload['message'],
   ]);
 }
@@ -389,6 +390,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         'q1' => $q1,
         'q2' => $q2,
         'q3' => $q3,
+        'is_anonymous' => $meetingFeedbackAnonymous ? 1 : 0,
         'message' => $meetingForm['message'],
       ]);
 

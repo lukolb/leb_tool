@@ -500,6 +500,7 @@ CREATE TABLE IF NOT EXISTS `parent_meeting_feedback` (
   `q1` tinyint UNSIGNED NOT NULL,
   `q2` tinyint UNSIGNED NOT NULL,
   `q3` tinyint UNSIGNED NOT NULL,
+  `is_anonymous` tinyint(1) NOT NULL DEFAULT '0',
   `message` text COLLATE utf8mb4_unicode_ci,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
