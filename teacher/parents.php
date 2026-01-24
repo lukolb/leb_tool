@@ -130,6 +130,18 @@ function meeting_feedback_option_labels(): array {
   ];
 }
 
+function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): array {
+  $sql = "SELECT pmf.message, pmf.created_at, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+    "FROM parent_meeting_feedback pmf\n" .
+    "JOIN students s ON s.id=pmf.student_id\n" .
+    "JOIN classes c ON c.id=pmf.class_id";
+  if ($whereSql !== '') $sql .= " WHERE " . $whereSql;
+  $sql .= " ORDER BY pmf.created_at DESC LIMIT 200";
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
 function render_meeting_feedback_chart(array $stats, string $questionKey, string $questionText, string $questionTextEn): void {
   $total = (int)($stats['total'] ?? 0);
   $labels = meeting_feedback_option_labels();
@@ -652,15 +664,45 @@ $stFb = $pdo->prepare(
 $meetingStatsClass = null;
 $meetingStatsGrade = null;
 $meetingStatsOverall = null;
+$meetingTextsClass = [];
+$meetingTextsAdmin = [];
+$meetingTextScope = $role === 'admin' ? (string)($_GET['feedback_scope'] ?? 'class') : 'class';
 if ($meetingFeedbackEnabled) {
   if ($classId > 0) {
     $meetingStatsClass = meeting_feedback_stats($pdo, 'class_id=?', [$classId]);
+    $meetingTextsClass = meeting_feedback_texts(
+      $pdo,
+      "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+      [$classId]
+    );
   }
   if ($role === 'admin') {
     if ($gradeLevel !== null) {
       $meetingStatsGrade = meeting_feedback_stats($pdo, 'grade_level=?', [$gradeLevel]);
     }
     $meetingStatsOverall = meeting_feedback_stats($pdo, '', []);
+    if ($meetingTextScope === 'grade' && $gradeLevel !== null) {
+      $meetingTextsAdmin = meeting_feedback_texts(
+        $pdo,
+        "pmf.grade_level=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        [$gradeLevel]
+      );
+    } elseif ($meetingTextScope === 'all') {
+      $meetingTextsAdmin = meeting_feedback_texts(
+        $pdo,
+        "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        []
+      );
+    } else {
+      $meetingTextScope = 'class';
+      if ($classId > 0) {
+        $meetingTextsAdmin = meeting_feedback_texts(
+          $pdo,
+          "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+          [$classId]
+        );
+      }
+    }
   }
 }
 
@@ -1067,6 +1109,79 @@ $introText = $parentAutoApprove
           );
         ?>
       <?php endif; ?>
+
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Freitexte</h3>
+      <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+        <?php if ($gradeLevel !== null): ?>
+          <input type="hidden" name="grade_level" value="<?= (int)$gradeLevel ?>">
+        <?php endif; ?>
+        <label class="muted" style="font-size:12px;">Ansicht</label>
+        <select name="feedback_scope" class="input" onchange="this.form.submit();">
+          <option value="class" <?= $meetingTextScope === 'class' ? 'selected' : '' ?>>Klasse</option>
+          <option value="grade" <?= $meetingTextScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
+          <option value="all" <?= $meetingTextScope === 'all' ? 'selected' : '' ?>>Alle</option>
+        </select>
+      </form>
+      <?php if (!$meetingTextsAdmin): ?>
+        <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+      <?php else: ?>
+        <div class="responsive-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Schüler</th>
+                <th>Klasse</th>
+                <th>Nachricht</th>
+                <th>Datum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($meetingTextsAdmin as $row): ?>
+                <?php
+                  $studentName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+                  $classLabel = parent_class_display($row);
+                ?>
+                <tr>
+                  <td><strong><?=h($studentName)?></strong></td>
+                  <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
+                  <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+                  <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+
+    <hr style="margin:20px 0;">
+    <h3 style="margin-top:0;">Freitexte (Klasse)</h3>
+    <?php if (!$meetingTextsClass): ?>
+      <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Schüler</th>
+              <th>Nachricht</th>
+              <th>Datum</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($meetingTextsClass as $row): ?>
+              <?php $studentName = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')); ?>
+              <tr>
+                <td><strong><?=h($studentName)?></strong></td>
+                <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+                <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
     <?php endif; ?>
   </div>
 <?php endif; ?>
