@@ -565,33 +565,56 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .meeting-feedback-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    .meeting-feedback-table {
+      width: 100%;
+      border-collapse: collapse;
       margin-top: 8px;
-    }
-    .meeting-feedback-row {
-      display: grid;
-      grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr);
-      gap: 12px;
-      padding: 10px 12px;
+      background: #fff;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: #fff;
+      overflow: hidden;
     }
-    .meeting-feedback-options label {
-      display: flex;
-      gap: 8px;
-      align-items: center;
+    .meeting-feedback-table th,
+    .meeting-feedback-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      text-align: center;
       font-size: 14px;
     }
-    .meeting-feedback-options label + label {
-      margin-top: 6px;
+    .meeting-feedback-table th:first-child,
+    .meeting-feedback-table td:first-child {
+      text-align: left;
+      width: 45%;
+    }
+    .meeting-feedback-table tr:last-child td {
+      border-bottom: none;
+    }
+    .meeting-feedback-table .muted {
+      font-size: 12px;
     }
     @media (max-width: 720px) {
-      .meeting-feedback-row {
-        grid-template-columns: 1fr;
+      .meeting-feedback-table,
+      .meeting-feedback-table thead {
+        display: none;
+      }
+      .meeting-feedback-table tbody,
+      .meeting-feedback-table tr,
+      .meeting-feedback-table td {
+        display: block;
+        width: 100%;
+      }
+      .meeting-feedback-table tr {
+        border-bottom: 1px solid var(--border);
+      }
+      .meeting-feedback-table td {
+        text-align: left;
+      }
+      .meeting-feedback-table td[data-label]::before {
+        content: attr(data-label) ': ';
+        font-weight: 600;
+        display: inline-block;
+        min-width: 160px;
       }
     }
   </style>
@@ -680,50 +703,51 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           <form method="post" id="meetingFeedbackForm" style="margin-top:12px; <?= (!$meetingFeedbackRequired && !$meetingFeedbackCompleted) ? 'display:none;' : '' ?>">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="action" value="submit_meeting_feedback">
-            <div class="meeting-feedback-grid">
-              <div class="meeting-feedback-row">
-                <div class="meeting-feedback-question">
-                  <strong>1. <?=h(t('parent.portal.meeting_feedback_q1'))?></strong>
-                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q1_en'))?></div>
-                </div>
-                <div class="meeting-feedback-options">
+            <table class="meeting-feedback-table">
+              <thead>
+                <tr>
+                  <th><?=h(t('parent.portal.meeting_feedback_title'))?></th>
                   <?php foreach ([4,3,2,1] as $opt): ?>
-                    <label>
+                    <th><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></th>
+                  <?php endforeach; ?>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>1. <?=h(t('parent.portal.meeting_feedback_q1'))?></strong>
+                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q1_en'))?></div>
+                  </td>
+                  <?php foreach ([4,3,2,1] as $opt): ?>
+                    <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q1" value="<?= $opt ?>" <?= ($meetingForm['q1'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
-                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
-                    </label>
+                    </td>
                   <?php endforeach; ?>
-                </div>
-              </div>
-              <div class="meeting-feedback-row">
-                <div class="meeting-feedback-question">
-                  <strong>2. <?=h(t('parent.portal.meeting_feedback_q2'))?></strong>
-                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q2_en'))?></div>
-                </div>
-                <div class="meeting-feedback-options">
+                </tr>
+                <tr>
+                  <td>
+                    <strong>2. <?=h(t('parent.portal.meeting_feedback_q2'))?></strong>
+                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q2_en'))?></div>
+                  </td>
                   <?php foreach ([4,3,2,1] as $opt): ?>
-                    <label>
+                    <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q2" value="<?= $opt ?>" <?= ($meetingForm['q2'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
-                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
-                    </label>
+                    </td>
                   <?php endforeach; ?>
-                </div>
-              </div>
-              <div class="meeting-feedback-row">
-                <div class="meeting-feedback-question">
-                  <strong>3. <?=h(t('parent.portal.meeting_feedback_q3'))?></strong>
-                  <div class="muted"><?=h(t('parent.portal.meeting_feedback_q3_en'))?></div>
-                </div>
-                <div class="meeting-feedback-options">
+                </tr>
+                <tr>
+                  <td>
+                    <strong>3. <?=h(t('parent.portal.meeting_feedback_q3'))?></strong>
+                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q3_en'))?></div>
+                  </td>
                   <?php foreach ([4,3,2,1] as $opt): ?>
-                    <label>
+                    <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
                       <input type="radio" name="q3" value="<?= $opt ?>" <?= ($meetingForm['q3'] ?? '') === (string)$opt ? 'checked' : '' ?> required>
-                      <span><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></span>
-                    </label>
+                    </td>
                   <?php endforeach; ?>
-                </div>
-              </div>
-            </div>
+                </tr>
+              </tbody>
+            </table>
             <label style="margin-top:12px; display:block;">
               <strong><?=h(t('parent.portal.meeting_feedback_message_label'))?></strong>
               <div class="muted"><?=h(t('parent.portal.meeting_feedback_message_label_en'))?></div>
