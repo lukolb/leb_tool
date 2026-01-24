@@ -708,7 +708,18 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                 <tr>
                   <th><?=h(t('parent.portal.meeting_feedback_title'))?></th>
                   <?php foreach ([4,3,2,1] as $opt): ?>
-                    <th><?=h(t('parent.portal.meeting_feedback_option_' . $opt))?></th>
+                    <?php
+                      $label = t('parent.portal.meeting_feedback_option_' . $opt);
+                      $parts = array_map('trim', explode('/', $label, 2));
+                      $primary = $parts[0] ?? $label;
+                      $secondary = $parts[1] ?? '';
+                    ?>
+                    <th>
+                      <div><?=h($primary)?></div>
+                      <?php if ($secondary !== ''): ?>
+                        <div class="muted"><?=h($secondary)?></div>
+                      <?php endif; ?>
+                    </th>
                   <?php endforeach; ?>
                 </tr>
               </thead>
@@ -751,7 +762,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
             <label style="margin-top:12px; display:block;">
               <strong><?=h(t('parent.portal.meeting_feedback_message_label'))?></strong>
               <div class="muted"><?=h(t('parent.portal.meeting_feedback_message_label_en'))?></div>
-              <textarea name="message" rows="4" style="margin-top:6px;"><?=h((string)$meetingForm['message'])?></textarea>
+              <textarea name="message" rows="4" style="margin-top:6px; width:100%;"><?=h((string)$meetingForm['message'])?></textarea>
             </label>
             <div class="actions" style="margin-top:12px;">
               <button class="btn primary" type="submit"><?=h(t('parent.portal.meeting_feedback_submit'))?></button>
