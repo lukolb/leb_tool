@@ -144,7 +144,7 @@ $sql =
 
 $requests = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
-$meetingFeedbackScope = (string)($_GET['meeting_feedback_scope'] ?? 'class');
+$meetingFeedbackScope = (string)($_GET['meeting_feedback_scope'] ?? 'all');
 $meetingFeedbackGrade = isset($_GET['meeting_feedback_grade']) && $_GET['meeting_feedback_grade'] !== ''
   ? (int)$_GET['meeting_feedback_grade']
   : null;
@@ -158,12 +158,13 @@ if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
   $meetingFeedbackParams[] = $meetingFeedbackGrade;
 } elseif ($meetingFeedbackScope === 'all') {
   // no filter
-} else {
-  $meetingFeedbackScope = 'class';
+} elseif ($meetingFeedbackScope === 'class') {
   if ($meetingFeedbackClass > 0) {
     $meetingFeedbackWhere[] = 'pmf.class_id=?';
     $meetingFeedbackParams[] = $meetingFeedbackClass;
   }
+} else {
+  $meetingFeedbackScope = 'all';
 }
 $meetingStatsSql =
   "SELECT COUNT(*) AS total,\n" .
@@ -349,30 +350,35 @@ render_admin_header($pageTitle);
 <div class="card" style="margin-top:14px;">
   <h2>Feedback zum Lernentwicklungsgespräch</h2>
   <p class="muted" style="margin-top:0;">Freitexte aus dem Eltern-Feedbackbogen. Bei anonymen Rückmeldungen werden keine Namen angezeigt.</p>
-  <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
+  <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f7f9fc;">
     <input type="hidden" name="status" value="<?=h($statusFilter)?>">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
-    <label class="muted" style="font-size:12px;">Auswertung</label>
-    <select name="meeting_feedback_scope" class="input">
-      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Nach Klasse</option>
-      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Nach Klassenstufe</option>
-      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle Rückmeldungen</option>
+    <label class="muted" style="font-size:12px;">Auswertungsebene</label>
+    <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
+      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
+      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
+      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
     </select>
-    <label class="muted" style="font-size:12px;">Klasse</label>
-    <select name="meeting_feedback_class" class="input">
-      <option value="">—</option>
-      <?php foreach ($classes as $c): ?>
-        <option value="<?= (int)$c['id'] ?>" <?= $meetingFeedbackClass === (int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
-      <?php endforeach; ?>
-    </select>
-    <label class="muted" style="font-size:12px;">Klassenstufe</label>
-    <select name="meeting_feedback_grade" class="input">
-      <option value="">—</option>
-      <?php foreach ($availableGrades as $g): ?>
-        <option value="<?= (int)$g ?>" <?= ($meetingFeedbackGrade !== null && (int)$meetingFeedbackGrade === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
-      <?php endforeach; ?>
-    </select>
-    <button class="btn secondary" type="submit">Anwenden</button>
+    <?php if ($meetingFeedbackScope === 'grade' || $meetingFeedbackScope === 'class'): ?>
+      <label class="muted" style="font-size:12px;">Klassenstufe</label>
+      <select name="meeting_feedback_grade" class="input" onchange="this.form.submit();">
+        <option value="">—</option>
+        <?php foreach ($availableGrades as $g): ?>
+          <option value="<?= (int)$g ?>" <?= ($meetingFeedbackGrade !== null && (int)$meetingFeedbackGrade === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
+        <?php endforeach; ?>
+      </select>
+    <?php endif; ?>
+    <?php if ($meetingFeedbackScope === 'class' && $meetingFeedbackGrade !== null): ?>
+      <label class="muted" style="font-size:12px;">Klasse</label>
+      <select name="meeting_feedback_class" class="input">
+        <option value="">—</option>
+        <?php foreach ($classes as $c): ?>
+          <?php if ($c['grade_level'] !== null && (int)$c['grade_level'] !== $meetingFeedbackGrade) continue; ?>
+          <option value="<?= (int)$c['id'] ?>" <?= $meetingFeedbackClass === (int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
+        <?php endforeach; ?>
+      </select>
+      <button class="btn secondary" type="submit">Anwenden</button>
+    <?php endif; ?>
   </form>
   <?php
     $meetingTotal = (int)($meetingStats['total'] ?? 0);
