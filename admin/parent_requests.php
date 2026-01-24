@@ -9,6 +9,9 @@ require_admin();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$cfg = app_config();
+$parentCfg = $cfg['parent'] ?? [];
+$meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 
 $classes = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")
   ->fetchAll(PDO::FETCH_ASSOC);
@@ -19,6 +22,13 @@ function parent_admin_class_display(array $c): string {
   $name  = (string)($c['name'] ?? '');
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
+
+$availableGrades = [];
+foreach ($classes as $c) {
+  if ($c['grade_level'] !== null) $availableGrades[] = (int)$c['grade_level'];
+}
+$availableGrades = array_values(array_unique($availableGrades));
+sort($availableGrades);
 
 $alerts = [];
 $errors = [];
@@ -133,6 +143,37 @@ $sql =
   "LIMIT 120";
 
 $requests = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+$meetingFeedbackScope = (string)($_GET['meeting_feedback_scope'] ?? 'class');
+$meetingFeedbackGrade = isset($_GET['meeting_feedback_grade']) && $_GET['meeting_feedback_grade'] !== ''
+  ? (int)$_GET['meeting_feedback_grade']
+  : null;
+$meetingFeedbackWhere = [];
+$meetingFeedbackParams = [];
+if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
+  $meetingFeedbackWhere[] = 'pmf.grade_level=?';
+  $meetingFeedbackParams[] = $meetingFeedbackGrade;
+} elseif ($meetingFeedbackScope === 'all') {
+  // no filter
+} else {
+  $meetingFeedbackScope = 'class';
+  if ($filterClassId > 0) {
+    $meetingFeedbackWhere[] = 'pmf.class_id=?';
+    $meetingFeedbackParams[] = $filterClassId;
+  }
+}
+$meetingFeedbackWhere[] = "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''";
+$meetingFeedbackSql =
+  "SELECT pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  "FROM parent_meeting_feedback pmf\n" .
+  "JOIN students s ON s.id=pmf.student_id\n" .
+  "JOIN classes c ON c.id=pmf.class_id\n" .
+  ($meetingFeedbackWhere ? ('WHERE ' . implode(' AND ', $meetingFeedbackWhere) . "\n") : '') .
+  "ORDER BY pmf.created_at DESC\n" .
+  "LIMIT 200";
+$stMeeting = $pdo->prepare($meetingFeedbackSql);
+$stMeeting->execute($meetingFeedbackParams);
+$meetingFeedbackTexts = $stMeeting->fetchAll(PDO::FETCH_ASSOC);
 
 $pageTitle = t('admin.parent_requests.title', 'Elternfreigaben');
 render_admin_header($pageTitle);
@@ -279,6 +320,61 @@ render_admin_header($pageTitle);
               </div>
             </td>
           </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
+
+<div class="card" style="margin-top:14px;">
+  <h2>Feedback zum Lernentwicklungsgespräch</h2>
+  <p class="muted" style="margin-top:0;">Freitexte aus dem Eltern-Feedbackbogen. Bei anonymen Rückmeldungen werden keine Namen angezeigt.</p>
+  <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
+    <input type="hidden" name="status" value="<?=h($statusFilter)?>">
+    <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
+    <label class="muted" style="font-size:12px;">Ansicht</label>
+    <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
+      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
+      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
+      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
+    </select>
+    <label class="muted" style="font-size:12px;">Stufe</label>
+    <select name="meeting_feedback_grade" class="input" onchange="this.form.submit();">
+      <option value="">—</option>
+      <?php foreach ($availableGrades as $g): ?>
+        <option value="<?= (int)$g ?>" <?= ($meetingFeedbackGrade !== null && (int)$meetingFeedbackGrade === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
+      <?php endforeach; ?>
+    </select>
+  </form>
+  <?php if (!$meetingFeedbackTexts): ?>
+    <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+  <?php else: ?>
+    <div class="responsive-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Schüler</th>
+            <th>Klasse</th>
+            <th>Nachricht</th>
+            <th>Datum</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($meetingFeedbackTexts as $row): ?>
+            <?php
+              $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
+              $studentName = $isAnonymous
+                ? 'Anonym'
+                : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+              $classLabel = parent_admin_class_display($row);
+            ?>
+            <tr>
+              <td><strong><?=h($studentName)?></strong></td>
+              <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
+              <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+              <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
+            </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
