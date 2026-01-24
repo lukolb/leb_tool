@@ -53,6 +53,8 @@ return [
     'meeting_feedback_enabled' => false,
     // Feedbackbogen ist verpflichtend, bevor der Bericht angezeigt wird.
     'meeting_feedback_required' => false,
+    // Feedbackbogen anonym erfassen (Eltern sehen Hinweis im Portal).
+    'meeting_feedback_anonymous' => false,
   ],
   'signature' => [
     // 32-Byte Master-Key (hex/base64 oder raw). Kann auch via SIGNATURE_MASTER_KEY gesetzt werden.

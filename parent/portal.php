@@ -14,6 +14,7 @@ $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
 $meetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 $meetingFeedbackRequired = (bool)($parentCfg['meeting_feedback_required'] ?? false);
+$meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 
 function parent_meta_read(?string $json): array {
   if (!$json) return [];
@@ -699,6 +700,9 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
             <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_required_hint'))?></div>
           <?php else: ?>
             <p class="muted" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_optional_hint'))?></p>
+          <?php endif; ?>
+          <?php if ($meetingFeedbackAnonymous): ?>
+            <p class="muted" style="margin-top:6px;"><?=h(t('parent.portal.meeting_feedback_anonymous_hint'))?></p>
           <?php endif; ?>
           <form method="post" id="meetingFeedbackForm" style="margin-top:12px; <?= (!$meetingFeedbackRequired && !$meetingFeedbackCompleted) ? 'display:none;' : '' ?>">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">

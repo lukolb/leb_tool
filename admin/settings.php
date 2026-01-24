@@ -159,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['parent']['signature_enabled'] = isset($_POST['parent_signature_enabled']);
       $cfg['parent']['meeting_feedback_enabled'] = isset($_POST['parent_meeting_feedback_enabled']);
       $cfg['parent']['meeting_feedback_required'] = isset($_POST['parent_meeting_feedback_required']) && $cfg['parent']['meeting_feedback_enabled'];
+      $cfg['parent']['meeting_feedback_anonymous'] = isset($_POST['parent_meeting_feedback_anonymous']);
 
       if (!isset($cfg['signature']) || !is_array($cfg['signature'])) $cfg['signature'] = [];
       $sigKeyInput = trim((string)($_POST['parent_signature_master_key'] ?? ''));
@@ -262,6 +263,7 @@ $parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
 $parentSignatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $parentMeetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 $parentMeetingFeedbackRequired = (bool)($parentCfg['meeting_feedback_required'] ?? false);
+$parentMeetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 $signatureCfg = $cfg['signature'] ?? [];
 $signatureMasterKeySet = trim((string)($signatureCfg['master_key'] ?? '')) !== '';
 
@@ -482,6 +484,10 @@ render_admin_header('Admin – Settings');
       <input type="checkbox" name="parent_meeting_feedback_required" value="1" <?=$parentMeetingFeedbackRequired ? 'checked' : ''?> <?= $parentMeetingFeedbackEnabled ? '' : 'disabled' ?>> Feedbackbogen verpflichtend vor Berichtszugriff
     </label>
     <p class="muted">Wenn aktiviert, müssen Eltern den Feedbackbogen ausfüllen, bevor sie den Bericht sehen können.</p>
+    <label class="chk" style="margin-top:6px;">
+      <input type="checkbox" name="parent_meeting_feedback_anonymous" value="1" <?=$parentMeetingFeedbackAnonymous ? 'checked' : ''?>> Feedback anonym erfassen
+    </label>
+    <p class="muted">Hinweistext in der Elternansicht: Feedback wird anonym ausgewertet.</p>
 
     <label style="margin-top:10px;">SIGNATURE_MASTER_KEY (32 Byte, Hex/Base64 möglich)</label>
     <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">

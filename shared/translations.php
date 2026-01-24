@@ -96,6 +96,7 @@ function translations_catalog(): array {
       'parent.portal.meeting_feedback_unavailable' => 'Feedback ist aktuell nicht verfügbar.',
       'parent.portal.meeting_feedback_already' => 'Feedback wurde bereits übermittelt.',
       'parent.portal.meeting_feedback_missing' => 'Bitte beantworten Sie alle Aussagen.',
+      'parent.portal.meeting_feedback_anonymous_hint' => 'Ihr Feedback wird anonym ausgewertet.',
 
       // Student login
       'student.login.html_title' => 'Schüler Login',
@@ -585,6 +586,7 @@ function translations_catalog(): array {
       'parent.portal.meeting_feedback_unavailable' => 'Feedback is currently unavailable.',
       'parent.portal.meeting_feedback_already' => 'Feedback has already been submitted.',
       'parent.portal.meeting_feedback_missing' => 'Please answer all statements.',
+      'parent.portal.meeting_feedback_anonymous_hint' => 'Your feedback is evaluated anonymously.',
 
       // Student login
       'student.login.html_title' => 'Student login',
