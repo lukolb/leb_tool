@@ -708,7 +708,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
     async function loadTemplate(){
       const resp = await fetch(payload.template_url, { credentials:'same-origin' });
-      if (!resp.ok) throw new Error(<?= json_encode(t('parent.portal.pdf_template_load_error')) ?>));
+      if (!resp.ok) throw new Error(<?= json_encode(t('parent.portal.pdf_template_load_error')) ?>);
       return new Uint8Array(await resp.arrayBuffer());
     }
 
