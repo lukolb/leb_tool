@@ -37,6 +37,17 @@ function translations_catalog(): array {
         
       'admin.parent_requests.pending_fb' => 'offen',
 
+      // Parent portal
+      'parent.portal.token_missing' => 'Token fehlt.',
+      'parent.portal.link_not_found' => 'Freigabe nicht gefunden.',
+      'parent.portal.responses_unavailable' => 'Rückmeldungen sind aktuell nicht möglich.',
+      'parent.portal.download_filename_prefix' => 'Lernentwicklungsbericht',
+      'parent.portal.loader_aria' => 'Lädt…',
+      'parent.portal.loader_text' => 'PDF wird geladen…',
+      'parent.portal.feedback_send_error' => 'Rückmeldung konnte nicht gesendet werden.',
+      'parent.portal.pdf_lib_load_error' => 'PDF-Bibliothek konnte nicht geladen werden.',
+      'parent.portal.pdf_template_load_error' => 'PDF-Vorlage konnte nicht geladen werden.',
+
       // Student login
       'student.login.html_title' => 'Schüler Login',
       'student.login.brand_subtitle' => 'Schüler Login',
@@ -465,6 +476,17 @@ function translations_catalog(): array {
       'aria.teacher_nav' => 'Teacher navigation',
         
       'admin.parent_requests.pending_fb' => 'open',
+
+      // Parent portal
+      'parent.portal.token_missing' => 'Token is missing.',
+      'parent.portal.link_not_found' => 'Share link not found.',
+      'parent.portal.responses_unavailable' => 'Responses are currently not available.',
+      'parent.portal.download_filename_prefix' => 'Learning_report',
+      'parent.portal.loader_aria' => 'Loading…',
+      'parent.portal.loader_text' => 'Loading PDF…',
+      'parent.portal.feedback_send_error' => 'Feedback could not be sent.',
+      'parent.portal.pdf_lib_load_error' => 'PDF library could not be loaded.',
+      'parent.portal.pdf_template_load_error' => 'PDF template could not be loaded.',
 
       // Student login
       'student.login.html_title' => 'Student login',

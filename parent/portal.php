@@ -218,6 +218,10 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
     $src = (string)($row['source'] ?? 'teacher');
     $meta = parent_meta_read($row['meta_json'] ?? null);
     $label = (string)($row['label'] ?? $key);
+    if ($lang === 'en') {
+      $labelEn = trim((string)($row['label_en'] ?? ''));
+      if ($labelEn !== '') $label = $labelEn;
+    }
     $resolved = parent_resolve_option_value($pdo, $meta, $row['value_json'] ?? null, $row['value_text'] ?? '');
 
     $existing = $map[$key] ?? null;
@@ -245,7 +249,7 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
 
 if ($token === '') {
   http_response_code(400);
-  echo 'Token fehlt.';
+  echo h(t('parent.portal.token_missing', 'Token fehlt.'));
   exit;
 }
 
@@ -264,11 +268,11 @@ $link = $st->fetch(PDO::FETCH_ASSOC);
 
 if (!$link) {
   http_response_code(404);
-  echo 'Freigabe nicht gefunden.';
+  echo h(t('parent.portal.link_not_found', 'Freigabe nicht gefunden.'));
   exit;
 }
 
-$lang = 'de';
+$lang = ui_lang();
 
 $expiresAt = $link['expires_at'] ?? null;
 $isExpired = false;
@@ -293,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
   try {
     csrf_verify();
     $action = (string)$_POST['action'];
-    if (!$allowResponses) throw new RuntimeException('Rückmeldungen sind aktuell nicht möglich.');
+    if (!$allowResponses) throw new RuntimeException(t('parent.portal.responses_unavailable', 'Rückmeldungen sind aktuell nicht möglich.'));
 
     if ($action === 'send_feedback') {
       $message = trim((string)($_POST['message'] ?? ''));
@@ -424,7 +428,8 @@ $logo = $b['logo_path'] ?? '';
 $primary = $b['primary'] ?? '#0b57d0';
 $secondary = $b['secondary'] ?? '#111111';
 $allowDownload = (bool)($parentCfg['download_enabled'] ?? false);
-$downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
+$downloadFilename = t('parent.portal.download_filename_prefix', 'Lernentwicklungsbericht') . '_' .
+  preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['last_name'] ?? '')) . '_' .
   preg_replace('/[^A-Za-z0-9._-]+/', '_', (string)($link['first_name'] ?? '')) . '.pdf';
 ?>
 <!doctype html>
@@ -482,6 +487,10 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         <div class="brand-title"><?=h($org)?></div>
         <div class="brand-subtitle"><?=h(t('parent.portal.subtitle', 'Elternmodus – nur Lesen'))?></div>
       </div>
+      <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria', 'Sprache wechseln'))?>">
+        <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
+        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇬🇧</a>
+      </div>
     </div>
   </div>
 
@@ -537,9 +546,9 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
       <div id="pdfPreview" class="card"
            style="background:#f8f9fb; border:1px solid var(--border); min-height:120px; user-select:none;-webkit-user-select:none; padding-bottom:6px;"
            oncontextmenu="return false;">
-        <div class="pdf-loader" aria-label="Lädt…" role="status">
+        <div class="pdf-loader" aria-label="<?=h(t('parent.portal.loader_aria', 'Lädt…'))?>" role="status">
           <span class="spinner"></span>
-          <span class="txt">PDF wird geladen…</span>
+          <span class="txt"><?=h(t('parent.portal.loader_text', 'PDF wird geladen…'))?></span>
         </div>
       </div>
     <?php endif; ?>
@@ -654,7 +663,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
           ensureAckPill();
           feedbackForm.reset();
         } catch (e) {
-          pushAlert('danger', <?= json_encode('Rückmeldung konnte nicht gesendet werden.') ?>);
+          pushAlert('danger', <?= json_encode(t('parent.portal.feedback_send_error', 'Rückmeldung konnte nicht gesendet werden.')) ?>);
         }
       });
     }
@@ -665,7 +674,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
         const s = document.createElement('script');
         s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
         s.onload = resolve;
-        s.onerror = () => reject(new Error('PDF-Bibliothek konnte nicht geladen werden.'));
+        s.onerror = () => reject(new Error(<?= json_encode(t('parent.portal.pdf_lib_load_error', 'PDF-Bibliothek konnte nicht geladen werden.')) ?>));
         document.head.appendChild(s);
       });
     }
@@ -699,7 +708,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
 
     async function loadTemplate(){
       const resp = await fetch(payload.template_url, { credentials:'same-origin' });
-      if (!resp.ok) throw new Error('PDF-Vorlage konnte nicht geladen werden.');
+      if (!resp.ok) throw new Error(<?= json_encode(t('parent.portal.pdf_template_load_error', 'PDF-Vorlage konnte nicht geladen werden.')) ?>));
       return new Uint8Array(await resp.arrayBuffer());
     }
 
@@ -869,7 +878,7 @@ $downloadFilename = 'Lernentwicklungsbericht_' . preg_replace('/[^A-Za-z0-9._-]+
 
       const y = parts.y, m = parts.m, d = parts.d;
       const yy = String(y).slice(-2);
-      const lang = 'de';
+      const lang = <?= json_encode($lang) ?>;
 
       return fmt
         .replaceAll('YYYY', String(y))
