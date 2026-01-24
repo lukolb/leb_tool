@@ -686,7 +686,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
             <div class="muted"><?=h(t('parent.portal.meeting_feedback_subtitle'))?></div>
           </div>
           <?php if (!$meetingFeedbackCompleted && !$meetingFeedbackRequired && $allowResponses): ?>
-            <button class="btn secondary" type="button" id="meetingFeedbackToggle"><?=h(t('parent.portal.meeting_feedback_open'))?></button>
+            <span class="muted"><?=h(t('parent.portal.meeting_feedback_optional_hint'))?></span>
           <?php endif; ?>
         </div>
         <?php if ($meetingFeedbackCompleted): ?>
@@ -698,8 +698,6 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         <?php else: ?>
           <?php if ($meetingFeedbackRequired): ?>
             <div class="alert warn" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_required_hint'))?></div>
-          <?php else: ?>
-            <p class="muted" style="margin-top:10px;"><?=h(t('parent.portal.meeting_feedback_optional_hint'))?></p>
           <?php endif; ?>
           <?php if ($meetingFeedbackAnonymous): ?>
             <p class="muted" style="margin-top:6px;"><?=h(t('parent.portal.meeting_feedback_anonymous_hint'))?></p>
@@ -828,7 +826,6 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     const feedbackForm = document.getElementById('parentFeedbackForm');
     const alertsWrap = document.getElementById('parentAlerts');
     const feedbackButton = feedbackForm?.querySelector('.btn.primary');
-    const meetingToggle = document.getElementById('meetingFeedbackToggle');
     const meetingForm = document.getElementById('meetingFeedbackForm');
 
     if (preview) {
@@ -909,15 +906,6 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       });
     }
 
-    if (meetingToggle && meetingForm) {
-      meetingToggle.addEventListener('click', () => {
-        const isHidden = meetingForm.style.display === 'none' || meetingForm.style.display === '';
-        meetingForm.style.display = isHidden ? 'block' : 'none';
-        if (isHidden) {
-          meetingForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
-    }
 
     async function ensurePdfLib(){
       if (window.PDFLib) return;
