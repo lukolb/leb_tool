@@ -24,11 +24,15 @@ function parent_admin_class_display(array $c): string {
 }
 
 $availableGrades = [];
+$availableYears = [];
 foreach ($classes as $c) {
   if ($c['grade_level'] !== null) $availableGrades[] = (int)$c['grade_level'];
+  if (!empty($c['school_year'])) $availableYears[] = (string)$c['school_year'];
 }
 $availableGrades = array_values(array_unique($availableGrades));
 sort($availableGrades);
+$availableYears = array_values(array_unique($availableYears));
+rsort($availableYears);
 
 $alerts = [];
 $errors = [];
@@ -151,8 +155,15 @@ $meetingFeedbackGrade = isset($_GET['meeting_feedback_grade']) && $_GET['meeting
 $meetingFeedbackClass = isset($_GET['meeting_feedback_class']) && $_GET['meeting_feedback_class'] !== ''
   ? (int)$_GET['meeting_feedback_class']
   : 0;
+$meetingFeedbackYear = isset($_GET['meeting_feedback_year']) && $_GET['meeting_feedback_year'] !== ''
+  ? (string)$_GET['meeting_feedback_year']
+  : '';
 $meetingFeedbackWhere = [];
 $meetingFeedbackParams = [];
+if ($meetingFeedbackYear !== '') {
+  $meetingFeedbackWhere[] = 'pmf.school_year=?';
+  $meetingFeedbackParams[] = $meetingFeedbackYear;
+}
 if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
   $meetingFeedbackWhere[] = 'pmf.grade_level=?';
   $meetingFeedbackParams[] = $meetingFeedbackGrade;
@@ -359,7 +370,14 @@ render_admin_header($pageTitle);
       <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
       <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
     </select>
-    <?php if ($meetingFeedbackScope === 'grade' || $meetingFeedbackScope === 'class'): ?>
+    <label class="muted" style="font-size:12px;">Schuljahr</label>
+    <select name="meeting_feedback_year" class="input" onchange="this.form.submit();">
+      <option value="">Alle</option>
+      <?php foreach ($availableYears as $year): ?>
+        <option value="<?=h($year)?>" <?= $meetingFeedbackYear === $year ? 'selected' : '' ?>><?=h($year)?></option>
+      <?php endforeach; ?>
+    </select>
+    <?php if ($meetingFeedbackScope === 'grade'): ?>
       <label class="muted" style="font-size:12px;">Klassenstufe</label>
       <select name="meeting_feedback_grade" class="input" onchange="this.form.submit();">
         <option value="">—</option>
@@ -368,12 +386,12 @@ render_admin_header($pageTitle);
         <?php endforeach; ?>
       </select>
     <?php endif; ?>
-    <?php if ($meetingFeedbackScope === 'class' && $meetingFeedbackGrade !== null): ?>
+    <?php if ($meetingFeedbackScope === 'class'): ?>
       <label class="muted" style="font-size:12px;">Klasse</label>
       <select name="meeting_feedback_class" class="input">
         <option value="">—</option>
         <?php foreach ($classes as $c): ?>
-          <?php if ($c['grade_level'] !== null && (int)$c['grade_level'] !== $meetingFeedbackGrade) continue; ?>
+          <?php if ($meetingFeedbackYear !== '' && (string)($c['school_year'] ?? '') !== $meetingFeedbackYear) continue; ?>
           <option value="<?= (int)$c['id'] ?>" <?= $meetingFeedbackClass === (int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
         <?php endforeach; ?>
       </select>
