@@ -164,9 +164,11 @@ if ($meetingFeedbackYear !== '') {
   $meetingFeedbackWhere[] = 'pmf.school_year=?';
   $meetingFeedbackParams[] = $meetingFeedbackYear;
 }
-if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
-  $meetingFeedbackWhere[] = 'pmf.grade_level=?';
-  $meetingFeedbackParams[] = $meetingFeedbackGrade;
+if ($meetingFeedbackScope === 'grade') {
+  if ($meetingFeedbackGrade !== null) {
+    $meetingFeedbackWhere[] = 'pmf.grade_level=?';
+    $meetingFeedbackParams[] = $meetingFeedbackGrade;
+  }
 } elseif ($meetingFeedbackScope === 'all') {
   // no filter
 } elseif ($meetingFeedbackScope === 'class') {
@@ -364,18 +366,18 @@ render_admin_header($pageTitle);
   <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f7f9fc;">
     <input type="hidden" name="status" value="<?=h($statusFilter)?>">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
-    <label class="muted" style="font-size:12px;">Auswertungsebene</label>
-    <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
-      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
-      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
-      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
-    </select>
     <label class="muted" style="font-size:12px;">Schuljahr</label>
     <select name="meeting_feedback_year" class="input" onchange="this.form.submit();">
       <option value="">Alle</option>
       <?php foreach ($availableYears as $year): ?>
         <option value="<?=h($year)?>" <?= $meetingFeedbackYear === $year ? 'selected' : '' ?>><?=h($year)?></option>
       <?php endforeach; ?>
+    </select>
+    <label class="muted" style="font-size:12px;">Auswertungsebene</label>
+    <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
+      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
+      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
+      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
     </select>
     <?php if ($meetingFeedbackScope === 'grade'): ?>
       <label class="muted" style="font-size:12px;">Klassenstufe</label>
