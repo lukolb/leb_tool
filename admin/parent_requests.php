@@ -148,6 +148,9 @@ $meetingFeedbackScope = (string)($_GET['meeting_feedback_scope'] ?? 'class');
 $meetingFeedbackGrade = isset($_GET['meeting_feedback_grade']) && $_GET['meeting_feedback_grade'] !== ''
   ? (int)$_GET['meeting_feedback_grade']
   : null;
+$meetingFeedbackClass = isset($_GET['meeting_feedback_class']) && $_GET['meeting_feedback_class'] !== ''
+  ? (int)$_GET['meeting_feedback_class']
+  : 0;
 $meetingFeedbackWhere = [];
 $meetingFeedbackParams = [];
 if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
@@ -157,22 +160,38 @@ if ($meetingFeedbackScope === 'grade' && $meetingFeedbackGrade !== null) {
   // no filter
 } else {
   $meetingFeedbackScope = 'class';
-  if ($filterClassId > 0) {
+  if ($meetingFeedbackClass > 0) {
     $meetingFeedbackWhere[] = 'pmf.class_id=?';
-    $meetingFeedbackParams[] = $filterClassId;
+    $meetingFeedbackParams[] = $meetingFeedbackClass;
   }
 }
-$meetingFeedbackWhere[] = "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''";
+$meetingStatsSql =
+  "SELECT COUNT(*) AS total,\n" .
+  "  SUM(q1=4) AS q1_4, SUM(q1=3) AS q1_3, SUM(q1=2) AS q1_2, SUM(q1=1) AS q1_1,\n" .
+  "  SUM(q2=4) AS q2_4, SUM(q2=3) AS q2_3, SUM(q2=2) AS q2_2, SUM(q2=1) AS q2_1,\n" .
+  "  SUM(q3=4) AS q3_4, SUM(q3=3) AS q3_3, SUM(q3=2) AS q3_2, SUM(q3=1) AS q3_1\n" .
+  "FROM parent_meeting_feedback pmf\n" .
+  ($meetingFeedbackWhere ? ('WHERE ' . implode(' AND ', $meetingFeedbackWhere) . "\n") : '');
+$stMeetingStats = $pdo->prepare($meetingStatsSql);
+$stMeetingStats->execute($meetingFeedbackParams);
+$meetingStats = $stMeetingStats->fetch(PDO::FETCH_ASSOC) ?: [];
+foreach ($meetingStats as $k => $v) {
+  $meetingStats[$k] = (int)$v;
+}
+
+$meetingFeedbackWhereTexts = $meetingFeedbackWhere;
+$meetingFeedbackParamsTexts = $meetingFeedbackParams;
+$meetingFeedbackWhereTexts[] = "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''";
 $meetingFeedbackSql =
   "SELECT pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
   "FROM parent_meeting_feedback pmf\n" .
   "JOIN students s ON s.id=pmf.student_id\n" .
   "JOIN classes c ON c.id=pmf.class_id\n" .
-  ($meetingFeedbackWhere ? ('WHERE ' . implode(' AND ', $meetingFeedbackWhere) . "\n") : '') .
+  ($meetingFeedbackWhereTexts ? ('WHERE ' . implode(' AND ', $meetingFeedbackWhereTexts) . "\n") : '') .
   "ORDER BY pmf.created_at DESC\n" .
   "LIMIT 200";
 $stMeeting = $pdo->prepare($meetingFeedbackSql);
-$stMeeting->execute($meetingFeedbackParams);
+$stMeeting->execute($meetingFeedbackParamsTexts);
 $meetingFeedbackTexts = $stMeeting->fetchAll(PDO::FETCH_ASSOC);
 
 $pageTitle = t('admin.parent_requests.title', 'Elternfreigaben');
@@ -333,20 +352,79 @@ render_admin_header($pageTitle);
   <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
     <input type="hidden" name="status" value="<?=h($statusFilter)?>">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
-    <label class="muted" style="font-size:12px;">Ansicht</label>
-    <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
-      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
-      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
-      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
+    <label class="muted" style="font-size:12px;">Auswertung</label>
+    <select name="meeting_feedback_scope" class="input">
+      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Nach Klasse</option>
+      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Nach Klassenstufe</option>
+      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle Rückmeldungen</option>
     </select>
-    <label class="muted" style="font-size:12px;">Stufe</label>
-    <select name="meeting_feedback_grade" class="input" onchange="this.form.submit();">
+    <label class="muted" style="font-size:12px;">Klasse</label>
+    <select name="meeting_feedback_class" class="input">
+      <option value="">—</option>
+      <?php foreach ($classes as $c): ?>
+        <option value="<?= (int)$c['id'] ?>" <?= $meetingFeedbackClass === (int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
+      <?php endforeach; ?>
+    </select>
+    <label class="muted" style="font-size:12px;">Klassenstufe</label>
+    <select name="meeting_feedback_grade" class="input">
       <option value="">—</option>
       <?php foreach ($availableGrades as $g): ?>
         <option value="<?= (int)$g ?>" <?= ($meetingFeedbackGrade !== null && (int)$meetingFeedbackGrade === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
       <?php endforeach; ?>
     </select>
+    <button class="btn secondary" type="submit">Anwenden</button>
   </form>
+  <?php
+    $meetingTotal = (int)($meetingStats['total'] ?? 0);
+    $renderStats = function(string $key, string $title, string $subtitle) use ($meetingStats, $meetingTotal) {
+      $labels = [
+        1 => 'Stimme nicht zu',
+        2 => 'Stimme eher nicht zu',
+        3 => 'Stimme eher zu',
+        4 => 'Stimme völlig zu',
+      ];
+      echo '<div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+      echo '<div style="font-weight:600; margin-bottom:6px;">' . h($title) . '</div>';
+      echo '<div class="muted" style="margin-bottom:10px;">' . h($subtitle) . '</div>';
+      if ($meetingTotal <= 0) {
+        echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+        echo '</div>';
+        return;
+      }
+      foreach ($labels as $score => $label) {
+        $count = (int)($meetingStats[$key . '_' . $score] ?? 0);
+        $pct = $meetingTotal > 0 ? round(($count / $meetingTotal) * 100, 1) : 0;
+        echo '<div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">';
+        echo '<div style="flex:1;">';
+        echo '<div style="font-size:13px; margin-bottom:4px;">' . h($label) . '</div>';
+        echo '<div style="background:#eef1f6; height:8px; border-radius:6px; overflow:hidden;">';
+        echo '<div style="width:' . h((string)$pct) . '%; height:8px; background:var(--primary);"></div>';
+        echo '</div>';
+        echo '</div>';
+        echo '<div class="muted" style="min-width:70px; text-align:right;">' . h((string)$count) . '</div>';
+        echo '</div>';
+      }
+      echo '<div class="muted" style="margin-top:8px;">Gesamt: ' . h((string)$meetingTotal) . '</div>';
+      echo '</div>';
+    };
+  ?>
+  <?php
+    $renderStats(
+      'q1',
+      '1. Das Gespräch war verständlich und informativ.',
+      'The conference was clear and informative.'
+    );
+    $renderStats(
+      'q2',
+      '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+      'I now understand how I can further support my child at home.'
+    );
+    $renderStats(
+      'q3',
+      '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+      'The next steps discussed are clear to me.'
+    );
+  ?>
   <?php if (!$meetingFeedbackTexts): ?>
     <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
   <?php else: ?>
