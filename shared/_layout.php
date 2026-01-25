@@ -77,6 +77,7 @@ function render_role_header(string $title): void {
   $canSwitchRole = is_actual_admin();
   $switchRole = $role === 'admin' ? 'teacher' : 'admin';
   $switchLabel = $role === 'admin' ? 'Als Lehrkraft wechseln' : 'Zum Adminbereich';
+  $switchIcon = $role === 'admin' ? '👩‍🏫' : '🛠️';
   ?>
   <!doctype html>
   <html lang="<?=h(ui_lang())?>">
@@ -105,6 +106,17 @@ function render_role_header(string $title): void {
             <div class="lang-switch" aria-label="Sprache wechseln">
               <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
               <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+              <?php if ($canSwitchRole): ?>
+                <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
+                  <?=h($switchIcon)?>
+                </a>
+              <?php endif; ?>
+            </div>
+          <?php elseif ($canSwitchRole): ?>
+            <div class="lang-switch" aria-label="Rolle wechseln">
+              <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
+                <?=h($switchIcon)?>
+              </a>
             </div>
           <?php endif; ?>
         </div>
@@ -152,11 +164,6 @@ function render_role_header(string $title): void {
                 <a class="nav-link <?=$activeClass?>" href="<?=h(url($href))?>"><?=h($label)?></a>
               <?php endif; ?>
             <?php endforeach; ?>
-            <?php if ($canSwitchRole): ?>
-              <a class="nav-link" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>">
-                <?=h($switchLabel)?>
-              </a>
-            <?php endif; ?>
           </nav>
         </div>
       </div>
