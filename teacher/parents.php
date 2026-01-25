@@ -142,31 +142,51 @@ function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): arra
   return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function render_meeting_feedback_chart(array $stats, string $questionKey, string $questionText, string $questionTextEn): void {
+function render_meeting_feedback_pies(array $stats, array $questions): void {
   $total = (int)($stats['total'] ?? 0);
-  $labels = meeting_feedback_option_labels();
-  echo '<div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
-  echo '<div style="font-weight:600; margin-bottom:6px;">' . h($questionText) . '</div>';
-  echo '<div class="muted" style="margin-bottom:10px;">' . h($questionTextEn) . '</div>';
-  if ($total <= 0) {
-    echo '<div class="muted">Keine Rückmeldungen vorhanden.</div>';
+  $segments = [
+    1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
+    2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
+    3 => ['label' => 'Stimme eher zu', 'color' => '#1976d2'],
+    4 => ['label' => 'Stimme völlig zu', 'color' => '#2e7d32'],
+  ];
+  echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
+  foreach ($questions as $key => $title) {
+    if ($total <= 0) {
+      echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+      echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
+      echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+      echo '</div>';
+      continue;
+    }
+    $offset = 0;
+    $slices = [];
+    foreach ($segments as $score => $seg) {
+      $count = (int)($stats[$key . '_' . $score] ?? 0);
+      $pct = $total > 0 ? ($count / $total) * 100 : 0;
+      $start = $offset;
+      $end = $offset + $pct;
+      $offset = $end;
+      $slices[] = $seg['color'] . ' ' . $start . '% ' . $end . '%';
+    }
+    $gradient = $slices ? 'conic-gradient(' . implode(', ', $slices) . ')' : 'conic-gradient(#e0e0e0 0 100%)';
+    echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+    echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
+    echo '<div style="display:flex; gap:12px; align-items:center;">';
+    echo '<div style="width:120px; height:120px; border-radius:50%; background:' . h($gradient) . ';"></div>';
+    echo '<div style="display:flex; flex-direction:column; gap:6px;">';
+    foreach ($segments as $score => $seg) {
+      $count = (int)($stats[$key . '_' . $score] ?? 0);
+      $pct = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+      echo '<div style="display:flex; align-items:center; gap:6px; font-size:13px;">';
+      echo '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' . h($seg['color']) . ';"></span>';
+      echo '<span>' . h($seg['label']) . ' · ' . h((string)$pct) . '% (' . h((string)$count) . ')</span>';
+      echo '</div>';
+    }
     echo '</div>';
-    return;
+    echo '</div>';
+    echo '</div>';
   }
-  foreach ($labels as $score => $label) {
-    $count = (int)($stats[$questionKey . '_' . $score] ?? 0);
-    $pct = $total > 0 ? round(($count / $total) * 100, 1) : 0;
-    echo '<div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">';
-    echo '<div style="flex:1;">';
-    echo '<div style="font-size:13px; margin-bottom:4px;">' . h($label) . '</div>';
-    echo '<div style="background:#eef1f6; height:8px; border-radius:6px; overflow:hidden;">';
-    echo '<div style="width:' . h((string)$pct) . '%; height:8px; background:var(--primary);"></div>';
-    echo '</div>';
-    echo '</div>';
-    echo '<div class="muted" style="min-width:70px; text-align:right;">' . h((string)$count) . '</div>';
-    echo '</div>';
-  }
-  echo '<div class="muted" style="margin-top:8px;">Gesamt: ' . h((string)$total) . '</div>';
   echo '</div>';
 }
 
@@ -1018,30 +1038,13 @@ $introText = $parentAutoApprove
       <p class="muted">Keine Klasse ausgewählt.</p>
     <?php else: ?>
       <h3 style="margin-top:10px;">Klasse <?=h(trim($selectedClassYear . ' · ' . $selectedClassLabel))?></h3>
-      <?php if (!$meetingStatsClass || (int)($meetingStatsClass['total'] ?? 0) === 0): ?>
-        <p class="muted">Noch keine Rückmeldungen für diese Klasse.</p>
-      <?php else: ?>
-        <?php
-          render_meeting_feedback_chart(
-            $meetingStatsClass,
-            'q1',
-            '1. Das Gespräch war verständlich und informativ.',
-            'The conference was clear and informative.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsClass,
-            'q2',
-            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-            'I now understand how I can further support my child at home.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsClass,
-            'q3',
-            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
-            'The next steps discussed are clear to me.'
-          );
-        ?>
-      <?php endif; ?>
+      <?php
+        render_meeting_feedback_pies($meetingStatsClass ?? [], [
+          'q1' => '1. Das Gespräch war verständlich und informativ.',
+          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+        ]);
+      ?>
     <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
@@ -1059,57 +1062,25 @@ $introText = $parentAutoApprove
       </form>
       <?php if ($gradeLevel === null): ?>
         <p class="muted">Keine Klassenstufe ausgewählt.</p>
-      <?php elseif (!$meetingStatsGrade || (int)($meetingStatsGrade['total'] ?? 0) === 0): ?>
-        <p class="muted">Noch keine Rückmeldungen für diese Klassenstufe.</p>
       <?php else: ?>
         <?php
-          render_meeting_feedback_chart(
-            $meetingStatsGrade,
-            'q1',
-            '1. Das Gespräch war verständlich und informativ.',
-            'The conference was clear and informative.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsGrade,
-            'q2',
-            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-            'I now understand how I can further support my child at home.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsGrade,
-            'q3',
-            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
-            'The next steps discussed are clear to me.'
-          );
+          render_meeting_feedback_pies($meetingStatsGrade ?? [], [
+            'q1' => '1. Das Gespräch war verständlich und informativ.',
+            'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+            'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+          ]);
         ?>
       <?php endif; ?>
 
       <hr style="margin:20px 0;">
       <h3 style="margin-top:0;">Gesamt</h3>
-      <?php if (!$meetingStatsOverall || (int)($meetingStatsOverall['total'] ?? 0) === 0): ?>
-        <p class="muted">Noch keine Rückmeldungen vorhanden.</p>
-      <?php else: ?>
-        <?php
-          render_meeting_feedback_chart(
-            $meetingStatsOverall,
-            'q1',
-            '1. Das Gespräch war verständlich und informativ.',
-            'The conference was clear and informative.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsOverall,
-            'q2',
-            '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-            'I now understand how I can further support my child at home.'
-          );
-          render_meeting_feedback_chart(
-            $meetingStatsOverall,
-            'q3',
-            '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
-            'The next steps discussed are clear to me.'
-          );
-        ?>
-      <?php endif; ?>
+      <?php
+        render_meeting_feedback_pies($meetingStatsOverall ?? [], [
+          'q1' => '1. Das Gespräch war verständlich und informativ.',
+          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+        ]);
+      ?>
 
       <hr style="margin:20px 0;">
       <h3 style="margin-top:0;">Freitexte</h3>

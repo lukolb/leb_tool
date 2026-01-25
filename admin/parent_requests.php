@@ -440,60 +440,13 @@ render_admin_header($pageTitle);
       echo '</div>';
       echo '</div>';
     };
-    $renderStats = function(string $key, string $title, string $subtitle) use ($meetingStats, $meetingTotal) {
-      $labels = [
-        1 => 'Stimme nicht zu',
-        2 => 'Stimme eher nicht zu',
-        3 => 'Stimme eher zu',
-        4 => 'Stimme völlig zu',
-      ];
-      echo '<div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
-      echo '<div style="font-weight:600; margin-bottom:6px;">' . h($title) . '</div>';
-      echo '<div class="muted" style="margin-bottom:10px;">' . h($subtitle) . '</div>';
-      if ($meetingTotal <= 0) {
-        echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
-        echo '</div>';
-        return;
-      }
-      foreach ($labels as $score => $label) {
-        $count = (int)($meetingStats[$key . '_' . $score] ?? 0);
-        $pct = $meetingTotal > 0 ? round(($count / $meetingTotal) * 100, 1) : 0;
-        echo '<div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">';
-        echo '<div style="flex:1;">';
-        echo '<div style="font-size:13px; margin-bottom:4px;">' . h($label) . '</div>';
-        echo '<div style="background:#eef1f6; height:8px; border-radius:6px; overflow:hidden;">';
-        echo '<div style="width:' . h((string)$pct) . '%; height:8px; background:var(--primary);"></div>';
-        echo '</div>';
-        echo '</div>';
-        echo '<div class="muted" style="min-width:70px; text-align:right;">' . h((string)$count) . '</div>';
-        echo '</div>';
-      }
-      echo '<div class="muted" style="margin-top:8px;">Gesamt: ' . h((string)$meetingTotal) . '</div>';
-      echo '</div>';
-    };
   ?>
   <?php
     echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
-    $renderPie('q1', '1. Verständlich & informativ');
-    $renderPie('q2', '2. Unterstützung zuhause');
-    $renderPie('q3', '3. Nächste Schritte');
+    $renderPie('q1', '1. Das Gespräch war verständlich und informativ.');
+    $renderPie('q2', '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.');
+    $renderPie('q3', '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.');
     echo '</div>';
-
-    $renderStats(
-      'q1',
-      '1. Das Gespräch war verständlich und informativ.',
-      'The conference was clear and informative.'
-    );
-    $renderStats(
-      'q2',
-      '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-      'I now understand how I can further support my child at home.'
-    );
-    $renderStats(
-      'q3',
-      '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
-      'The next steps discussed are clear to me.'
-    );
   ?>
   <?php if (!$meetingFeedbackTexts): ?>
     <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
