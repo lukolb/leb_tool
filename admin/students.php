@@ -300,17 +300,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (empty($_FILES['csv_file']) || !isset($_FILES['csv_file']['tmp_name'])) {
         throw new RuntimeException('Bitte CSV-Datei auswählen.');
       }
-      $tmpPath = (string)$_FILES['csv_file']['tmp_name'];
-      if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
-        throw new RuntimeException('Upload fehlgeschlagen.');
+      $csvTmpNames = $_FILES['csv_file']['tmp_name'];
+      $csvNames = $_FILES['csv_file']['name'] ?? [];
+      if (!is_array($csvTmpNames)) {
+        $csvTmpNames = [$csvTmpNames];
+        $csvNames = is_array($csvNames) ? $csvNames : [$csvNames];
+      }
+      $csvTmpNames = array_values($csvTmpNames);
+      $csvNames = array_values(is_array($csvNames) ? $csvNames : []);
+      $csvCount = count($csvTmpNames);
+      if ($csvCount === 0) {
+        throw new RuntimeException('Bitte CSV-Datei auswählen.');
       }
 
       $schoolYear = trim((string)($_POST['school_year'] ?? ''));
       if ($schoolYear === '') $schoolYear = $defaultSchoolYear;
       if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
-
-      $rows = read_csv_assoc($tmpPath);
-      if (!$rows) throw new RuntimeException('CSV ist leer oder konnte nicht gelesen werden.');
 
       $createdClasses = 0;
       $createdStudents = 0;
@@ -318,10 +323,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $skipped = 0;
       $importSkippedDetails = [];
       $importSummary = [
+        'files' => [],
         'classes' => [],
         'students' => [],
         'skipped' => [],
         'stats' => [
+          'files' => 0,
           'classes_created' => 0,
           'students_created' => 0,
           'students_updated' => 0,
@@ -348,144 +355,174 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       );
       $setSelfMaster = $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?");
 
-      foreach ($rows as $r) {
-        $gradeRaw = $r['Grade'] ?? $r['Klasse'] ?? $r['Stufe'] ?? null;
-        $labelRaw = $r['Parallelklasse'] ?? $r['Parallelklasse/Gruppe'] ?? $r['Class Section'] ?? $r['Parallel Class'] ?? null;
-        $grade = parse_grade_level($gradeRaw);
-        $label = normalize_label((string)$labelRaw);
-
-        $first = normalize_name((string)($r['Student First Name'] ?? $r['First Name'] ?? $r['Student Firstname'] ?? ''));
-        $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
-        $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
-        $emailStudent = sanitize_import_email($r['Student Email'] ?? $r['E-Mail Student'] ?? $r['E-Mail Schüler'] ?? $r['Email Student'] ?? null);
-        $emailParent1 = sanitize_import_email($r['E-Mail Parent 1'] ?? $r['Parent 1 Email'] ?? $r['Parent Email 1'] ?? $r['Email Parent 1'] ?? null);
-        $emailParent2 = sanitize_import_email($r['E-Mail Parent 2'] ?? $r['Parent 2 Email'] ?? $r['Parent Email 2'] ?? $r['Email Parent 2'] ?? null);
-
-        if ($first === '' && $last === '') continue;
-        if ($grade === null || $label === '') {
-          $skipped++;
+      foreach ($csvTmpNames as $index => $tmpPathRaw) {
+        $tmpPath = (string)$tmpPathRaw;
+        $csvLabel = $csvNames[$index] ?? ('CSV ' . ($index + 1));
+        if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
           $detail = [
-            'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
-            'reason' => 'Klasse oder Parallelklasse fehlt.',
+            'name' => $csvLabel,
+            'reason' => 'Upload fehlgeschlagen.',
           ];
           $importSkippedDetails[] = $detail;
           $importSummary['skipped'][] = $detail;
-          continue;
-        }
-        if ($first === '' || $last === '') {
           $skipped++;
-          $detail = [
-            'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
-            'reason' => 'Vorname oder Nachname fehlt.',
-          ];
-          $importSkippedDetails[] = $detail;
-          $importSummary['skipped'][] = $detail;
-          continue;
-        }
-        if ($dob === null) {
-          $skipped++;
-          $detail = [
-            'name' => trim($first . ' ' . $last),
-            'reason' => 'Geburtsdatum fehlt oder ist ungültig.',
-          ];
-          $importSkippedDetails[] = $detail;
-          $importSummary['skipped'][] = $detail;
           continue;
         }
 
-        $classLookup->execute([$schoolYear, $grade, $label]);
-        $classId = $classLookup->fetchColumn();
-        if (!$classId) {
-          $name = computed_class_name($grade, $label);
-          $classInsert->execute([$schoolYear, $grade, $label, $name]);
-          $classId = (int)$pdo->lastInsertId();
-          $createdClasses++;
-          $importSummary['classes'][$classId] = [
-            'class_id' => $classId,
-            'school_year' => $schoolYear,
-            'grade_level' => $grade,
-            'label' => $label,
-            'name' => $name,
-            'students_created' => 0,
-            'students_updated' => 0,
-            'students_skipped' => 0,
+        $rows = read_csv_assoc($tmpPath);
+        if (!$rows) {
+          $detail = [
+            'name' => $csvLabel,
+            'reason' => 'CSV ist leer oder konnte nicht gelesen werden.',
           ];
-        } else {
-          $classId = (int)$classId;
-          if (!isset($importSummary['classes'][$classId])) {
+          $importSkippedDetails[] = $detail;
+          $importSummary['skipped'][] = $detail;
+          $skipped++;
+          continue;
+        }
+
+        $importSummary['files'][] = $csvLabel;
+
+        foreach ($rows as $r) {
+          $gradeRaw = $r['Grade'] ?? $r['Klasse'] ?? $r['Stufe'] ?? null;
+          $labelRaw = $r['Parallelklasse'] ?? $r['Parallelklasse/Gruppe'] ?? $r['Class Section'] ?? $r['Parallel Class'] ?? null;
+          $grade = parse_grade_level($gradeRaw);
+          $label = normalize_label((string)$labelRaw);
+
+          $first = normalize_name((string)($r['Student First Name'] ?? $r['First Name'] ?? $r['Student Firstname'] ?? ''));
+          $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
+          $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
+          $emailStudent = sanitize_import_email($r['Student Email'] ?? $r['E-Mail Student'] ?? $r['E-Mail Schüler'] ?? $r['Email Student'] ?? null);
+          $emailParent1 = sanitize_import_email($r['E-Mail Parent 1'] ?? $r['Parent 1 Email'] ?? $r['Parent Email 1'] ?? $r['Email Parent 1'] ?? null);
+          $emailParent2 = sanitize_import_email($r['E-Mail Parent 2'] ?? $r['Parent 2 Email'] ?? $r['Parent Email 2'] ?? $r['Email Parent 2'] ?? null);
+
+          if ($first === '' && $last === '') continue;
+          if ($grade === null || $label === '') {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
+              'reason' => 'Klasse oder Parallelklasse fehlt.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+          if ($first === '' || $last === '') {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
+              'reason' => 'Vorname oder Nachname fehlt.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+          if ($dob === null) {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last),
+              'reason' => 'Geburtsdatum fehlt oder ist ungültig.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+
+          $classLookup->execute([$schoolYear, $grade, $label]);
+          $classId = $classLookup->fetchColumn();
+          if (!$classId) {
+            $name = computed_class_name($grade, $label);
+            $classInsert->execute([$schoolYear, $grade, $label, $name]);
+            $classId = (int)$pdo->lastInsertId();
+            $createdClasses++;
             $importSummary['classes'][$classId] = [
               'class_id' => $classId,
               'school_year' => $schoolYear,
               'grade_level' => $grade,
               'label' => $label,
-              'name' => computed_class_name($grade, $label),
+              'name' => $name,
               'students_created' => 0,
               'students_updated' => 0,
               'students_skipped' => 0,
             ];
-          }
-        }
-
-        $checkStudent->execute([$first, $last, $dob, $classId]);
-        $existingId = $checkStudent->fetchColumn();
-        if ($existingId) {
-          $updates = [];
-          $params = [];
-          if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
-          if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
-          if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
-          if ($updates) {
-            $params[] = (int)$existingId;
-            $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
-            $updatedStudents++;
-            $importSummary['classes'][$classId]['students_updated']++;
-            $importSummary['students'][] = [
-              'class_id' => $classId,
-              'name' => trim($first . ' ' . $last),
-              'status' => 'aktualisiert',
-            ];
           } else {
-            $skipped++;
-            $detail = [
-              'name' => trim($first . ' ' . $last),
-              'reason' => 'Schüler existiert bereits.',
-            ];
-            $importSkippedDetails[] = $detail;
-            $importSummary['classes'][$classId]['students_skipped']++;
-            $importSummary['skipped'][] = $detail;
+            $classId = (int)$classId;
+            if (!isset($importSummary['classes'][$classId])) {
+              $importSummary['classes'][$classId] = [
+                'class_id' => $classId,
+                'school_year' => $schoolYear,
+                'grade_level' => $grade,
+                'label' => $label,
+                'name' => computed_class_name($grade, $label),
+                'students_created' => 0,
+                'students_updated' => 0,
+                'students_skipped' => 0,
+              ];
+            }
           }
-          continue;
-        }
 
-        $master = find_master_student_id($pdo, $first, $last, $dob);
-        $insertStudent->execute([$master, $classId, $first, $last, $dob]);
-        $newId = (int)$pdo->lastInsertId();
-        if (!$master) {
-          $setSelfMaster->execute([$newId, $newId]);
+          $checkStudent->execute([$first, $last, $dob, $classId]);
+          $existingId = $checkStudent->fetchColumn();
+          if ($existingId) {
+            $updates = [];
+            $params = [];
+            if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
+            if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
+            if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
+            if ($updates) {
+              $params[] = (int)$existingId;
+              $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
+              $updatedStudents++;
+              $importSummary['classes'][$classId]['students_updated']++;
+              $importSummary['students'][] = [
+                'class_id' => $classId,
+                'name' => trim($first . ' ' . $last),
+                'status' => 'aktualisiert',
+              ];
+            } else {
+              $skipped++;
+              $detail = [
+                'name' => trim($first . ' ' . $last),
+                'reason' => 'Schüler existiert bereits.',
+              ];
+              $importSkippedDetails[] = $detail;
+              $importSummary['classes'][$classId]['students_skipped']++;
+              $importSummary['skipped'][] = $detail;
+            }
+            continue;
+          }
+
+          $master = find_master_student_id($pdo, $first, $last, $dob);
+          $insertStudent->execute([$master, $classId, $first, $last, $dob]);
+          $newId = (int)$pdo->lastInsertId();
+          if (!$master) {
+            $setSelfMaster->execute([$newId, $newId]);
+          }
+          if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
+            $pdo->prepare(
+              "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
+            )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
+          }
+          if ($master) {
+            $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
+            if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
+          } else {
+            save_student_custom_values($pdo, $newId, [], true);
+          }
+          $createdStudents++;
+          $importSummary['classes'][$classId]['students_created']++;
+          $importSummary['students'][] = [
+            'class_id' => $classId,
+            'name' => trim($first . ' ' . $last),
+            'status' => 'angelegt',
+          ];
         }
-        if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
-          $pdo->prepare(
-            "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
-          )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
-        }
-        if ($master) {
-          $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
-          if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
-        } else {
-          save_student_custom_values($pdo, $newId, [], true);
-        }
-        $createdStudents++;
-        $importSummary['classes'][$classId]['students_created']++;
-        $importSummary['students'][] = [
-          'class_id' => $classId,
-          'name' => trim($first . ' ' . $last),
-          'status' => 'angelegt',
-        ];
       }
 
       $pdo->commit();
 
       $importSummary['stats'] = [
+        'files' => count($importSummary['files']),
         'classes_created' => $createdClasses,
         'students_created' => $createdStudents,
         'students_updated' => $updatedStudents,
@@ -713,6 +750,7 @@ render_admin_header('Schüler');
   <div class="card">
     <h2 style="margin-top:0;">Import-Zusammenfassung</h2>
     <div class="muted" style="margin-bottom:10px;">
+      Dateien: <?=h((string)($summaryStats['files'] ?? 0))?> ·
       Klassen angelegt: <?=h((string)($summaryStats['classes_created'] ?? 0))?> ·
       Schüler angelegt: <?=h((string)($summaryStats['students_created'] ?? 0))?> ·
       aktualisiert: <?=h((string)($summaryStats['students_updated'] ?? 0))?> ·
@@ -846,8 +884,8 @@ render_admin_header('Schüler');
       </select>
     </div>
     <div>
-      <label>CSV-Datei</label>
-      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+      <label>CSV-Datei(en)</label>
+      <input type="file" name="csv_file[]" accept=".csv,text/csv" multiple required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
       <button class="btn" type="submit">Importieren</button>
