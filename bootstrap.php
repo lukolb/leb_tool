@@ -471,6 +471,33 @@ function ensure_schema(PDO $pdo): void {
       );
     }
 
+    // --- parent_meeting_feedback: Feedback zum Lernentwicklungsgespräch
+    if (!db_has_table($pdo, 'parent_meeting_feedback')) {
+      $pdo->exec(
+        "CREATE TABLE parent_meeting_feedback (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  student_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  class_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  grade_level INT DEFAULT NULL,\n" .
+        "  link_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  q1 TINYINT UNSIGNED NOT NULL,\n" .
+        "  q2 TINYINT UNSIGNED NOT NULL,\n" .
+        "  q3 TINYINT UNSIGNED NOT NULL,\n" .
+        "  is_anonymous TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "  message TEXT COLLATE utf8mb4_unicode_ci,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_parent_meeting_feedback_student (student_id),\n" .
+        "  KEY idx_parent_meeting_feedback_class (class_id),\n" .
+        "  KEY idx_parent_meeting_feedback_grade (grade_level),\n" .
+        "  KEY idx_parent_meeting_feedback_year (school_year)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    } elseif (!db_has_column($pdo, 'parent_meeting_feedback', 'is_anonymous')) {
+      $pdo->exec("ALTER TABLE parent_meeting_feedback ADD COLUMN is_anonymous TINYINT(1) NOT NULL DEFAULT 0");
+    }
+
     // --- teacher_signatures: encrypted vector signatures for parent export
     if (!db_has_table($pdo, 'teacher_signatures')) {
       $pdo->exec(

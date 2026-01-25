@@ -17,6 +17,7 @@ $parentAutoApprove = (bool)($parentCfg['auto_approve_requests'] ?? false);
 $signaturePurpose = 'parent_export';
 $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
+$meetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 
 function parent_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -91,6 +92,117 @@ function build_feedback_reply_mailto(array $emails, string $studentName, string 
   return 'mailto:' . $recipients . '?' . $query;
 }
 
+function meeting_feedback_stats(PDO $pdo, string $whereSql, array $params): array {
+  $sql = "SELECT\n" .
+    "  COUNT(*) AS total,\n" .
+    "  SUM(q1=4) AS q1_4,\n" .
+    "  SUM(q1=3) AS q1_3,\n" .
+    "  SUM(q1=2) AS q1_2,\n" .
+    "  SUM(q1=1) AS q1_1,\n" .
+    "  SUM(q2=4) AS q2_4,\n" .
+    "  SUM(q2=3) AS q2_3,\n" .
+    "  SUM(q2=2) AS q2_2,\n" .
+    "  SUM(q2=1) AS q2_1,\n" .
+    "  SUM(q3=4) AS q3_4,\n" .
+    "  SUM(q3=3) AS q3_3,\n" .
+    "  SUM(q3=2) AS q3_2,\n" .
+    "  SUM(q3=1) AS q3_1\n" .
+    "FROM parent_meeting_feedback";
+  if ($whereSql !== '') {
+    $sql .= " WHERE " . $whereSql;
+  }
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($row as $k => $v) {
+    $out[$k] = (int)$v;
+  }
+  return $out;
+}
+
+function meeting_feedback_option_labels(): array {
+  return [
+    4 => 'Stimme völlig zu / Strongly agree',
+    3 => 'Stimme eher zu / Agree',
+    2 => 'Stimme eher nicht zu / Disagree',
+    1 => 'Stimme nicht zu / Strongly disagree',
+  ];
+}
+
+function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): array {
+  $sql = "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+    "FROM parent_meeting_feedback pmf\n" .
+    "JOIN students s ON s.id=pmf.student_id\n" .
+    "JOIN classes c ON c.id=pmf.class_id";
+  if ($whereSql !== '') $sql .= " WHERE " . $whereSql;
+  $sql .= " ORDER BY pmf.created_at DESC LIMIT 200";
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function render_meeting_feedback_pies(array $stats, array $questions): void {
+  $total = (int)($stats['total'] ?? 0);
+  $segments = [
+    1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
+    2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
+    3 => ['label' => 'Stimme eher zu', 'color' => '#558dfc'],
+    4 => ['label' => 'Stimme völlig zu', 'color' => '#16bc00'],
+  ];
+  echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
+  foreach ($questions as $key => $title) {
+    if ($total <= 0) {
+      echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+      echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
+      echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+      echo '</div>';
+      continue;
+    }
+    $offset = 0;
+    $slices = [];
+    foreach ($segments as $score => $seg) {
+      $count = (int)($stats[$key . '_' . $score] ?? 0);
+      $pct = $total > 0 ? ($count / $total) * 100 : 0;
+      $start = $offset;
+      $end = $offset + $pct;
+      $offset = $end;
+      $slices[] = $seg['color'] . ' ' . $start . '% ' . $end . '%';
+    }
+    $gradient = $slices ? 'conic-gradient(' . implode(', ', $slices) . ')' : 'conic-gradient(#e0e0e0 0 100%)';
+    echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+    echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
+    echo '<div style="display:flex; gap:12px; align-items:center;">';
+    echo '<div style="width:120px; height:120px; border-radius:50%; background:' . h($gradient) . ';"></div>';
+    echo '<div style="display:flex; flex-direction:column; gap:6px;">';
+    foreach ($segments as $score => $seg) {
+      $count = (int)($stats[$key . '_' . $score] ?? 0);
+      $pct = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+      echo '<div style="display:flex; align-items:center; gap:6px; font-size:13px;">';
+      echo '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' . h($seg['color']) . ';"></span>';
+      echo '<span>' . h($seg['label']) . ' · ' . h((string)$pct) . '% (' . h((string)$count) . ')</span>';
+      echo '</div>';
+    }
+    echo '</div>';
+    echo '</div>';
+    echo '</div>';
+  }
+  echo '</div>';
+}
+
+function teacher_feedback_query_url(array $overrides): string {
+  $params = $_GET;
+  foreach ($overrides as $key => $value) {
+    if ($value === null || $value === '') {
+      unset($params[$key]);
+    } else {
+      $params[$key] = $value;
+    }
+  }
+  $query = http_build_query($params);
+  return url('teacher/parents.php' . ($query ? ('?' . $query) : ''));
+}
+
 // --- classes for teacher/admin ---
 if ($role === 'admin') {
   $classes = $pdo->query(
@@ -111,6 +223,33 @@ if ($role === 'admin') {
 $classId = (int)($_GET['class_id'] ?? 0);
 if ($classId <= 0 && $classes) {
   $classId = (int)($classes[0]['id'] ?? 0);
+}
+$selectedClassGradeLevel = null;
+$availableGrades = [];
+foreach ($classes as $c) {
+  if ($c['grade_level'] !== null) $availableGrades[] = (int)$c['grade_level'];
+  if ((int)($c['id'] ?? 0) === $classId) {
+    $selectedClassGradeLevel = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  }
+}
+$availableGrades = array_values(array_unique($availableGrades));
+sort($availableGrades);
+$gradeLevel = null;
+$selectedClassLabel = '';
+$selectedClassYear = '';
+foreach ($classes as $c) {
+  if ((int)($c['id'] ?? 0) === $classId) {
+    $selectedClassLabel = parent_class_display($c);
+    $selectedClassYear = (string)($c['school_year'] ?? '');
+    break;
+  }
+}
+if ($role === 'admin') {
+  if (isset($_GET['grade_level']) && $_GET['grade_level'] !== '') {
+    $gradeLevel = (int)$_GET['grade_level'];
+  } elseif ($selectedClassGradeLevel !== null) {
+    $gradeLevel = (int)$selectedClassGradeLevel;
+  }
 }
 
 $alerts = [];
@@ -555,6 +694,75 @@ $stFb = $pdo->prepare(
   $feedbackList = $stFb->fetchAll(PDO::FETCH_ASSOC);
 }
 
+$meetingStatsClass = null;
+$meetingStatsGrade = null;
+$meetingStatsOverall = null;
+$meetingTextsClass = [];
+$meetingTextsAdmin = [];
+$meetingTextScope = $role === 'admin' ? (string)($_GET['feedback_scope'] ?? 'class') : 'class';
+$meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
+$meetingFeedbackId = isset($_GET['meeting_feedback_id']) && $_GET['meeting_feedback_id'] !== ''
+  ? (int)$_GET['meeting_feedback_id']
+  : 0;
+if ($meetingFeedbackEnabled) {
+  if ($classId > 0) {
+    $meetingStatsClass = meeting_feedback_stats(
+      $pdo,
+      $meetingFeedbackId > 0 ? 'class_id=? AND id=?' : 'class_id=?',
+      $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
+    );
+    $meetingTextsClass = meeting_feedback_texts(
+      $pdo,
+      $meetingFeedbackId > 0
+        ? "pmf.class_id=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+        : "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+      $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
+    );
+  }
+  if ($role === 'admin') {
+    if ($gradeLevel !== null) {
+      $meetingStatsGrade = meeting_feedback_stats(
+        $pdo,
+        $meetingFeedbackId > 0 ? 'grade_level=? AND id=?' : 'grade_level=?',
+        $meetingFeedbackId > 0 ? [$gradeLevel, $meetingFeedbackId] : [$gradeLevel]
+      );
+    }
+    $meetingStatsOverall = meeting_feedback_stats(
+      $pdo,
+      $meetingFeedbackId > 0 ? 'id=?' : '',
+      $meetingFeedbackId > 0 ? [$meetingFeedbackId] : []
+    );
+    if ($meetingTextScope === 'grade' && $gradeLevel !== null) {
+      $meetingTextsAdmin = meeting_feedback_texts(
+        $pdo,
+        $meetingFeedbackId > 0
+          ? "pmf.grade_level=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+          : "pmf.grade_level=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        $meetingFeedbackId > 0 ? [$gradeLevel, $meetingFeedbackId] : [$gradeLevel]
+      );
+    } elseif ($meetingTextScope === 'all') {
+      $meetingTextsAdmin = meeting_feedback_texts(
+        $pdo,
+        $meetingFeedbackId > 0
+          ? "pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+          : "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        $meetingFeedbackId > 0 ? [$meetingFeedbackId] : []
+      );
+    } else {
+      $meetingTextScope = 'class';
+      if ($classId > 0) {
+        $meetingTextsAdmin = meeting_feedback_texts(
+          $pdo,
+          $meetingFeedbackId > 0
+            ? "pmf.class_id=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+            : "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+          $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
+        );
+      }
+    }
+  }
+}
+
 $pageTitle = t('teacher.parents.title', 'Elternmodus');
 $missingTx = [
   'missing_title' => t('teacher.parents.missing_title', 'Fehlende Einträge gefunden'),
@@ -659,70 +867,91 @@ $introText = $parentAutoApprove
 </div>
 <?php endif; ?>
 
-<div class="card">
-  <h2><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
-  <?php if (!$students): ?>
-    <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
-  <?php else: ?>
-    <div class="responsive-table">
-      <table>
-        <thead>
-          <tr>
-            <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
-            <th><?=h(t('teacher.parents.status', 'Status'))?></th>
-            <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
-            <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
-            <th><?=h(t('teacher.parents.actions', 'Aktionen'))?></th>
-          </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($students as $s):
-          $linkId = (int)($s['parent_link_id'] ?? 0);
-          $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
-          $status = $link['status'] ?? '-';
-          $statusLabel = $status;
-          if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
-          if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
-          if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
-          if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
-            $statusColor = $status;
-            if ($status === 'requested') $statusColor = 'blue';
-            if ($status === 'approved') $statusColor = 'green';
-            if ($status === 'revoked') $statusColor = 'red';
-            if ($status === 'expired') $statusColor = 'red';
-          $expiresAt = $link['expires_at'] ?? null;
-          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
-          $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
-          $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
-          $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
-          $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
-        ?>
-          <tr>
-            <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
-            <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
-            <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
-            <td>
-              <?php if ($totalAcks > 0): ?>
-                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
-                  <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
-                </span>
-              <?php endif; ?>
-              <?php if ($totalQuestions > 0): ?>
-                <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
-                  <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
-                </span>
-              <?php else: ?>
-                <?php if ($totalAcks === 0): ?>
-                  <span class="muted">–</span>
+<details class="card" open id="teacherParentsApprovals" data-storage-key="teacherParentsApprovals">
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></summary>
+  <div style="margin-top:12px;">
+    <?php if (!$students): ?>
+      <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
+              <th><?=h(t('teacher.parents.status', 'Status'))?></th>
+              <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
+              <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
+              <th><?=h(t('teacher.parents.actions', 'Aktionen'))?></th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($students as $s):
+            $linkId = (int)($s['parent_link_id'] ?? 0);
+            $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
+            $status = $link['status'] ?? '-';
+            $statusLabel = $status;
+            if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
+            if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
+            if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
+            if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
+              $statusColor = $status;
+              if ($status === 'requested') $statusColor = 'blue';
+              if ($status === 'approved') $statusColor = 'green';
+              if ($status === 'revoked') $statusColor = 'red';
+              if ($status === 'expired') $statusColor = 'red';
+            $expiresAt = $link['expires_at'] ?? null;
+            $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
+            $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
+            $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
+            $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
+            $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
+          ?>
+            <tr>
+              <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
+              <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
+              <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
+              <td>
+                <?php if ($totalAcks > 0): ?>
+                  <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
+                    <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
+                  </span>
                 <?php endif; ?>
-              <?php endif; ?>
-            </td>
-            <td>
-              <?php if ($status === 'approved' && $shareUrl): ?>
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                  <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
-                  <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
-                  <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
+                <?php if ($totalQuestions > 0): ?>
+                  <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
+                    <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
+                  </span>
+                <?php else: ?>
+                  <?php if ($totalAcks === 0): ?>
+                    <span class="muted">–</span>
+                  <?php endif; ?>
+                <?php endif; ?>
+              </td>
+              <td>
+                <?php if ($status === 'approved' && $shareUrl): ?>
+                  <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
+                    <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
+                    <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="extend_link">
+                      <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                      <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                      <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
+                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                    </form>
+                    <form method="post" style="margin:0;">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="revoke_link">
+                      <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                      <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                      <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm', 'Zugriff wirklich beenden?'))?>');"><?=h(t('teacher.parents.revoke', 'Beenden'))?></button>
+                    </form>
+                  </div>
+                  <div class="muted" style="font-size:12px; margin-top:4px;">
+                    <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
+                  </div>
+                <?php elseif ($status === 'expired'): ?>
+                  <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="extend_link">
                     <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
@@ -730,132 +959,263 @@ $introText = $parentAutoApprove
                     <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
                     <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
                   </form>
-                  <form method="post" style="margin:0;">
+                <?php elseif ($status === 'requested'): ?>
+                  <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
+                <?php else: ?>
+                  <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                    <input type="hidden" name="action" value="revoke_link">
+                    <input type="hidden" name="action" value="request_link">
                     <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                    <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                    <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm', 'Zugriff wirklich beenden?'))?>');"><?=h(t('teacher.parents.revoke', 'Beenden'))?></button>
+                    <?php if ($signatureEnabled && $signatureConfigured): ?>
+                      <input type="hidden" name="signature_use" value="0" class="signature-use-input">
+                      <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
+                    <?php endif; ?>
+                    <div>
+                      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
+                    </div>
+                    <div>
+                      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
+                      <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
+                    </div>
                   </form>
-                </div>
-                <div class="muted" style="font-size:12px; margin-top:4px;">
-                  <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
-                </div>
-              <?php elseif ($status === 'expired'): ?>
-                <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="extend_link">
-                  <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                  <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                  <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
-                  <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
-                </form>
-              <?php elseif ($status === 'requested'): ?>
-                <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
-              <?php else: ?>
-                <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="request_link">
-                  <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                  <?php if ($signatureEnabled && $signatureConfigured): ?>
-                    <input type="hidden" name="signature_use" value="0" class="signature-use-input">
-                    <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
-                  <?php endif; ?>
-                  <div>
-                    <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
-                  </div>
-                  <div>
-                    <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
-                    <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
-                  </div>
-                </form>
-              <?php endif; ?>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-  <?php endif; ?>
-</div>
-
-<div class="card" style="margin-top:14px;">
-  <h2><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></h2>
-  <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
-  <?php if (!$feedbackList): ?>
-    <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
-  <?php else: ?>
-    <div class="responsive-table">
-      <table>
-        <thead>
-          <tr>
-            <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
-            <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
-            <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
-            <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
-            <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($feedbackList as $fb): ?>
-            <?php
-              $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-              $feedbackDate = '';
-              if (!empty($fb['created_at'])) {
-                try {
-                  $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
-                } catch (Throwable $e) {
-                  $feedbackDate = '';
-                }
-              }
-              $feedbackEmails = array_values(array_unique(array_filter([
-                sanitize_email($fb['email_parent1'] ?? null),
-                sanitize_email($fb['email_parent2'] ?? null),
-              ])));
-              $replyLink = build_feedback_reply_mailto($feedbackEmails, $feedbackStudent, (string)($fb['message'] ?? ''), $feedbackDate);
-            ?>
-            <tr>
-              <td><strong><?=h($feedbackStudent)?></strong></td>
-              <td>
-                <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
-                  <span class="muted">–</span>
-                <?php else: ?>
-                  <?= nl2br(h((string)$fb['message'])) ?>
                 <?php endif; ?>
-              </td>
-              <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
-              <td>
-                <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
-                  <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
-                <?php else: ?>
-                  <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
-                <?php endif; ?>
-              </td>
-              <td>
-                <div style="display:flex; flex-direction:column; gap:6px;">
-                  <?php if ($replyLink): ?>
-                    <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
-                  <?php else: ?>
-                    <span class="muted">–</span>
-                  <?php endif; ?>
-                  <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
-                    <form method="post" style="margin:0;">
-                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                      <input type="hidden" name="action" value="mark_feedback_reviewed">
-                      <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
-                      <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
-                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
-                    </form>
-                  <?php endif; ?>
-                </div>
               </td>
             </tr>
           <?php endforeach; ?>
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+</details>
+
+<details class="card" style="margin-top:14px;" open id="teacherParentsFeedback" data-storage-key="teacherParentsFeedback">
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></summary>
+  <div style="margin-top:12px;">
+    <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
+    <?php if (!$feedbackList): ?>
+      <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
+              <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
+              <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
+              <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
+              <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($feedbackList as $fb): ?>
+              <?php
+                $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
+                $feedbackDate = '';
+                if (!empty($fb['created_at'])) {
+                  try {
+                    $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
+                  } catch (Throwable $e) {
+                    $feedbackDate = '';
+                  }
+                }
+                $feedbackEmails = array_values(array_unique(array_filter([
+                  sanitize_email($fb['email_parent1'] ?? null),
+                  sanitize_email($fb['email_parent2'] ?? null),
+                ])));
+                $replyLink = build_feedback_reply_mailto($feedbackEmails, $feedbackStudent, (string)($fb['message'] ?? ''), $feedbackDate);
+              ?>
+              <tr>
+                <td><strong><?=h($feedbackStudent)?></strong></td>
+                <td>
+                  <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
+                    <span class="muted">–</span>
+                  <?php else: ?>
+                    <?= nl2br(h((string)$fb['message'])) ?>
+                  <?php endif; ?>
+                </td>
+                <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
+                <td>
+                  <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
+                    <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
+                  <?php else: ?>
+                    <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <?php if ($replyLink): ?>
+                      <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
+                    <?php else: ?>
+                      <span class="muted">–</span>
+                    <?php endif; ?>
+                    <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
+                      <form method="post" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                        <input type="hidden" name="action" value="mark_feedback_reviewed">
+                        <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
+                        <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
+                        <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
+                      </form>
+                    <?php endif; ?>
+                  </div>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+</details>
+
+<?php if ($meetingFeedbackEnabled): ?>
+  <div class="card" style="margin-top:14px;" id="meetingFeedbackSection">
+    <h2>Feedback zum Lernentwicklungsgespräch</h2>
+    <p class="muted" style="margin-top:0;">Auswertung des Feedbackbogens für Eltern. Jede Rückmeldung kann nur einmal pro Kind abgegeben werden.</p>
+    <div style="margin-top:8px;">
+      <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>" data-meeting-reset style="<?= $meetingFeedbackId > 0 ? '' : 'display:none;' ?>">Filter zurücksetzen</a>
     </div>
-  <?php endif; ?>
-</div>
+
+    <?php if ($classId <= 0): ?>
+      <p class="muted">Keine Klasse ausgewählt.</p>
+    <?php else: ?>
+      <h3 style="margin-top:10px;">Klasse <?=h(trim($selectedClassYear . ' · ' . $selectedClassLabel))?></h3>
+      <?php
+        render_meeting_feedback_pies($meetingStatsClass ?? [], [
+          'q1' => '1. Das Gespräch war verständlich und informativ.',
+          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+        ]);
+      ?>
+    <?php endif; ?>
+
+    <?php if ($role === 'admin'): ?>
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Klassenstufe</h3>
+      <form method="get" class="row" style="gap:12px; align-items:center;">
+        <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+        <label class="muted" style="font-size:12px;">Stufe auswählen</label>
+        <select name="grade_level" class="input" onchange="this.form.submit();">
+          <option value="">—</option>
+          <?php foreach ($availableGrades as $g): ?>
+            <option value="<?= (int)$g ?>" <?= ($gradeLevel !== null && (int)$gradeLevel === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
+          <?php endforeach; ?>
+        </select>
+      </form>
+      <?php if ($gradeLevel === null): ?>
+        <p class="muted">Keine Klassenstufe ausgewählt.</p>
+      <?php else: ?>
+        <?php
+          render_meeting_feedback_pies($meetingStatsGrade ?? [], [
+            'q1' => '1. Das Gespräch war verständlich und informativ.',
+            'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+            'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+          ]);
+        ?>
+      <?php endif; ?>
+
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Gesamt</h3>
+      <?php
+        render_meeting_feedback_pies($meetingStatsOverall ?? [], [
+          'q1' => '1. Das Gespräch war verständlich und informativ.',
+          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
+          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+        ]);
+      ?>
+
+      <hr style="margin:20px 0;">
+      <h3 style="margin-top:0;">Freitexte</h3>
+      <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
+        <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
+        <?php if ($gradeLevel !== null): ?>
+          <input type="hidden" name="grade_level" value="<?= (int)$gradeLevel ?>">
+        <?php endif; ?>
+        <label class="muted" style="font-size:12px;">Ansicht</label>
+        <select name="feedback_scope" class="input" onchange="this.form.submit();">
+          <option value="class" <?= $meetingTextScope === 'class' ? 'selected' : '' ?>>Klasse</option>
+          <option value="grade" <?= $meetingTextScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
+          <option value="all" <?= $meetingTextScope === 'all' ? 'selected' : '' ?>>Alle</option>
+        </select>
+      </form>
+      <?php if (!$meetingTextsAdmin): ?>
+        <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+      <?php else: ?>
+        <div class="responsive-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Schüler</th>
+                <th>Klasse</th>
+                <th>Nachricht</th>
+                <th>Datum</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($meetingTextsAdmin as $row): ?>
+                <?php
+                  $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
+                  $studentName = $isAnonymous
+                    ? 'Anonym'
+                    : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+                  $classLabel = parent_class_display($row);
+                ?>
+                <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
+                  <td><strong><?=h($studentName)?></strong></td>
+                  <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
+                  <td>
+                    <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" data-meeting-filter="<?= (int)($row['id'] ?? 0) ?>" style="color:inherit; text-decoration:underline;">
+                      <?= nl2br(h((string)($row['message'] ?? ''))) ?>
+                    </a>
+                  </td>
+                  <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+
+    <hr style="margin:20px 0;">
+    <h3 style="margin-top:0;">Freitexte (Klasse)</h3>
+    <?php if (!$meetingTextsClass): ?>
+      <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Schüler</th>
+              <th>Nachricht</th>
+              <th>Datum</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($meetingTextsClass as $row): ?>
+              <?php
+                $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
+                $studentName = $isAnonymous
+                  ? 'Anonym'
+                  : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+              ?>
+              <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
+                <td><strong><?=h($studentName)?></strong></td>
+                <td>
+                  <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" data-meeting-filter="<?= (int)($row['id'] ?? 0) ?>" style="color:inherit; text-decoration:underline;">
+                    <?= nl2br(h((string)($row['message'] ?? ''))) ?>
+                  </a>
+                </td>
+                <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <div class="card" style="margin-top:18px; border:1px solid var(--border); background:linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);">
   <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
@@ -990,6 +1350,61 @@ $introText = $parentAutoApprove
   const CSRF = <?= json_encode(csrf_token()) ?>;
   const MISSING_TX = <?= json_encode($missingTx, JSON_UNESCAPED_UNICODE) ?>;
   const CURRENT_CLASS_ID = <?= (int)$classId ?>;
+
+  document.querySelectorAll('details[data-storage-key]').forEach((el) => {
+    const key = el.getAttribute('data-storage-key');
+    if (key) {
+      const stored = window.localStorage.getItem(key);
+      if (stored === 'open') el.open = true;
+      if (stored === 'closed') el.open = false;
+    }
+    el.addEventListener('toggle', () => {
+      if (!key) return;
+      window.localStorage.setItem(key, el.open ? 'open' : 'closed');
+    });
+  });
+
+  (function(){
+    const section = document.getElementById('meetingFeedbackSection');
+    if (!section) return;
+    const resetLink = section.querySelector('[data-meeting-reset]');
+
+    function applyFilter(id) {
+      section.querySelectorAll('tbody tr[data-meeting-id]').forEach((row) => {
+        row.style.display = id && row.dataset.meetingId !== String(id) ? 'none' : '';
+      });
+      if (resetLink) {
+        resetLink.style.display = id ? 'inline-flex' : 'none';
+      }
+      const url = new URL(window.location.href);
+      if (id) {
+        url.searchParams.set('meeting_feedback_id', String(id));
+      } else {
+        url.searchParams.delete('meeting_feedback_id');
+      }
+      window.history.replaceState({}, '', url.toString());
+      //section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    section.querySelectorAll('[data-meeting-filter]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        applyFilter(link.dataset.meetingFilter || '');
+      });
+    });
+
+    if (resetLink) {
+      resetLink.addEventListener('click', (event) => {
+        event.preventDefault();
+        applyFilter('');
+      });
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('meeting_feedback_id')) {
+      applyFilter(params.get('meeting_feedback_id'));
+    }
+  })();
 
   const missingModal = document.getElementById('missingModal');
   const missingModalSummary = document.getElementById('missingModalSummary');
