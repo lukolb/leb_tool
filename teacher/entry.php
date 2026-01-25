@@ -3139,6 +3139,14 @@ render_teacher_header($pageTitle);
       : renderInputHtml(f, reportId, value, locked, canEdit);
   }
 
+  function isStudentInputLocked(status){
+    return String(status || 'draft') === 'locked';
+  }
+
+  function isTeacherInputLocked(status){
+    return CHILD_MODE ? isStudentInputLocked(status) : false;
+  }
+
   function currentStudents(){
     const f = normalize(ui.studentFilter);
     let list = filterStudentsForMissing(state.students);
@@ -3471,7 +3479,8 @@ render_teacher_header($pageTitle);
 
     const reportId = s.report_instance_id;
     const status = String(s.status || 'draft');
-    const locked = (status === 'locked');
+    const childLocked = isStudentInputLocked(status);
+    const locked = isTeacherInputLocked(status);
     let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
     if (CHILD_MODE) {
       childMissingFields = [];
@@ -3488,8 +3497,11 @@ render_teacher_header($pageTitle);
     const unlockBtn = `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
 
     let html = '';
-    if (locked) {
-      html += `<div class="alert danger"><strong>Dieser Bericht ist gesperrt.</strong> Eingaben können nicht mehr geändert werden.${unlockBtn}</div>`;
+    if (childLocked) {
+      const info = CHILD_MODE
+        ? 'Eingaben können nicht mehr geändert werden.'
+        : 'Schülereingabe ist gesperrt. Lehrkraft kann weiterhin ergänzen.';
+      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>Dieser Bericht ist gesperrt.</strong> ${info}${unlockBtn}</div>`;
     } else if (status === 'submitted') {
       html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.${unlockBtn}</div>`;
     } else if (childMissingFields.length > 0) {
@@ -3691,7 +3703,7 @@ render_teacher_header($pageTitle);
           const td = document.createElement('td');
           const reportId = s.report_instance_id;
           const status = String(s.status||'draft');
-          const locked = (status === 'locked');
+          const locked = isTeacherInputLocked(status);
           const v = activeFieldValue(reportId, f.id);
           const canEditField = (Number(f.can_edit || 0) === 1);
 
@@ -3772,7 +3784,7 @@ render_teacher_header($pageTitle);
       fields.forEach(f => {
         const td = document.createElement('td');
         const reportId = s.report_instance_id;
-        const locked = (status === 'locked');
+        const locked = isTeacherInputLocked(status);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
@@ -3849,7 +3861,7 @@ render_teacher_header($pageTitle);
         const td = document.createElement('td');
         const reportId = s.report_instance_id;
         const status = String(s.status||'draft');
-        const locked = (status === 'locked');
+        const locked = isTeacherInputLocked(status);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
