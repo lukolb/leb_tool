@@ -389,8 +389,8 @@ function translations_catalog(): array {
       'teacher.students.copy_loading' => 'Lade…',
       'teacher.students.copy_error_fallback' => 'Fehler',
       'teacher.students.copy_no_students' => 'Keine aktiven Schüler in der Quelle.',
-      'teacher.students.ok_child_locked' => 'Kinder-Eingabe gesperrt ({count} Reports).',
-      'teacher.students.ok_child_unlocked' => 'Kinder-Eingabe freigegeben ({count} Reports).',
+      'teacher.students.ok_child_locked' => 'Kinder-Eingabe gesperrt ({count} Berichte).',
+      'teacher.students.ok_child_unlocked' => 'Kinder-Eingabe freigegeben ({count} Berichte).',
       'teacher.students.ok_added' => 'Schüler wurde angelegt.',
       'teacher.students.ok_reactivated' => 'Schüler wurde reaktiviert.',
       'teacher.students.ok_deactivated' => 'Schüler wurde deaktiviert.',
@@ -530,9 +530,9 @@ function translations_catalog(): array {
       // Parent portal
       'parent.portal.title' => 'Parent mode – preview',
       'parent.portal.subtitle' => 'Parent mode – read only',
-      'parent.portal.heading' => 'Learning report',
+      'parent.portal.heading' => 'Student Progress report',
       'parent.portal.download' => 'Download PDF',
-      'parent.portal.download_filename_prefix' => 'Learning_report',
+      'parent.portal.download_filename_prefix' => 'Student_Progress_Report',
       'parent.portal.feedback_ack_sent' => 'Read receipt sent',
       'parent.portal.readonly_hint' => 'Access is time-limited.',
       'parent.portal.class' => 'Class',
@@ -898,7 +898,7 @@ function translations_catalog(): array {
 
       // Student area (PHP-rendered)
       'student.html_title' => 'Student area',
-      'student.subtitle' => 'Student area – learning progress report',
+      'student.subtitle' => 'Student area – Student Progress Report',
       'student.fallback_name' => 'Student',
       'student.class_label' => 'Class',
       'student.logout' => 'Log out',

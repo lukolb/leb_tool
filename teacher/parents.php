@@ -147,8 +147,8 @@ function render_meeting_feedback_pies(array $stats, array $questions): void {
   $segments = [
     1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
     2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
-    3 => ['label' => 'Stimme eher zu', 'color' => '#1976d2'],
-    4 => ['label' => 'Stimme völlig zu', 'color' => '#2e7d32'],
+    3 => ['label' => 'Stimme eher zu', 'color' => '#558dfc'],
+    4 => ['label' => 'Stimme völlig zu', 'color' => '#16bc00'],
   ];
   echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
   foreach ($questions as $key => $title) {
@@ -1383,7 +1383,7 @@ $introText = $parentAutoApprove
         url.searchParams.delete('meeting_feedback_id');
       }
       window.history.replaceState({}, '', url.toString());
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      //section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     section.querySelectorAll('[data-meeting-filter]').forEach((link) => {

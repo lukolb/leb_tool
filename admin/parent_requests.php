@@ -422,17 +422,19 @@ render_admin_header($pageTitle);
       </select>
     <?php endif; ?>
   </form>
-  <div style="margin-top:8px;">
-    <a class="btn secondary" href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => null]))?>" data-meeting-reset style="<?= $meetingFeedbackId > 0 ? '' : 'display:none;' ?>">Filter zurücksetzen</a>
-  </div>
+  <?php if ($meetingFeedbackId > 0): ?>
+    <div style="margin-top:8px;">
+      <a class="btn secondary" href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => null]))?>">Filter zurücksetzen</a>
+    </div>
+  <?php endif; ?>
   <?php
     $meetingTotal = (int)($meetingStats['total'] ?? 0);
     $renderPie = function(string $key, string $title) use ($meetingStats, $meetingTotal) {
       $segments = [
         1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
         2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
-        3 => ['label' => 'Stimme eher zu', 'color' => '#1976d2'],
-        4 => ['label' => 'Stimme völlig zu', 'color' => '#2e7d32'],
+        3 => ['label' => 'Stimme eher zu', 'color' => '#558dfc'],
+        4 => ['label' => 'Stimme völlig zu', 'color' => '#16bc00'],
       ];
       if ($meetingTotal <= 0) {
         echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
@@ -496,11 +498,11 @@ render_admin_header($pageTitle);
                 : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
               $classLabel = parent_admin_class_display($row);
             ?>
-            <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
+            <tr>
               <td><strong><?=h($studentName)?></strong></td>
               <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
               <td>
-                <a href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" data-meeting-filter="<?= (int)($row['id'] ?? 0) ?>" style="color:inherit; text-decoration:underline;">
+                <a href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
                   <?= nl2br(h((string)($row['message'] ?? ''))) ?>
                 </a>
               </td>
@@ -515,53 +517,10 @@ render_admin_header($pageTitle);
 
 <script>
   (function(){
-    const section = document.getElementById('meetingFeedbackSection');
-    if (!section) return;
-    const resetLink = section.querySelector('[data-meeting-reset]');
-
-    function applyFilter(id) {
-      section.querySelectorAll('tbody tr[data-meeting-id]').forEach((row) => {
-        row.style.display = id && row.dataset.meetingId !== String(id) ? 'none' : '';
-      });
-      if (resetLink) {
-        resetLink.style.display = id ? 'inline-flex' : 'none';
-      }
-      const url = new URL(window.location.href);
-      if (id) {
-        url.searchParams.set('meeting_feedback_id', String(id));
-      } else {
-        url.searchParams.delete('meeting_feedback_id');
-      }
-      window.history.replaceState({}, '', url.toString());
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    section.querySelectorAll('[data-meeting-filter]').forEach((link) => {
-      link.addEventListener('click', (event) => {
-        event.preventDefault();
-        applyFilter(link.dataset.meetingFilter || '');
-      });
-    });
-
-    if (resetLink) {
-      resetLink.addEventListener('click', (event) => {
-        event.preventDefault();
-        applyFilter('');
-      });
-    }
-
     const params = new URLSearchParams(window.location.search);
-    if (params.has('meeting_feedback_id')) {
-      applyFilter(params.get('meeting_feedback_id'));
-      return;
-    }
-    if (
-      params.has('meeting_feedback_scope') ||
-      params.has('meeting_feedback_year') ||
-      params.has('meeting_feedback_grade') ||
-      params.has('meeting_feedback_class')
-    ) {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (params.has('meeting_feedback_scope') || params.has('meeting_feedback_year') || params.has('meeting_feedback_grade') || params.has('meeting_feedback_class')) {
+      const section = document.getElementById('meetingFeedbackSection');
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   })();
 </script>
