@@ -867,7 +867,7 @@ $introText = $parentAutoApprove
 </div>
 <?php endif; ?>
 
-<details class="card" open>
+<details class="card" open id="teacherParentsApprovals" data-storage-key="teacherParentsApprovals">
   <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></summary>
   <div style="margin-top:12px;">
     <?php if (!$students): ?>
@@ -989,7 +989,7 @@ $introText = $parentAutoApprove
   </div>
 </details>
 
-<details class="card" style="margin-top:14px;" open>
+<details class="card" style="margin-top:14px;" open id="teacherParentsFeedback" data-storage-key="teacherParentsFeedback">
   <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></summary>
   <div style="margin-top:12px;">
     <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
@@ -1070,14 +1070,12 @@ $introText = $parentAutoApprove
 </details>
 
 <?php if ($meetingFeedbackEnabled): ?>
-  <div class="card" style="margin-top:14px;">
+  <div class="card" style="margin-top:14px;" id="meetingFeedbackSection">
     <h2>Feedback zum Lernentwicklungsgespräch</h2>
     <p class="muted" style="margin-top:0;">Auswertung des Feedbackbogens für Eltern. Jede Rückmeldung kann nur einmal pro Kind abgegeben werden.</p>
-    <?php if ($meetingFeedbackId > 0): ?>
-      <div style="margin-top:8px;">
-        <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>">Filter zurücksetzen</a>
-      </div>
-    <?php endif; ?>
+    <div style="margin-top:8px;">
+      <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>" data-meeting-reset style="<?= $meetingFeedbackId > 0 ? '' : 'display:none;' ?>">Filter zurücksetzen</a>
+    </div>
 
     <?php if ($classId <= 0): ?>
       <p class="muted">Keine Klasse ausgewählt.</p>
@@ -1163,11 +1161,11 @@ $introText = $parentAutoApprove
                     : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
                   $classLabel = parent_class_display($row);
                 ?>
-                <tr>
+                <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
                   <td><strong><?=h($studentName)?></strong></td>
                   <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
                   <td>
-                    <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
+                    <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" data-meeting-filter="<?= (int)($row['id'] ?? 0) ?>" style="color:inherit; text-decoration:underline;">
                       <?= nl2br(h((string)($row['message'] ?? ''))) ?>
                     </a>
                   </td>
@@ -1202,10 +1200,10 @@ $introText = $parentAutoApprove
                   ? 'Anonym'
                   : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
               ?>
-              <tr>
+              <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
                 <td><strong><?=h($studentName)?></strong></td>
                 <td>
-                  <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
+                  <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" data-meeting-filter="<?= (int)($row['id'] ?? 0) ?>" style="color:inherit; text-decoration:underline;">
                     <?= nl2br(h((string)($row['message'] ?? ''))) ?>
                   </a>
                 </td>
@@ -1352,6 +1350,61 @@ $introText = $parentAutoApprove
   const CSRF = <?= json_encode(csrf_token()) ?>;
   const MISSING_TX = <?= json_encode($missingTx, JSON_UNESCAPED_UNICODE) ?>;
   const CURRENT_CLASS_ID = <?= (int)$classId ?>;
+
+  document.querySelectorAll('details[data-storage-key]').forEach((el) => {
+    const key = el.getAttribute('data-storage-key');
+    if (key) {
+      const stored = window.localStorage.getItem(key);
+      if (stored === 'open') el.open = true;
+      if (stored === 'closed') el.open = false;
+    }
+    el.addEventListener('toggle', () => {
+      if (!key) return;
+      window.localStorage.setItem(key, el.open ? 'open' : 'closed');
+    });
+  });
+
+  (function(){
+    const section = document.getElementById('meetingFeedbackSection');
+    if (!section) return;
+    const resetLink = section.querySelector('[data-meeting-reset]');
+
+    function applyFilter(id) {
+      section.querySelectorAll('tbody tr[data-meeting-id]').forEach((row) => {
+        row.style.display = id && row.dataset.meetingId !== String(id) ? 'none' : '';
+      });
+      if (resetLink) {
+        resetLink.style.display = id ? 'inline-flex' : 'none';
+      }
+      const url = new URL(window.location.href);
+      if (id) {
+        url.searchParams.set('meeting_feedback_id', String(id));
+      } else {
+        url.searchParams.delete('meeting_feedback_id');
+      }
+      window.history.replaceState({}, '', url.toString());
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    section.querySelectorAll('[data-meeting-filter]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        applyFilter(link.dataset.meetingFilter || '');
+      });
+    });
+
+    if (resetLink) {
+      resetLink.addEventListener('click', (event) => {
+        event.preventDefault();
+        applyFilter('');
+      });
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('meeting_feedback_id')) {
+      applyFilter(params.get('meeting_feedback_id'));
+    }
+  })();
 
   const missingModal = document.getElementById('missingModal');
   const missingModalSummary = document.getElementById('missingModalSummary');
