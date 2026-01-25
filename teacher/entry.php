@@ -791,6 +791,7 @@ render_teacher_header($pageTitle);
     gradeOrientation: localStorage.getItem('leb_grade_orientation') || 'students_rows',
     optionMode: (localStorage.getItem(OPTION_STYLE_KEY) === 'buttons') ? 'buttons' : 'dropdown',
     saveTimers: new Map(),
+    pendingPayloads: new Map(),
     saveInFlight: 0,
     mergeDecisions: new Map(),
   };
@@ -1319,15 +1320,45 @@ render_teacher_header($pageTitle);
     state.fieldMap = map;
   }
 
-  async function api(action, payload){
+  async function api(action, payload, options = {}){
+    const keepalive = !!options.keepalive;
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload })
+      body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
+      keepalive
     });
     const j = await res.json().catch(()=>null);
     if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
     return j;
+  }
+
+  function fireAndForget(action, payload){
+    const body = JSON.stringify({ action, csrf_token: csrf, ...payload });
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon(apiUrl, blob);
+      return;
+    }
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(()=>{});
+  }
+
+  function flushPendingSaves(){
+    if (!ui.pendingPayloads.size) return;
+    ui.pendingPayloads.forEach((info, key) => {
+      if (!info) return;
+      if (ui.saveTimers.has(key)) {
+        clearTimeout(ui.saveTimers.get(key));
+        ui.saveTimers.delete(key);
+      }
+      ui.pendingPayloads.delete(key);
+      fireAndForget(info.action, info.payload);
+    });
   }
 
   function showErr(msg){
@@ -1989,6 +2020,10 @@ render_teacher_header($pageTitle);
   function scheduleSave(reportId, fieldId, value){
     const key = `${reportId}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+    ui.pendingPayloads.set(key, {
+      action: 'save',
+      payload: { report_instance_id: reportId, template_field_id: fieldId, value_text: value },
+    });
 
     const updated = setTeacherFreeTextPart(reportId, fieldId, value);
     if (!updated) {
@@ -2001,6 +2036,7 @@ render_teacher_header($pageTitle);
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);
+      ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
       setSaveStatus('saving', '⏳ speichert …');
@@ -2037,6 +2073,10 @@ render_teacher_header($pageTitle);
   function scheduleChildSave(reportId, fieldId, value, labelText){
     const key = `child:${reportId}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+    ui.pendingPayloads.set(key, {
+      action: 'child_value_update',
+      payload: { report_instance_id: reportId, child_field_id: fieldId, value_text: String(value ?? '') },
+    });
 
     const ridKey = String(reportId);
     const fidKey = String(fieldId);
@@ -2049,6 +2089,7 @@ render_teacher_header($pageTitle);
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);
+      ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
       setSaveStatus('saving', '⏳ speichert …');
@@ -2079,6 +2120,10 @@ render_teacher_header($pageTitle);
     const rid = classReportId();
     const key = `class:${rid}:${fieldId}`;
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+    ui.pendingPayloads.set(key, {
+      action: 'save_class',
+      payload: { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value },
+    });
 
     const updated = setTeacherFreeTextPart(rid, fieldId, value);
     if (!updated) {
@@ -2091,6 +2136,7 @@ render_teacher_header($pageTitle);
 
     ui.saveTimers.set(key, setTimeout(async () => {
       ui.saveTimers.delete(key);
+      ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
       setSaveStatus('saving', '⏳ speichert …');
@@ -4308,6 +4354,12 @@ if (dlgSave) {
         }
       }
     }
+  });
+
+  window.addEventListener('beforeunload', flushPendingSaves);
+  window.addEventListener('pagehide', flushPendingSaves);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingSaves();
   });
 
   const initialClassId = Number(classSelect.value || <?=json_encode((int)$classId)?> || 0);
