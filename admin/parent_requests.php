@@ -401,6 +401,45 @@ render_admin_header($pageTitle);
   </form>
   <?php
     $meetingTotal = (int)($meetingStats['total'] ?? 0);
+    $renderPie = function(string $key, string $title) use ($meetingStats, $meetingTotal) {
+      $segments = [
+        1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
+        2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
+        3 => ['label' => 'Stimme eher zu', 'color' => '#1976d2'],
+        4 => ['label' => 'Stimme völlig zu', 'color' => '#2e7d32'],
+      ];
+      if ($meetingTotal <= 0) {
+        echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+        return;
+      }
+      $offset = 0;
+      $slices = [];
+      foreach ($segments as $score => $seg) {
+        $count = (int)($meetingStats[$key . '_' . $score] ?? 0);
+        $pct = $meetingTotal > 0 ? ($count / $meetingTotal) * 100 : 0;
+        $start = $offset;
+        $end = $offset + $pct;
+        $offset = $end;
+        $slices[] = $seg['color'] . ' ' . $start . '% ' . $end . '%';
+      }
+      $gradient = $slices ? 'conic-gradient(' . implode(', ', $slices) . ')' : 'conic-gradient(#e0e0e0 0 100%)';
+      echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
+      echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
+      echo '<div style="display:flex; gap:12px; align-items:center;">';
+      echo '<div style="width:120px; height:120px; border-radius:50%; background:' . h($gradient) . ';"></div>';
+      echo '<div style="display:flex; flex-direction:column; gap:6px;">';
+      foreach ($segments as $score => $seg) {
+        $count = (int)($meetingStats[$key . '_' . $score] ?? 0);
+        $pct = $meetingTotal > 0 ? round(($count / $meetingTotal) * 100, 1) : 0;
+        echo '<div style="display:flex; align-items:center; gap:6px; font-size:13px;">';
+        echo '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' . h($seg['color']) . ';"></span>';
+        echo '<span>' . h($seg['label']) . ' · ' . h((string)$pct) . '% (' . h((string)$count) . ')</span>';
+        echo '</div>';
+      }
+      echo '</div>';
+      echo '</div>';
+      echo '</div>';
+    };
     $renderStats = function(string $key, string $title, string $subtitle) use ($meetingStats, $meetingTotal) {
       $labels = [
         1 => 'Stimme nicht zu',
@@ -434,6 +473,12 @@ render_admin_header($pageTitle);
     };
   ?>
   <?php
+    echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
+    $renderPie('q1', '1. Verständlich & informativ');
+    $renderPie('q2', '2. Unterstützung zuhause');
+    $renderPie('q3', '3. Nächste Schritte');
+    echo '</div>';
+
     $renderStats(
       'q1',
       '1. Das Gespräch war verständlich und informativ.',
