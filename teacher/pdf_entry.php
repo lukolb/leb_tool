@@ -366,7 +366,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let pdfDoc = null;
   let state = null;
   let renderToken = 0;
-  let saveTimer = null;
+  const saveTimers = new Map();
+  const pendingSaves = new Map();
+  let activeSaves = 0;
   let renderTimer = null;
   let showStudentValues = false;
   let allowStudentEdit = false;
@@ -441,12 +443,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
   }
 
-  async function api(action, payload){
+  async function api(action, payload, options = {}){
     const body = { action, csrf_token: csrf, ...payload };
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      ...options
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -762,8 +765,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       queueSave(field, nextVal);
     };
 
-    if (!useRadioGroup && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) {
-      el.addEventListener('blur', handler);
+    if (!useRadioGroup && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') && type !== 'checkbox') {
+      el.addEventListener('input', handler);
     } else if (!useRadioGroup) {
       el.addEventListener('change', handler);
     }
@@ -1007,17 +1010,46 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
   }
 
+  function saveKeyForField(field){
+    const isChildOnly = Number(field.child_only || 0) === 1;
+    const scope = String(field.scope || 'student');
+    return `${field.id}:${isChildOnly ? 'child' : scope}`;
+  }
+
+  function updateSavingIndicator(){
+    setSaving(pendingSaves.size > 0 || activeSaves > 0);
+  }
+
   function queueSave(field, value){
     if (!state) return;
     const isChildOnly = Number(field.child_only || 0) === 1;
     const target = isChildOnly ? (state.values_child = state.values_child || {}) : (state.values = state.values || {});
     target[field.id] = value;
-    setSaving(true);
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveField(field, value), 250);
+    const key = saveKeyForField(field);
+    pendingSaves.set(key, { field, value });
+    updateSavingIndicator();
+    if (saveTimers.has(key)) {
+      clearTimeout(saveTimers.get(key));
+      saveTimers.delete(key);
+    }
+    saveTimers.set(key, setTimeout(() => flushSave(key), 250));
   }
 
-  async function saveField(field, value){
+  function flushSave(key, options = {}){
+    if (!pendingSaves.has(key)) return;
+    const item = pendingSaves.get(key);
+    pendingSaves.delete(key);
+    if (saveTimers.has(key)) {
+      clearTimeout(saveTimers.get(key));
+      saveTimers.delete(key);
+    }
+    if (!item) return;
+    saveField(item.field, item.value, options);
+  }
+
+  async function saveField(field, value, options = {}){
+    activeSaves += 1;
+    updateSavingIndicator();
     try {
       if (!state) return;
       if (Number(field.child_only || 0) === 1) {
@@ -1025,7 +1057,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           report_instance_id: state.student.report_instance_id,
           child_field_id: field.id,
           value_text: value
-        });
+        }, options);
         state.values_child = state.values_child || {};
         state.values_child[field.id] = res?.raw_value_text ?? value;
         state.values_child_display = state.values_child_display || {};
@@ -1038,19 +1070,20 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           report_instance_id: state.class_report_instance_id,
           template_field_id: field.id,
           value_text: value
-        });
+        }, options);
       } else {
         await api('save', {
           report_instance_id: state.student.report_instance_id,
           template_field_id: field.id,
           value_text: value
-        });
+        }, options);
       }
       showSaveStatus('Gespeichert');
     } catch (e) {
       showSaveStatus(e?.message || 'Speichern fehlgeschlagen.', true);
     } finally {
-      setSaving(false);
+      activeSaves = Math.max(0, activeSaves - 1);
+      updateSavingIndicator();
     }
   }
 
@@ -1072,6 +1105,22 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (!pdfDoc) return;
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(() => renderPages(), 120);
+  });
+
+  function flushPendingSaves(options = {}){
+    if (!pendingSaves.size) return;
+    const keys = Array.from(pendingSaves.keys());
+    keys.forEach((key) => flushSave(key, options));
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushPendingSaves();
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    flushPendingSaves({ keepalive: true });
   });
 
   if (toggleStudentValues) {
