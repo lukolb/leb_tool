@@ -3501,9 +3501,9 @@ render_teacher_header($pageTitle);
     let html = '';
     if (childLocked) {
       const info = CHILD_MODE
-        ? 'Eingaben können nicht mehr geändert werden.'
+        ? 'Schülereingabe kann nicht mehr geändert werden.'
         : 'Schülereingabe ist gesperrt. Lehrkraft kann weiterhin ergänzen.';
-      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>Dieser Bericht ist gesperrt.</strong> ${info}${unlockBtn}</div>`;
+      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>Dieser Bericht ist gesperrt (Schüler).</strong> ${info}${unlockBtn}</div>`;
     } else if (status === 'submitted') {
       html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.${unlockBtn}</div>`;
     } else if (childMissingFields.length > 0) {
