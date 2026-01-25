@@ -918,11 +918,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
-  async function api(action, payload){
+  async function api(action, payload, options = {}){
+    const keepalive = !!options.keepalive;
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload })
+      body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
+      keepalive
     });
     const j = await res.json().catch(()=>null);
     if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
@@ -1455,13 +1457,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     saveStatus.style.display = text ? 'flex' : 'none';
   }
 
-  async function saveFieldValue(fieldId, valueText){
+  async function saveFieldValue(fieldId, valueText, options = {}){
     if (isLocked()) return;
     saveInFlight++;
     setSaving(true);
     setSaveStatus('saving', t('student.js.save_working', '⏳ speichert …'));
     try {
-      await api('save_value', { template_field_id: Number(fieldId), value_text: String(valueText ?? '') });
+      await api('save_value', { template_field_id: Number(fieldId), value_text: String(valueText ?? '') }, options);
       lastSaveAt = new Date();
       setSaveStatus('ok', tfmt('student.js.save_ok', '✔ gespeichert um {time}', { time: formatTime(lastSaveAt) }));
       return true;
@@ -1480,13 +1482,43 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (isLocked()) return;
     const key = String(fieldId);
     if (pendingTimers.has(key)) {
-      clearTimeout(pendingTimers.get(key));
-      pendingTimers.delete(key);
+      clearTimeout(pendingTimers.get(key).timer);
     }
-    pendingTimers.set(key, setTimeout(async () => {
+    const entry = {
+      timer: null,
+      value: valueText,
+    };
+    entry.timer = setTimeout(async () => {
       pendingTimers.delete(key);
       try { await saveFieldValue(fieldId, valueText); } catch(e){ /* quiet */ }
     }, delayMs));
+    pendingTimers.set(key, entry);
+  }
+
+  function fireAndForgetSave(fieldId, valueText){
+    const payload = { action: 'save_value', csrf_token: csrf, template_field_id: Number(fieldId), value_text: String(valueText ?? '') };
+    const body = JSON.stringify(payload);
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon(apiUrl, blob);
+      return;
+    }
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(()=>{});
+  }
+
+  function flushPendingSaves(){
+    if (!pendingTimers.size) return;
+    pendingTimers.forEach((entry, key) => {
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      pendingTimers.delete(key);
+      fireAndForgetSave(key, entry.value);
+    });
   }
 
   // ===== CHANGED: option labels now support bilingual labels from option_list_items (label / label_en) =====
@@ -1646,6 +1678,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         if (isLocked()) return;
         const v = inp.value;
         updateFieldLocal(fid, v);
+        const key = String(fid);
+        if (pendingTimers.has(key)) {
+          clearTimeout(pendingTimers.get(key).timer);
+          pendingTimers.delete(key);
+        }
         saveFieldValue(fid, v).catch(()=>{});
         refreshDynamicTexts(container);
       });
@@ -2061,6 +2098,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (e.target === aiModal) closeAiModal();
     });
   }
+  window.addEventListener('beforeunload', flushPendingSaves);
+  window.addEventListener('pagehide', flushPendingSaves);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingSaves();
+  });
 
   (async function init(){
     try {
