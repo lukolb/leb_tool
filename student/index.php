@@ -804,7 +804,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     const mod = await loadVitsModule();
     if (!mod || !mod.download) return null;
     updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
-    vitsPrefetchPromise = mod.download(voiceId).catch(() => null);
+    vitsPrefetchPromise = mod.download(voiceId).catch((err) => {
+      console.warn('vits-web download failed', err);
+      vitsPrefetchPromise = null;
+      return null;
+    });
     return vitsPrefetchPromise;
   }
 
@@ -813,41 +817,54 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!mod || !mod.TtsSession) return null;
     if (vitsSessions.has(voiceId)) return vitsSessions.get(voiceId);
     updateTtsUi(t('student.tts.model_loading', 'Vorlesemodell wird geladen …'));
-    const session = await mod.TtsSession.create({ voiceId });
-    vitsSessions.set(voiceId, session);
-    return session;
+    try {
+      const session = await mod.TtsSession.create({ voiceId });
+      vitsSessions.set(voiceId, session);
+      return session;
+    } catch (err) {
+      console.warn('vits-web session failed', err);
+      return null;
+    }
   }
 
   async function speakWithVits(text){
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
     const voiceId = vitsVoiceIdForLang();
-    const session = await ensureVitsSession(voiceId);
-    if (!session) return false;
-    stopTts();
-    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
-    const blob = await session.predict(normalized);
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.playbackRate = TTS_RATE;
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
-      updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
-      vitsAudio = null;
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
-      vitsAudio = null;
-    };
-    vitsAudio = audio;
-    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     try {
-      await audio.play();
-      updateTtsUi();
-      return true;
-    } catch (e) {
+      const session = await ensureVitsSession(voiceId);
+      if (!session) return false;
+      stopTts();
+      updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+      const blob = await session.predict(normalized);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.playbackRate = TTS_RATE;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
+        vitsAudio = null;
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+        vitsAudio = null;
+      };
+      vitsAudio = audio;
+      updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+      try {
+        await audio.play();
+        updateTtsUi();
+        return true;
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+        return false;
+      }
+    } catch (err) {
+      console.warn('vits-web playback failed', err);
       updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+      vitsAudio = null;
       return false;
     }
   }
