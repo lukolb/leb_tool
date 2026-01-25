@@ -3007,7 +3007,7 @@ render_teacher_header($pageTitle);
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
         const childValRaw = (ui.showChild && f.child && f.child.id) ? String(childVal(reportId, f.child.id) ?? '').trim() : '';
-        const hasSelected = opts.some(o => {
+        const hasSelected = currentVal !== '' && opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
@@ -3019,7 +3019,7 @@ render_teacher_header($pageTitle);
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+          const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
@@ -3083,7 +3083,7 @@ render_teacher_header($pageTitle);
       if (ui.optionMode === 'buttons' && opts.length > 0) {
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
-        const hasSelected = opts.some(o => {
+        const hasSelected = currentVal !== '' && opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
@@ -3095,7 +3095,7 @@ render_teacher_header($pageTitle);
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+          const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
