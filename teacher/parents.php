@@ -131,7 +131,7 @@ function meeting_feedback_option_labels(): array {
 }
 
 function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): array {
-  $sql = "SELECT pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  $sql = "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
     "FROM parent_meeting_feedback pmf\n" .
     "JOIN students s ON s.id=pmf.student_id\n" .
     "JOIN classes c ON c.id=pmf.class_id";
@@ -188,6 +188,19 @@ function render_meeting_feedback_pies(array $stats, array $questions): void {
     echo '</div>';
   }
   echo '</div>';
+}
+
+function teacher_feedback_query_url(array $overrides): string {
+  $params = $_GET;
+  foreach ($overrides as $key => $value) {
+    if ($value === null || $value === '') {
+      unset($params[$key]);
+    } else {
+      $params[$key] = $value;
+    }
+  }
+  $query = http_build_query($params);
+  return url('teacher/parents.php' . ($query ? ('?' . $query) : ''));
 }
 
 // --- classes for teacher/admin ---
@@ -688,39 +701,62 @@ $meetingTextsClass = [];
 $meetingTextsAdmin = [];
 $meetingTextScope = $role === 'admin' ? (string)($_GET['feedback_scope'] ?? 'class') : 'class';
 $meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
+$meetingFeedbackId = isset($_GET['meeting_feedback_id']) && $_GET['meeting_feedback_id'] !== ''
+  ? (int)$_GET['meeting_feedback_id']
+  : 0;
 if ($meetingFeedbackEnabled) {
   if ($classId > 0) {
-    $meetingStatsClass = meeting_feedback_stats($pdo, 'class_id=?', [$classId]);
+    $meetingStatsClass = meeting_feedback_stats(
+      $pdo,
+      $meetingFeedbackId > 0 ? 'class_id=? AND id=?' : 'class_id=?',
+      $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
+    );
     $meetingTextsClass = meeting_feedback_texts(
       $pdo,
-      "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
-      [$classId]
+      $meetingFeedbackId > 0
+        ? "pmf.class_id=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+        : "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+      $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
     );
   }
   if ($role === 'admin') {
     if ($gradeLevel !== null) {
-      $meetingStatsGrade = meeting_feedback_stats($pdo, 'grade_level=?', [$gradeLevel]);
+      $meetingStatsGrade = meeting_feedback_stats(
+        $pdo,
+        $meetingFeedbackId > 0 ? 'grade_level=? AND id=?' : 'grade_level=?',
+        $meetingFeedbackId > 0 ? [$gradeLevel, $meetingFeedbackId] : [$gradeLevel]
+      );
     }
-    $meetingStatsOverall = meeting_feedback_stats($pdo, '', []);
+    $meetingStatsOverall = meeting_feedback_stats(
+      $pdo,
+      $meetingFeedbackId > 0 ? 'id=?' : '',
+      $meetingFeedbackId > 0 ? [$meetingFeedbackId] : []
+    );
     if ($meetingTextScope === 'grade' && $gradeLevel !== null) {
       $meetingTextsAdmin = meeting_feedback_texts(
         $pdo,
-        "pmf.grade_level=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
-        [$gradeLevel]
+        $meetingFeedbackId > 0
+          ? "pmf.grade_level=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+          : "pmf.grade_level=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        $meetingFeedbackId > 0 ? [$gradeLevel, $meetingFeedbackId] : [$gradeLevel]
       );
     } elseif ($meetingTextScope === 'all') {
       $meetingTextsAdmin = meeting_feedback_texts(
         $pdo,
-        "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
-        []
+        $meetingFeedbackId > 0
+          ? "pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+          : "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+        $meetingFeedbackId > 0 ? [$meetingFeedbackId] : []
       );
     } else {
       $meetingTextScope = 'class';
       if ($classId > 0) {
         $meetingTextsAdmin = meeting_feedback_texts(
           $pdo,
-          "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
-          [$classId]
+          $meetingFeedbackId > 0
+            ? "pmf.class_id=? AND pmf.id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''"
+            : "pmf.class_id=? AND pmf.message IS NOT NULL AND TRIM(pmf.message)<>''",
+          $meetingFeedbackId > 0 ? [$classId, $meetingFeedbackId] : [$classId]
         );
       }
     }
@@ -1033,6 +1069,11 @@ $introText = $parentAutoApprove
   <div class="card" style="margin-top:14px;">
     <h2>Feedback zum Lernentwicklungsgespräch</h2>
     <p class="muted" style="margin-top:0;">Auswertung des Feedbackbogens für Eltern. Jede Rückmeldung kann nur einmal pro Kind abgegeben werden.</p>
+    <?php if ($meetingFeedbackId > 0): ?>
+      <div style="margin-top:8px;">
+        <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>">Filter zurücksetzen</a>
+      </div>
+    <?php endif; ?>
 
     <?php if ($classId <= 0): ?>
       <p class="muted">Keine Klasse ausgewählt.</p>
@@ -1121,7 +1162,11 @@ $introText = $parentAutoApprove
                 <tr>
                   <td><strong><?=h($studentName)?></strong></td>
                   <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
-                  <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+                  <td>
+                    <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
+                      <?= nl2br(h((string)($row['message'] ?? ''))) ?>
+                    </a>
+                  </td>
                   <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
                 </tr>
               <?php endforeach; ?>
@@ -1155,7 +1200,11 @@ $introText = $parentAutoApprove
               ?>
               <tr>
                 <td><strong><?=h($studentName)?></strong></td>
-                <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+                <td>
+                  <a href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
+                    <?= nl2br(h((string)($row['message'] ?? ''))) ?>
+                  </a>
+                </td>
                 <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
               </tr>
             <?php endforeach; ?>
