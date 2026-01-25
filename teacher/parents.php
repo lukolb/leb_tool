@@ -867,70 +867,91 @@ $introText = $parentAutoApprove
 </div>
 <?php endif; ?>
 
-<div class="card">
-  <h2><?=h(t('teacher.parents.table_title', 'Freigaben'))?></h2>
-  <?php if (!$students): ?>
-    <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
-  <?php else: ?>
-    <div class="responsive-table">
-      <table>
-        <thead>
-          <tr>
-            <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
-            <th><?=h(t('teacher.parents.status', 'Status'))?></th>
-            <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
-            <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
-            <th><?=h(t('teacher.parents.actions', 'Aktionen'))?></th>
-          </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($students as $s):
-          $linkId = (int)($s['parent_link_id'] ?? 0);
-          $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
-          $status = $link['status'] ?? '-';
-          $statusLabel = $status;
-          if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
-          if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
-          if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
-          if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
-            $statusColor = $status;
-            if ($status === 'requested') $statusColor = 'blue';
-            if ($status === 'approved') $statusColor = 'green';
-            if ($status === 'revoked') $statusColor = 'red';
-            if ($status === 'expired') $statusColor = 'red';
-          $expiresAt = $link['expires_at'] ?? null;
-          $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
-          $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
-          $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
-          $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
-          $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
-        ?>
-          <tr>
-            <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
-            <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
-            <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
-            <td>
-              <?php if ($totalAcks > 0): ?>
-                <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
-                  <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
-                </span>
-              <?php endif; ?>
-              <?php if ($totalQuestions > 0): ?>
-                <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
-                  <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
-                </span>
-              <?php else: ?>
-                <?php if ($totalAcks === 0): ?>
-                  <span class="muted">–</span>
+<details class="card" open>
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></summary>
+  <div style="margin-top:12px;">
+    <?php if (!$students): ?>
+      <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
+              <th><?=h(t('teacher.parents.status', 'Status'))?></th>
+              <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
+              <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
+              <th><?=h(t('teacher.parents.actions', 'Aktionen'))?></th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($students as $s):
+            $linkId = (int)($s['parent_link_id'] ?? 0);
+            $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
+            $status = $link['status'] ?? '-';
+            $statusLabel = $status;
+            if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
+            if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
+            if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
+            if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
+              $statusColor = $status;
+              if ($status === 'requested') $statusColor = 'blue';
+              if ($status === 'approved') $statusColor = 'green';
+              if ($status === 'revoked') $statusColor = 'red';
+              if ($status === 'expired') $statusColor = 'red';
+            $expiresAt = $link['expires_at'] ?? null;
+            $pending = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['pending_questions'] : 0;
+            $totalQuestions = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_questions'] : 0;
+            $totalAcks = $linkId && isset($feedbackCounts[$linkId]) ? (int)$feedbackCounts[$linkId]['total_acks'] : 0;
+            $ackLatest = $linkId && isset($feedbackCounts[$linkId]) ? ($feedbackCounts[$linkId]['ack_latest'] ?? null) : null;
+            $shareUrl = ($link && $status === 'approved') ? absolute_url('parent/portal.php?token=' . urlencode((string)$link['token'])) : '';
+          ?>
+            <tr>
+              <td><strong><?=h((string)$s['first_name'] . ' ' . (string)$s['last_name'])?></strong></td>
+              <td><span class="pill <?=h($statusColor)?>"><?=h($statusLabel)?></span></td>
+              <td><?= render_local_datetime($expiresAt, 'd.m.Y H:i') ?></td>
+              <td>
+                <?php if ($totalAcks > 0): ?>
+                  <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
+                    <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
+                  </span>
                 <?php endif; ?>
-              <?php endif; ?>
-            </td>
-            <td>
-              <?php if ($status === 'approved' && $shareUrl): ?>
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                  <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
-                  <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
-                  <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
+                <?php if ($totalQuestions > 0): ?>
+                  <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
+                    <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
+                  </span>
+                <?php else: ?>
+                  <?php if ($totalAcks === 0): ?>
+                    <span class="muted">–</span>
+                  <?php endif; ?>
+                <?php endif; ?>
+              </td>
+              <td>
+                <?php if ($status === 'approved' && $shareUrl): ?>
+                  <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
+                    <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
+                    <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="extend_link">
+                      <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                      <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                      <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
+                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                    </form>
+                    <form method="post" style="margin:0;">
+                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                      <input type="hidden" name="action" value="revoke_link">
+                      <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
+                      <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
+                      <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm', 'Zugriff wirklich beenden?'))?>');"><?=h(t('teacher.parents.revoke', 'Beenden'))?></button>
+                    </form>
+                  </div>
+                  <div class="muted" style="font-size:12px; margin-top:4px;">
+                    <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
+                  </div>
+                <?php elseif ($status === 'expired'): ?>
+                  <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="extend_link">
                     <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
@@ -938,132 +959,115 @@ $introText = $parentAutoApprove
                     <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
                     <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
                   </form>
-                  <form method="post" style="margin:0;">
+                <?php elseif ($status === 'requested'): ?>
+                  <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
+                <?php else: ?>
+                  <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                    <input type="hidden" name="action" value="revoke_link">
+                    <input type="hidden" name="action" value="request_link">
                     <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                    <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                    <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm', 'Zugriff wirklich beenden?'))?>');"><?=h(t('teacher.parents.revoke', 'Beenden'))?></button>
+                    <?php if ($signatureEnabled && $signatureConfigured): ?>
+                      <input type="hidden" name="signature_use" value="0" class="signature-use-input">
+                      <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
+                    <?php endif; ?>
+                    <div>
+                      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
+                    </div>
+                    <div>
+                      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
+                      <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
+                    </div>
                   </form>
-                </div>
-                <div class="muted" style="font-size:12px; margin-top:4px;">
-                  <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
-                </div>
-              <?php elseif ($status === 'expired'): ?>
-                <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="extend_link">
-                  <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                  <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                  <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
-                  <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
-                </form>
-              <?php elseif ($status === 'requested'): ?>
-                <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
-              <?php else: ?>
-                <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="request_link">
-                  <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
-                  <?php if ($signatureEnabled && $signatureConfigured): ?>
-                    <input type="hidden" name="signature_use" value="0" class="signature-use-input">
-                    <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
-                  <?php endif; ?>
-                  <div>
-                    <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
-                  </div>
-                  <div>
-                    <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
-                    <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
-                  </div>
-                </form>
-              <?php endif; ?>
-            </td>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-  <?php endif; ?>
-</div>
-
-<div class="card" style="margin-top:14px;">
-  <h2><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></h2>
-  <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
-  <?php if (!$feedbackList): ?>
-    <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
-  <?php else: ?>
-    <div class="responsive-table">
-      <table>
-        <thead>
-          <tr>
-            <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
-            <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
-            <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
-            <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
-            <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($feedbackList as $fb): ?>
-            <?php
-              $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-              $feedbackDate = '';
-              if (!empty($fb['created_at'])) {
-                try {
-                  $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
-                } catch (Throwable $e) {
-                  $feedbackDate = '';
-                }
-              }
-              $feedbackEmails = array_values(array_unique(array_filter([
-                sanitize_email($fb['email_parent1'] ?? null),
-                sanitize_email($fb['email_parent2'] ?? null),
-              ])));
-              $replyLink = build_feedback_reply_mailto($feedbackEmails, $feedbackStudent, (string)($fb['message'] ?? ''), $feedbackDate);
-            ?>
-            <tr>
-              <td><strong><?=h($feedbackStudent)?></strong></td>
-              <td>
-                <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
-                  <span class="muted">–</span>
-                <?php else: ?>
-                  <?= nl2br(h((string)$fb['message'])) ?>
                 <?php endif; ?>
-              </td>
-              <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
-              <td>
-                <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
-                  <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
-                <?php else: ?>
-                  <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
-                <?php endif; ?>
-              </td>
-              <td>
-                <div style="display:flex; flex-direction:column; gap:6px;">
-                  <?php if ($replyLink): ?>
-                    <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
-                  <?php else: ?>
-                    <span class="muted">–</span>
-                  <?php endif; ?>
-                  <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
-                    <form method="post" style="margin:0;">
-                      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                      <input type="hidden" name="action" value="mark_feedback_reviewed">
-                      <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
-                      <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
-                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
-                    </form>
-                  <?php endif; ?>
-                </div>
               </td>
             </tr>
           <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-  <?php endif; ?>
-</div>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+</details>
+
+<details class="card" style="margin-top:14px;" open>
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></summary>
+  <div style="margin-top:12px;">
+    <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
+    <?php if (!$feedbackList): ?>
+      <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
+    <?php else: ?>
+      <div class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
+              <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
+              <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
+              <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
+              <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($feedbackList as $fb): ?>
+              <?php
+                $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
+                $feedbackDate = '';
+                if (!empty($fb['created_at'])) {
+                  try {
+                    $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
+                  } catch (Throwable $e) {
+                    $feedbackDate = '';
+                  }
+                }
+                $feedbackEmails = array_values(array_unique(array_filter([
+                  sanitize_email($fb['email_parent1'] ?? null),
+                  sanitize_email($fb['email_parent2'] ?? null),
+                ])));
+                $replyLink = build_feedback_reply_mailto($feedbackEmails, $feedbackStudent, (string)($fb['message'] ?? ''), $feedbackDate);
+              ?>
+              <tr>
+                <td><strong><?=h($feedbackStudent)?></strong></td>
+                <td>
+                  <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
+                    <span class="muted">–</span>
+                  <?php else: ?>
+                    <?= nl2br(h((string)$fb['message'])) ?>
+                  <?php endif; ?>
+                </td>
+                <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
+                <td>
+                  <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
+                    <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
+                  <?php else: ?>
+                    <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <?php if ($replyLink): ?>
+                      <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
+                    <?php else: ?>
+                      <span class="muted">–</span>
+                    <?php endif; ?>
+                    <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
+                      <form method="post" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                        <input type="hidden" name="action" value="mark_feedback_reviewed">
+                        <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
+                        <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
+                        <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
+                      </form>
+                    <?php endif; ?>
+                  </div>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+</details>
 
 <?php if ($meetingFeedbackEnabled): ?>
   <div class="card" style="margin-top:14px;">
