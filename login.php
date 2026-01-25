@@ -5,7 +5,6 @@ require __DIR__ . '/bootstrap.php';
 $err = '';
 $email = $_POST['email'] ?? '';
 $pass  = $_POST['password'] ?? '';
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -26,15 +25,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Login fehlgeschlagen.';
       } else {
         session_regenerate_id(true);
+        $actualRole = (string)($u['role'] ?? '');
         $_SESSION['user'] = [
           'id' => (int)$u['id'],
           'email' => $u['email'],
           'display_name' => $u['display_name'],
-          'role' => $u['role'],
+          'role' => $actualRole,
+          'actual_role' => $actualRole,
         ];
         audit('login', (int)$u['id']);
-        if (($u['role'] ?? '') === 'admin') {
-          redirect('admin/index.php');
+        if ($actualRole === 'admin') {
+          redirect('role_select.php');
         }
         redirect('teacher/index.php');
       }

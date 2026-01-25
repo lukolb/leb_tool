@@ -3097,9 +3097,6 @@ if ($action === 'delegations_save') {
     $expectedLabel = class_report_period_label($classId);
     if ((string)($ri['period_label'] ?? '') !== $expectedLabel) throw new RuntimeException('Perioden-Konflikt.');
 
-    $status = (string)($ri['status'] ?? 'draft');
-    if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
-
     $st = $pdo->prepare(
       "SELECT id, field_name, field_type, is_multiline, meta_json
        FROM template_fields
@@ -3216,9 +3213,6 @@ if ($action === 'delegations_save') {
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
-
-    $status = (string)($ri['status'] ?? 'draft');
-    if ($status === 'locked') throw new RuntimeException('Report ist gesperrt.');
 
     $riTemplateId = (int)($ri['template_id'] ?? 0);
     $classTemplateId = (int)($ri['class_template_id'] ?? 0);

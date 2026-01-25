@@ -578,21 +578,17 @@ function require_login(): void {
 }
 
 function get_role(): string {
-    $u = current_user();
-    $role = (string)($u['role'] ?? '');
-    if ($role == 'teacher') {
-      return "teacher";
-    } else if($role == 'admin') {
-        return "admin";
-    } else {
-        return null;
-    }
+  $u = current_user();
+  $role = (string)($u['role'] ?? '');
+  if ($role === '') {
+    $role = (string)($u['actual_role'] ?? '');
+  }
+  return $role === 'admin' ? 'admin' : 'teacher';
 }
 
 function require_admin(): void {
   require_login();
-  $u = current_user();
-  if (($u['role'] ?? '') !== 'admin') {
+  if (get_role() !== 'admin') {
     http_response_code(403);
     echo "403 Forbidden";
     exit;
@@ -601,13 +597,18 @@ function require_admin(): void {
 
 function require_teacher(): void {
   require_login();
-  $u = current_user();
-  $role = (string)($u['role'] ?? '');
+  $role = get_role();
   if ($role !== 'teacher' && $role !== 'admin') {
     http_response_code(403);
     echo "403 Forbidden";
     exit;
   }
+}
+
+function is_actual_admin(): bool {
+  $u = current_user();
+  $actualRole = (string)($u['actual_role'] ?? $u['role'] ?? '');
+  return $actualRole === 'admin';
 }
 
 function user_can_access_class(PDO $pdo, int $userId, int $classId): bool {

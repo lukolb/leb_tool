@@ -74,6 +74,10 @@ function render_role_header(string $title): void {
   $vars = "--primary:" . h($primary) . ";--secondary:" . h($secondary) . ";";
   $aria = $role === 'admin' ? t('aria.admin_nav') : t('aria.teacher_nav');
   $navItems = nav_items_for_role($role);
+  $canSwitchRole = is_actual_admin();
+  $switchRole = $role === 'admin' ? 'teacher' : 'admin';
+  $switchLabel = $role === 'admin' ? 'Als Lehrkraft wechseln' : 'Zum Adminbereich';
+  $switchIcon = $role === 'admin' ? '👩‍🏫' : '🛠️';
   ?>
   <!doctype html>
   <html lang="<?=h(ui_lang())?>">
@@ -102,6 +106,17 @@ function render_role_header(string $title): void {
             <div class="lang-switch" aria-label="Sprache wechseln">
               <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
               <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
+              <?php if ($canSwitchRole): ?>
+                <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
+                  <?=h($switchIcon)?>
+                </a>
+              <?php endif; ?>
+            </div>
+          <?php elseif ($canSwitchRole): ?>
+            <div class="lang-switch" aria-label="Rolle wechseln">
+              <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
+                <?=h($switchIcon)?>
+              </a>
             </div>
           <?php endif; ?>
         </div>
