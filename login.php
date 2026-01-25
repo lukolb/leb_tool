@@ -5,6 +5,7 @@ require __DIR__ . '/bootstrap.php';
 $err = '';
 $email = $_POST['email'] ?? '';
 $pass  = $_POST['password'] ?? '';
+$loginRole = $_POST['login_role'] ?? 'admin';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -26,14 +27,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Login fehlgeschlagen.';
       } else {
         session_regenerate_id(true);
+        $actualRole = (string)($u['role'] ?? '');
+        $effectiveRole = $actualRole;
+        if ($actualRole === 'admin' && in_array((string)$loginRole, ['admin', 'teacher'], true)) {
+          $effectiveRole = (string)$loginRole;
+        }
         $_SESSION['user'] = [
           'id' => (int)$u['id'],
           'email' => $u['email'],
           'display_name' => $u['display_name'],
-          'role' => $u['role'],
+          'role' => $effectiveRole,
+          'actual_role' => $actualRole,
         ];
         audit('login', (int)$u['id']);
-        if (($u['role'] ?? '') === 'admin') {
+        if ($effectiveRole === 'admin') {
           redirect('admin/index.php');
         }
         redirect('teacher/index.php');
@@ -84,6 +91,12 @@ $logo = $b['logo_path'] ?? '';
 
         <label>Passwort</label>
         <input name="password" type="password" required>
+
+        <label>Als Rolle anmelden <span class="muted">(nur Admins)</span></label>
+        <select name="login_role">
+          <option value="admin" <?=((string)$loginRole === 'admin') ? 'selected' : ''?>>Admin</option>
+          <option value="teacher" <?=((string)$loginRole === 'teacher') ? 'selected' : ''?>>Lehrer</option>
+        </select>
 
         <div class="actions">
             <a class="btn primary" type="submit" onclick="document.getElementById('loginForm').submit(); return false;">Anmelden</a>

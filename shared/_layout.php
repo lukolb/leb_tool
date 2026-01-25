@@ -74,6 +74,9 @@ function render_role_header(string $title): void {
   $vars = "--primary:" . h($primary) . ";--secondary:" . h($secondary) . ";";
   $aria = $role === 'admin' ? t('aria.admin_nav') : t('aria.teacher_nav');
   $navItems = nav_items_for_role($role);
+  $canSwitchRole = is_actual_admin();
+  $switchRole = $role === 'admin' ? 'teacher' : 'admin';
+  $switchLabel = $role === 'admin' ? 'Als Lehrkraft wechseln' : 'Zum Adminbereich';
   ?>
   <!doctype html>
   <html lang="<?=h(ui_lang())?>">
@@ -149,6 +152,11 @@ function render_role_header(string $title): void {
                 <a class="nav-link <?=$activeClass?>" href="<?=h(url($href))?>"><?=h($label)?></a>
               <?php endif; ?>
             <?php endforeach; ?>
+            <?php if ($canSwitchRole): ?>
+              <a class="nav-link" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>">
+                <?=h($switchLabel)?>
+              </a>
+            <?php endif; ?>
           </nav>
         </div>
       </div>
