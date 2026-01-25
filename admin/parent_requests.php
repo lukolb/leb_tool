@@ -360,7 +360,7 @@ render_admin_header($pageTitle);
   <?php endif; ?>
 </div>
 
-<div class="card" style="margin-top:14px;">
+<div class="card" style="margin-top:14px;" id="meetingFeedbackSection">
   <h2>Feedback zum Lernentwicklungsgespräch</h2>
   <p class="muted" style="margin-top:0;">Freitexte aus dem Eltern-Feedbackbogen. Bei anonymen Rückmeldungen werden keine Namen angezeigt.</p>
   <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f7f9fc;">
@@ -390,14 +390,13 @@ render_admin_header($pageTitle);
     <?php endif; ?>
     <?php if ($meetingFeedbackScope === 'class'): ?>
       <label class="muted" style="font-size:12px;">Klasse</label>
-      <select name="meeting_feedback_class" class="input">
+      <select name="meeting_feedback_class" class="input" onchange="this.form.submit();">
         <option value="">—</option>
         <?php foreach ($classes as $c): ?>
           <?php if ($meetingFeedbackYear !== '' && (string)($c['school_year'] ?? '') !== $meetingFeedbackYear) continue; ?>
           <option value="<?= (int)$c['id'] ?>" <?= $meetingFeedbackClass === (int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
         <?php endforeach; ?>
       </select>
-      <button class="btn secondary" type="submit">Anwenden</button>
     <?php endif; ?>
   </form>
   <?php
@@ -485,5 +484,15 @@ render_admin_header($pageTitle);
     </div>
   <?php endif; ?>
 </div>
+
+<script>
+  (function(){
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('meeting_feedback_scope') || params.has('meeting_feedback_year') || params.has('meeting_feedback_grade') || params.has('meeting_feedback_class')) {
+      const section = document.getElementById('meetingFeedbackSection');
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  })();
+</script>
 
 <?php render_admin_footer(); ?>
