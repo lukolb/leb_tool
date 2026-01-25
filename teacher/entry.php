@@ -13,6 +13,7 @@ $userId = (int)($u['id'] ?? 0);
 $classId = (int)($_GET['class_id'] ?? 0);
 $delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
 $childMode = ((int)($_GET['child'] ?? 0) === 1);
+$childEditOverride = ((int)($_GET['child_edit'] ?? 0) === 1);
 
 $jsDelegatedMode = $delegatedMode ? 1 : 0;
 $jsUserId = $userId;
@@ -654,6 +655,7 @@ render_teacher_header($pageTitle);
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
+  const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm', 'Schülereingabe "{label}" wirklich löschen?'))?>;
   const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear', 'Zurücksetzen'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
@@ -3144,7 +3146,7 @@ render_teacher_header($pageTitle);
   }
 
   function isTeacherInputLocked(status){
-    return CHILD_MODE ? isStudentInputLocked(status) : false;
+    return CHILD_MODE ? (!CHILD_EDIT_OVERRIDE && isStudentInputLocked(status)) : false;
   }
 
   function currentStudents(){
