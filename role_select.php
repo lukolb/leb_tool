@@ -64,14 +64,10 @@ $logo = $b['logo_path'] ?? '';
       <form method="post">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <label>Bitte wählen</label>
-        <select name="role" required>
-          <option value="" <?= $selected === '' ? 'selected' : '' ?> disabled>Rolle auswählen</option>
-          <option value="admin" <?= $selected === 'admin' ? 'selected' : '' ?>>Admin</option>
-          <option value="teacher" <?= $selected === 'teacher' ? 'selected' : '' ?>>Lehrer</option>
-        </select>
 
         <div class="actions">
-          <button class="btn primary" type="submit">Weiter</button>
+          <button class="btn primary" type="submit" name="role" value="admin">🛠️ Admin</button>
+          <button class="btn secondary" type="submit" name="role" value="teacher">👩‍🏫 Lehrkraft</button>
         </div>
       </form>
     </div>
