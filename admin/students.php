@@ -9,14 +9,163 @@ require_admin();
 $pdo = db();
 $userId = (int)(current_user()['id'] ?? 0);
 
+$cfg = app_config();
+$defaultSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+
 $err = '';
 $ok = '';
+$importSkippedDetails = [];
+$importSummary = $_SESSION['admin_import_summary'] ?? null;
+if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+  unset($_SESSION['admin_import_summary']);
+}
 
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name = (string)($c['class_name'] ?? '');
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : '—');
+}
+
+function normalize_label(string $s): string {
+  $s = trim($s);
+  $s = strtolower($s);
+  $s = preg_replace('/\s+/', '', $s);
+  return $s;
+}
+
+function computed_class_name(?int $grade, string $label): string {
+  $label = normalize_label($label);
+  if ($grade === null || $grade <= 0 || $label === '') return trim((string)$grade . $label);
+  return (string)$grade . $label;
+}
+
+function normalize_name(string $s): string {
+  $s = trim($s);
+  $s = preg_replace('/\s+/', ' ', $s);
+  return $s;
+}
+
+function sanitize_import_email(?string $value): ?string {
+  $email = trim((string)$value);
+  if ($email === '') return null;
+  return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+}
+
+function parse_blackbaud_date(?string $s): ?string {
+  $s = trim((string)$s);
+  if ($s === '' || $s === '""') return null;
+
+  // Blackbaud often exports as M/D/YYYY (e.g. 7/16/2019)
+  $s = trim($s, "\" \t\n\r\0\x0B");
+  if (preg_match('/^\d{1,2}\/\d{1,2}\/\d{4}$/', $s)) {
+    $dt = DateTimeImmutable::createFromFormat('n/j/Y', $s);
+    if ($dt) return $dt->format('Y-m-d');
+    $dt = DateTimeImmutable::createFromFormat('m/d/Y', $s);
+    if ($dt) return $dt->format('Y-m-d');
+  }
+  // accept YYYY-MM-DD
+  if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $s)) return $s;
+  // accept DD.MM.YYYY
+  if (preg_match('/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/', $s, $m)) {
+    $d = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+    $mo = str_pad($m[2], 2, '0', STR_PAD_LEFT);
+    return $m[3] . '-' . $mo . '-' . $d;
+  }
+  return null;
+}
+
+function parse_grade_level(?string $value): ?int {
+  $value = trim((string)$value);
+  if ($value === '') return null;
+  if (preg_match('/\d+/', $value, $m)) {
+    $grade = (int)$m[0];
+    return $grade > 0 ? $grade : null;
+  }
+  return null;
+}
+
+function read_csv_assoc(string $path): array {
+  $fh = fopen($path, 'rb');
+  if (!$fh) throw new RuntimeException('CSV konnte nicht geöffnet werden.');
+
+  // Read header line (handle UTF-8 BOM)
+  $rawHeader = fgets($fh);
+  if ($rawHeader === false) { fclose($fh); return []; }
+  $rawHeader = preg_replace('/^\xEF\xBB\xBF/', '', $rawHeader);
+
+  $delimiterCounts = [
+    ',' => substr_count($rawHeader, ','),
+    ';' => substr_count($rawHeader, ';'),
+    "\t" => substr_count($rawHeader, "\t"),
+  ];
+  arsort($delimiterCounts);
+  $delimiter = array_key_first($delimiterCounts);
+  if ($delimiter === null || $delimiterCounts[$delimiter] === 0) {
+    $delimiter = ',';
+  }
+
+  // Put header line back into a temp stream so we can use fgetcsv consistently
+  $tmp = fopen('php://temp', 'wb+');
+  fwrite($tmp, $rawHeader);
+  while (($line = fgets($fh)) !== false) fwrite($tmp, $line);
+  fclose($fh);
+  rewind($tmp);
+
+  $header = fgetcsv($tmp, 0, $delimiter, '"');
+  if (!$header) { fclose($tmp); return []; }
+
+  $header = array_map(static function($h) {
+    $h = (string)$h;
+    $h = trim($h);
+    $h = trim($h, "\" \t\n\r\0\x0B");
+    return $h;
+  }, $header);
+
+  $rows = [];
+  while (($row = fgetcsv($tmp, 0, $delimiter, '"')) !== false) {
+    if (!$row) continue;
+    $assoc = [];
+    foreach ($header as $i => $h) {
+      $assoc[$h] = $row[$i] ?? '';
+    }
+    // skip empty lines
+    $allEmpty = true;
+    foreach ($assoc as $v) { if (trim((string)$v) !== '') { $allEmpty = false; break; } }
+    if ($allEmpty) continue;
+    $rows[] = $assoc;
+  }
+  fclose($tmp);
+  return $rows;
+}
+
+function find_master_student_id(PDO $pdo, string $first, string $last, ?string $dob): ?int {
+  $first = trim($first);
+  $last  = trim($last);
+  if ($first === '' || $last === '') return null;
+  if ($dob === null || $dob === '') return null;
+
+  $q = $pdo->prepare(
+    "SELECT id, master_student_id
+     FROM students
+     WHERE first_name=? AND last_name=? AND date_of_birth=?
+     ORDER BY (master_student_id IS NULL) ASC, id ASC
+     LIMIT 1"
+  );
+  $q->execute([$first, $last, $dob]);
+  $row = $q->fetch();
+  if (!$row) return null;
+
+  $master = $row['master_student_id'] !== null ? (int)$row['master_student_id'] : 0;
+  if ($master > 0) return $master;
+
+  // If the found record has no master, set itself as master (future-proof)
+  $sid = (int)$row['id'];
+  if ($sid > 0) {
+    $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$sid, $sid]);
+    return $sid;
+  }
+  return null;
 }
 
 function delete_students_cascade(PDO $pdo, array $studentIds): array {
@@ -118,6 +267,279 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       audit('admin_student_delete', $userId, ['student_id'=>$studentId,'deleted_ids'=>$ids] + $stats);
       $ok = "Schüler gelöscht (Einträge: {$stats['students_deleted']}, Berichte: {$stats['reports_deleted']}, Feldwerte: {$stats['values_deleted']}).";
     }
+
+    elseif ($action === 'update_import_templates') {
+      $classTemplates = $_POST['class_template'] ?? [];
+      if (!is_array($classTemplates)) $classTemplates = [];
+      $summary = $_SESSION['admin_import_summary'] ?? null;
+      if (!$summary || empty($summary['classes'])) {
+        throw new RuntimeException('Keine Import-Zusammenfassung verfügbar.');
+      }
+      $classIds = array_map(static fn($c)=>(int)($c['class_id'] ?? 0), $summary['classes']);
+      $classIds = array_values(array_filter($classIds, fn($x)=>$x>0));
+      if (!$classIds) {
+        throw new RuntimeException('Keine Klassen zum Aktualisieren gefunden.');
+      }
+
+      $pdo->beginTransaction();
+      $updated = 0;
+      foreach ($classTemplates as $cid => $tid) {
+        $cid = (int)$cid;
+        if (!in_array($cid, $classIds, true)) continue;
+        $tid = (int)$tid;
+        $tpl = $tid > 0 ? $tid : null;
+        $pdo->prepare("UPDATE classes SET template_id=? WHERE id=?")->execute([$tpl, $cid]);
+        $updated++;
+      }
+      $pdo->commit();
+      audit('admin_students_import_templates', $userId, ['updated'=>$updated,'class_ids'=>$classIds]);
+      $ok = "Vorlagen aktualisiert ({$updated}).";
+    }
+
+    elseif ($action === 'import_blackbaud_csv') {
+      if (empty($_FILES['csv_file']) || !isset($_FILES['csv_file']['tmp_name'])) {
+        throw new RuntimeException('Bitte CSV-Datei auswählen.');
+      }
+      $csvTmpNames = $_FILES['csv_file']['tmp_name'];
+      $csvNames = $_FILES['csv_file']['name'] ?? [];
+      if (!is_array($csvTmpNames)) {
+        $csvTmpNames = [$csvTmpNames];
+        $csvNames = is_array($csvNames) ? $csvNames : [$csvNames];
+      }
+      $csvTmpNames = array_values($csvTmpNames);
+      $csvNames = array_values(is_array($csvNames) ? $csvNames : []);
+      $csvCount = count($csvTmpNames);
+      if ($csvCount === 0) {
+        throw new RuntimeException('Bitte CSV-Datei auswählen.');
+      }
+
+      $schoolYear = trim((string)($_POST['school_year'] ?? ''));
+      if ($schoolYear === '') $schoolYear = $defaultSchoolYear;
+      if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
+
+      $createdClasses = 0;
+      $createdStudents = 0;
+      $updatedStudents = 0;
+      $skipped = 0;
+      $importSkippedDetails = [];
+      $importSummary = [
+        'files' => [],
+        'classes' => [],
+        'students' => [],
+        'skipped' => [],
+        'stats' => [
+          'files' => 0,
+          'classes_created' => 0,
+          'students_created' => 0,
+          'students_updated' => 0,
+          'skipped' => 0,
+        ],
+      ];
+
+      $pdo->beginTransaction();
+
+      $classLookup = $pdo->prepare(
+        "SELECT id FROM classes WHERE school_year=? AND grade_level=? AND label=? LIMIT 1"
+      );
+      $classInsert = $pdo->prepare(
+        "INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active)
+         VALUES (?, ?, ?, ?, NULL, 'groups', 1)"
+      );
+
+      $checkStudent = $pdo->prepare(
+        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? AND class_id=? LIMIT 1"
+      );
+      $insertStudent = $pdo->prepare(
+        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
+         VALUES (?, ?, ?, ?, ?, 1)"
+      );
+      $setSelfMaster = $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?");
+
+      foreach ($csvTmpNames as $index => $tmpPathRaw) {
+        $tmpPath = (string)$tmpPathRaw;
+        $csvLabel = $csvNames[$index] ?? ('CSV ' . ($index + 1));
+        if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+          $detail = [
+            'name' => $csvLabel,
+            'reason' => 'Upload fehlgeschlagen.',
+          ];
+          $importSkippedDetails[] = $detail;
+          $importSummary['skipped'][] = $detail;
+          $skipped++;
+          continue;
+        }
+
+        $rows = read_csv_assoc($tmpPath);
+        if (!$rows) {
+          $detail = [
+            'name' => $csvLabel,
+            'reason' => 'CSV ist leer oder konnte nicht gelesen werden.',
+          ];
+          $importSkippedDetails[] = $detail;
+          $importSummary['skipped'][] = $detail;
+          $skipped++;
+          continue;
+        }
+
+        $importSummary['files'][] = $csvLabel;
+
+        foreach ($rows as $r) {
+          $gradeRaw = $r['Grade'] ?? $r['Klasse'] ?? $r['Stufe'] ?? null;
+          $labelRaw = $r['Parallelklasse'] ?? $r['Parallelklasse/Gruppe'] ?? $r['Class Section'] ?? $r['Parallel Class'] ?? null;
+          $grade = parse_grade_level($gradeRaw);
+          $label = normalize_label((string)$labelRaw);
+
+          $first = normalize_name((string)($r['Student First Name'] ?? $r['First Name'] ?? $r['Student Firstname'] ?? ''));
+          $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
+          $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
+          $emailStudent = sanitize_import_email($r['Student Email'] ?? $r['E-Mail Student'] ?? $r['E-Mail Schüler'] ?? $r['Email Student'] ?? null);
+          $emailParent1 = sanitize_import_email($r['E-Mail Parent 1'] ?? $r['Parent 1 Email'] ?? $r['Parent Email 1'] ?? $r['Email Parent 1'] ?? null);
+          $emailParent2 = sanitize_import_email($r['E-Mail Parent 2'] ?? $r['Parent 2 Email'] ?? $r['Parent Email 2'] ?? $r['Email Parent 2'] ?? null);
+
+          if ($first === '' && $last === '') continue;
+          if ($grade === null || $label === '') {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
+              'reason' => 'Klasse oder Parallelklasse fehlt.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+          if ($first === '' || $last === '') {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
+              'reason' => 'Vorname oder Nachname fehlt.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+          if ($dob === null) {
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last),
+              'reason' => 'Geburtsdatum fehlt oder ist ungültig.',
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['skipped'][] = $detail;
+            continue;
+          }
+
+          $classLookup->execute([$schoolYear, $grade, $label]);
+          $classId = $classLookup->fetchColumn();
+          if (!$classId) {
+            $name = computed_class_name($grade, $label);
+            $classInsert->execute([$schoolYear, $grade, $label, $name]);
+            $classId = (int)$pdo->lastInsertId();
+            $createdClasses++;
+            $importSummary['classes'][$classId] = [
+              'class_id' => $classId,
+              'school_year' => $schoolYear,
+              'grade_level' => $grade,
+              'label' => $label,
+              'name' => $name,
+              'students_created' => 0,
+              'students_updated' => 0,
+              'students_skipped' => 0,
+            ];
+          } else {
+            $classId = (int)$classId;
+            if (!isset($importSummary['classes'][$classId])) {
+              $importSummary['classes'][$classId] = [
+                'class_id' => $classId,
+                'school_year' => $schoolYear,
+                'grade_level' => $grade,
+                'label' => $label,
+                'name' => computed_class_name($grade, $label),
+                'students_created' => 0,
+                'students_updated' => 0,
+                'students_skipped' => 0,
+              ];
+            }
+          }
+
+          $checkStudent->execute([$first, $last, $dob, $classId]);
+          $existingId = $checkStudent->fetchColumn();
+          if ($existingId) {
+            $updates = [];
+            $params = [];
+            if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
+            if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
+            if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
+            if ($updates) {
+              $params[] = (int)$existingId;
+              $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
+              $updatedStudents++;
+              $importSummary['classes'][$classId]['students_updated']++;
+              $importSummary['students'][] = [
+                'class_id' => $classId,
+                'name' => trim($first . ' ' . $last),
+                'status' => 'aktualisiert',
+              ];
+            } else {
+              $skipped++;
+              $detail = [
+                'name' => trim($first . ' ' . $last),
+                'reason' => 'Schüler existiert bereits.',
+              ];
+              $importSkippedDetails[] = $detail;
+              $importSummary['classes'][$classId]['students_skipped']++;
+              $importSummary['skipped'][] = $detail;
+            }
+            continue;
+          }
+
+          $master = find_master_student_id($pdo, $first, $last, $dob);
+          $insertStudent->execute([$master, $classId, $first, $last, $dob]);
+          $newId = (int)$pdo->lastInsertId();
+          if (!$master) {
+            $setSelfMaster->execute([$newId, $newId]);
+          }
+          if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
+            $pdo->prepare(
+              "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
+            )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
+          }
+          if ($master) {
+            $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
+            if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
+          } else {
+            save_student_custom_values($pdo, $newId, [], true);
+          }
+          $createdStudents++;
+          $importSummary['classes'][$classId]['students_created']++;
+          $importSummary['students'][] = [
+            'class_id' => $classId,
+            'name' => trim($first . ' ' . $last),
+            'status' => 'angelegt',
+          ];
+        }
+      }
+
+      $pdo->commit();
+
+      $importSummary['stats'] = [
+        'files' => count($importSummary['files']),
+        'classes_created' => $createdClasses,
+        'students_created' => $createdStudents,
+        'students_updated' => $updatedStudents,
+        'skipped' => $skipped,
+      ];
+      $importSummary['classes'] = array_values($importSummary['classes']);
+      $_SESSION['admin_import_summary'] = $importSummary;
+
+      audit('admin_students_import_csv', $userId, [
+        'school_year' => $schoolYear,
+        'classes_created' => $createdClasses,
+        'students_created' => $createdStudents,
+        'students_updated' => $updatedStudents,
+        'skipped' => $skipped
+      ]);
+      $ok = "CSV-Import: Klassen angelegt {$createdClasses}, Schüler angelegt {$createdStudents}, aktualisiert {$updatedStudents}, übersprungen {$skipped}.";
+    }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
@@ -179,6 +601,27 @@ $deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 $classes = $pdo->query("SELECT id, school_year, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$templates = $pdo->query(
+  "SELECT id, name, template_version, is_active
+   FROM templates
+   ORDER BY is_active DESC, template_version DESC, id DESC"
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$importClassTemplateMap = [];
+if ($importSummary && !empty($importSummary['classes'])) {
+  $importClassIds = array_values(array_filter(array_map(
+    static fn($c)=> (int)($c['class_id'] ?? 0),
+    $importSummary['classes']
+  ), fn($x)=>$x>0));
+  if ($importClassIds) {
+    $in = implode(',', array_fill(0, count($importClassIds), '?'));
+    $st = $pdo->prepare("SELECT id, template_id FROM classes WHERE id IN ($in)");
+    $st->execute($importClassIds);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+      $importClassTemplateMap[(int)$row['id']] = (int)($row['template_id'] ?? 0);
+    }
+  }
+}
 
 render_admin_header('Schüler');
 ?>
@@ -296,6 +739,159 @@ render_admin_header('Schüler');
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+
+<?php if ($importSummary): ?>
+  <?php
+    $summaryStats = $importSummary['stats'] ?? [];
+    $summaryClasses = $importSummary['classes'] ?? [];
+    $summaryStudents = $importSummary['students'] ?? [];
+    $summarySkipped = $importSummary['skipped'] ?? [];
+  ?>
+  <div class="card">
+    <h2 style="margin-top:0;">Import-Zusammenfassung</h2>
+    <div class="muted" style="margin-bottom:10px;">
+      Dateien: <?=h((string)($summaryStats['files'] ?? 0))?> ·
+      Klassen angelegt: <?=h((string)($summaryStats['classes_created'] ?? 0))?> ·
+      Schüler angelegt: <?=h((string)($summaryStats['students_created'] ?? 0))?> ·
+      aktualisiert: <?=h((string)($summaryStats['students_updated'] ?? 0))?> ·
+      übersprungen: <?=h((string)($summaryStats['skipped'] ?? 0))?>
+    </div>
+
+    <?php if ($summaryClasses): ?>
+      <form method="post" class="stack" style="margin-bottom:16px;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="update_import_templates">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Klasse</th>
+              <th>Schuljahr</th>
+              <th>Schüler angelegt</th>
+              <th>Aktualisiert</th>
+              <th>Übersprungen</th>
+              <th>Template</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($summaryClasses as $c): ?>
+              <?php
+                $cid = (int)($c['class_id'] ?? 0);
+                $classLabel = ((int)($c['grade_level'] ?? 0)) . (string)($c['label'] ?? '');
+                $currentTemplate = (int)($importClassTemplateMap[$cid] ?? 0);
+              ?>
+              <tr>
+                <td><?=h($classLabel)?></td>
+                <td><?=h((string)($c['school_year'] ?? ''))?></td>
+                <td><?=h((string)($c['students_created'] ?? 0))?></td>
+                <td><?=h((string)($c['students_updated'] ?? 0))?></td>
+                <td><?=h((string)($c['students_skipped'] ?? 0))?></td>
+                <td>
+                  <select name="class_template[<?=h((string)$cid)?>]">
+                    <option value="0">— keine —</option>
+                    <?php foreach ($templates as $tpl): ?>
+                      <?php $tplId = (int)($tpl['id'] ?? 0); ?>
+                      <option value="<?=h((string)$tplId)?>" <?=($tplId === $currentTemplate) ? 'selected' : ''?>>
+                        <?=h((string)($tpl['name'] ?? ''))?>
+                        <?=((int)($tpl['template_version'] ?? 0) > 0) ? ' v' . h((string)$tpl['template_version']) : ''?>
+                        <?=((int)($tpl['is_active'] ?? 0) === 0) ? ' (inaktiv)' : ''?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <div class="actions" style="justify-content:flex-start;">
+          <button class="btn" type="submit">Templates speichern</button>
+        </div>
+      </form>
+    <?php endif; ?>
+
+    <?php if ($summaryStudents): ?>
+      <details>
+        <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Importierte Schüler anzeigen</summary>
+        <div class="panel" style="margin-top:10px;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Klasse</th>
+                <th>Name</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($summaryStudents as $s): ?>
+                <?php
+                  $cid = (int)($s['class_id'] ?? 0);
+                  $classLabel = '';
+                  foreach ($summaryClasses as $c) {
+                    if ((int)($c['class_id'] ?? 0) === $cid) {
+                      $classLabel = ((int)($c['grade_level'] ?? 0)) . (string)($c['label'] ?? '');
+                      break;
+                    }
+                  }
+                ?>
+                <tr>
+                  <td><?=h($classLabel)?></td>
+                  <td><?=h((string)($s['name'] ?? ''))?></td>
+                  <td><?=h((string)($s['status'] ?? ''))?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    <?php endif; ?>
+
+    <?php if ($summarySkipped): ?>
+      <details style="margin-top:12px;">
+        <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Übersprungene Einträge anzeigen</summary>
+        <div class="panel" style="margin-top:10px;">
+          <ul style="margin:8px 0 0 18px;">
+            <?php foreach ($summarySkipped as $detail): ?>
+              <li><strong><?=h((string)($detail['name'] ?? ''))?></strong>: <?=h((string)($detail['reason'] ?? ''))?></li>
+            <?php endforeach; ?>
+          </ul>
+        </div>
+      </details>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
+
+<div class="card">
+  <h2 style="margin-top:0;">Blackbaud-CSV importieren</h2>
+  <p class="muted">
+    CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Grade</code>, <code>Parallelklasse</code>,
+    <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.
+    Optional: <code>Student Email</code>, <code>E-Mail Parent 1</code>, <code>E-Mail Parent 2</code>.
+  </p>
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 220px 1fr auto; gap:12px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="import_blackbaud_csv">
+    <div>
+      <label>Schuljahr</label>
+      <select name="school_year" required>
+        <?php if ($defaultSchoolYear === ''): ?>
+          <option value="" selected disabled>Bitte wählen</option>
+        <?php else: ?>
+          <option value="<?=h($defaultSchoolYear)?>" selected><?=h($defaultSchoolYear)?> (Standard)</option>
+        <?php endif; ?>
+        <?php foreach ($years as $y): ?>
+          <?php if ((string)$y === $defaultSchoolYear) continue; ?>
+          <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label>CSV-Datei(en)</label>
+      <input type="file" name="csv_file[]" accept=".csv,text/csv" multiple required>
+    </div>
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn" type="submit">Importieren</button>
+    </div>
+  </form>
+</div>
 
 <div class="card">
   <h2 style="margin-top:0;">Liste</h2>
