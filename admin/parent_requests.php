@@ -23,6 +23,19 @@ function parent_admin_class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
 
+function admin_feedback_query_url(array $overrides): string {
+  $params = $_GET;
+  foreach ($overrides as $key => $value) {
+    if ($value === null || $value === '') {
+      unset($params[$key]);
+    } else {
+      $params[$key] = $value;
+    }
+  }
+  $query = http_build_query($params);
+  return url('admin/parent_requests.php' . ($query ? ('?' . $query) : ''));
+}
+
 $availableGrades = [];
 $availableYears = [];
 foreach ($classes as $c) {
@@ -158,6 +171,9 @@ $meetingFeedbackClass = isset($_GET['meeting_feedback_class']) && $_GET['meeting
 $meetingFeedbackYear = isset($_GET['meeting_feedback_year']) && $_GET['meeting_feedback_year'] !== ''
   ? (string)$_GET['meeting_feedback_year']
   : '';
+$meetingFeedbackId = isset($_GET['meeting_feedback_id']) && $_GET['meeting_feedback_id'] !== ''
+  ? (int)$_GET['meeting_feedback_id']
+  : 0;
 $meetingFeedbackWhere = [];
 $meetingFeedbackParams = [];
 if ($meetingFeedbackYear !== '') {
@@ -179,6 +195,10 @@ if ($meetingFeedbackScope === 'grade') {
 } else {
   $meetingFeedbackScope = 'all';
 }
+if ($meetingFeedbackId > 0) {
+  $meetingFeedbackWhere[] = 'pmf.id=?';
+  $meetingFeedbackParams[] = $meetingFeedbackId;
+}
 $meetingStatsSql =
   "SELECT COUNT(*) AS total,\n" .
   "  SUM(q1=4) AS q1_4, SUM(q1=3) AS q1_3, SUM(q1=2) AS q1_2, SUM(q1=1) AS q1_1,\n" .
@@ -197,7 +217,7 @@ $meetingFeedbackWhereTexts = $meetingFeedbackWhere;
 $meetingFeedbackParamsTexts = $meetingFeedbackParams;
 $meetingFeedbackWhereTexts[] = "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''";
 $meetingFeedbackSql =
-  "SELECT pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
   "FROM parent_meeting_feedback pmf\n" .
   "JOIN students s ON s.id=pmf.student_id\n" .
   "JOIN classes c ON c.id=pmf.class_id\n" .
@@ -366,6 +386,9 @@ render_admin_header($pageTitle);
   <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f7f9fc;">
     <input type="hidden" name="status" value="<?=h($statusFilter)?>">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
+    <?php if ($meetingFeedbackId > 0): ?>
+      <input type="hidden" name="meeting_feedback_id" value="<?= (int)$meetingFeedbackId ?>">
+    <?php endif; ?>
     <label class="muted" style="font-size:12px;">Schuljahr</label>
     <select name="meeting_feedback_year" class="input" onchange="this.form.submit();">
       <option value="">Alle</option>
@@ -399,6 +422,11 @@ render_admin_header($pageTitle);
       </select>
     <?php endif; ?>
   </form>
+  <?php if ($meetingFeedbackId > 0): ?>
+    <div style="margin-top:8px;">
+      <a class="btn secondary" href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => null]))?>">Filter zurücksetzen</a>
+    </div>
+  <?php endif; ?>
   <?php
     $meetingTotal = (int)($meetingStats['total'] ?? 0);
     $renderPie = function(string $key, string $title) use ($meetingStats, $meetingTotal) {
@@ -473,7 +501,11 @@ render_admin_header($pageTitle);
             <tr>
               <td><strong><?=h($studentName)?></strong></td>
               <td><?=h((string)($row['school_year'] ?? ''))?> · <?=h($classLabel)?></td>
-              <td><?= nl2br(h((string)($row['message'] ?? ''))) ?></td>
+              <td>
+                <a href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => (int)($row['id'] ?? 0)]))?>" style="color:inherit; text-decoration:underline;">
+                  <?= nl2br(h((string)($row['message'] ?? ''))) ?>
+                </a>
+              </td>
               <td><?= render_local_datetime((string)($row['created_at'] ?? ''), 'd.m.Y H:i') ?></td>
             </tr>
           <?php endforeach; ?>
