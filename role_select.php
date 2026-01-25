@@ -40,7 +40,25 @@ $logo = $b['logo_path'] ?? '';
   <title><?=h($org)?> – Rolle wählen</title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
-  <style>:root{--primary:<?=h($b['primary'] ?? '#0b57d0')?>;--secondary:<?=h($b['secondary'] ?? '#111111')?>;}</style>
+  <style>
+    :root{--primary:<?=h($b['primary'] ?? '#0b57d0')?>;--secondary:<?=h($b['secondary'] ?? '#111111')?>;}
+    .role-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .role-actions .btn {
+      min-width: 200px;
+      padding: 14px 18px;
+      font-size: 1.05rem;
+      background: #f5f7ff;
+      color: #1f3a8a;
+      border: 1px solid #d5dcff;
+    }
+    .role-actions .btn:hover {
+      background: #eaf0ff;
+    }
+  </style>
 </head>
 <body class="page">
   <div class="topbar">
@@ -65,9 +83,9 @@ $logo = $b['logo_path'] ?? '';
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <label>Bitte wählen</label>
 
-        <div class="actions">
-          <button class="btn primary" type="submit" name="role" value="admin">🛠️ Admin</button>
-          <button class="btn secondary" type="submit" name="role" value="teacher">👩‍🏫 Lehrkraft</button>
+        <div class="actions role-actions">
+          <button class="btn" type="submit" name="role" value="admin">🛠️ Admin</button>
+          <button class="btn" type="submit" name="role" value="teacher">👩‍🏫 Lehrkraft</button>
         </div>
       </form>
     </div>
