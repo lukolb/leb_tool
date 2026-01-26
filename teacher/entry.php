@@ -3523,7 +3523,9 @@ render_teacher_header($pageTitle);
         });
       });
     }
-    const unlockBtn = `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
+    const unlockBtn = DELEGATED_MODE
+      ? ''
+      : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
 
     let html = '';
     if (childLocked) {
