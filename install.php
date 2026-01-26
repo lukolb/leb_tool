@@ -98,6 +98,7 @@ $orgName    = $_POST['org_name'] ?? 'LEG Tool';
 $brandPrimary   = $_POST['brand_primary'] ?? '#0b57d0';
 $brandSecondary = $_POST['brand_secondary'] ?? '#111111';
 $defaultSchoolYear = $_POST['default_school_year'] ?? '';
+$schoolTimezone = $_POST['school_timezone'] ?? 'America/New_York';
 $aiKey = $_POST['ai_key'] ?? '';
 $aiProvider = $_POST['ai_provider'] ?? 'openai';
 $aiBaseUrl = $_POST['ai_base_url'] ?? 'https://api.openai.com';
@@ -113,6 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (strlen($adminPass) < 10) $errors[] = "Admin-Passwort muss mindestens 10 Zeichen haben.";
   if (!preg_match('/^#[0-9a-fA-F]{6}$/', $brandPrimary)) $errors[] = "Primary Color muss ein Hex-Wert wie #0b57d0 sein.";
   if (!preg_match('/^#[0-9a-fA-F]{6}$/', $brandSecondary)) $errors[] = "Secondary Color muss ein Hex-Wert wie #111111 sein.";
+  if (!in_array($schoolTimezone, timezone_identifiers_list(), true)) $errors[] = "Bitte eine gültige Schul-Zeitzone (IANA) auswählen.";
 
   if (!$errors) {
     $pdo = null;
@@ -195,6 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['app']['base_path'] = base_path();
       $cfg['app']['public_base_url'] = absolute_base_url();
       $cfg['app']['default_school_year'] = $defaultSchoolYear;
+      $cfg['app']['timezone'] = $schoolTimezone;
 
       $cfg['app']['brand']['primary'] = $brandPrimary;
       $cfg['app']['brand']['secondary'] = $brandSecondary;
@@ -945,6 +948,16 @@ SQL;
             <div>
               <label>Default Schuljahr (optional, z.B. 2025/26)</label>
               <input name="default_school_year" value="<?=h($defaultSchoolYear)?>">
+            </div>
+            <div>
+              <label>Schul-Zeitzone (IANA, z.B. Europe/Berlin)</label>
+              <input name="school_timezone" list="timezoneOptions" value="<?=h($schoolTimezone)?>" required>
+              <datalist id="timezoneOptions">
+                <?php foreach (timezone_identifiers_list() as $tz): ?>
+                  <option value="<?=h($tz)?>"></option>
+                <?php endforeach; ?>
+              </datalist>
+              <div class="muted">Wird für alle Zeitstempel und automatische Sommer-/Winterzeit verwendet.</div>
             </div>
 
             <div>
