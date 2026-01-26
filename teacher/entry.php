@@ -605,7 +605,7 @@ render_teacher_header($pageTitle);
 
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
-  .grade-head-sticky{ position:sticky; top:0; z-index:5; background:#fff; }
+  .grade-head-sticky{ position:sticky; top: var(--fixed-header-height, 0px); z-index:5; background:#fff; overflow:hidden; }
   .grade-body-scroller{ overflow-x:auto; }
   .grade-table{ table-layout: auto; width: max-content; border-collapse: separate; border-spacing: 0; margin:0; }
   #itemTable th, #itemTable td, .grade-table th, .grade-table td { vertical-align: top; }
@@ -618,7 +618,7 @@ render_teacher_header($pageTitle);
 
   #itemTable thead th, .grade-table thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, .grade-table thead th.sticky{ z-index:4; }
-  .grade-head-sticky th{ position:sticky; top:0; background:#fff; z-index:5; }
+  .grade-head-sticky th{ position:sticky; top: var(--fixed-header-height, 0px); background:#fff; z-index:5; }
 
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   .grade-table th:not(.sticky), .grade-table td:not(.sticky){
@@ -753,11 +753,13 @@ render_teacher_header($pageTitle);
   const gradeTableBody = document.getElementById('gradeTableBody');
   const gradeColGroupHead = document.getElementById('gradeColGroupHead');
   const gradeColGroupBody = document.getElementById('gradeColGroupBody');
+  const fixedHeader = document.querySelector('.fixedHeader');
 
   if (gradeBodyScroller) {
     gradeBodyScroller.addEventListener('scroll', syncGradeHeaderScroll);
   }
   window.addEventListener('resize', scheduleGradeSync);
+  window.addEventListener('resize', updateFixedHeaderHeight);
 
   const studentSearch = document.getElementById('studentSearch');
   const studentGroupSelect = document.getElementById('studentGroupSelect');
@@ -3706,6 +3708,11 @@ render_teacher_header($pageTitle);
     gradeTableHead.style.transform = `translateX(${-gradeBodyScroller.scrollLeft}px)`;
   }
 
+  function updateFixedHeaderHeight(){
+    const h = fixedHeader ? Math.ceil(fixedHeader.getBoundingClientRect().height) : 0;
+    document.documentElement.style.setProperty('--fixed-header-height', `${h}px`);
+  }
+
   function syncGradeColWidths(){
     if (!gradeTableHead || !gradeTableBody || !gradeColGroupHead || !gradeColGroupBody) return;
     const bodyRow = gradeTableBody.querySelector('tbody tr');
@@ -3735,6 +3742,7 @@ render_teacher_header($pageTitle);
   function scheduleGradeSync(){
     if (gradeResizeTimer) window.clearTimeout(gradeResizeTimer);
     gradeResizeTimer = window.setTimeout(() => {
+      updateFixedHeaderHeight();
       syncGradeColWidths();
       syncGradeHeaderScroll();
     }, 120);
@@ -3823,6 +3831,7 @@ render_teacher_header($pageTitle);
     });
 
     requestAnimationFrame(() => {
+      updateFixedHeaderHeight();
       syncGradeColWidths();
       syncGradeHeaderScroll();
     });
@@ -3902,6 +3911,7 @@ render_teacher_header($pageTitle);
     });
 
     requestAnimationFrame(() => {
+      updateFixedHeaderHeight();
       syncGradeColWidths();
       syncGradeHeaderScroll();
     });
