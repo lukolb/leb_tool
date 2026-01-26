@@ -1654,42 +1654,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     fillPdf().catch(e => showError(e?.message || String(e)));
   </script>
   <?php endif; ?>
-  <script>
-    (function(){
-      const parseDateValue = (value) => {
-        if (!value) return null;
-        const trimmed = String(value).trim();
-        if (!trimmed) return null;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-          return new Date(`${trimmed}T00:00:00`);
-        }
-        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
-          return new Date(trimmed.replace(' ', 'T'));
-        }
-        return new Date(trimmed);
-      };
-
-      const formatLocal = (value) => {
-        const date = parseDateValue(value);
-        if (!date || Number.isNaN(date.getTime())) return null;
-        try {
-          return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
-        } catch (e) {
-          return date.toLocaleString();
-        }
-      };
-
-      document.querySelectorAll('[data-dt]').forEach((el) => {
-        const formatted = formatLocal(el.dataset.dt || '');
-        if (formatted) el.textContent = formatted;
-      });
-
-      document.querySelectorAll('[data-dt-title]').forEach((el) => {
-        const formatted = formatLocal(el.dataset.dtTitle || '');
-        if (formatted) el.setAttribute('title', formatted);
-      });
-    })();
-  </script>
+  <?php // Client-side datetime formatting disabled; server renders school-local time. ?>
 <?php render_history_replace_state_script(); ?>
 </body>
 </html>
