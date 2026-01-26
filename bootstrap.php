@@ -220,16 +220,20 @@ function db(): PDO {
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
 function user_timezone_name(?string $override = null): string {
-  $tz = $override ?? ($_POST['user_tz'] ?? $_COOKIE['user_tz'] ?? '');
-  if (is_string($tz)) {
-    $tz = trim($tz);
-  } else {
-    $tz = '';
+  $tz = $override ?? '';
+  if (!is_string($tz) || trim($tz) === '') {
+    $cfg = app_config();
+    $tz = (string)($cfg['app']['timezone'] ?? '');
   }
-  if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
-    return $tz;
+  $tz = trim((string)$tz);
+  if ($tz === '') return 'America/New_York';
+  $normalized = normalize_db_timezone_string($tz, 'America/New_York');
+  if (preg_match('/^[+-]\d{2}:\d{2}$/', $normalized)) return $normalized;
+  try {
+    return (new DateTimeZone($normalized))->getName();
+  } catch (Throwable $e) {
+    return 'America/New_York';
   }
-  return 'America/New_York';
 }
 
 function user_timezone(): DateTimeZone {

@@ -13,6 +13,8 @@ return [
   'app' => [
     'session_name' => 'legtool_sess',
     'password_pepper' => '',
+    // Schul-Zeitzone (IANA, z.B. "Europe/Berlin") für alle Zeitstempel im UI
+    'timezone' => 'America/New_York',
 
     // Wird bei Installation automatisch gesetzt:
     // z.B. '/leb_pdf'

@@ -1679,11 +1679,6 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         }
       };
 
-      const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tzName) {
-        document.cookie = `user_tz=${encodeURIComponent(tzName)}; path=/; max-age=31536000; samesite=lax`;
-      }
-
       document.querySelectorAll('[data-dt]').forEach((el) => {
         const formatted = formatLocal(el.dataset.dt || '');
         if (formatted) el.textContent = formatted;
