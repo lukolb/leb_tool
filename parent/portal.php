@@ -1651,9 +1651,22 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
   <?php endif; ?>
   <script>
     (function(){
+      const parseDateValue = (value) => {
+        if (!value) return null;
+        const trimmed = String(value).trim();
+        if (!trimmed) return null;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+          return new Date(`${trimmed}T00:00:00`);
+        }
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+          return new Date(trimmed.replace(' ', 'T'));
+        }
+        return new Date(trimmed);
+      };
+
       const formatLocal = (value) => {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return null;
+        const date = parseDateValue(value);
+        if (!date || Number.isNaN(date.getTime())) return null;
         try {
           return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
         } catch (e) {
