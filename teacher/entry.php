@@ -110,6 +110,28 @@ if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pd
   exit;
 }
 
+function user_is_class_teacher_entry(PDO $pdo, int $userId, int $classId): bool {
+  if ($userId <= 0 || $classId <= 0) return false;
+  $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+  $st->execute([$userId, $classId]);
+  return (bool)$st->fetch();
+}
+
+if ($childMode && ($u['role'] ?? '') !== 'admin') {
+  $isClassTeacher = $classId > 0 && user_is_class_teacher_entry($pdo, $userId, $classId);
+  if (!$isClassTeacher) {
+    http_response_code(403);
+    render_teacher_header(t('teacher.child_entry.title', 'Schülerfelder'));
+    ?>
+    <div class="card">
+      <div class="alert danger"><strong>403 Forbidden.</strong></div>
+    </div>
+    <?php
+    render_teacher_footer();
+    exit;
+  }
+}
+
 $pageTitle = $childMode
   ? t('teacher.child_entry.title', 'Schülerfelder')
   : t('teacher.entry.title', 'Eingaben');
@@ -123,15 +145,17 @@ render_teacher_header($pageTitle);
       <?php else: ?>
         <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation', 'Delegation abschließen…'))?></button>
       <?php endif; ?>
-    <?php if ($childMode): ?>
-        <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-          <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
-        </a>
-      <?php else: ?>
-        <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-          <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
-        </a>
-      <?php endif; ?>
+    <?php if (!$delegatedMode): ?>
+      <?php if ($childMode): ?>
+          <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+            <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
+          </a>
+        <?php else: ?>
+          <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+            <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
+          </a>
+        <?php endif; ?>
+    <?php endif; ?>
   </div>
   <h1><?=h($childMode ? t('teacher.child_entry.heading', 'Schülerfelder bearbeiten') : ($delegatedMode ? t('teacher.entry.heading_delegated', 'Delegation bearbeiten') : t('teacher.entry.heading_fill', 'Eingaben ausfüllen')))?></h1>
 </div>

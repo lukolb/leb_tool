@@ -355,6 +355,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
   const toggleStudentEdit = document.getElementById('toggleStudentEdit');
+  const toggleStudentEditWrap = toggleStudentEdit ? toggleStudentEdit.closest('label') : null;
   const studentEditWarning = document.getElementById('studentEditWarning');
   const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.\n\nMöchtest du fortfahren?'))?>;
   const prevStudentBtn = document.getElementById('prevStudentBtn');
@@ -372,6 +373,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let renderTimer = null;
   let showStudentValues = false;
   let allowStudentEdit = false;
+  let isDelegatedView = false;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -1091,6 +1093,16 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     try {
       const data = await api('load_pdf', { class_id: classId, student_id: studentId });
       state = data;
+      isDelegatedView = Boolean(data?.delegated_view);
+      if (isDelegatedView) {
+        allowStudentEdit = false;
+        if (toggleStudentEdit) {
+          toggleStudentEdit.checked = false;
+          toggleStudentEdit.disabled = true;
+        }
+        if (toggleStudentEditWrap) toggleStudentEditWrap.style.display = 'none';
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+      }
       pdfDoc = await pdfjsLib.getDocument({ url: data.template.pdf_url, withCredentials: true }).promise;
       await renderPages();
       await enrichFieldRectsFromPdf();
@@ -1138,6 +1150,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
   if (toggleStudentEdit) {
     toggleStudentEdit.addEventListener('change', () => {
+      if (isDelegatedView) {
+        toggleStudentEdit.checked = false;
+        allowStudentEdit = false;
+        if (studentEditWarning) studentEditWarning.style.display = 'none';
+        return;
+      }
       const wasShowStudentValues = showStudentValues;
       if (toggleStudentEdit.checked) {
         if (toggleStudentValues && !toggleStudentValues.checked) {
