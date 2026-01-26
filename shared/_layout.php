@@ -35,10 +35,11 @@ function nav_items_for_role(string $role): array {
       ]],
 
       // Stammdaten
-      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php'], 'children'=>[
+      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php'], 'children'=>[
         ['label'=>t('nav.settings'),  'href'=>'admin/settings.php',  'files'=>['settings.php']],
         ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
         ['label'=>t('nav.log'), 'href'=>'admin/log.php', 'files'=>['log.php']],
+        ['label'=>t('nav.backup'), 'href'=>'admin/backup.php', 'files'=>['backup.php']],
       ]],
         
       ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
