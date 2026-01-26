@@ -2300,6 +2300,7 @@ try {
 
     $appendField = function(array $f, bool $canEditOverride, bool $forceChildOnly) use (
       $pdo,
+      $u,
       $classId,
       $schoolYear,
       $lang,
