@@ -12,6 +12,7 @@ $userId = (int)($u['id'] ?? 0);
 
 $classId = (int)($_GET['class_id'] ?? 0);
 $studentId = (int)($_GET['student_id'] ?? 0);
+$delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
 
 if ($classId <= 0 || $studentId <= 0) {
   render_teacher_header('PDF-Formular');
@@ -304,7 +305,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   </div>
   <div class="card">
     <div class="row-actions" style="float: right;">
-      <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId))?>">Zurück zur Eingabe</a>
+      <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId . ($delegatedMode ? '&delegated=1' : '')))?>">Zurück zur Eingabe</a>
     </div>
     <h1 style="margin-bottom:4px;"><?=h(t('teacher.entry.heading_fill', 'Eingaben ausfüllen'))?></h1>
     <div class="muted">

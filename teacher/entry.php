@@ -868,6 +868,9 @@ render_teacher_header($pageTitle);
       const url = new URL(pdfEntryBase, window.location.origin);
       url.searchParams.set('class_id', String(cid));
       url.searchParams.set('student_id', String(sid));
+      if (DELEGATED_MODE) {
+        url.searchParams.set('delegated', '1');
+      }
       window.location.href = url.toString();
     });
   }
