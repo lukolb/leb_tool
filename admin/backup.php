@@ -348,6 +348,17 @@ function renderUploadsOptions(items){
   importUploadsOptions.style.display = importUploads.checked ? '' : 'none';
 }
 
+function formatLocalDate(value){
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  } catch (e) {
+    return date.toLocaleString();
+  }
+}
+
 function updateAnalyzeProgress(pct){
   const value = Math.max(0, Math.min(100, pct));
   importAnalysisPct.textContent = `${value}%`;
@@ -403,7 +414,7 @@ async function pollAnalyze(){
 
     if (data.done) {
       const summaryBits = [];
-      if (data.manifest?.created_at) summaryBits.push(`Erstellt: ${data.manifest.created_at}`);
+      if (data.manifest?.created_at) summaryBits.push(`Erstellt: ${formatLocalDate(data.manifest.created_at)}`);
       if (typeof data.table_count === 'number') summaryBits.push(`Tabellen: ${data.table_count}`);
       if (data.manifest?.settings) {
         const settingsState = data.settings_same === true ? 'gleich' : (data.settings_same === false ? 'abweichend' : 'unbekannt');
