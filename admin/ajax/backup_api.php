@@ -136,7 +136,7 @@ function export_settings_payload(): array {
   return $out;
 }
 
-function apply_settings_payload(array $payload): void {
+function apply_settings_payload(array $payload, array $allowed): void {
   $cfgPath = __DIR__ . '/../../config.php';
   $cfg = app_config();
 
@@ -145,12 +145,15 @@ function apply_settings_payload(array $payload): void {
     unset($payload['db']);
   }
 
-  if (isset($payload['app']) && is_array($payload['app'])) {
+  $allowedSet = array_fill_keys($allowed, true);
+
+  if (isset($allowedSet['app']) && isset($payload['app']) && is_array($payload['app'])) {
     $cfg['app']['brand'] = $payload['app']['brand'] ?? ($cfg['app']['brand'] ?? []);
     $cfg['app']['default_school_year'] = $payload['app']['default_school_year'] ?? ($cfg['app']['default_school_year'] ?? '');
     $cfg['app']['uploads_dir'] = $payload['app']['uploads_dir'] ?? ($cfg['app']['uploads_dir'] ?? 'uploads');
   }
   foreach (['mail','ai','student','parent','signature'] as $key) {
+    if (!isset($allowedSet[$key])) continue;
     if (isset($payload[$key]) && is_array($payload[$key])) {
       $cfg[$key] = $payload[$key];
     }
@@ -180,11 +183,64 @@ function add_uploads_to_zip(ZipArchive $zip, string $uploadsDirRel): int {
   return $count;
 }
 
-function extract_uploads_from_zip(ZipArchive $zip, string $uploadsDirRel, bool $overwrite): int {
+function upload_category_key(string $uploadsDirRel, string $path): ?string {
+  $prefix = trim($uploadsDirRel, '/\\') . '/';
+  if (!str_starts_with($path, $prefix)) return null;
+  $rel = substr($path, strlen($prefix));
+  $rel = ltrim($rel, '/\\');
+  if ($rel === '') return null;
+  $parts = preg_split('~/+~', $rel) ?: [];
+  $first = $parts[0] ?? '';
+  return $first !== '' ? $first : '_root';
+}
+
+function upload_category_label(string $key): string {
+  if ($key === '_root') return 'Root';
+  return ucfirst(str_replace('_', ' ', $key));
+}
+
+function uploads_categories_from_zip(ZipArchive $zip, string $uploadsDirRel): array {
+  $counts = [];
+  for ($i = 0; $i < $zip->numFiles; $i++) {
+    $stat = $zip->statIndex($i);
+    if (!$stat) continue;
+    $name = $stat['name'] ?? '';
+    if (str_ends_with($name, '/')) continue;
+    $key = upload_category_key($uploadsDirRel, $name);
+    if (!$key) continue;
+    $counts[$key] = ($counts[$key] ?? 0) + 1;
+  }
+  ksort($counts);
+  return $counts;
+}
+
+function uploads_categories_on_disk(string $uploadsDirRel): array {
+  $root = realpath(__DIR__ . '/../..') ?: (__DIR__ . '/../..');
+  $uploadsDirAbs = $root . '/' . trim($uploadsDirRel, '/\\');
+  if (!is_dir($uploadsDirAbs)) return [];
+  $counts = [];
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($uploadsDirAbs, FilesystemIterator::SKIP_DOTS)
+  );
+  foreach ($iterator as $file) {
+    if (!$file->isFile()) continue;
+    $rel = ltrim(str_replace($uploadsDirAbs, '', $file->getPathname()), '/\\');
+    if ($rel === '') continue;
+    $parts = preg_split('~/+~', $rel) ?: [];
+    $key = $parts[0] ?? '';
+    if ($key === '') $key = '_root';
+    $counts[$key] = ($counts[$key] ?? 0) + 1;
+  }
+  ksort($counts);
+  return $counts;
+}
+
+function extract_uploads_from_zip(ZipArchive $zip, string $uploadsDirRel, bool $overwrite, array $allowedCategories): int {
   $root = realpath(__DIR__ . '/../..') ?: (__DIR__ . '/../..');
   $uploadsDirAbs = $root . '/' . trim($uploadsDirRel, '/\\');
   if (!is_dir($uploadsDirAbs)) @mkdir($uploadsDirAbs, 0755, true);
   $count = 0;
+  $allowedSet = array_fill_keys($allowedCategories, true);
 
   for ($i = 0; $i < $zip->numFiles; $i++) {
     $stat = $zip->statIndex($i);
@@ -192,6 +248,11 @@ function extract_uploads_from_zip(ZipArchive $zip, string $uploadsDirRel, bool $
     $name = $stat['name'] ?? '';
     if (!str_starts_with($name, trim($uploadsDirRel, '/\\') . '/')) continue;
     if (str_contains($name, '..')) continue;
+    if (str_ends_with($name, '/')) continue;
+    if ($allowedSet) {
+      $key = upload_category_key($uploadsDirRel, $name);
+      if (!$key || !isset($allowedSet[$key])) continue;
+    }
 
     $dest = $root . '/' . $name;
     $destDir = dirname($dest);
@@ -401,8 +462,20 @@ if ($action === 'analyze_step') {
 
     if (!empty($state['uploads_pending'])) {
       $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
-      $state['uploads_backup_count'] = count_uploads_in_zip($zip, $uploadsDir);
-      $state['uploads_current_count'] = count_uploads_on_disk($uploadsDir);
+      $backupCats = uploads_categories_from_zip($zip, $uploadsDir);
+      $currentCats = uploads_categories_on_disk($uploadsDir);
+      $state['uploads_backup_count'] = array_sum($backupCats);
+      $state['uploads_current_count'] = array_sum($currentCats);
+      $cats = [];
+      foreach ($backupCats as $key => $count) {
+        $cats[] = [
+          'key' => $key,
+          'label' => upload_category_label($key),
+          'backup_count' => $count,
+          'current_count' => $currentCats[$key] ?? 0,
+        ];
+      }
+      $state['uploads_categories'] = $cats;
       $state['uploads_same'] = ($state['uploads_backup_count'] === $state['uploads_current_count']);
       if ($state['uploads_same'] === false) $state['is_same'] = false;
       $state['uploads_pending'] = false;
@@ -452,6 +525,7 @@ if ($action === 'analyze_step') {
       'uploads_same' => $state['uploads_same'] ?? null,
       'uploads_backup_count' => $state['uploads_backup_count'] ?? null,
       'uploads_current_count' => $state['uploads_current_count'] ?? null,
+      'uploads_categories' => $state['uploads_categories'] ?? [],
     ]);
   } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => $e->getMessage()], 400);
@@ -615,8 +689,13 @@ if ($action === 'import') {
       if ($raw !== false) {
         $settings = json_decode($raw, true);
         if (is_array($settings)) {
-          apply_settings_payload($settings);
-          $settingsApplied = true;
+          $selected = $_POST['selected_settings'] ?? [];
+          if (!is_array($selected)) $selected = [];
+          $selected = array_values(array_unique(array_filter(array_map('strval', $selected))));
+          if ($selected) {
+            apply_settings_payload($settings, $selected);
+            $settingsApplied = true;
+          }
         }
       }
     }
@@ -624,7 +703,12 @@ if ($action === 'import') {
     $uploadsImported = 0;
     if ($importUploads) {
       $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
-      $uploadsImported = extract_uploads_from_zip($zip, $uploadsDir, true);
+      $selected = $_POST['selected_uploads'] ?? [];
+      if (!is_array($selected)) $selected = [];
+      $selected = array_values(array_unique(array_filter(array_map('strval', $selected))));
+      if ($selected) {
+        $uploadsImported = extract_uploads_from_zip($zip, $uploadsDir, true, $selected);
+      }
     }
 
     $zip->close();

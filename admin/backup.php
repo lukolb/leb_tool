@@ -13,6 +13,11 @@ $backupApiUrl = url('admin/ajax/backup_api.php');
 render_admin_header($pageTitle);
 ?>
 
+<style>
+.spin{ display:inline-block; animation:spin 1s linear infinite; }
+@keyframes spin{ from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
+</style>
+
 <div class="card" style="margin-bottom:14px;">
   <h1>Datensicherung</h1>
   <p class="muted">Exportiere Datenbank-Tabellen, Einstellungen und Uploads als ZIP-Datei. Beim Import kannst du auswählen, was übernommen wird.</p>
@@ -57,7 +62,7 @@ render_admin_header($pageTitle);
         <div id="importAnalysisStatus" class="muted" style="margin-top:10px;">Noch keine Datei ausgewählt.</div>
         <div id="importAnalysisProgress" style="display:none; margin-top:10px;">
           <div class="progress-wrap">
-            <div class="progress-meta"><span>Analyse läuft …</span><span class="muted" id="importAnalysisPct">0%</span></div>
+            <div class="progress-meta"><span><span class="spin">⚙️</span> Analyse läuft …</span><span class="muted" id="importAnalysisPct">0%</span></div>
             <div class="progress"><div class="progress-bar" id="importAnalysisBar" style="width:0%;"></div></div>
           </div>
         </div>
@@ -89,10 +94,13 @@ render_admin_header($pageTitle);
             <input type="checkbox" id="importSettings" name="import_settings" checked>
             Einstellungen
           </label>
-          <label class="row" style="gap:8px; margin-top:6px;">
+          <div id="importSettingsOptions" class="muted" style="margin:6px 0 0 24px;"></div>
+          <div class="muted" style="margin:6px 0 0 24px;">Hinweis: DB-Zugangsdaten werden nie importiert.</div>
+          <label class="row" style="gap:8px; margin-top:10px;">
             <input type="checkbox" id="importUploads" name="import_uploads" checked>
             Uploads
           </label>
+          <div id="importUploadsOptions" class="muted" style="margin:6px 0 0 24px;"></div>
           <label class="row" style="gap:8px; margin-top:6px;">
             <input type="checkbox" id="importReplace" name="import_replace" checked>
             Datenbanktabellen ersetzen (vorher leeren)
@@ -126,6 +134,10 @@ const importFile = document.getElementById('importFile');
 const importAnalysisProgress = document.getElementById('importAnalysisProgress');
 const importAnalysisPct = document.getElementById('importAnalysisPct');
 const importAnalysisBar = document.getElementById('importAnalysisBar');
+const importSettingsOptions = document.getElementById('importSettingsOptions');
+const importUploadsOptions = document.getElementById('importUploadsOptions');
+const importSettings = document.getElementById('importSettings');
+const importUploads = document.getElementById('importUploads');
 let analyzeToken = null;
 let analyzeCompare = [];
 
@@ -228,6 +240,12 @@ function resetImportFlow(message){
   importAnalysisBar.style.width = '0%';
   analyzeToken = null;
   analyzeCompare = [];
+  importSettingsOptions.textContent = 'Einstellungen werden nach der Analyse angezeigt.';
+  importUploadsOptions.textContent = 'Uploads werden nach der Analyse angezeigt.';
+  importSettings.disabled = false;
+  importUploads.disabled = false;
+  importSettings.checked = true;
+  importUploads.checked = true;
 }
 
 function renderCompareTable(entries){
@@ -262,6 +280,72 @@ function renderCompareTable(entries){
       </table>
     </div>
   `;
+}
+
+function renderSettingsOptions(){
+  const opts = [
+    { key: 'app', label: 'Branding & Schuljahr' },
+    { key: 'mail', label: 'Mail' },
+    { key: 'ai', label: 'KI' },
+    { key: 'student', label: 'Schüler' },
+    { key: 'parent', label: 'Eltern' },
+    { key: 'signature', label: 'Signatur' },
+  ];
+  const wrap = document.createElement('div');
+  wrap.className = 'grid';
+  wrap.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+  wrap.style.gap = '6px';
+  opts.forEach((opt) => {
+    const label = document.createElement('label');
+    label.className = 'row';
+    label.style.gap = '8px';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.name = 'selected_settings[]';
+    input.value = opt.key;
+    input.checked = true;
+    if (!importSettings.checked) input.disabled = true;
+    label.appendChild(input);
+    const span = document.createElement('span');
+    span.textContent = opt.label;
+    label.appendChild(span);
+    wrap.appendChild(label);
+  });
+  importSettingsOptions.innerHTML = '';
+  importSettingsOptions.appendChild(wrap);
+  importSettingsOptions.style.display = importSettings.checked ? '' : 'none';
+}
+
+function renderUploadsOptions(items){
+  if (!Array.isArray(items) || !items.length) {
+    importUploadsOptions.textContent = 'Keine Upload-Kategorien im Backup.';
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'grid';
+  wrap.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+  wrap.style.gap = '6px';
+  items.forEach((it) => {
+    const label = document.createElement('label');
+    label.className = 'row';
+    label.style.gap = '8px';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.name = 'selected_uploads[]';
+    input.value = it.key;
+    input.checked = true;
+    if (!importUploads.checked) input.disabled = true;
+    label.appendChild(input);
+    const span = document.createElement('span');
+    const backupCount = typeof it.backup_count === 'number' ? it.backup_count : '–';
+    const currentCount = typeof it.current_count === 'number' ? it.current_count : '–';
+    span.textContent = `${it.label} (${backupCount} vs ${currentCount})`;
+    label.appendChild(span);
+    wrap.appendChild(label);
+  });
+  importUploadsOptions.innerHTML = '';
+  importUploadsOptions.appendChild(wrap);
+  importUploadsOptions.style.display = importUploads.checked ? '' : 'none';
 }
 
 function updateAnalyzeProgress(pct){
@@ -335,6 +419,27 @@ async function pollAnalyze(){
 
       importAnalysisStatus.textContent = data.is_same ? 'Backup entspricht dem aktuellen Stand.' : 'Backup unterscheidet sich vom aktuellen Stand.';
 
+      if (data.manifest?.settings) {
+        importSettings.disabled = false;
+        if (!importSettings.checked) importSettings.checked = true;
+        renderSettingsOptions();
+      } else {
+        importSettings.checked = false;
+        importSettings.disabled = true;
+        importSettingsOptions.textContent = 'Keine Einstellungen im Backup.';
+      }
+
+      if (data.manifest?.uploads) {
+        importUploads.disabled = false;
+        if (!importUploads.checked) importUploads.checked = true;
+        importUploads.disabled = false;
+        renderUploadsOptions(data.uploads_categories || []);
+      } else {
+        importUploads.checked = false;
+        importUploads.disabled = true;
+        importUploadsOptions.textContent = 'Keine Uploads im Backup.';
+      }
+
       if (data.is_same) {
         importConfirmWrap.style.display = 'none';
         importOptions.style.display = 'none';
@@ -369,6 +474,19 @@ importConfirm.addEventListener('change', () => {
   importOptions.style.display = importConfirm.checked ? '' : 'none';
 });
 
+importSettings.addEventListener('change', () => {
+  importSettingsOptions.style.display = importSettings.checked ? '' : 'none';
+  importSettingsOptions.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+    el.disabled = !importSettings.checked;
+  });
+});
+importUploads.addEventListener('change', () => {
+  importUploadsOptions.style.display = importUploads.checked ? '' : 'none';
+  importUploadsOptions.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+    el.disabled = !importUploads.checked;
+  });
+});
+
 document.getElementById('importForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!importConfirm.checked) {
@@ -381,6 +499,20 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
   if (!tables.length && !includeSettings && !includeUploads) {
     importStatus.textContent = 'Bitte mindestens eine Option auswählen.';
     return;
+  }
+  if (includeSettings) {
+    const selectedSettings = Array.from(document.querySelectorAll('input[name="selected_settings[]"]:checked'));
+    if (!selectedSettings.length) {
+      importStatus.textContent = 'Bitte mindestens eine Einstellung auswählen.';
+      return;
+    }
+  }
+  if (includeUploads) {
+    const selectedUploads = Array.from(document.querySelectorAll('input[name="selected_uploads[]"]:checked'));
+    if (!selectedUploads.length) {
+      importStatus.textContent = 'Bitte mindestens eine Upload-Kategorie auswählen.';
+      return;
+    }
   }
   importStatus.textContent = 'Import läuft …';
 
