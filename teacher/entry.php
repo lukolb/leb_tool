@@ -434,11 +434,17 @@ render_teacher_header($pageTitle);
       </div>
     </div>
 
-    <div style="margin-top:12px; border:1px solid var(--border); border-radius:12px;">
-      <!-- Keep sticky headers tied to page scroll; put horizontal scroll on inner wrapper. -->
-      <div style="overflow-x:auto;">
-        <table class="table" id="gradeTable" style="margin:0;">
+    <!-- Split head/body tables so sticky header isn't trapped by the horizontal scroller. -->
+    <div id="gradeTableWrap" class="grade-table-wrap">
+      <div id="gradeHeadSticky" class="grade-head-sticky">
+        <table id="gradeTableHead" class="table grade-table" aria-hidden="true">
+          <colgroup id="gradeColGroupHead"></colgroup>
           <thead id="gradeHead"></thead>
+        </table>
+      </div>
+      <div id="gradeBodyScroller" class="grade-body-scroller">
+        <table id="gradeTableBody" class="table grade-table">
+          <colgroup id="gradeColGroupBody"></colgroup>
           <tbody id="gradeBody"></tbody>
         </table>
       </div>
@@ -597,21 +603,25 @@ render_teacher_header($pageTitle);
     border-color:#fff transparent transparent transparent;
   }
 
-  #itemTable, #gradeTable { table-layout: auto; width: max-content; }
-  #gradeTable { border-collapse: separate; border-spacing: 0; }
-  #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
+  #itemTable { table-layout: auto; width: max-content; }
+  .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
+  .grade-head-sticky{ position:sticky; top:0; z-index:5; background:#fff; }
+  .grade-body-scroller{ overflow-x:auto; }
+  .grade-table{ table-layout: auto; width: max-content; border-collapse: separate; border-spacing: 0; margin:0; }
+  #itemTable th, #itemTable td, .grade-table th, .grade-table td { vertical-align: top; }
 
   #itemTable th.sticky, #itemTable td.sticky,
-  #gradeTable th.sticky, #gradeTable td.sticky{
+  .grade-table th.sticky, .grade-table td.sticky{
     position:sticky; left:0; background:#fff; z-index:2;
     min-width: 220px; max-width: 320px;
   }
 
-  #itemTable thead th, #gradeTable thead th{ position:sticky; top:0; background:#fff; z-index:3; }
-  #itemTable thead th.sticky, #gradeTable thead th.sticky{ z-index:4; }
+  #itemTable thead th, .grade-table thead th{ position:sticky; top:0; background:#fff; z-index:3; }
+  #itemTable thead th.sticky, .grade-table thead th.sticky{ z-index:4; }
+  .grade-head-sticky th{ position:sticky; top:0; background:#fff; z-index:5; }
 
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
-  #gradeTable th:not(.sticky), #gradeTable td:not(.sticky){
+  .grade-table th:not(.sticky), .grade-table td:not(.sticky){
     max-width: 260px;
   }
 
@@ -738,6 +748,16 @@ render_teacher_header($pageTitle);
   const gradeSearch = document.getElementById('gradeSearch');
   const gradeHead = document.getElementById('gradeHead');
   const gradeBody = document.getElementById('gradeBody');
+  const gradeBodyScroller = document.getElementById('gradeBodyScroller');
+  const gradeTableHead = document.getElementById('gradeTableHead');
+  const gradeTableBody = document.getElementById('gradeTableBody');
+  const gradeColGroupHead = document.getElementById('gradeColGroupHead');
+  const gradeColGroupBody = document.getElementById('gradeColGroupBody');
+
+  if (gradeBodyScroller) {
+    gradeBodyScroller.addEventListener('scroll', syncGradeHeaderScroll);
+  }
+  window.addEventListener('resize', scheduleGradeSync);
 
   const studentSearch = document.getElementById('studentSearch');
   const studentGroupSelect = document.getElementById('studentGroupSelect');
@@ -3681,6 +3701,45 @@ render_teacher_header($pageTitle);
 
   }
 
+  function syncGradeHeaderScroll(){
+    if (!gradeBodyScroller || !gradeTableHead) return;
+    gradeTableHead.style.transform = `translateX(${-gradeBodyScroller.scrollLeft}px)`;
+  }
+
+  function syncGradeColWidths(){
+    if (!gradeTableHead || !gradeTableBody || !gradeColGroupHead || !gradeColGroupBody) return;
+    const bodyRow = gradeTableBody.querySelector('tbody tr');
+    const refCells = bodyRow ? Array.from(bodyRow.children) : Array.from(gradeTableHead.querySelectorAll('thead th'));
+    if (!refCells.length) return;
+
+    gradeColGroupHead.innerHTML = '';
+    gradeColGroupBody.innerHTML = '';
+
+    let total = 0;
+    refCells.forEach(cell => {
+      const w = Math.ceil(cell.getBoundingClientRect().width);
+      total += w;
+      const c1 = document.createElement('col');
+      const c2 = document.createElement('col');
+      c1.style.width = `${w}px`;
+      c2.style.width = `${w}px`;
+      gradeColGroupHead.appendChild(c1);
+      gradeColGroupBody.appendChild(c2);
+    });
+
+    gradeTableHead.style.width = `${total}px`;
+    gradeTableBody.style.width = `${total}px`;
+  }
+
+  let gradeResizeTimer = null;
+  function scheduleGradeSync(){
+    if (gradeResizeTimer) window.clearTimeout(gradeResizeTimer);
+    gradeResizeTimer = window.setTimeout(() => {
+      syncGradeColWidths();
+      syncGradeHeaderScroll();
+    }, 120);
+  }
+
   function renderGradesView(){
     ensureSelect(gradeGroupSelect);
 
@@ -3763,6 +3822,10 @@ render_teacher_header($pageTitle);
       gradeBody.appendChild(row);
     });
 
+    requestAnimationFrame(() => {
+      syncGradeColWidths();
+      syncGradeHeaderScroll();
+    });
     wireActiveInputs(gradeBody);
     if (!CHILD_MODE) {
       wireChildValueControls(gradeBody);
@@ -3838,6 +3901,10 @@ render_teacher_header($pageTitle);
       gradeBody.appendChild(tr);
     });
 
+    requestAnimationFrame(() => {
+      syncGradeColWidths();
+      syncGradeHeaderScroll();
+    });
     wireActiveInputs(gradeBody);
     if (!CHILD_MODE) {
       wireChildValueControls(gradeBody);
