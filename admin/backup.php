@@ -57,8 +57,8 @@ render_admin_header($pageTitle);
         <div id="importAnalysisStatus" class="muted" style="margin-top:10px;">Noch keine Datei ausgewählt.</div>
         <div id="importAnalysisProgress" style="display:none; margin-top:10px;">
           <div class="progress-wrap">
-            <div class="progress-meta"><span>Analyse läuft …</span><span class="muted">bitte warten</span></div>
-            <div class="progress"><div class="progress-bar" style="width:100%;"></div></div>
+            <div class="progress-meta"><span>Analyse läuft …</span><span class="muted" id="importAnalysisPct">0%</span></div>
+            <div class="progress"><div class="progress-bar" id="importAnalysisBar" style="width:0%;"></div></div>
           </div>
         </div>
       </div>
@@ -124,6 +124,10 @@ const importConfirm = document.getElementById('importConfirm');
 const importOptions = document.getElementById('importOptions');
 const importFile = document.getElementById('importFile');
 const importAnalysisProgress = document.getElementById('importAnalysisProgress');
+const importAnalysisPct = document.getElementById('importAnalysisPct');
+const importAnalysisBar = document.getElementById('importAnalysisBar');
+let analyzeToken = null;
+let analyzeCompare = [];
 
 function renderTableList(tables, target, prefix){
   if (!tables.length) {
@@ -220,6 +224,10 @@ function resetImportFlow(message){
   importConfirm.checked = false;
   importOptions.style.display = 'none';
   importAnalysisProgress.style.display = 'none';
+  importAnalysisPct.textContent = '0%';
+  importAnalysisBar.style.width = '0%';
+  analyzeToken = null;
+  analyzeCompare = [];
 }
 
 function renderCompareTable(entries){
@@ -256,6 +264,12 @@ function renderCompareTable(entries){
   `;
 }
 
+function updateAnalyzeProgress(pct){
+  const value = Math.max(0, Math.min(100, pct));
+  importAnalysisPct.textContent = `${value}%`;
+  importAnalysisBar.style.width = `${value}%`;
+}
+
 async function analyzeBackup(file){
   importAnalysisStatus.textContent = 'Backup wird analysiert …';
   importAnalysisSummary.textContent = 'Analyse läuft …';
@@ -264,9 +278,11 @@ async function analyzeBackup(file){
   importOptions.style.display = 'none';
   importConfirm.checked = false;
   importAnalysisProgress.style.display = '';
+  updateAnalyzeProgress(0);
+  analyzeCompare = [];
 
   const formData = new FormData();
-  formData.append('action', 'analyze');
+  formData.append('action', 'analyze_start');
   formData.append('csrf_token', csrfToken);
   formData.append('backup_file', file);
 
@@ -274,34 +290,64 @@ async function analyzeBackup(file){
     const resp = await fetch(backupApiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) throw new Error(data.error || 'Analyse fehlgeschlagen.');
+    analyzeToken = data.token;
+    updateAnalyzeProgress(0);
+    await pollAnalyze();
+  } catch (e) {
+    resetImportFlow('Analyse fehlgeschlagen.');
+    importAnalysisStatus.textContent = `Fehler: ${e.message}`;
+  }
+}
 
-    const summaryBits = [];
-    if (data.manifest?.created_at) summaryBits.push(`Erstellt: ${data.manifest.created_at}`);
-    if (typeof data.table_count === 'number') summaryBits.push(`Tabellen: ${data.table_count}`);
-    if (data.manifest?.settings) {
-      const settingsState = data.settings_same === true ? 'gleich' : (data.settings_same === false ? 'abweichend' : 'unbekannt');
-      summaryBits.push(`Einstellungen: ${settingsState}`);
-    }
-    if (data.manifest?.uploads) {
-      const uploadsState = data.uploads_same === true ? 'gleich' : (data.uploads_same === false ? 'abweichend' : 'unbekannt');
-      const backupCount = typeof data.uploads_backup_count === 'number' ? data.uploads_backup_count : '–';
-      const currentCount = typeof data.uploads_current_count === 'number' ? data.uploads_current_count : '–';
-      summaryBits.push(`Uploads: ${uploadsState} (${backupCount} vs ${currentCount})`);
-    }
-    importAnalysisSummary.textContent = summaryBits.length ? summaryBits.join(' · ') : 'Backup analysiert.';
+async function pollAnalyze(){
+  if (!analyzeToken) return;
+  try {
+    const formData = new FormData();
+    formData.append('action', 'analyze_step');
+    formData.append('csrf_token', csrfToken);
+    formData.append('token', analyzeToken);
+    const resp = await fetch(backupApiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Analyse fehlgeschlagen.');
 
-    importAnalysisCompare.innerHTML = renderCompareTable(data.compare || []);
-    importAnalysisStatus.textContent = data.is_same ? 'Backup entspricht dem aktuellen Stand.' : 'Backup unterscheidet sich vom aktuellen Stand.';
-
-    if (data.is_same) {
-      importConfirmWrap.style.display = 'none';
-      importOptions.style.display = 'none';
-      importStatus.textContent = 'Import nicht erforderlich.';
-    } else {
-      importConfirmWrap.style.display = '';
-      importStatus.textContent = 'Bitte bestätigen, bevor importiert wird.';
+    if (Array.isArray(data.compare_chunk) && data.compare_chunk.length) {
+      analyzeCompare = analyzeCompare.concat(data.compare_chunk);
+      importAnalysisCompare.innerHTML = renderCompareTable(analyzeCompare);
     }
-    importAnalysisProgress.style.display = 'none';
+
+    if (typeof data.progress_pct === 'number') updateAnalyzeProgress(data.progress_pct);
+
+    if (data.done) {
+      const summaryBits = [];
+      if (data.manifest?.created_at) summaryBits.push(`Erstellt: ${data.manifest.created_at}`);
+      if (typeof data.table_count === 'number') summaryBits.push(`Tabellen: ${data.table_count}`);
+      if (data.manifest?.settings) {
+        const settingsState = data.settings_same === true ? 'gleich' : (data.settings_same === false ? 'abweichend' : 'unbekannt');
+        summaryBits.push(`Einstellungen: ${settingsState}`);
+      }
+      if (data.manifest?.uploads) {
+        const uploadsState = data.uploads_same === true ? 'gleich' : (data.uploads_same === false ? 'abweichend' : 'unbekannt');
+        const backupCount = typeof data.uploads_backup_count === 'number' ? data.uploads_backup_count : '–';
+        const currentCount = typeof data.uploads_current_count === 'number' ? data.uploads_current_count : '–';
+        summaryBits.push(`Uploads: ${uploadsState} (${backupCount} vs ${currentCount})`);
+      }
+      importAnalysisSummary.textContent = summaryBits.length ? summaryBits.join(' · ') : 'Backup analysiert.';
+
+      importAnalysisStatus.textContent = data.is_same ? 'Backup entspricht dem aktuellen Stand.' : 'Backup unterscheidet sich vom aktuellen Stand.';
+
+      if (data.is_same) {
+        importConfirmWrap.style.display = 'none';
+        importOptions.style.display = 'none';
+        importStatus.textContent = 'Import nicht erforderlich.';
+      } else {
+        importConfirmWrap.style.display = '';
+        importStatus.textContent = 'Bitte bestätigen, bevor importiert wird.';
+      }
+      importAnalysisProgress.style.display = 'none';
+      return;
+    }
+
+    setTimeout(pollAnalyze, 300);
   } catch (e) {
     resetImportFlow('Analyse fehlgeschlagen.');
     importAnalysisStatus.textContent = `Fehler: ${e.message}`;

@@ -240,15 +240,69 @@ if ($action === 'list_tables') {
   json_out(['ok' => true, 'tables' => $tables]);
 }
 
-if ($action === 'analyze') {
+function analyze_store(string $token, array $data): void {
+  if (!isset($_SESSION['backup_analyze']) || !is_array($_SESSION['backup_analyze'])) {
+    $_SESSION['backup_analyze'] = [];
+  }
+  $_SESSION['backup_analyze'][$token] = $data;
+}
+
+function analyze_get(string $token): ?array {
+  $all = $_SESSION['backup_analyze'] ?? [];
+  if (!is_array($all) || !isset($all[$token]) || !is_array($all[$token])) return null;
+  return $all[$token];
+}
+
+function analyze_clear(string $token): void {
+  if (isset($_SESSION['backup_analyze'][$token])) {
+    unset($_SESSION['backup_analyze'][$token]);
+  }
+}
+
+function analyze_table_compare(PDO $pdo, ZipArchive $zip, string $table): ?array {
+  $entry = "data/{$table}.json";
+  $raw = $zip->getFromName($entry);
+  if ($raw === false) return null;
+  $data = json_decode($raw, true);
+  if (!is_array($data) || !isset($data['columns'], $data['rows'])) return null;
+  $columns = is_array($data['columns']) ? $data['columns'] : [];
+  $rows = is_array($data['rows']) ? $data['rows'] : [];
+  $dateCol = detect_date_column($columns);
+  $backupLatest = max_date_from_rows($columns, $rows, $dateCol);
+  $backupCount = isset($data['row_count']) ? (int)$data['row_count'] : count($rows);
+
+  $current = current_table_stats($pdo, $table, $dateCol);
+  $currentCount = $current['count'];
+  $currentLatest = $current['latest'];
+
+  $same = ($backupCount === $currentCount) && ($backupLatest === $currentLatest);
+
+  return [
+    'table' => $table,
+    'backup_count' => $backupCount,
+    'current_count' => $currentCount,
+    'backup_latest' => $backupLatest,
+    'current_latest' => $currentLatest,
+    'same' => $same,
+  ];
+}
+
+if ($action === 'analyze_start') {
   try {
     csrf_verify();
     if (!isset($_FILES['backup_file']) || ($_FILES['backup_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
       throw new RuntimeException('Keine gültige ZIP-Datei hochgeladen.');
     }
 
+    $tmp = tempnam(sys_get_temp_dir(), 'leb_analyze_');
+    if ($tmp === false) throw new RuntimeException('Konnte temporäre Datei nicht erstellen.');
+    if (!move_uploaded_file($_FILES['backup_file']['tmp_name'], $tmp)) {
+      throw new RuntimeException('Konnte Upload nicht speichern.');
+    }
+
     $zip = new ZipArchive();
-    if ($zip->open($_FILES['backup_file']['tmp_name']) !== true) {
+    if ($zip->open($tmp) !== true) {
+      @unlink($tmp);
       throw new RuntimeException('Konnte ZIP-Datei nicht öffnen.');
     }
 
@@ -258,40 +312,9 @@ if ($action === 'analyze') {
     $tables = $manifest['tables'] ?? [];
     if (!is_array($tables)) $tables = [];
 
-    $compare = [];
+    $tableList = array_values(array_filter(array_map('strval', $tables), fn($t) => $t !== ''));
+    $tableCount = count($tableList);
     $isSame = true;
-    $tableCount = 0;
-    foreach ($tables as $table) {
-      $table = (string)$table;
-      if ($table === '') continue;
-      $entry = "data/{$table}.json";
-      $raw = $zip->getFromName($entry);
-      if ($raw === false) continue;
-      $data = json_decode($raw, true);
-      if (!is_array($data) || !isset($data['columns'], $data['rows'])) continue;
-      $columns = is_array($data['columns']) ? $data['columns'] : [];
-      $rows = is_array($data['rows']) ? $data['rows'] : [];
-      $dateCol = detect_date_column($columns);
-      $backupLatest = max_date_from_rows($columns, $rows, $dateCol);
-      $backupCount = isset($data['row_count']) ? (int)$data['row_count'] : count($rows);
-
-      $current = current_table_stats($pdo, $table, $dateCol);
-      $currentCount = $current['count'];
-      $currentLatest = $current['latest'];
-
-      $same = ($backupCount === $currentCount) && ($backupLatest === $currentLatest);
-      if (!$same) $isSame = false;
-
-      $compare[] = [
-        'table' => $table,
-        'backup_count' => $backupCount,
-        'current_count' => $currentCount,
-        'backup_latest' => $backupLatest,
-        'current_latest' => $currentLatest,
-        'same' => $same,
-      ];
-      $tableCount++;
-    }
 
     $settingsSame = null;
     if (!empty($manifest['settings'])) {
@@ -320,20 +343,98 @@ if ($action === 'analyze') {
 
     if ($tableCount === 0 && empty($manifest['settings']) && empty($manifest['uploads'])) {
       $zip->close();
+      @unlink($tmp);
       throw new RuntimeException('Backup enthält keine Daten.');
     }
 
     $zip->close();
-    json_out([
-      'ok' => true,
+    $token = bin2hex(random_bytes(16));
+    analyze_store($token, [
+      'path' => $tmp,
       'manifest' => $manifest,
+      'tables' => $tableList,
+      'index' => 0,
+      'compare' => [],
       'table_count' => $tableCount,
-      'compare' => $compare,
       'is_same' => $isSame,
       'settings_same' => $settingsSame,
       'uploads_same' => $uploadsSame,
       'uploads_backup_count' => $uploadsBackupCount,
       'uploads_current_count' => $uploadsCurrentCount,
+    ]);
+
+    json_out([
+      'ok' => true,
+      'token' => $token,
+    ]);
+  } catch (Throwable $e) {
+    json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  }
+}
+
+if ($action === 'analyze_step') {
+  try {
+    csrf_verify();
+    $token = (string)($_POST['token'] ?? '');
+    if ($token === '') throw new RuntimeException('Token fehlt.');
+    $state = analyze_get($token);
+    if (!$state) throw new RuntimeException('Analyse-Session abgelaufen.');
+
+    $path = (string)($state['path'] ?? '');
+    if ($path === '' || !is_file($path)) throw new RuntimeException('Analyse-Datei fehlt.');
+
+    $zip = new ZipArchive();
+    if ($zip->open($path) !== true) {
+      throw new RuntimeException('Konnte ZIP-Datei nicht öffnen.');
+    }
+
+    $tables = $state['tables'] ?? [];
+    if (!is_array($tables)) $tables = [];
+    $index = (int)($state['index'] ?? 0);
+    $batchSize = 3;
+    $compareChunk = [];
+
+    if ($tables) {
+      $end = min(count($tables), $index + $batchSize);
+      for ($i = $index; $i < $end; $i++) {
+        $table = (string)($tables[$i] ?? '');
+        if ($table === '') continue;
+        $cmp = analyze_table_compare($pdo, $zip, $table);
+        if ($cmp) {
+          $compareChunk[] = $cmp;
+          $state['compare'][] = $cmp;
+          if (!($cmp['same'] ?? true)) $state['is_same'] = false;
+        }
+      }
+      $state['index'] = $end;
+    }
+
+    $total = (int)($state['table_count'] ?? count($tables));
+    $processed = min($total, (int)($state['index'] ?? 0));
+    $progressPct = $total > 0 ? (int)round(($processed / $total) * 100) : 100;
+    $done = ($processed >= $total);
+
+    $zip->close();
+
+    if ($done) {
+      @unlink($path);
+      analyze_clear($token);
+    } else {
+      analyze_store($token, $state);
+    }
+
+    json_out([
+      'ok' => true,
+      'compare_chunk' => $compareChunk,
+      'progress_pct' => $progressPct,
+      'done' => $done,
+      'manifest' => $state['manifest'] ?? [],
+      'table_count' => $total,
+      'is_same' => $state['is_same'] ?? false,
+      'settings_same' => $state['settings_same'] ?? null,
+      'uploads_same' => $state['uploads_same'] ?? null,
+      'uploads_backup_count' => $state['uploads_backup_count'] ?? null,
+      'uploads_current_count' => $state['uploads_current_count'] ?? null,
     ]);
   } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => $e->getMessage()], 400);
