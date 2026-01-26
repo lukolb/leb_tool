@@ -3041,6 +3041,7 @@ render_teacher_header($pageTitle);
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
           return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
         });
+        const hasAnyIcon = opts.some(o => !!(o && o.icon_url));
         const cards = opts.map((o, idx) => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
@@ -3053,7 +3054,7 @@ render_teacher_header($pageTitle);
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
             ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
-            : `<span class="ico placeholder" aria-hidden="true">•</span>`;
+            : (hasAnyIcon ? `<span class="ico placeholder" aria-hidden="true">•</span>` : '');
           const classes = ['opt'];
           if (selected) classes.push('selected');
           if (matchesChild) classes.push('child-val');
@@ -3117,6 +3118,7 @@ render_teacher_header($pageTitle);
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
           return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
         });
+        const hasAnyIcon = opts.some(o => !!(o && o.icon_url));
         const cards = opts.map((o, idx) => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
@@ -3128,7 +3130,7 @@ render_teacher_header($pageTitle);
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
           const ico = iconUrl
             ? `<span class="ico"><img src="${esc(iconUrl)}" alt=""></span>`
-            : `<span class="ico placeholder" aria-hidden="true">•</span>`;
+            : (hasAnyIcon ? `<span class="ico placeholder" aria-hidden="true">•</span>` : '');
           const classes = ['opt'];
           if (selected) classes.push('selected');
           return `<button type="button" class="${classes.join(' ')}" tabindex="${tabIndex}" data-option-card="1" data-value="${esc(oVal)}" aria-pressed="${selected ? 'true' : 'false'}" ${dis}>${ico}<span class="lbl">${esc(lbl)}</span></button>`;
