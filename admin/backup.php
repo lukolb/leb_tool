@@ -54,8 +54,29 @@ render_admin_header($pageTitle);
         <label for="importFile"><strong>ZIP-Datei</strong></label>
         <input id="importFile" class="input" type="file" name="backup_file" accept=".zip" required>
         <div class="muted" style="margin-top:6px;">Nur ZIP-Dateien, die über den Export erzeugt wurden.</div>
+        <div id="importAnalysisStatus" class="muted" style="margin-top:10px;">Noch keine Datei ausgewählt.</div>
       </div>
       <div>
+        <strong>Analyse</strong>
+        <div id="importAnalysisSummary" class="muted" style="margin-top:8px;">Bitte Backup-Datei auswählen.</div>
+        <div id="importAnalysisCompare" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div id="importConfirmWrap" style="display:none; margin-top:14px;">
+      <label class="row" style="gap:8px;">
+        <input type="checkbox" id="importConfirm">
+        Backup weicht vom aktuellen Stand ab. Daten wirklich überschreiben?
+      </label>
+    </div>
+
+    <div id="importOptions" style="display:none; margin-top:14px;">
+      <div>
+        <strong>Datenbank-Tabellen</strong>
+        <div id="importTables" class="muted" style="margin-top:6px;">Tabellen werden geladen …</div>
+      </div>
+
+      <div style="margin-top:12px;">
         <strong>Daten übernehmen</strong>
         <div style="margin-top:8px;">
           <label class="row" style="gap:8px;">
@@ -72,15 +93,10 @@ render_admin_header($pageTitle);
           </label>
         </div>
       </div>
-    </div>
 
-    <div style="margin-top:14px;">
-      <strong>Datenbank-Tabellen</strong>
-      <div id="importTables" class="muted" style="margin-top:6px;">Tabellen werden geladen …</div>
-    </div>
-
-    <div class="row" style="justify-content:flex-end; margin-top:16px;">
-      <button class="btn primary" id="btnImport" type="submit">Backup importieren</button>
+      <div class="row" style="justify-content:flex-end; margin-top:16px;">
+        <button class="btn primary" id="btnImport" type="submit">Backup importieren</button>
+      </div>
     </div>
     <div id="importStatus" class="muted" style="margin-top:10px;">Bereit.</div>
   </form>
@@ -94,6 +110,13 @@ const exportTables = document.getElementById('exportTables');
 const importTables = document.getElementById('importTables');
 const exportStatus = document.getElementById('exportStatus');
 const importStatus = document.getElementById('importStatus');
+const importAnalysisStatus = document.getElementById('importAnalysisStatus');
+const importAnalysisSummary = document.getElementById('importAnalysisSummary');
+const importAnalysisCompare = document.getElementById('importAnalysisCompare');
+const importConfirmWrap = document.getElementById('importConfirmWrap');
+const importConfirm = document.getElementById('importConfirm');
+const importOptions = document.getElementById('importOptions');
+const importFile = document.getElementById('importFile');
 
 function renderTableList(tables, target, prefix){
   if (!tables.length) {
@@ -183,8 +206,119 @@ document.getElementById('btnExport').addEventListener('click', async () => {
   }
 });
 
+function resetImportFlow(message){
+  importAnalysisSummary.textContent = message || 'Bitte Backup-Datei auswählen.';
+  importAnalysisCompare.innerHTML = '';
+  importConfirmWrap.style.display = 'none';
+  importConfirm.checked = false;
+  importOptions.style.display = 'none';
+}
+
+function renderCompareTable(entries){
+  if (!entries.length) return '';
+  const rows = entries.map((row) => {
+    const status = row.same ? '✅' : '⚠️';
+    return `
+      <tr>
+        <td>${status}</td>
+        <td>${row.table}</td>
+        <td>${row.backup_count}</td>
+        <td>${row.current_count}</td>
+        <td>${row.backup_latest || '–'}</td>
+        <td>${row.current_latest || '–'}</td>
+      </tr>
+    `;
+  }).join('');
+  return `
+    <div style="overflow:auto;">
+      <table class="table" style="min-width:560px;">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Tabelle</th>
+            <th>Backup</th>
+            <th>Aktuell</th>
+            <th>Backup Datum</th>
+            <th>Aktuell Datum</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function analyzeBackup(file){
+  importAnalysisStatus.textContent = 'Backup wird analysiert …';
+  importAnalysisSummary.textContent = 'Analyse läuft …';
+  importAnalysisCompare.innerHTML = '';
+  importConfirmWrap.style.display = 'none';
+  importOptions.style.display = 'none';
+  importConfirm.checked = false;
+
+  const formData = new FormData();
+  formData.append('action', 'analyze');
+  formData.append('csrf_token', csrfToken);
+  formData.append('backup_file', file);
+
+  try {
+    const resp = await fetch(backupApiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Analyse fehlgeschlagen.');
+
+    const summaryBits = [];
+    if (data.manifest?.created_at) summaryBits.push(`Erstellt: ${data.manifest.created_at}`);
+    if (typeof data.table_count === 'number') summaryBits.push(`Tabellen: ${data.table_count}`);
+    if (data.manifest?.settings) {
+      const settingsState = data.settings_same === true ? 'gleich' : (data.settings_same === false ? 'abweichend' : 'unbekannt');
+      summaryBits.push(`Einstellungen: ${settingsState}`);
+    }
+    if (data.manifest?.uploads) {
+      const uploadsState = data.uploads_same === true ? 'gleich' : (data.uploads_same === false ? 'abweichend' : 'unbekannt');
+      const backupCount = typeof data.uploads_backup_count === 'number' ? data.uploads_backup_count : '–';
+      const currentCount = typeof data.uploads_current_count === 'number' ? data.uploads_current_count : '–';
+      summaryBits.push(`Uploads: ${uploadsState} (${backupCount} vs ${currentCount})`);
+    }
+    importAnalysisSummary.textContent = summaryBits.length ? summaryBits.join(' · ') : 'Backup analysiert.';
+
+    importAnalysisCompare.innerHTML = renderCompareTable(data.compare || []);
+    importAnalysisStatus.textContent = data.is_same ? 'Backup entspricht dem aktuellen Stand.' : 'Backup unterscheidet sich vom aktuellen Stand.';
+
+    if (data.is_same) {
+      importConfirmWrap.style.display = 'none';
+      importOptions.style.display = 'none';
+      importStatus.textContent = 'Import nicht erforderlich.';
+    } else {
+      importConfirmWrap.style.display = '';
+      importStatus.textContent = 'Bitte bestätigen, bevor importiert wird.';
+    }
+  } catch (e) {
+    resetImportFlow('Analyse fehlgeschlagen.');
+    importAnalysisStatus.textContent = `Fehler: ${e.message}`;
+  }
+}
+
+importFile.addEventListener('change', () => {
+  const file = importFile.files && importFile.files[0];
+  if (!file) {
+    resetImportFlow('Noch keine Datei ausgewählt.');
+    importAnalysisStatus.textContent = 'Noch keine Datei ausgewählt.';
+    return;
+  }
+  importStatus.textContent = 'Bereit.';
+  analyzeBackup(file);
+});
+
+importConfirm.addEventListener('change', () => {
+  importOptions.style.display = importConfirm.checked ? '' : 'none';
+});
+
 document.getElementById('importForm').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!importConfirm.checked) {
+    importStatus.textContent = 'Bitte erst bestätigen.';
+    return;
+  }
   const tables = selectedTables(importTables);
   const includeSettings = document.getElementById('importSettings').checked;
   const includeUploads = document.getElementById('importUploads').checked;

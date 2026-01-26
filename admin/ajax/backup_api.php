@@ -58,6 +58,39 @@ function valid_table_name(string $name): bool {
   return (bool)preg_match('/^[a-zA-Z0-9_]+$/', $name);
 }
 
+function detect_date_column(array $columns): ?string {
+  foreach (['updated_at', 'created_at'] as $cand) {
+    if (in_array($cand, $columns, true)) return $cand;
+  }
+  return null;
+}
+
+function max_date_from_rows(array $columns, array $rows, ?string $col): ?string {
+  if (!$col) return null;
+  $idx = array_search($col, $columns, true);
+  if ($idx === false) return null;
+  $max = '';
+  foreach ($rows as $row) {
+    if (!is_array($row) || !array_key_exists($idx, $row)) continue;
+    $val = (string)($row[$idx] ?? '');
+    if ($val === '') continue;
+    if ($max === '' || $val > $max) $max = $val;
+  }
+  return $max !== '' ? $max : null;
+}
+
+function current_table_stats(PDO $pdo, string $table, ?string $dateColumn): array {
+  $quoted = quote_ident($pdo, $table);
+  $count = (int)$pdo->query("SELECT COUNT(*) FROM {$quoted}")->fetchColumn();
+  $latest = null;
+  if ($dateColumn && db_has_column($pdo, $table, $dateColumn)) {
+    $col = quote_ident($pdo, $dateColumn);
+    $latest = $pdo->query("SELECT MAX({$col}) FROM {$quoted}")->fetchColumn();
+    if ($latest !== null) $latest = (string)$latest;
+  }
+  return ['count' => $count, 'latest' => $latest];
+}
+
 function export_table(PDO $pdo, string $table): array {
   $quoted = quote_ident($pdo, $table);
   $metaStmt = $pdo->query("SELECT * FROM {$quoted} LIMIT 0");
@@ -174,9 +207,137 @@ function extract_uploads_from_zip(ZipArchive $zip, string $uploadsDirRel, bool $
   return $count;
 }
 
+function count_uploads_in_zip(ZipArchive $zip, string $uploadsDirRel): int {
+  $count = 0;
+  $prefix = trim($uploadsDirRel, '/\\') . '/';
+  for ($i = 0; $i < $zip->numFiles; $i++) {
+    $stat = $zip->statIndex($i);
+    if (!$stat) continue;
+    $name = $stat['name'] ?? '';
+    if (!str_starts_with($name, $prefix)) continue;
+    if (str_ends_with($name, '/')) continue;
+    $count++;
+  }
+  return $count;
+}
+
+function count_uploads_on_disk(string $uploadsDirRel): int {
+  $root = realpath(__DIR__ . '/../..') ?: (__DIR__ . '/../..');
+  $uploadsDirAbs = $root . '/' . trim($uploadsDirRel, '/\\');
+  if (!is_dir($uploadsDirAbs)) return 0;
+  $count = 0;
+  $iterator = new RecursiveIteratorIterator(
+    new RecursiveDirectoryIterator($uploadsDirAbs, FilesystemIterator::SKIP_DOTS)
+  );
+  foreach ($iterator as $file) {
+    if ($file->isFile()) $count++;
+  }
+  return $count;
+}
+
 if ($action === 'list_tables') {
   $tables = list_db_tables($pdo);
   json_out(['ok' => true, 'tables' => $tables]);
+}
+
+if ($action === 'analyze') {
+  try {
+    csrf_verify();
+    if (!isset($_FILES['backup_file']) || ($_FILES['backup_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+      throw new RuntimeException('Keine gültige ZIP-Datei hochgeladen.');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($_FILES['backup_file']['tmp_name']) !== true) {
+      throw new RuntimeException('Konnte ZIP-Datei nicht öffnen.');
+    }
+
+    $manifestRaw = $zip->getFromName('manifest.json');
+    $manifest = is_string($manifestRaw) ? json_decode($manifestRaw, true) : null;
+    if (!is_array($manifest)) $manifest = [];
+    $tables = $manifest['tables'] ?? [];
+    if (!is_array($tables)) $tables = [];
+
+    $compare = [];
+    $isSame = true;
+    $tableCount = 0;
+    foreach ($tables as $table) {
+      $table = (string)$table;
+      if ($table === '') continue;
+      $entry = "data/{$table}.json";
+      $raw = $zip->getFromName($entry);
+      if ($raw === false) continue;
+      $data = json_decode($raw, true);
+      if (!is_array($data) || !isset($data['columns'], $data['rows'])) continue;
+      $columns = is_array($data['columns']) ? $data['columns'] : [];
+      $rows = is_array($data['rows']) ? $data['rows'] : [];
+      $dateCol = detect_date_column($columns);
+      $backupLatest = max_date_from_rows($columns, $rows, $dateCol);
+      $backupCount = isset($data['row_count']) ? (int)$data['row_count'] : count($rows);
+
+      $current = current_table_stats($pdo, $table, $dateCol);
+      $currentCount = $current['count'];
+      $currentLatest = $current['latest'];
+
+      $same = ($backupCount === $currentCount) && ($backupLatest === $currentLatest);
+      if (!$same) $isSame = false;
+
+      $compare[] = [
+        'table' => $table,
+        'backup_count' => $backupCount,
+        'current_count' => $currentCount,
+        'backup_latest' => $backupLatest,
+        'current_latest' => $currentLatest,
+        'same' => $same,
+      ];
+      $tableCount++;
+    }
+
+    $settingsSame = null;
+    if (!empty($manifest['settings'])) {
+      $settingsRaw = $zip->getFromName('settings.json');
+      if (is_string($settingsRaw)) {
+        $settingsBackup = json_decode($settingsRaw, true);
+        $settingsSame = is_array($settingsBackup)
+          ? (json_encode_safe($settingsBackup) === json_encode_safe(export_settings_payload()))
+          : false;
+      } else {
+        $settingsSame = false;
+      }
+      if (!$settingsSame) $isSame = false;
+    }
+
+    $uploadsSame = null;
+    $uploadsBackupCount = null;
+    $uploadsCurrentCount = null;
+    if (!empty($manifest['uploads'])) {
+      $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
+      $uploadsBackupCount = count_uploads_in_zip($zip, $uploadsDir);
+      $uploadsCurrentCount = count_uploads_on_disk($uploadsDir);
+      $uploadsSame = ($uploadsBackupCount === $uploadsCurrentCount);
+      if (!$uploadsSame) $isSame = false;
+    }
+
+    if ($tableCount === 0 && empty($manifest['settings']) && empty($manifest['uploads'])) {
+      $zip->close();
+      throw new RuntimeException('Backup enthält keine Daten.');
+    }
+
+    $zip->close();
+    json_out([
+      'ok' => true,
+      'manifest' => $manifest,
+      'table_count' => $tableCount,
+      'compare' => $compare,
+      'is_same' => $isSame,
+      'settings_same' => $settingsSame,
+      'uploads_same' => $uploadsSame,
+      'uploads_backup_count' => $uploadsBackupCount,
+      'uploads_current_count' => $uploadsCurrentCount,
+    ]);
+  } catch (Throwable $e) {
+    json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  }
 }
 
 if ($action === 'export') {
