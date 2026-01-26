@@ -252,14 +252,16 @@ function renderCompareTable(entries){
   if (!entries.length) return '';
   const rows = entries.map((row) => {
     const status = row.same ? '✅' : '⚠️';
+    const backupDate = formatLocalDate(row.backup_latest) || '–';
+    const currentDate = formatLocalDate(row.current_latest) || '–';
     return `
       <tr>
         <td>${status}</td>
         <td>${row.table}</td>
         <td>${row.backup_count}</td>
         <td>${row.current_count}</td>
-        <td>${row.backup_latest || '–'}</td>
-        <td>${row.current_latest || '–'}</td>
+        <td>${backupDate}</td>
+        <td>${currentDate}</td>
       </tr>
     `;
   }).join('');
