@@ -110,6 +110,28 @@ if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pd
   exit;
 }
 
+function user_is_class_teacher_entry(PDO $pdo, int $userId, int $classId): bool {
+  if ($userId <= 0 || $classId <= 0) return false;
+  $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+  $st->execute([$userId, $classId]);
+  return (bool)$st->fetch();
+}
+
+if ($childMode && ($u['role'] ?? '') !== 'admin') {
+  $isClassTeacher = $classId > 0 && user_is_class_teacher_entry($pdo, $userId, $classId);
+  if (!$isClassTeacher) {
+    http_response_code(403);
+    render_teacher_header(t('teacher.child_entry.title', 'Schülerfelder'));
+    ?>
+    <div class="card">
+      <div class="alert danger"><strong>403 Forbidden.</strong></div>
+    </div>
+    <?php
+    render_teacher_footer();
+    exit;
+  }
+}
+
 $pageTitle = $childMode
   ? t('teacher.child_entry.title', 'Schülerfelder')
   : t('teacher.entry.title', 'Eingaben');
@@ -123,15 +145,17 @@ render_teacher_header($pageTitle);
       <?php else: ?>
         <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation', 'Delegation abschließen…'))?></button>
       <?php endif; ?>
-    <?php if ($childMode): ?>
-        <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-          <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
-        </a>
-      <?php else: ?>
-        <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-          <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
-        </a>
-      <?php endif; ?>
+    <?php if (!$delegatedMode): ?>
+      <?php if ($childMode): ?>
+          <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+            <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
+          </a>
+        <?php else: ?>
+          <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+            <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
+          </a>
+        <?php endif; ?>
+    <?php endif; ?>
   </div>
   <h1><?=h($childMode ? t('teacher.child_entry.heading', 'Schülerfelder bearbeiten') : ($delegatedMode ? t('teacher.entry.heading_delegated', 'Delegation bearbeiten') : t('teacher.entry.heading_fill', 'Eingaben ausfüllen')))?></h1>
 </div>
@@ -844,6 +868,9 @@ render_teacher_header($pageTitle);
       const url = new URL(pdfEntryBase, window.location.origin);
       url.searchParams.set('class_id', String(cid));
       url.searchParams.set('student_id', String(sid));
+      if (DELEGATED_MODE) {
+        url.searchParams.set('delegated', '1');
+      }
       window.location.href = url.toString();
     });
   }
@@ -3007,7 +3034,7 @@ render_teacher_header($pageTitle);
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
         const childValRaw = (ui.showChild && f.child && f.child.id) ? String(childVal(reportId, f.child.id) ?? '').trim() : '';
-        const hasSelected = opts.some(o => {
+        const hasSelected = currentVal !== '' && opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
@@ -3019,7 +3046,7 @@ render_teacher_header($pageTitle);
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+          const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
@@ -3083,7 +3110,7 @@ render_teacher_header($pageTitle);
       if (ui.optionMode === 'buttons' && opts.length > 0) {
         const disabledAttr = (locked || !canEdit) ? 'data-disabled="1"' : '';
         const currentVal = String(value ?? '').trim();
-        const hasSelected = opts.some(o => {
+        const hasSelected = currentVal !== '' && opts.some(o => {
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
@@ -3095,7 +3122,7 @@ render_teacher_header($pageTitle);
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
           const lbl = optionLabel(opts, oVal) || oVal || 'Option';
-          const selected = currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
+          const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
           const iconUrl = o && o.icon_url ? String(o.icon_url) : '';
@@ -3496,7 +3523,9 @@ render_teacher_header($pageTitle);
         });
       });
     }
-    const unlockBtn = `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
+    const unlockBtn = DELEGATED_MODE
+      ? ''
+      : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
 
     let html = '';
     if (childLocked) {

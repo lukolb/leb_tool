@@ -1714,7 +1714,7 @@ try {
   csrf_verify();
 
   $pdo = db();
-  $u = current_user();
+  $u = current_user() ?: [];
   $lang = ui_lang();
   $userId = (int)($u['id'] ?? 0);
 
@@ -2264,6 +2264,15 @@ try {
     if ($schoolYear === '') $schoolYear = date('Y');
     $periodLabel = 'Standard';
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+    $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
+    $delegateGroupKeys = [];
+    if ($delegateOnly && $delegations) {
+      foreach ($delegations as $gk => $del) {
+        $uids = isset($del['user_ids']) && is_array($del['user_ids']) ? $del['user_ids'] : [];
+        if (in_array($userId, $uids, true)) $delegateGroupKeys[] = (string)$gk;
+      }
+    }
 
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
     $reportId = (int)($ri['id'] ?? 0);
@@ -2296,6 +2305,8 @@ try {
       $schoolYear,
       $lang,
       $childFieldByBase,
+      $delegateOnly,
+      $delegateGroupKeys,
       &$optCache,
       &$iconCache,
       &$fields,
@@ -2306,6 +2317,14 @@ try {
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
       $isSystemBound = is_system_bound($meta);
+      $groupKey = group_key_from_meta($meta);
+      if (
+        $delegateOnly
+        && !$isSystemBound
+        && !in_array($groupKey, $delegateGroupKeys, true)
+      ) {
+        return;
+      }
       $childFieldId = 0;
       if (!$forceChildOnly) {
         $base = base_field_key((string)($f['field_name'] ?? ''));
@@ -2491,6 +2510,7 @@ try {
       'values_display' => $valuesDisplay,
       'values_child_display' => $valuesChildDisplay,
       'values_delegate_other_display' => $valuesDelegateOtherDisplay,
+      'delegated_view' => $delegateOnly ? 1 : 0,
     ]);
   }
 
@@ -3213,6 +3233,12 @@ if ($action === 'delegations_save') {
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $riTemplateId = (int)($ri['template_id'] ?? 0);
     $classTemplateId = (int)($ri['class_template_id'] ?? 0);
@@ -3426,6 +3452,9 @@ if ($action === 'delegations_save') {
 
     $classId = (int)($ri['class_id'] ?? 0);
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
