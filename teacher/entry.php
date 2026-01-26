@@ -434,11 +434,14 @@ render_teacher_header($pageTitle);
       </div>
     </div>
 
-    <div style="overflow-x:auto; overflow-y:visible; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
-      <table class="table" id="gradeTable" style="margin:0;">
-        <thead id="gradeHead"></thead>
-        <tbody id="gradeBody"></tbody>
-      </table>
+    <div style="margin-top:12px; border:1px solid var(--border); border-radius:12px;">
+      <!-- Keep sticky headers tied to page scroll; put horizontal scroll on inner wrapper. -->
+      <div style="overflow-x:auto;">
+        <table class="table" id="gradeTable" style="margin:0;">
+          <thead id="gradeHead"></thead>
+          <tbody id="gradeBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -606,8 +609,6 @@ render_teacher_header($pageTitle);
 
   #itemTable thead th, #gradeTable thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, #gradeTable thead th.sticky{ z-index:4; }
-  #gradeHead{ position:sticky; top:0; z-index:5; background:#fff; }
-  #gradeHead th{ position:static; }
 
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   #gradeTable th:not(.sticky), #gradeTable td:not(.sticky){
