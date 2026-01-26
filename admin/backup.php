@@ -105,6 +105,17 @@ render_admin_header($pageTitle);
             <input type="checkbox" id="importReplace" name="import_replace" checked>
             Datenbanktabellen ersetzen (vorher leeren)
           </label>
+          <div id="importConflictMode" style="margin:6px 0 0 24px; display:none;">
+            <div class="muted">Wenn Tabellen nicht geleert werden, bei Konflikten:</div>
+            <label class="row" style="gap:8px; margin-top:6px;">
+              <input type="radio" name="conflict_mode" value="skip" checked>
+              Vorhandene Datensätze behalten (überspringen)
+            </label>
+            <label class="row" style="gap:8px; margin-top:6px;">
+              <input type="radio" name="conflict_mode" value="overwrite">
+              Vorhandene Datensätze überschreiben
+            </label>
+          </div>
         </div>
       </div>
 
@@ -517,6 +528,15 @@ importUploads.addEventListener('change', () => {
     el.disabled = !importUploads.checked;
   });
 });
+const importReplace = document.getElementById('importReplace');
+const importConflictMode = document.getElementById('importConflictMode');
+if (importReplace) {
+  const toggleConflictMode = () => {
+    if (importConflictMode) importConflictMode.style.display = importReplace.checked ? 'none' : '';
+  };
+  importReplace.addEventListener('change', toggleConflictMode);
+  toggleConflictMode();
+}
 
 document.getElementById('importForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -527,6 +547,7 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
   const tables = selectedTables(importTables);
   const includeSettings = document.getElementById('importSettings').checked;
   const includeUploads = document.getElementById('importUploads').checked;
+  const replaceTables = document.getElementById('importReplace').checked;
   if (!tables.length && !includeSettings && !includeUploads) {
     importStatus.textContent = 'Bitte mindestens eine Option auswählen.';
     return;
@@ -542,6 +563,13 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
     const selectedUploads = Array.from(document.querySelectorAll('input[name="selected_uploads[]"]:checked'));
     if (!selectedUploads.length) {
       importStatus.textContent = 'Bitte mindestens eine Upload-Kategorie auswählen.';
+      return;
+    }
+  }
+  if (!replaceTables) {
+    const selectedMode = document.querySelector('input[name="conflict_mode"]:checked');
+    if (!selectedMode) {
+      importStatus.textContent = 'Bitte Konfliktverhalten auswählen.';
       return;
     }
   }

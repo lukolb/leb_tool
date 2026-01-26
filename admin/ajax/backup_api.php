@@ -614,6 +614,10 @@ if ($action === 'import') {
     $importSettings = isset($_POST['import_settings']);
     $importUploads = isset($_POST['import_uploads']);
     $replaceTables = isset($_POST['import_replace']);
+    $conflictMode = (string)($_POST['conflict_mode'] ?? 'skip');
+    if (!$replaceTables && !in_array($conflictMode, ['skip', 'overwrite'], true)) {
+      throw new RuntimeException('Konfliktverhalten fehlt.');
+    }
 
     if (!$tables && !$importSettings && !$importUploads) {
       throw new RuntimeException('Keine Import-Option ausgewählt.');
@@ -663,21 +667,52 @@ if ($action === 'import') {
 
       $placeholders = implode(',', array_fill(0, count($columns), '?'));
       $colSql = implode(',', array_map(fn($c) => quote_ident($pdo, $c), $columns));
-      $stmt = $pdo->prepare("INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders})");
+      $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+      if (!$replaceTables) {
+        if ($driver === 'sqlite') {
+          $insertSql = $conflictMode === 'overwrite'
+            ? "INSERT OR REPLACE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})"
+            : "INSERT OR IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+        } else {
+          if ($conflictMode === 'overwrite') {
+            $updates = implode(', ', array_map(fn($c) => quote_ident($pdo, $c) . '=VALUES(' . quote_ident($pdo, $c) . ')', $columns));
+            $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders}) ON DUPLICATE KEY UPDATE {$updates}";
+          } else {
+            $insertSql = "INSERT IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+          }
+        }
+      }
+      $stmt = $pdo->prepare($insertSql);
 
       $imported = 0;
+      $conflicts = 0;
+      $updated = 0;
       try {
         $pdo->beginTransaction();
         foreach ($rows as $row) {
           if (!is_array($row)) continue;
           $stmt->execute($row);
-          $imported++;
+          $affected = $stmt->rowCount();
+          if ($replaceTables) {
+            $imported++;
+            continue;
+          }
+          if ($driver !== 'sqlite' && $conflictMode === 'overwrite' && $affected === 2) {
+            $updated++;
+            $conflicts++;
+            continue;
+          }
+          if ($affected >= 1) {
+            $imported++;
+          } else {
+            $conflicts++;
+          }
         }
         $pdo->commit();
-        $tableStats[$table] = ['imported' => $imported];
+        $tableStats[$table] = ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated];
       } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $tableStats[$table] = ['imported' => $imported, 'error' => $e->getMessage()];
+        $tableStats[$table] = ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'error' => $e->getMessage()];
       }
     }
 
@@ -723,7 +758,16 @@ if ($action === 'import') {
       'uploads' => $uploadsImported,
     ]);
 
+    $conflictsTotal = 0;
+    $updatedTotal = 0;
+    foreach ($tableStats as $stats) {
+      $conflictsTotal += (int)($stats['conflicts'] ?? 0);
+      $updatedTotal += (int)($stats['updated'] ?? 0);
+    }
     $msg = 'Import abgeschlossen. Tabellen: ' . count($tableStats) . ', Uploads: ' . $uploadsImported . ', Einstellungen: ' . ($settingsApplied ? 'ja' : 'nein');
+    if (!$replaceTables) {
+      $msg .= '. Konflikte: ' . $conflictsTotal . ', Überschrieben: ' . $updatedTotal;
+    }
     json_out(['ok' => true, 'message' => $msg, 'tables' => $tableStats]);
   } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => $e->getMessage()], 400);
