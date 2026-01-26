@@ -619,6 +619,7 @@ render_teacher_header($pageTitle);
   #itemTable thead th, .grade-table thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, .grade-table thead th.sticky{ z-index:4; }
   .grade-head-sticky th{ position:sticky; top: var(--fixed-header-height, 0px); background:#fff; z-index:5; }
+  .grade-head-sticky th.sticky{ left:0; z-index:6; }
 
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   .grade-table th:not(.sticky), .grade-table td:not(.sticky){
