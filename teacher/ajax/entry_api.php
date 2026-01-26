@@ -3233,6 +3233,12 @@ if ($action === 'delegations_save') {
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $riTemplateId = (int)($ri['template_id'] ?? 0);
     $classTemplateId = (int)($ri['class_template_id'] ?? 0);
@@ -3446,6 +3452,9 @@ if ($action === 'delegations_save') {
 
     $classId = (int)($ri['class_id'] ?? 0);
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
