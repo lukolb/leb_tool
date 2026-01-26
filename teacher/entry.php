@@ -434,7 +434,7 @@ render_teacher_header($pageTitle);
       </div>
     </div>
 
-    <div style="overflow:auto; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
+    <div style="overflow-x:auto; overflow-y:visible; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
       <table class="table" id="gradeTable" style="margin:0;">
         <thead id="gradeHead"></thead>
         <tbody id="gradeBody"></tbody>
@@ -595,6 +595,7 @@ render_teacher_header($pageTitle);
   }
 
   #itemTable, #gradeTable { table-layout: auto; width: max-content; }
+  #gradeTable { border-collapse: separate; border-spacing: 0; }
   #itemTable th, #itemTable td, #gradeTable th, #gradeTable td { vertical-align: top; }
 
   #itemTable th.sticky, #itemTable td.sticky,
