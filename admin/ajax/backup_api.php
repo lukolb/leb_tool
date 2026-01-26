@@ -315,31 +315,13 @@ if ($action === 'analyze_start') {
     $tableList = array_values(array_filter(array_map('strval', $tables), fn($t) => $t !== ''));
     $tableCount = count($tableList);
     $isSame = true;
-
+    $settingsPending = !empty($manifest['settings']);
+    $uploadsPending = !empty($manifest['uploads']);
+    $metaTotal = (int)$settingsPending + (int)$uploadsPending;
     $settingsSame = null;
-    if (!empty($manifest['settings'])) {
-      $settingsRaw = $zip->getFromName('settings.json');
-      if (is_string($settingsRaw)) {
-        $settingsBackup = json_decode($settingsRaw, true);
-        $settingsSame = is_array($settingsBackup)
-          ? (json_encode_safe($settingsBackup) === json_encode_safe(export_settings_payload()))
-          : false;
-      } else {
-        $settingsSame = false;
-      }
-      if (!$settingsSame) $isSame = false;
-    }
-
     $uploadsSame = null;
     $uploadsBackupCount = null;
     $uploadsCurrentCount = null;
-    if (!empty($manifest['uploads'])) {
-      $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
-      $uploadsBackupCount = count_uploads_in_zip($zip, $uploadsDir);
-      $uploadsCurrentCount = count_uploads_on_disk($uploadsDir);
-      $uploadsSame = ($uploadsBackupCount === $uploadsCurrentCount);
-      if (!$uploadsSame) $isSame = false;
-    }
 
     if ($tableCount === 0 && empty($manifest['settings']) && empty($manifest['uploads'])) {
       $zip->close();
@@ -357,6 +339,9 @@ if ($action === 'analyze_start') {
       'compare' => [],
       'table_count' => $tableCount,
       'is_same' => $isSame,
+      'meta_total' => $metaTotal,
+      'settings_pending' => $settingsPending,
+      'uploads_pending' => $uploadsPending,
       'settings_same' => $settingsSame,
       'uploads_same' => $uploadsSame,
       'uploads_backup_count' => $uploadsBackupCount,
@@ -394,6 +379,31 @@ if ($action === 'analyze_step') {
     $batchSize = 3;
     $compareChunk = [];
 
+    if (!empty($state['settings_pending'])) {
+      $settingsRaw = $zip->getFromName('settings.json');
+      if (is_string($settingsRaw)) {
+        $settingsBackup = json_decode($settingsRaw, true);
+        $state['settings_same'] = is_array($settingsBackup)
+          ? (json_encode_safe($settingsBackup) === json_encode_safe(export_settings_payload()))
+          : false;
+      } else {
+        $state['settings_same'] = false;
+      }
+      if ($state['settings_same'] === false) $state['is_same'] = false;
+      $state['settings_pending'] = false;
+      $state['meta_done'] = (int)($state['meta_done'] ?? 0) + 1;
+    }
+
+    if (!empty($state['uploads_pending'])) {
+      $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
+      $state['uploads_backup_count'] = count_uploads_in_zip($zip, $uploadsDir);
+      $state['uploads_current_count'] = count_uploads_on_disk($uploadsDir);
+      $state['uploads_same'] = ($state['uploads_backup_count'] === $state['uploads_current_count']);
+      if ($state['uploads_same'] === false) $state['is_same'] = false;
+      $state['uploads_pending'] = false;
+      $state['meta_done'] = (int)($state['meta_done'] ?? 0) + 1;
+    }
+
     if ($tables) {
       $end = min(count($tables), $index + $batchSize);
       for ($i = $index; $i < $end; $i++) {
@@ -409,8 +419,10 @@ if ($action === 'analyze_step') {
       $state['index'] = $end;
     }
 
-    $total = (int)($state['table_count'] ?? count($tables));
-    $processed = min($total, (int)($state['index'] ?? 0));
+    $metaTotal = (int)($state['meta_total'] ?? 0);
+    $metaDone = (int)($state['meta_done'] ?? 0);
+    $total = (int)($state['table_count'] ?? count($tables)) + $metaTotal;
+    $processed = min((int)($state['table_count'] ?? 0), (int)($state['index'] ?? 0)) + $metaDone;
     $progressPct = $total > 0 ? (int)round(($processed / $total) * 100) : 100;
     $done = ($processed >= $total);
 
