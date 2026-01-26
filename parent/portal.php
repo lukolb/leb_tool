@@ -305,7 +305,12 @@ $lang = ui_lang();
 $expiresAt = $link['expires_at'] ?? null;
 $isExpired = false;
 if ($expiresAt) {
-  $isExpired = (strtotime((string)$expiresAt) < time());
+  $expiresAtLocal = db_datetime_to_user_datetime((string)$expiresAt);
+  if ($expiresAtLocal) {
+    $isExpired = $expiresAtLocal < new DateTimeImmutable('now', user_timezone());
+  } else {
+    $isExpired = (strtotime((string)$expiresAt) < time());
+  }
   if ($isExpired && ($link['status'] ?? '') !== 'expired') {
     $pdo->prepare("UPDATE parent_portal_links SET status='expired', updated_at=NOW() WHERE id=? LIMIT 1")->execute([(int)$link['id']]);
     $link['status'] = 'expired';
