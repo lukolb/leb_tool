@@ -386,6 +386,19 @@ function db_datetime_to_user_date(?string $dbDateTime, ?string $userTz = null, s
   return db_datetime_to_user_local($dbDateTime, $userTz, $format);
 }
 
+function user_local_datetime_to_db(?DateTimeImmutable $localDateTime, ?string $userTz = null): ?DateTimeImmutable {
+  if (!$localDateTime) return null;
+  try {
+    $pdo = db();
+    $dbTz = db_detect_timezone($pdo);
+    $userTz = user_timezone_name($userTz);
+    $localized = $localDateTime->setTimezone(new DateTimeZone($userTz));
+    return $localized->setTimezone(new DateTimeZone($dbTz));
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
 function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', string $empty = '–'): string {
   $dt = db_datetime_to_user_datetime($value);
   if (!$dt) return h($empty);
@@ -408,7 +421,8 @@ function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): stri
   $base = $base ? $base->setTimezone($tz) : new DateTimeImmutable('today', $tz);
   $start = $base->setTime(0, 0, 0);
   $target = $start->modify('+' . $days . ' days')->setTime(23, 59, 59);
-  return $target->format('Y-m-d H:i:s');
+  $dbTarget = user_local_datetime_to_db($target);
+  return ($dbTarget ?? $target)->format('Y-m-d H:i:s');
 }
 
 function render_history_replace_state_script(): void {
