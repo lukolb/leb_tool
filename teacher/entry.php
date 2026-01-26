@@ -606,8 +606,8 @@ render_teacher_header($pageTitle);
 
   #itemTable thead th, #gradeTable thead th{ position:sticky; top:0; background:#fff; z-index:3; }
   #itemTable thead th.sticky, #gradeTable thead th.sticky{ z-index:4; }
-  #gradeTable thead tr:first-child th{ top:0; }
-  #gradeTable thead tr:nth-child(2) th{ top: var(--grade-head-row-height, 0px); }
+  #gradeHead{ position:sticky; top:0; z-index:5; background:#fff; }
+  #gradeHead th{ position:static; }
 
   #itemTable th:not(.sticky), #itemTable td:not(.sticky),
   #gradeTable th:not(.sticky), #gradeTable td:not(.sticky){
@@ -735,7 +735,6 @@ render_teacher_header($pageTitle);
   const gradeGroupSelect = document.getElementById('gradeGroupSelect');
   const gradeOrientation = document.getElementById('gradeOrientation');
   const gradeSearch = document.getElementById('gradeSearch');
-  const gradeTable = document.getElementById('gradeTable');
   const gradeHead = document.getElementById('gradeHead');
   const gradeBody = document.getElementById('gradeBody');
 
@@ -3725,11 +3724,6 @@ render_teacher_header($pageTitle);
         tr.appendChild(th);
       });
       gradeHead.appendChild(tr);
-      requestAnimationFrame(() => {
-        const firstRow = gradeHead.querySelector('tr');
-        const height = firstRow ? Math.ceil(firstRow.getBoundingClientRect().height) : 0;
-        gradeTable?.style.setProperty('--grade-head-row-height', `${height}px`);
-      });
 
       gradeBody.innerHTML = '';
       fields.forEach(f => {
@@ -3811,11 +3805,6 @@ render_teacher_header($pageTitle);
       tr2.appendChild(th);
     });
     gradeHead.appendChild(tr2);
-    requestAnimationFrame(() => {
-      const firstRow = gradeHead.querySelector('tr');
-      const height = firstRow ? Math.ceil(firstRow.getBoundingClientRect().height) : 0;
-      gradeTable?.style.setProperty('--grade-head-row-height', `${height}px`);
-    });
 
     gradeBody.innerHTML = '';
     sCols.forEach(s => {
