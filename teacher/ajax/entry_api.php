@@ -1714,7 +1714,7 @@ try {
   csrf_verify();
 
   $pdo = db();
-  $u = current_user();
+  $u = current_user() ?: [];
   $lang = ui_lang();
   $userId = (int)($u['id'] ?? 0);
 
