@@ -17,6 +17,14 @@ function json_out(array $payload, int $status = 200): void {
   exit;
 }
 
+function json_encode_safe(mixed $value): string {
+  $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if ($encoded === false) {
+    return json_encode(['error' => 'json_encode failed'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  }
+  return $encoded;
+}
+
 function db_driver(PDO $pdo): string {
   try {
     return (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
@@ -201,17 +209,17 @@ if ($action === 'export') {
       'settings' => $includeSettings,
       'uploads' => $includeUploads,
     ];
-    $zip->addFromString('manifest.json', json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $zip->addFromString('manifest.json', json_encode_safe($manifest));
 
     foreach ($tables as $table) {
       if (!valid_table_name($table)) continue;
       $payload = export_table($pdo, $table);
-      $zip->addFromString("data/{$table}.json", json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+      $zip->addFromString("data/{$table}.json", json_encode_safe($payload));
     }
 
     if ($includeSettings) {
       $settings = export_settings_payload();
-      $zip->addFromString('settings.json', json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+      $zip->addFromString('settings.json', json_encode_safe($settings));
     }
 
     if ($includeUploads) {
