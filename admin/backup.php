@@ -55,6 +55,12 @@ render_admin_header($pageTitle);
         <input id="importFile" class="input" type="file" name="backup_file" accept=".zip" required>
         <div class="muted" style="margin-top:6px;">Nur ZIP-Dateien, die über den Export erzeugt wurden.</div>
         <div id="importAnalysisStatus" class="muted" style="margin-top:10px;">Noch keine Datei ausgewählt.</div>
+        <div id="importAnalysisProgress" style="display:none; margin-top:10px;">
+          <div class="progress-wrap">
+            <div class="progress-meta"><span>Analyse läuft …</span><span class="muted">bitte warten</span></div>
+            <div class="progress"><div class="progress-bar" style="width:100%;"></div></div>
+          </div>
+        </div>
       </div>
       <div>
         <strong>Analyse</strong>
@@ -117,6 +123,7 @@ const importConfirmWrap = document.getElementById('importConfirmWrap');
 const importConfirm = document.getElementById('importConfirm');
 const importOptions = document.getElementById('importOptions');
 const importFile = document.getElementById('importFile');
+const importAnalysisProgress = document.getElementById('importAnalysisProgress');
 
 function renderTableList(tables, target, prefix){
   if (!tables.length) {
@@ -212,6 +219,7 @@ function resetImportFlow(message){
   importConfirmWrap.style.display = 'none';
   importConfirm.checked = false;
   importOptions.style.display = 'none';
+  importAnalysisProgress.style.display = 'none';
 }
 
 function renderCompareTable(entries){
@@ -255,6 +263,7 @@ async function analyzeBackup(file){
   importConfirmWrap.style.display = 'none';
   importOptions.style.display = 'none';
   importConfirm.checked = false;
+  importAnalysisProgress.style.display = '';
 
   const formData = new FormData();
   formData.append('action', 'analyze');
@@ -292,6 +301,7 @@ async function analyzeBackup(file){
       importConfirmWrap.style.display = '';
       importStatus.textContent = 'Bitte bestätigen, bevor importiert wird.';
     }
+    importAnalysisProgress.style.display = 'none';
   } catch (e) {
     resetImportFlow('Analyse fehlgeschlagen.');
     importAnalysisStatus.textContent = `Fehler: ${e.message}`;
