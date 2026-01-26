@@ -140,6 +140,11 @@ function apply_settings_payload(array $payload): void {
   $cfgPath = __DIR__ . '/../../config.php';
   $cfg = app_config();
 
+  // Never overwrite DB credentials from a backup payload.
+  if (array_key_exists('db', $payload)) {
+    unset($payload['db']);
+  }
+
   if (isset($payload['app']) && is_array($payload['app'])) {
     $cfg['app']['brand'] = $payload['app']['brand'] ?? ($cfg['app']['brand'] ?? []);
     $cfg['app']['default_school_year'] = $payload['app']['default_school_year'] ?? ($cfg['app']['default_school_year'] ?? '');
