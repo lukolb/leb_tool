@@ -1,5 +1,6 @@
 <?php
 // config.sample.php
+define('DB_DATETIME_TZ', 'UTC');
 return [
   'db' => [
     'host' => 'localhost',

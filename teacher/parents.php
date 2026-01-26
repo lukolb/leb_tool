@@ -52,13 +52,8 @@ function read_signature_payload_from_post(): ?array {
 }
 
 function format_parent_link_expiry(?string $expiresAt, string $format): string {
-  if (!$expiresAt) return '';
-  try {
-    $dt = new DateTimeImmutable((string)$expiresAt);
-  } catch (Throwable $e) {
-    return '';
-  }
-  return $dt->format($format);
+  $formatted = db_datetime_to_user_date($expiresAt, null, $format);
+  return $formatted ?? '';
 }
 
 function build_parent_mail_html(string $template, array $student, string $link, ?string $expiresAt): string {
@@ -1011,14 +1006,7 @@ $introText = $parentAutoApprove
             <?php foreach ($feedbackList as $fb): ?>
               <?php
                 $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-                $feedbackDate = '';
-                if (!empty($fb['created_at'])) {
-                  try {
-                    $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
-                  } catch (Throwable $e) {
-                    $feedbackDate = '';
-                  }
-                }
+                $feedbackDate = db_datetime_to_user_local((string)($fb['created_at'] ?? ''), null, 'd.m.Y H:i') ?? '';
                 $feedbackEmails = array_values(array_unique(array_filter([
                   sanitize_email($fb['email_parent1'] ?? null),
                   sanitize_email($fb['email_parent2'] ?? null),

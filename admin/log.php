@@ -816,7 +816,7 @@ render_admin_header('Admin – Audit-Log');
               $urlUser  = ($uid > 0) ? page_url(['user_id' => $uid, 'page' => 1, 'filters_open' => 0]) : '';
             ?>
             <tr>
-              <td style="white-space:nowrap;"><?=h($dt)?></td>
+              <td style="white-space:nowrap;"><?= render_local_datetime($dt, 'd.m.Y H:i') ?></td>
 
               <td style="white-space:nowrap;">
                 <a class="linklike" href="<?=h($urlEvent)?>" title="Nach diesem Event filtern">

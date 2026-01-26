@@ -342,6 +342,8 @@ function analyze_table_compare(PDO $pdo, ZipArchive $zip, string $table): ?array
   $currentLatest = $current['latest'];
 
   $same = ($backupCount === $currentCount) && ($backupLatest === $currentLatest);
+  $backupLocal = db_datetime_to_user_datetime($backupLatest);
+  $currentLocal = db_datetime_to_user_datetime($currentLatest);
 
   return [
     'table' => $table,
@@ -349,6 +351,8 @@ function analyze_table_compare(PDO $pdo, ZipArchive $zip, string $table): ?array
     'current_count' => $currentCount,
     'backup_latest' => $backupLatest,
     'current_latest' => $currentLatest,
+    'backup_latest_local' => $backupLocal ? $backupLocal->format('c') : null,
+    'current_latest_local' => $currentLocal ? $currentLocal->format('c') : null,
     'same' => $same,
   ];
 }

@@ -219,41 +219,187 @@ function db(): PDO {
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
-function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', string $empty = '–'): string {
-  if (!$value) return h($empty);
-  try {
-    $dt = new DateTimeImmutable($value);
-  } catch (Throwable $e) {
-    return h($empty);
-  }
-  $iso = $dt->format('c');
-  $fallback = $dt->format($format);
-  return '<time data-dt="' . h($iso) . '">' . h($fallback) . '</time>';
-}
-
-function render_local_datetime_title_attr(?string $value, string $format = 'd.m.Y H:i'): string {
-  if (!$value) return '';
-  try {
-    $dt = new DateTimeImmutable($value);
-  } catch (Throwable $e) {
-    return '';
-  }
-  $iso = $dt->format('c');
-  $fallback = $dt->format($format);
-  return ' data-dt-title="' . h($iso) . '" title="' . h($fallback) . '"';
-}
-
-function user_timezone(): DateTimeZone {
-  $tz = $_POST['user_tz'] ?? $_COOKIE['user_tz'] ?? '';
+function user_timezone_name(?string $override = null): string {
+  $tz = $override ?? ($_POST['user_tz'] ?? $_COOKIE['user_tz'] ?? '');
   if (is_string($tz)) {
     $tz = trim($tz);
   } else {
     $tz = '';
   }
   if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
-    return new DateTimeZone($tz);
+    return $tz;
   }
-  return new DateTimeZone(date_default_timezone_get());
+  return 'America/New_York';
+}
+
+function user_timezone(): DateTimeZone {
+  return new DateTimeZone(user_timezone_name());
+}
+
+function normalize_db_timezone_string(string $tz, string $fallback = 'UTC'): string {
+  $tz = trim($tz);
+  if ($tz === '') return $fallback;
+  if (preg_match('/^[+-]\d{2}:\d{2}$/', $tz)) return $tz;
+  if ($tz === 'SYSTEM') return $fallback;
+  try {
+    return (new DateTimeZone($tz))->getName();
+  } catch (Throwable $e) {
+    // continue with abbreviation lookup
+  }
+
+  $abbr = strtolower($tz);
+  $abbrs = timezone_abbreviations_list();
+  $candidates = $abbrs[$abbr] ?? [];
+  $candidates = array_values(array_filter($candidates, static function ($item): bool {
+    return is_array($item) && !empty($item['timezone_id']);
+  }));
+  usort($candidates, static function (array $a, array $b): int {
+    return strcmp((string)$a['timezone_id'], (string)$b['timezone_id']);
+  });
+
+  $preferredPrefixes = ['America/', 'Europe/', 'UTC', 'Etc/', 'Australia/', 'Asia/', 'Africa/'];
+  $selected = '';
+  foreach ($preferredPrefixes as $prefix) {
+    foreach ($candidates as $candidate) {
+      $id = (string)$candidate['timezone_id'];
+      if ($id === '') continue;
+      if ($prefix === 'UTC') {
+        if ($id === 'UTC') {
+          $selected = $id;
+          break 2;
+        }
+      } elseif (str_starts_with($id, $prefix)) {
+        $selected = $id;
+        break 2;
+      }
+    }
+  }
+  if ($selected === '' && $candidates) {
+    $selected = (string)$candidates[0]['timezone_id'];
+  }
+
+  if ($selected !== '') {
+    try {
+      return (new DateTimeZone($selected))->getName();
+    } catch (Throwable $e) {
+      return $fallback;
+    }
+  }
+  return $fallback;
+}
+
+function persist_config_define(string $key, string $value): bool {
+  $path = APP_CONFIG_PATH;
+  if (!is_file($path) || !is_writable($path)) return false;
+
+  $contents = file_get_contents($path);
+  if ($contents === false) return false;
+
+  $escapedValue = addcslashes($value, "\\'");
+  $defineLine = "define('" . $key . "', '" . $escapedValue . "');";
+  $pattern = '~define\\(\\s*[\'"]' . preg_quote($key, '~') . '[\'"]\\s*,\\s*[\'"].*?[\'"]\\s*\\)\\s*;~s';
+  $newContents = $contents;
+  if (preg_match($pattern, $contents)) {
+    $newContents = preg_replace($pattern, $defineLine, $contents, 1) ?? $contents;
+  } else {
+    if (preg_match('/<\\?php\\s*/', $contents, $m, PREG_OFFSET_CAPTURE)) {
+      $pos = $m[0][1] + strlen($m[0][0]);
+      $newContents = substr_replace($contents, "\n" . $defineLine . "\n", $pos, 0);
+    } else {
+      $newContents = "<?php\n" . $defineLine . "\n" . $contents;
+    }
+  }
+
+  $dir = dirname($path);
+  $tmp = tempnam($dir, 'cfg');
+  if ($tmp !== false) {
+    if (file_put_contents($tmp, $newContents) !== false) {
+      if (@rename($tmp, $path)) return true;
+    }
+    @unlink($tmp);
+  }
+  return file_put_contents($path, $newContents) !== false;
+}
+
+function db_detect_timezone(PDO $pdo, string $fallback = 'UTC'): string {
+  static $cached = null;
+  if (is_string($cached) && $cached !== '') return $cached;
+
+  if (defined('DB_DATETIME_TZ') && DB_DATETIME_TZ !== '') {
+    $tz = normalize_db_timezone_string((string)DB_DATETIME_TZ, $fallback);
+    $cached = $tz;
+    return $tz;
+  }
+
+  $detected = $fallback;
+  try {
+    $row = $pdo->query(
+      "SELECT\n" .
+      "  @@global.time_zone   AS global_tz,\n" .
+      "  @@session.time_zone  AS session_tz,\n" .
+      "  @@system_time_zone   AS system_tz"
+    )->fetch(PDO::FETCH_ASSOC) ?: [];
+    $session = trim((string)($row['session_tz'] ?? ''));
+    $global = trim((string)($row['global_tz'] ?? ''));
+    $system = trim((string)($row['system_tz'] ?? ''));
+
+    $candidate = '';
+    if ($session !== '' && strtoupper($session) !== 'SYSTEM') {
+      $candidate = $session;
+    } elseif ($global !== '' && strtoupper($global) !== 'SYSTEM') {
+      $candidate = $global;
+    } elseif ($system !== '') {
+      $candidate = $system;
+    }
+
+    $detected = normalize_db_timezone_string($candidate, $fallback);
+  } catch (Throwable $e) {
+    $detected = $fallback;
+  }
+
+  $cached = $detected;
+  persist_config_define('DB_DATETIME_TZ', $detected);
+  return $detected;
+}
+
+function db_datetime_to_user_datetime(?string $dbDateTime, ?string $userTz = null): ?DateTimeImmutable {
+  if ($dbDateTime === null) return null;
+  $dbDateTime = trim((string)$dbDateTime);
+  if ($dbDateTime === '' || $dbDateTime === '0000-00-00 00:00:00') return null;
+  try {
+    $pdo = db();
+    $dbTz = db_detect_timezone($pdo);
+    $userTz = user_timezone_name($userTz);
+    $dt = new DateTimeImmutable($dbDateTime, new DateTimeZone($dbTz));
+    return $dt->setTimezone(new DateTimeZone($userTz));
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
+function db_datetime_to_user_local(?string $dbDateTime, ?string $userTz = null, string $format = 'd.m.Y H:i'): ?string {
+  $dt = db_datetime_to_user_datetime($dbDateTime, $userTz);
+  return $dt ? $dt->format($format) : null;
+}
+
+function db_datetime_to_user_date(?string $dbDateTime, ?string $userTz = null, string $format = 'd.m.Y'): ?string {
+  return db_datetime_to_user_local($dbDateTime, $userTz, $format);
+}
+
+function render_local_datetime(?string $value, string $format = 'd.m.Y H:i', string $empty = '–'): string {
+  $dt = db_datetime_to_user_datetime($value);
+  if (!$dt) return h($empty);
+  $iso = $dt->format('c');
+  $formatted = $dt->format($format);
+  return '<time data-dt="' . h($iso) . '">' . h($formatted) . '</time>';
+}
+
+function render_local_datetime_title_attr(?string $value, string $format = 'd.m.Y H:i'): string {
+  $dt = db_datetime_to_user_datetime($value);
+  if (!$dt) return '';
+  $iso = $dt->format('c');
+  $formatted = $dt->format($format);
+  return ' data-dt-title="' . h($iso) . '" title="' . h($formatted) . '"';
 }
 
 function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): string {
