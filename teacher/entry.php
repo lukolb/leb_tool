@@ -437,10 +437,12 @@ render_teacher_header($pageTitle);
     <!-- Split head/body tables so sticky header isn't trapped by the horizontal scroller. -->
     <div id="gradeTableWrap" class="grade-table-wrap">
       <div id="gradeHeadSticky" class="grade-head-sticky">
+        <div id="gradeHeadScroller" class="grade-head-scroller" aria-hidden="true">
         <table id="gradeTableHead" class="table grade-table" aria-hidden="true">
           <colgroup id="gradeColGroupHead"></colgroup>
           <thead id="gradeHead"></thead>
         </table>
+        </div>
       </div>
       <div id="gradeBodyScroller" class="grade-body-scroller">
         <table id="gradeTableBody" class="table grade-table">
@@ -606,6 +608,8 @@ render_teacher_header($pageTitle);
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
   .grade-head-sticky{ position:sticky; top: var(--fixed-header-height, 0px); z-index:5; background:#fff; overflow:hidden; }
+  .grade-head-scroller{ overflow-x:auto; scrollbar-width:none; }
+  .grade-head-scroller::-webkit-scrollbar{ display:none; }
   .grade-body-scroller{ overflow-x:auto; }
   .grade-table{ table-layout: auto; width: max-content; border-collapse: separate; border-spacing: 0; margin:0; }
   #itemTable th, #itemTable td, .grade-table th, .grade-table td { vertical-align: top; }
@@ -754,6 +758,7 @@ render_teacher_header($pageTitle);
   const gradeTableBody = document.getElementById('gradeTableBody');
   const gradeColGroupHead = document.getElementById('gradeColGroupHead');
   const gradeColGroupBody = document.getElementById('gradeColGroupBody');
+  const gradeHeadScroller = document.getElementById('gradeHeadScroller');
   const fixedHeader = document.querySelector('.fixedHeader');
 
   if (gradeBodyScroller) {
@@ -3705,8 +3710,8 @@ render_teacher_header($pageTitle);
   }
 
   function syncGradeHeaderScroll(){
-    if (!gradeBodyScroller || !gradeTableHead) return;
-    gradeTableHead.style.transform = `translateX(${-gradeBodyScroller.scrollLeft}px)`;
+    if (!gradeBodyScroller || !gradeHeadScroller) return;
+    gradeHeadScroller.scrollLeft = gradeBodyScroller.scrollLeft;
   }
 
   function updateFixedHeaderHeight(){
