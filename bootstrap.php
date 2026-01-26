@@ -583,7 +583,10 @@ function get_role(): string {
   if ($role === '') {
     $role = (string)($u['actual_role'] ?? '');
   }
-  return $role === 'admin' ? 'admin' : 'teacher';
+  if ($role === 'admin' || $role === 'teacher') {
+    return $role;
+  }
+  return '';
 }
 
 function require_admin(): void {
