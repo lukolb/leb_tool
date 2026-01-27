@@ -214,31 +214,8 @@ function finalmarks_period_label(string $term): string {
   return $term !== '' ? $term : 'Standard';
 }
 
-function finalmarks_parse_pdf(string $path): array {
-  $parser = new \Smalot\PdfParser\Parser();
-  $pdf = $parser->parseFile($path);
-  $pages = $pdf->getPages();
-  $blocks = [];
-
-  if ($pages) {
-    foreach ($pages as $page) {
-      $text = (string)$page->getText();
-      if ($text !== '') {
-        $blocks[] = $text;
-      }
-    }
-  }
-
-  if (!$blocks) {
-    $text = (string)$pdf->getText();
-    if ($text !== '') {
-      $blocks = preg_split('/(?=^Endnoten von)/mu', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
-      if (!$blocks) {
-        $blocks = [$text];
-      }
-    }
-  }
-
+function finalmarks_parse_blocks(array $blocks): array {
+  $blocks = array_values(array_filter(array_map('strval', $blocks), fn($b) => trim($b) !== ''));
   $results = [];
   foreach ($blocks as $block) {
     $block = trim((string)$block);
@@ -350,212 +327,183 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
   if ($classId <= 0) {
     $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
   } elseif ($action === 'preview') {
-    $file = $_FILES['finalmarks_pdf'] ?? null;
-    if (!$file || !is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-      $finalmarksErrors[] = 'PDF-Upload fehlgeschlagen.';
+    $blocksJson = (string)($_POST['finalmarks_blocks'] ?? '');
+    $blocks = $blocksJson !== '' ? json_decode($blocksJson, true) : [];
+    if (!is_array($blocks) || !$blocks) {
+      $finalmarksErrors[] = 'PDF konnte nicht gelesen werden (Browser-Parser).';
     } else {
-      $autoloadPath = __DIR__ . '/../vendor/autoload.php';
-      if (!file_exists($autoloadPath)) {
-        $finalmarksErrors[] = 'PDF-Parser fehlt. Bitte Composer-Abhängigkeiten installieren.';
-      } else {
-        require_once $autoloadPath;
-        $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'leb_finalmarks';
-        if (!is_dir($tmpDir)) {
-          mkdir($tmpDir, 0770, true);
+      $token = bin2hex(random_bytes(16));
+      $parsed = finalmarks_parse_blocks($blocks);
+      $stClass = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+      $stClass->execute([$classId]);
+      $templateId = (int)($stClass->fetchColumn() ?: 0);
+      if ($templateId <= 0) {
+        $finalmarksErrors[] = 'Für diese Klasse ist keine Vorlage hinterlegt.';
+      }
+      if (!$finalmarksErrors) {
+        $_SESSION['finalmarks_import'][$token] = [
+          'class_id' => $classId,
+          'school_year' => $finalmarksFormSchoolYear,
+          'term' => $finalmarksFormTerm,
+          'template_id' => $templateId,
+          'file_hash' => (string)($_POST['finalmarks_file_hash'] ?? ''),
+          'file_name' => (string)($_POST['finalmarks_file_name'] ?? ''),
+          'blocks' => $blocks,
+          'created_at' => time(),
+        ];
+
+        [$subjectFields, $fieldDuplicates] = finalmarks_subject_fields($pdo, $templateId);
+        $fieldWarnings = [];
+        foreach ($fieldDuplicates as $subjectKey => $ids) {
+          $fieldWarnings[] = 'Mehrere Notenfelder für Fach ' . $subjectKey . ' gefunden; erstes Feld wird verwendet.';
         }
-        $token = bin2hex(random_bytes(16));
-        $tmpPath = $tmpDir . DIRECTORY_SEPARATOR . 'finalmarks_' . $token . '.pdf';
-        if (!move_uploaded_file((string)$file['tmp_name'], $tmpPath)) {
-          $finalmarksErrors[] = 'PDF konnte nicht gespeichert werden.';
-        } else {
-          try {
-            $parsed = finalmarks_parse_pdf($tmpPath);
-          } catch (Throwable $e) {
-            $parsed = [];
-            $finalmarksErrors[] = 'PDF konnte nicht gelesen werden.';
+
+        $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+        $st->execute([$classId]);
+        $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
+        $classMap = [];
+        foreach ($classStudents as $student) {
+          $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
+          $classMap[$nameKey][] = $student;
+        }
+        $globalMap = null;
+        $needsGlobal = false;
+        foreach ($parsed as $page) {
+          $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
+          if ($nameKey === '' || !isset($classMap[$nameKey])) {
+            $needsGlobal = true;
+            break;
+          }
+        }
+        if ($needsGlobal) {
+          $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
+          $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
+          $globalMap = [];
+          foreach ($allStudents as $student) {
+            $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
+            $globalMap[$nameKey][] = $student;
+          }
+        }
+
+        $statusCounts = [
+          'FOUND_IN_CLASS' => 0,
+          'FOUND_NOT_IN_CLASS' => 0,
+          'NOT_FOUND' => 0,
+          'AMBIGUOUS' => 0,
+        ];
+        $importableNotes = 0;
+        $ignoredNotes = 0;
+        $periodLabel = finalmarks_period_label($finalmarksFormTerm);
+        $reportByStudent = [];
+        if ($classStudents) {
+          $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
+          $in = implode(',', array_fill(0, count($studentIds), '?'));
+          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
+          $stRep = $pdo->prepare(
+            "SELECT id, student_id
+             FROM report_instances
+             WHERE template_id=? AND school_year=? AND period_label=? AND student_id IN ($in)"
+          );
+          $stRep->execute($params);
+          foreach ($stRep->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
+          }
+        }
+        $finalmarksPreview = [];
+
+        foreach ($parsed as $page) {
+          $name = (string)($page['name'] ?? '');
+          $nameKey = finalmarks_normalize_name($name);
+          $status = 'NOT_FOUND';
+          $matchedStudent = null;
+
+          if ($nameKey !== '' && isset($classMap[$nameKey])) {
+            $matches = $classMap[$nameKey];
+            if (count($matches) === 1) {
+              $status = 'FOUND_IN_CLASS';
+              $matchedStudent = $matches[0];
+            } else {
+              $status = 'AMBIGUOUS';
+            }
+          } elseif ($globalMap !== null && $nameKey !== '' && isset($globalMap[$nameKey])) {
+            $matches = $globalMap[$nameKey];
+            if (count($matches) === 1) {
+              $status = 'FOUND_NOT_IN_CLASS';
+              $matchedStudent = $matches[0];
+            } else {
+              $status = 'AMBIGUOUS';
+            }
           }
 
-          if (!$finalmarksErrors) {
-            $stClass = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
-            $stClass->execute([$classId]);
-            $templateId = (int)($stClass->fetchColumn() ?: 0);
-            if ($templateId <= 0) {
-              $finalmarksErrors[] = 'Für diese Klasse ist keine Vorlage hinterlegt.';
+          $statusCounts[$status]++;
+          $subjects = (array)($page['subjects'] ?? []);
+          $warnings = (array)($page['warnings'] ?? []);
+          $knownSubjects = [];
+          $reportId = null;
+          if ($status === 'FOUND_IN_CLASS' && $matchedStudent) {
+            $reportId = $reportByStudent[(int)($matchedStudent['id'] ?? 0)] ?? null;
+            if (!$reportId) {
+              $warnings[] = 'Kein Bericht für Schuljahr/Abschnitt gefunden.';
             }
           }
-
-          if (!$finalmarksErrors) {
-            $hash = hash_file('sha256', $tmpPath);
-            $_SESSION['finalmarks_import'][$token] = [
-              'class_id' => $classId,
-              'school_year' => $finalmarksFormSchoolYear,
-              'term' => $finalmarksFormTerm,
-              'template_id' => $templateId,
-              'tmp_pdf_path' => $tmpPath,
-              'file_hash' => $hash,
-              'created_at' => time(),
-            ];
-
-            [$subjectFields, $fieldDuplicates] = finalmarks_subject_fields($pdo, $templateId);
-            $fieldWarnings = [];
-            foreach ($fieldDuplicates as $subjectKey => $ids) {
-              $fieldWarnings[] = 'Mehrere Notenfelder für Fach ' . $subjectKey . ' gefunden; erstes Feld wird verwendet.';
-            }
-
-            $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
-            $st->execute([$classId]);
-            $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
-            $classMap = [];
-            foreach ($classStudents as $student) {
-              $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
-              $classMap[$nameKey][] = $student;
-            }
-            $globalMap = null;
-            $needsGlobal = false;
-            foreach ($parsed as $page) {
-              $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
-              if ($nameKey === '' || !isset($classMap[$nameKey])) {
-                $needsGlobal = true;
-                break;
-              }
-            }
-            if ($needsGlobal) {
-              $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
-              $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
-              $globalMap = [];
-              foreach ($allStudents as $student) {
-                $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
-                $globalMap[$nameKey][] = $student;
-              }
-            }
-
-            $statusCounts = [
-              'FOUND_IN_CLASS' => 0,
-              'FOUND_NOT_IN_CLASS' => 0,
-              'NOT_FOUND' => 0,
-              'AMBIGUOUS' => 0,
-            ];
-            $importableNotes = 0;
-            $ignoredNotes = 0;
-            $periodLabel = finalmarks_period_label($finalmarksFormTerm);
-            $reportByStudent = [];
-            if ($classStudents) {
-              $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
-              $in = implode(',', array_fill(0, count($studentIds), '?'));
-              $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
-              $stRep = $pdo->prepare(
-                "SELECT id, student_id
-                 FROM report_instances
-                 WHERE template_id=? AND school_year=? AND period_label=? AND student_id IN ($in)"
-              );
-              $stRep->execute($params);
-              foreach ($stRep->fetchAll(PDO::FETCH_ASSOC) as $r) {
-                $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
-              }
-            }
-            $finalmarksPreview = [];
-
-            foreach ($parsed as $page) {
-              $name = (string)($page['name'] ?? '');
-              $nameKey = finalmarks_normalize_name($name);
-              $status = 'NOT_FOUND';
-              $matchedStudent = null;
-
-              if ($nameKey !== '' && isset($classMap[$nameKey])) {
-                $matches = $classMap[$nameKey];
-                if (count($matches) === 1) {
-                  $status = 'FOUND_IN_CLASS';
-                  $matchedStudent = $matches[0];
-                } else {
-                  $status = 'AMBIGUOUS';
-                }
-              } elseif ($globalMap !== null && $nameKey !== '' && isset($globalMap[$nameKey])) {
-                $matches = $globalMap[$nameKey];
-                if (count($matches) === 1) {
-                  $status = 'FOUND_NOT_IN_CLASS';
-                  $matchedStudent = $matches[0];
-                } else {
-                  $status = 'AMBIGUOUS';
-                }
-              }
-
-              $statusCounts[$status]++;
-              $subjects = (array)($page['subjects'] ?? []);
-              $warnings = (array)($page['warnings'] ?? []);
-              $knownSubjects = [];
-              $reportId = null;
-              if ($status === 'FOUND_IN_CLASS' && $matchedStudent) {
-                $reportId = $reportByStudent[(int)($matchedStudent['id'] ?? 0)] ?? null;
-                if (!$reportId) {
-                  $warnings[] = 'Kein Bericht für Schuljahr/Abschnitt gefunden.';
-                }
-              }
-              foreach ($subjects as $key => $entry) {
-                $grade = (string)($entry['grade'] ?? '');
-                $field = $subjectFields[$key] ?? null;
-                if ($field === null) {
-                  $warnings[] = 'Kein Notenfeld für Fach ' . $key . ' gefunden.';
+          foreach ($subjects as $key => $entry) {
+            $grade = (string)($entry['grade'] ?? '');
+            $field = $subjectFields[$key] ?? null;
+            if ($field === null) {
+              $warnings[] = 'Kein Notenfeld für Fach ' . $key . ' gefunden.';
+              $ignoredNotes++;
+            } else {
+              $listId = finalmarks_option_list_id_from_meta($field['meta']);
+              if ($listId > 0) {
+                $stOpt = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+                $stOpt->execute([$listId, $grade]);
+                $optId = (int)($stOpt->fetchColumn() ?: 0);
+                if ($optId <= 0) {
+                  $warnings[] = 'Note nicht in Optionsliste: ' . $key . ' ' . $grade;
                   $ignoredNotes++;
                 } else {
-                  $listId = finalmarks_option_list_id_from_meta($field['meta']);
-                  if ($listId > 0) {
-                    $stOpt = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
-                    $stOpt->execute([$listId, $grade]);
-                    $optId = (int)($stOpt->fetchColumn() ?: 0);
-                    if ($optId <= 0) {
-                      $warnings[] = 'Note nicht in Optionsliste: ' . $key . ' ' . $grade;
-                      $ignoredNotes++;
-                    } else {
-                      if ($status === 'FOUND_IN_CLASS' && $reportId) {
-                        $importableNotes++;
-                      }
-                    }
-                  } else {
-                    if ($status === 'FOUND_IN_CLASS' && $reportId) {
-                      $importableNotes++;
-                    }
+                  if ($status === 'FOUND_IN_CLASS' && $reportId) {
+                    $importableNotes++;
                   }
                 }
-                $knownSubjects[$key] = $grade;
-              }
-              $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
-              $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
-              if ($fieldWarnings) {
-                $warnings = array_merge($warnings, $fieldWarnings);
-              }
-
-              $finalmarksPreview[] = [
-                'name' => $name,
-                'status' => $status,
-                'student' => $matchedStudent,
-                'subjects' => $knownSubjects,
-                'warnings' => $warnings,
-                'has_grades' => count($subjects) > 0,
-                'report_id' => $reportId,
-              ];
-            }
-
-            $finalmarksSummary = [
-              'pages' => count($parsed),
-              'status_counts' => $statusCounts,
-              'importable_notes' => $importableNotes,
-              'ignored_notes' => $ignoredNotes,
-            ];
-            foreach ($finalmarksPreview as $row) {
-              if ($row['status'] === 'FOUND_IN_CLASS' && $row['has_grades'] && $row['report_id']) {
-                $finalmarksHasImportable = true;
-                break;
+              } else {
+                if ($status === 'FOUND_IN_CLASS' && $reportId) {
+                  $importableNotes++;
+                }
               }
             }
-            $finalmarksToken = $token;
+            $knownSubjects[$key] = $grade;
+          }
+          $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
+          $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
+          if ($fieldWarnings) {
+            $warnings = array_merge($warnings, $fieldWarnings);
           }
 
-          if ($finalmarksErrors) {
-            if (file_exists($tmpPath)) {
-              unlink($tmpPath);
-            }
+          $finalmarksPreview[] = [
+            'name' => $name,
+            'status' => $status,
+            'student' => $matchedStudent,
+            'subjects' => $knownSubjects,
+            'warnings' => $warnings,
+            'has_grades' => count($subjects) > 0,
+            'report_id' => $reportId,
+          ];
+        }
+
+        $finalmarksSummary = [
+          'pages' => count($parsed),
+          'status_counts' => $statusCounts,
+          'importable_notes' => $importableNotes,
+          'ignored_notes' => $ignoredNotes,
+        ];
+        foreach ($finalmarksPreview as $row) {
+          if ($row['status'] === 'FOUND_IN_CLASS' && $row['has_grades'] && $row['report_id']) {
+            $finalmarksHasImportable = true;
+            break;
           }
         }
+        $finalmarksToken = $token;
       }
     }
   } elseif ($action === 'commit') {
@@ -565,16 +513,6 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       $finalmarksErrors[] = 'Import-Token ist ungültig oder abgelaufen.';
     } elseif ((int)($sessionData['class_id'] ?? 0) !== $classId) {
       $finalmarksErrors[] = 'Klassen-Kontext stimmt nicht.';
-    } else {
-      $tmpPath = (string)($sessionData['tmp_pdf_path'] ?? '');
-      if ($tmpPath === '' || !file_exists($tmpPath)) {
-        $finalmarksErrors[] = 'Temporäre PDF-Datei fehlt.';
-      } else {
-        $hash = hash_file('sha256', $tmpPath);
-        if ($hash !== (string)($sessionData['file_hash'] ?? '')) {
-          $finalmarksErrors[] = 'PDF-Datei wurde verändert.';
-        }
-      }
     }
 
     if (!$finalmarksErrors) {
@@ -584,17 +522,11 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       if ($templateId <= 0) {
         $finalmarksErrors[] = 'Vorlage für Klasse fehlt.';
       }
-      $autoloadPath = __DIR__ . '/../vendor/autoload.php';
-      if (!file_exists($autoloadPath)) {
-        $finalmarksErrors[] = 'PDF-Parser fehlt. Bitte Composer-Abhängigkeiten installieren.';
+      $blocks = (array)($sessionData['blocks'] ?? []);
+      if (!$blocks) {
+        $finalmarksErrors[] = 'Gespeicherte PDF-Daten fehlen.';
       } else {
-        require_once $autoloadPath;
-        try {
-          $parsed = finalmarks_parse_pdf($tmpPath);
-        } catch (Throwable $e) {
-          $parsed = [];
-          $finalmarksErrors[] = 'PDF konnte nicht gelesen werden.';
-        }
+        $parsed = finalmarks_parse_blocks($blocks);
       }
     }
 
@@ -728,9 +660,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         if (isset($_SESSION['finalmarks_import'][$token])) {
           unset($_SESSION['finalmarks_import'][$token]);
         }
-        if (file_exists($tmpPath)) {
-          unlink($tmpPath);
-        }
+        // Token invalidieren
       }
     }
   }
@@ -832,8 +762,11 @@ render_teacher_header($pageTitle);
           <?php endif; ?>
         </div>
       <?php endif; ?>
-      <form method="post" enctype="multipart/form-data" style="margin-top:10px;">
+      <form method="post" enctype="multipart/form-data" style="margin-top:10px;" id="finalmarksForm">
         <input type="hidden" name="finalmarks_action" value="preview">
+        <input type="hidden" name="finalmarks_blocks" id="finalmarksBlocks" value="">
+        <input type="hidden" name="finalmarks_file_hash" id="finalmarksFileHash" value="">
+        <input type="hidden" name="finalmarks_file_name" id="finalmarksFileName" value="">
         <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
           <div>
             <label class="label" for="finalmarksPdf">PDF-Datei</label>
@@ -5242,6 +5175,76 @@ if (dlgSave) {
     showErr('Keine Klasse verfügbar.');
   }
 })();
+</script>
+
+<script src="<?=h(url('assets/pdf-lib.min.js'))?>"></script>
+<script type="module">
+  import * as pdfjsLib from "<?=h(url('assets/pdfjs/pdf.min.mjs'))?>";
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "<?=h(url('assets/pdfjs/pdf.worker.min.mjs'))?>";
+
+  const finalmarksForm = document.getElementById('finalmarksForm');
+  const finalmarksPdf = document.getElementById('finalmarksPdf');
+  const finalmarksBlocks = document.getElementById('finalmarksBlocks');
+  const finalmarksFileHash = document.getElementById('finalmarksFileHash');
+  const finalmarksFileName = document.getElementById('finalmarksFileName');
+
+  async function fileHashHex(buffer) {
+    if (!crypto?.subtle) return '';
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function textBlocksFromItems(items) {
+    const lines = new Map();
+    for (const item of items) {
+      const y = Math.round(item.transform[5]);
+      const x = item.transform[4];
+      if (!lines.has(y)) lines.set(y, []);
+      lines.get(y).push({ x, str: item.str });
+    }
+    const sortedYs = Array.from(lines.keys()).sort((a, b) => b - a);
+    return sortedYs.map(y => {
+      const parts = lines.get(y) || [];
+      parts.sort((a, b) => a.x - b.x);
+      return parts.map(p => p.str).join(' ').trim();
+    }).filter(Boolean);
+  }
+
+  async function parsePdfToBlocks(file) {
+    const buffer = await file.arrayBuffer();
+    const pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const blocks = [];
+    for (let i = 1; i <= pdfDoc.numPages; i += 1) {
+      const page = await pdfDoc.getPage(i);
+      const content = await page.getTextContent({ normalizeWhitespace: true });
+      const lines = textBlocksFromItems(content.items || []);
+      blocks.push(lines.join("\n"));
+    }
+    return { blocks, hash: await fileHashHex(buffer) };
+  }
+
+  if (finalmarksForm && finalmarksPdf && finalmarksBlocks) {
+    finalmarksForm.addEventListener('submit', async (ev) => {
+      if (finalmarksForm.dataset.parsed === '1') return;
+      ev.preventDefault();
+      const file = finalmarksPdf.files && finalmarksPdf.files[0];
+      if (!file) {
+        alert('Bitte eine PDF-Datei auswählen.');
+        return;
+      }
+      try {
+        finalmarksForm.dataset.parsed = '1';
+        const result = await parsePdfToBlocks(file);
+        finalmarksBlocks.value = JSON.stringify(result.blocks);
+        if (finalmarksFileHash) finalmarksFileHash.value = result.hash || '';
+        if (finalmarksFileName) finalmarksFileName.value = file.name || '';
+        finalmarksForm.submit();
+      } catch (err) {
+        finalmarksForm.dataset.parsed = '';
+        alert('PDF konnte im Browser nicht gelesen werden.');
+      }
+    });
+  }
 </script>
 
 <?php
