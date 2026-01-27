@@ -123,6 +123,12 @@ render_admin_header($pageTitle);
         <button class="btn primary" id="btnImport" type="submit">Backup importieren</button>
       </div>
     </div>
+    <div id="importProgress" style="display:none; margin-top:10px;">
+      <div class="progress-wrap">
+        <div class="progress-meta"><span><span class="spin">⚙️</span> Import läuft …</span><span class="muted" id="importPct">0%</span></div>
+        <div class="progress"><div class="progress-bar" id="importBar" style="width:0%;"></div></div>
+      </div>
+    </div>
     <div id="importStatus" class="muted" style="margin-top:10px;">Bereit.</div>
   </form>
 </div>
@@ -149,8 +155,12 @@ const importSettingsOptions = document.getElementById('importSettingsOptions');
 const importUploadsOptions = document.getElementById('importUploadsOptions');
 const importSettings = document.getElementById('importSettings');
 const importUploads = document.getElementById('importUploads');
+const importProgress = document.getElementById('importProgress');
+const importPct = document.getElementById('importPct');
+const importBar = document.getElementById('importBar');
 let analyzeToken = null;
 let analyzeCompare = [];
+let importToken = null;
 
 function renderTableList(tables, target, prefix){
   if (!tables.length) {
@@ -396,6 +406,12 @@ function updateAnalyzeProgress(pct){
   importAnalysisBar.style.width = `${value}%`;
 }
 
+function updateImportProgress(pct){
+  const value = Math.max(0, Math.min(100, pct));
+  importPct.textContent = `${value}%`;
+  importBar.style.width = `${value}%`;
+}
+
 async function analyzeBackup(file){
   importAnalysisStatus.textContent = 'Backup wird analysiert …';
   importAnalysisSummary.textContent = 'Analyse läuft …';
@@ -501,6 +517,32 @@ async function pollAnalyze(){
   }
 }
 
+async function pollImport(){
+  if (!importToken) return;
+  try {
+    const formData = new FormData();
+    formData.append('action', 'import_step');
+    formData.append('csrf_token', csrfToken);
+    formData.append('token', importToken);
+    const resp = await fetch(backupApiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Import fehlgeschlagen.');
+
+    if (typeof data.progress_pct === 'number') updateImportProgress(data.progress_pct);
+
+    if (data.done) {
+      importProgress.style.display = 'none';
+      importStatus.textContent = data.message || 'Import abgeschlossen.';
+      importToken = null;
+      return;
+    }
+    setTimeout(pollImport, 300);
+  } catch (e) {
+    importProgress.style.display = 'none';
+    importStatus.textContent = `Fehler: ${e.message}`;
+  }
+}
+
 importFile.addEventListener('change', () => {
   const file = importFile.files && importFile.files[0];
   if (!file) {
@@ -573,18 +615,23 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
       return;
     }
   }
-  importStatus.textContent = 'Import läuft …';
+  importStatus.textContent = 'Import wird gestartet …';
+  importProgress.style.display = '';
+  updateImportProgress(0);
 
   const formData = new FormData(event.target);
-  formData.append('action', 'import');
+  formData.append('action', 'import_start');
   tables.forEach((tbl) => formData.append('tables[]', tbl));
 
   try {
     const resp = await fetch(backupApiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) throw new Error(data.error || 'Import fehlgeschlagen.');
-    importStatus.textContent = data.message || 'Import abgeschlossen.';
+    importToken = data.token;
+    updateImportProgress(0);
+    await pollImport();
   } catch (e) {
+    importProgress.style.display = 'none';
     importStatus.textContent = `Fehler: ${e.message}`;
   }
 });

@@ -325,6 +325,102 @@ function analyze_clear(string $token): void {
   }
 }
 
+function import_store(string $token, array $data): void {
+  if (!isset($_SESSION['backup_import']) || !is_array($_SESSION['backup_import'])) {
+    $_SESSION['backup_import'] = [];
+  }
+  $_SESSION['backup_import'][$token] = $data;
+}
+
+function import_get(string $token): ?array {
+  $all = $_SESSION['backup_import'] ?? [];
+  if (!is_array($all) || !isset($all[$token]) || !is_array($all[$token])) return null;
+  return $all[$token];
+}
+
+function import_clear(string $token): void {
+  if (isset($_SESSION['backup_import'][$token])) {
+    unset($_SESSION['backup_import'][$token]);
+  }
+}
+
+function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $replaceTables, string $conflictMode): array {
+  $entry = "data/{$table}.json";
+  $raw = $zip->getFromName($entry);
+  if ($raw === false) {
+    return ['imported' => 0, 'skipped' => 'missing'];
+  }
+  $data = json_decode($raw, true);
+  if (!is_array($data) || !isset($data['columns'], $data['rows']) || !is_array($data['columns']) || !is_array($data['rows'])) {
+    return ['imported' => 0, 'skipped' => 'invalid'];
+  }
+
+  $columns = array_values(array_map('strval', $data['columns']));
+  $rows = $data['rows'];
+  if (!$columns) {
+    return ['imported' => 0, 'skipped' => 'no_columns'];
+  }
+  if (!valid_table_name($table)) {
+    return ['imported' => 0, 'skipped' => 'invalid_table'];
+  }
+
+  $quoted = quote_ident($pdo, $table);
+  if ($replaceTables) {
+    $pdo->exec("DELETE FROM {$quoted}");
+  }
+
+  $placeholders = implode(',', array_fill(0, count($columns), '?'));
+  $colSql = implode(',', array_map(fn($c) => quote_ident($pdo, $c), $columns));
+  $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+  $driver = db_driver($pdo);
+  if (!$replaceTables) {
+    if ($driver === 'sqlite') {
+      $insertSql = $conflictMode === 'overwrite'
+        ? "INSERT OR REPLACE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})"
+        : "INSERT OR IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+    } else {
+      if ($conflictMode === 'overwrite') {
+        $updates = implode(', ', array_map(fn($c) => quote_ident($pdo, $c) . '=VALUES(' . quote_ident($pdo, $c) . ')', $columns));
+        $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders}) ON DUPLICATE KEY UPDATE {$updates}";
+      } else {
+        $insertSql = "INSERT IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
+      }
+    }
+  }
+  $stmt = $pdo->prepare($insertSql);
+
+  $imported = 0;
+  $conflicts = 0;
+  $updated = 0;
+  try {
+    $pdo->beginTransaction();
+    foreach ($rows as $row) {
+      if (!is_array($row)) continue;
+      $stmt->execute($row);
+      $affected = $stmt->rowCount();
+      if ($replaceTables) {
+        $imported++;
+        continue;
+      }
+      if ($driver !== 'sqlite' && $conflictMode === 'overwrite' && $affected === 2) {
+        $updated++;
+        $conflicts++;
+        continue;
+      }
+      if ($affected >= 1) {
+        $imported++;
+      } else {
+        $conflicts++;
+      }
+    }
+    $pdo->commit();
+    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated];
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'error' => $e->getMessage()];
+  }
+}
+
 function analyze_table_compare(PDO $pdo, ZipArchive $zip, string $table): ?array {
   $entry = "data/{$table}.json";
   $raw = $zip->getFromName($entry);
@@ -530,6 +626,201 @@ if ($action === 'analyze_step') {
       'uploads_backup_count' => $state['uploads_backup_count'] ?? null,
       'uploads_current_count' => $state['uploads_current_count'] ?? null,
       'uploads_categories' => $state['uploads_categories'] ?? [],
+    ]);
+  } catch (Throwable $e) {
+    json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  }
+}
+
+if ($action === 'import_start') {
+  try {
+    csrf_verify();
+    if (!isset($_FILES['backup_file']) || ($_FILES['backup_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+      throw new RuntimeException('Keine gültige ZIP-Datei hochgeladen.');
+    }
+
+    $tables = $_POST['tables'] ?? [];
+    if (!is_array($tables)) $tables = [];
+    $allTables = list_db_tables($pdo);
+    $tables = array_values(array_filter(array_unique(array_map('strval', $tables))));
+    $tables = array_values(array_intersect($tables, $allTables));
+
+    $importSettings = isset($_POST['import_settings']);
+    $importUploads = isset($_POST['import_uploads']);
+    $replaceTables = isset($_POST['import_replace']);
+    $conflictMode = (string)($_POST['conflict_mode'] ?? 'skip');
+    if (!$replaceTables && !in_array($conflictMode, ['skip', 'overwrite'], true)) {
+      throw new RuntimeException('Konfliktverhalten fehlt.');
+    }
+
+    if (!$tables && !$importSettings && !$importUploads) {
+      throw new RuntimeException('Keine Import-Option ausgewählt.');
+    }
+
+    $tmp = tempnam(sys_get_temp_dir(), 'leb_import_');
+    if ($tmp === false) throw new RuntimeException('Konnte temporäre Datei nicht erstellen.');
+    if (!move_uploaded_file($_FILES['backup_file']['tmp_name'], $tmp)) {
+      throw new RuntimeException('Konnte Upload nicht speichern.');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmp) !== true) {
+      @unlink($tmp);
+      throw new RuntimeException('Konnte ZIP-Datei nicht öffnen.');
+    }
+    $zip->close();
+
+    $selectedSettings = $_POST['selected_settings'] ?? [];
+    if (!is_array($selectedSettings)) $selectedSettings = [];
+    $selectedSettings = array_values(array_unique(array_filter(array_map('strval', $selectedSettings))));
+
+    $selectedUploads = $_POST['selected_uploads'] ?? [];
+    if (!is_array($selectedUploads)) $selectedUploads = [];
+    $selectedUploads = array_values(array_unique(array_filter(array_map('strval', $selectedUploads))));
+
+    $totalSteps = count($tables) + ($importSettings ? 1 : 0) + ($importUploads ? 1 : 0);
+    if ($totalSteps < 1) $totalSteps = 1;
+
+    $token = bin2hex(random_bytes(16));
+    import_store($token, [
+      'tmp' => $tmp,
+      'tables' => $tables,
+      'index' => 0,
+      'import_settings' => $importSettings,
+      'import_uploads' => $importUploads,
+      'replace_tables' => $replaceTables,
+      'conflict_mode' => $conflictMode,
+      'selected_settings' => $selectedSettings,
+      'selected_uploads' => $selectedUploads,
+      'table_stats' => [],
+      'settings_applied' => false,
+      'uploads_imported' => 0,
+      'total_steps' => $totalSteps,
+      'steps_done' => 0,
+    ]);
+    json_out(['ok' => true, 'token' => $token, 'progress_pct' => 0]);
+  } catch (Throwable $e) {
+    json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  }
+}
+
+if ($action === 'import_step') {
+  try {
+    csrf_verify();
+    $token = (string)($_POST['token'] ?? '');
+    if ($token === '') throw new RuntimeException('Token fehlt.');
+    $state = import_get($token);
+    if (!$state) throw new RuntimeException('Import-Session abgelaufen.');
+
+    $tmp = (string)($state['tmp'] ?? '');
+    if ($tmp === '' || !is_file($tmp)) throw new RuntimeException('Import-Datei fehlt.');
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmp) !== true) {
+      throw new RuntimeException('Konnte ZIP-Datei nicht öffnen.');
+    }
+
+    $driver = db_driver($pdo);
+    if ($driver === 'sqlite') {
+      $pdo->exec('PRAGMA foreign_keys=OFF');
+    } else {
+      $pdo->exec('SET FOREIGN_KEY_CHECKS=0');
+    }
+
+    $tables = $state['tables'] ?? [];
+    if (!is_array($tables)) $tables = [];
+    $index = (int)($state['index'] ?? 0);
+    $tableStats = $state['table_stats'] ?? [];
+
+    if ($index < count($tables)) {
+      $table = (string)$tables[$index];
+      $tableStats[$table] = import_table_from_zip(
+        $pdo,
+        $zip,
+        $table,
+        (bool)($state['replace_tables'] ?? false),
+        (string)($state['conflict_mode'] ?? 'skip')
+      );
+      $state['index'] = $index + 1;
+      $state['table_stats'] = $tableStats;
+      $state['steps_done'] = (int)($state['steps_done'] ?? 0) + 1;
+    } elseif (!empty($state['import_settings']) && empty($state['settings_applied'])) {
+      $raw = $zip->getFromName('settings.json');
+      if ($raw !== false) {
+        $settings = json_decode($raw, true);
+        if (is_array($settings)) {
+          $selected = $state['selected_settings'] ?? [];
+          if (!is_array($selected)) $selected = [];
+          if ($selected) {
+            apply_settings_payload($settings, $selected);
+            $state['settings_applied'] = true;
+          }
+        }
+      }
+      $state['steps_done'] = (int)($state['steps_done'] ?? 0) + 1;
+    } elseif (!empty($state['import_uploads']) && (int)($state['uploads_imported'] ?? 0) === 0) {
+      $uploadsDir = (string)((app_config()['app']['uploads_dir'] ?? 'uploads'));
+      $selected = $state['selected_uploads'] ?? [];
+      if (!is_array($selected)) $selected = [];
+      if ($selected) {
+        $state['uploads_imported'] = extract_uploads_from_zip($zip, $uploadsDir, true, $selected);
+      } else {
+        $state['uploads_imported'] = 0;
+      }
+      $state['steps_done'] = (int)($state['steps_done'] ?? 0) + 1;
+    }
+
+    if ($driver === 'sqlite') {
+      $pdo->exec('PRAGMA foreign_keys=ON');
+    } else {
+      $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    $zip->close();
+    import_store($token, $state);
+
+    $totalSteps = (int)($state['total_steps'] ?? 1);
+    $stepsDone = (int)($state['steps_done'] ?? 0);
+    $progress = (int)round(($stepsDone / max(1, $totalSteps)) * 100);
+
+    $done = ($stepsDone >= $totalSteps);
+    if ($done) {
+      $tableStats = $state['table_stats'] ?? [];
+      $settingsApplied = !empty($state['settings_applied']);
+      $uploadsImported = (int)($state['uploads_imported'] ?? 0);
+
+      audit('admin_backup_import', (int)current_user()['id'], [
+        'tables' => array_keys(is_array($tableStats) ? $tableStats : []),
+        'settings' => $settingsApplied,
+        'uploads' => $uploadsImported,
+      ]);
+
+      $conflictsTotal = 0;
+      $updatedTotal = 0;
+      foreach ($tableStats as $stats) {
+        $conflictsTotal += (int)($stats['conflicts'] ?? 0);
+        $updatedTotal += (int)($stats['updated'] ?? 0);
+      }
+      $msg = 'Import abgeschlossen. Tabellen: ' . count($tableStats) . ', Uploads: ' . $uploadsImported . ', Einstellungen: ' . ($settingsApplied ? 'ja' : 'nein');
+      if (empty($state['replace_tables'])) {
+        $msg .= '. Konflikte: ' . $conflictsTotal . ', Überschrieben: ' . $updatedTotal;
+      }
+
+      @unlink($tmp);
+      import_clear($token);
+      json_out([
+        'ok' => true,
+        'done' => true,
+        'progress_pct' => $progress,
+        'message' => $msg,
+        'tables' => $tableStats,
+      ]);
+    }
+
+    json_out([
+      'ok' => true,
+      'done' => false,
+      'progress_pct' => $progress,
     ]);
   } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => $e->getMessage()], 400);
