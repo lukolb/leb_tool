@@ -251,6 +251,7 @@ function finalmarks_parse_blocks(array $blocks): array {
       $line = finalmarks_collapse_spaced_letters($line);
       $line = preg_replace('/E\s*n\s*d\s*n\s*o\s*t\s*e\s*n\s*v\s*o\s*n/iu', 'Endnoten von', $line);
       $line = preg_replace('/Endnotenvon/iu', 'Endnoten von', $line);
+      $line = preg_replace('/\bvon(?=\p{L})/iu', 'von ', $line);
       return trim(preg_replace('/\s+/u', ' ', $line));
     };
 
@@ -258,12 +259,13 @@ function finalmarks_parse_blocks(array $blocks): array {
       $line = trim((string)$line);
       if ($line === '') continue;
       $headerLine = $normalizeHeader($line);
-      if (preg_match('/^Endnoten\s*von\s+(.+?)\s*$/iu', $headerLine, $m)) {
+      if (preg_match('/^Endnoten\s*von\s*(.+?)\s*$/iu', $headerLine, $m)) {
         if ($name === '') {
           $name = trim(preg_replace('/\s+/u', ' ', finalmarks_collapse_spaced_letters($m[1])));
         }
         continue;
       }
+      if (preg_match('/^Endnoten\b/i', $headerLine)) continue;
       if (preg_match('/^Stand\b/i', $headerLine)) continue;
       if (preg_match('/^Fach\s+Note/i', $line)) continue;
 
