@@ -563,12 +563,20 @@ const missingFontSelect = document.getElementById('missingFontSelect');
 const pdfFontNameInput = document.getElementById('pdfFontNameInput');
 const btnUploadMissingFont = document.getElementById('btnUploadMissingFont');
 
-const uploadedPdfFonts = <?= json_encode(array_values($pdfFontsCfg)) ?>;
-const uploadedFontKeys = new Set(
-  uploadedPdfFonts
-    .map(f => (f && f.name ? normalizeFontKey(f.name) : ''))
-    .filter(Boolean)
-);
+const FONT_KEY_ALIASES = new Map([
+  ['helv', 'helvetica'],
+  ['helv-bold', 'helvetica-bold'],
+  ['helv-oblique', 'helvetica-oblique'],
+  ['helv-boldoblique', 'helvetica-boldoblique'],
+  ['tiro', 'times-roman'],
+  ['tiro-bold', 'times-bold'],
+  ['tiro-italic', 'times-italic'],
+  ['tiro-bolditalic', 'times-bolditalic'],
+  ['cour', 'courier'],
+  ['cour-bold', 'courier-bold'],
+  ['cour-oblique', 'courier-oblique'],
+  ['cour-boldoblique', 'courier-boldoblique'],
+]);
 
 const STANDARD_FONT_KEYS = new Set([
   'helvetica',
@@ -587,20 +595,12 @@ const STANDARD_FONT_KEYS = new Set([
   'zapfdingbats',
 ]);
 
-const FONT_KEY_ALIASES = new Map([
-  ['helv', 'helvetica'],
-  ['helv-bold', 'helvetica-bold'],
-  ['helv-oblique', 'helvetica-oblique'],
-  ['helv-boldoblique', 'helvetica-boldoblique'],
-  ['tiro', 'times-roman'],
-  ['tiro-bold', 'times-bold'],
-  ['tiro-italic', 'times-italic'],
-  ['tiro-bolditalic', 'times-bolditalic'],
-  ['cour', 'courier'],
-  ['cour-bold', 'courier-bold'],
-  ['cour-oblique', 'courier-oblique'],
-  ['cour-boldoblique', 'courier-boldoblique'],
-]);
+const uploadedPdfFonts = <?= json_encode(array_values($pdfFontsCfg)) ?>;
+const uploadedFontKeys = new Set(
+  uploadedPdfFonts
+    .map(f => (f && f.name ? normalizeFontKey(f.name) : ''))
+    .filter(Boolean)
+);
 
 // Copy UI
 const copyFromTemplate = document.getElementById('copyFromTemplate');
