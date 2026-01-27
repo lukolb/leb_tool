@@ -344,7 +344,7 @@ function import_clear(string $token): void {
   }
 }
 
-function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $replaceTables, string $conflictMode): array {
+function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $replaceTables, string $conflictMode, array $protectedUser = []): array {
   $entry = "data/{$table}.json";
   $raw = $zip->getFromName($entry);
   if ($raw === false) {
@@ -365,8 +365,16 @@ function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $r
   }
 
   $quoted = quote_ident($pdo, $table);
+  $protectId = (int)($protectedUser['id'] ?? 0);
+  $protectEmail = trim((string)($protectedUser['email'] ?? ''));
+  $idIndex = array_search('id', $columns, true);
+  $emailIndex = array_search('email', $columns, true);
   if ($replaceTables) {
-    $pdo->exec("DELETE FROM {$quoted}");
+    if ($table === 'users' && $protectId > 0) {
+      $pdo->exec("DELETE FROM {$quoted} WHERE id <> " . (int)$protectId);
+    } else {
+      $pdo->exec("DELETE FROM {$quoted}");
+    }
   }
 
   $placeholders = implode(',', array_fill(0, count($columns), '?'));
@@ -392,10 +400,19 @@ function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $r
   $imported = 0;
   $conflicts = 0;
   $updated = 0;
+  $protected = 0;
   try {
     $pdo->beginTransaction();
     foreach ($rows as $row) {
       if (!is_array($row)) continue;
+      if ($table === 'users') {
+        $rowId = ($idIndex !== false && array_key_exists($idIndex, $row)) ? (int)$row[$idIndex] : 0;
+        $rowEmail = ($emailIndex !== false && array_key_exists($emailIndex, $row)) ? trim((string)$row[$emailIndex]) : '';
+        if (($protectId > 0 && $rowId === $protectId) || ($protectEmail !== '' && $rowEmail !== '' && strcasecmp($rowEmail, $protectEmail) === 0)) {
+          $protected++;
+          continue;
+        }
+      }
       $stmt->execute($row);
       $affected = $stmt->rowCount();
       if ($replaceTables) {
@@ -414,10 +431,10 @@ function import_table_from_zip(PDO $pdo, ZipArchive $zip, string $table, bool $r
       }
     }
     $pdo->commit();
-    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated];
+    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'protected' => $protected];
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'error' => $e->getMessage()];
+    return ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'protected' => $protected, 'error' => $e->getMessage()];
   }
 }
 
@@ -697,6 +714,10 @@ if ($action === 'import_start') {
       'conflict_mode' => $conflictMode,
       'selected_settings' => $selectedSettings,
       'selected_uploads' => $selectedUploads,
+      'protected_user' => [
+        'id' => (int)(current_user()['id'] ?? 0),
+        'email' => (string)(current_user()['email'] ?? ''),
+      ],
       'table_stats' => [],
       'settings_applied' => false,
       'uploads_imported' => 0,
@@ -744,7 +765,8 @@ if ($action === 'import_step') {
         $zip,
         $table,
         (bool)($state['replace_tables'] ?? false),
-        (string)($state['conflict_mode'] ?? 'skip')
+        (string)($state['conflict_mode'] ?? 'skip'),
+        is_array($state['protected_user'] ?? null) ? $state['protected_user'] : []
       );
       $state['index'] = $index + 1;
       $state['table_stats'] = $tableStats;
@@ -943,84 +965,19 @@ if ($action === 'import') {
     }
 
     $tableStats = [];
+    $protectedUser = [
+      'id' => (int)(current_user()['id'] ?? 0),
+      'email' => (string)(current_user()['email'] ?? ''),
+    ];
     foreach ($tables as $table) {
-      $entry = "data/{$table}.json";
-      $raw = $zip->getFromName($entry);
-      if ($raw === false) {
-        $tableStats[$table] = ['imported' => 0, 'skipped' => 'missing'];
-        continue;
-      }
-      $data = json_decode($raw, true);
-      if (!is_array($data) || !isset($data['columns'], $data['rows']) || !is_array($data['columns']) || !is_array($data['rows'])) {
-        $tableStats[$table] = ['imported' => 0, 'skipped' => 'invalid'];
-        continue;
-      }
-
-      $columns = array_values(array_map('strval', $data['columns']));
-      $rows = $data['rows'];
-      if (!$columns) {
-        $tableStats[$table] = ['imported' => 0, 'skipped' => 'no_columns'];
-        continue;
-      }
-      if (!valid_table_name($table)) {
-        $tableStats[$table] = ['imported' => 0, 'skipped' => 'invalid_table'];
-        continue;
-      }
-
-      $quoted = quote_ident($pdo, $table);
-      if ($replaceTables) {
-        $pdo->exec("DELETE FROM {$quoted}");
-      }
-
-      $placeholders = implode(',', array_fill(0, count($columns), '?'));
-      $colSql = implode(',', array_map(fn($c) => quote_ident($pdo, $c), $columns));
-      $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
-      if (!$replaceTables) {
-        if ($driver === 'sqlite') {
-          $insertSql = $conflictMode === 'overwrite'
-            ? "INSERT OR REPLACE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})"
-            : "INSERT OR IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
-        } else {
-          if ($conflictMode === 'overwrite') {
-            $updates = implode(', ', array_map(fn($c) => quote_ident($pdo, $c) . '=VALUES(' . quote_ident($pdo, $c) . ')', $columns));
-            $insertSql = "INSERT INTO {$quoted} ({$colSql}) VALUES ({$placeholders}) ON DUPLICATE KEY UPDATE {$updates}";
-          } else {
-            $insertSql = "INSERT IGNORE INTO {$quoted} ({$colSql}) VALUES ({$placeholders})";
-          }
-        }
-      }
-      $stmt = $pdo->prepare($insertSql);
-
-      $imported = 0;
-      $conflicts = 0;
-      $updated = 0;
-      try {
-        $pdo->beginTransaction();
-        foreach ($rows as $row) {
-          if (!is_array($row)) continue;
-          $stmt->execute($row);
-          $affected = $stmt->rowCount();
-          if ($replaceTables) {
-            $imported++;
-            continue;
-          }
-          if ($driver !== 'sqlite' && $conflictMode === 'overwrite' && $affected === 2) {
-            $updated++;
-            $conflicts++;
-            continue;
-          }
-          if ($affected >= 1) {
-            $imported++;
-          } else {
-            $conflicts++;
-          }
-        }
-        $pdo->commit();
-        $tableStats[$table] = ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated];
-      } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        $tableStats[$table] = ['imported' => $imported, 'conflicts' => $conflicts, 'updated' => $updated, 'error' => $e->getMessage()];
-      }
+      $tableStats[$table] = import_table_from_zip(
+        $pdo,
+        $zip,
+        $table,
+        $replaceTables,
+        $conflictMode,
+        $protectedUser
+      );
     }
 
     if ($driver === 'sqlite') {
