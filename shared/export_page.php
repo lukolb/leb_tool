@@ -938,7 +938,7 @@ function buildCrossAppearanceStream(pdfDoc, rect, color){
   const h = Math.max(1, rect.height || 1);
   const minDim = Math.min(w, h);
   const inset = minDim * 0.18;
-  const lw = Math.min(2.5, Math.max(0.8, minDim * 0.1));
+  const lw = Math.min(1.8, Math.max(0.5, minDim * 0.07));
   const x1 = inset;
   const y1 = inset;
   const x2 = w - inset;
