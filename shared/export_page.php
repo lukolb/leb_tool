@@ -1121,7 +1121,6 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
     PDFArray,
     PDFNumber,
     PDFDict,
-    StandardFonts,
   } = PDFLib;
 
   const pdfDoc = await PDFDocument.load(templateBytes);
@@ -1274,8 +1273,8 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
 
   let appearanceFont = null;
   try {
-    if (StandardFonts) {
-      appearanceFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    if (PDFLib?.StandardFonts && typeof pdfDoc.embedFont === 'function') {
+      appearanceFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
     }
   } catch (e) {}
   try {
