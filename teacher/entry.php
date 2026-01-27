@@ -208,10 +208,16 @@ function finalmarks_name_tokens(string $name): array {
 function finalmarks_tokens_match(array $pageTokens, array $studentTokens): bool {
   if (!$pageTokens || !$studentTokens) return false;
   $pageSet = array_fill_keys($pageTokens, true);
-  foreach ($studentTokens as $token) {
-    if (!isset($pageSet[$token])) return false;
+  $studentSet = array_fill_keys($studentTokens, true);
+  $pageCount = count($pageSet);
+  $matchCount = 0;
+  foreach ($pageSet as $token => $_) {
+    if (isset($studentSet[$token])) $matchCount++;
   }
-  return true;
+  if ($pageCount === 0 || $matchCount === 0) return false;
+  if ($matchCount === $pageCount) return true;
+  if ($matchCount >= 2) return true;
+  return false;
 }
 
 function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
