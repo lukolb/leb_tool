@@ -117,6 +117,194 @@ function user_is_class_teacher_entry(PDO $pdo, int $userId, int $classId): bool 
   return (bool)$st->fetch();
 }
 
+function finalmarks_normalize_name(string $name): string {
+  $name = trim(preg_replace('/\s+/u', ' ', $name));
+  return mb_strtolower($name);
+}
+
+function finalmarks_subject_key(string $label): ?string {
+  $label = trim(preg_replace('/\s+/u', ' ', $label));
+  $label = mb_strtolower($label);
+  $map = [
+    'de' => 'de',
+    'deutsch' => 'de',
+    'german' => 'de',
+    'englisch' => 'en',
+    'english' => 'en',
+    'ethik' => 'eth',
+    'kunst' => 'art',
+    'mathematik' => 'math',
+    'mathe' => 'math',
+    'sachunterricht' => 'sci',
+    'musik' => 'music',
+    'sachkunde' => 'sci',
+    'sport' => 'pe',
+    'pe' => 'pe',
+  ];
+  return $map[$label] ?? null;
+}
+
+function finalmarks_student_display(array $student): string {
+  $first = trim((string)($student['first_name'] ?? ''));
+  $last = trim((string)($student['last_name'] ?? ''));
+  return trim($first . ' ' . $last);
+}
+
+function finalmarks_meta_read(?string $json): array {
+  if (!$json) return [];
+  $a = json_decode($json, true);
+  return is_array($a) ? $a : [];
+}
+
+function finalmarks_option_list_id_from_meta(array $meta): int {
+  $tid = $meta['option_list_template_id'] ?? null;
+  if ($tid === null || $tid === '') return 0;
+  return (int)$tid;
+}
+
+function finalmarks_subject_key_from_candidates(array $candidates): ?string {
+  foreach ($candidates as $candidate) {
+    $candidate = trim((string)$candidate);
+    if ($candidate === '') continue;
+    $key = finalmarks_subject_key($candidate);
+    if ($key !== null) return $key;
+  }
+  return null;
+}
+
+function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
+  $st = $pdo->prepare(
+    "SELECT id, field_name, label, field_type, meta_json
+     FROM template_fields
+     WHERE template_id=? AND field_type IN ('grade','select','radio') AND can_teacher_edit=1
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $st->execute([$templateId]);
+  $map = [];
+  $duplicates = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $meta = finalmarks_meta_read($row['meta_json'] ?? null);
+    $group = trim((string)($meta['group'] ?? ''));
+    if ($group !== '' && strpos($group, '/') !== false) {
+      $group = trim(explode('/', $group, 2)[0]);
+    }
+    $candidates = [
+      (string)($row['label'] ?? ''),
+      (string)($row['field_name'] ?? ''),
+      $group,
+    ];
+    $subjectKey = finalmarks_subject_key_from_candidates($candidates);
+    if ($subjectKey === null) continue;
+    if (isset($map[$subjectKey])) {
+      $duplicates[$subjectKey][] = (int)$row['id'];
+      continue;
+    }
+    $map[$subjectKey] = [
+      'id' => (int)$row['id'],
+      'label' => trim((string)($row['label'] ?? $row['field_name'] ?? '')),
+      'field_type' => (string)($row['field_type'] ?? ''),
+      'meta' => $meta,
+    ];
+  }
+  return [$map, $duplicates];
+}
+
+function finalmarks_period_label(string $term): string {
+  $term = trim($term);
+  return $term !== '' ? $term : 'Standard';
+}
+
+function finalmarks_parse_pdf(string $path): array {
+  $parser = new \Smalot\PdfParser\Parser();
+  $pdf = $parser->parseFile($path);
+  $pages = $pdf->getPages();
+  $blocks = [];
+
+  if ($pages) {
+    foreach ($pages as $page) {
+      $text = (string)$page->getText();
+      if ($text !== '') {
+        $blocks[] = $text;
+      }
+    }
+  }
+
+  if (!$blocks) {
+    $text = (string)$pdf->getText();
+    if ($text !== '') {
+      $blocks = preg_split('/(?=^Endnoten von)/mu', $text, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+      if (!$blocks) {
+        $blocks = [$text];
+      }
+    }
+  }
+
+  $results = [];
+  foreach ($blocks as $block) {
+    $block = trim((string)$block);
+    if ($block === '') continue;
+    $name = '';
+    if (preg_match('/^Endnoten von\s+(.+?)\s*$/mu', $block, $m)) {
+      $name = trim(preg_replace('/\s+/u', ' ', $m[1]));
+    }
+    $lines = preg_split('/\R/u', $block) ?: [];
+    $subjects = [];
+    $warnings = [];
+    $unknownSubjects = [];
+    $duplicateSubjects = [];
+    $invalidGrades = [];
+    $validGrades = ['1+','1-','1','2+','2-','2','3+','3-','3','4+','4-','4','5+','5-','5','6'];
+
+    foreach ($lines as $line) {
+      $line = trim((string)$line);
+      if ($line === '') continue;
+      if (preg_match('/^Endnoten von\s+/u', $line)) continue;
+      if (preg_match('/^Fach\s+Note/i', $line)) continue;
+
+      if (preg_match('/^(.*?)\s+(1\+|1\-|1|2\+|2\-|2|3\+|3\-|3|4\+|4\-|4|5\+|5\-|5|6)\s*$/u', $line, $m)) {
+        $label = trim(preg_replace('/\s+/u', ' ', $m[1]));
+        $grade = trim($m[2]);
+        $key = finalmarks_subject_key($label);
+        if ($key === null) {
+          $unknownSubjects[] = $label;
+          $warnings[] = 'Unbekanntes Fach: ' . $label;
+          continue;
+        }
+        if (isset($subjects[$key])) {
+          $duplicateSubjects[] = $label;
+          $warnings[] = 'Doppeltes Fach: ' . $label . ' (letzte Note übernommen)';
+        }
+        $subjects[$key] = ['label' => $label, 'grade' => $grade];
+        continue;
+      }
+
+      if (preg_match('/^(.*?)\s+(\S+)\s*$/u', $line, $m)) {
+        $label = trim(preg_replace('/\s+/u', ' ', $m[1]));
+        $grade = trim($m[2]);
+        if (!in_array($grade, $validGrades, true)) {
+          $invalidGrades[] = $label . ' ' . $grade;
+          $warnings[] = 'Ungültige Note: ' . $label . ' ' . $grade;
+        }
+      }
+    }
+
+    if (!$subjects) {
+      $warnings[] = 'Keine Noten gefunden';
+    }
+
+    $results[] = [
+      'name' => $name,
+      'subjects' => $subjects,
+      'warnings' => $warnings,
+      'unknown_subjects' => $unknownSubjects,
+      'duplicate_subjects' => $duplicateSubjects,
+      'invalid_grades' => $invalidGrades,
+    ];
+  }
+
+  return $results;
+}
+
 if ($childMode && ($u['role'] ?? '') !== 'admin') {
   $isClassTeacher = $classId > 0 && user_is_class_teacher_entry($pdo, $userId, $classId);
   if (!$isClassTeacher) {
@@ -129,6 +317,422 @@ if ($childMode && ($u['role'] ?? '') !== 'admin') {
     <?php
     render_teacher_footer();
     exit;
+  }
+}
+
+$isTeacherRole = (($u['role'] ?? '') === 'teacher');
+$finalmarksPreview = null;
+$finalmarksErrors = [];
+$finalmarksSuccess = null;
+$finalmarksSummary = null;
+$finalmarksToken = '';
+$finalmarksFormSchoolYear = '';
+$finalmarksFormTerm = '';
+$finalmarksHasImportable = false;
+$currentClass = null;
+foreach ($classes as $c) {
+  if ((int)($c['id'] ?? 0) === $classId) {
+    $currentClass = $c;
+    break;
+  }
+}
+$finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
+if ($finalmarksFormSchoolYear === '') {
+  $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+}
+$finalmarksFormTerm = '';
+
+if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['finalmarks_action'])) {
+  $action = (string)$_POST['finalmarks_action'];
+  $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
+  $finalmarksFormTerm = trim((string)($_POST['term'] ?? ''));
+
+  if ($classId <= 0) {
+    $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
+  } elseif ($action === 'preview') {
+    $file = $_FILES['finalmarks_pdf'] ?? null;
+    if (!$file || !is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+      $finalmarksErrors[] = 'PDF-Upload fehlgeschlagen.';
+    } else {
+      $autoloadPath = __DIR__ . '/../vendor/autoload.php';
+      if (!file_exists($autoloadPath)) {
+        $finalmarksErrors[] = 'PDF-Parser fehlt. Bitte Composer-Abhängigkeiten installieren.';
+      } else {
+        require_once $autoloadPath;
+        $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'leb_finalmarks';
+        if (!is_dir($tmpDir)) {
+          mkdir($tmpDir, 0770, true);
+        }
+        $token = bin2hex(random_bytes(16));
+        $tmpPath = $tmpDir . DIRECTORY_SEPARATOR . 'finalmarks_' . $token . '.pdf';
+        if (!move_uploaded_file((string)$file['tmp_name'], $tmpPath)) {
+          $finalmarksErrors[] = 'PDF konnte nicht gespeichert werden.';
+        } else {
+          try {
+            $parsed = finalmarks_parse_pdf($tmpPath);
+          } catch (Throwable $e) {
+            $parsed = [];
+            $finalmarksErrors[] = 'PDF konnte nicht gelesen werden.';
+          }
+
+          if (!$finalmarksErrors) {
+            $stClass = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+            $stClass->execute([$classId]);
+            $templateId = (int)($stClass->fetchColumn() ?: 0);
+            if ($templateId <= 0) {
+              $finalmarksErrors[] = 'Für diese Klasse ist keine Vorlage hinterlegt.';
+            }
+          }
+
+          if (!$finalmarksErrors) {
+            $hash = hash_file('sha256', $tmpPath);
+            $_SESSION['finalmarks_import'][$token] = [
+              'class_id' => $classId,
+              'school_year' => $finalmarksFormSchoolYear,
+              'term' => $finalmarksFormTerm,
+              'template_id' => $templateId,
+              'tmp_pdf_path' => $tmpPath,
+              'file_hash' => $hash,
+              'created_at' => time(),
+            ];
+
+            [$subjectFields, $fieldDuplicates] = finalmarks_subject_fields($pdo, $templateId);
+            $fieldWarnings = [];
+            foreach ($fieldDuplicates as $subjectKey => $ids) {
+              $fieldWarnings[] = 'Mehrere Notenfelder für Fach ' . $subjectKey . ' gefunden; erstes Feld wird verwendet.';
+            }
+
+            $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+            $st->execute([$classId]);
+            $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
+            $classMap = [];
+            foreach ($classStudents as $student) {
+              $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
+              $classMap[$nameKey][] = $student;
+            }
+            $globalMap = null;
+            $needsGlobal = false;
+            foreach ($parsed as $page) {
+              $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
+              if ($nameKey === '' || !isset($classMap[$nameKey])) {
+                $needsGlobal = true;
+                break;
+              }
+            }
+            if ($needsGlobal) {
+              $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
+              $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
+              $globalMap = [];
+              foreach ($allStudents as $student) {
+                $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
+                $globalMap[$nameKey][] = $student;
+              }
+            }
+
+            $statusCounts = [
+              'FOUND_IN_CLASS' => 0,
+              'FOUND_NOT_IN_CLASS' => 0,
+              'NOT_FOUND' => 0,
+              'AMBIGUOUS' => 0,
+            ];
+            $importableNotes = 0;
+            $ignoredNotes = 0;
+            $periodLabel = finalmarks_period_label($finalmarksFormTerm);
+            $reportByStudent = [];
+            if ($classStudents) {
+              $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
+              $in = implode(',', array_fill(0, count($studentIds), '?'));
+              $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
+              $stRep = $pdo->prepare(
+                "SELECT id, student_id
+                 FROM report_instances
+                 WHERE template_id=? AND school_year=? AND period_label=? AND student_id IN ($in)"
+              );
+              $stRep->execute($params);
+              foreach ($stRep->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
+              }
+            }
+            $finalmarksPreview = [];
+
+            foreach ($parsed as $page) {
+              $name = (string)($page['name'] ?? '');
+              $nameKey = finalmarks_normalize_name($name);
+              $status = 'NOT_FOUND';
+              $matchedStudent = null;
+
+              if ($nameKey !== '' && isset($classMap[$nameKey])) {
+                $matches = $classMap[$nameKey];
+                if (count($matches) === 1) {
+                  $status = 'FOUND_IN_CLASS';
+                  $matchedStudent = $matches[0];
+                } else {
+                  $status = 'AMBIGUOUS';
+                }
+              } elseif ($globalMap !== null && $nameKey !== '' && isset($globalMap[$nameKey])) {
+                $matches = $globalMap[$nameKey];
+                if (count($matches) === 1) {
+                  $status = 'FOUND_NOT_IN_CLASS';
+                  $matchedStudent = $matches[0];
+                } else {
+                  $status = 'AMBIGUOUS';
+                }
+              }
+
+              $statusCounts[$status]++;
+              $subjects = (array)($page['subjects'] ?? []);
+              $warnings = (array)($page['warnings'] ?? []);
+              $knownSubjects = [];
+              $reportId = null;
+              if ($status === 'FOUND_IN_CLASS' && $matchedStudent) {
+                $reportId = $reportByStudent[(int)($matchedStudent['id'] ?? 0)] ?? null;
+                if (!$reportId) {
+                  $warnings[] = 'Kein Bericht für Schuljahr/Abschnitt gefunden.';
+                }
+              }
+              foreach ($subjects as $key => $entry) {
+                $grade = (string)($entry['grade'] ?? '');
+                $field = $subjectFields[$key] ?? null;
+                if ($field === null) {
+                  $warnings[] = 'Kein Notenfeld für Fach ' . $key . ' gefunden.';
+                  $ignoredNotes++;
+                } else {
+                  $listId = finalmarks_option_list_id_from_meta($field['meta']);
+                  if ($listId > 0) {
+                    $stOpt = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+                    $stOpt->execute([$listId, $grade]);
+                    $optId = (int)($stOpt->fetchColumn() ?: 0);
+                    if ($optId <= 0) {
+                      $warnings[] = 'Note nicht in Optionsliste: ' . $key . ' ' . $grade;
+                      $ignoredNotes++;
+                    } else {
+                      if ($status === 'FOUND_IN_CLASS' && $reportId) {
+                        $importableNotes++;
+                      }
+                    }
+                  } else {
+                    if ($status === 'FOUND_IN_CLASS' && $reportId) {
+                      $importableNotes++;
+                    }
+                  }
+                }
+                $knownSubjects[$key] = $grade;
+              }
+              $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
+              $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
+              if ($fieldWarnings) {
+                $warnings = array_merge($warnings, $fieldWarnings);
+              }
+
+              $finalmarksPreview[] = [
+                'name' => $name,
+                'status' => $status,
+                'student' => $matchedStudent,
+                'subjects' => $knownSubjects,
+                'warnings' => $warnings,
+                'has_grades' => count($subjects) > 0,
+                'report_id' => $reportId,
+              ];
+            }
+
+            $finalmarksSummary = [
+              'pages' => count($parsed),
+              'status_counts' => $statusCounts,
+              'importable_notes' => $importableNotes,
+              'ignored_notes' => $ignoredNotes,
+            ];
+            foreach ($finalmarksPreview as $row) {
+              if ($row['status'] === 'FOUND_IN_CLASS' && $row['has_grades'] && $row['report_id']) {
+                $finalmarksHasImportable = true;
+                break;
+              }
+            }
+            $finalmarksToken = $token;
+          }
+
+          if ($finalmarksErrors) {
+            if (file_exists($tmpPath)) {
+              unlink($tmpPath);
+            }
+          }
+        }
+      }
+    }
+  } elseif ($action === 'commit') {
+    $token = trim((string)($_POST['finalmarks_token'] ?? ''));
+    $sessionData = $_SESSION['finalmarks_import'][$token] ?? null;
+    if (!$sessionData || !is_array($sessionData)) {
+      $finalmarksErrors[] = 'Import-Token ist ungültig oder abgelaufen.';
+    } elseif ((int)($sessionData['class_id'] ?? 0) !== $classId) {
+      $finalmarksErrors[] = 'Klassen-Kontext stimmt nicht.';
+    } else {
+      $tmpPath = (string)($sessionData['tmp_pdf_path'] ?? '');
+      if ($tmpPath === '' || !file_exists($tmpPath)) {
+        $finalmarksErrors[] = 'Temporäre PDF-Datei fehlt.';
+      } else {
+        $hash = hash_file('sha256', $tmpPath);
+        if ($hash !== (string)($sessionData['file_hash'] ?? '')) {
+          $finalmarksErrors[] = 'PDF-Datei wurde verändert.';
+        }
+      }
+    }
+
+    if (!$finalmarksErrors) {
+      $finalmarksFormSchoolYear = trim((string)($sessionData['school_year'] ?? $finalmarksFormSchoolYear));
+      $finalmarksFormTerm = trim((string)($sessionData['term'] ?? $finalmarksFormTerm));
+      $templateId = (int)($sessionData['template_id'] ?? 0);
+      if ($templateId <= 0) {
+        $finalmarksErrors[] = 'Vorlage für Klasse fehlt.';
+      }
+      $autoloadPath = __DIR__ . '/../vendor/autoload.php';
+      if (!file_exists($autoloadPath)) {
+        $finalmarksErrors[] = 'PDF-Parser fehlt. Bitte Composer-Abhängigkeiten installieren.';
+      } else {
+        require_once $autoloadPath;
+        try {
+          $parsed = finalmarks_parse_pdf($tmpPath);
+        } catch (Throwable $e) {
+          $parsed = [];
+          $finalmarksErrors[] = 'PDF konnte nicht gelesen werden.';
+        }
+      }
+    }
+
+    if (!$finalmarksErrors) {
+      [$subjectFields] = finalmarks_subject_fields($pdo, $templateId);
+      $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+      $st->execute([$classId]);
+      $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
+      $classMap = [];
+      foreach ($classStudents as $student) {
+        $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
+        $classMap[$nameKey][] = $student;
+      }
+      $selectedIds = array_map('intval', (array)($_POST['finalmarks_import_ids'] ?? []));
+      $hasSelection = array_key_exists('finalmarks_import_ids_present', $_POST);
+
+      $rowsToInsert = [];
+      $skippedStudents = 0;
+      $skippedNotes = 0;
+      $periodLabel = finalmarks_period_label($finalmarksFormTerm);
+      $reportByStudent = [];
+      if ($classStudents) {
+        $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
+        $in = implode(',', array_fill(0, count($studentIds), '?'));
+        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
+        $stRep = $pdo->prepare(
+          "SELECT id, student_id
+           FROM report_instances
+           WHERE template_id=? AND school_year=? AND period_label=? AND student_id IN ($in)"
+        );
+        $stRep->execute($params);
+        foreach ($stRep->fetchAll(PDO::FETCH_ASSOC) as $r) {
+          $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
+        }
+      }
+      foreach ($parsed as $page) {
+        $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
+        if ($nameKey === '' || !isset($classMap[$nameKey]) || count($classMap[$nameKey]) !== 1) {
+          $skippedStudents++;
+          continue;
+        }
+        $student = $classMap[$nameKey][0];
+        $studentId = (int)($student['id'] ?? 0);
+        if ($hasSelection && !in_array($studentId, $selectedIds, true)) {
+          $skippedStudents++;
+          continue;
+        }
+        $reportId = $reportByStudent[$studentId] ?? 0;
+        if ($reportId <= 0) {
+          $skippedStudents++;
+          continue;
+        }
+        $subjects = (array)($page['subjects'] ?? []);
+        if (!$subjects) {
+          $skippedStudents++;
+          continue;
+        }
+        foreach ($subjects as $key => $entry) {
+          $grade = (string)($entry['grade'] ?? '');
+          if ($grade === '') {
+            $skippedNotes++;
+            continue;
+          }
+          $field = $subjectFields[$key] ?? null;
+          if ($field === null) {
+            $skippedNotes++;
+            continue;
+          }
+          $listId = finalmarks_option_list_id_from_meta($field['meta']);
+          $valueJson = null;
+          if ($listId > 0) {
+            $stOpt = $pdo->prepare("SELECT id FROM option_list_items WHERE list_id=? AND value=? LIMIT 1");
+            $stOpt->execute([$listId, $grade]);
+            $optId = (int)($stOpt->fetchColumn() ?: 0);
+            if ($optId <= 0) {
+              $skippedNotes++;
+              continue;
+            }
+            $valueJson = json_encode(['option_item_id' => $optId], JSON_UNESCAPED_UNICODE);
+          }
+          $rowsToInsert[] = [
+            'report_instance_id' => $reportId,
+            'template_field_id' => (int)$field['id'],
+            'value_text' => $grade,
+            'value_json' => $valueJson,
+          ];
+        }
+      }
+
+      if (!$rowsToInsert) {
+        $finalmarksErrors[] = 'Keine importierbaren Noten gefunden.';
+      } else {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare(
+          "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+           VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
+           ON DUPLICATE KEY UPDATE
+             value_text=VALUES(value_text),
+             value_json=VALUES(value_json),
+             source='teacher',
+             updated_by_user_id=VALUES(updated_by_user_id),
+             updated_at=NOW()"
+        );
+        $inserted = 0;
+        $updated = 0;
+        foreach ($rowsToInsert as $row) {
+          $stmt->execute([
+            $row['report_instance_id'],
+            $row['template_field_id'],
+            $row['value_text'],
+            $row['value_json'],
+            $userId,
+          ]);
+          $affected = $stmt->rowCount();
+          if ($affected === 1) {
+            $inserted++;
+          } elseif ($affected === 2) {
+            $updated++;
+          }
+        }
+        $pdo->commit();
+
+        $finalmarksSuccess = 'Endnoten importiert.';
+        $finalmarksSummary = [
+          'inserted' => $inserted,
+          'updated' => $updated,
+          'skipped_students' => $skippedStudents,
+          'skipped_notes' => $skippedNotes,
+          'rows' => count($rowsToInsert),
+        ];
+        if (isset($_SESSION['finalmarks_import'][$token])) {
+          unset($_SESSION['finalmarks_import'][$token]);
+        }
+        if (file_exists($tmpPath)) {
+          unlink($tmpPath);
+        }
+      }
+    }
   }
 }
 
@@ -197,6 +801,143 @@ render_teacher_header($pageTitle);
     </div>
   </div>
 </div>
+
+<?php if ($isTeacherRole && !$childMode): ?>
+  <div class="card">
+    <h2 style="margin-top:0;">Endnoten (PDF) für diese Klasse importieren</h2>
+    <?php if ($classId <= 0): ?>
+      <div class="alert">Bitte zuerst eine Klasse auswählen.</div>
+    <?php else: ?>
+      <?php if ($finalmarksErrors): ?>
+        <div class="alert danger">
+          <strong>Fehler beim Import:</strong>
+          <ul style="margin:8px 0 0 18px;">
+            <?php foreach ($finalmarksErrors as $err): ?>
+              <li><?=h($err)?></li>
+            <?php endforeach; ?>
+          </ul>
+        </div>
+      <?php endif; ?>
+      <?php if ($finalmarksSuccess): ?>
+        <div class="alert success">
+          <strong><?=h($finalmarksSuccess)?></strong>
+          <?php if ($finalmarksSummary): ?>
+            <div class="muted" style="margin-top:6px;">
+              Einträge: <?=h((string)($finalmarksSummary['rows'] ?? 0))?> ·
+              Neu: <?=h((string)($finalmarksSummary['inserted'] ?? 0))?> ·
+              Aktualisiert: <?=h((string)($finalmarksSummary['updated'] ?? 0))?> ·
+              Übersprungene Schüler: <?=h((string)($finalmarksSummary['skipped_students'] ?? 0))?> ·
+              Übersprungene Noten: <?=h((string)($finalmarksSummary['skipped_notes'] ?? 0))?>
+            </div>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
+      <form method="post" enctype="multipart/form-data" style="margin-top:10px;">
+        <input type="hidden" name="finalmarks_action" value="preview">
+        <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
+          <div>
+            <label class="label" for="finalmarksPdf">PDF-Datei</label>
+            <input class="input" type="file" id="finalmarksPdf" name="finalmarks_pdf" accept="application/pdf" required>
+          </div>
+          <div>
+            <label class="label" for="finalmarksYear">Schuljahr</label>
+            <input class="input" type="text" id="finalmarksYear" name="school_year" value="<?=h($finalmarksFormSchoolYear)?>" placeholder="z.B. 2025/26">
+          </div>
+          <div>
+            <label class="label" for="finalmarksTerm">Abschnitt</label>
+            <input class="input" type="text" id="finalmarksTerm" name="term" value="<?=h($finalmarksFormTerm)?>" placeholder="optional">
+          </div>
+          <label class="pill-mini" style="margin-bottom:6px;">
+            <input type="checkbox" checked disabled style="margin-right:6px;"> Dry-Run (nur Vorschau)
+          </label>
+          <button class="btn" type="submit">PDF auslesen &amp; prüfen</button>
+        </div>
+      </form>
+
+      <?php if ($finalmarksPreview !== null && $finalmarksSummary): ?>
+        <div style="margin-top:16px;">
+          <h3 style="margin:0 0 8px;">PDF → DB Prüfung</h3>
+          <form method="post">
+            <input type="hidden" name="finalmarks_action" value="commit">
+            <input type="hidden" name="finalmarks_token" value="<?=h($finalmarksToken)?>">
+            <input type="hidden" name="finalmarks_import_ids_present" value="1">
+            <div style="overflow:auto; border:1px solid var(--border); border-radius:12px;">
+              <table class="table" style="margin:0;">
+                <thead>
+                  <tr>
+                    <th>PDF-Name</th>
+                    <th>Status</th>
+                    <th>DB-Schüler</th>
+                    <th>Noten</th>
+                    <th>Warnungen</th>
+                    <th>Importieren</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($finalmarksPreview as $row): ?>
+                    <?php
+                      $student = $row['student'];
+                      $status = (string)$row['status'];
+                      $canImport = ($status === 'FOUND_IN_CLASS' && $row['has_grades'] && $row['report_id']);
+                    ?>
+                    <tr>
+                      <td><?=h($row['name'] !== '' ? $row['name'] : '—')?></td>
+                      <td><span class="pill-mini"><?=h($status)?></span></td>
+                      <td>
+                        <?php if ($student): ?>
+                          <?=h(finalmarks_student_display($student))?> (ID <?=h((string)($student['id'] ?? ''))?>)
+                        <?php else: ?>
+                          —
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <?php if ($row['subjects']): ?>
+                          <?php foreach ($row['subjects'] as $key => $grade): ?>
+                            <span class="pill-mini" style="margin-right:4px;"><?=h($key)?>:<?=h($grade)?></span>
+                          <?php endforeach; ?>
+                        <?php else: ?>
+                          —
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <?php if ($row['warnings']): ?>
+                          <ul style="margin:0 0 0 16px;">
+                            <?php foreach ($row['warnings'] as $warning): ?>
+                              <li><?=h($warning)?></li>
+                            <?php endforeach; ?>
+                          </ul>
+                        <?php else: ?>
+                          —
+                        <?php endif; ?>
+                      </td>
+                      <td>
+                        <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="row" style="gap:12px; align-items:center; flex-wrap:wrap; margin-top:12px;">
+              <div class="muted">
+                Seiten: <?=h((string)($finalmarksSummary['pages'] ?? 0))?> ·
+                FOUND_IN_CLASS: <?=h((string)($finalmarksSummary['status_counts']['FOUND_IN_CLASS'] ?? 0))?> ·
+                FOUND_NOT_IN_CLASS: <?=h((string)($finalmarksSummary['status_counts']['FOUND_NOT_IN_CLASS'] ?? 0))?> ·
+                NOT_FOUND: <?=h((string)($finalmarksSummary['status_counts']['NOT_FOUND'] ?? 0))?> ·
+                AMBIGUOUS: <?=h((string)($finalmarksSummary['status_counts']['AMBIGUOUS'] ?? 0))?> ·
+                Importierbare Noten: <?=h((string)($finalmarksSummary['importable_notes'] ?? 0))?> ·
+                Ignorierte Noten: <?=h((string)($finalmarksSummary['ignored_notes'] ?? 0))?>
+              </div>
+            </div>
+
+            <button class="btn primary" type="submit" style="margin-top:12px;" <?= $finalmarksHasImportable ? '' : 'disabled' ?>>Endnoten endgültig importieren</button>
+          </form>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 
 <div class="card" id="snippetBar" style="display:none;">
   <div class="row" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
