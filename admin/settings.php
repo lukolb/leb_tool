@@ -175,6 +175,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
     }
 
+    if (!isset($cfg['pdf']) || !is_array($cfg['pdf'])) $cfg['pdf'] = [];
+    if (!isset($cfg['pdf']['fonts']) || !is_array($cfg['pdf']['fonts'])) $cfg['pdf']['fonts'] = [];
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -202,6 +205,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!move_uploaded_file($tmp, $destAbs)) throw new RuntimeException('Konnte Logo nicht speichern.');
 
       $brand['logo_path'] = $uploadsDirRel . '/branding/logo.' . $ext;
+    }
+
+    if ($action === 'upload_pdf_font') {
+      if (!isset($_FILES['pdf_font_file']) || ($_FILES['pdf_font_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('Keine PDF-Schriftart hochgeladen.');
+      }
+      $fontName = trim((string)($_POST['pdf_font_name'] ?? ''));
+      if ($fontName === '') throw new RuntimeException('Bitte einen Namen für die Schriftart angeben.');
+
+      $uploadsDirRel = $cfg['app']['uploads_dir'] ?? 'uploads';
+      $rootAbs = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+      $fontsAbs = $rootAbs . '/' . $uploadsDirRel . '/pdf_fonts';
+      if (!is_dir($fontsAbs)) {
+        @mkdir($fontsAbs, 0755, true);
+      }
+
+      $tmp = $_FILES['pdf_font_file']['tmp_name'];
+      $mime = mime_content_type($tmp) ?: '';
+      $allowed = [
+        'font/ttf' => 'ttf',
+        'font/otf' => 'otf',
+        'application/x-font-ttf' => 'ttf',
+        'application/x-font-otf' => 'otf',
+        'application/font-sfnt' => 'ttf',
+      ];
+      $ext = $allowed[$mime] ?? '';
+      if ($ext === '') {
+        $original = (string)($_FILES['pdf_font_file']['name'] ?? '');
+        $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+      }
+      if (!in_array($ext, ['ttf', 'otf'], true)) {
+        throw new RuntimeException('Schriftart muss TTF oder OTF sein.');
+      }
+
+      $original = (string)($_FILES['pdf_font_file']['name'] ?? 'font.' . $ext);
+      $base = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original, PATHINFO_FILENAME)) ?: 'font';
+      $dest = $base . '.' . $ext;
+      $i = 1;
+      while (is_file($fontsAbs . '/' . $dest)) {
+        $dest = $base . '-' . $i . '.' . $ext;
+        $i++;
+      }
+
+      $destAbs = $fontsAbs . '/' . $dest;
+      if (!move_uploaded_file($tmp, $destAbs)) {
+        throw new RuntimeException('Konnte Schriftart nicht speichern.');
+      }
+
+      $cfg['pdf']['fonts'][] = [
+        'name' => $fontName,
+        'file' => $uploadsDirRel . '/pdf_fonts/' . $dest,
+      ];
+    }
+
+    if ($action === 'remove_pdf_font') {
+      $fontFile = basename((string)($_POST['pdf_font_file'] ?? ''));
+      if ($fontFile === '') throw new RuntimeException('Dateiname fehlt.');
+      $uploadsDirRel = $cfg['app']['uploads_dir'] ?? 'uploads';
+      $rootAbs = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+      $fontsAbs = $rootAbs . '/' . $uploadsDirRel . '/pdf_fonts';
+
+      $next = [];
+      foreach ($cfg['pdf']['fonts'] as $font) {
+        $path = (string)($font['file'] ?? '');
+        if (basename($path) === $fontFile) {
+          $abs = realpath($rootAbs . '/' . ltrim($path, '/'));
+          if ($abs && is_file($abs) && str_starts_with($abs, $fontsAbs)) {
+            @unlink($abs);
+          }
+          continue;
+        }
+        $next[] = $font;
+      }
+      $cfg['pdf']['fonts'] = $next;
     }
 
     // ---- Student intro (WYSIWYG) ----
@@ -290,6 +367,9 @@ $introHtml = '';
 if (is_file($introAbs)) {
   $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
 }
+
+$pdfFonts = $cfg['pdf']['fonts'] ?? [];
+if (!is_array($pdfFonts)) $pdfFonts = [];
 
 render_admin_header('Admin – Settings');
 ?>
@@ -679,6 +759,64 @@ render_admin_header('Admin – Settings');
     });
   })();
   </script>
+</div>
+
+<div class="card">
+  <h2>PDF-Schriftarten</h2>
+  <p class="muted">Hochgeladene Schriftarten können bei PDF-Feld-Appearances verwendet werden, wenn die Vorlage diese Schrift im Feld vorgibt.</p>
+
+  <?php if (!$pdfFonts): ?>
+    <p class="muted">Noch keine zusätzlichen PDF-Schriftarten hinterlegt.</p>
+  <?php else: ?>
+    <div class="table-wrap" style="margin-bottom:12px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Datei</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($pdfFonts as $font): ?>
+            <?php $file = basename((string)($font['file'] ?? '')); ?>
+            <tr>
+              <td><?=h((string)($font['name'] ?? ''))?></td>
+              <td class="muted"><?=h($file)?></td>
+              <td style="text-align:right;">
+                <form method="post" onsubmit="return confirm('Schriftart wirklich entfernen?');">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="remove_pdf_font">
+                  <input type="hidden" name="pdf_font_file" value="<?=h($file)?>">
+                  <button class="btn danger" type="submit">Entfernen</button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+
+  <form method="post" enctype="multipart/form-data" style="margin-top:14px;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="upload_pdf_font">
+
+    <div class="grid" style="grid-template-columns: 1fr 2fr; align-items:end; gap:12px;">
+      <div>
+        <label>Name der Schriftart</label>
+        <input name="pdf_font_name" required placeholder="z.B. Source Sans Pro">
+      </div>
+      <div>
+        <label>Datei (TTF/OTF)</label>
+        <input type="file" name="pdf_font_file" accept=".ttf,.otf,font/ttf,font/otf,application/x-font-ttf,application/x-font-otf" required>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">Schriftart hochladen</button>
+    </div>
+  </form>
 </div>
 
 <div class="card">
