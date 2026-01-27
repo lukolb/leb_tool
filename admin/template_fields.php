@@ -686,6 +686,12 @@ const IGN_SPLIT_LS_KEY = `template_fields_ignored_split_v1:${templateId}`;
 
 function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
 
+function updateDirtyUI(){
+  const warning = document.getElementById("dirtyWarning");
+  if (!warning) return;
+  warning.style.display = dirty.size ? "block" : "none";
+}
+
 function startDragAutoScroll(){
   if (dragScrollRaf) return;
 
@@ -744,6 +750,12 @@ window.addEventListener('dragend', ()=>{
   isRowDragging = false;
   if (dragScrollRaf) cancelAnimationFrame(dragScrollRaf);
   dragScrollRaf = 0;
+});
+
+window.addEventListener('beforeunload', (event)=>{
+  if (!dirty.size) return;
+  event.preventDefault();
+  event.returnValue = '';
 });
 
 function loadIgnoredSplit(){
@@ -1163,9 +1175,7 @@ function getSubgroupMatchKey(f){
 function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
-
-  if (dirty.size) document.getElementById("dirtyWarning").style.display = "block";
-  else document.getElementById("dirtyWarning").style.display = "none";
+  updateDirtyUI();
 }
 
 /* ---- Split hint ("DE | EN") ---- */
@@ -2309,9 +2319,7 @@ async function save(){
   dirty.clear();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
   updateMeta();
-
-  if (dirty.size) document.getElementById("dirtyWarning").style.display = "block";
-  else document.getElementById("dirtyWarning").style.display = "none";
+  updateDirtyUI();
 }
 
 /* ---------- Options dialog ---------- */
@@ -2597,6 +2605,7 @@ async function load(){
   selected = new Set();
   dirty = new Set();
   rebuildGroupDatalist();
+  updateDirtyUI();
 
   await loadOptionTemplates();
 

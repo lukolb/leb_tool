@@ -52,13 +52,8 @@ function read_signature_payload_from_post(): ?array {
 }
 
 function format_parent_link_expiry(?string $expiresAt, string $format): string {
-  if (!$expiresAt) return '';
-  try {
-    $dt = new DateTimeImmutable((string)$expiresAt);
-  } catch (Throwable $e) {
-    return '';
-  }
-  return $dt->format($format);
+  $formatted = db_datetime_to_user_date($expiresAt, null, $format);
+  return $formatted ?? '';
 }
 
 function build_parent_mail_html(string $template, array $student, string $link, ?string $expiresAt): string {
@@ -476,7 +471,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($existing) {
           $exStatus = (string)($existing['status'] ?? '');
           $exExpires = $existing['expires_at'] ?? null;
-          $stillActive = ($exStatus === 'approved' && $exExpires && strtotime((string)$exExpires) > time());
+          $stillActive = false;
+          if ($exStatus === 'approved' && $exExpires) {
+            $exLocal = db_datetime_to_user_datetime((string)$exExpires);
+            if ($exLocal) {
+              $stillActive = $exLocal > new DateTimeImmutable('now', user_timezone());
+            } else {
+              $stillActive = strtotime((string)$exExpires) > time();
+            }
+          }
           if ($stillActive) { $skippedActive++; continue; }
         }
 
@@ -574,7 +577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $base = $linkRow['expires_at'] ?? null;
-        $start = $base ? new DateTimeImmutable((string)$base) : new DateTimeImmutable('today');
+        $start = $base ? db_datetime_to_user_datetime((string)$base) : null;
         $newExpiry = end_of_day_after_days($days, $start);
         $nextStatus = $linkStatus === 'expired' ? 'approved' : $linkStatus;
         $upd = $pdo->prepare("UPDATE parent_portal_links SET status=?, expires_at=?, updated_at=NOW() WHERE id=?");
@@ -1011,14 +1014,7 @@ $introText = $parentAutoApprove
             <?php foreach ($feedbackList as $fb): ?>
               <?php
                 $feedbackStudent = trim((string)($fb['first_name'] ?? '') . ' ' . (string)($fb['last_name'] ?? ''));
-                $feedbackDate = '';
-                if (!empty($fb['created_at'])) {
-                  try {
-                    $feedbackDate = (new DateTimeImmutable((string)$fb['created_at'], new DateTimeZone('UTC')))->format('d.m.Y H:i');
-                  } catch (Throwable $e) {
-                    $feedbackDate = '';
-                  }
-                }
+                $feedbackDate = db_datetime_to_user_local((string)($fb['created_at'] ?? ''), null, 'd.m.Y H:i') ?? '';
                 $feedbackEmails = array_values(array_unique(array_filter([
                   sanitize_email($fb['email_parent1'] ?? null),
                   sanitize_email($fb['email_parent2'] ?? null),

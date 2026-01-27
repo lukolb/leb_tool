@@ -94,10 +94,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $brand['secondary'] = $secondary;
 
     $defaultSY = trim((string)($_POST['default_school_year'] ?? ($cfg['app']['default_school_year'] ?? '')));
+    $schoolTimezone = trim((string)($_POST['school_timezone'] ?? ($cfg['app']['timezone'] ?? 'America/New_York')));
 
     if ($brand['org_name'] === '') throw new RuntimeException('Organisation/Schule darf nicht leer sein.');
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $brand['primary'])) throw new RuntimeException('Primary Color ungültig (z.B. #0b57d0).');
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $brand['secondary'])) throw new RuntimeException('Secondary Color ungültig (z.B. #111111).');
+    if (!in_array($schoolTimezone, timezone_identifiers_list(), true)) {
+      throw new RuntimeException('Schul-Zeitzone muss eine gültige IANA-Zeitzone sein (z.B. Europe/Berlin).');
+    }
 
     // ---- Mail settings (From) ----
     $fromEmail = trim((string)($_POST['from_email'] ?? ($cfg['mail']['from_email'] ?? '')));
@@ -217,6 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ---- Save cfg ----
     $cfg['app']['brand'] = $brand;
     $cfg['app']['default_school_year'] = $defaultSY;
+    $cfg['app']['timezone'] = $schoolTimezone;
 
     $export = "<?php\n// config.php (updated by admin/settings.php)\nreturn " . var_export($cfg, true) . ";\n";
     if (file_put_contents($cfgPath, $export, LOCK_EX) === false) {
@@ -242,6 +247,7 @@ $primary = $brand['primary'] ?? '#0b57d0';
 $secondary = $brand['secondary'] ?? '#111111';
 $logo = $brand['logo_path'] ?? '';
 $defaultSY = $cfg['app']['default_school_year'] ?? '';
+$schoolTimezone = $cfg['app']['timezone'] ?? 'America/New_York';
 
 $mail = $cfg['mail'] ?? [];
 $fromEmail = $mail['from_email'] ?? 'no-reply@example.org';
@@ -352,6 +358,16 @@ render_admin_header('Admin – Settings');
       <div>
         <label>Default Schuljahr (für Bulk-Import)</label>
         <input name="default_school_year" value="<?=h((string)$defaultSY)?>" placeholder="z.B. 2025/26">
+      </div>
+      <div>
+        <label>Schul-Zeitzone (IANA)</label>
+        <input name="school_timezone" list="timezoneOptions" value="<?=h((string)$schoolTimezone)?>" placeholder="z.B. Europe/Berlin" required>
+        <datalist id="timezoneOptions">
+          <?php foreach (timezone_identifiers_list() as $tz): ?>
+            <option value="<?=h($tz)?>"></option>
+          <?php endforeach; ?>
+        </datalist>
+        <div class="muted">Gilt für alle Zeitstempel im Tool (inkl. Sommer-/Winterzeit).</div>
       </div>
 
       <div>

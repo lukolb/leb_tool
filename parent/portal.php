@@ -305,7 +305,12 @@ $lang = ui_lang();
 $expiresAt = $link['expires_at'] ?? null;
 $isExpired = false;
 if ($expiresAt) {
-  $isExpired = (strtotime((string)$expiresAt) < time());
+  $expiresAtLocal = db_datetime_to_user_datetime((string)$expiresAt);
+  if ($expiresAtLocal) {
+    $isExpired = $expiresAtLocal < new DateTimeImmutable('now', user_timezone());
+  } else {
+    $isExpired = (strtotime((string)$expiresAt) < time());
+  }
   if ($isExpired && ($link['status'] ?? '') !== 'expired') {
     $pdo->prepare("UPDATE parent_portal_links SET status='expired', updated_at=NOW() WHERE id=? LIMIT 1")->execute([(int)$link['id']]);
     $link['status'] = 'expired';
@@ -1649,34 +1654,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     fillPdf().catch(e => showError(e?.message || String(e)));
   </script>
   <?php endif; ?>
-  <script>
-    (function(){
-      const formatLocal = (value) => {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return null;
-        try {
-          return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(date);
-        } catch (e) {
-          return date.toLocaleString();
-        }
-      };
-
-      const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tzName) {
-        document.cookie = `user_tz=${encodeURIComponent(tzName)}; path=/; max-age=31536000; samesite=lax`;
-      }
-
-      document.querySelectorAll('[data-dt]').forEach((el) => {
-        const formatted = formatLocal(el.dataset.dt || '');
-        if (formatted) el.textContent = formatted;
-      });
-
-      document.querySelectorAll('[data-dt-title]').forEach((el) => {
-        const formatted = formatLocal(el.dataset.dtTitle || '');
-        if (formatted) el.setAttribute('title', formatted);
-      });
-    })();
-  </script>
+  <?php // Client-side datetime formatting disabled; server renders school-local time. ?>
 <?php render_history_replace_state_script(); ?>
 </body>
 </html>
