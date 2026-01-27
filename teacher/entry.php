@@ -190,6 +190,30 @@ function finalmarks_name_keys(string $name): array {
   return array_values(array_unique($keys));
 }
 
+function finalmarks_name_tokens(string $name): array {
+  $name = finalmarks_collapse_spaced_letters($name);
+  $name = str_replace([',', ';'], ' ', $name);
+  $name = preg_replace('/([a-zäöüß])([A-ZÄÖÜ])/u', '$1 $2', $name);
+  $name = trim(preg_replace('/\s+/u', ' ', $name));
+  if ($name === '') return [];
+  $parts = preg_split('/\s+/u', $name) ?: [];
+  $tokens = [];
+  foreach ($parts as $part) {
+    $part = mb_strtolower(trim($part));
+    if ($part !== '') $tokens[] = $part;
+  }
+  return array_values(array_unique($tokens));
+}
+
+function finalmarks_tokens_match(array $pageTokens, array $studentTokens): bool {
+  if (!$pageTokens || !$studentTokens) return false;
+  $pageSet = array_fill_keys($pageTokens, true);
+  foreach ($studentTokens as $token) {
+    if (!isset($pageSet[$token])) return false;
+  }
+  return true;
+}
+
 function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
     "SELECT id, field_name, label, field_type, meta_json
@@ -493,16 +517,13 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
             }
           } else {
             $partialMatches = [];
-            $pageKey = $nameKeys[0] ?? '';
-            if ($pageKey !== '') {
+            $pageTokens = finalmarks_name_tokens($name);
+            if ($pageTokens) {
               foreach ($classStudents as $student) {
                 $studentName = finalmarks_student_display($student);
-                $studentKeys = finalmarks_name_keys($studentName);
-                foreach ($studentKeys as $studentKey) {
-                  if ($studentKey !== '' && (strpos($studentKey, $pageKey) !== false || strpos($pageKey, $studentKey) !== false)) {
-                    $partialMatches[] = $student;
-                    break;
-                  }
+                $studentTokens = finalmarks_name_tokens($studentName);
+                if (finalmarks_tokens_match($pageTokens, $studentTokens)) {
+                  $partialMatches[] = $student;
                 }
               }
             }
@@ -701,6 +722,21 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         if ($matches && count($matches) === 1) {
           $student = $matches[0];
         } else {
+          $partialMatches = [];
+          $pageTokens = finalmarks_name_tokens((string)($page['name'] ?? ''));
+          if ($pageTokens) {
+            foreach ($classStudents as $cand) {
+              $studentTokens = finalmarks_name_tokens(finalmarks_student_display($cand));
+              if (finalmarks_tokens_match($pageTokens, $studentTokens)) {
+                $partialMatches[] = $cand;
+              }
+            }
+          }
+          if (count($partialMatches) === 1) {
+            $student = $partialMatches[0];
+          }
+        }
+        if (!$student) {
           $manualId = (int)($manualMap[(string)$idx] ?? 0);
           if ($manualId > 0 && isset($classMapById[$manualId]) && !in_array($manualId, $usedManualIds, true)) {
             $student = $classMapById[$manualId];
@@ -995,7 +1031,7 @@ render_teacher_header($pageTitle);
                         <?php endif; ?>
                       </td>
                       <td>
-                        <?php if ($status === 'NOT_FOUND'): ?>
+                        <?php if ($status !== 'FOUND_IN_CLASS'): ?>
                           <div style="display:flex; flex-direction:column; gap:6px;">
                             <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
                               <option value="">Schüler auswählen…</option>
