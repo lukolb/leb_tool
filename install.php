@@ -440,35 +440,6 @@ CREATE TABLE IF NOT EXISTS `field_value_history` (
   KEY `idx_fvh_field` (`template_field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `report_collaborators` (
-  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
-  `report_instance_id` bigint UNSIGNED NOT NULL,
-  `user_id` bigint UNSIGNED NOT NULL,
-  `role_label` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `can_edit` tinyint(1) NOT NULL DEFAULT '1',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_report_collab` (`report_instance_id`,`user_id`),
-  KEY `idx_collab_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `qr_tokens` (
-  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
-  `student_id` bigint UNSIGNED NOT NULL,
-  `report_instance_id` bigint UNSIGNED NOT NULL,
-  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `scope` enum('child_edit','child_view') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'child_edit',
-  `expires_at` datetime DEFAULT NULL,
-  `revoked_at` datetime DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `last_used_at` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_qr_token_hash` (`token_hash`),
-  KEY `idx_qr_student` (`student_id`),
-  KEY `idx_qr_report` (`report_instance_id`),
-  KEY `idx_qr_validity` (`expires_at`,`revoked_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE IF NOT EXISTS `parent_portal_links` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `student_id` bigint UNSIGNED NOT NULL,
@@ -584,18 +555,6 @@ CREATE TABLE IF NOT EXISTS `user_class_assignments` (
   UNIQUE KEY `uq_user_class` (`user_id`,`class_id`),
   KEY `idx_uca_user` (`user_id`),
   KEY `idx_uca_class` (`class_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `option_scales` (
-  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `applies_to` enum('radio','select','grade','any') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'any',
-  `options_json` $JSON COLLATE utf8mb4_unicode_ci NOT NULL,
-  `is_active` tinyint(1) NOT NULL DEFAULT '1',
-  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_option_scales_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `option_list_templates` (
@@ -746,14 +705,6 @@ ALTER TABLE `field_value_history`
   ADD CONSTRAINT `fk_fvh_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_fvh_updated_by_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_fvh_updated_by_student` FOREIGN KEY (`updated_by_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
-ALTER TABLE `report_collaborators`
-  ADD CONSTRAINT `fk_report_collab_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_report_collab_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
-ALTER TABLE `qr_tokens`
-  ADD CONSTRAINT `fk_qr_tokens_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_qr_tokens_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `parent_portal_links`
   ADD CONSTRAINT `fk_parent_portal_links_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
