@@ -470,41 +470,63 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           }
         }
         $finalmarksPreview = [];
+        $matchedStudentIds = [];
 
-        foreach ($parsed as $page) {
+        foreach ($parsed as $idx => $page) {
           $name = (string)($page['name'] ?? '');
-              $nameKeys = finalmarks_name_keys($name);
-              $status = 'NOT_FOUND';
-              $matchedStudent = null;
-              $matches = [];
-              foreach ($nameKeys as $nameKey) {
-                if (isset($classMap[$nameKey])) {
-                  $matches = $classMap[$nameKey];
-                  break;
-                }
-              }
-              if ($matches) {
-                if (count($matches) === 1) {
-                  $status = 'FOUND_IN_CLASS';
-                  $matchedStudent = $matches[0];
-                } else {
-                  $status = 'AMBIGUOUS';
-                }
-              } elseif ($globalMap !== null) {
-                $matches = [];
-                foreach ($nameKeys as $nameKey) {
-                  if (isset($globalMap[$nameKey])) {
-                    $matches = $globalMap[$nameKey];
+          $nameKeys = finalmarks_name_keys($name);
+          $status = 'NOT_FOUND';
+          $matchedStudent = null;
+          $matches = [];
+          foreach ($nameKeys as $nameKey) {
+            if (isset($classMap[$nameKey])) {
+              $matches = $classMap[$nameKey];
+              break;
+            }
+          }
+          if ($matches) {
+            if (count($matches) === 1) {
+              $status = 'FOUND_IN_CLASS';
+              $matchedStudent = $matches[0];
+            } else {
+              $status = 'AMBIGUOUS';
+            }
+          } else {
+            $partialMatches = [];
+            $pageKey = $nameKeys[0] ?? '';
+            if ($pageKey !== '') {
+              foreach ($classStudents as $student) {
+                $studentName = finalmarks_student_display($student);
+                $studentKeys = finalmarks_name_keys($studentName);
+                foreach ($studentKeys as $studentKey) {
+                  if ($studentKey !== '' && (strpos($studentKey, $pageKey) !== false || strpos($pageKey, $studentKey) !== false)) {
+                    $partialMatches[] = $student;
                     break;
                   }
                 }
-                if (count($matches) === 1) {
-                  $status = 'FOUND_NOT_IN_CLASS';
-                  $matchedStudent = $matches[0];
-                } else {
-                  $status = 'AMBIGUOUS';
+              }
+            }
+            if (count($partialMatches) === 1) {
+              $status = 'FOUND_IN_CLASS';
+              $matchedStudent = $partialMatches[0];
+            } elseif ($globalMap !== null) {
+              $matches = [];
+              foreach ($nameKeys as $nameKey) {
+                if (isset($globalMap[$nameKey])) {
+                  $matches = $globalMap[$nameKey];
+                  break;
                 }
               }
+              if (count($matches) === 1) {
+                $status = 'FOUND_NOT_IN_CLASS';
+                $matchedStudent = $matches[0];
+              } elseif (count($partialMatches) > 1) {
+                $status = 'AMBIGUOUS';
+              }
+            } elseif (count($partialMatches) > 1) {
+              $status = 'AMBIGUOUS';
+            }
+          }
 
           $statusCounts[$status]++;
           $subjects = (array)($page['subjects'] ?? []);
@@ -516,6 +538,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
             if (!$reportId) {
               $warnings[] = 'Kein Bericht für Schuljahr/Abschnitt gefunden.';
             }
+            $matchedStudentIds[] = (int)($matchedStudent['id'] ?? 0);
           }
           foreach ($subjects as $key => $entry) {
             $grade = (string)($entry['grade'] ?? '');
@@ -563,15 +586,27 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           }
           $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
           $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
-              $finalmarksPreview[] = [
-                'name' => $name,
-                'status' => $status,
+          $finalmarksPreview[] = [
+            'page_index' => $idx,
+            'name' => $name,
+            'status' => $status,
             'student' => $matchedStudent,
             'subjects' => $knownSubjects,
             'warnings' => $warnings,
             'has_grades' => count($subjects) > 0,
             'report_id' => $reportId,
           ];
+        }
+
+        $remainingStudents = [];
+        if ($classStudents) {
+          $matchedStudentIds = array_values(array_unique($matchedStudentIds));
+          foreach ($classStudents as $student) {
+            $sid = (int)($student['id'] ?? 0);
+            if ($sid > 0 && !in_array($sid, $matchedStudentIds, true)) {
+              $remainingStudents[] = $student;
+            }
+          }
         }
 
         $finalmarksSummary = [
@@ -619,14 +654,19 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       $st->execute([$classId]);
       $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
       $classMap = [];
+      $classMapById = [];
       foreach ($classStudents as $student) {
         $studentName = finalmarks_student_display($student);
+        $sid = (int)($student['id'] ?? 0);
+        if ($sid > 0) $classMapById[$sid] = $student;
         foreach (finalmarks_name_keys($studentName) as $nameKey) {
           $classMap[$nameKey][] = $student;
         }
       }
       $selectedIds = array_map('intval', (array)($_POST['finalmarks_import_ids'] ?? []));
       $hasSelection = array_key_exists('finalmarks_import_ids_present', $_POST);
+      $manualMap = $_POST['finalmarks_manual_map'] ?? [];
+      if (!is_array($manualMap)) $manualMap = [];
 
       $rowsToInsert = [];
       $skippedStudents = 0;
@@ -647,7 +687,8 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
         }
       }
-      foreach ($parsed as $page) {
+      $usedManualIds = [];
+      foreach ($parsed as $idx => $page) {
         $pageKeys = finalmarks_name_keys((string)($page['name'] ?? ''));
         $matches = [];
         foreach ($pageKeys as $nameKey) {
@@ -656,11 +697,20 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
             break;
           }
         }
-        if (!$matches || count($matches) !== 1) {
+        $student = null;
+        if ($matches && count($matches) === 1) {
+          $student = $matches[0];
+        } else {
+          $manualId = (int)($manualMap[(string)$idx] ?? 0);
+          if ($manualId > 0 && isset($classMapById[$manualId]) && !in_array($manualId, $usedManualIds, true)) {
+            $student = $classMapById[$manualId];
+            $usedManualIds[] = $manualId;
+          }
+        }
+        if (!$student) {
           $skippedStudents++;
           continue;
         }
-        $student = $matches[0];
         $studentId = (int)($student['id'] ?? 0);
         if ($hasSelection && !in_array($studentId, $selectedIds, true)) {
           $skippedStudents++;
@@ -945,7 +995,19 @@ render_teacher_header($pageTitle);
                         <?php endif; ?>
                       </td>
                       <td>
-                        <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
+                        <?php if ($status === 'NOT_FOUND'): ?>
+                          <div style="display:flex; flex-direction:column; gap:6px;">
+                            <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
+                              <option value="">Schüler auswählen…</option>
+                              <?php foreach ($remainingStudents ?? [] as $cand): ?>
+                                <option value="<?=h((string)($cand['id'] ?? ''))?>"><?=h(finalmarks_student_display($cand))?></option>
+                              <?php endforeach; ?>
+                            </select>
+                            <input type="checkbox" class="finalmarks-import-toggle" name="finalmarks_import_ids[]" value="" disabled>
+                          </div>
+                        <?php else: ?>
+                          <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
+                        <?php endif; ?>
                       </td>
                     </tr>
                   <?php endforeach; ?>
@@ -968,6 +1030,36 @@ render_teacher_header($pageTitle);
             <button class="btn primary" type="submit" style="margin-top:12px;" <?= $finalmarksHasImportable ? '' : 'disabled' ?>>Endnoten endgültig importieren</button>
           </form>
         </div>
+        <script>
+          (() => {
+            const selects = Array.from(document.querySelectorAll('.finalmarks-manual-select'));
+            if (!selects.length) return;
+            const refreshOptions = () => {
+              const chosen = new Set(selects.map(sel => sel.value).filter(Boolean));
+              selects.forEach(sel => {
+                const current = sel.value;
+                Array.from(sel.options).forEach(opt => {
+                  if (!opt.value) return;
+                  opt.disabled = opt.value !== current && chosen.has(opt.value);
+                });
+                const toggle = sel.closest('td')?.querySelector('.finalmarks-import-toggle');
+                if (toggle) {
+                  if (current) {
+                    toggle.disabled = false;
+                    toggle.value = current;
+                    toggle.checked = true;
+                  } else {
+                    toggle.disabled = true;
+                    toggle.value = '';
+                    toggle.checked = false;
+                  }
+                }
+              });
+            };
+            selects.forEach(sel => sel.addEventListener('change', refreshOptions));
+            refreshOptions();
+          })();
+        </script>
       <?php endif; ?>
     <?php endif; ?>
   </div>
