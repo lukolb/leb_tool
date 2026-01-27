@@ -118,6 +118,7 @@ function user_is_class_teacher_entry(PDO $pdo, int $userId, int $classId): bool 
 }
 
 function finalmarks_normalize_name(string $name): string {
+  $name = finalmarks_collapse_spaced_letters($name);
   $name = trim(preg_replace('/\s+/u', ' ', $name));
   return mb_strtolower($name);
 }
@@ -170,6 +171,23 @@ function finalmarks_subject_key_from_candidates(array $candidates): ?string {
     if ($key !== null) return $key;
   }
   return null;
+}
+
+function finalmarks_collapse_spaced_letters(string $value): string {
+  $value = preg_replace_callback('/(?:\p{L}\s+){2,}\p{L}/u', function ($m) {
+    $chunk = preg_replace('/\s+/u', ' ', $m[0]);
+    return str_replace(' ', '', $chunk);
+  }, $value);
+  return $value ?? '';
+}
+
+function finalmarks_name_keys(string $name): array {
+  $normalized = finalmarks_normalize_name($name);
+  if ($normalized === '') return [];
+  $keys = [$normalized];
+  $noSpace = str_replace(' ', '', $normalized);
+  if ($noSpace !== $normalized) $keys[] = $noSpace;
+  return array_values(array_unique($keys));
 }
 
 function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
@@ -230,6 +248,7 @@ function finalmarks_parse_blocks(array $blocks): array {
     $validGrades = ['1+','1-','1','2+','2-','2','3+','3-','3','4+','4-','4','5+','5-','5','6'];
 
     $normalizeHeader = function (string $line): string {
+      $line = finalmarks_collapse_spaced_letters($line);
       $line = preg_replace('/E\s*n\s*d\s*n\s*o\s*t\s*e\s*n\s*v\s*o\s*n/iu', 'Endnoten von', $line);
       return trim(preg_replace('/\s+/u', ' ', $line));
     };
@@ -240,10 +259,11 @@ function finalmarks_parse_blocks(array $blocks): array {
       $headerLine = $normalizeHeader($line);
       if (preg_match('/^Endnoten von\s+(.+?)\s*$/iu', $headerLine, $m)) {
         if ($name === '') {
-          $name = trim(preg_replace('/\s+/u', ' ', $m[1]));
+          $name = trim(preg_replace('/\s+/u', ' ', finalmarks_collapse_spaced_letters($m[1])));
         }
         continue;
       }
+      if (preg_match('/^Stand\b/i', $headerLine)) continue;
       if (preg_match('/^Fach\s+Note/i', $line)) continue;
 
       if (preg_match('/^(.*?)\s+(1\+|1\-|1|2\+|2\-|2|3\+|3\-|3|4\+|4\-|4|5\+|5\-|5|6)\s*$/u', $line, $m)) {
@@ -264,7 +284,7 @@ function finalmarks_parse_blocks(array $blocks): array {
       }
 
       if (preg_match('/^(.*?)\s+(\S+)\s*$/u', $line, $m)) {
-        $label = trim(preg_replace('/\s+/u', ' ', $m[1]));
+        $label = trim(preg_replace('/\s+/u', ' ', finalmarks_collapse_spaced_letters($m[1])));
         $grade = trim($m[2]);
         if (!in_array($grade, $validGrades, true)) {
           $invalidGrades[] = $label . ' ' . $grade;
@@ -360,38 +380,45 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           'created_at' => time(),
         ];
 
-        [$subjectFields, $fieldDuplicates] = finalmarks_subject_fields($pdo, $templateId);
-        $fieldWarnings = [];
-        foreach ($fieldDuplicates as $subjectKey => $ids) {
-          $fieldWarnings[] = 'Mehrere Notenfelder für Fach ' . $subjectKey . ' gefunden; erstes Feld wird verwendet.';
-        }
+            [$subjectFields] = finalmarks_subject_fields($pdo, $templateId);
 
-        $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
-        $st->execute([$classId]);
-        $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
-        $classMap = [];
-        foreach ($classStudents as $student) {
-          $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
-          $classMap[$nameKey][] = $student;
-        }
-        $globalMap = null;
-        $needsGlobal = false;
-        foreach ($parsed as $page) {
-          $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
-          if ($nameKey === '' || !isset($classMap[$nameKey])) {
-            $needsGlobal = true;
-            break;
-          }
-        }
-        if ($needsGlobal) {
-          $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
-          $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
-          $globalMap = [];
-          foreach ($allStudents as $student) {
-            $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
-            $globalMap[$nameKey][] = $student;
-          }
-        }
+            $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+            $st->execute([$classId]);
+            $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
+            $classMap = [];
+            foreach ($classStudents as $student) {
+              $studentName = finalmarks_student_display($student);
+              foreach (finalmarks_name_keys($studentName) as $nameKey) {
+                $classMap[$nameKey][] = $student;
+              }
+            }
+            $globalMap = null;
+            $needsGlobal = false;
+            foreach ($parsed as $page) {
+              $pageKeys = finalmarks_name_keys((string)($page['name'] ?? ''));
+              $found = false;
+              foreach ($pageKeys as $nameKey) {
+                if (isset($classMap[$nameKey])) {
+                  $found = true;
+                  break;
+                }
+              }
+              if (!$found) {
+                $needsGlobal = true;
+                break;
+              }
+            }
+            if ($needsGlobal) {
+              $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
+              $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
+              $globalMap = [];
+              foreach ($allStudents as $student) {
+                $studentName = finalmarks_student_display($student);
+                foreach (finalmarks_name_keys($studentName) as $nameKey) {
+                  $globalMap[$nameKey][] = $student;
+                }
+              }
+            }
 
         $statusCounts = [
           'FOUND_IN_CLASS' => 0,
@@ -421,27 +448,38 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 
         foreach ($parsed as $page) {
           $name = (string)($page['name'] ?? '');
-          $nameKey = finalmarks_normalize_name($name);
-          $status = 'NOT_FOUND';
-          $matchedStudent = null;
-
-          if ($nameKey !== '' && isset($classMap[$nameKey])) {
-            $matches = $classMap[$nameKey];
-            if (count($matches) === 1) {
-              $status = 'FOUND_IN_CLASS';
-              $matchedStudent = $matches[0];
-            } else {
-              $status = 'AMBIGUOUS';
-            }
-          } elseif ($globalMap !== null && $nameKey !== '' && isset($globalMap[$nameKey])) {
-            $matches = $globalMap[$nameKey];
-            if (count($matches) === 1) {
-              $status = 'FOUND_NOT_IN_CLASS';
-              $matchedStudent = $matches[0];
-            } else {
-              $status = 'AMBIGUOUS';
-            }
-          }
+              $nameKeys = finalmarks_name_keys($name);
+              $status = 'NOT_FOUND';
+              $matchedStudent = null;
+              $matches = [];
+              foreach ($nameKeys as $nameKey) {
+                if (isset($classMap[$nameKey])) {
+                  $matches = $classMap[$nameKey];
+                  break;
+                }
+              }
+              if ($matches) {
+                if (count($matches) === 1) {
+                  $status = 'FOUND_IN_CLASS';
+                  $matchedStudent = $matches[0];
+                } else {
+                  $status = 'AMBIGUOUS';
+                }
+              } elseif ($globalMap !== null) {
+                $matches = [];
+                foreach ($nameKeys as $nameKey) {
+                  if (isset($globalMap[$nameKey])) {
+                    $matches = $globalMap[$nameKey];
+                    break;
+                  }
+                }
+                if (count($matches) === 1) {
+                  $status = 'FOUND_NOT_IN_CLASS';
+                  $matchedStudent = $matches[0];
+                } else {
+                  $status = 'AMBIGUOUS';
+                }
+              }
 
           $statusCounts[$status]++;
           $subjects = (array)($page['subjects'] ?? []);
@@ -484,13 +522,9 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           }
           $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
           $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
-          if ($fieldWarnings) {
-            $warnings = array_merge($warnings, $fieldWarnings);
-          }
-
-          $finalmarksPreview[] = [
-            'name' => $name,
-            'status' => $status,
+              $finalmarksPreview[] = [
+                'name' => $name,
+                'status' => $status,
             'student' => $matchedStudent,
             'subjects' => $knownSubjects,
             'warnings' => $warnings,
@@ -545,8 +579,10 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
       $classMap = [];
       foreach ($classStudents as $student) {
-        $nameKey = finalmarks_normalize_name(finalmarks_student_display($student));
-        $classMap[$nameKey][] = $student;
+        $studentName = finalmarks_student_display($student);
+        foreach (finalmarks_name_keys($studentName) as $nameKey) {
+          $classMap[$nameKey][] = $student;
+        }
       }
       $selectedIds = array_map('intval', (array)($_POST['finalmarks_import_ids'] ?? []));
       $hasSelection = array_key_exists('finalmarks_import_ids_present', $_POST);
@@ -571,12 +607,19 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         }
       }
       foreach ($parsed as $page) {
-        $nameKey = finalmarks_normalize_name((string)($page['name'] ?? ''));
-        if ($nameKey === '' || !isset($classMap[$nameKey]) || count($classMap[$nameKey]) !== 1) {
+        $pageKeys = finalmarks_name_keys((string)($page['name'] ?? ''));
+        $matches = [];
+        foreach ($pageKeys as $nameKey) {
+          if (isset($classMap[$nameKey])) {
+            $matches = $classMap[$nameKey];
+            break;
+          }
+        }
+        if (!$matches || count($matches) !== 1) {
           $skippedStudents++;
           continue;
         }
-        $student = $classMap[$nameKey][0];
+        $student = $matches[0];
         $studentId = (int)($student['id'] ?? 0);
         if ($hasSelection && !in_array($studentId, $selectedIds, true)) {
           $skippedStudents++;
