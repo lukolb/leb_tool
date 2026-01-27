@@ -89,6 +89,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = "Template hochgeladen (#{$tplId}). Jetzt „Felder auslesen“ klicken.";
     }
 
+    if ($action === 'upload_pdf_font') {
+      if (!isset($_FILES['pdf_font_file']) || ($_FILES['pdf_font_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('Keine PDF-Schriftart hochgeladen.');
+      }
+      $fontName = trim((string)($_POST['pdf_font_name'] ?? ''));
+      if ($fontName === '') throw new RuntimeException('Bitte eine Schriftart aus der Liste wählen.');
+
+      $cfg = app_config();
+      if (!isset($cfg['pdf']) || !is_array($cfg['pdf'])) $cfg['pdf'] = [];
+      if (!isset($cfg['pdf']['fonts']) || !is_array($cfg['pdf']['fonts'])) $cfg['pdf']['fonts'] = [];
+
+      $uploadsRel = $cfg['app']['uploads_dir'] ?? 'uploads';
+      $rootAbs = realpath(__DIR__ . '/..');
+      if (!$rootAbs) throw new RuntimeException('Root-Pfad konnte nicht ermittelt werden.');
+      $fontsAbs = $rootAbs . '/' . $uploadsRel . '/pdf_fonts';
+      if (!is_dir($fontsAbs)) {
+        @mkdir($fontsAbs, 0755, true);
+      }
+
+      $tmp = $_FILES['pdf_font_file']['tmp_name'];
+      $mime = mime_content_type($tmp) ?: '';
+      $allowed = [
+        'font/ttf' => 'ttf',
+        'font/otf' => 'otf',
+        'application/x-font-ttf' => 'ttf',
+        'application/x-font-otf' => 'otf',
+        'application/font-sfnt' => 'ttf',
+      ];
+      $ext = $allowed[$mime] ?? '';
+      if ($ext === '') {
+        $original = (string)($_FILES['pdf_font_file']['name'] ?? '');
+        $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+      }
+      if (!in_array($ext, ['ttf', 'otf'], true)) {
+        throw new RuntimeException('Schriftart muss TTF oder OTF sein.');
+      }
+
+      $original = (string)($_FILES['pdf_font_file']['name'] ?? 'font.' . $ext);
+      $base = preg_replace('/[^A-Za-z0-9._-]+/', '_', pathinfo($original, PATHINFO_FILENAME)) ?: 'font';
+      $dest = $base . '.' . $ext;
+      $i = 1;
+      while (is_file($fontsAbs . '/' . $dest)) {
+        $dest = $base . '-' . $i . '.' . $ext;
+        $i++;
+      }
+
+      $destAbs = $fontsAbs . '/' . $dest;
+      if (!move_uploaded_file($tmp, $destAbs)) {
+        throw new RuntimeException('Konnte Schriftart nicht speichern.');
+      }
+
+      $cfg['pdf']['fonts'][] = [
+        'name' => $fontName,
+        'file' => $uploadsRel . '/pdf_fonts/' . $dest,
+      ];
+
+      $cfgPath = __DIR__ . '/../config.php';
+      $export = "<?php\n// config.php (updated by admin/templates.php)\nreturn " . var_export($cfg, true) . ";\n";
+      if (file_put_contents($cfgPath, $export, LOCK_EX) === false) {
+        throw new RuntimeException('Konnte config.php nicht schreiben (Rechte?).');
+      }
+
+      audit('pdf_font_upload', (int)current_user()['id'], ['file' => $dest, 'name' => $fontName]);
+      $ok = 'PDF-Schriftart hochgeladen.';
+    }
+
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
@@ -99,6 +165,10 @@ $templates = $pdo->query("
   FROM templates
   ORDER BY created_at DESC
 ")->fetchAll();
+
+$cfg = app_config();
+$pdfFontsCfg = $cfg['pdf']['fonts'] ?? [];
+if (!is_array($pdfFontsCfg)) $pdfFontsCfg = [];
 
 render_admin_header('Admin – Templates');
 ?>
@@ -248,6 +318,10 @@ tr.tpl-inactive { opacity: 0.65; }
               <a class="btn secondary js-extract" type="button"
                  data-template-id="<?=h((string)$t['id'])?>"
                  data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">Felder auslesen</a>
+              <a class="btn secondary js-font-scan" type="button"
+                 data-template-id="<?=h((string)$t['id'])?>"
+                 data-template-name="<?=h((string)($t['name'] ?? ''))?>"
+                 data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>">Schriftarten prüfen</a>
               <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>">Bearbeiten</a>
               <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>">Mapping</a>
             </td>
@@ -256,6 +330,47 @@ tr.tpl-inactive { opacity: 0.65; }
       </tbody>
     </table>
   <?php endif; ?>
+</div>
+
+<div class="card" id="fontAuditCard">
+  <h2>PDF-Schriftarten prüfen</h2>
+  <p class="muted">Liest aus der PDF-Vorlage die in Formularfeldern verwendeten Schriftarten aus und zeigt fehlende Fonts an.</p>
+
+  <div class="row" style="gap:12px; flex-wrap:wrap; align-items:flex-start;">
+    <div style="min-width:240px;">
+      <label>Ausgewähltes Template</label>
+      <div id="fontAuditTemplate" class="muted">—</div>
+    </div>
+    <div style="flex:1;">
+      <label>Fehlende Schriftarten</label>
+      <ul id="missingFontsList" class="muted" style="margin:6px 0 0 18px;"></ul>
+      <div id="missingFontsEmpty" class="muted" style="margin-top:6px;">Noch keine Prüfung durchgeführt.</div>
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" style="margin-top:14px;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="upload_pdf_font">
+    <input type="hidden" name="pdf_font_name" id="pdfFontNameInput">
+
+    <div class="grid" style="grid-template-columns: 1fr 2fr; align-items:end; gap:12px;">
+      <div>
+        <label>Fehlende Schriftart auswählen</label>
+        <select id="missingFontSelect" required>
+          <option value="">Bitte zuerst prüfen…</option>
+        </select>
+        <div class="muted" style="margin-top:6px;">Die Schriftart wird automatisch mit dem Font-Namen aus der PDF benannt.</div>
+      </div>
+      <div>
+        <label>Datei (TTF/OTF)</label>
+        <input type="file" name="pdf_font_file" accept=".ttf,.otf,font/ttf,font/otf,application/x-font-ttf,application/x-font-otf" required>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit" id="btnUploadMissingFont" disabled>Schriftart hochladen</button>
+    </div>
+  </form>
 </div>
 
 <div class="card" id="wizard" style="display:none;">
@@ -441,6 +556,51 @@ const btnToggleHighlights = document.getElementById('btnToggleHighlights');
 
 const fieldFilter = document.getElementById('fieldFilter');
 const btnClearFilter = document.getElementById('btnClearFilter');
+const fontAuditTemplate = document.getElementById('fontAuditTemplate');
+const missingFontsList = document.getElementById('missingFontsList');
+const missingFontsEmpty = document.getElementById('missingFontsEmpty');
+const missingFontSelect = document.getElementById('missingFontSelect');
+const pdfFontNameInput = document.getElementById('pdfFontNameInput');
+const btnUploadMissingFont = document.getElementById('btnUploadMissingFont');
+
+const uploadedPdfFonts = <?= json_encode(array_values($pdfFontsCfg)) ?>;
+const uploadedFontKeys = new Set(
+  uploadedPdfFonts
+    .map(f => (f && f.name ? normalizeFontKey(f.name) : ''))
+    .filter(Boolean)
+);
+
+const STANDARD_FONT_KEYS = new Set([
+  'helvetica',
+  'helvetica-bold',
+  'helvetica-oblique',
+  'helvetica-boldoblique',
+  'times-roman',
+  'times-bold',
+  'times-italic',
+  'times-bolditalic',
+  'courier',
+  'courier-bold',
+  'courier-oblique',
+  'courier-boldoblique',
+  'symbol',
+  'zapfdingbats',
+]);
+
+const FONT_KEY_ALIASES = new Map([
+  ['helv', 'helvetica'],
+  ['helv-bold', 'helvetica-bold'],
+  ['helv-oblique', 'helvetica-oblique'],
+  ['helv-boldoblique', 'helvetica-boldoblique'],
+  ['tiro', 'times-roman'],
+  ['tiro-bold', 'times-bold'],
+  ['tiro-italic', 'times-italic'],
+  ['tiro-bolditalic', 'times-bolditalic'],
+  ['cour', 'courier'],
+  ['cour-bold', 'courier-bold'],
+  ['cour-oblique', 'courier-oblique'],
+  ['cour-boldoblique', 'courier-boldoblique'],
+]);
 
 // Copy UI
 const copyFromTemplate = document.getElementById('copyFromTemplate');
@@ -492,6 +652,103 @@ function normalizeType(rawType, multilineFlag) {
   if (u === 'CHECKBOX') return 'checkbox';
   if (u === 'RADIO') return 'radio';
   return 'radio';
+}
+
+function normalizeFontKey(name){
+  let key = (name ?? '').toString().trim().replace(/^\//, '').toLowerCase();
+  key = key.replace(/^[a-z]{6}\+/, '');
+  key = key.replace(/[\s_]+/g, '-');
+  return FONT_KEY_ALIASES.get(key) || key;
+}
+
+function extractFontNamesFromDa(da){
+  const s = (da ?? '').toString();
+  if (!s) return [];
+  const out = [];
+  const re = /\/([^\s]+)\s+[\d.]+\s+Tf/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    if (m[1]) out.push(m[1]);
+  }
+  return out;
+}
+
+function collectFontName(out, raw){
+  const name = (raw ?? '').toString().trim();
+  if (!name) return;
+  out.add(name.replace(/^\//, ''));
+}
+
+function renderMissingFonts(missing){
+  missingFontsList.innerHTML = '';
+  missingFontSelect.innerHTML = '';
+
+  if (!missing.length) {
+    missingFontsEmpty.textContent = 'Keine fehlenden Schriftarten gefunden.';
+    missingFontsEmpty.style.display = '';
+    missingFontSelect.innerHTML = '<option value="">Keine fehlenden Schriftarten</option>';
+    pdfFontNameInput.value = '';
+    btnUploadMissingFont.disabled = true;
+    return;
+  }
+
+  missingFontsEmpty.style.display = 'none';
+  for (const font of missing) {
+    const li = document.createElement('li');
+    li.textContent = font;
+    missingFontsList.appendChild(li);
+
+    const opt = document.createElement('option');
+    opt.value = font;
+    opt.textContent = font;
+    missingFontSelect.appendChild(opt);
+  }
+
+  missingFontSelect.selectedIndex = 0;
+  pdfFontNameInput.value = missingFontSelect.value;
+  btnUploadMissingFont.disabled = !missingFontSelect.value;
+}
+
+async function scanPdfFonts(pdfUrl){
+  const pdf = await pdfjsLib.getDocument({ url: pdfUrl, withCredentials:true }).promise;
+  const found = new Set();
+
+  if (pdf.getFieldObjects) {
+    const fo = await pdf.getFieldObjects();
+    if (fo && typeof fo === 'object') {
+      for (const arr of Object.values(fo)) {
+        if (!Array.isArray(arr)) continue;
+        for (const field of arr) {
+          const da = field?.defaultAppearance || field?.defaultStyle || '';
+          for (const name of extractFontNamesFromDa(da)) {
+            collectFontName(found, name);
+          }
+        }
+      }
+    }
+  }
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const annots = await page.getAnnotations({ intent:"display" });
+    for (const a of annots) {
+      const da = a?.defaultAppearance || a?.defaultStyle || '';
+      for (const name of extractFontNamesFromDa(da)) {
+        collectFontName(found, name);
+      }
+    }
+  }
+
+  const missing = [];
+  for (const name of found) {
+    const key = normalizeFontKey(name);
+    if (!key) continue;
+    if (STANDARD_FONT_KEYS.has(key)) continue;
+    if (uploadedFontKeys.has(key)) continue;
+    missing.push(name);
+  }
+  missing.sort((a, b) => a.localeCompare(b));
+  return missing;
 }
 
 function clampNumber(value, fallback, min = null, max = null) {
@@ -1048,6 +1305,41 @@ document.querySelectorAll('.js-extract').forEach(btn=>{
     }
   });
 });
+
+document.querySelectorAll('.js-font-scan').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const pdfUrl = btn.getAttribute('data-pdf-url') || '';
+    const tplName = btn.getAttribute('data-template-name') || '';
+    if (!pdfUrl) return;
+
+    fontAuditTemplate.textContent = tplName || '—';
+    missingFontsEmpty.textContent = 'Suche fehlende Schriftarten …';
+    missingFontsEmpty.style.display = '';
+    missingFontsList.innerHTML = '';
+    missingFontSelect.innerHTML = '<option value="">Lade …</option>';
+    pdfFontNameInput.value = '';
+    btnUploadMissingFont.disabled = true;
+
+    try {
+      const missing = await scanPdfFonts(pdfUrl);
+      renderMissingFonts(missing);
+    } catch (e) {
+      missingFontsEmpty.textContent = 'Fehler beim Lesen der Schriftarten: ' + (e?.message || e);
+      missingFontsEmpty.style.display = '';
+      missingFontsList.innerHTML = '';
+      missingFontSelect.innerHTML = '<option value="">Fehler</option>';
+      pdfFontNameInput.value = '';
+      btnUploadMissingFont.disabled = true;
+    }
+  });
+});
+
+if (missingFontSelect) {
+  missingFontSelect.addEventListener('change', () => {
+    pdfFontNameInput.value = missingFontSelect.value || '';
+    btnUploadMissingFont.disabled = !pdfFontNameInput.value;
+  });
+}
 
 btnChildNone.addEventListener('click', ()=>setChildVisible(0));
 btnChildAll.addEventListener('click', ()=>setChildVisible(1));
