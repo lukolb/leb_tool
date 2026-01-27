@@ -673,6 +673,22 @@ function extractFontNamesFromDa(da){
   return out;
 }
 
+function parseDaFontName(da){
+  const s = (da ?? '').toString();
+  const m = s.match(/\/([^\s]+)\s+[\d.]+\s+Tf/);
+  return m ? m[1] : '';
+}
+
+function extractDaStringFromField(field){
+  if (!field) return '';
+  return field?.defaultAppearance || field?.DA || field?.da || '';
+}
+
+function isTextFieldType(fieldType){
+  const t = (fieldType ?? '').toString().toUpperCase();
+  return t === 'TX' || t === 'TEXT';
+}
+
 function collectFontName(out, raw){
   const name = (raw ?? '').toString().trim();
   if (!name) return;
@@ -719,10 +735,11 @@ async function scanPdfFonts(pdfUrl){
       for (const arr of Object.values(fo)) {
         if (!Array.isArray(arr)) continue;
         for (const field of arr) {
-          const da = field?.defaultAppearance || field?.defaultStyle || '';
-          for (const name of extractFontNamesFromDa(da)) {
-            collectFontName(found, name);
-          }
+          const fieldType = field?.fieldType || field?.type || '';
+          if (!isTextFieldType(fieldType)) continue;
+          const da = extractDaStringFromField(field);
+          const fontName = parseDaFontName(da);
+          if (fontName) collectFontName(found, fontName);
         }
       }
     }
@@ -732,10 +749,10 @@ async function scanPdfFonts(pdfUrl){
     const page = await pdf.getPage(p);
     const annots = await page.getAnnotations({ intent:"display" });
     for (const a of annots) {
-      const da = a?.defaultAppearance || a?.defaultStyle || '';
-      for (const name of extractFontNamesFromDa(da)) {
-        collectFontName(found, name);
-      }
+      if (!isTextFieldType(a?.fieldType || a?.type || '')) continue;
+      const da = extractDaStringFromField(a);
+      const fontName = parseDaFontName(da);
+      if (fontName) collectFontName(found, fontName);
     }
   }
 
