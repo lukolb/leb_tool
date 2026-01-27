@@ -546,6 +546,8 @@ async function pollImport(){
     if (data.done) {
       importProgress.style.display = 'none';
       importStatus.textContent = data.message || 'Import abgeschlossen.';
+      const importButton = document.getElementById('btnImport');
+      if (importButton) importButton.style.display = '';
       importToken = null;
       return;
     }
@@ -632,6 +634,8 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
   importProgress.style.display = '';
   updateImportProgress(0);
   updateImportLabel('Import wird vorbereitet …');
+  const importButton = document.getElementById('btnImport');
+  if (importButton) importButton.style.display = 'none';
 
   const formData = new FormData(event.target);
   formData.append('action', 'import_start');
@@ -646,6 +650,7 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
     await pollImport();
   } catch (e) {
     importProgress.style.display = 'none';
+    if (importButton) importButton.style.display = '';
     importStatus.textContent = `Fehler: ${e.message}`;
   }
 });

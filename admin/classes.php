@@ -130,7 +130,7 @@ function delete_class_with_all_data(PDO $pdo, int $classId): array {
 }
 
 // Teachers list
-$teachers = $pdo->query("SELECT id, display_name, email FROM users WHERE role='teacher' AND deleted_at IS NULL ORDER BY display_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$teachers = $pdo->query("SELECT id, display_name, email FROM users WHERE role IN ('teacher','admin') AND deleted_at IS NULL ORDER BY display_name ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // Templates list (for class assignment)
 $templates = $pdo->query(
