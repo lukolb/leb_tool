@@ -447,6 +447,28 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
             $reportByStudent[(int)$r['student_id']] = (int)$r['id'];
           }
         }
+        $existingValues = [];
+        if ($reportByStudent && $subjectFields) {
+          $reportIds = array_values(array_unique(array_values($reportByStudent)));
+          $fieldIds = array_values(array_unique(array_map(fn($f) => (int)$f['id'], $subjectFields)));
+          $inReports = implode(',', array_fill(0, count($reportIds), '?'));
+          $inFields = implode(',', array_fill(0, count($fieldIds), '?'));
+          $params = array_merge($reportIds, $fieldIds);
+          $stVals = $pdo->prepare(
+            "SELECT report_instance_id, template_field_id, value_text
+             FROM field_values
+             WHERE report_instance_id IN ($inReports)
+               AND template_field_id IN ($inFields)
+               AND source='teacher'"
+          );
+          $stVals->execute($params);
+          foreach ($stVals->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $rid = (int)$row['report_instance_id'];
+            $fid = (int)$row['template_field_id'];
+            if (!isset($existingValues[$rid])) $existingValues[$rid] = [];
+            $existingValues[$rid][$fid] = (string)($row['value_text'] ?? '');
+          }
+        }
         $finalmarksPreview = [];
 
         foreach ($parsed as $page) {
@@ -521,7 +543,23 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
                 }
               }
             }
-            $knownSubjects[$key] = $grade;
+            $compareStatus = null;
+            $existingValue = null;
+            if ($reportId && $field) {
+              $existingValue = $existingValues[$reportId][(int)$field['id']] ?? null;
+              if ($existingValue === null || $existingValue === '') {
+                $compareStatus = 'new';
+              } elseif (trim($existingValue) === trim($grade)) {
+                $compareStatus = 'match';
+              } else {
+                $compareStatus = 'diff';
+              }
+            }
+            $knownSubjects[$key] = [
+              'grade' => $grade,
+              'status' => $compareStatus,
+              'existing' => $existingValue,
+            ];
           }
           $ignoredNotes += count((array)($page['unknown_subjects'] ?? []));
           $ignoredNotes += count((array)($page['invalid_grades'] ?? []));
@@ -878,13 +916,22 @@ render_teacher_header($pageTitle);
                         <?php endif; ?>
                       </td>
                       <td>
-                        <?php if ($row['subjects']): ?>
-                          <?php foreach ($row['subjects'] as $key => $grade): ?>
-                            <span class="pill-mini" style="margin-right:4px;"><?=h($key)?>:<?=h($grade)?></span>
-                          <?php endforeach; ?>
-                        <?php else: ?>
-                          —
-                        <?php endif; ?>
+                      <?php if ($row['subjects']): ?>
+                        <?php foreach ($row['subjects'] as $key => $subject): ?>
+                          <?php
+                            $grade = is_array($subject) ? (string)($subject['grade'] ?? '') : (string)$subject;
+                            $status = is_array($subject) ? (string)($subject['status'] ?? '') : '';
+                            $existing = is_array($subject) ? (string)($subject['existing'] ?? '') : '';
+                            $style = '';
+                            if ($status === 'match') $style = 'background: rgba(46, 125, 50, 0.15); color: #1b5e20;';
+                            elseif ($status === 'diff') $style = 'background: rgba(245, 124, 0, 0.18); color: #e65100;';
+                            elseif ($status === 'new') $style = 'background: rgba(30, 136, 229, 0.15); color: #0d47a1;';
+                          ?>
+                          <span class="pill-mini" style="margin-right:4px; <?=h($style)?>" title="<?=h($existing !== '' ? ('Vorhanden: ' . $existing) : 'Neu')?>"><?=h($key)?>:<?=h($grade)?></span>
+                        <?php endforeach; ?>
+                      <?php else: ?>
+                        —
+                      <?php endif; ?>
                       </td>
                       <td>
                         <?php if ($row['warnings']): ?>
