@@ -221,9 +221,6 @@ function finalmarks_parse_blocks(array $blocks): array {
     $block = trim((string)$block);
     if ($block === '') continue;
     $name = '';
-    if (preg_match('/^Endnoten von\s+(.+?)\s*$/mu', $block, $m)) {
-      $name = trim(preg_replace('/\s+/u', ' ', $m[1]));
-    }
     $lines = preg_split('/\R/u', $block) ?: [];
     $subjects = [];
     $warnings = [];
@@ -232,10 +229,21 @@ function finalmarks_parse_blocks(array $blocks): array {
     $invalidGrades = [];
     $validGrades = ['1+','1-','1','2+','2-','2','3+','3-','3','4+','4-','4','5+','5-','5','6'];
 
+    $normalizeHeader = function (string $line): string {
+      $line = preg_replace('/E\s*n\s*d\s*n\s*o\s*t\s*e\s*n\s*v\s*o\s*n/iu', 'Endnoten von', $line);
+      return trim(preg_replace('/\s+/u', ' ', $line));
+    };
+
     foreach ($lines as $line) {
       $line = trim((string)$line);
       if ($line === '') continue;
-      if (preg_match('/^Endnoten von\s+/u', $line)) continue;
+      $headerLine = $normalizeHeader($line);
+      if (preg_match('/^Endnoten von\s+(.+?)\s*$/iu', $headerLine, $m)) {
+        if ($name === '') {
+          $name = trim(preg_replace('/\s+/u', ' ', $m[1]));
+        }
+        continue;
+      }
       if (preg_match('/^Fach\s+Note/i', $line)) continue;
 
       if (preg_match('/^(.*?)\s+(1\+|1\-|1|2\+|2\-|2|3\+|3\-|3|4\+|4\-|4|5\+|5\-|5|6)\s*$/u', $line, $m)) {
