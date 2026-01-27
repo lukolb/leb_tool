@@ -257,11 +257,6 @@ function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
   return [$map, $duplicates];
 }
 
-function finalmarks_period_label(string $term): string {
-  $term = trim($term);
-  return $term !== '' ? $term : 'Standard';
-}
-
 function finalmarks_parse_blocks(array $blocks): array {
   $blocks = array_values(array_filter(array_map('strval', $blocks), fn($b) => trim($b) !== ''));
   $results = [];
@@ -365,7 +360,6 @@ $finalmarksSuccess = null;
 $finalmarksSummary = null;
 $finalmarksToken = '';
 $finalmarksFormSchoolYear = '';
-$finalmarksFormTerm = '';
 $finalmarksHasImportable = false;
 $currentClass = null;
 foreach ($classes as $c) {
@@ -378,12 +372,10 @@ $finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
 if ($finalmarksFormSchoolYear === '') {
   $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
 }
-$finalmarksFormTerm = '';
 
 if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['finalmarks_action'])) {
   $action = (string)$_POST['finalmarks_action'];
   $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
-  $finalmarksFormTerm = trim((string)($_POST['term'] ?? ''));
 
   if ($classId <= 0) {
     $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
@@ -405,7 +397,6 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         $_SESSION['finalmarks_import'][$token] = [
           'class_id' => $classId,
           'school_year' => $finalmarksFormSchoolYear,
-          'term' => $finalmarksFormTerm,
           'template_id' => $templateId,
           'file_hash' => (string)($_POST['finalmarks_file_hash'] ?? ''),
           'file_name' => (string)($_POST['finalmarks_file_name'] ?? ''),
@@ -461,12 +452,11 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         ];
         $importableNotes = 0;
         $ignoredNotes = 0;
-        $periodLabel = finalmarks_period_label($finalmarksFormTerm);
         $reportByStudent = [];
         if ($classStudents) {
           $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
           $in = implode(',', array_fill(0, count($studentIds), '?'));
-          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
+          $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
           $stRep = $pdo->prepare(
             "SELECT id, student_id
              FROM report_instances
@@ -662,7 +652,6 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 
     if (!$finalmarksErrors) {
       $finalmarksFormSchoolYear = trim((string)($sessionData['school_year'] ?? $finalmarksFormSchoolYear));
-      $finalmarksFormTerm = trim((string)($sessionData['term'] ?? $finalmarksFormTerm));
       $templateId = (int)($sessionData['template_id'] ?? 0);
       if ($templateId <= 0) {
         $finalmarksErrors[] = 'Vorlage für Klasse fehlt.';
@@ -698,12 +687,11 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       $rowsToInsert = [];
       $skippedStudents = 0;
       $skippedNotes = 0;
-      $periodLabel = finalmarks_period_label($finalmarksFormTerm);
       $reportByStudent = [];
       if ($classStudents) {
         $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
         $in = implode(',', array_fill(0, count($studentIds), '?'));
-        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $periodLabel], $studentIds);
+        $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
         $stRep = $pdo->prepare(
           "SELECT id, student_id
            FROM report_instances
@@ -918,7 +906,7 @@ render_teacher_header($pageTitle);
 
 <?php if ($isTeacherRole && !$childMode): ?>
   <div class="card">
-    <h2 style="margin-top:0;">Endnoten (PDF) für diese Klasse importieren</h2>
+    <h2 style="margin-top:0;">Endnoten aus XSchool für diese Klasse importieren</h2>
     <?php if ($classId <= 0): ?>
       <div class="alert">Bitte zuerst eine Klasse auswählen.</div>
     <?php else: ?>
@@ -951,7 +939,7 @@ render_teacher_header($pageTitle);
         <input type="hidden" name="finalmarks_blocks" id="finalmarksBlocks" value="">
         <input type="hidden" name="finalmarks_file_hash" id="finalmarksFileHash" value="">
         <input type="hidden" name="finalmarks_file_name" id="finalmarksFileName" value="">
-        <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div class="row" style="gap:10px;align-items: flex-start;flex-wrap:wrap;display: inline-flex;">
           <div>
             <label class="label" for="finalmarksPdf">PDF-Datei</label>
             <input class="input" type="file" id="finalmarksPdf" name="finalmarks_pdf" accept="application/pdf" required>
@@ -960,14 +948,11 @@ render_teacher_header($pageTitle);
             <label class="label" for="finalmarksYear">Schuljahr</label>
             <input class="input" type="text" id="finalmarksYear" name="school_year" value="<?=h($finalmarksFormSchoolYear)?>" placeholder="z.B. 2025/26">
           </div>
-          <div>
-            <label class="label" for="finalmarksTerm">Abschnitt</label>
-            <input class="input" type="text" id="finalmarksTerm" name="term" value="<?=h($finalmarksFormTerm)?>" placeholder="optional">
-          </div>
-          <label class="pill-mini" style="margin-bottom:6px;">
-            <input type="checkbox" checked disabled style="margin-right:6px;"> Dry-Run (nur Vorschau)
-          </label>
-          <button class="btn" type="submit">PDF auslesen &amp; prüfen</button>
+            <div>
+                
+                <label class="label" for="finalmarksSubmitbtn">&nbsp;</label>
+          <button class="btn" type="submit" id="finalmarksSubmitbtn">PDF auslesen &amp; prüfen</button>
+            </div>
         </div>
       </form>
 
@@ -1019,12 +1004,12 @@ render_teacher_header($pageTitle);
                         <?php foreach ($row['subjects'] as $key => $subject): ?>
                           <?php
                             $grade = is_array($subject) ? (string)($subject['grade'] ?? '') : (string)$subject;
-                            $status = is_array($subject) ? (string)($subject['status'] ?? '') : '';
+                            $gradestatus = is_array($subject) ? (string)($subject['status'] ?? '') : '';
                             $existing = is_array($subject) ? (string)($subject['existing'] ?? '') : '';
                             $style = '';
-                            if ($status === 'match') $style = 'background: rgba(46, 125, 50, 0.15); color: #1b5e20;';
-                            elseif ($status === 'diff') $style = 'background: rgba(245, 124, 0, 0.18); color: #e65100;';
-                            elseif ($status === 'new') $style = 'background: rgba(30, 136, 229, 0.15); color: #0d47a1;';
+                            if ($gradestatus === 'match') $style = 'background: rgba(46, 125, 50, 0.15); color: #1b5e20;';
+                            elseif ($gradestatus === 'diff') $style = 'background: rgba(245, 124, 0, 0.18); color: #e65100;';
+                            elseif ($gradestatus === 'new') $style = 'background: rgba(30, 136, 229, 0.15); color: #0d47a1;';
                           ?>
                           <span class="pill-mini" style="margin-right:4px; <?=h($style)?>" title="<?=h($existing !== '' ? ('Vorhanden: ' . $existing) : 'Neu')?>"><?=h($key)?>:<?=h($grade)?></span>
                         <?php endforeach; ?>
