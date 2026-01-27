@@ -143,6 +143,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       foreach ($stmts as $sql) {
         $i++;
         try {
+          if (preg_match('/ALTER TABLE\\s+`([^`]+)`\\s+ADD CONSTRAINT\\s+`([^`]+)`/i', $sql, $m)) {
+            $tableName = $m[1];
+            $constraintName = $m[2];
+            $chk = $pdo->prepare(
+              "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS\n" .
+              "WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?"
+            );
+            $chk->execute([$tableName, $constraintName]);
+            if ((int)$chk->fetchColumn() > 0) {
+              dlog("Skipping existing constraint: {$constraintName} on {$tableName}");
+              continue;
+            }
+          }
           $pdo->exec($sql);
         } catch (Throwable $e) {
           $preview = trim(preg_replace('/\s+/', ' ', $sql));
