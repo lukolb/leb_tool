@@ -1001,7 +1001,14 @@ render_teacher_header($pageTitle);
                       <td><?=h($row['name'] !== '' ? $row['name'] : '—')?></td>
                       <td><span class="pill-mini"><?=h($status)?></span></td>
                       <td>
-                        <?php if ($student): ?>
+                        <?php if ($status !== 'FOUND_IN_CLASS'): ?>
+                          <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
+                            <option value="">Schüler auswählen…</option>
+                            <?php foreach ($remainingStudents ?? [] as $cand): ?>
+                              <option value="<?=h((string)($cand['id'] ?? ''))?>"><?=h(finalmarks_student_display($cand))?></option>
+                            <?php endforeach; ?>
+                          </select>
+                        <?php elseif ($student): ?>
                           <?=h(finalmarks_student_display($student))?> (ID <?=h((string)($student['id'] ?? ''))?>)
                         <?php else: ?>
                           —
@@ -1040,15 +1047,7 @@ render_teacher_header($pageTitle);
                         <?php if ($status === 'FOUND_IN_CLASS'): ?>
                           <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
                         <?php else: ?>
-                          <div style="display:flex; flex-direction:column; gap:6px;">
-                            <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
-                              <option value="">Schüler auswählen…</option>
-                              <?php foreach ($remainingStudents ?? [] as $cand): ?>
-                                <option value="<?=h((string)($cand['id'] ?? ''))?>"><?=h(finalmarks_student_display($cand))?></option>
-                              <?php endforeach; ?>
-                            </select>
-                            <input type="checkbox" class="finalmarks-import-toggle" name="finalmarks_import_ids[]" value="" disabled>
-                          </div>
+                          <input type="checkbox" class="finalmarks-import-toggle" name="finalmarks_import_ids[]" value="" disabled>
                         <?php endif; ?>
                       </td>
                     </tr>
