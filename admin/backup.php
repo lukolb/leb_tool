@@ -62,7 +62,7 @@ render_admin_header($pageTitle);
         <div id="importAnalysisStatus" class="muted" style="margin-top:10px;">Noch keine Datei ausgewählt.</div>
         <div id="importAnalysisProgress" style="display:none; margin-top:10px;">
           <div class="progress-wrap">
-            <div class="progress-meta"><span><span class="spin">⚙️</span> Analyse läuft …</span><span class="muted" id="importAnalysisPct">0%</span></div>
+            <div class="progress-meta"><span><span class="spin">⚙️</span> <span id="importAnalysisLabel">Analyse läuft …</span></span><span class="muted" id="importAnalysisPct">0%</span></div>
             <div class="progress"><div class="progress-bar" id="importAnalysisBar" style="width:0%;"></div></div>
           </div>
         </div>
@@ -125,7 +125,7 @@ render_admin_header($pageTitle);
     </div>
     <div id="importProgress" style="display:none; margin-top:10px;">
       <div class="progress-wrap">
-        <div class="progress-meta"><span><span class="spin">⚙️</span> Import läuft …</span><span class="muted" id="importPct">0%</span></div>
+        <div class="progress-meta"><span><span class="spin">⚙️</span> <span id="importLabel">Import läuft …</span></span><span class="muted" id="importPct">0%</span></div>
         <div class="progress"><div class="progress-bar" id="importBar" style="width:0%;"></div></div>
       </div>
     </div>
@@ -151,6 +151,7 @@ const importFile = document.getElementById('importFile');
 const importAnalysisProgress = document.getElementById('importAnalysisProgress');
 const importAnalysisPct = document.getElementById('importAnalysisPct');
 const importAnalysisBar = document.getElementById('importAnalysisBar');
+const importAnalysisLabel = document.getElementById('importAnalysisLabel');
 const importSettingsOptions = document.getElementById('importSettingsOptions');
 const importUploadsOptions = document.getElementById('importUploadsOptions');
 const importSettings = document.getElementById('importSettings');
@@ -158,6 +159,7 @@ const importUploads = document.getElementById('importUploads');
 const importProgress = document.getElementById('importProgress');
 const importPct = document.getElementById('importPct');
 const importBar = document.getElementById('importBar');
+const importLabel = document.getElementById('importLabel');
 let analyzeToken = null;
 let analyzeCompare = [];
 let importToken = null;
@@ -406,15 +408,24 @@ function updateAnalyzeProgress(pct){
   importAnalysisBar.style.width = `${value}%`;
 }
 
+function updateAnalyzeLabel(text){
+  if (importAnalysisLabel) importAnalysisLabel.textContent = text;
+}
+
 function updateImportProgress(pct){
   const value = Math.max(0, Math.min(100, pct));
   importPct.textContent = `${value}%`;
   importBar.style.width = `${value}%`;
 }
 
+function updateImportLabel(text){
+  if (importLabel) importLabel.textContent = text;
+}
+
 async function analyzeBackup(file){
   importAnalysisStatus.textContent = 'Backup wird analysiert …';
   importAnalysisSummary.textContent = 'Analyse läuft …';
+  updateAnalyzeLabel('Datei wird vorbereitet …');
   importAnalysisCompare.innerHTML = '';
   importConfirmWrap.style.display = 'none';
   importOptions.style.display = 'none';
@@ -458,6 +469,7 @@ async function pollAnalyze(){
     }
 
     if (typeof data.progress_pct === 'number') updateAnalyzeProgress(data.progress_pct);
+    if (data.progress_label) updateAnalyzeLabel(data.progress_label);
 
     if (data.done) {
       const summaryBits = [];
@@ -529,6 +541,7 @@ async function pollImport(){
     if (!resp.ok || !data.ok) throw new Error(data.error || 'Import fehlgeschlagen.');
 
     if (typeof data.progress_pct === 'number') updateImportProgress(data.progress_pct);
+    if (data.progress_label) updateImportLabel(data.progress_label);
 
     if (data.done) {
       importProgress.style.display = 'none';
@@ -618,6 +631,7 @@ document.getElementById('importForm').addEventListener('submit', async (event) =
   importStatus.textContent = 'Import wird gestartet …';
   importProgress.style.display = '';
   updateImportProgress(0);
+  updateImportLabel('Import wird vorbereitet …');
 
   const formData = new FormData(event.target);
   formData.append('action', 'import_start');

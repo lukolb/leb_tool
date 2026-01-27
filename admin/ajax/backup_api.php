@@ -544,6 +544,7 @@ if ($action === 'analyze_step') {
     $index = (int)($state['index'] ?? 0);
     $batchSize = 3;
     $compareChunk = [];
+    $progressLabel = 'Analyse läuft …';
 
     if (!empty($state['settings_pending'])) {
       $settingsRaw = $zip->getFromName('settings.json');
@@ -558,6 +559,7 @@ if ($action === 'analyze_step') {
       if ($state['settings_same'] === false) $state['is_same'] = false;
       $state['settings_pending'] = false;
       $state['meta_done'] = (int)($state['meta_done'] ?? 0) + 1;
+      $progressLabel = 'Einstellungen werden geprüft …';
     }
 
     if (!empty($state['uploads_pending'])) {
@@ -580,6 +582,7 @@ if ($action === 'analyze_step') {
       if ($state['uploads_same'] === false) $state['is_same'] = false;
       $state['uploads_pending'] = false;
       $state['meta_done'] = (int)($state['meta_done'] ?? 0) + 1;
+      $progressLabel = 'Uploads werden geprüft …';
     }
 
     if ($tables) {
@@ -595,6 +598,7 @@ if ($action === 'analyze_step') {
         }
       }
       $state['index'] = $end;
+      $progressLabel = 'Tabellen werden geprüft … (' . $end . '/' . count($tables) . ')';
     }
 
     $metaTotal = (int)($state['meta_total'] ?? 0);
@@ -617,6 +621,7 @@ if ($action === 'analyze_step') {
       'ok' => true,
       'compare_chunk' => $compareChunk,
       'progress_pct' => $progressPct,
+      'progress_label' => $progressLabel,
       'done' => $done,
       'manifest' => $state['manifest'] ?? [],
       'table_count' => $total,
@@ -782,6 +787,15 @@ if ($action === 'import_step') {
     $totalSteps = (int)($state['total_steps'] ?? 1);
     $stepsDone = (int)($state['steps_done'] ?? 0);
     $progress = (int)round(($stepsDone / max(1, $totalSteps)) * 100);
+    $progressLabel = 'Import läuft …';
+    $tablesTotal = is_array($tables) ? count($tables) : 0;
+    if ($stepsDone <= $tablesTotal) {
+      $progressLabel = 'Tabelle wird importiert … (' . min($stepsDone, $tablesTotal) . '/' . $tablesTotal . ')';
+    } elseif (!empty($state['import_settings']) && empty($state['settings_applied'])) {
+      $progressLabel = 'Einstellungen werden importiert …';
+    } elseif (!empty($state['import_uploads']) && (int)($state['uploads_imported'] ?? 0) === 0) {
+      $progressLabel = 'Uploads werden importiert …';
+    }
 
     $done = ($stepsDone >= $totalSteps);
     if ($done) {
@@ -812,6 +826,7 @@ if ($action === 'import_step') {
         'ok' => true,
         'done' => true,
         'progress_pct' => $progress,
+        'progress_label' => $progressLabel,
         'message' => $msg,
         'tables' => $tableStats,
       ]);
@@ -821,6 +836,7 @@ if ($action === 'import_step') {
       'ok' => true,
       'done' => false,
       'progress_pct' => $progress,
+      'progress_label' => $progressLabel,
     ]);
   } catch (Throwable $e) {
     json_out(['ok' => false, 'error' => $e->getMessage()], 400);
