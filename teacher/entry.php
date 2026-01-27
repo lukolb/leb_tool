@@ -1037,7 +1037,9 @@ render_teacher_header($pageTitle);
                         <?php endif; ?>
                       </td>
                       <td>
-                        <?php if ($status !== 'FOUND_IN_CLASS'): ?>
+                        <?php if ($status === 'FOUND_IN_CLASS'): ?>
+                          <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
+                        <?php else: ?>
                           <div style="display:flex; flex-direction:column; gap:6px;">
                             <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
                               <option value="">Schüler auswählen…</option>
@@ -1047,8 +1049,6 @@ render_teacher_header($pageTitle);
                             </select>
                             <input type="checkbox" class="finalmarks-import-toggle" name="finalmarks_import_ids[]" value="" disabled>
                           </div>
-                        <?php else: ?>
-                          <input type="checkbox" name="finalmarks_import_ids[]" value="<?=h((string)($student['id'] ?? ''))?>" <?= $canImport ? 'checked' : 'disabled' ?>>
                         <?php endif; ?>
                       </td>
                     </tr>
