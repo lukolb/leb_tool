@@ -946,8 +946,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     );
     const embeddedFontCache = new Map();
 
-    async function ensureFontkit(){
-      if (window.fontkit || window.PDFLib?.fontkit) return;
+    async function ensureFontkit(pdfDoc){
+      if (window.fontkit || window.PDFLib?.fontkit) {
+        const kit = window.fontkit || window.PDFLib?.fontkit;
+        if (kit && pdfDoc?.registerFontkit) {
+          try { pdfDoc.registerFontkit(kit); } catch (e) {}
+        }
+        return kit || null;
+      }
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
@@ -955,9 +961,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         s.onerror = () => reject(new Error('fontkit_load_failed'));
         document.head.appendChild(s);
       });
-      if (window.PDFLib?.registerFontkit && window.fontkit) {
-        try { window.PDFLib.registerFontkit(window.fontkit); } catch (e) {}
+      const kit = window.fontkit || window.PDFLib?.fontkit || null;
+      if (kit && pdfDoc?.registerFontkit) {
+        try { pdfDoc.registerFontkit(kit); } catch (e) {}
       }
+      return kit;
     }
 
     function normalizeFontKey(name){
@@ -1005,7 +1013,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
       const custom = uploadedPdfFontMap.get(key);
       if (custom?.url && typeof pdfDoc.embedFont === 'function') {
-        await ensureFontkit();
+        await ensureFontkit(pdfDoc);
         try {
           const resp = await fetch(custom.url, { credentials: 'same-origin' });
           if (!resp.ok) throw new Error('font_download_failed');
