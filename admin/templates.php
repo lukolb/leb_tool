@@ -661,18 +661,6 @@ function normalizeFontKey(name){
   return FONT_KEY_ALIASES.get(key) || key;
 }
 
-function extractFontNamesFromDa(da){
-  const s = (da ?? '').toString();
-  if (!s) return [];
-  const out = [];
-  const re = /\/([^\s]+)\s+[\d.]+\s+Tf/g;
-  let m;
-  while ((m = re.exec(s)) !== null) {
-    if (m[1]) out.push(m[1]);
-  }
-  return out;
-}
-
 function parseDaFontName(da){
   const s = (da ?? '').toString();
   const m = s.match(/\/([^\s]+)\s+[\d.]+\s+Tf/);
@@ -681,7 +669,12 @@ function parseDaFontName(da){
 
 function extractDaStringFromField(field){
   if (!field) return '';
-  return field?.defaultAppearance || field?.DA || field?.da || '';
+  return field?.defaultAppearance
+    || field?.defaultStyle
+    || field?.DA
+    || field?.da
+    || field?.appearance
+    || '';
 }
 
 function isTextFieldType(fieldType){
