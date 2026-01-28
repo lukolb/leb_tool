@@ -667,7 +667,18 @@ function parseDaFontName(da){
   return m ? m[1] : '';
 }
 
-function extractDaStringFromField(field){
+function extractDaStringFromField(field, PDFName){
+  try {
+    const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+    if (da) return da.decodeText ? da.decodeText() : String(da);
+  } catch (e) {}
+  try {
+    const widgets = field?.acroField?.getWidgets?.() || [];
+    for (const widget of widgets) {
+      const da = widget?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) return da.decodeText ? da.decodeText() : String(da);
+    }
+  } catch (e) {}
   if (!field) return '';
   return field?.defaultAppearance
     || field?.defaultStyle
@@ -730,7 +741,7 @@ async function scanPdfFonts(pdfUrl){
         for (const field of arr) {
           const fieldType = field?.fieldType || field?.type || '';
           if (!isTextFieldType(fieldType)) continue;
-          const da = extractDaStringFromField(field);
+          const da = extractDaStringFromField(field, pdfjsLib?.PDFName);
           const fontName = parseDaFontName(da);
           if (fontName) collectFontName(found, fontName);
         }
@@ -743,7 +754,7 @@ async function scanPdfFonts(pdfUrl){
     const annots = await page.getAnnotations({ intent:"display" });
     for (const a of annots) {
       if (!isTextFieldType(a?.fieldType || a?.type || '')) continue;
-      const da = extractDaStringFromField(a);
+      const da = extractDaStringFromField(a, pdfjsLib?.PDFName);
       const fontName = parseDaFontName(da);
       if (fontName) collectFontName(found, fontName);
     }
