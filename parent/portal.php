@@ -1074,6 +1074,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           try { field.defaultUpdateAppearances(font); } catch (e) {}
         }
       }
+      try {
+        if (typeof form.updateFieldAppearances === 'function') {
+          form.updateFieldAppearances();
+        }
+      } catch (e) {}
     }
 
     function renderPages(bytes){

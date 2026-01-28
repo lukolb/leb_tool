@@ -485,6 +485,11 @@ async function updateTextFieldAppearances(pdfDoc, form){
       try { field.defaultUpdateAppearances(font); } catch (e) {}
     }
   }
+  try {
+    if (typeof form.updateFieldAppearances === 'function') {
+      form.updateFieldAppearances();
+    }
+  } catch (e) {}
 }
 
 function isNonFatalBusinessError(msg){
