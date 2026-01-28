@@ -667,27 +667,19 @@ function parseDaFontName(da){
   return m ? m[1] : '';
 }
 
-function extractDaStringFromField(field, PDFName = null){
-  if (PDFName?.of) {
-    try {
-      const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+function extractDaString(field, PDFName){
+  try {
+    const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+    if (da) return da.decodeText ? da.decodeText() : String(da);
+  } catch (e) {}
+  try {
+    const widgets = field?.acroField?.getWidgets?.() || [];
+    for (const widget of widgets) {
+      const da = widget?.dict?.lookup?.(PDFName.of('DA'));
       if (da) return da.decodeText ? da.decodeText() : String(da);
-    } catch (e) {}
-    try {
-      const widgets = field?.acroField?.getWidgets?.() || [];
-      for (const widget of widgets) {
-        const da = widget?.dict?.lookup?.(PDFName.of('DA'));
-        if (da) return da.decodeText ? da.decodeText() : String(da);
-      }
-    } catch (e) {}
-  }
-  if (!field) return '';
-  return field?.defaultAppearance
-    || field?.defaultStyle
-    || field?.DA
-    || field?.da
-    || field?.appearance
-    || '';
+    }
+  } catch (e) {}
+  return '';
 }
 
 function isTextFieldType(fieldType){
@@ -732,34 +724,23 @@ function renderMissingFonts(missing){
 }
 
 async function scanPdfFonts(pdfUrl){
-  const pdf = await pdfjsLib.getDocument({ url: pdfUrl, withCredentials:true }).promise;
+  await ensurePdfLib();
+  const resp = await fetch(pdfUrl, { credentials: 'same-origin' });
+  if (!resp.ok) throw new Error('PDF konnte nicht geladen werden.');
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+
+  const PDFLib = window.PDFLib;
+  const { PDFDocument, PDFName, PDFTextField } = PDFLib;
+  const pdfDoc = await PDFDocument.load(bytes);
+  const form = pdfDoc.getForm();
   const found = new Set();
 
-  if (pdf.getFieldObjects) {
-    const fo = await pdf.getFieldObjects();
-    if (fo && typeof fo === 'object') {
-      for (const arr of Object.values(fo)) {
-        if (!Array.isArray(arr)) continue;
-        for (const field of arr) {
-          const fieldType = field?.fieldType || field?.type || '';
-          if (!isTextFieldType(fieldType)) continue;
-          const da = extractDaStringFromField(field);
-          const fontName = parseDaFontName(da);
-          if (fontName) collectFontName(found, fontName);
-        }
-      }
-    }
-  }
-
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const annots = await page.getAnnotations({ intent:"display" });
-    for (const a of annots) {
-      if (!isTextFieldType(a?.fieldType || a?.type || '')) continue;
-      const da = extractDaStringFromField(a);
-      const fontName = parseDaFontName(da);
-      if (fontName) collectFontName(found, fontName);
-    }
+  const fields = form.getFields();
+  for (const field of fields) {
+    if (!(PDFTextField && field instanceof PDFTextField)) continue;
+    const da = extractDaString(field, PDFName);
+    const fontName = parseDaFontName(da);
+    if (fontName) collectFontName(found, fontName);
   }
 
   const missing = [];
@@ -772,6 +753,17 @@ async function scanPdfFonts(pdfUrl){
   }
   missing.sort((a, b) => a.localeCompare(b));
   return missing;
+}
+
+async function ensurePdfLib(){
+  if (window.PDFLib) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('pdf-lib konnte nicht geladen werden.'));
+    document.head.appendChild(s);
+  });
 }
 
 function clampNumber(value, fallback, min = null, max = null) {
