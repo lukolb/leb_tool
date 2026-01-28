@@ -687,17 +687,23 @@ function isTextFieldType(fieldType){
   return t === 'TX' || t === 'TEXT';
 }
 
-function collectFontName(out, raw){
-  const name = (raw ?? '').toString().trim();
+function normalizeFontDisplayName(name){
+  return (name ?? '').toString().trim().replace(/^\//, '');
+}
+
+function addMissingFont(missing, fontName, fieldName){
+  const name = normalizeFontDisplayName(fontName);
   if (!name) return;
-  out.add(name.replace(/^\//, ''));
+  if (!missing.has(name)) missing.set(name, new Set());
+  if (fieldName) missing.get(name).add(fieldName);
 }
 
 function renderMissingFonts(missing){
   missingFontsList.innerHTML = '';
   missingFontSelect.innerHTML = '';
 
-  if (!missing.length) {
+  const entries = Array.from(missing.entries());
+  if (!entries.length) {
     missingFontsEmpty.textContent = 'Keine fehlenden Schriftarten gefunden.';
     missingFontsEmpty.style.display = '';
     missingFontSelect.innerHTML = '<option value="">Keine fehlenden Schriftarten</option>';
@@ -707,9 +713,11 @@ function renderMissingFonts(missing){
   }
 
   missingFontsEmpty.style.display = 'none';
-  for (const font of missing) {
+  entries.sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [font, fields] of entries) {
     const li = document.createElement('li');
-    li.textContent = font;
+    const fieldList = Array.from(fields).sort().join(', ');
+    li.textContent = fieldList ? `${font} — ${fieldList}` : font;
     missingFontsList.appendChild(li);
 
     const opt = document.createElement('option');
@@ -733,25 +741,22 @@ async function scanPdfFonts(pdfUrl){
   const { PDFDocument, PDFName, PDFTextField } = PDFLib;
   const pdfDoc = await PDFDocument.load(bytes);
   const form = pdfDoc.getForm();
-  const found = new Set();
+  const missing = new Map();
 
   const fields = form.getFields();
   for (const field of fields) {
     if (!(PDFTextField && field instanceof PDFTextField)) continue;
     const da = extractDaString(field, PDFName);
     const fontName = parseDaFontName(da);
-    if (fontName) collectFontName(found, fontName);
-  }
-
-  const missing = [];
-  for (const name of found) {
+    if (!fontName) continue;
+    const name = normalizeFontDisplayName(fontName);
     const key = normalizeFontKey(name);
     if (!key) continue;
     if (STANDARD_FONT_KEYS.has(key)) continue;
     if (uploadedFontKeys.has(key)) continue;
-    missing.push(name);
+    addMissingFont(missing, name, field?.getName?.());
   }
-  missing.sort((a, b) => a.localeCompare(b));
+
   return missing;
 }
 
