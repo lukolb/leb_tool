@@ -122,8 +122,8 @@ function ai_provider_config(): array {
   $timeout = (int)($ai['timeout_seconds'] ?? 40);
   if ($timeout <= 0) $timeout = 40;
 
-  if (!$enabled) throw new RuntimeException('KI-Vorschläge sind deaktiviert.');
-  if ($apiKey === '') throw new RuntimeException('Kein API-Key konfiguriert.');
+  if (!$enabled) throw new RuntimeException(t('teacher.ai.error.disabled'));
+  if ($apiKey === '') throw new RuntimeException(t('teacher.ai.error.api_key_missing'));
 
   return [
     'api_key' => $apiKey,
@@ -157,7 +157,7 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   if ($resp === false) {
     $err = curl_error($ch);
     curl_close($ch);
-    throw new RuntimeException('AI request failed: ' . $err);
+    throw new RuntimeException(str_replace('{error}', $err, t('teacher.ai.error.request_failed')));
   }
   curl_close($ch);
 
@@ -165,11 +165,11 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   if ($httpCode < 200 || $httpCode >= 300) {
     $msg = is_array($json) ? (string)($json['error']['message'] ?? '') : '';
     if ($msg === '') $msg = 'HTTP ' . $httpCode;
-    throw new RuntimeException('AI error: ' . $msg);
+    throw new RuntimeException(str_replace('{error}', $msg, t('teacher.ai.error.response_failed')));
   }
 
   $content = trim((string)($json['choices'][0]['message']['content'] ?? ''));
-  if ($content === '') throw new RuntimeException('AI: leere Antwort.');
+  if ($content === '') throw new RuntimeException(t('teacher.ai.error.empty_response'));
   return $content;
 }
 
@@ -212,17 +212,17 @@ try {
   $userId = (int)($u['id'] ?? 0);
 
   $action = (string)($data['action'] ?? 'ai_student_support_plan');
-  if ($action !== 'ai_student_support_plan') throw new RuntimeException('Unbekannte Aktion.');
+  if ($action !== 'ai_student_support_plan') throw new RuntimeException(t('teacher.ai.error.unknown_action'));
 
   $classId = (int)($data['class_id'] ?? 0);
   $studentId = (int)($data['student_id'] ?? 0);
   $force = (int)($data['force'] ?? 0) === 1;
 
-  if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
-  if ($studentId <= 0) throw new RuntimeException('student_id fehlt.');
+  if ($classId <= 0) throw new RuntimeException(t('teacher.ai.error.class_id_missing'));
+  if ($studentId <= 0) throw new RuntimeException(t('teacher.ai.error.student_id_missing'));
 
   if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-    throw new RuntimeException('Keine Berechtigung.');
+    throw new RuntimeException(t('teacher.ai.error.forbidden'));
   }
 
   $stStu = $pdo->prepare(
@@ -234,9 +234,9 @@ try {
   );
   $stStu->execute([$studentId]);
   $stu = $stStu->fetch(PDO::FETCH_ASSOC);
-  if (!$stu) throw new RuntimeException('Schüler nicht gefunden.');
+  if (!$stu) throw new RuntimeException(t('teacher.ai.error.student_not_found'));
   if ((int)$stu['class_id'] !== $classId && ($u['role'] ?? '') !== 'admin') {
-    throw new RuntimeException('Schüler gehört nicht zu dieser Klasse.');
+    throw new RuntimeException(t('teacher.ai.error.student_wrong_class'));
   }
 
   $cfg = app_config();
