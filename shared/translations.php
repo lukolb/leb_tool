@@ -37,6 +37,8 @@ function translations_catalog(): array {
       'aria.teacher_nav' => 'Lehrkraft Navigation',
         
       'admin.parent_requests.pending_fb' => 'offen',
+      'admin.users.skip_duplicate' => 'existiert bereits.',
+      'admin.users.skipped_details' => 'Übersprungene Einträge anzeigen ({count})',
 
       // Parent portal
       'parent.portal.title' => 'Elternmodus – Vorschau',
@@ -528,6 +530,8 @@ function translations_catalog(): array {
       'aria.teacher_nav' => 'Teacher navigation',
         
       'admin.parent_requests.pending_fb' => 'open',
+      'admin.users.skip_duplicate' => 'already exists.',
+      'admin.users.skipped_details' => 'Show skipped entries ({count})',
 
       // Parent portal
       'parent.portal.title' => 'Parent mode – preview',

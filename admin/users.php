@@ -192,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $q->execute([$email]);
         if ($q->fetch()) {
           $skipped++;
-          $skippedDetails[] = "{$email}: existiert bereits.";
+          $skippedDetails[] = "{$email}: " . t('admin.users.skip_duplicate', 'existiert bereits.');
           continue;
         }
 
@@ -264,7 +264,9 @@ render_admin_header('User');
       <?php endif; ?>
       <?php if (!empty($bulk['skipped_details'])): ?>
         <details style="margin-top:8px;">
-          <summary>Übersprungene Einträge anzeigen (<?=count($bulk['skipped_details'])?>)</summary>
+          <summary><?=h(strtr(t('admin.users.skipped_details', 'Übersprungene Einträge anzeigen ({count})'), [
+            '{count}' => (string)count($bulk['skipped_details'])
+          ]))?></summary>
           <ul>
             <?php foreach ($bulk['skipped_details'] as $detail): ?><li><?=h((string)$detail)?></li><?php endforeach; ?>
           </ul>
