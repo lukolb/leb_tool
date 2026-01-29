@@ -92,11 +92,12 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
         $loginUrl = $token ? absolute_url('student/login.php?token=' . urlencode($token)) : '';
       ?>
       <div class="qr-card">
-        <div class="qr-box" data-url="<?=h($loginUrl)?>"></div>
+          <a href="<?=h($loginUrl)?>" target="_blank"><div class="qr-box" data-url="<?=h($loginUrl)?>"></div></a>
         <div class="qr-meta">
           <div class="qr-name"><?=h((string)$s['first_name'])?> <?=h((string)$s['last_name'])?></div>
           <div class="qr-small">Schuljahr <?=h((string)$class['school_year'])?> · Klasse <?=h(class_display($class))?></div>
           <div class="qr-small">Alternative ohne Kamera:</div>
+          <div class="qr-small"><a href="<?=h(absolute_url(''))?>" target="_blank"><?=h(absolute_url(''))?></a></div>
           <div class="qr-code"><?=h($loginCode ?: '—')?></div>
         </div>
       </div>

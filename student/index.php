@@ -1508,7 +1508,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     entry.timer = setTimeout(async () => {
       pendingTimers.delete(key);
       try { await saveFieldValue(fieldId, valueText); } catch(e){ /* quiet */ }
-    }, delayMs));
+    }, delayMs);
     pendingTimers.set(key, entry);
   }
 
