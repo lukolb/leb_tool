@@ -249,11 +249,9 @@ render_admin_header('User');
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
-<div class="card">
-  <?php if ($bulk): ?>
-    <div class="alert">
-      Bulk-Import: erstellt <?=h((string)$bulk['created'])?>, übersprungen <?=h((string)$bulk['skipped'])?>.
+<?php if ($bulk): ?>
+    <div class="alert <?=h($bulk['created'] > 0 ? 'success' : 'danger')?>">
+      Bulk-Import: erstellt <strong><?=h((string)$bulk['created'])?></strong>, übersprungen <strong><?=h((string)$bulk['skipped'])?></strong>.
       <?php if (!empty($bulk['errors'])): ?>
         <details style="margin-top:8px;">
           <summary>Fehler anzeigen (<?=count($bulk['errors'])?>)</summary>
@@ -275,6 +273,7 @@ render_admin_header('User');
     </div>
   <?php endif; ?>
 
+<div class="card">
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
       <h2 style="margin-top:0;">Neuen User anlegen</h2>
