@@ -428,7 +428,7 @@ async function getEmbeddedFont(pdfDoc, fontName){
     try {
       const resp = await fetch(custom.url, { credentials: 'same-origin' });
       if (!resp.ok) throw new Error('font_download_failed');
-      const bytes = await resp.arrayBuffer();
+      const bytes = new Uint8Array(await resp.arrayBuffer());
       const font = await pdfDoc.embedFont(bytes, { subset: true });
       embeddedFontCache.set(key, font);
       return font;
