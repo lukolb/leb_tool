@@ -1157,11 +1157,21 @@ function getGroupPath(f){
   return (g && String(g).trim()) ? String(g).trim() : '—';
 }
 
+function normalizeGroupKeyValue(value){
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 function getGroupKey(f){
   const path = getGroupPath(f);
   if (path === '—') return '—';
   const parts = parseGroupParts(path);
   return parts.group || '—';
+}
+
+function getGroupMatchKey(f){
+  const key = getGroupKey(f);
+  if (key === '—') return '—';
+  return normalizeGroupKeyValue(key);
 }
 
 function getSubgroupMatchKey(f){
@@ -1810,9 +1820,9 @@ function renderTable(){
       // Beim Verlassen einmalig auf die gesamte Gruppe übertragen (ohne Re-Render während der Eingabe)
       e.stopPropagation();
       const v = String(inpGE.value || '').trim();
-      const gCur = getGroupKey(fields[idx]);
+      const gCur = getGroupMatchKey(fields[idx]);
       for (let i=0; i<fields.length; i++){
-        if (getGroupKey(fields[i]) !== gCur) continue;
+        if (getGroupMatchKey(fields[i]) !== gCur) continue;
         fields[i].meta = fields[i].meta || {};
         if (v) fields[i].meta.group_title_en = v;
         else delete fields[i].meta.group_title_en;
@@ -2055,7 +2065,7 @@ function syncGroupTitleEnDom(groupKey, value){
     if (!fid) continue;
     const ff = fields.find(x => x.id === fid);
     if (!ff) continue;
-    if (getGroupKey(ff) !== groupKey) continue;
+    if (getGroupMatchKey(ff) !== groupKey) continue;
     if (el.value !== v) el.value = v;
   }
 }
