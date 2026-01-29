@@ -606,10 +606,10 @@ function ai_provider_config(): array {
   $timeout = (int)($ai['timeout_seconds'] ?? 20);
 
   if (!$enabled) {
-    throw new RuntimeException('KI-Vorschläge sind deaktiviert.');
+    throw new RuntimeException(t('teacher.ai.error.disabled'));
   }
   if ($apiKey === '') {
-    throw new RuntimeException('AI API Key nicht konfiguriert.');
+    throw new RuntimeException(t('teacher.ai.error.api_key_missing'));
   }
 
   return [
@@ -656,17 +656,17 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   if ($resp === false) {
     $err = curl_error($ch);
     curl_close($ch);
-    throw new RuntimeException('AI Request fehlgeschlagen: ' . $err);
+    throw new RuntimeException(str_replace('{error}', $err, t('teacher.ai.error.request_failed')));
   }
   curl_close($ch);
 
   $json = json_decode((string)$resp, true);
   if (!is_array($json)) {
-    throw new RuntimeException('AI Antwort unverständlich.');
+    throw new RuntimeException(t('teacher.ai.error.unreadable'));
   }
   if ($httpCode >= 400) {
     $msg = (string)($json['error']['message'] ?? 'Fehler beim AI-Provider.');
-    throw new RuntimeException('AI Fehler: ' . $msg);
+    throw new RuntimeException(str_replace('{error}', $msg, t('teacher.ai.error.response_failed')));
   }
 
   $choices = $json['choices'] ?? [];
@@ -676,7 +676,7 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   }
   $content = trim($content);
   if ($content === '') {
-    throw new RuntimeException('AI hat keine Antwort geliefert.');
+    throw new RuntimeException(t('teacher.ai.error.empty_response'));
   }
 
   return $content;
