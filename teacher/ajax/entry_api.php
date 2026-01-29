@@ -1719,7 +1719,7 @@ try {
   $userId = (int)($u['id'] ?? 0);
 
   $action = (string)($data['action'] ?? '');
-  if ($action === '') throw new RuntimeException('action fehlt.');
+  if ($action === '') throw new RuntimeException(t('teacher.entry_api.error.action_missing'));
 
   if ($action === 'load') {
     $classId = (int)($data['class_id'] ?? 0);
@@ -3478,7 +3478,7 @@ if ($action === 'delegations_save') {
     json_out(['ok' => true, 'status' => 'draft', 'changed' => true]);
   }
 
-  throw new RuntimeException('Unbekannte action.');
+  throw new RuntimeException(t('teacher.entry_api.error.unknown_action'));
 
 } catch (Throwable $e) {
   json_out(['ok' => false, 'error' => $e->getMessage()], 400);
