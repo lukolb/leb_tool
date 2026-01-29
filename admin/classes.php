@@ -91,7 +91,7 @@ function assert_template_selectable(PDO $pdo, ?int $newTemplateId, ?int $current
     return $tid;
   }
 
-  throw new RuntimeException('Die ausgewählte Vorlage ist inaktiv und kann nicht neu zugeordnet werden.');
+  throw new RuntimeException(t('admin.classes.error.template_inactive'));
 }
 
 function delete_class_with_all_data(PDO $pdo, int $classId): array {
@@ -149,9 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $gradeLevel = (int)($_POST['grade_level'] ?? 0);
       $label = normalize_label((string)($_POST['label'] ?? ''));
-      if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
-      if ($gradeLevel <= 0) throw new RuntimeException('Klassenstufe fehlt.');
-      if ($label === '') throw new RuntimeException('Bezeichnung fehlt.');
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      if ($gradeLevel <= 0) throw new RuntimeException(t('admin.classes.error.grade_missing'));
+      if ($label === '') throw new RuntimeException(t('admin.classes.error.label_missing'));
 
       $name = computed_name($gradeLevel, $label);
 
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'template_id'=>$templateId,
         'student_wizard_display'=>$wizardDisplay
       ]);
-      $ok = 'Klasse wurde angelegt.';
+      $ok = t('admin.classes.ok.created');
     }
 
     elseif ($action === 'create_bulk') {
@@ -192,11 +192,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $gradeFrom = (int)($_POST['grade_from'] ?? 0);
       $gradeTo   = (int)($_POST['grade_to'] ?? 0);
       $labelsRaw = (string)($_POST['labels'] ?? '');
-      if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
-      if ($gradeFrom <= 0 || $gradeTo <= 0) throw new RuntimeException('Stufenbereich fehlt.');
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      if ($gradeFrom <= 0 || $gradeTo <= 0) throw new RuntimeException(t('admin.classes.error.grade_range_missing'));
       if ($gradeTo < $gradeFrom) [$gradeFrom, $gradeTo] = [$gradeTo, $gradeFrom];
       $labels = parse_labels($labelsRaw);
-      if (!$labels) throw new RuntimeException('Bezeichnungen fehlen (z.B. a-b oder a,b).');
+      if (!$labels) throw new RuntimeException(t('admin.classes.error.labels_missing'));
 
       $teacherIds = $_POST['teacher_ids'] ?? [];
       if (!is_array($teacherIds)) $teacherIds = [];
@@ -248,18 +248,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'template_id'=>$templateId,
         'student_wizard_display'=>$wizardDisplay
       ]);
-      $ok = "Bulk erstellt: {$created} (übersprungen: {$skipped})";
+      $ok = str_replace(
+        ['{created}', '{skipped}'],
+        [(string)$created, (string)$skipped],
+        t('admin.classes.ok.bulk_created')
+      );
     }
 
     elseif ($action === 'update_class') {
       $classId = (int)($_POST['class_id'] ?? 0);
-      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+      if ($classId <= 0) throw new RuntimeException(t('admin.classes.error.class_id_missing'));
 
       // aktuelles Template der Klasse laden (für "inaktiv aber bereits zugeordnet" Regel)
       $stCur = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
       $stCur->execute([$classId]);
       $curRow = $stCur->fetch(PDO::FETCH_ASSOC);
-      if (!$curRow) throw new RuntimeException('Klasse nicht gefunden.');
+      if (!$curRow) throw new RuntimeException(t('admin.classes.error.class_not_found'));
       $currentTemplateId = (int)($curRow['template_id'] ?? 0);
 
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
@@ -267,9 +271,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $label = normalize_label((string)($_POST['label'] ?? ''));
       $isActive = ((int)($_POST['is_active'] ?? 1) === 1) ? 1 : 0;
 
-      if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
-      if ($gradeLevel <= 0) throw new RuntimeException('Klassenstufe fehlt.');
-      if ($label === '') throw new RuntimeException('Bezeichnung fehlt.');
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      if ($gradeLevel <= 0) throw new RuntimeException(t('admin.classes.error.grade_missing'));
+      if ($label === '') throw new RuntimeException(t('admin.classes.error.label_missing'));
 
       $name = computed_name($gradeLevel, $label);
 
@@ -302,36 +306,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'template_id'=>$templateId,
         'student_wizard_display'=>$wizardDisplay
       ]);
-      $ok = 'Klasse wurde aktualisiert.';
+      $ok = t('admin.classes.ok.updated');
     }
 
     elseif ($action === 'toggle_active') {
       $classId = (int)($_POST['class_id'] ?? 0);
-      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+      if ($classId <= 0) throw new RuntimeException(t('admin.classes.error.class_id_missing'));
       $st = $pdo->prepare("SELECT is_active FROM classes WHERE id=?");
       $st->execute([$classId]);
       $row = $st->fetch();
-      if (!$row) throw new RuntimeException('Klasse nicht gefunden.');
+      if (!$row) throw new RuntimeException(t('admin.classes.error.class_not_found'));
       $new = ((int)$row['is_active']===1) ? 0 : 1;
       $pdo->prepare("UPDATE classes SET is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
           ->execute([$new, $new, $classId]);
       audit('admin_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
-      $ok = $new ? 'Klasse wurde aktiviert.' : 'Klasse wurde inaktiv gesetzt.';
+      $ok = $new ? t('admin.classes.ok.activated') : t('admin.classes.ok.deactivated');
     }
 
     elseif ($action === 'delete_class') {
       $classId = (int)($_POST['class_id'] ?? 0);
-      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+      if ($classId <= 0) throw new RuntimeException(t('admin.classes.error.class_id_missing'));
 
       $confirm = (string)($_POST['confirm_text'] ?? '');
       $must = (string)($_POST['must_match'] ?? '');
       if ($confirm === '' || $must === '' || $confirm !== $must) {
-        throw new RuntimeException('Sicherheitsabfrage fehlgeschlagen. Bitte exakt den angezeigten Text eingeben.');
+        throw new RuntimeException(t('admin.classes.error.confirm_failed'));
       }
 
       $stats = delete_class_with_all_data($pdo, $classId);
       audit('admin_class_delete', $userId, ['class_id'=>$classId] + $stats);
-      $ok = "Klasse gelöscht (Schüler gelöscht: {$stats['students_deleted']}).";
+      $ok = str_replace(
+        '{count}',
+        (string)$stats['students_deleted'],
+        t('admin.classes.ok.deleted')
+      );
     }
 
   } catch (Throwable $e) {
@@ -385,7 +393,7 @@ foreach ($classes as $c) {
   $grouped[$y][] = $c;
 }
 
-render_admin_header('Klassen');
+render_admin_header(t('admin.classes.title'));
 ?>
 
 <style>
@@ -395,139 +403,139 @@ render_admin_header('Klassen');
 </style>
 
 <div class="card">
-  <h1>Klassenverwaltung</h1>
+  <h1><?=h(t('admin.classes.heading'))?></h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
-  <h2 style="margin-top:0;">Klassen anlegen</h2>
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.create_heading'))?></h2>
 
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
-      <h3 style="margin-top:0;">Einzeln</h3>
+      <h3 style="margin-top:0;"><?=h(t('admin.classes.create_single_heading'))?></h3>
       <form method="post" id="createClassSingle" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_single">
 
         <div>
-          <label>Schuljahr</label>
-          <input name="school_year" type="text" value="<?=h($defaultSchoolYear)?>" placeholder="2025/26" required>
+          <label><?=h(t('admin.classes.school_year_label'))?></label>
+          <input name="school_year" type="text" value="<?=h($defaultSchoolYear)?>" placeholder="<?=h(t('admin.classes.school_year_placeholder'))?>" required>
         </div>
         <div>
-          <label>Stufe</label>
+          <label><?=h(t('admin.classes.grade_label'))?></label>
           <input name="grade_level" type="number" min="1" max="13" required>
         </div>
         <div>
-          <label>Bezeichnung</label>
-          <input name="label" type="text" placeholder="a" required>
+          <label><?=h(t('admin.classes.label_label'))?></label>
+          <input name="label" type="text" placeholder="<?=h(t('admin.classes.label_placeholder'))?>" required>
         </div>
 
         <div>
-          <label>Vorlage</label>
+          <label><?=h(t('admin.classes.template_label'))?></label>
           <select name="template_id">
-            <option value="0">— Keine —</option>
+            <option value="0"><?=h(t('admin.classes.template_none_option'))?></option>
             <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
               <option value="<?=h((string)$tid)?>" <?=($inactive ? 'disabled' : '')?>>
                 <?=h((string)$tpl['name'])?>
                 <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
-                <?=($inactive ? ' – inaktiv' : '')?>
+                <?=($inactive ? ' – ' . h(t('admin.classes.template_inactive_badge')) : '')?>
               </option>
             <?php endforeach; ?>
           </select>
-          <div class="muted">Wenn leer: Lehrkraft sieht Hinweis „keine Vorlage zugeordnet“.</div>
+          <div class="muted"><?=h(t('admin.classes.template_empty_hint'))?></div>
         </div>
 
         <!-- NEW: wizard display selection -->
         <div>
-          <label>Schüler-Wizard</label>
+          <label><?=h(t('admin.classes.wizard_label'))?></label>
           <select name="student_wizard_display">
-            <option value="groups" selected>Abschnitte (Gruppen)</option>
-            <option value="items">Einzelne Fragen (Items)</option>
-            <option value="beginner">Leseanfänger</option>
+            <option value="groups" selected><?=h(t('teacher.classes.wizard.groups'))?></option>
+            <option value="items"><?=h(t('teacher.classes.wizard.items'))?></option>
+            <option value="beginner"><?=h(t('teacher.classes.wizard.beginner'))?></option>
           </select>
-          <div class="muted">Anzeigeform wird in der Klasse gespeichert (Admin/Lehrkraft können beide ändern).</div>
+          <div class="muted"><?=h(t('admin.classes.wizard_class_hint'))?></div>
         </div>
 
         <div>
-          <label>Lehrkräfte</label>
+          <label><?=h(t('admin.classes.teachers_label'))?></label>
           <select name="teacher_ids[]" multiple size="4">
             <?php foreach ($teachers as $t): ?>
               <option value="<?=h((string)$t['id'])?>"><?=h((string)$t['display_name'])?> (<?=h((string)$t['email'])?>)</option>
             <?php endforeach; ?>
           </select>
-          <div class="muted">Wenn leer: keine automatische Zuordnung.</div>
+          <div class="muted"><?=h(t('admin.classes.teachers_hint'))?></div>
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h(t('admin.classes.create_button'))?></a>
         </div>
       </form>
     </div>
 
     <div class="panel">
-      <h3 style="margin-top:0;">Bulk</h3>
+      <h3 style="margin-top:0;"><?=h(t('admin.classes.create_bulk_heading'))?></h3>
       <form id="createClassBulk" method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_bulk">
 
         <div>
-          <label>Schuljahr</label>
-          <input name="school_year" type="text" value="<?=h($defaultSchoolYear)?>" placeholder="2025/26" required>
+          <label><?=h(t('admin.classes.school_year_label'))?></label>
+          <input name="school_year" type="text" value="<?=h($defaultSchoolYear)?>" placeholder="<?=h(t('admin.classes.school_year_placeholder'))?>" required>
         </div>
         <div>
-          <label>Stufe von</label>
+          <label><?=h(t('admin.classes.grade_from_label'))?></label>
           <input name="grade_from" type="number" min="1" max="13" required>
         </div>
         <div>
-          <label>Stufe bis</label>
+          <label><?=h(t('admin.classes.grade_to_label'))?></label>
           <input name="grade_to" type="number" min="1" max="13" required>
         </div>
         <div>
-          <label>Bezeichnungen</label>
-          <input name="labels" type="text" placeholder="a-b oder a,b,c" required>
-          <div class="muted" style="margin-top:6px;">Beispiele: <code>a-b</code>, <code>a,b</code></div>
+          <label><?=h(t('admin.classes.labels_label'))?></label>
+          <input name="labels" type="text" placeholder="<?=h(t('admin.classes.labels_placeholder'))?>" required>
+          <div class="muted" style="margin-top:6px;"><?=h(t('admin.classes.labels_examples'))?>: <code>a-b</code>, <code>a,b</code></div>
         </div>
 
         <div>
-          <label>Vorlage</label>
+          <label><?=h(t('admin.classes.template_label'))?></label>
           <select name="template_id">
-            <option value="0">— Keine —</option>
+            <option value="0"><?=h(t('admin.classes.template_none_option'))?></option>
             <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
               <option value="<?=h((string)$tid)?>" <?=($inactive ? 'disabled' : '')?>>
                 <?=h((string)$tpl['name'])?>
                 <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
-                <?=($inactive ? ' – inaktiv' : '')?>
+                <?=($inactive ? ' – ' . h(t('admin.classes.template_inactive_badge')) : '')?>
               </option>
             <?php endforeach; ?>
           </select>
-          <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
+          <div class="muted"><?=h(t('admin.classes.template_bulk_hint'))?></div>
         </div>
 
         <!-- NEW: wizard display selection -->
         <div>
-          <label>Schüler-Wizard</label>
+          <label><?=h(t('admin.classes.wizard_label'))?></label>
           <select name="student_wizard_display">
-            <option value="groups" selected>Abschnitte (Gruppen)</option>
-            <option value="items">Einzelne Fragen (Items)</option>
-            <option value="beginner">Leseanfänger</option>
+            <option value="groups" selected><?=h(t('teacher.classes.wizard.groups'))?></option>
+            <option value="items"><?=h(t('teacher.classes.wizard.items'))?></option>
+            <option value="beginner"><?=h(t('teacher.classes.wizard.beginner'))?></option>
           </select>
-          <div class="muted">Wird auf alle neu angelegten Klassen angewendet.</div>
+          <div class="muted"><?=h(t('admin.classes.wizard_bulk_hint'))?></div>
         </div>
 
         <div style="grid-column:1/-1;">
-          <label>Lehrkräfte (werden allen neu angelegten Klassen zugeordnet)</label>
+          <label><?=h(t('admin.classes.teachers_bulk_label'))?></label>
           <select name="teacher_ids[]" multiple size="4">
             <?php foreach ($teachers as $t): ?>
               <option value="<?=h((string)$t['id'])?>"><?=h((string)$t['display_name'])?> (<?=h((string)$t['email'])?>)</option>
             <?php endforeach; ?>
           </select>
-          <div class="muted">Wenn leer: keine automatische Zuordnung.</div>
+          <div class="muted"><?=h(t('admin.classes.teachers_hint'))?></div>
         </div>
 
         <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Bulk anlegen</a>
+          <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h(t('admin.classes.create_bulk_button'))?></a>
         </div>
       </form>
     </div>
@@ -535,18 +543,18 @@ render_admin_header('Klassen');
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Klassen (nach Schuljahr)</h2>
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.list_heading'))?></h2>
 
   <div class="actions" style="justify-content:flex-start;">
     <?php if ($showInactive): ?>
-      <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Inaktive ausblenden</a>
+      <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>"><?=h(t('admin.classes.hide_inactive'))?></a>
     <?php else: ?>
-      <a class="btn secondary" href="<?=h(url('admin/classes.php?show_inactive=1'))?>">Inaktive anzeigen</a>
+      <a class="btn secondary" href="<?=h(url('admin/classes.php?show_inactive=1'))?>"><?=h(t('admin.classes.show_inactive'))?></a>
     <?php endif; ?>
   </div>
 
   <?php if (!$grouped): ?>
-    <div class="alert">Keine Klassen gefunden.</div>
+    <div class="alert"><?=h(t('admin.classes.none'))?></div>
   <?php else: ?>
     <?php foreach ($grouped as $year => $items): ?>
       <details open style="margin-bottom:10px;">
@@ -557,13 +565,13 @@ render_admin_header('Klassen');
         <table class="table">
           <thead>
             <tr>
-              <th>Klasse</th>
-              <th>Vorlage</th>
-              <th>Lehrkräfte</th>
-              <th>Schüler</th>
-              <th>Wizard</th>
-              <th>Status</th>
-              <th>Aktionen</th>
+              <th><?=h(t('admin.classes.table.class'))?></th>
+              <th><?=h(t('admin.classes.table.template'))?></th>
+              <th><?=h(t('admin.classes.table.teachers'))?></th>
+              <th><?=h(t('admin.classes.table.students'))?></th>
+              <th><?=h(t('admin.classes.table.wizard'))?></th>
+              <th><?=h(t('admin.classes.table.status'))?></th>
+              <th><?=h(t('admin.classes.table.actions'))?></th>
             </tr>
           </thead>
           <tbody>
@@ -580,7 +588,7 @@ render_admin_header('Klassen');
                   } else {
                     echo h($tplName);
                     if ($tplVer > 0) echo ' <span class="muted">(v' . h((string)$tplVer) . ')</span>';
-                    if ($tplAct !== 1) echo ' <span class="badge">inaktiv</span>';
+                    if ($tplAct !== 1) echo ' <span class="badge">' . h(t('admin.classes.template_inactive_badge')) . '</span>';
                   }
                 ?>
               </td>
@@ -590,20 +598,20 @@ render_admin_header('Klassen');
                 <?php
                   $wiz = normalize_wizard_display((string)($c['student_wizard_display'] ?? 'groups'));
                   echo $wiz === 'items'
-                    ? '<span class="badge">Items</span>'
-                    : '<span class="badge">Gruppen</span>';
+                    ? '<span class="badge">' . h(t('teacher.classes.wizard.items')) . '</span>'
+                    : '<span class="badge">' . h(t('teacher.classes.wizard.groups')) . '</span>';
                 ?>
               </td>
-              <td><?=((int)$c['is_active']===1) ? '<span class="badge">aktiv</span>' : '<span class="badge">inaktiv</span>'?></td>
+              <td><?=((int)$c['is_active']===1) ? '<span class="badge">' . h(t('teacher.classes.status.active')) . '</span>' : '<span class="badge">' . h(t('teacher.classes.status.inactive')) . '</span>'?></td>
               <td style="display:flex; gap:8px; flex-wrap:wrap;">
-                <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>#editClass">Bearbeiten</a>
-                <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id='.(int)$c['id']))?>">Schüler</a>
-                <a class="btn secondary" href="<?=h(url('admin/export.php?class_id='.(int)$c['id']))?>">Export</a>
+                <a class="btn secondary" href="<?=h(url('admin/classes.php?edit='.(int)$c['id']))?>#editClass"><?=h(t('admin.classes.action.edit'))?></a>
+                <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id='.(int)$c['id']))?>"><?=h(t('admin.classes.action.students'))?></a>
+                <a class="btn secondary" href="<?=h(url('admin/export.php?class_id='.(int)$c['id']))?>"><?=h(t('admin.classes.action.export'))?></a>
                 <form method="post" style="display:inline;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="toggle_active">
                   <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
-                  <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=((int)$c['is_active']===1)?'Inaktiv setzen':'Aktivieren'?></a>
+                  <a class="btn secondary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h((int)$c['is_active']===1 ? t('admin.classes.action.deactivate') : t('admin.classes.action.activate'))?></a>
                 </form>
               </td>
             </tr>
@@ -617,7 +625,7 @@ render_admin_header('Klassen');
 
 <?php if ($editClass): ?>
   <div class="card" id="editClass">
-    <h2 style="margin-top:0;">Klasse bearbeiten: <?=h((string)$editClass['school_year'])?> · <?=h(class_display($editClass))?></h2>
+    <h2 style="margin-top:0;"><?=h(str_replace('{class}', (string)$editClass['school_year'] . ' · ' . class_display($editClass), t('admin.classes.edit_heading')))?></h2>
 
     <form id="classEditForm" method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -625,57 +633,57 @@ render_admin_header('Klassen');
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
 
       <div>
-        <label>Schuljahr</label>
+        <label><?=h(t('admin.classes.school_year_label'))?></label>
         <input name="school_year" type="text" value="<?=h((string)$editClass['school_year'])?>" required>
       </div>
       <div>
-        <label>Stufe</label>
+        <label><?=h(t('admin.classes.grade_label'))?></label>
         <input name="grade_level" type="number" min="1" max="13" value="<?=h((string)($editClass['grade_level'] ?? ''))?>" required>
       </div>
       <div>
-        <label>Bezeichnung</label>
+        <label><?=h(t('admin.classes.label_label'))?></label>
         <input name="label" type="text" value="<?=h((string)($editClass['label'] ?? ''))?>" required>
       </div>
       <div>
-        <label>Status</label>
+        <label><?=h(t('admin.classes.status_label'))?></label>
         <select name="is_active">
-          <option value="1" <?=((int)($editClass['is_active'] ?? 1)===1)?'selected':''?>>aktiv</option>
-          <option value="0" <?=((int)($editClass['is_active'] ?? 1)===0)?'selected':''?>>inaktiv</option>
+          <option value="1" <?=((int)($editClass['is_active'] ?? 1)===1)?'selected':''?>><?=h(t('teacher.classes.status.active'))?></option>
+          <option value="0" <?=((int)($editClass['is_active'] ?? 1)===0)?'selected':''?>><?=h(t('teacher.classes.status.inactive'))?></option>
         </select>
       </div>
 
       <div>
-        <label>Vorlage</label>
+        <label><?=h(t('admin.classes.template_label'))?></label>
         <?php $curTplId = (int)($editClass['template_id'] ?? 0); ?>
         <select name="template_id">
-          <option value="0">— Keine —</option>
+          <option value="0"><?=h(t('admin.classes.template_none_option'))?></option>
           <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
             <option value="<?=h((string)$tid)?>"
               <?=($tid===$curTplId ? 'selected' : '')?>
               <?=($inactive && $tid!==$curTplId ? 'disabled' : '')?>>
               <?=h((string)$tpl['name'])?>
               <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
-              <?=($inactive ? ' – inaktiv' : '')?>
+              <?=($inactive ? ' – ' . h(t('admin.classes.template_inactive_badge')) : '')?>
             </option>
           <?php endforeach; ?>
         </select>
-        <div class="muted">Ohne Vorlage: Lehrkraft/Schüler sehen Hinweis, dass keine Vorlage zugeordnet ist.</div>
+        <div class="muted"><?=h(t('admin.classes.template_edit_hint'))?></div>
       </div>
 
       <!-- NEW: wizard display in edit -->
       <div>
-        <label>Schüler-Wizard</label>
+        <label><?=h(t('admin.classes.wizard_label'))?></label>
         <?php $curWiz = normalize_wizard_display((string)($editClass['student_wizard_display'] ?? 'groups')); ?>
         <select name="student_wizard_display">
-          <option value="groups" <?=$curWiz==='groups'?'selected':''?>>Abschnitte (Gruppen)</option>
-          <option value="items" <?=$curWiz==='items'?'selected':''?>>Einzelne Fragen (Items)</option>
-          <option value="beginner" <?=$curWiz==='beginner'?'selected':''?>>Leseanfänger</option>
+          <option value="groups" <?=$curWiz==='groups'?'selected':''?>><?=h(t('teacher.classes.wizard.groups'))?></option>
+          <option value="items" <?=$curWiz==='items'?'selected':''?>><?=h(t('teacher.classes.wizard.items'))?></option>
+          <option value="beginner" <?=$curWiz==='beginner'?'selected':''?>><?=h(t('teacher.classes.wizard.beginner'))?></option>
         </select>
-        <div class="muted">Wert wird direkt in <code>classes.student_wizard_display</code> gespeichert.</div>
+        <div class="muted"><?=h(t('admin.classes.wizard_edit_hint'))?> <code>classes.student_wizard_display</code></div>
       </div>
 
       <div>
-        <label>Lehrkräfte</label>
+        <label><?=h(t('admin.classes.teachers_label'))?></label>
         <select name="teacher_ids[]" multiple size="6">
           <?php foreach ($teachers as $t): $tid=(int)$t['id']; ?>
             <option value="<?=h((string)$tid)?>" <?=in_array($tid, $editTeacherIds, true) ? 'selected' : ''?>>
@@ -686,17 +694,16 @@ render_admin_header('Klassen');
       </div>
 
       <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
-        <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>">Abbrechen</a>
-        <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;">Speichern</a>
+        <a class="btn secondary" href="<?=h(url('admin/classes.php'))?>"><?=h(t('admin.classes.action.cancel'))?></a>
+        <a class="btn primary" type="submit" onclick="this.closest('form').submit(); return false;"><?=h(t('admin.classes.action.save'))?></a>
       </div>
     </form>
 
     <hr style="margin:18px 0; border:none; border-top:1px solid var(--border);">
 
-    <h3 style="margin:0 0 8px 0;">Klasse löschen</h3>
+    <h3 style="margin:0 0 8px 0;"><?=h(t('admin.classes.delete_heading'))?></h3>
     <div class="alert danger">
-      <strong>Achtung:</strong> Löscht die Klasse <em>und alle dazugehörigen Daten</em> (Schüler inkl. Berichte/Feldwerte).
-      Das ist nicht rückgängig zu machen.
+      <strong><?=h(t('admin.classes.delete_warning_title'))?></strong> <?=h(t('admin.classes.delete_warning_text'))?>
     </div>
 
     <?php $must = (string)$editClass['school_year'] . ' ' . class_display($editClass); ?>
@@ -707,14 +714,14 @@ render_admin_header('Klassen');
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
       <input type="hidden" name="must_match" value="<?=h($must)?>">
 
-      <div class="muted" style="grid-column:1/-1;">Tippe zur Bestätigung exakt: <code><?=h($must)?></code></div>
+      <div class="muted" style="grid-column:1/-1;"><?=h(t('admin.classes.delete_confirm_hint'))?> <code><?=h($must)?></code></div>
 
       <div>
-        <label>Bestätigung</label>
+        <label><?=h(t('admin.classes.delete_confirm_label'))?></label>
         <input name="confirm_text" type="text" placeholder="<?=h($must)?>" required>
       </div>
       <div class="actions" style="justify-content:flex-start;">
-        <button class="btn danger" type="submit">Endgültig löschen</button>
+        <button class="btn danger" type="submit"><?=h(t('admin.classes.delete_confirm_button'))?></button>
       </div>
     </form>
   </div>

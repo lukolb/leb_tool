@@ -16,7 +16,7 @@ try {
   // CSRF via header
   $csrf = (string)($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
   if ($csrf === '' || !hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) {
-    throw new RuntimeException('CSRF ungültig.');
+    throw new RuntimeException(t('teacher.students_source.error.csrf_invalid'));
   }
 
   $pdo = db();
@@ -24,10 +24,10 @@ try {
   $userId = (int)($u['id'] ?? 0);
 
   $sourceClassId = (int)($_GET['source_class_id'] ?? 0);
-  if ($sourceClassId <= 0) throw new RuntimeException('source_class_id fehlt.');
+  if ($sourceClassId <= 0) throw new RuntimeException(t('teacher.students_source.error.source_class_missing'));
 
   if (!user_can_access_class($pdo, $userId, $sourceClassId)) {
-    throw new RuntimeException('Keine Berechtigung für die Quellklasse.');
+    throw new RuntimeException(t('teacher.students_source.error.no_access'));
   }
 
   $st = $pdo->prepare(

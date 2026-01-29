@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     if (!in_array((string)$selected, ['admin', 'teacher'], true)) {
-      throw new RuntimeException('Bitte eine Rolle auswählen.');
+      throw new RuntimeException(t('auth.role_select.error_required'));
     }
     $_SESSION['user']['role'] = (string)$selected;
     audit('role_select', (int)($_SESSION['user']['id'] ?? null), ['role' => (string)$selected]);
@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     redirect('teacher/index.php');
   } catch (Throwable $e) {
-    $err = 'Fehler: ' . $e->getMessage();
+    $err = t('auth.error_prefix', 'Fehler: ') . $e->getMessage();
   }
 }
 
@@ -33,11 +33,11 @@ $org = $b['org_name'] ?? 'LEG Tool';
 $logo = $b['logo_path'] ?? '';
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?=h($org)?> – Rolle wählen</title>
+  <title><?=h($org)?> – <?=h(t('auth.role_select.title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>
@@ -66,14 +66,14 @@ $logo = $b['logo_path'] ?? '';
       <?php if ($logo): ?><img src="<?=h(url($logo))?>" alt="<?=h($org)?>"><?php endif; ?>
       <div>
         <div class="brand-title"><?=h($org)?></div>
-        <div class="brand-subtitle">Rolle wählen</div>
+        <div class="brand-subtitle"><?=h(t('auth.role_select.brand_subtitle'))?></div>
       </div>
     </div>
   </div>
 
   <div class="container">
     <div class="card">
-      <h1>Als Rolle fortfahren</h1>
+      <h1><?=h(t('auth.role_select.heading'))?></h1>
 
       <?php if ($err): ?>
         <div class="alert danger"><strong><?=h($err)?></strong></div>
@@ -81,11 +81,11 @@ $logo = $b['logo_path'] ?? '';
 
       <form method="post">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-        <label>Bitte wählen</label>
+        <label><?=h(t('auth.role_select.label'))?></label>
 
         <div class="actions role-actions">
-          <button class="btn" type="submit" name="role" value="admin">🛠️ Admin</button>
-          <button class="btn" type="submit" name="role" value="teacher">👩‍🏫 Lehrkraft</button>
+          <button class="btn" type="submit" name="role" value="admin">🛠️ <?=h(t('auth.role_select.admin'))?></button>
+          <button class="btn" type="submit" name="role" value="teacher">👩‍🏫 <?=h(t('auth.role_select.teacher'))?></button>
         </div>
       </form>
     </div>

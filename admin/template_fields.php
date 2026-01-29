@@ -7,16 +7,16 @@ require_admin();
 
 $templateId = (int)($_GET['template_id'] ?? 0);
 if ($templateId <= 0) {
-  render_admin_header('Feld-Editor');
-  echo '<div class="alert danger"><strong>template_id fehlt.</strong></div>';
-  echo '<div class="card"><a class="btn secondary" href="'.h(url('admin/templates.php')).'">← Templates</a></div>';
+  render_admin_header(t('admin.template_fields.title'));
+  echo '<div class="alert danger"><strong>' . h(t('admin.template_fields.error.template_id_missing')) . '</strong></div>';
+  echo '<div class="card"><a class="btn secondary" href="' . h(url('admin/templates.php')) . '">← ' . h(t('admin.template_fields.back_templates')) . '</a></div>';
   render_admin_footer();
   exit;
 }
 
 $pdfUrl = url('admin/file.php?template_id=' . $templateId);
 
-render_admin_header('Feld-Editor');
+render_admin_header(t('admin.template_fields.title'));
 ?>
 
 <style>
@@ -241,17 +241,17 @@ render_admin_header('Feld-Editor');
 
 <div class="card">
     <div class="row-actions" style="float: right;">
-        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← zurück zu den Templates</a>
+        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← <?=h(t('admin.template_fields.back_templates'))?></a>
     </div>
 
-  <h1>Feld-Editor</h1>
+  <h1><?=h(t('admin.template_fields.heading'))?></h1>
 </div>
 
 <div id="dirtyWarning" class="alert danger" style="display:none">
   <p style="margin:0; display:flex; align-items:center; gap:12px;">
-    <b>Achtung! Ungespeicherte Änderungen!</b>
+    <b><?=h(t('admin.template_fields.unsaved_warning'))?></b>
     <button class="btn primary" type="button" id="btnSaveTop" style="margin-left:auto;">
-      Speichern
+      <?=h(t('admin.template_fields.save_button'))?>
     </button>
   </p>
 </div>
@@ -260,20 +260,20 @@ render_admin_header('Feld-Editor');
 <div class="card split-banner" id="splitBanner">
   <div class="muted2" id="splitBannerText">—</div>
   <div class="actions" style="justify-content:flex-start; gap:8px;">
-    <button class="btn secondary" type="button" id="btnSplitNow">Jetzt trennen</button>
-    <button class="btn secondary" type="button" id="btnSplitDismiss">Ignorieren</button>
-    <button class="btn secondary" type="button" id="btnSplitAll">Alle trennen</button>
-    <button class="btn secondary" type="button" id="btnSplitResetIgnored">Ignorierte zurücksetzen</button>
+    <button class="btn secondary" type="button" id="btnSplitNow"><?=h(t('admin.template_fields.split_now'))?></button>
+    <button class="btn secondary" type="button" id="btnSplitDismiss"><?=h(t('admin.template_fields.split_dismiss'))?></button>
+    <button class="btn secondary" type="button" id="btnSplitAll"><?=h(t('admin.template_fields.split_all'))?></button>
+    <button class="btn secondary" type="button" id="btnSplitResetIgnored"><?=h(t('admin.template_fields.split_reset_ignored'))?></button>
   </div>
 </div>
 
 <div class="card" id="metaCard">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <div class="muted" id="metaLine">Lade…</div>
+      <div class="muted" id="metaLine"><?=h(t('admin.template_fields.loading'))?></div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <a class="btn secondary" type="button" id="btnTogglePreview">Vorschau ausblenden</a>
+      <a class="btn secondary" type="button" id="btnTogglePreview"><?=h(t('admin.template_fields.preview_hide'))?></a>
     </div>
   </div>
 </div>
@@ -284,32 +284,32 @@ render_admin_header('Feld-Editor');
 <!-- OPTIONS MODAL -->
 <dialog id="optionsModal">
   <div class="dlg-head">
-    <h3 class="dlg-title">Optionen</h3>
+    <h3 class="dlg-title"><?=h(t('admin.template_fields.options_title'))?></h3>
     <div class="muted2" id="optSubtitle"></div>
   </div>
   <div class="dlg-body">
     <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
       <div>
-        <label>Options-Vorlage (option_list_templates)</label>
-        <select id="optTpl"><option value="">—</option></select>
-        <div class="muted2">Setzt options_json + merkt <code>meta.option_list_template_id</code>.</div>
+        <label><?=h(t('admin.template_fields.options_template_label'))?></label>
+        <select id="optTpl"><option value=""><?=h(t('admin.template_fields.option_empty'))?></option></select>
+        <div class="muted2"><?=h(t('admin.template_fields.options_template_hint'))?> <code>meta.option_list_template_id</code>.</div>
       </div>
       <div class="actions" style="justify-content:flex-start; gap:8px;">
-        <button class="btn secondary" type="button" id="btnClearOptions">Leeren</button>
+        <button class="btn secondary" type="button" id="btnClearOptions"><?=h(t('admin.template_fields.options_clear'))?></button>
       </div>
     </div>
 
     <div style="margin-top:12px;">
-      <label>options_json (JSON)</label>
+      <label><?=h(t('admin.template_fields.options_json_label'))?></label>
       <textarea id="optJson" placeholder='{"options":[{"value":"A","label":"A","icon_id":123}]}'></textarea>
-      <div class="muted2">Wir speichern die Items als <code>{"options":[...]}</code> ins Feld.</div>
+      <div class="muted2"><?=h(t('admin.template_fields.options_json_hint'))?> <code>{"options":[...]}</code>.</div>
     </div>
   </div>
 
   <form method="dialog">
     <div class="dlg-foot">
-      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
-      <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+      <button class="btn secondary" value="cancel" type="submit"><?=h(t('admin.template_fields.cancel_button'))?></button>
+      <button class="btn primary" value="ok" type="submit"><?=h(t('admin.template_fields.apply_button'))?></button>
     </div>
   </form>
 </dialog>
@@ -317,38 +317,38 @@ render_admin_header('Feld-Editor');
 <!-- DATE MODAL -->
 <dialog id="dateModal">
   <div class="dlg-head">
-    <h3 class="dlg-title">Datumsformat</h3>
+    <h3 class="dlg-title"><?=h(t('admin.template_fields.date_title'))?></h3>
     <div class="muted2" id="dateSubtitle"></div>
   </div>
   <div class="dlg-body">
     <div class="grid" style="grid-template-columns: 180px 1fr; gap:12px;">
       <div>
-        <label>Modus</label>
+        <label><?=h(t('admin.template_fields.date_mode_label'))?></label>
         <select id="dateMode">
-          <option value="preset">Preset</option>
-          <option value="custom">Custom</option>
+          <option value="preset"><?=h(t('admin.template_fields.date_mode_preset'))?></option>
+          <option value="custom"><?=h(t('admin.template_fields.date_mode_custom'))?></option>
         </select>
       </div>
       <div>
-        <label>Preset</label>
+        <label><?=h(t('admin.template_fields.date_preset_label'))?></label>
         <select id="datePreset">
-          <option value="MM/DD/YYYY">MM/DD/YYYY (US)</option>
-          <option value="DD.MM.YYYY">DD.MM.YYYY (DE)</option>
-          <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+          <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
+          <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+          <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
         </select>
       </div>
     </div>
     <div style="margin-top:12px;">
-      <label>Custom Format</label>
-      <input id="dateCustom" placeholder="z.B. DD. MMMM YYYY">
-      <div class="muted2">Wird genutzt, wenn Modus = Custom.</div>
+      <label><?=h(t('admin.template_fields.date_custom_label'))?></label>
+      <input id="dateCustom" placeholder="<?=h(t('admin.template_fields.date_custom_placeholder'))?>">
+      <div class="muted2"><?=h(t('admin.template_fields.date_custom_hint'))?></div>
     </div>
   </div>
 
   <form method="dialog">
   <div class="dlg-foot">
-    <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
-    <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+    <button class="btn secondary" value="cancel" type="submit"><?=h(t('admin.template_fields.cancel_button'))?></button>
+    <button class="btn primary" value="ok" type="submit"><?=h(t('admin.template_fields.apply_button'))?></button>
   </div>
 </form>
 </dialog>
@@ -357,28 +357,28 @@ render_admin_header('Feld-Editor');
 <div class="card panel">
   <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
     <div>
-      <h2>PDF-Vorlage ersetzen</h2>
-      <div class="muted2">Lädt eine neue PDF-Datei hoch, synchronisiert Feld-Positionen und informiert über fehlende Felder.</div>
+      <h2><?=h(t('admin.template_fields.pdf_replace_title'))?></h2>
+      <div class="muted2"><?=h(t('admin.template_fields.pdf_replace_hint'))?></div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <a class="btn secondary" type="button" id="btnReplacePdf">PDF austauschen</a>
-      <a class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;">Fehlende Felder löschen…</a>
+      <a class="btn secondary" type="button" id="btnReplacePdf"><?=h(t('admin.template_fields.pdf_replace_button'))?></a>
+      <a class="btn secondary" type="button" id="btnDeleteMissing" style="display:none;"><?=h(t('admin.template_fields.pdf_delete_missing'))?></a>
     </div>
   </div>
   <div style="margin-top:12px; display:grid; gap:6px;">
     <div>
-      <label>Neue PDF auswählen</label>
+      <label><?=h(t('admin.template_fields.pdf_select_label'))?></label>
       <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
     </div>
-    <div class="muted2">Empfohlen: gleiche Felder behalten oder neu zuordnen, damit bestehende Daten nicht verloren gehen.</div>
+    <div class="muted2"><?=h(t('admin.template_fields.pdf_select_hint'))?></div>
   </div>
   <div class="muted2" id="replacePdfStatus" style="margin-top:8px;"></div>
 </div>
 
 <dialog id="mapPdfFieldsDialog">
   <div class="dlg-head">
-    <h3 class="dlg-title" style="margin:0;">Neue PDF-Felder zuordnen</h3>
-    <div class="muted2">Neue PDF-Felder können bestehenden (fehlenden) Feldern zugeordnet werden, damit Daten erhalten bleiben.</div>
+    <h3 class="dlg-title" style="margin:0;"><?=h(t('admin.template_fields.pdf_map_title'))?></h3>
+    <div class="muted2"><?=h(t('admin.template_fields.pdf_map_hint'))?></div>
   </div>
   <div class="dlg-body">
     <div class="muted2" id="mapPdfSummary"></div>
@@ -387,8 +387,8 @@ render_admin_header('Feld-Editor');
   </div>
   <form method="dialog">
     <div class="dlg-foot">
-      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
-      <button class="btn primary" value="ok" type="submit">Zuordnung übernehmen</button>
+    <button class="btn secondary" value="cancel" type="submit"><?=h(t('admin.template_fields.cancel_button'))?></button>
+    <button class="btn primary" value="ok" type="submit"><?=h(t('admin.template_fields.pdf_map_apply'))?></button>
     </div>
   </form>
 </dialog>
@@ -397,12 +397,12 @@ render_admin_header('Feld-Editor');
 <div class="card panel">
   <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:space-between;">
     <div>
-      <h2>Gruppenübersicht</h2>
-      <div class="muted2">Klick = filtern, Toggle = Gruppe in Tabelle ein/ausklappen. Alt-Klick = Gruppe ausblenden.</div>
+      <h2><?=h(t('admin.template_fields.groups_overview_title'))?></h2>
+      <div class="muted2"><?=h(t('admin.template_fields.groups_overview_hint'))?></div>
     </div>
     <div class="actions" style="justify-content:flex-start; gap:8px;">
-      <a class="btn secondary" type="button" id="btnClearGroupFilter">Gruppenfilter löschen</a>
-      <a class="btn secondary" type="button" id="btnShowAllGroups">Alle Gruppen einblenden</a>
+      <a class="btn secondary" type="button" id="btnClearGroupFilter"><?=h(t('admin.template_fields.groups_filter_clear'))?></a>
+      <a class="btn secondary" type="button" id="btnShowAllGroups"><?=h(t('admin.template_fields.groups_show_all'))?></a>
     </div>
   </div>
   <div class="groups-bar" id="groupsBar" style="margin-top:10px;"></div>
@@ -413,111 +413,111 @@ render_admin_header('Feld-Editor');
   <div class="card" style="overflow:hidden; margin: 0" id="tableCard">
     <div class="grid" style="grid-template-columns: 1fr 200px; gap:12px; align-items:end;">
       <div>
-          <h3 style="margin-top: 0;">Filter (Feldname/Label/Gruppe)</h3>
-        <input id="fieldFilter" placeholder="z.B. soc, work, eng, math …">
+          <h3 style="margin-top: 0;"><?=h(t('admin.template_fields.filter_title'))?></h3>
+        <input id="fieldFilter" placeholder="<?=h(t('admin.template_fields.filter_placeholder'))?>">
         <div style="margin-top:8px;">
-          <label class="muted2" style="display:block; margin-bottom:4px;">Nicht enthält</label>
-          <input id="fieldExclude" placeholder="z.B. -T">
+          <label class="muted2" style="display:block; margin-bottom:4px;"><?=h(t('admin.template_fields.filter_exclude_label'))?></label>
+          <input id="fieldExclude" placeholder="<?=h(t('admin.template_fields.filter_exclude_placeholder'))?>">
         </div>
-        <div class="muted2">Filter wirkt auf Bulk-Aktionen (sichtbare Zeilen) und Gruppenübersicht.</div>
+        <div class="muted2"><?=h(t('admin.template_fields.filter_hint'))?></div>
       </div>
       <div class="actions" style="justify-content:flex-start;">
-        <a class="btn secondary" type="button" id="btnClearFilter">Filter löschen</a>
+        <a class="btn secondary" type="button" id="btnClearFilter"><?=h(t('admin.template_fields.filter_clear'))?></a>
       </div>
     </div>
 
     <!-- BULK TOOLBAR -->
-    <h3 style="margin-bottom: 0;">Werte setzen</h3>
+    <h3 style="margin-bottom: 0;"><?=h(t('admin.template_fields.bulk_title'))?></h3>
     <div class="toolbar" style="margin-top:12px;">
 
       <div class="block">
-        <label>Gruppe setzen</label>
-        <input id="bulkGroup" list="groupList" placeholder="z.B. Social / Math / German">
-        <label class="muted2" style="margin-top:6px;">Untergruppe setzen</label>
-        <input id="bulkSubgroup" list="subgroupList" placeholder="z.B. Algebra / Grammatik">
-        <div class="muted2">Leer lassen → Untergruppe entfernen (nur Gruppe bleibt).</div>
+        <label><?=h(t('admin.template_fields.bulk_group_label'))?></label>
+        <input id="bulkGroup" list="groupList" placeholder="<?=h(t('admin.template_fields.bulk_group_placeholder'))?>">
+        <label class="muted2" style="margin-top:6px;"><?=h(t('admin.template_fields.bulk_subgroup_label'))?></label>
+        <input id="bulkSubgroup" list="subgroupList" placeholder="<?=h(t('admin.template_fields.bulk_subgroup_placeholder'))?>">
+        <div class="muted2"><?=h(t('admin.template_fields.bulk_subgroup_hint'))?></div>
       </div>
 
       <div class="block">
-        <label>Typ setzen</label>
+        <label><?=h(t('admin.template_fields.bulk_type_label'))?></label>
         <select id="bulkType">
-          <option value="">—</option>
+          <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
           <option>text</option><option>multiline</option><option>date</option><option>number</option>
           <option>grade</option><option>checkbox</option><option>radio</option><option>select</option><option>signature</option>
         </select>
       </div>
 
       <div class="block">
-        <label>Rechte</label>
+        <label><?=h(t('admin.template_fields.bulk_rights_label'))?></label>
         <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap:8px;">
           <div>
-            <label class="muted2">Kind</label>
+            <label class="muted2"><?=h(t('admin.template_fields.bulk_rights_child'))?></label>
             <select id="bulkChild">
-              <option value="">—</option>
-              <option value="1">Ja</option>
-              <option value="0">Nein</option>
+              <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
+              <option value="1"><?=h(t('admin.template_fields.option_yes'))?></option>
+              <option value="0"><?=h(t('admin.template_fields.option_no'))?></option>
             </select>
           </div>
           <div>
-            <label class="muted2">Lehrer</label>
+            <label class="muted2"><?=h(t('admin.template_fields.bulk_rights_teacher'))?></label>
             <select id="bulkTeacher">
-              <option value="">—</option>
-              <option value="1">Ja</option>
-              <option value="0">Nein</option>
+              <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
+              <option value="1"><?=h(t('admin.template_fields.option_yes'))?></option>
+              <option value="0"><?=h(t('admin.template_fields.option_no'))?></option>
             </select>
           </div>
           <div>
-            <label class="muted2">Required</label>
+            <label class="muted2"><?=h(t('admin.template_fields.bulk_rights_required'))?></label>
             <select id="bulkRequired">
-              <option value="">—</option>
-              <option value="1">Ja</option>
-              <option value="0">Nein</option>
+              <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
+              <option value="1"><?=h(t('admin.template_fields.option_yes'))?></option>
+              <option value="0"><?=h(t('admin.template_fields.option_no'))?></option>
             </select>
           </div>
         </div>
       </div>
 
       <div class="block" style="min-width:340px;">
-        <label>Options-Vorlage (option_list_templates)</label>
+        <label><?=h(t('admin.template_fields.options_template_label'))?></label>
         <select id="bulkTpl">
-          <option value="">— keine —</option>
+          <option value=""><?=h(t('admin.template_fields.options_template_none'))?></option>
         </select>
-        <div class="muted2">Setzt options_json + merkt <code>meta.option_list_template_id</code>.</div>
+        <div class="muted2"><?=h(t('admin.template_fields.options_template_hint'))?> <code>meta.option_list_template_id</code>.</div>
       </div>
 
       <div class="block" style="min-width:360px;">
-        <label>Datumsformat (nur date)</label>
+        <label><?=h(t('admin.template_fields.date_bulk_label'))?></label>
         <div style="display:flex; gap:8px;">
           <select id="bulkDateMode" style="max-width:140px;">
-            <option value="">—</option>
-            <option value="preset">Preset</option>
-            <option value="custom">Custom</option>
+            <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
+            <option value="preset"><?=h(t('admin.template_fields.date_mode_preset'))?></option>
+            <option value="custom"><?=h(t('admin.template_fields.date_mode_custom'))?></option>
           </select>
           <select id="bulkDatePreset">
-            <option value="MM/DD/YYYY">MM/DD/YYYY (US)</option>
-            <option value="DD.MM.YYYY">DD.MM.YYYY (DE)</option>
-            <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+            <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
+            <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+            <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
           </select>
         </div>
-        <input id="bulkDateCustom" placeholder="z.B. DD. MMMM YYYY" style="margin-top:6px;">
+        <input id="bulkDateCustom" placeholder="<?=h(t('admin.template_fields.date_custom_placeholder'))?>" style="margin-top:6px;">
       </div>
 
       <div class="actions">
-          <a class="btn secondary" type="button" id="btnApplySelected" style="gap: 0;">Auf Auswahl (<span id="selCount">0</span>) anwenden</a>
-        <a class="btn secondary" type="button" id="btnApplyVisible">Auf sichtbare anwenden</a>
+          <a class="btn secondary" type="button" id="btnApplySelected" style="gap: 0;"><?=h(t('admin.template_fields.apply_selected'))?> (<span id="selCount">0</span>)</a>
+        <a class="btn secondary" type="button" id="btnApplyVisible"><?=h(t('admin.template_fields.apply_visible'))?></a>
       </div>
 
       <div class="block" style="min-width:280px;">
-          <h3 style="margin-bottom: 0;">Auto-Group</h3>
-        <div class="muted" style="margin-bottom: 10px;">Prefix ignoriert alles nach <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
+          <h3 style="margin-bottom: 0;"><?=h(t('admin.template_fields.auto_group_title'))?></h3>
+        <div class="muted" style="margin-bottom: 10px;"><?=h(t('admin.template_fields.auto_group_hint'))?> <code>-</code> (z.B. <code>mu-grade</code> → <code>mu</code>).</div>
         <div style="display:flex; gap:8px;">
-          <a class="btn secondary" type="button" id="btnAutoGroupPrefix">Nach Prefix</a>
-          <a class="btn secondary" type="button" id="btnAutoGroupPage">Nach PDF-Seite</a>
+          <a class="btn secondary" type="button" id="btnAutoGroupPrefix"><?=h(t('admin.template_fields.auto_group_prefix'))?></a>
+          <a class="btn secondary" type="button" id="btnAutoGroupPage"><?=h(t('admin.template_fields.auto_group_page'))?></a>
         </div>
       </div>
         <div class="block" style="min-width:100%; text-align: end;">
             <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
-            <a class="btn primary" type="button" id="btnSave">Speichern</a>
+            <a class="btn primary" type="button" id="btnSave"><?=h(t('admin.template_fields.save_button'))?></a>
         </div>
     </div>
 
@@ -525,22 +525,22 @@ render_admin_header('Feld-Editor');
       <table id="fieldsTbl">
         <thead>
           <tr>
-            <th class="sticky-col-0" style="width:46px;">✓</th>
-            <th class="sticky-col-1">Feldname</th>
-            <th style="min-width:200px;">Gruppe</th>
-            <th style="min-width:200px;">Untergruppe</th>
-            <th style="min-width:220px;">Untergruppe (EN)</th>
-            <th style="min-width:220px;">Gruppentitel (EN)</th>
-            <th style="min-width:160px;">Typ</th>
-            <th style="min-width:260px;">Label</th>
-            <th style="min-width:260px;">Label (EN)</th>
-            <th style="min-width:240px;">Stammfeld</th>
-            <th style="min-width:420px;">Help</th>
-            <th>Kind</th>
-            <th>Lehrer</th>
-            <th>Klassenfeld</th>
-            <th>Erforderlich</th>
-            <th style="min-width:420px;">Extras</th>
+            <th class="sticky-col-0" style="width:46px;"><?=h(t('admin.template_fields.table.select'))?></th>
+            <th class="sticky-col-1"><?=h(t('admin.template_fields.table.field_name'))?></th>
+            <th style="min-width:200px;"><?=h(t('admin.template_fields.table.group'))?></th>
+            <th style="min-width:200px;"><?=h(t('admin.template_fields.table.subgroup'))?></th>
+            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
+            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
+            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
+            <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label'))?></th>
+            <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label_en'))?></th>
+            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
+            <th style="min-width:420px;"><?=h(t('admin.template_fields.table.help'))?></th>
+            <th><?=h(t('admin.template_fields.table.child'))?></th>
+            <th><?=h(t('admin.template_fields.table.teacher'))?></th>
+            <th><?=h(t('admin.template_fields.table.class_field'))?></th>
+            <th><?=h(t('admin.template_fields.table.required'))?></th>
+            <th style="min-width:420px;"><?=h(t('admin.template_fields.table.extras'))?></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -548,27 +548,27 @@ render_admin_header('Feld-Editor');
     </div>
 
     <p class="muted2" style="margin-top:10px;">
-      • Klick auf Zeile markiert das Feld im PDF.<br>
-      • Klick im PDF sucht das Feld in der Tabelle und markiert es (wie in templates.php).<br>
-      • Im PDF werden alle Felder der aktuellen Seite hellblau angezeigt.<br>
-      • Drag&Drop in der Tabelle ändert die Reihenfolge (<code>sort_order</code>) ohne extra Sort-Spalte.<br>
-      • Preview-Breite: ziehe den Balken zwischen Tabelle und Vorschau.
+      • <?=h(t('admin.template_fields.help_row_click'))?><br>
+      • <?=h(t('admin.template_fields.help_pdf_click'))?><br>
+      • <?=h(t('admin.template_fields.help_page_highlight'))?><br>
+      • <?=h(t('admin.template_fields.help_drag_drop'))?> <code>sort_order</code> <?=h(t('admin.template_fields.help_drag_drop_suffix'))?><br>
+      • <?=h(t('admin.template_fields.help_preview_width'))?>
     </p>
   </div>
 
   <!-- RESIZER -->
-  <div class="col-resizer" id="colResizer" title="Ziehen um Vorschau-Breite anzupassen"></div>
+  <div class="col-resizer" id="colResizer" title="<?=h(t('admin.template_fields.preview_resize_title'))?>"></div>
 
   <!-- PDF Preview -->
   <div class="card wiz-preview" id="previewCard" style="margin:0;">
-    <h2>PDF Vorschau</h2>
-    <div class="muted" id="pdfHint">Klicke links ein Feld, um es im PDF zu markieren.</div>
+    <h2><?=h(t('admin.template_fields.pdf_preview_title'))?></h2>
+    <div class="muted" id="pdfHint"><?=h(t('admin.template_fields.pdf_preview_hint'))?></div>
 
     <div style="display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap;">
-      <button class="btn secondary" id="btnPrevPage" type="button">←</button>
-      <div class="muted" id="pageInfo">Seite –</div>
-      <button class="btn secondary" id="btnNextPage" type="button">→</button>
-      <div class="muted2" style="margin-left:auto;">Tipp: Klick ins PDF → Feld finden</div>
+      <button class="btn secondary" id="btnPrevPage" type="button" aria-label="<?=h(t('admin.template_fields.page_prev'))?>">←</button>
+      <div class="muted" id="pageInfo"><?=h(t('admin.template_fields.page_label'))?> –</div>
+      <button class="btn secondary" id="btnNextPage" type="button" aria-label="<?=h(t('admin.template_fields.page_next'))?>">→</button>
+      <div class="muted2" style="margin-left:auto;"><?=h(t('admin.template_fields.page_tip'))?></div>
     </div>
 
     <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden;">
@@ -588,6 +588,81 @@ const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
 const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
 const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
+const I18N = <?=json_encode([
+  'option_unassigned' => t('admin.template_fields.option_unassigned'),
+  'split_notice_title' => t('admin.template_fields.split_notice_title'),
+  'split_notice_prefix' => t('admin.template_fields.split_notice_prefix'),
+  'split_reset_done' => t('admin.template_fields.split_reset_done'),
+  'group_alt_hide' => t('admin.template_fields.group_alt_hide'),
+  'option_empty' => t('admin.template_fields.option_empty'),
+  'group_empty' => t('admin.template_fields.option_empty'),
+  'option_template_none' => t('admin.template_fields.options_template_none'),
+  'template_select' => t('admin.template_fields.template_select'),
+  'base_field_student_first' => t('admin.template_fields.base_field_student_first'),
+  'base_field_student_last' => t('admin.template_fields.base_field_student_last'),
+  'base_field_student_birth' => t('admin.template_fields.base_field_student_birth'),
+  'base_field_class_display' => t('admin.template_fields.base_field_class_display'),
+  'base_field_class_grade' => t('admin.template_fields.base_field_class_grade'),
+  'base_field_class_label' => t('admin.template_fields.base_field_class_label'),
+  'base_field_school_year' => t('admin.template_fields.base_field_school_year'),
+  'label_en_placeholder' => t('admin.template_fields.label_en_placeholder'),
+  'badge_options' => t('admin.template_fields.badge_options'),
+  'groups_bar_title' => t('admin.template_fields.groups_bar_title'),
+  'import_failed' => t('admin.template_fields.import_failed'),
+  'delete_failed' => t('admin.template_fields.delete_failed'),
+  'delete_missing_button' => t('admin.template_fields.delete_missing_button'),
+  'mapping_summary' => t('admin.template_fields.mapping_summary'),
+  'mapping_existing_field' => t('admin.template_fields.mapping_existing_field'),
+  'mapping_duplicate' => t('admin.template_fields.mapping_duplicate'),
+  'pdf_read_error' => t('admin.template_fields.pdf_read_error'),
+  'warn_missing_pdf' => t('admin.template_fields.warn_missing_pdf'),
+  'confirm_new_fields' => t('admin.template_fields.confirm_new_fields'),
+  'confirm_delete_missing' => t('admin.template_fields.confirm_delete_missing'),
+  'api_error' => t('admin.template_fields.api_error'),
+  'option_api_error' => t('admin.template_fields.option_api_error'),
+  'template_not_found' => t('admin.template_fields.template_not_found'),
+  'preview_hide' => t('admin.template_fields.preview_hide'),
+  'preview_show' => t('admin.template_fields.preview_show'),
+  'load_fields_error' => t('admin.template_fields.load_fields_error'),
+  'pdf_select_required' => t('admin.template_fields.pdf_select_required'),
+  'pdf_checking' => t('admin.template_fields.pdf_checking'),
+  'pdf_replace_warning' => t('admin.template_fields.pdf_replace_warning'),
+  'pdf_replace_cancelled' => t('admin.template_fields.pdf_replace_cancelled'),
+  'pdf_mapping_cancelled' => t('admin.template_fields.pdf_mapping_cancelled'),
+  'pdf_uploading' => t('admin.template_fields.pdf_uploading'),
+  'pdf_upload_failed' => t('admin.template_fields.pdf_upload_failed'),
+  'pdf_saved_updating' => t('admin.template_fields.pdf_saved_updating'),
+  'pdf_summary_updated' => t('admin.template_fields.pdf_summary_updated'),
+  'pdf_summary_missing' => t('admin.template_fields.pdf_summary_missing'),
+  'pdf_summary_added' => t('admin.template_fields.pdf_summary_added'),
+  'pdf_summary_renamed' => t('admin.template_fields.pdf_summary_renamed'),
+  'pdf_summary_deleted' => t('admin.template_fields.pdf_summary_deleted'),
+  'pdf_missing_none' => t('admin.template_fields.pdf_missing_none'),
+  'pdf_delete_confirm' => t('admin.template_fields.pdf_delete_confirm'),
+  'pdf_deleted' => t('admin.template_fields.pdf_deleted'),
+  'pdf_delete_error' => t('admin.template_fields.pdf_delete_error'),
+  'split_applied' => t('admin.template_fields.split_applied'),
+  'meta_line' => t('admin.template_fields.meta_line'),
+  'pdf_marked' => t('admin.template_fields.pdf_marked'),
+  'pdf_hint_default' => t('admin.template_fields.pdf_hint_default'),
+  'page_info' => t('admin.template_fields.page_info'),
+  'pdf_hit_none' => t('admin.template_fields.pdf_hit_none'),
+  'pdf_hit_hidden' => t('admin.template_fields.pdf_hit_hidden'),
+  'pdf_no_position' => t('admin.template_fields.pdf_no_position'),
+  'template_label' => t('admin.template_fields.template_label'),
+  'options_count' => t('admin.template_fields.options_count'),
+  'badge_multiline' => t('admin.template_fields.badge_multiline'),
+  'date_button' => t('admin.template_fields.date_button'),
+  'options_button' => t('admin.template_fields.options_button'),
+  'group_page' => t('admin.template_fields.group_page'),
+  'error_prefix' => t('admin.template_fields.error_prefix'),
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+const tAdmin = (key) => I18N[key] ?? key;
+const tfmtAdmin = (key, vars = {}) => {
+  const base = tAdmin(key);
+  return base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
+};
+const EMPTY_LABEL = tAdmin('group_empty');
 
 const metaLine = document.getElementById('metaLine');
 const tbody = document.querySelector('#fieldsTbl tbody');
@@ -927,7 +1002,7 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
   });
 
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.ok) throw new Error(data.error || `Import fehlgeschlagen (HTTP ${resp.status})`);
+  if (!resp.ok || !data.ok) throw new Error(data.error || tfmtAdmin('import_failed', { status: String(resp.status) }));
 
   return data.imported || 0;
 }
@@ -937,7 +1012,7 @@ function updateMissingDeleteButton(names){
   if (!btnDeleteMissing) return;
   if (lastMissingNames.length) {
     btnDeleteMissing.style.display = '';
-    btnDeleteMissing.textContent = `Fehlende Felder löschen (${lastMissingNames.length})…`;
+    btnDeleteMissing.textContent = tfmtAdmin('delete_missing_button', { count: String(lastMissingNames.length) });
   } else {
     btnDeleteMissing.style.display = 'none';
   }
@@ -953,7 +1028,7 @@ async function deleteFieldsByName(names){
     body: JSON.stringify(payload)
   });
   const data = await resp.json().catch(()=>({}));
-  if (!resp.ok || !data.ok) throw new Error(data.error || `Löschen fehlgeschlagen (HTTP ${resp.status})`);
+  if (!resp.ok || !data.ok) throw new Error(data.error || tfmtAdmin('delete_failed', { status: String(resp.status) }));
   return data.deleted || 0;
 }
 
@@ -961,9 +1036,9 @@ function buildMappingDialog(missing, newcomers){
   mapPdfFieldsList.innerHTML = '';
   mapPdfError.style.display = 'none';
   mapPdfError.textContent = '';
-  mapPdfSummary.textContent = `Fehlende Felder: ${missing.length} · Neue PDF-Felder: ${newcomers.length}`;
+  mapPdfSummary.textContent = tfmtAdmin('mapping_summary', { missing: String(missing.length), newcomers: String(newcomers.length) });
 
-  const options = [{ value:'', label:'— nicht zuordnen —' }, ...newcomers.map(n=>({ value:n, label:n }))];
+  const options = [{ value:'', label: tAdmin('option_unassigned') }, ...newcomers.map(n=>({ value:n, label:n }))];
 
   for (const m of missing){
     const wrap = document.createElement('div');
@@ -972,7 +1047,7 @@ function buildMappingDialog(missing, newcomers){
     wrap.style.gap = '6px';
 
     const label = document.createElement('label');
-    label.textContent = `Bestehendes Feld: ${m}`;
+    label.textContent = tfmtAdmin('mapping_existing_field', { field: m });
     const select = document.createElement('select');
     select.dataset.missingName = m;
     for (const opt of options){
@@ -997,7 +1072,7 @@ function collectMappingFromDialog(){
     const target = sel.value.trim();
     if (!target) continue;
     if (chosenTargets.has(target)) {
-      mapPdfError.textContent = `„${target}“ wurde mehrfach ausgewählt. Bitte jede neue PDF-Feld nur einmal zuordnen.`;
+      mapPdfError.textContent = tfmtAdmin('mapping_duplicate', { target });
       mapPdfError.style.display = 'block';
       return null;
     }
@@ -1036,7 +1111,7 @@ async function assessNewPdfFile(file){
   try {
     doc = await pdfjsLib.getDocument({ data: buf }).promise;
   } catch (e) {
-    throw new Error('Neue PDF konnte nicht gelesen werden: ' + (e?.message || e));
+    throw new Error(tAdmin('pdf_read_error') + ' ' + (e?.message || e));
   }
 
   try {
@@ -1107,14 +1182,14 @@ async function syncPdfPositionsWithFields(opts={}){
   updateMeta();
 
   if (missing.length) {
-    alert('Warnung: Diese Felder fehlen in der neuen PDF und könnten Daten verlieren: ' + missing.join(', '));
+    alert(tfmtAdmin('warn_missing_pdf', { fields: missing.join(', ') }));
   }
 
   if (dirty.size) await save();
 
   let imported = 0;
   if (newcomers.length) {
-    const wantImport = confirm(`Neue Felder in PDF entdeckt (${newcomers.length}). Jetzt anlegen?`);
+    const wantImport = confirm(tfmtAdmin('confirm_new_fields', { count: String(newcomers.length) }));
     if (wantImport) {
       imported = await importNewFieldsFromPdf(newcomers, pdfInfo);
       await load();
@@ -1124,7 +1199,7 @@ async function syncPdfPositionsWithFields(opts={}){
   let deleted = 0;
   updateMissingDeleteButton(missing);
   if (missing.length && opts?.promptDeleteMissing !== false) {
-    const wantDelete = confirm(`Soll(en) ${missing.length} fehlende Feld(er) dauerhaft gelöscht werden? (${missing.join(', ')})`);
+    const wantDelete = confirm(tfmtAdmin('confirm_delete_missing', { count: String(missing.length), fields: missing.join(', ') }));
     if (wantDelete) {
       deleted = await deleteFieldsByName(missing);
       await load();
@@ -1154,19 +1229,19 @@ function buildGroupPath(group, subgroup){
 
 function getGroupPath(f){
   const g = f?.meta?.group;
-  return (g && String(g).trim()) ? String(g).trim() : '—';
+  return (g && String(g).trim()) ? String(g).trim() : EMPTY_LABEL;
 }
 
 function getGroupKey(f){
   const path = getGroupPath(f);
-  if (path === '—') return '—';
+  if (path === EMPTY_LABEL) return EMPTY_LABEL;
   const parts = parseGroupParts(path);
-  return parts.group || '—';
+  return parts.group || EMPTY_LABEL;
 }
 
 function getSubgroupMatchKey(f){
   const path = getGroupPath(f);
-  if (path === '—') return '';
+  if (path === EMPTY_LABEL) return '';
   const parts = parseGroupParts(path);
   if (!parts.group || !parts.subgroup) return '';
   return `${parts.group}||${parts.subgroup}`;
@@ -1182,7 +1257,7 @@ function markDirty(id){
 function hideSplitBanner(){
   splitCandidate = null;
   splitBanner.style.display = 'none';
-  splitBannerText.textContent = '—';
+  splitBannerText.textContent = EMPTY_LABEL;
 }
 
 function getRowInputsForField(fieldId){
@@ -1253,7 +1328,7 @@ function queueSplitCandidate(fieldId, idx, inpDE=null, inpEN=null){
 
   const total = countSplitCandidates();
   splitBannerText.innerHTML =
-    `<strong>Hinweis:</strong> „DE | EN“ erkannt (${total}×) → <span class="muted2">DE: ${escapeHtml(de)} · EN: ${escapeHtml(en)}</span>`;
+    `<strong>${tAdmin('split_notice_title')}</strong> ${tfmtAdmin('split_notice_prefix', { total: String(total) })} <span class="muted2">DE: ${escapeHtml(de)} · EN: ${escapeHtml(en)}</span>`;
 
   splitBanner.style.display = 'flex';
 }
@@ -1367,7 +1442,7 @@ btnSplitAll.addEventListener('click', ()=>{
   updateMeta();
 
   // Optional: kleine Statusmeldung
-  if (changed) saveHint.textContent = `Getrennt: ${changed} Felder (noch offen: ${countSplitCandidates()})`;
+  if (changed) saveHint.textContent = tfmtAdmin('split_applied', { changed: String(changed), remaining: String(countSplitCandidates()) });
 });
 
 btnSplitDismiss.addEventListener('click', ()=>{
@@ -1384,7 +1459,7 @@ btnSplitResetIgnored.addEventListener('click', ()=>{
   try { localStorage.removeItem(IGN_SPLIT_LS_KEY); } catch(e) {}
   hideSplitBanner();
   scanForSplitCandidate();
-  saveHint.textContent = 'Ignorierte Split-Hinweise zurückgesetzt.';
+  saveHint.textContent = tAdmin('split_reset_done');
 });
 
 function isVisibleByFilter(f){
@@ -1412,7 +1487,7 @@ function rebuildGroupDatalist(){
   const subgroupSet = new Set();
   for (const f of fields) {
     const g = getGroupPath(f);
-    if (!g || g === '—') continue;
+    if (!g || g === EMPTY_LABEL) continue;
     const parts = parseGroupParts(g);
     if (parts.group) groupSet.add(parts.group);
     if (parts.subgroup) subgroupSet.add(parts.subgroup);
@@ -1427,8 +1502,14 @@ function updateMeta(){
   const total = fields.length;
   const visible = fields.filter(isVisibleByFilter).length;
   const sel = selected.size;
-  metaLine.textContent =
-    `Template #${template?.id ?? templateId} – ${template?.name ?? ''} v${template?.template_version ?? ''} · Felder: ${total} (sichtbar: ${visible}) · Auswahl: ${sel}`;
+  metaLine.textContent = tfmtAdmin('meta_line', {
+    id: String(template?.id ?? templateId),
+    name: String(template?.name ?? ''),
+    version: String(template?.template_version ?? ''),
+    total: String(total),
+    visible: String(visible),
+    selected: String(sel),
+  });
   selCount.textContent = String(sel);
 }
 
@@ -1448,19 +1529,19 @@ function computeExtras(f){
 
   if (['radio','select','grade'].includes(f.type)) {
     const tid = f?.meta?.option_list_template_id;
-    if (tid) badges.push(`🧩 ${escapeHtml(optionTemplateNameById(tid) || ('Template ' + tid))}`);
+    if (tid) badges.push(`🧩 ${escapeHtml(optionTemplateNameById(tid) || (tAdmin('template_label') + ' ' + tid))}`);
 
     const opt = f.options;
     let count = 0;
     if (opt && typeof opt === 'object' && Array.isArray(opt.options)) count = opt.options.length;
-    if (count) badges.push(`☰ ${count} Optionen`);
-    else badges.push('☰ — Optionen');
+    if (count) badges.push(`☰ ${tfmtAdmin('options_count', { count: String(count) })}`);
+    else badges.push(`☰ ${tAdmin('badge_options')}`);
 
   }
 
-  if (f.type === 'multiline' || f.multiline) badges.push('↵ multiline');
+  if (f.type === 'multiline' || f.multiline) badges.push(`↵ ${tAdmin('badge_multiline')}`);
 
-  return badges.map(b=>`<span class="badge">${b}</span>`).join('') || '<span class="muted2">—</span>';
+  return badges.map(b=>`<span class="badge">${b}</span>`).join('') || `<span class="muted2">${EMPTY_LABEL}</span>`;
 }
 
 function scrollRowIntoView(id){
@@ -1493,7 +1574,7 @@ function renderGroupsBar(){
   for (const g of groups) {
     const pill = document.createElement('div');
     pill.className = 'group-pill' + ((groupFilter===g) ? ' is-active' : '');
-    pill.title = 'Klick = filtern, Toggle = ein/ausklappen, Alt-Klick = ausblenden';
+    pill.title = tAdmin('groups_bar_title');
 
     const tog = document.createElement('span');
     tog.className = 'toggle';
@@ -1518,7 +1599,7 @@ function renderGroupsBar(){
 
     pill.addEventListener('click', (e)=>{
       if (e.altKey) {
-        if (g !== '—') hiddenGroups.add(g);
+        if (g !== EMPTY_LABEL) hiddenGroups.add(g);
         rebuildGroupDatalist();
         renderGroupsBar();
         renderTable();
@@ -1569,7 +1650,7 @@ function renderTable(){
             <span class="gbtn">${isCollapsed ? '+' : '–'}</span>
             <span>${escapeHtml(g)}</span>
             <span class="gmeta">(${cnt})</span>
-            <span class="gmeta">Alt-Klick = ausblenden</span>
+            <span class="gmeta">${tAdmin('group_alt_hide')}</span>
           </div>
         `;
 
@@ -1588,7 +1669,7 @@ function renderTable(){
         gr.addEventListener('click', (e)=>{
           e.preventDefault();
           if (e.altKey) {
-            if (g !== '—') hiddenGroups.add(g);
+            if (g !== EMPTY_LABEL) hiddenGroups.add(g);
             rebuildGroupDatalist();
             renderGroupsBar();
             renderTable();
@@ -1656,7 +1737,7 @@ function renderTable(){
         await renderPage();
       } else {
         currentHighlight = null;
-        pdfHint.textContent = `Keine Position für „${f.name}“ gefunden.`;
+        pdfHint.textContent = tfmtAdmin('pdf_no_position', { name: f.name });
         await renderPage();
       }
     });
@@ -1866,7 +1947,7 @@ function renderTable(){
     inpLE.type = 'text';
     inpLE.dataset.role = 'label_en';
     inpLE.dataset.fieldId = String(f.id);
-    inpLE.placeholder = 'English label (optional)';
+    inpLE.placeholder = tAdmin('label_en_placeholder');
     inpLE.value = (f.label_en !== undefined && f.label_en !== null) ? String(f.label_en) : '';
     inpLE.addEventListener('click',(e)=>e.stopPropagation());
     inpLE.addEventListener('input',(e)=>{
@@ -1882,14 +1963,14 @@ function renderTable(){
     const tdB = document.createElement('td');
     const selB = document.createElement('select');
     selB.innerHTML = `
-      <option value="">—</option>
-      <option value="student.first_name">Schüler: Vorname</option>
-      <option value="student.last_name">Schüler: Nachname</option>
-      <option value="student.date_of_birth">Schüler: Geburtsdatum</option>
-      <option value="class.display">Klasse: Anzeige (z.B. 4a)</option>
-      <option value="class.grade_level">Klasse: Stufe</option>
-      <option value="class.label">Klasse: Bezeichnung</option>
-      <option value="class.school_year">Schuljahr</option>
+      <option value="">${tAdmin('option_empty')}</option>
+      <option value="student.first_name">${tAdmin('base_field_student_first')}</option>
+      <option value="student.last_name">${tAdmin('base_field_student_last')}</option>
+      <option value="student.date_of_birth">${tAdmin('base_field_student_birth')}</option>
+      <option value="class.display">${tAdmin('base_field_class_display')}</option>
+      <option value="class.grade_level">${tAdmin('base_field_class_grade')}</option>
+      <option value="class.label">${tAdmin('base_field_class_label')}</option>
+      <option value="class.school_year">${tAdmin('base_field_school_year')}</option>
     `;
     const curBind = (f.meta && f.meta.system_binding) ? String(f.meta.system_binding) : '';
     if (curBind) {
@@ -1990,7 +2071,7 @@ function renderTable(){
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn secondary';
-      btn.textContent = 'Datumsformat…';
+      btn.textContent = tAdmin('date_button');
       btn.addEventListener('click', (e)=>{ e.stopPropagation(); openDateModal(f.id); });
       wrap.appendChild(btn);
     }
@@ -1999,7 +2080,7 @@ function renderTable(){
       const tplSel = document.createElement('select');
       tplSel.style.maxWidth = '320px';
       tplSel.innerHTML =
-        `<option value="">Vorlage wählen…</option>` +
+        `<option value="">${tAdmin('template_select')}</option>` +
         optionTemplates.map(t=>`<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
       const curTid = f?.meta?.option_list_template_id ? String(f.meta.option_list_template_id) : '';
       if (curTid) {
@@ -2029,7 +2110,7 @@ function renderTable(){
       const btnOpt = document.createElement('button');
       btnOpt.type = 'button';
       btnOpt.className = 'btn secondary';
-      btnOpt.textContent = 'Optionen…';
+      btnOpt.textContent = tAdmin('options_button');
       btnOpt.addEventListener('click', (e)=>{ e.stopPropagation(); openOptionsModal(f.id); });
       wrap.appendChild(btnOpt);
 
@@ -2103,7 +2184,7 @@ async function apiPost(payload){
     body: JSON.stringify({ csrf_token: csrf, template_id: templateId, ...payload })
   });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || 'API Fehler');
+  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('api_error'));
   return j;
 }
 
@@ -2114,7 +2195,7 @@ async function optionListsPost(payload){
     body: JSON.stringify({ csrf_token: csrf, ...payload })
   });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || 'Option-API Fehler');
+  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('option_api_error'));
   return j;
 }
 
@@ -2122,11 +2203,11 @@ async function loadOptionTemplates(){
   const j = await optionListsPost({ action: 'list_templates' });
   optionTemplates = j.templates || [];
 
-  bulkTpl.innerHTML = `<option value="">— keine —</option>` + optionTemplates.map(t=>{
+  bulkTpl.innerHTML = `<option value="">${tAdmin('option_template_none')}</option>` + optionTemplates.map(t=>{
     return `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
   }).join('');
 
-  optTpl.innerHTML = `<option value="">—</option>` + optionTemplates.map(t=>{
+  optTpl.innerHTML = `<option value="">${tAdmin('option_empty')}</option>` + optionTemplates.map(t=>{
     return `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
   }).join('');
 }
@@ -2138,7 +2219,7 @@ async function fetchOptionTemplate(listId){
 
 async function applyOptionTemplateToField(fieldId, listId){
   const { template: tpl, items } = await fetchOptionTemplate(listId);
-  if (!tpl) throw new Error('Vorlage nicht gefunden.');
+  if (!tpl) throw new Error(tAdmin('template_not_found'));
 
   const idx = fields.findIndex(x=>x.id===fieldId);
   if (idx < 0) return;
@@ -2281,7 +2362,7 @@ function autoGroupPage(ids){
     const p = nf.meta?.page;
     if (p) {
       nf.meta = nf.meta || {};
-      nf.meta.group = `Seite ${p}`;
+      nf.meta.group = tfmtAdmin('group_page', { page: String(p) });
       markDirty(nf.id);
     }
     return nf;
@@ -2492,27 +2573,27 @@ btnSaveTop.addEventListener('click', save);
 
 btnReplacePdf.addEventListener('click', async ()=>{
   const file = replacePdfInput?.files?.[0] ?? null;
-  if (!file) { replacePdfStatus.textContent = 'Bitte neue PDF auswählen.'; return; }
+  if (!file) { replacePdfStatus.textContent = tAdmin('pdf_select_required'); return; }
 
   btnReplacePdf.disabled = true;
-  replacePdfStatus.textContent = 'Prüfe Felder in neuer PDF…';
+  replacePdfStatus.textContent = tAdmin('pdf_checking');
 
   try {
     const assessment = await assessNewPdfFile(file);
     let plannedMapping = {};
     if (assessment?.missing?.length) {
-      const msg = `Warnung: ${assessment.missing.length} vorhandene Felder fehlen in der neuen PDF (${assessment.missing.join(', ')}) und Daten könnten verloren gehen. PDF trotzdem ersetzen?`;
+      const msg = tfmtAdmin('pdf_replace_warning', { count: String(assessment.missing.length), fields: assessment.missing.join(', ') });
       const proceed = confirm(msg);
-      if (!proceed) { replacePdfStatus.textContent = 'Abgebrochen: PDF wurde nicht ersetzt.'; return; }
+      if (!proceed) { replacePdfStatus.textContent = tAdmin('pdf_replace_cancelled'); return; }
     }
 
     if (assessment?.missing?.length && assessment?.newcomers?.length) {
       const mapping = await promptPdfFieldMapping(assessment.missing, assessment.newcomers);
-      if (mapping === null) { replacePdfStatus.textContent = 'Abgebrochen: Zuordnung abgebrochen.'; return; }
+      if (mapping === null) { replacePdfStatus.textContent = tAdmin('pdf_mapping_cancelled'); return; }
       plannedMapping = mapping || {};
     }
 
-    replacePdfStatus.textContent = 'Lade PDF hoch…';
+    replacePdfStatus.textContent = tAdmin('pdf_uploading');
 
     const fd = new FormData();
     fd.append('csrf_token', csrf);
@@ -2521,23 +2602,23 @@ btnReplacePdf.addEventListener('click', async ()=>{
 
     const resp = await fetch(replacePdfUrl, { method:'POST', body: fd });
     const data = await resp.json().catch(()=>({}));
-    if (!resp.ok || !data.ok) throw new Error(data.error || `Upload fehlgeschlagen (HTTP ${resp.status})`);
+    if (!resp.ok || !data.ok) throw new Error(data.error || tfmtAdmin('pdf_upload_failed', { status: String(resp.status) }));
 
     pdfUrl = String(data.pdf_url || pdfUrl) + '&cache=' + Date.now();
-    replacePdfStatus.textContent = 'PDF gespeichert. Aktualisiere Vorschau und Felder…';
+    replacePdfStatus.textContent = tAdmin('pdf_saved_updating');
 
     await loadPdf();
     const summary = await syncPdfPositionsWithFields({ mapping: plannedMapping });
     const parts = [
-      `Positionen aktualisiert (${summary.updated})`,
-      `fehlend: ${summary.missing}`,
-      `neu: ${summary.added}`
+      tfmtAdmin('pdf_summary_updated', { count: String(summary.updated) }),
+      tfmtAdmin('pdf_summary_missing', { count: String(summary.missing) }),
+      tfmtAdmin('pdf_summary_added', { count: String(summary.added) })
     ];
-    if (summary.renamed) parts.push(`zugeordnet: ${summary.renamed}`);
-    if (summary.deleted) parts.push(`gelöscht: ${summary.deleted}`);
+    if (summary.renamed) parts.push(tfmtAdmin('pdf_summary_renamed', { count: String(summary.renamed) }));
+    if (summary.deleted) parts.push(tfmtAdmin('pdf_summary_deleted', { count: String(summary.deleted) }));
     replacePdfStatus.textContent = parts.join(', ');
   } catch (e) {
-    replacePdfStatus.textContent = 'Fehler: ' + (e?.message || e);
+    replacePdfStatus.textContent = tAdmin('error_prefix') + ' ' + (e?.message || e);
     } finally {
       btnReplacePdf.disabled = false;
       if (replacePdfInput) replacePdfInput.value = '';
@@ -2545,16 +2626,16 @@ btnReplacePdf.addEventListener('click', async ()=>{
 });
 
 btnDeleteMissing.addEventListener('click', async ()=>{
-  if (!lastMissingNames.length) { replacePdfStatus.textContent = 'Keine fehlenden Felder erkannt.'; return; }
-  const want = confirm(`Fehlende Felder jetzt löschen? (${lastMissingNames.join(', ')})`);
+  if (!lastMissingNames.length) { replacePdfStatus.textContent = tAdmin('pdf_missing_none'); return; }
+  const want = confirm(tfmtAdmin('pdf_delete_confirm', { fields: lastMissingNames.join(', ') }));
   if (!want) return;
   try {
     const deleted = await deleteFieldsByName(lastMissingNames);
-    replacePdfStatus.textContent = `Fehlende Felder gelöscht (${deleted}).`;
+    replacePdfStatus.textContent = tfmtAdmin('pdf_deleted', { count: String(deleted) });
     updateMissingDeleteButton([]);
     await load();
   } catch (e) {
-    replacePdfStatus.textContent = 'Fehler beim Löschen: ' + (e?.message || e);
+    replacePdfStatus.textContent = tAdmin('pdf_delete_error') + ' ' + (e?.message || e);
   }
 });
 
@@ -2578,7 +2659,7 @@ btnTogglePreview.addEventListener('click', ()=>{
   const hidden = layout2.classList.toggle('hide-preview');
   previewCard.style.display = hidden ? 'none' : '';
   colResizer.style.display = hidden ? 'none' : '';
-  btnTogglePreview.textContent = hidden ? 'Vorschau einblenden' : 'Vorschau ausblenden';
+  btnTogglePreview.textContent = hidden ? tAdmin('preview_show') : tAdmin('preview_hide');
   if (!hidden) setTimeout(()=>renderPage(), 80);
 });
 
@@ -2586,7 +2667,7 @@ btnTogglePreview.addEventListener('click', ()=>{
 async function load(){
   const resp = await fetch(apiUrl + "?action=list&template_id=" + encodeURIComponent(templateId), { headers:{ 'X-CSRF-Token': csrf }});
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || 'Konnte Felder nicht laden.');
+  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('load_fields_error'));
 
   template = j.template;
   fields = j.fields || [];
@@ -2718,12 +2799,12 @@ async function renderPage(){
     ctx.strokeRect(rx, ry, rw, rh);
     ctx.restore();
 
-    pdfHint.textContent = `Markiert: ${currentHighlight.name}`;
+    pdfHint.textContent = tfmtAdmin('pdf_marked', { name: currentHighlight.name });
   } else {
-    pdfHint.textContent = 'Klicke links ein Feld, um es im PDF zu markieren.';
+    pdfHint.textContent = tAdmin('pdf_hint_default');
   }
 
-  pageInfo.textContent = `Seite ${currentPage} / ${pdfDoc.numPages}`;
+  pageInfo.textContent = tfmtAdmin('page_info', { page: String(currentPage), total: String(pdfDoc.numPages) });
   btnPrevPage.disabled = currentPage <= 1;
   btnNextPage.disabled = currentPage >= pdfDoc.numPages;
 }
@@ -2759,7 +2840,7 @@ pdfCanvas.addEventListener('click', async (ev) => {
   hits.sort((a,b)=>a.d2-b.d2);
 
   if (!hits.length) {
-    pdfHint.textContent = 'Kein Feld an dieser Stelle gefunden.';
+    pdfHint.textContent = tAdmin('pdf_hit_none');
     return;
   }
 
@@ -2803,11 +2884,11 @@ pdfCanvas.addEventListener('click', async (ev) => {
     const id = Number(tr.dataset.id || 0);
     if (id) setFoundRow(id);
   } else {
-    pdfHint.textContent = `Feld „${hit.name}“ gefunden, aber Zeile ist aktuell nicht sichtbar.`;
+    pdfHint.textContent = tfmtAdmin('pdf_hit_hidden', { name: hit.name });
   }
 });
 
-load().catch(err=>{ metaLine.textContent = 'Fehler: ' + (err?.message || err); });
+load().catch(err=>{ metaLine.textContent = tAdmin('error_prefix') + ' ' + (err?.message || err); });
 </script>
 
 <?php render_admin_footer(); ?>

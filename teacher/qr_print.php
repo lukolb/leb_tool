@@ -10,13 +10,13 @@ $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
 $classId = (int)($_GET['class_id'] ?? 0);
-if ($classId <= 0) { http_response_code(400); echo "class_id fehlt"; exit; }
-if (!user_can_access_class($pdo, $userId, $classId)) { http_response_code(403); echo "403 Forbidden"; exit; }
+if ($classId <= 0) { http_response_code(400); echo t('teacher.qr_print.error.class_id_missing'); exit; }
+if (!user_can_access_class($pdo, $userId, $classId)) { http_response_code(403); echo t('teacher.qr_print.error.forbidden'); exit; }
 
 $cls = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
 $cls->execute([$classId]);
 $class = $cls->fetch(PDO::FETCH_ASSOC);
-if (!$class) { http_response_code(404); echo "Klasse nicht gefunden"; exit; }
+if (!$class) { http_response_code(404); echo t('teacher.qr_print.error.class_not_found'); exit; }
 
 $st = $pdo->prepare(
   "SELECT id, first_name, last_name, login_code, qr_token
@@ -34,10 +34,25 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
-$title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . class_display($class);
+$title = str_replace(
+  ['{year}', '{class}'],
+  [(string)$class['school_year'], class_display($class)],
+  t('teacher.qr_print.title')
+);
+$qrTx = [
+  'close' => t('teacher.qr_print.close'),
+  'print' => t('teacher.qr_print.print'),
+  'alert_title' => t('teacher.qr_print.alert_title'),
+  'alert_body' => t('teacher.qr_print.alert_body'),
+  'school_year' => t('teacher.qr_print.school_year'),
+  'class_label' => t('teacher.qr_print.class_label'),
+  'alt_no_camera' => t('teacher.qr_print.alt_no_camera'),
+  'dash' => t('teacher.qr_print.dash'),
+  'qr_error' => t('teacher.qr_print.qr_error'),
+];
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -76,12 +91,12 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
   <div class="container">
     <div class="card noprint">
         <div class="row-actions" style="margin-bottom: 10px;">
-          <a class="btn secondary" onclick="window.close()">Schließen</a>
-        <a class="btn primary" onclick="window.print()">Drucken</a>
+          <a class="btn secondary" onclick="window.close()"><?=h($qrTx['close'])?></a>
+        <a class="btn primary" onclick="window.print()"><?=h($qrTx['print'])?></a>
       </div>
       <h1 style="margin-top:0;"><?=h($title)?></h1>
       <div class="alert">
-        <strong>Wichtig:</strong> Falls bei einem Kind kein QR angezeigt wird, erst in der Schülerverwaltung „Login-Codes/QR erstellen“ klicken.
+        <strong><?=h($qrTx['alert_title'])?>:</strong> <?=h($qrTx['alert_body'])?>
       </div>
     </div>
 
@@ -95,10 +110,10 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
           <a href="<?=h($loginUrl)?>" target="_blank"><div class="qr-box" data-url="<?=h($loginUrl)?>"></div></a>
         <div class="qr-meta">
           <div class="qr-name"><?=h((string)$s['first_name'])?> <?=h((string)$s['last_name'])?></div>
-          <div class="qr-small">Schuljahr <?=h((string)$class['school_year'])?> · Klasse <?=h(class_display($class))?></div>
-          <div class="qr-small">Alternative ohne Kamera:</div>
+          <div class="qr-small"><?=h($qrTx['school_year'])?> <?=h((string)$class['school_year'])?> · <?=h($qrTx['class_label'])?> <?=h(class_display($class))?></div>
+          <div class="qr-small"><?=h($qrTx['alt_no_camera'])?></div>
           <div class="qr-small"><a href="<?=h(absolute_url(''))?>" target="_blank"><?=h(absolute_url(''))?></a></div>
-          <div class="qr-code"><?=h($loginCode ?: '—')?></div>
+          <div class="qr-code"><?=h($loginCode ?: $qrTx['dash'])?></div>
         </div>
       </div>
       <?php endforeach; ?>
@@ -108,17 +123,18 @@ $title = 'LEB-Tool - QR-Codes – ' . (string)$class['school_year'] . ' · ' . c
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script>
     (function(){
+      const QR_TX = <?= json_encode($qrTx, JSON_UNESCAPED_UNICODE) ?>;
       const boxes = document.querySelectorAll('.qr-box');
       boxes.forEach(box => {
         const url = box.getAttribute('data-url');
         if (!url) {
-          box.textContent = '—';
+          box.textContent = QR_TX.dash || '—';
           return;
         }
         try {
           new QRCode(box, { text: url, width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
         } catch (e) {
-          box.textContent = 'QR Fehler';
+          box.textContent = QR_TX.qr_error || 'QR error';
         }
       });
     })();

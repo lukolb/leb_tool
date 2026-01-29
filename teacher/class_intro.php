@@ -27,22 +27,22 @@ function sanitize_intro_html(string $html): string {
 
 function known_intro_placeholders(): array {
   return [
-    '{{org_name}}'      => 'Schule/Organisation',
-    '{{student_name}}'  => 'Schüler (Vorname Nachname)',
-    '{{first_name}}'    => 'Vorname',
-    '{{last_name}}'     => 'Nachname',
-    '{{class}}'         => 'Klasse (z.B. 4A)',
-    '{{school_year}}'   => 'Schuljahr (z.B. 2025/26)',
+    '{{org_name}}'      => t('teacher.class_intro.placeholder.org_name'),
+    '{{student_name}}'  => t('teacher.class_intro.placeholder.student_name'),
+    '{{first_name}}'    => t('teacher.class_intro.placeholder.first_name'),
+    '{{last_name}}'     => t('teacher.class_intro.placeholder.last_name'),
+    '{{class}}'         => t('teacher.class_intro.placeholder.class'),
+    '{{school_year}}'   => t('teacher.class_intro.placeholder.school_year'),
   ];
 }
 
 $classId = (int)($_GET['class_id'] ?? 0);
 if ($classId <= 0) {
-  $err = t('teacher.class_intro.missing_class', 'Klasse fehlt.');
+  $err = t('teacher.class_intro.missing_class');
 }
 
 if (!$err && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-  $err = t('teacher.class_intro.no_access', 'Keine Berechtigung.');
+  $err = t('teacher.class_intro.no_access');
 }
 
 $classRow = null;
@@ -51,7 +51,7 @@ if (!$err) {
   $st->execute([$classId]);
   $classRow = $st->fetch(PDO::FETCH_ASSOC);
   if (!$classRow) {
-    $err = t('teacher.class_intro.not_found', 'Klasse nicht gefunden.');
+    $err = t('teacher.class_intro.not_found');
   }
 }
 
@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$err) {
           ->execute([$store, $classId]);
 
       audit('class_set_student_intro', $userId, ['class_id'=>$classId]);
-      $ok = t('teacher.class_intro.saved', 'Intro gespeichert.');
+      $ok = t('teacher.class_intro.saved');
 
       $st = $pdo->prepare("SELECT id, school_year, grade_level, label, name, student_intro_html FROM classes WHERE id=? LIMIT 1");
       $st->execute([$classId]);
@@ -90,14 +90,16 @@ $classIntroHtml = $classRow ? (string)($classRow['student_intro_html'] ?? '') : 
 $hasOverride = trim($classIntroHtml) !== '';
 $initialHtml = $hasOverride ? $classIntroHtml : $defaultIntroHtml;
 
-render_teacher_header(t('teacher.class_intro.title', 'Schüler-Startseite'));
+$defaultIntroHtmlText = t('teacher.class_intro.default_html');
+
+render_teacher_header(t('teacher.class_intro.title'));
 ?>
 
 <div class="card">
-  <h1><?=h(t('teacher.class_intro.title', 'Schüler-Startseite'))?></h1>
+  <h1><?=h(t('teacher.class_intro.title'))?></h1>
   <?php if ($classRow): ?>
     <p class="muted">
-      <?=h(t('teacher.class_intro.class_label', 'Klasse'))?>:
+      <?=h(t('teacher.class_intro.class_label'))?>:
       <strong><?=h(($classRow['grade_level'] ?? '') !== null && (string)$classRow['label'] !== '' ? ((int)$classRow['grade_level'] . (string)$classRow['label']) : (string)($classRow['name'] ?? ''))?></strong>
     </p>
   <?php endif; ?>
@@ -109,19 +111,19 @@ render_teacher_header(t('teacher.class_intro.title', 'Schüler-Startseite'));
 <?php if ($classRow): ?>
   <div class="card">
     <p class="muted">
-      <?=h(t('teacher.class_intro.hint', 'Diese Intro-Seite überschreibt die Admin-Vorgabe für diese Klasse. Wenn du sie leer lässt, wird die Admin-Intro angezeigt.'))?>
+      <?=h(t('teacher.class_intro.hint'))?>
     </p>
 
     <div class="panel" style="padding:10px; margin-bottom:10px;">
-      <label><?=h(t('teacher.class_intro.placeholders', 'Platzhalter einfügen'))?></label>
+      <label><?=h(t('teacher.class_intro.placeholders'))?></label>
       <div class="actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:6px;">
         <select id="phSelect" class="input" style="min-width:260px;">
           <?php foreach (known_intro_placeholders() as $token => $label): ?>
             <option value="<?=h($token)?>"><?=h($label)?> — <?=h($token)?></option>
           <?php endforeach; ?>
         </select>
-        <button class="btn secondary" type="button" id="btnInsertPh"><?=h(t('teacher.class_intro.insert', 'Einfügen'))?></button>
-        <span class="muted"><?=h(t('teacher.class_intro.example', 'Beispiel: „Hallo {{first_name}}!“'))?></span>
+        <button class="btn secondary" type="button" id="btnInsertPh"><?=h(t('teacher.class_intro.insert'))?></button>
+        <span class="muted"><?=h(t('teacher.class_intro.example'))?></span>
       </div>
     </div>
 
@@ -140,8 +142,8 @@ render_teacher_header(t('teacher.class_intro.title', 'Schüler-Startseite'));
       <div id="quillEditor"></div>
 
       <div class="actions" style="margin-top:12px;">
-        <button class="btn primary" type="submit"><?=h(t('teacher.class_intro.save', 'Intro speichern'))?></button>
-        <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>"><?=h(t('teacher.class_intro.back', 'Zurück zur Klassenliste'))?></a>
+        <button class="btn primary" type="submit"><?=h(t('teacher.class_intro.save'))?></button>
+        <a class="btn secondary" href="<?=h(url('teacher/classes.php'))?>"><?=h(t('teacher.class_intro.back'))?></a>
       </div>
     </form>
 
@@ -164,12 +166,14 @@ render_teacher_header(t('teacher.class_intro.title', 'Schüler-Startseite'));
         }
       });
 
+      const defaultIntroHtml = <?=json_encode($defaultIntroHtmlText)?>;
+
       if (initialHtml) {
         quill.root.innerHTML = initialHtml;
       } else {
         quill.root.innerHTML = hasOverride
           ? '<p></p>'
-          : '<p><strong>Hallo {{first_name}}!</strong></p><p>Bitte fülle den Bericht Schritt für Schritt aus.</p>';
+          : defaultIntroHtml;
       }
 
       const hidden = document.getElementById('studentIntroHtml');

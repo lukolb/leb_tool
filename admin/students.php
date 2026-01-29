@@ -87,7 +87,7 @@ function parse_grade_level(?string $value): ?int {
 
 function read_csv_assoc(string $path): array {
   $fh = fopen($path, 'rb');
-  if (!$fh) throw new RuntimeException('CSV konnte nicht geöffnet werden.');
+  if (!$fh) throw new RuntimeException(t('admin.students.error.csv_open_failed'));
 
   // Read header line (handle UTF-8 BOM)
   $rawHeader = fgets($fh);
@@ -242,18 +242,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     if ($action === 'delete_student') {
       $studentId = (int)($_POST['student_id'] ?? 0);
-      if ($studentId <= 0) throw new RuntimeException('student_id fehlt.');
+      if ($studentId <= 0) throw new RuntimeException(t('admin.students.error.student_id_missing'));
 
       $confirm = (string)($_POST['confirm_text'] ?? '');
       $must = (string)($_POST['must_match'] ?? '');
       if ($confirm === '' || $must === '' || $confirm !== $must) {
-        throw new RuntimeException('Sicherheitsabfrage fehlgeschlagen. Bitte exakt den angezeigten Text eingeben.');
+        throw new RuntimeException(t('admin.students.error.confirm_failed'));
       }
 
       $st = $pdo->prepare("SELECT id, master_student_id FROM students WHERE id=? LIMIT 1");
       $st->execute([$studentId]);
       $row = $st->fetch(PDO::FETCH_ASSOC);
-      if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
+      if (!$row) throw new RuntimeException(t('admin.students.error.not_found'));
 
       $master = (int)($row['master_student_id'] ?? 0);
       $ids = [$studentId];
@@ -265,7 +265,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $stats = delete_students_cascade($pdo, $ids);
       audit('admin_student_delete', $userId, ['student_id'=>$studentId,'deleted_ids'=>$ids] + $stats);
-      $ok = "Schüler gelöscht (Einträge: {$stats['students_deleted']}, Berichte: {$stats['reports_deleted']}, Feldwerte: {$stats['values_deleted']}).";
+      $ok = str_replace(
+        ['{students}', '{reports}', '{values}'],
+        [(string)$stats['students_deleted'], (string)$stats['reports_deleted'], (string)$stats['values_deleted']],
+        t('admin.students.status.deleted')
+      );
     }
 
     elseif ($action === 'update_import_templates') {
@@ -273,12 +277,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!is_array($classTemplates)) $classTemplates = [];
       $summary = $_SESSION['admin_import_summary'] ?? null;
       if (!$summary || empty($summary['classes'])) {
-        throw new RuntimeException('Keine Import-Zusammenfassung verfügbar.');
+        throw new RuntimeException(t('admin.students.error.import_summary_missing'));
       }
       $classIds = array_map(static fn($c)=>(int)($c['class_id'] ?? 0), $summary['classes']);
       $classIds = array_values(array_filter($classIds, fn($x)=>$x>0));
       if (!$classIds) {
-        throw new RuntimeException('Keine Klassen zum Aktualisieren gefunden.');
+        throw new RuntimeException(t('admin.students.error.no_classes_to_update'));
       }
 
       $pdo->beginTransaction();
@@ -293,12 +297,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $pdo->commit();
       audit('admin_students_import_templates', $userId, ['updated'=>$updated,'class_ids'=>$classIds]);
-      $ok = "Vorlagen aktualisiert ({$updated}).";
+      $ok = str_replace(
+        '{updated}',
+        (string)$updated,
+        t('admin.students.status.templates_updated')
+      );
     }
 
     elseif ($action === 'import_blackbaud_csv') {
       if (empty($_FILES['csv_file']) || !isset($_FILES['csv_file']['tmp_name'])) {
-        throw new RuntimeException('Bitte CSV-Datei auswählen.');
+        throw new RuntimeException(t('admin.students.error.csv_required'));
       }
       $csvTmpNames = $_FILES['csv_file']['tmp_name'];
       $csvNames = $_FILES['csv_file']['name'] ?? [];
@@ -310,12 +318,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $csvNames = array_values(is_array($csvNames) ? $csvNames : []);
       $csvCount = count($csvTmpNames);
       if ($csvCount === 0) {
-        throw new RuntimeException('Bitte CSV-Datei auswählen.');
+        throw new RuntimeException(t('admin.students.error.csv_required'));
       }
 
       $schoolYear = trim((string)($_POST['school_year'] ?? ''));
       if ($schoolYear === '') $schoolYear = $defaultSchoolYear;
-      if ($schoolYear === '') throw new RuntimeException('Schuljahr fehlt.');
+      if ($schoolYear === '') throw new RuntimeException(t('admin.students.error.school_year_missing'));
 
       $createdClasses = 0;
       $createdStudents = 0;
@@ -361,7 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
           $detail = [
             'name' => $csvLabel,
-            'reason' => 'Upload fehlgeschlagen.',
+            'reason' => t('admin.students.import.reason.upload_failed'),
           ];
           $importSkippedDetails[] = $detail;
           $importSummary['skipped'][] = $detail;
@@ -373,7 +381,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$rows) {
           $detail = [
             'name' => $csvLabel,
-            'reason' => 'CSV ist leer oder konnte nicht gelesen werden.',
+            'reason' => t('admin.students.import.reason.empty_csv'),
           ];
           $importSkippedDetails[] = $detail;
           $importSummary['skipped'][] = $detail;
@@ -400,8 +408,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($grade === null || $label === '') {
             $skipped++;
             $detail = [
-              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
-              'reason' => 'Klasse oder Parallelklasse fehlt.',
+              'name' => trim($first . ' ' . $last) ?: t('admin.students.import.unknown_name'),
+              'reason' => t('admin.students.import.reason.class_missing'),
             ];
             $importSkippedDetails[] = $detail;
             $importSummary['skipped'][] = $detail;
@@ -410,8 +418,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($first === '' || $last === '') {
             $skipped++;
             $detail = [
-              'name' => trim($first . ' ' . $last) ?: 'Unbekannt',
-              'reason' => 'Vorname oder Nachname fehlt.',
+              'name' => trim($first . ' ' . $last) ?: t('admin.students.import.unknown_name'),
+              'reason' => t('admin.students.import.reason.name_missing'),
             ];
             $importSkippedDetails[] = $detail;
             $importSummary['skipped'][] = $detail;
@@ -421,7 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $skipped++;
             $detail = [
               'name' => trim($first . ' ' . $last),
-              'reason' => 'Geburtsdatum fehlt oder ist ungültig.',
+              'reason' => t('admin.students.import.reason.dob_missing'),
             ];
             $importSkippedDetails[] = $detail;
             $importSummary['skipped'][] = $detail;
@@ -477,13 +485,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $importSummary['students'][] = [
                 'class_id' => $classId,
                 'name' => trim($first . ' ' . $last),
-                'status' => 'aktualisiert',
+                'status' => t('admin.students.import.status.updated'),
               ];
             } else {
               $skipped++;
               $detail = [
                 'name' => trim($first . ' ' . $last),
-                'reason' => 'Schüler existiert bereits.',
+                'reason' => t('admin.students.import.reason.exists'),
               ];
               $importSkippedDetails[] = $detail;
               $importSummary['classes'][$classId]['students_skipped']++;
@@ -514,7 +522,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $importSummary['students'][] = [
             'class_id' => $classId,
             'name' => trim($first . ' ' . $last),
-            'status' => 'angelegt',
+            'status' => t('admin.students.import.status.created'),
           ];
         }
       }
@@ -538,7 +546,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'students_updated' => $updatedStudents,
         'skipped' => $skipped
       ]);
-      $ok = "CSV-Import: Klassen angelegt {$createdClasses}, Schüler angelegt {$createdStudents}, aktualisiert {$updatedStudents}, übersprungen {$skipped}.";
+      $ok = str_replace(
+        ['{classes}', '{created}', '{updated}', '{skipped}'],
+        [(string)$createdClasses, (string)$createdStudents, (string)$updatedStudents, (string)$skipped],
+        t('admin.students.status.import_summary')
+      );
     }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -623,54 +635,54 @@ if ($importSummary && !empty($importSummary['classes'])) {
   }
 }
 
-render_admin_header('Schüler');
+render_admin_header(t('admin.students.title'));
 ?>
 
 <div class="card">
-  <h1>Schüler (Admin)</h1>
+  <h1><?=h(t('admin.students.heading'))?></h1>
 </div>
 
 <div class="card">
   <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
     <div>
-      <label>Suche</label>
-      <input name="q" type="text" value="<?=h($q)?>" placeholder="Name oder ID">
+      <label><?=h(t('admin.students.filter.search_label'))?></label>
+      <input name="q" type="text" value="<?=h($q)?>" placeholder="<?=h(t('admin.students.filter.search_placeholder'))?>">
     </div>
     <div>
-      <label>Schuljahr</label>
+      <label><?=h(t('admin.students.filter.school_year'))?></label>
       <select name="school_year">
-        <option value="">— alle —</option>
+        <option value=""><?=h(t('admin.students.filter.all_years'))?></option>
         <?php foreach ($years as $y): ?>
           <option value="<?=h((string)$y)?>" <?=($schoolYear===(string)$y)?'selected':''?>><?=h((string)$y)?></option>
         <?php endforeach; ?>
       </select>
     </div>
     <div>
-      <label>Klasse</label>
+      <label><?=h(t('admin.students.filter.class'))?></label>
       <select name="class_id">
-        <option value="0">— alle —</option>
+        <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
         <?php foreach ($classes as $c): ?>
           <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
-            <?=h((string)$c['school_year'])?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?' (inaktiv)':''?>
+            <?=h((string)$c['school_year'])?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
           </option>
         <?php endforeach; ?>
       </select>
     </div>
     <div>
-      <label>Sortierung</label>
+      <label><?=h(t('admin.students.filter.sort'))?></label>
       <select name="sort">
-        <option value="name" <?=($sort==='name')?'selected':''?>>Name</option>
-        <option value="class" <?=($sort==='class')?'selected':''?>>Klasse</option>
-        <option value="year" <?=($sort==='year')?'selected':''?>>Schuljahr</option>
-        <option value="created" <?=($sort==='created')?'selected':''?>>Neueste</option>
+        <option value="name" <?=($sort==='name')?'selected':''?>><?=h(t('admin.students.sort.name'))?></option>
+        <option value="class" <?=($sort==='class')?'selected':''?>><?=h(t('admin.students.sort.class'))?></option>
+        <option value="year" <?=($sort==='year')?'selected':''?>><?=h(t('admin.students.sort.year'))?></option>
+        <option value="created" <?=($sort==='created')?'selected':''?>><?=h(t('admin.students.sort.created'))?></option>
       </select>
     </div>
     <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
-      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>">Reset</a>
+      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>"><?=h(t('admin.students.filter.reset'))?></a>
     </div>
   </form>
 
-  <div class="muted" style="margin-top:10px;">Maximal 500 Treffer (Performance).</div>
+  <div class="muted" style="margin-top:10px;"><?=h(t('admin.students.filter.limit_hint'))?></div>
 </div>
 
 <script>
@@ -748,13 +760,19 @@ render_admin_header('Schüler');
     $summarySkipped = $importSummary['skipped'] ?? [];
   ?>
   <div class="card">
-    <h2 style="margin-top:0;">Import-Zusammenfassung</h2>
+    <h2 style="margin-top:0;"><?=h(t('admin.students.import.summary_heading'))?></h2>
     <div class="muted" style="margin-bottom:10px;">
-      Dateien: <?=h((string)($summaryStats['files'] ?? 0))?> ·
-      Klassen angelegt: <?=h((string)($summaryStats['classes_created'] ?? 0))?> ·
-      Schüler angelegt: <?=h((string)($summaryStats['students_created'] ?? 0))?> ·
-      aktualisiert: <?=h((string)($summaryStats['students_updated'] ?? 0))?> ·
-      übersprungen: <?=h((string)($summaryStats['skipped'] ?? 0))?>
+      <?=h(str_replace(
+        ['{files}', '{classes}', '{created}', '{updated}', '{skipped}'],
+        [
+          (string)($summaryStats['files'] ?? 0),
+          (string)($summaryStats['classes_created'] ?? 0),
+          (string)($summaryStats['students_created'] ?? 0),
+          (string)($summaryStats['students_updated'] ?? 0),
+          (string)($summaryStats['skipped'] ?? 0),
+        ],
+        t('admin.students.import.summary_line')
+      ))?>
     </div>
 
     <?php if ($summaryClasses): ?>
@@ -764,12 +782,12 @@ render_admin_header('Schüler');
         <table class="table">
           <thead>
             <tr>
-              <th>Klasse</th>
-              <th>Schuljahr</th>
-              <th>Schüler angelegt</th>
-              <th>Aktualisiert</th>
-              <th>Übersprungen</th>
-              <th>Template</th>
+              <th><?=h(t('admin.students.import.table.class'))?></th>
+              <th><?=h(t('admin.students.import.table.year'))?></th>
+              <th><?=h(t('admin.students.import.table.created'))?></th>
+              <th><?=h(t('admin.students.import.table.updated'))?></th>
+              <th><?=h(t('admin.students.import.table.skipped'))?></th>
+              <th><?=h(t('admin.students.import.table.template'))?></th>
             </tr>
           </thead>
           <tbody>
@@ -787,13 +805,13 @@ render_admin_header('Schüler');
                 <td><?=h((string)($c['students_skipped'] ?? 0))?></td>
                 <td>
                   <select name="class_template[<?=h((string)$cid)?>]">
-                    <option value="0">— keine —</option>
+                    <option value="0"><?=h(t('admin.students.import.template_none'))?></option>
                     <?php foreach ($templates as $tpl): ?>
                       <?php $tplId = (int)($tpl['id'] ?? 0); ?>
                       <option value="<?=h((string)$tplId)?>" <?=($tplId === $currentTemplate) ? 'selected' : ''?>>
                         <?=h((string)($tpl['name'] ?? ''))?>
                         <?=((int)($tpl['template_version'] ?? 0) > 0) ? ' v' . h((string)$tpl['template_version']) : ''?>
-                        <?=((int)($tpl['is_active'] ?? 0) === 0) ? ' (inaktiv)' : ''?>
+                        <?=((int)($tpl['is_active'] ?? 0) === 0) ? h(t('admin.students.filter.inactive_suffix')) : ''?>
                       </option>
                     <?php endforeach; ?>
                   </select>
@@ -803,21 +821,21 @@ render_admin_header('Schüler');
           </tbody>
         </table>
         <div class="actions" style="justify-content:flex-start;">
-          <button class="btn" type="submit">Templates speichern</button>
+          <button class="btn" type="submit"><?=h(t('admin.students.import.save_templates'))?></button>
         </div>
       </form>
     <?php endif; ?>
 
     <?php if ($summaryStudents): ?>
       <details>
-        <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Importierte Schüler anzeigen</summary>
+        <summary class="btn secondary" style="display:inline-block; cursor:pointer;"><?=h(t('admin.students.import.show_imported'))?></summary>
         <div class="panel" style="margin-top:10px;">
           <table class="table">
             <thead>
               <tr>
-                <th>Klasse</th>
-                <th>Name</th>
-                <th>Status</th>
+                <th><?=h(t('admin.students.import.table.class'))?></th>
+                <th><?=h(t('admin.students.import.table.name'))?></th>
+                <th><?=h(t('admin.students.import.table.status'))?></th>
               </tr>
             </thead>
             <tbody>
@@ -846,7 +864,7 @@ render_admin_header('Schüler');
 
     <?php if ($summarySkipped): ?>
       <details style="margin-top:12px;">
-        <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Übersprungene Einträge anzeigen</summary>
+        <summary class="btn secondary" style="display:inline-block; cursor:pointer;"><?=h(t('admin.students.import.show_skipped'))?></summary>
         <div class="panel" style="margin-top:10px;">
           <ul style="margin:8px 0 0 18px;">
             <?php foreach ($summarySkipped as $detail): ?>
@@ -860,22 +878,18 @@ render_admin_header('Schüler');
 <?php endif; ?>
 
 <div class="card">
-  <h2 style="margin-top:0;">Blackbaud-CSV importieren</h2>
-  <p class="muted">
-    CSV-Export aus Blackbaud (oder ähnlich). Erwartete Spalten: <code>Grade</code>, <code>Parallelklasse</code>,
-    <code>Student First Name</code>, <code>Student Last Name</code>, <code>Birth Date</code>.
-    Optional: <code>Student Email</code>, <code>E-Mail Parent 1</code>, <code>E-Mail Parent 2</code>.
-  </p>
+  <h2 style="margin-top:0;"><?=h(t('admin.students.import.blackbaud_heading'))?></h2>
+  <p class="muted"><?=t('admin.students.import.blackbaud_hint')?></p>
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 220px 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="import_blackbaud_csv">
     <div>
-      <label>Schuljahr</label>
+      <label><?=h(t('admin.students.import.school_year'))?></label>
       <select name="school_year" required>
         <?php if ($defaultSchoolYear === ''): ?>
-          <option value="" selected disabled>Bitte wählen</option>
+          <option value="" selected disabled><?=h(t('admin.students.import.select_year'))?></option>
         <?php else: ?>
-          <option value="<?=h($defaultSchoolYear)?>" selected><?=h($defaultSchoolYear)?> (Standard)</option>
+          <option value="<?=h($defaultSchoolYear)?>" selected><?=h($defaultSchoolYear)?> <?=h(t('admin.students.import.default_year_suffix'))?></option>
         <?php endif; ?>
         <?php foreach ($years as $y): ?>
           <?php if ((string)$y === $defaultSchoolYear) continue; ?>
@@ -884,30 +898,30 @@ render_admin_header('Schüler');
       </select>
     </div>
     <div>
-      <label>CSV-Datei(en)</label>
+      <label><?=h(t('admin.students.import.csv_label'))?></label>
       <input type="file" name="csv_file[]" accept=".csv,text/csv" multiple required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <button class="btn" type="submit">Importieren</button>
+      <button class="btn" type="submit"><?=h(t('admin.students.import.start'))?></button>
     </div>
   </form>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Liste</h2>
+  <h2 style="margin-top:0;"><?=h(t('admin.students.list_heading'))?></h2>
 
   <?php if (!$students): ?>
-    <div class="alert">Keine Schüler gefunden.</div>
+    <div class="alert"><?=h(t('admin.students.list_empty'))?></div>
   <?php else: ?>
     <table class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Geburtsdatum</th>
-          <th>Klasse</th>
-          <th>Schuljahr</th>
-          <th>Aktiv</th>
-          <th>Aktionen</th>
+          <th><?=h(t('admin.students.table.name'))?></th>
+          <th><?=h(t('admin.students.table.dob'))?></th>
+          <th><?=h(t('admin.students.table.class'))?></th>
+          <th><?=h(t('admin.students.table.year'))?></th>
+          <th><?=h(t('admin.students.table.active'))?></th>
+          <th><?=h(t('admin.students.table.actions'))?></th>
         </tr>
       </thead>
       <tbody>
@@ -916,37 +930,41 @@ render_admin_header('Schüler');
           <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
           <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
           <td><?=h(class_display($s))?></td>
-          <td><?=h((string)($s['school_year'] ?? '—'))?></td>
+          <td><?=h((string)($s['school_year'] ?? t('admin.students.table.no_year')))?></td>
           <td>
-            <?=((int)$s['is_active']===1) ? '<span class="badge">ja</span>' : '<span class="badge">nein</span>'?>
-            <?=((int)($s['class_active'] ?? 1)===0) ? ' <span class="badge">Klasse inaktiv</span>' : ''?>
+            <?=((int)$s['is_active']===1) ? '<span class="badge">' . h(t('admin.students.badge.yes')) . '</span>' : '<span class="badge">' . h(t('admin.students.badge.no')) . '</span>'?>
+            <?=((int)($s['class_active'] ?? 1)===0) ? ' <span class="badge">' . h(t('admin.students.badge.class_inactive')) . '</span>' : ''?>
           </td>
           <td>
             <details>
-              <summary class="btn secondary" style="display:inline-block; cursor:pointer;">Verwalten</summary>
+              <summary class="btn secondary" style="display:inline-block; cursor:pointer;"><?=h(t('admin.students.action.manage'))?></summary>
               <div class="panel" style="margin-top:10px;">
                 <?php
                   $must = (string)$s['last_name'] . ', ' . (string)$s['first_name'];
                   $mid = (int)($s['master_student_id'] ?? 0);
                   if ($mid <= 0) $mid = (int)($s['id'] ?? 0);
                   $impact = $deleteImpactMap[$mid] ?? ['students'=>1,'reports'=>0,'values'=>0];
-                  $studentNote = ((int)$impact['students'] > 1) ? ' (inkl. verknüpfter Schüler)' : '';
+                  $studentNote = ((int)$impact['students'] > 1) ? t('admin.students.delete.related_suffix') : '';
                 ?>
                 <div class="muted">
-                  Es werden gelöscht: Schüler <?=h((string)$impact['students'])?><?=h($studentNote)?>, Berichte <?=h((string)$impact['reports'])?>, Feldwerte <?=h((string)$impact['values'])?>.
+                  <?=h(str_replace(
+                    ['{students}', '{student_suffix}', '{reports}', '{values}'],
+                    [(string)$impact['students'], $studentNote, (string)$impact['reports'], (string)$impact['values']],
+                    t('admin.students.delete.summary')
+                  ))?>
                 </div>
-                <div class="muted">Bestätige mit: <code><?=h($must)?></code></div>
-                <form method="post" onsubmit="return confirm('Wirklich endgültig löschen?');" class="grid" style="grid-template-columns: 1fr auto; gap:10px; align-items:end; margin-top:10px;">
+                <div class="muted"><?=h(t('admin.students.delete.confirm_with'))?> <code><?=h($must)?></code></div>
+                <form method="post" onsubmit="return confirm('<?=h(t('admin.students.delete.confirm_final'))?>');" class="grid" style="grid-template-columns: 1fr auto; gap:10px; align-items:end; margin-top:10px;">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="delete_student">
                   <input type="hidden" name="student_id" value="<?=h((string)$s['id'])?>">
                   <input type="hidden" name="must_match" value="<?=h($must)?>">
                   <div>
-                    <label>Bestätigung</label>
+                    <label><?=h(t('admin.students.delete.confirm_label'))?></label>
                     <input name="confirm_text" type="text" placeholder="<?=h($must)?>" required>
                   </div>
                   <div class="actions" style="justify-content:flex-start;">
-                    <button class="btn danger" type="submit">Schüler löschen</button>
+                    <button class="btn danger" type="submit"><?=h(t('admin.students.delete.action'))?></button>
                   </div>
                 </form>
               </div>

@@ -64,7 +64,7 @@ function create_user(PDO $pdo, string $email, string $name, string $role, bool $
     $token = create_password_reset_token($id, 48, true);
     $link = absolute_url('reset_password.php?token=' . urlencode($token));
     $html = build_set_password_email($name, $email, $link);
-    send_email($email, 'Konto erstellen – Passwort setzen', $html);
+    send_email($email, t('admin.users.email.create_subject'), $html);
   }
   return $id;
 }
@@ -79,60 +79,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $name  = normalize_name((string)($_POST['name'] ?? ''));
       $role  = normalize_role((string)($_POST['role'] ?? 'teacher'));
 
-      if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('E-Mail ungültig.');
-      if ($name === '') throw new RuntimeException('Name fehlt.');
+      if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException(t('admin.users.error.email_invalid'));
+      if ($name === '') throw new RuntimeException(t('admin.users.error.name_missing'));
 
       // prevent duplicates
       $q = $pdo->prepare("SELECT id FROM users WHERE email=? AND deleted_at IS NULL LIMIT 1");
       $q->execute([$email]);
-      if ($q->fetch()) throw new RuntimeException('User existiert bereits.');
+      if ($q->fetch()) throw new RuntimeException(t('admin.users.error.user_exists'));
 
       $id = create_user($pdo, $email, $name, $role, true);
       audit('admin_user_create', $currentId, ['user_id'=>$id,'email'=>$email,'role'=>$role]);
-      $ok = 'User angelegt (Einladungs-Mail wurde gesendet).';
+      $ok = t('admin.users.status.created');
     }
 
     elseif ($action === 'update') {
       $id = (int)($_POST['id'] ?? 0);
-      if ($id <= 0) throw new RuntimeException('ID fehlt.');
+      if ($id <= 0) throw new RuntimeException(t('admin.users.error.id_missing'));
 
       $name = normalize_name((string)($_POST['name'] ?? ''));
       $role = normalize_role((string)($_POST['role'] ?? 'teacher'));
       $active = (int)($_POST['is_active'] ?? 0) === 1 ? 1 : 0;
 
-      if ($name === '') throw new RuntimeException('Name fehlt.');
+      if ($name === '') throw new RuntimeException(t('admin.users.error.name_missing'));
 
       // do not allow self-disable
-      if ($id === $currentId && $active !== 1) throw new RuntimeException('Du kannst dich nicht selbst deaktivieren.');
+      if ($id === $currentId && $active !== 1) throw new RuntimeException(t('admin.users.error.self_disable'));
 
       $pdo->prepare("UPDATE users SET display_name=?, role=?, is_active=? WHERE id=?")
           ->execute([$name, $role, $active, $id]);
       audit('admin_user_update', $currentId, ['user_id'=>$id,'role'=>$role,'is_active'=>$active]);
-      $ok = 'User aktualisiert.';
+      $ok = t('admin.users.status.updated');
     }
 
     elseif ($action === 'send_invite') {
       $id = (int)($_POST['id'] ?? 0);
-      if ($id <= 0) throw new RuntimeException('ID fehlt.');
+      if ($id <= 0) throw new RuntimeException(t('admin.users.error.id_missing'));
 
       $st = $pdo->prepare("SELECT id, email, display_name FROM users WHERE id=? AND deleted_at IS NULL LIMIT 1");
       $st->execute([$id]);
       $usr = $st->fetch();
-      if (!$usr) throw new RuntimeException('User nicht gefunden.');
+      if (!$usr) throw new RuntimeException(t('admin.users.error.not_found'));
 
       $token = create_password_reset_token($id, 60, true);
       $link = absolute_url('reset_password.php?token=' . urlencode($token));
       $html = build_set_password_email((string)$usr['display_name'], (string)$usr['email'], $link);
-      send_email((string)$usr['email'], 'Passwort setzen', $html);
+      send_email((string)$usr['email'], t('admin.users.email.reset_subject'), $html);
 
       audit('admin_user_invite', $currentId, ['user_id'=>$id]);
-      $ok = 'Einladungs-Mail wurde gesendet.';
+      $ok = t('admin.users.status.invite_sent');
     }
 
     elseif ($action === 'delete') {
       $id = (int)($_POST['id'] ?? 0);
-      if ($id <= 0) throw new RuntimeException('ID fehlt.');
-      if ($id === $currentId) throw new RuntimeException('Du kannst dich nicht selbst löschen.');
+      if ($id <= 0) throw new RuntimeException(t('admin.users.error.id_missing'));
+      if ($id === $currentId) throw new RuntimeException(t('admin.users.error.self_delete'));
 
       // soft delete
       $pdo->prepare("UPDATE users SET deleted_at=NOW(), is_active=0 WHERE id=?")->execute([$id]);
@@ -141,16 +141,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare("DELETE FROM user_class_assignments WHERE user_id=?")->execute([$id]);
 
       audit('admin_user_delete', $currentId, ['user_id'=>$id]);
-      $ok = 'User gelöscht.';
+      $ok = t('admin.users.status.deleted');
     }
 
     elseif ($action === 'bulk_import') {
       if (!isset($_FILES['csv']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) {
-        throw new RuntimeException('CSV fehlt.');
+        throw new RuntimeException(t('admin.users.error.csv_missing'));
       }
       $tmp = $_FILES['csv']['tmp_name'];
       $fh = fopen($tmp, 'r');
-      if (!$fh) throw new RuntimeException('CSV kann nicht gelesen werden.');
+      if (!$fh) throw new RuntimeException(t('admin.users.error.csv_unreadable'));
 
       $sample = '';
       while (!feof($fh)) {
@@ -160,8 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $delimiter = detect_csv_delimiter($sample);
       rewind($fh);
 
-      $header = fgetcsv($fh, 0, $delimiter);
-      if (!$header) throw new RuntimeException('CSV ist leer.');
+      $header = fgetcsv($fh);
+      if (!$header) throw new RuntimeException(t('admin.users.error.csv_empty'));
 
       $map = [];
       foreach ($header as $i => $col) {
@@ -170,7 +170,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       foreach (['email','name','role'] as $req) {
-        if (!isset($map[$req])) throw new RuntimeException("Spalte fehlt: {$req}");
+        if (!isset($map[$req])) {
+          throw new RuntimeException(str_replace('{column}', $req, t('admin.users.error.column_missing')));
+        }
       }
 
       $created = 0;
@@ -184,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role  = normalize_role((string)($row[$map['role']] ?? 'teacher'));
 
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $name === '') {
-          $errors[] = "Ungültige Zeile: " . implode(',', $row);
+          $errors[] = str_replace('{row}', implode(',', $row), t('admin.users.error.invalid_row'));
           continue;
         }
 
@@ -228,7 +230,7 @@ $users = $pdo->query(
    ORDER BY role DESC, display_name ASC"
 )->fetchAll();
 
-render_admin_header('User');
+render_admin_header(t('admin.users.title'));
 ?>
 
 <style>
@@ -244,17 +246,17 @@ render_admin_header('User');
 </style>
 
 <div class="card">
-  <h1>User</h1>
+  <h1><?=h(t('admin.users.title'))?></h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 <?php if ($bulk): ?>
     <div class="alert <?=h($bulk['created'] > 0 ? 'success' : 'danger')?>">
-      Bulk-Import: erstellt <strong><?=h((string)$bulk['created'])?></strong>, übersprungen <strong><?=h((string)$bulk['skipped'])?></strong>.
+      <?=h(str_replace(['{created}', '{skipped}'], [ (string)$bulk['created'], (string)$bulk['skipped'] ], t('admin.users.bulk.summary')))?>
       <?php if (!empty($bulk['errors'])): ?>
         <details style="margin-top:8px;">
-          <summary>Fehler anzeigen (<?=count($bulk['errors'])?>)</summary>
+          <summary><?=h(str_replace('{count}', (string)count($bulk['errors']), t('admin.users.bulk.show_errors')))?></summary>
           <ul>
             <?php foreach ($bulk['errors'] as $e): ?><li><?=h((string)$e)?></li><?php endforeach; ?>
           </ul>
@@ -276,38 +278,38 @@ render_admin_header('User');
 <div class="card">
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
-      <h2 style="margin-top:0;">Neuen User anlegen</h2>
+      <h2 style="margin-top:0;"><?=h(t('admin.users.create_heading'))?></h2>
       <form method="post" class="grid" style="grid-template-columns: 1fr 1fr 140px auto; gap:12px; align-items:end;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create">
 
         <div>
-          <label>E-Mail</label>
+          <label><?=h(t('admin.users.label.email'))?></label>
           <input name="email" type="email" required>
         </div>
         <div>
-          <label>Name</label>
+          <label><?=h(t('admin.users.label.name'))?></label>
           <input name="name" type="text" required>
         </div>
         <div>
-          <label>Rolle</label>
+          <label><?=h(t('admin.users.label.role'))?></label>
           <select name="role">
-            <option value="teacher">teacher</option>
-            <option value="admin">admin</option>
+            <option value="teacher"><?=h(t('admin.users.role.teacher'))?></option>
+            <option value="admin"><?=h(t('admin.users.role.admin'))?></option>
           </select>
         </div>
         <div class="actions" style="justify-content:flex-start;">
-          <button class="btn primary" type="submit">Anlegen</button>
+          <button class="btn primary" type="submit"><?=h(t('admin.users.action.create'))?></button>
         </div>
       </form>
-      <div class="muted" style="margin-top:8px;">Nach dem Anlegen wird automatisch eine E-Mail zum Setzen des Passworts gesendet.</div>
+      <div class="muted" style="margin-top:8px;"><?=h(t('admin.users.create_hint'))?></div>
     </div>
 
     <div class="panel">
-      <h2 style="margin-top:0;">Bulk Import (CSV)</h2>
-      <div class="muted">Spalten: <code>email,name,role</code></div>
+      <h2 style="margin-top:0;"><?=h(t('admin.users.bulk.heading'))?></h2>
+      <div class="muted"><?=t('admin.users.bulk.columns')?></div>
       <div class="actions" style="justify-content:flex-start; margin:10px 0;">
-        <a class="btn secondary" href="<?=h(url('admin/users.php?download=csv_template'))?>">CSV-Template herunterladen</a>
+        <a class="btn secondary" href="<?=h(url('admin/users.php?download=csv_template'))?>"><?=h(t('admin.users.bulk.download_template'))?></a>
       </div>
       <form method="post" enctype="multipart/form-data" id="bulkImportForm">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -319,7 +321,7 @@ render_admin_header('User');
           <a href="#"
              class="btn primary"
              onclick="this.closest('form').submit(); return false;">
-             Import starten
+             <?=h(t('admin.users.bulk.import_start'))?>
           </a>
         </div>
       </form>
@@ -328,20 +330,20 @@ render_admin_header('User');
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;">Bestehende User</h2>
+  <h2 style="margin-top:0;"><?=h(t('admin.users.list_heading'))?></h2>
 
   <div class="alert">
-    Klassen-Zuordnungen werden in <a href="<?=h(url('admin/classes.php'))?>">Klassen</a> verwaltet.
+    <?=str_replace('{link}', '<a href="' . h(url('admin/classes.php')) . '">' . h(t('admin.users.classes_link')) . '</a>', t('admin.users.classes_hint'))?>
   </div>
 
   <table class="table">
     <thead>
       <tr>
-        <th>Name</th>
-        <th>E-Mail</th>
-        <th>Rolle</th>
-        <th>Aktiv</th>
-        <th>Aktionen</th>
+        <th><?=h(t('admin.users.table.name'))?></th>
+        <th><?=h(t('admin.users.table.email'))?></th>
+        <th><?=h(t('admin.users.table.role'))?></th>
+        <th><?=h(t('admin.users.table.active'))?></th>
+        <th><?=h(t('admin.users.table.actions'))?></th>
       </tr>
     </thead>
     <tbody>
@@ -350,10 +352,10 @@ render_admin_header('User');
         <td><?=h((string)$usr['display_name'])?></td>
         <td><?=h((string)$usr['email'])?></td>
         <td><?=h((string)$usr['role'])?></td>
-        <td><?=((int)$usr['is_active']===1) ? '<span class="badge">ja</span>' : '<span class="badge">nein</span>'?></td>
+        <td><?=((int)$usr['is_active']===1) ? '<span class="badge">' . h(t('admin.users.badge.yes')) . '</span>' : '<span class="badge">' . h(t('admin.users.badge.no')) . '</span>'?></td>
         <td>
           <details>
-            <summary id="userEditBtn" class="btn secondary" style="display:inline-block; cursor:pointer;">Bearbeiten</summary>
+            <summary id="userEditBtn" class="btn secondary" style="display:inline-block; cursor:pointer;"><?=h(t('admin.users.action.edit'))?></summary>
             <div class="panel" style="margin-top:10px;">
               <form method="post" class="grid" style="grid-template-columns: 1fr 140px 140px auto; gap:10px; align-items:end;">
                 <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -361,28 +363,28 @@ render_admin_header('User');
                 <input type="hidden" name="id" value="<?=h((string)$usr['id'])?>">
 
                 <div>
-                  <label>Name</label>
+                  <label><?=h(t('admin.users.label.name'))?></label>
                   <input name="name" type="text" value="<?=h((string)$usr['display_name'])?>" required>
                 </div>
 
                 <div>
-                  <label>Rolle</label>
+                  <label><?=h(t('admin.users.label.role'))?></label>
                   <select name="role">
-                    <option value="teacher" <?=((string)$usr['role']==='teacher')?'selected':''?>>teacher</option>
-                    <option value="admin" <?=((string)$usr['role']==='admin')?'selected':''?>>admin</option>
+                    <option value="teacher" <?=((string)$usr['role']==='teacher')?'selected':''?>><?=h(t('admin.users.role.teacher'))?></option>
+                    <option value="admin" <?=((string)$usr['role']==='admin')?'selected':''?>><?=h(t('admin.users.role.admin'))?></option>
                   </select>
                 </div>
 
                 <div>
-                  <label>Aktiv</label>
+                  <label><?=h(t('admin.users.label.active'))?></label>
                   <select name="is_active">
-                    <option value="1" <?=((int)$usr['is_active']===1)?'selected':''?>>ja</option>
-                    <option value="0" <?=((int)$usr['is_active']===0)?'selected':''?>>nein</option>
+                    <option value="1" <?=((int)$usr['is_active']===1)?'selected':''?>><?=h(t('admin.users.badge.yes'))?></option>
+                    <option value="0" <?=((int)$usr['is_active']===0)?'selected':''?>><?=h(t('admin.users.badge.no'))?></option>
                   </select>
                 </div>
 
                 <div class="actions" style="justify-content:flex-start;">
-                  <button class="btn primary" type="submit">Speichern</button>
+                  <button class="btn primary" type="submit"><?=h(t('admin.users.action.save'))?></button>
                 </div>
               </form>
 
@@ -391,14 +393,14 @@ render_admin_header('User');
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="send_invite">
                   <input type="hidden" name="id" value="<?=h((string)$usr['id'])?>">
-                  <button class="btn secondary" type="submit">Passwort-Link senden</button>
+                  <button class="btn secondary" type="submit"><?=h(t('admin.users.action.send_link'))?></button>
                 </form>
 
-                <form method="post" style="display:inline;" onsubmit="return confirm('User wirklich löschen? (Zuordnungen werden entfernt)');">
+                <form method="post" style="display:inline;" onsubmit="return confirm('<?=h(t('admin.users.confirm_delete'))?>');">
                   <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                   <input type="hidden" name="action" value="delete">
                   <input type="hidden" name="id" value="<?=h((string)$usr['id'])?>">
-                  <button class="btn danger" type="submit">Löschen</button>
+                  <button class="btn danger" type="submit"><?=h(t('admin.users.action.delete'))?></button>
                 </form>
               </div>
             </div>
