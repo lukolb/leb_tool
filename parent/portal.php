@@ -1052,6 +1052,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           fallbackFont = form.getDefaultFont();
         }
       } catch (e) {}
+      try {
+        if (!fallbackFont && PDFLib?.StandardFonts && typeof pdfDoc.embedFont === 'function') {
+          fallbackFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+        }
+      } catch (e) {}
 
       try {
         if (typeof form.updateFieldAppearances === 'function') {
