@@ -77,8 +77,11 @@ function render_role_header(string $title): void {
   $navItems = nav_items_for_role($role);
   $canSwitchRole = is_actual_admin();
   $switchRole = $role === 'admin' ? 'teacher' : 'admin';
-  $switchLabel = $role === 'admin' ? 'Als Lehrkraft wechseln' : 'Zum Adminbereich';
+  $switchLabel = $role === 'admin'
+    ? t('nav.switch_to_teacher')
+    : t('nav.switch_to_admin');
   $switchIcon = $role === 'admin' ? '👩‍🏫' : '🛠️';
+  $lang = ui_lang();
   ?>
   <!doctype html>
   <html lang="<?=h(ui_lang())?>">
@@ -102,24 +105,15 @@ function render_role_header(string $title): void {
             <div class="brand-subtitle"><?=h($title)?></div>
           </div>
 
-          <?php if ($role !== 'admin'): ?>
-            <?php $lang = ui_lang(); ?>
-            <div class="lang-switch" aria-label="Sprache wechseln">
-              <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="Deutsch">🇩🇪</a>
-              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="English">🇬🇧</a>
-              <?php if ($canSwitchRole): ?>
-                <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
-                  <?=h($switchIcon)?>
-                </a>
-              <?php endif; ?>
-            </div>
-          <?php elseif ($canSwitchRole): ?>
-            <div class="lang-switch" aria-label="Rolle wechseln">
+          <div class="lang-switch" aria-label="<?=h(t('ui.lang_switch_aria'))?>">
+            <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('ui.lang_de'))?>">🇩🇪</a>
+            <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('ui.lang_en'))?>">🇬🇧</a>
+            <?php if ($canSwitchRole): ?>
               <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
                 <?=h($switchIcon)?>
               </a>
-            </div>
-          <?php endif; ?>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
 

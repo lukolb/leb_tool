@@ -735,8 +735,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
               <tbody>
                 <tr>
                   <td>
-                    <strong>1. <?=h(t('parent.portal.meeting_feedback_q1'))?></strong>
-                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q1_en'))?></div>
+                    <?php
+                      $q1 = t('parent.portal.meeting_feedback_q1');
+                      $q1En = t('parent.portal.meeting_feedback_q1_en');
+                    ?>
+                    <strong>1. <?=h($q1)?></strong>
+                    <?php if ($q1En !== '' && $q1En !== $q1): ?>
+                      <div class="muted"><?=h($q1En)?></div>
+                    <?php endif; ?>
                   </td>
                   <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
@@ -746,8 +752,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                 </tr>
                 <tr>
                   <td>
-                    <strong>2. <?=h(t('parent.portal.meeting_feedback_q2'))?></strong>
-                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q2_en'))?></div>
+                    <?php
+                      $q2 = t('parent.portal.meeting_feedback_q2');
+                      $q2En = t('parent.portal.meeting_feedback_q2_en');
+                    ?>
+                    <strong>2. <?=h($q2)?></strong>
+                    <?php if ($q2En !== '' && $q2En !== $q2): ?>
+                      <div class="muted"><?=h($q2En)?></div>
+                    <?php endif; ?>
                   </td>
                   <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
@@ -757,8 +769,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
                 </tr>
                 <tr>
                   <td>
-                    <strong>3. <?=h(t('parent.portal.meeting_feedback_q3'))?></strong>
-                    <div class="muted"><?=h(t('parent.portal.meeting_feedback_q3_en'))?></div>
+                    <?php
+                      $q3 = t('parent.portal.meeting_feedback_q3');
+                      $q3En = t('parent.portal.meeting_feedback_q3_en');
+                    ?>
+                    <strong>3. <?=h($q3)?></strong>
+                    <?php if ($q3En !== '' && $q3En !== $q3): ?>
+                      <div class="muted"><?=h($q3En)?></div>
+                    <?php endif; ?>
                   </td>
                   <?php foreach ([1,2,3,4] as $opt): ?>
                     <td data-label="<?=h(t('parent.portal.meeting_feedback_option_' . $opt))?>">
@@ -769,8 +787,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
               </tbody>
             </table>
             <label style="margin-top:12px; display:block;">
-              <strong><?=h(t('parent.portal.meeting_feedback_message_label'))?></strong>
-              <div class="muted"><?=h(t('parent.portal.meeting_feedback_message_label_en'))?></div>
+              <?php
+                $messageLabel = t('parent.portal.meeting_feedback_message_label');
+                $messageLabelEn = t('parent.portal.meeting_feedback_message_label_en');
+              ?>
+              <strong><?=h($messageLabel)?></strong>
+              <?php if ($messageLabelEn !== '' && $messageLabelEn !== $messageLabel): ?>
+                <div class="muted"><?=h($messageLabelEn)?></div>
+              <?php endif; ?>
               <textarea name="message" rows="4" style="margin-top:6px; width:100%;"><?=h((string)$meetingForm['message'])?></textarea>
             </label>
             <div class="actions" style="margin-top:12px;">

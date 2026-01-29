@@ -6,7 +6,7 @@ require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_admin();
 
-render_admin_header('Admin – Icon & Options');
+render_admin_header(t('admin.icon_library.title'));
 ?>
 
 <style>
@@ -65,34 +65,34 @@ render_admin_header('Admin – Icon & Options');
 </style>
 
 <div class="card">
-    <h1>Options-Listen</h1>
+    <h1><?=h(t('admin.icon_library.heading'))?></h1>
 </div>
 
 <div class="card">
   <div class="tabs">
-    <button class="tabbtn active" data-tab="lists">Option-Listen</button>
-    <button class="tabbtn" data-tab="icons">Icons</button>
+    <button class="tabbtn active" data-tab="lists"><?=h(t('admin.icon_library.tab_lists'))?></button>
+    <button class="tabbtn" data-tab="icons"><?=h(t('admin.icon_library.tab_icons'))?></button>
   </div>
 </div>
 
 <div class="card">
 
   <div id="tab-icons" class="tabpanel">
-    <h2 style="margin-top:0;">Icon Library</h2>
-    <p class="muted">Hier lädst du Symbole hoch. Diese werden in der Datenbank gespeichert (inkl. Pfad), damit du sie später in Option-Listen auswählen kannst.</p>
+    <h2 style="margin-top:0;"><?=h(t('admin.icon_library.icons_heading'))?></h2>
+    <p class="muted"><?=h(t('admin.icon_library.icons_intro'))?></p>
 
     <div class="grid2" style="align-items:start;">
       <div class="card" style="margin:0;">
-        <h3 style="margin-top:0;">Icon hochladen</h3>
+        <h3 style="margin-top:0;"><?=h(t('admin.icon_library.upload_heading'))?></h3>
         <form id="iconUploadForm" method="post" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="file" name="icon[]" accept=".png,.jpg,.jpeg,.webp,.svg" multiple required>
           <div class="actions" style="margin-top:12px;">
-            <button class="btn primary" type="submit">Upload</button>
+            <button class="btn primary" type="submit"><?=h(t('admin.icon_library.upload_button'))?></button>
           </div>
         </form>
         <div class="muted small" style="margin-top:10px;">
-          Empfohlen: kleine Icons (z.B. 32–128px), transparente PNG/WebP. Mehrfachauswahl möglich.
+          <?=h(t('admin.icon_library.upload_hint'))?>
         </div>
         <div class="muted small" id="iconUploadMsg" style="margin-top:8px;"></div>
       </div>
@@ -100,15 +100,15 @@ render_admin_header('Admin – Icon & Options');
       <div class="card" style="margin:0;">
         <div class="grid" style="grid-template-columns:1fr 160px; gap:12px; align-items:end;">
           <div>
-            <label>Filter</label>
-            <input id="iconFilter" placeholder="z.B. star, smile, 1, 2 ...">
+            <label><?=h(t('admin.icon_library.filter_label'))?></label>
+            <input id="iconFilter" placeholder="<?=h(t('admin.icon_library.icon_filter_placeholder'))?>">
           </div>
           <div class="actions" style="justify-content:flex-start;">
-            <button class="btn secondary" id="btnReloadIcons" type="button">Neu laden</button>
+            <button class="btn secondary" id="btnReloadIcons" type="button"><?=h(t('admin.icon_library.reload_button'))?></button>
           </div>
         </div>
 
-        <h3 style="margin:14px 0 8px;">Vorhandene Icons</h3>
+        <h3 style="margin:14px 0 8px;"><?=h(t('admin.icon_library.icons_list_heading'))?></h3>
         <div id="iconMsg" class="muted small" style="margin-bottom:8px;"></div>
         <div id="iconGrid" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:12px;"></div>
       </div>
@@ -116,34 +116,34 @@ render_admin_header('Admin – Icon & Options');
   </div>
 
   <div id="tab-lists" class="tabpanel active">
-    <h2 style="margin-top:0;">Option-Listen Vorlagen</h2>
-    <p class="muted">Erstelle hier Auswahllisten (z.B. Skala, Ja/Nein, Smileys). Diese Vorlagen nutzt du später in <code>template_fields.php</code> für Radio/Select-Felder.</p>
+    <h2 style="margin-top:0;"><?=h(t('admin.icon_library.lists_heading'))?></h2>
+    <p class="muted"><?=h(t('admin.icon_library.lists_intro'))?></p>
 
     <div class="grid2">
       <div class="card" style="margin:0;">
-        <h3 style="margin-top:0;">Vorlagen</h3>
+        <h3 style="margin-top:0;"><?=h(t('admin.icon_library.templates_heading'))?></h3>
 
         <div class="grid" style="gap:12px; align-items:end;">
           <div>
-            <label>Neue Vorlage</label>
-            <input id="newListName" placeholder="z.B. Skala, Ja/Nein">
+            <label><?=h(t('admin.icon_library.new_template_label'))?></label>
+            <input id="newListName" placeholder="<?=h(t('admin.icon_library.new_template_placeholder'))?>">
           </div>
           <div class="actions" style="justify-content:flex-start;">
-            <button class="btn primary" id="btnCreateList" type="button">Erstellen</button>
+            <button class="btn primary" id="btnCreateList" type="button"><?=h(t('admin.icon_library.create_button'))?></button>
           </div>
         </div>
 
         <div style="margin-top:12px;">
-          <label>Filter</label>
-          <input id="listFilter" placeholder="z.B. Skala, Smileys ...">
+          <label><?=h(t('admin.icon_library.filter_label'))?></label>
+          <input id="listFilter" placeholder="<?=h(t('admin.icon_library.list_filter_placeholder'))?>">
         </div>
 
         <div class="table-scroll" style="margin-top:10px;">
           <table style="width:100%; border-collapse:separate; border-spacing:0;">
             <thead>
               <tr>
-                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">ID</th>
-                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);">Name</th>
+                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);"><?=h(t('admin.icon_library.table_id'))?></th>
+                <th style="top:0; z-index:2; background:var(--card,#fff); padding:10px; border-bottom:1px solid var(--border);"><?=h(t('admin.icon_library.table_name'))?></th>
               </tr>
             </thead>
             <tbody id="listsTbody"></tbody>
@@ -154,40 +154,40 @@ render_admin_header('Admin – Icon & Options');
       </div>
 
       <div class="card" style="margin:0;">
-        <h3 style="margin-top:0;">Optionen der Vorlage</h3>
+        <h3 style="margin-top:0;"><?=h(t('admin.icon_library.template_options_heading'))?></h3>
 
-        <div id="noListSelected" class="muted">Wähle links eine Vorlage aus.</div>
+        <div id="noListSelected" class="muted"><?=h(t('admin.icon_library.template_select_hint'))?></div>
 
         <div id="listEditor" style="display:none;">
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
             <div>
-              <label>Name</label>
+              <label><?=h(t('admin.icon_library.template_name_label'))?></label>
               <input id="editListName">
             </div>
             <div>
-              <label>Beschreibung (optional)</label>
-              <input id="editListDesc" placeholder="z.B. Bewertungs-Skala für Verhalten">
+              <label><?=h(t('admin.icon_library.template_description_label'))?></label>
+              <input id="editListDesc" placeholder="<?=h(t('admin.icon_library.template_description_placeholder'))?>">
             </div>
           </div>
 
           <div class="actions" style="margin-top:12px; flex-wrap:wrap;">
-            <button class="btn secondary" id="btnAddItem" type="button">Item hinzufügen</button>
-            <button class="btn primary" id="btnSaveList" type="button">Speichern</button>
-            <button class="btn secondary" id="btnDuplicateList" type="button">Duplizieren</button>
-            <button class="btn secondary" id="btnDeleteList" type="button" style="border-color:#b00020; color:#b00020;">Löschen</button>
+            <button class="btn secondary" id="btnAddItem" type="button"><?=h(t('admin.icon_library.add_item_button'))?></button>
+            <button class="btn primary" id="btnSaveList" type="button"><?=h(t('admin.icon_library.save_button'))?></button>
+            <button class="btn secondary" id="btnDuplicateList" type="button"><?=h(t('admin.icon_library.duplicate_button'))?></button>
+            <button class="btn secondary" id="btnDeleteList" type="button" style="border-color:#b00020; color:#b00020;"><?=h(t('admin.icon_library.delete_button'))?></button>
           </div>
 
           <div class="table-scroll" style="margin-top:10px;">
             <table id="itemsTbl">
               <thead>
                 <tr>
-                  <th class="col-sort">Sort</th>
-                  <th class="col-sort">Value</th>
-                  <th>Label (DE)</th>
-                  <th>Label (EN)</th>
-                <th class="col-ico">Icon</th>
-                <th style="width:150px; min-width:150px;">Schülerfeld sperren</th>
-                <th style="width:90px; min-width:90px;">Aktion</th>
+                  <th class="col-sort"><?=h(t('admin.icon_library.col_sort'))?></th>
+                  <th class="col-sort"><?=h(t('admin.icon_library.col_value'))?></th>
+                  <th><?=h(t('admin.icon_library.col_label_de'))?></th>
+                  <th><?=h(t('admin.icon_library.col_label_en'))?></th>
+                <th class="col-ico"><?=h(t('admin.icon_library.col_icon'))?></th>
+                <th style="width:150px; min-width:150px;"><?=h(t('admin.icon_library.col_lock_child'))?></th>
+                <th style="width:90px; min-width:90px;"><?=h(t('admin.icon_library.col_action'))?></th>
                 </tr>
               </thead>
               <tbody id="itemsTbody"></tbody>
@@ -195,8 +195,7 @@ render_admin_header('Admin – Icon & Options');
           </div>
 
           <div class="muted small" style="margin-top:10px;">
-            Tipp: <strong>Value</strong> ist der gespeicherte Wert (z.B. <code>1</code>, <code>yes</code>, <code>A</code>), <strong>Label</strong> ist das, was angezeigt wird.
-            <br>Wenn <strong>Label (EN)</strong> leer ist, wird automatisch <strong>Label (DE)</strong> verwendet.
+            <?=t('admin.icon_library.items_hint')?>
           </div>
 
           <div class="muted small" id="itemsMsg" style="margin-top:8px;"></div>
@@ -210,6 +209,49 @@ render_admin_header('Admin – Icon & Options');
 <script>
 (function(){
   const csrf = <?=json_encode(csrf_token())?>;
+  const I18N = <?=json_encode([
+    'tab_lists' => t('admin.icon_library.tab_lists'),
+    'tab_icons' => t('admin.icon_library.tab_icons'),
+    'icons_empty' => t('admin.icon_library.icons_empty'),
+    'icon_delete_button' => t('admin.icon_library.icon_delete_button'),
+    'icon_delete_confirm' => t('admin.icon_library.icon_delete_confirm'),
+    'icon_deleting' => t('admin.icon_library.icon_deleting'),
+    'icon_deleted' => t('admin.icon_library.icon_deleted'),
+    'error_prefix' => t('admin.icon_library.error_prefix'),
+    'upload_select_files' => t('admin.icon_library.upload_select_files'),
+    'upload_in_progress' => t('admin.icon_library.upload_in_progress'),
+    'upload_ok_many' => t('admin.icon_library.upload_ok_many'),
+    'upload_ok_single' => t('admin.icon_library.upload_ok_single'),
+    'upload_file_fallback' => t('admin.icon_library.upload_file_fallback'),
+    'templates_empty' => t('admin.icon_library.templates_empty'),
+    'icon_none' => t('admin.icon_library.icon_none'),
+    'icon_preview_label' => t('admin.icon_library.icon_preview_label'),
+    'lock_label' => t('admin.icon_library.lock_label'),
+    'remove_button' => t('admin.icon_library.remove_button'),
+    'item_value_placeholder' => t('admin.icon_library.item_value_placeholder'),
+    'item_label_de_placeholder' => t('admin.icon_library.item_label_de_placeholder'),
+    'item_label_en_placeholder' => t('admin.icon_library.item_label_en_placeholder'),
+    'list_empty_name' => t('admin.icon_library.list_empty_name'),
+    'list_create_progress' => t('admin.icon_library.list_create_progress'),
+    'list_create_ok' => t('admin.icon_library.list_create_ok'),
+    'save_progress' => t('admin.icon_library.save_progress'),
+    'save_missing_name' => t('admin.icon_library.save_missing_name'),
+    'save_ok' => t('admin.icon_library.save_ok'),
+    'save_ok_updated' => t('admin.icon_library.save_ok_updated'),
+    'duplicate_progress' => t('admin.icon_library.duplicate_progress'),
+    'duplicate_ok' => t('admin.icon_library.duplicate_ok'),
+    'delete_confirm' => t('admin.icon_library.delete_confirm'),
+    'delete_progress' => t('admin.icon_library.delete_progress'),
+    'delete_ok' => t('admin.icon_library.delete_ok')
+  ], JSON_UNESCAPED_UNICODE) ?>;
+  const tIcon = (key) => I18N[key] ?? key;
+  const tfmtIcon = (key, vars = {}) => {
+    let base = tIcon(key);
+    Object.entries(vars).forEach(([k, v]) => {
+      base = base.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+    });
+    return base;
+  };
 
   // Tabs
   document.querySelectorAll('.tabbtn').forEach(btn => {
@@ -240,7 +282,7 @@ render_admin_header('Admin – Icon & Options');
     );
 
     if (!icons.length){
-      iconGrid.innerHTML = '<div class="muted">Keine Icons gefunden.</div>';
+      iconGrid.innerHTML = `<div class="muted">${tIcon('icons_empty')}</div>`;
       return;
     }
 
@@ -254,7 +296,7 @@ render_admin_header('Admin – Icon & Options');
           <input readonly value="${escapeAttr(ic.storage_path)}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:10px;">
         </div>
         <div class="actions" style="margin-top:10px; justify-content:flex-end;">
-          <button class="btn secondary js-del-icon" data-id="${ic.id}" type="button" style="border-color:#b00020; color:#b00020;">Löschen</button>
+          <button class="btn secondary js-del-icon" data-id="${ic.id}" type="button" style="border-color:#b00020; color:#b00020;">${tIcon('icon_delete_button')}</button>
         </div>
       </div>
     `).join('');
@@ -288,8 +330,8 @@ render_admin_header('Admin – Icon & Options');
 
   async function deleteIcon(id){
     if (!id) return;
-    if (!confirm('Icon wirklich löschen?')) return;
-    setIconMsg('Lösche…');
+    if (!confirm(tIcon('icon_delete_confirm'))) return;
+    setIconMsg(tIcon('icon_deleting'));
 
     const resp = await fetch(<?=json_encode(url('admin/ajax/icon_delete.php'))?>, {
       method: 'POST',
@@ -298,20 +340,20 @@ render_admin_header('Admin – Icon & Options');
     });
     const j = await resp.json().catch(()=>({}));
     if (!resp.ok || !j.ok){
-      setIconMsg('Fehler: ' + (j.error || ('HTTP ' + resp.status)), true);
+      setIconMsg(tIcon('error_prefix') + (j.error || ('HTTP ' + resp.status)), true);
       return;
     }
-    setIconMsg('Icon gelöscht.');
+    setIconMsg(tIcon('icon_deleted'));
     await loadIcons();
   }
 
   iconUploadForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!iconFileInput.files || iconFileInput.files.length === 0) {
-      iconUploadMsg.textContent = 'Bitte mindestens eine Datei auswählen.';
+      iconUploadMsg.textContent = tIcon('upload_select_files');
       return;
     }
-    iconUploadMsg.textContent = 'Upload…';
+    iconUploadMsg.textContent = tIcon('upload_in_progress');
 
     const fd = new FormData(iconUploadForm);
     const resp = await fetch(<?=json_encode(url('admin/ajax/icon_upload.php'))?>, {
@@ -320,15 +362,15 @@ render_admin_header('Admin – Icon & Options');
     });
     const j = await resp.json().catch(()=>({}));
     if (!resp.ok || !j.ok){
-      iconUploadMsg.textContent = 'Fehler: ' + (j.error || ('HTTP '+resp.status));
+      iconUploadMsg.textContent = tIcon('error_prefix') + (j.error || ('HTTP '+resp.status));
       return;
     }
     const uploaded = Array.isArray(j.uploaded) ? j.uploaded : [];
     if (uploaded.length > 0) {
-      const names = uploaded.map(u => u.filename || 'Datei').join(', ');
-      iconUploadMsg.textContent = `OK: ${uploaded.length} Datei(en) hochgeladen (${names})`;
+      const names = uploaded.map(u => u.filename || tIcon('upload_file_fallback')).join(', ');
+      iconUploadMsg.textContent = tfmtIcon('upload_ok_many', { count: String(uploaded.length), names });
     } else {
-      iconUploadMsg.textContent = 'OK: ' + (j.filename || 'hochgeladen');
+      iconUploadMsg.textContent = tfmtIcon('upload_ok_single', { name: j.filename || tIcon('upload_file_fallback') });
     }
     iconUploadForm.reset();
     await loadIcons();
@@ -362,7 +404,7 @@ render_admin_header('Admin – Icon & Options');
     const arr = !ft ? listsCache : listsCache.filter(x => String(x.name||'').toLowerCase().includes(ft));
 
     if (!arr.length){
-      listsTbody.innerHTML = '<tr><td colspan="2" class="muted" style="padding:10px;">Keine Vorlagen.</td></tr>';
+      listsTbody.innerHTML = `<tr><td colspan="2" class="muted" style="padding:10px;">${tIcon('templates_empty')}</td></tr>`;
       return;
     }
 
@@ -375,7 +417,7 @@ render_admin_header('Admin – Icon & Options');
   }
 
   function iconOptionsHtml(selectedId){
-    const opts = ['<option value="">— kein —</option>'];
+    const opts = [`<option value="">${tIcon('icon_none')}</option>`];
     (iconsForPicker || []).forEach(ic => {
       const sel = (String(ic.id) === String(selectedId)) ? 'selected' : '';
       opts.push(`<option value="${ic.id}" ${sel}>#${ic.id} · ${escapeHtml(ic.filename)}</option>`);
@@ -390,24 +432,24 @@ render_admin_header('Admin – Icon & Options');
 
       tr.innerHTML = `
         <td class="col-sort"><input type="number" value="${Number(it.sort_order ?? idx)}" min="0" step="1"></td>
-        <td><input type="text" value="${escapeAttr(it.value || '')}" placeholder="z.B. 1 / yes / A"></td>
-        <td><input type="text" value="${escapeAttr(it.label || '')}" placeholder="Anzeige-Text (DE)"></td>
-        <td><input type="text" value="${escapeAttr(it.label_en || '')}" placeholder="Display text (EN)"></td>
+        <td><input type="text" value="${escapeAttr(it.value || '')}" placeholder="${tIcon('item_value_placeholder')}"></td>
+        <td><input type="text" value="${escapeAttr(it.label || '')}" placeholder="${tIcon('item_label_de_placeholder')}"></td>
+        <td><input type="text" value="${escapeAttr(it.label_en || '')}" placeholder="${tIcon('item_label_en_placeholder')}"></td>
         <td class="col-ico">
           <select>${iconOptionsHtml(it.icon_id || '')}</select>
           <div class="muted small" style="margin-top:6px; display:flex; gap:8px; align-items:center;">
             <span class="js-icon-preview"></span>
-            <span class="muted small">Preview</span>
+            <span class="muted small">${tIcon('icon_preview_label')}</span>
           </div>
         </td>
         <td style="text-align:center;">
           <label style="display:inline-flex; align-items:center; gap:6px;">
             <input type="checkbox" ${it.lock_child ? 'checked' : ''}>
-            <span class="muted small">sperrt</span>
+            <span class="muted small">${tIcon('lock_label')}</span>
           </label>
         </td>
         <td>
-          <button class="btn secondary js-del" type="button">Entfernen</button>
+          <button class="btn secondary js-del" type="button">${tIcon('remove_button')}</button>
         </td>
       `;
 
@@ -502,16 +544,16 @@ render_admin_header('Admin – Icon & Options');
 
   btnCreateList.addEventListener('click', async () => {
     const name = (newListName.value || '').trim();
-    if (!name){ listMsg.textContent = 'Bitte Namen eingeben.'; return; }
+    if (!name){ listMsg.textContent = tIcon('list_empty_name'); return; }
     try{
-      listMsg.textContent = 'Erstelle…';
+      listMsg.textContent = tIcon('list_create_progress');
       const j = await api({ action:'create_template', name });
       newListName.value = '';
-      listMsg.textContent = 'OK: erstellt #' + j.list_id;
+      listMsg.textContent = tfmtIcon('list_create_ok', { id: String(j.list_id) });
       await loadLists();
       await selectList(j.list_id);
     } catch(err){
-      listMsg.textContent = 'Fehler: ' + (err && err.message ? err.message : err);
+      listMsg.textContent = tIcon('error_prefix') + (err && err.message ? err.message : err);
     }
   });
 
@@ -522,9 +564,9 @@ render_admin_header('Admin – Icon & Options');
 
   btnSaveList.addEventListener('click', async () => {
     try{
-      itemsMsg.textContent = 'Speichere…';
+      itemsMsg.textContent = tIcon('save_progress');
       const name = (editListName.value || '').trim();
-      if (!name) throw new Error('Name fehlt.');
+      if (!name) throw new Error(tIcon('save_missing_name'));
 
       // Clean items: require value + label (DE); EN optional
       const cleaned = activeItems
@@ -549,41 +591,41 @@ render_admin_header('Admin – Icon & Options');
 
       const upd = (j && typeof j.template_fields_updated !== 'undefined') ? Number(j.template_fields_updated) : null;
       itemsMsg.textContent = upd === null
-        ? 'OK gespeichert.'
-        : ('OK gespeichert. Template-Felder aktualisiert: ' + upd + '.');
+        ? tIcon('save_ok')
+        : tfmtIcon('save_ok_updated', { count: String(upd) });
       await loadLists();
       await selectList(activeListId);
     } catch(err){
-      itemsMsg.textContent = 'Fehler: ' + (err && err.message ? err.message : err);
+      itemsMsg.textContent = tIcon('error_prefix') + (err && err.message ? err.message : err);
     }
   });
 
   btnDuplicateList.addEventListener('click', async () => {
     try{
-      itemsMsg.textContent = 'Dupliziere…';
+      itemsMsg.textContent = tIcon('duplicate_progress');
       const j = await api({ action: 'duplicate_template', list_id: activeListId });
-      itemsMsg.textContent = 'OK: neue Vorlage #' + j.new_list_id;
+      itemsMsg.textContent = tfmtIcon('duplicate_ok', { id: String(j.new_list_id) });
       await loadLists();
       await selectList(j.new_list_id);
     } catch(err){
-      itemsMsg.textContent = 'Fehler: ' + (err && err.message ? err.message : err);
+      itemsMsg.textContent = tIcon('error_prefix') + (err && err.message ? err.message : err);
     }
   });
 
   btnDeleteList.addEventListener('click', async () => {
     if (!activeListId) return;
-    if (!confirm('Vorlage wirklich löschen? (Items werden mit gelöscht)')) return;
+    if (!confirm(tIcon('delete_confirm'))) return;
     try{
-      itemsMsg.textContent = 'Lösche…';
+      itemsMsg.textContent = tIcon('delete_progress');
       await api({ action:'delete_template', list_id: activeListId });
-      itemsMsg.textContent = 'Gelöscht.';
+      itemsMsg.textContent = tIcon('delete_ok');
       activeListId = 0;
       activeItems = [];
       listEditor.style.display = 'none';
       noListSelected.style.display = 'block';
       await loadLists();
     } catch(err){
-      itemsMsg.textContent = 'Fehler: ' + (err && err.message ? err.message : err);
+      itemsMsg.textContent = tIcon('error_prefix') + (err && err.message ? err.message : err);
     }
   });
 

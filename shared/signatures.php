@@ -10,7 +10,7 @@ function signature_master_key(): string {
   }
   $raw = trim((string)$raw);
   if ($raw === '') {
-    throw new RuntimeException('SIGNATURE_MASTER_KEY fehlt.');
+    throw new RuntimeException(t('signature.error.master_key_missing', 'SIGNATURE_MASTER_KEY fehlt.'));
   }
 
   if (preg_match('/^[a-f0-9]{64}$/i', $raw)) {
@@ -23,7 +23,7 @@ function signature_master_key(): string {
   }
 
   if (strlen($raw) !== 32) {
-    throw new RuntimeException('SIGNATURE_MASTER_KEY muss 32 Bytes haben.');
+    throw new RuntimeException(t('signature.error.master_key_length', 'SIGNATURE_MASTER_KEY muss 32 Bytes haben.'));
   }
   return $raw;
 }
@@ -52,12 +52,12 @@ function signature_aad_legacy(int $userId, string $purpose): string {
 function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints = 5000): array {
   if (is_string($raw)) {
     if (strlen($raw) > 200000) {
-      throw new RuntimeException('Signaturdaten sind zu groß.');
+      throw new RuntimeException(t('signature.error.data_too_large', 'Signaturdaten sind zu groß.'));
     }
     $raw = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
   }
   if (!is_array($raw)) {
-    throw new RuntimeException('Signaturdaten fehlen.');
+    throw new RuntimeException(t('signature.error.data_missing', 'Signaturdaten fehlen.'));
   }
   $version = (int)($raw['v'] ?? ($raw['version'] ?? 1));
   if ($version < 1) $version = 1;
@@ -66,7 +66,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   if (is_numeric($ratio)) {
     $ratio = (float)$ratio;
     if (!is_finite($ratio) || $ratio <= 0) {
-      throw new RuntimeException('Signatur-Seitenverhältnis ist ungültig.');
+      throw new RuntimeException(t('signature.error.ratio_invalid', 'Signatur-Seitenverhältnis ist ungültig.'));
     }
     $ratioSource = 'client';
   } else {
@@ -74,7 +74,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   }
   $strokes = $raw['strokes'] ?? null;
   if (!is_array($strokes)) {
-    throw new RuntimeException('Signaturdaten sind ungültig.');
+    throw new RuntimeException(t('signature.error.data_invalid', 'Signaturdaten sind ungültig.'));
   }
 
   $clean = [];
@@ -115,7 +115,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
   }
 
   if (!$clean) {
-    throw new RuntimeException('Signatur ist leer.');
+    throw new RuntimeException(t('signature.error.empty', 'Signatur ist leer.'));
   }
 
   $boundsRatio = null;
@@ -150,7 +150,7 @@ function signature_sanitize_payload($raw, int $maxStrokes = 120, int $maxPoints 
     $ratio = max(0.1, min(50.0, $ratio));
   }
   if ($ratio === null) {
-    throw new RuntimeException('Signatur-Seitenverhältnis fehlt.');
+    throw new RuntimeException(t('signature.error.ratio_missing', 'Signatur-Seitenverhältnis fehlt.'));
   }
 
   return [
@@ -170,17 +170,17 @@ function signature_encrypt_payload(array $payload, int $userId, string $purpose)
   $iv = random_bytes(12);
   $plaintext = json_encode($payload, JSON_UNESCAPED_UNICODE);
   if ($plaintext === false) {
-    throw new RuntimeException('Signaturdaten konnten nicht codiert werden.');
+    throw new RuntimeException(t('signature.error.encode_failed', 'Signaturdaten konnten nicht codiert werden.'));
   }
   $ciphertext = openssl_encrypt($plaintext, 'aes-256-gcm', $dataKey, OPENSSL_RAW_DATA, $iv, $tag, $aad);
   if ($ciphertext === false) {
-    throw new RuntimeException('Signaturdaten konnten nicht verschlüsselt werden.');
+    throw new RuntimeException(t('signature.error.encrypt_failed', 'Signaturdaten konnten nicht verschlüsselt werden.'));
   }
 
   $keyIv = random_bytes(12);
   $encKey = openssl_encrypt($dataKey, 'aes-256-gcm', $master, OPENSSL_RAW_DATA, $keyIv, $keyTag, $aad);
   if ($encKey === false) {
-    throw new RuntimeException('Signatur-Schlüssel konnte nicht verschlüsselt werden.');
+    throw new RuntimeException(t('signature.error.key_encrypt_failed', 'Signatur-Schlüssel konnte nicht verschlüsselt werden.'));
   }
 
   return [

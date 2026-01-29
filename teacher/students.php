@@ -824,10 +824,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $q->execute([$studentId]);
       $valueCount = (int)($q->fetch(PDO::FETCH_ASSOC)['value_count'] ?? 0);
       if ($valueCount > 0) {
-        throw new RuntimeException(t(
-          'teacher.students.error_delete_has_data',
-          'Schüler kann nicht gelöscht werden, da bereits Formular-Daten gespeichert sind. Bitte an den Admin wenden.'
-        ));
+        throw new RuntimeException(t('teacher.students.error_delete_has_data', 'Schüler kann nicht gelöscht werden, da bereits Formular-Daten gespeichert sind. Bitte an den Admin wenden.'));
       }
 
       $pdo->beginTransaction();

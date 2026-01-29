@@ -15,10 +15,10 @@ $studentId = (int)($_GET['student_id'] ?? 0);
 $delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
 
 if ($classId <= 0 || $studentId <= 0) {
-  render_teacher_header('PDF-Formular');
+  render_teacher_header(t('teacher.pdf_entry.title'));
   ?>
   <div class="card">
-    <div class="alert danger"><strong>Fehlende Parameter.</strong></div>
+    <div class="alert danger"><strong><?=h(t('teacher.pdf_entry.missing_params'))?></strong></div>
   </div>
   <?php
   render_teacher_footer();
@@ -27,7 +27,7 @@ if ($classId <= 0 || $studentId <= 0) {
 
 if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
-  echo '403 Forbidden';
+  echo h(t('teacher.entry.forbidden'));
   exit;
 }
 
@@ -42,10 +42,10 @@ $st = $pdo->prepare(
 $st->execute([$studentId]);
 $student = $st->fetch(PDO::FETCH_ASSOC);
 if (!$student || (int)($student['class_id'] ?? 0) !== $classId) {
-  render_teacher_header('PDF-Formular');
+  render_teacher_header(t('teacher.pdf_entry.title'));
   ?>
   <div class="card">
-    <div class="alert danger"><strong>Schüler nicht gefunden oder falsche Klasse.</strong></div>
+    <div class="alert danger"><strong><?=h(t('teacher.pdf_entry.student_not_found'))?></strong></div>
   </div>
   <?php
   render_teacher_footer();
@@ -60,7 +60,7 @@ function pdf_entry_class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . $id));
 }
 
-$pageTitle = t('teacher.entry.title', 'Eingaben');
+$pageTitle = t('teacher.entry.title');
 render_teacher_header($pageTitle);
 $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($student['last_name'] ?? ''));
 ?>
@@ -296,45 +296,45 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
 <div class="pdf-entry-wrap">
   <div class="pdf-student-nav left">
-    <button type="button" id="prevStudentBtn" title="Vorheriger Schüler" disabled>‹</button>
+    <button type="button" id="prevStudentBtn" title="<?=h(t('teacher.pdf_entry.prev_student'))?>" disabled>‹</button>
     <div class="pdf-student-nav-label" id="prevStudentLabel"></div>
   </div>
   <div class="pdf-student-nav right">
-    <button type="button" id="nextStudentBtn" title="Nächster Schüler" disabled>›</button>
+    <button type="button" id="nextStudentBtn" title="<?=h(t('teacher.pdf_entry.next_student'))?>" disabled>›</button>
     <div class="pdf-student-nav-label" id="nextStudentLabel"></div>
   </div>
   <div class="card">
     <div class="row-actions" style="float: right;">
-      <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId . ($delegatedMode ? '&delegated=1' : '')))?>">Zurück zur Eingabe</a>
+      <a class="btn secondary" href="<?=h(url('teacher/entry.php?class_id=' . (int)$classId . ($delegatedMode ? '&delegated=1' : '')))?>"><?=h(t('teacher.pdf_entry.back_to_entry'))?></a>
     </div>
-    <h1 style="margin-bottom:4px;"><?=h(t('teacher.entry.heading_fill', 'Eingaben ausfüllen'))?></h1>
+    <h1 style="margin-bottom:4px;"><?=h(t('teacher.entry.heading_fill'))?></h1>
     <div class="muted">
       <?=h($studentName)?> · <?=h((string)($student['school_year'] ?? ''))?> · <?=h(pdf_entry_class_display($student))?>
     </div>
-    <div class="muted" style="margin-top:6px;">Die Felder werden automatisch gespeichert.</div>
+    <div class="muted" style="margin-top:6px;"><?=h(t('teacher.pdf_entry.autosave_hint'))?></div>
     <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-      <label class="pdf-toggle" title="<?=h(t('teacher.entry.show_student_values_hint', 'Tastenkürzel: Strg+Shift+S'))?>">
+      <label class="pdf-toggle" title="<?=h(t('teacher.entry.show_student_values_hint'))?>">
         <input type="checkbox" id="toggleStudentValues" />
-        <?=h(t('teacher.entry.show_student_values', 'Schülerwerte anzeigen'))?>
+        <?=h(t('teacher.entry.show_student_values'))?>
       </label>
       <label class="pdf-toggle">
         <input type="checkbox" id="toggleStudentEdit" />
-        <?=h(t('teacher.entry.edit_student_values', 'Schülereinträge bearbeiten'))?>
+        <?=h(t('teacher.entry.edit_student_values'))?>
       </label>
-      <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
+      <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('teacher.entry.save_status_saving'))?></span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
     <div id="studentEditWarning" class="alert danger" style="display:none; margin-top:10px;">
-      <?=h(t('teacher.entry.edit_student_values_warning', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.'))?>
+      <?=h(t('teacher.entry.edit_student_values_warning'))?>
     </div>
   </div>
 
   <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
 
   <div id="pdfEntryPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;">
-    <div class="pdf-loader" aria-label="Lädt…" role="status">
+    <div class="pdf-loader" aria-label="<?=h(t('ui.loading'))?>" role="status">
       <span class="spinner"></span>
-      <span class="txt">PDF wird geladen…</span>
+      <span class="txt"><?=h(t('teacher.pdf_entry.loading'))?></span>
     </div>
   </div>
 </div>
@@ -348,6 +348,22 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const studentId = <?=json_encode($studentId)?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const UI_LANG = <?=json_encode(ui_lang())?>;
+  const I18N = <?=json_encode([
+    'prev_student' => t('teacher.pdf_entry.prev_student'),
+    'next_student' => t('teacher.pdf_entry.next_student'),
+    'prev_student_with_name' => t('teacher.pdf_entry.prev_student_with_name'),
+    'next_student_with_name' => t('teacher.pdf_entry.next_student_with_name'),
+    'student_value_aria' => t('teacher.pdf_entry.student_value_aria'),
+    'save_success' => t('teacher.pdf_entry.save_success'),
+    'save_failed' => t('teacher.pdf_entry.save_failed'),
+    'ready' => t('teacher.pdf_entry.ready'),
+    'load_failed' => t('teacher.pdf_entry.load_failed'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+  const tPdf = (key) => I18N[key] ?? key;
+  const tfmtPdf = (key, vars = {}) => {
+    const base = tPdf(key);
+    return base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
+  };
 
   const preview = document.getElementById('pdfEntryPreview');
   const errBox = document.getElementById('errBox');
@@ -358,7 +374,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const toggleStudentEdit = document.getElementById('toggleStudentEdit');
   const toggleStudentEditWrap = toggleStudentEdit ? toggleStudentEdit.closest('label') : null;
   const studentEditWarning = document.getElementById('studentEditWarning');
-  const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm', 'Warnung: Das Bearbeiten der Schülereinträge durch Lehrkräfte ist nicht vorgesehen. Schüler sehen alle diese Einträge.\n\nMöchtest du fortfahren?'))?>;
+  const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm'))?>;
   const prevStudentBtn = document.getElementById('prevStudentBtn');
   const nextStudentBtn = document.getElementById('nextStudentBtn');
   const prevStudentLabel = document.getElementById('prevStudentLabel');
@@ -433,14 +449,18 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (prevStudentBtn) {
       const hasPrev = Boolean(nav.prev_id);
       prevStudentBtn.disabled = !hasPrev;
-      prevStudentBtn.title = hasPrev ? `Vorheriger Schüler: ${nav.prev_name || ''}` : 'Vorheriger Schüler';
+      prevStudentBtn.title = hasPrev
+        ? tfmtPdf('prev_student_with_name', { name: nav.prev_name || '' })
+        : tPdf('prev_student');
       if (prevStudentLabel) prevStudentLabel.textContent = hasPrev ? (nav.prev_name || '') : '';
       prevStudentBtn.onclick = () => goToStudent(nav.prev_id);
     }
     if (nextStudentBtn) {
       const hasNext = Boolean(nav.next_id);
       nextStudentBtn.disabled = !hasNext;
-      nextStudentBtn.title = hasNext ? `Nächster Schüler: ${nav.next_name || ''}` : 'Nächster Schüler';
+      nextStudentBtn.title = hasNext
+        ? tfmtPdf('next_student_with_name', { name: nav.next_name || '' })
+        : tPdf('next_student');
       if (nextStudentLabel) nextStudentLabel.textContent = hasNext ? (nav.next_name || '') : '';
       nextStudentBtn.onclick = () => goToStudent(nav.next_id);
     }
@@ -798,7 +818,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-student-info';
     wrapper.setAttribute('tabindex', '0');
-    wrapper.setAttribute('aria-label', 'Schülerwert anzeigen');
+    wrapper.setAttribute('aria-label', tPdf('student_value_aria'));
     wrapper.textContent = 'i';
     const tooltip = document.createElement('div');
     tooltip.className = 'pdf-student-info__tooltip';
@@ -1081,9 +1101,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
           value_text: value
         }, options);
       }
-      showSaveStatus('Gespeichert');
+      showSaveStatus(tPdf('save_success'));
     } catch (e) {
-      showSaveStatus(e?.message || 'Speichern fehlgeschlagen.', true);
+      showSaveStatus(e?.message || tPdf('save_failed'), true);
     } finally {
       activeSaves = Math.max(0, activeSaves - 1);
       updateSavingIndicator();
@@ -1108,9 +1128,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       await renderPages();
       await enrichFieldRectsFromPdf();
       updateStudentNav();
-      showSaveStatus('Bereit');
+      showSaveStatus(tPdf('ready'));
     } catch (e) {
-      showError(e?.message || 'Laden fehlgeschlagen.');
+      showError(e?.message || tPdf('load_failed'));
     }
   }
 

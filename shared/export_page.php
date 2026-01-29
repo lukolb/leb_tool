@@ -52,6 +52,47 @@ $tx = [
   'cancel' => t('teacher.export.cancel', 'Abbrechen'),
   'ignore' => t('teacher.export.ignore', 'Ignorieren & exportieren'),
 ];
+$txJs = [
+  'pdf_lib_load_error' => t('teacher.export.js.pdf_lib_load_error', 'pdf-lib konnte nicht geladen werden.'),
+  'jszip_load_error' => t('teacher.export.js.jszip_load_error', 'JSZip konnte nicht geladen werden.'),
+  'api_url_missing' => t('teacher.export.js.api_url_missing', 'EXPORT_API_URL ist leer (Wrapper setzt $exportApiUrl nicht).'),
+  'api_network_error' => t('teacher.export.js.api_network_error', 'Netzwerkfehler beim API-Request: {message}'),
+  'invalid_api_response' => t('teacher.export.js.invalid_api_response', 'Ungültige API-Antwort.'),
+  'status_checking' => t('teacher.export.js.status_checking', 'Prüfe Daten …'),
+  'status_check_done' => t('teacher.export.js.status_check_done', 'Prüfen fertig'),
+  'status_ok_students' => t('teacher.export.js.status_ok_students', 'OK. {count} Schüler gefunden.'),
+  'status_info' => t('teacher.export.js.status_info', 'Hinweis.'),
+  'status_error' => t('teacher.export.js.status_error', 'Fehler: {message}'),
+  'status_load_export' => t('teacher.export.js.status_load_export', 'Lade Exportdaten …'),
+  'status_load_libs' => t('teacher.export.js.status_load_libs', 'Lade Bibliotheken …'),
+  'status_libs_loaded' => t('teacher.export.js.status_libs_loaded', 'Bibliotheken geladen'),
+  'status_load_template' => t('teacher.export.js.status_load_template', 'Lade PDF-Vorlage …'),
+  'status_template_loaded' => t('teacher.export.js.status_template_loaded', 'PDF-Vorlage geladen'),
+  'error_template_load' => t('teacher.export.js.error_template_load', 'PDF-Vorlage konnte nicht geladen werden.'),
+  'error_no_students' => t('teacher.export.js.error_no_students', 'Keine Schüler gefunden (Filter?).'),
+  'status_create_pdfs' => t('teacher.export.js.status_create_pdfs', 'Erzeuge PDFs …'),
+  'status_zip_packing' => t('teacher.export.js.status_zip_packing', 'ZIP packen …'),
+  'status_zip_done' => t('teacher.export.js.status_zip_done', 'Fertig. ZIP wurde heruntergeladen.'),
+  'status_done' => t('teacher.export.js.status_done', 'Fertig'),
+  'status_merge_pdf' => t('teacher.export.js.status_merge_pdf', 'Erzeuge eine zusammengeführte PDF …'),
+  'status_merging' => t('teacher.export.js.status_merging', 'Zusammenführen …'),
+  'status_pdf_done' => t('teacher.export.js.status_pdf_done', 'Fertig. PDF wurde heruntergeladen.'),
+  'status_create_pdf' => t('teacher.export.js.status_create_pdf', 'Erzeuge PDF …'),
+  'status_export_cancelled' => t('teacher.export.js.status_export_cancelled', 'Export abgebrochen.'),
+  'progress_error' => t('teacher.export.js.progress_error', 'Fehler'),
+  'admin_template_hint' => t('teacher.export.js.admin_template_hint', ' (Admin: bitte der Klasse eine Vorlage zuweisen.)'),
+  'missing_summary' => t('teacher.export.js.missing_summary', 'Insgesamt {total} fehlende Einträge bei {students} Schüler(n).'),
+  'required_suffix' => t('teacher.export.js.required_suffix', ' (Pflicht)'),
+  'more_entries' => t('teacher.export.js.more_entries', '… und {count} weitere'),
+  'missing_count_suffix' => t('teacher.export.js.missing_count_suffix', ' – {count} fehlend'),
+  'missing_none' => t('teacher.export.js.missing_none', 'Keine passenden Treffer.'),
+  'student_id_label' => t('teacher.export.js.student_id_label', 'ID {id}'),
+  'class_label_fallback' => t('teacher.export.js.class_label_fallback', 'Klasse'),
+  'only_submitted_suffix' => t('teacher.export.js.only_submitted_suffix', ' - nur abgegebene'),
+  'student_filename_fallback' => t('teacher.export.js.student_filename_fallback', 'Schueler-{id}'),
+  'non_fatal_no_template' => t('export.api.error.no_template', 'Für diese Klasse wurde keine Vorlage zugeordnet.'),
+  'non_fatal_no_students' => t('teacher.export.js.non_fatal_no_students', 'Keine Schüler gefunden'),
+];
 
 function export_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -221,8 +262,22 @@ function export_class_display(array $c): string {
 <script>
 const CSRF = <?= json_encode($csrf) ?>;
 const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
-
 const EXPORT_API_URL = <?= json_encode($exportApiUrl) ?>;
+const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
+const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
+
+function t(key, fallback){
+  return (I18N && Object.prototype.hasOwnProperty.call(I18N, key)) ? I18N[key] : (fallback || key);
+}
+function tfmt(key, fallback, vars){
+  let s = t(key, fallback);
+  if (vars && typeof vars === 'object'){
+    for (const k of Object.keys(vars)){
+      s = s.replaceAll('{' + k + '}', String(vars[k]));
+    }
+  }
+  return s;
+}
 
 const elClass = document.getElementById('classId');
 const elStudentWrap = document.getElementById('singleStudentWrap');
@@ -319,7 +374,7 @@ async function loadLibsIfNeeded(needZip){
       const s = document.createElement('script');
       s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
       s.onload = resolve;
-      s.onerror = () => reject(new Error('pdf-lib konnte nicht geladen werden.'));
+      s.onerror = () => reject(new Error(t('pdf_lib_load_error')));
       document.head.appendChild(s);
     });
   }
@@ -328,7 +383,7 @@ async function loadLibsIfNeeded(needZip){
       const s = document.createElement('script');
       s.src = 'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js';
       s.onload = resolve;
-      s.onerror = () => reject(new Error('JSZip konnte nicht geladen werden.'));
+      s.onerror = () => reject(new Error(t('jszip_load_error')));
       document.head.appendChild(s);
     });
   }
@@ -336,15 +391,16 @@ async function loadLibsIfNeeded(needZip){
 
 function isNonFatalBusinessError(msg){
   const m = (msg||'').toLowerCase();
-  return m.includes('keine vorlage zugeordnet')
-      || m.includes('vorlage zugeordnet')
-      || m.includes('vorlage wurde keine')
-      || m.includes('keine schüler')
-      || m.includes('keine schueler');
+  const needles = [
+    t('non_fatal_no_template').toLowerCase(),
+    t('non_fatal_no_students').toLowerCase(),
+    'keine schueler',
+  ];
+  return needles.some((n) => n && m.includes(n));
 }
 
 async function apiFetch(payload){
-  if (!EXPORT_API_URL) throw new Error('EXPORT_API_URL ist leer (Wrapper setzt $exportApiUrl nicht).');
+  if (!EXPORT_API_URL) throw new Error(t('api_url_missing'));
 
   let resp;
   try {
@@ -355,7 +411,7 @@ async function apiFetch(payload){
       body: JSON.stringify(payload)
     });
   } catch (e) {
-    throw new Error('Netzwerkfehler beim API-Request: ' + (e?.message || e));
+    throw new Error(tfmt('api_network_error', null, { message: (e?.message || e) }));
   }
 
   const raw = await resp.text();
@@ -373,7 +429,7 @@ async function apiFetch(payload){
 
   if (!data || !data.ok) {
     const msg = data?.error ? String(data.error) : raw.slice(0, 300);
-    const err = new Error(msg || 'Ungültige API-Antwort.');
+    const err = new Error(msg || t('invalid_api_response'));
     err._httpStatus = resp.status;
     err._raw = raw;
     err._isJson = !!data;
@@ -396,7 +452,7 @@ function fillStudentSelect(students, keepId){
     const id = String(s.id);
     if (idx === 0) firstId = id;
     opt.value = id;
-    opt.textContent = s.name || ('ID ' + id);
+    opt.textContent = s.name || tfmt('student_id_label', null, { id });
     if (keep && id === keep) foundKeep = true;
     elStudent.appendChild(opt);
   });
@@ -417,7 +473,7 @@ function updateWarnBoxFromPreview(preview){
   if (!warnBox || !warnText) return;
 
   if (total > 0) {
-    warnText.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler(n).`;
+    warnText.textContent = tfmt('missing_summary', null, { total, students: studentsWith });
     warnBox.style.display = '';
     if (btnWarnDetails) btnWarnDetails.style.display = '';
   } else {
@@ -434,15 +490,15 @@ async function check(){
   const keepStudentId = elStudent?.value;
 
   setInfo('');
-  setStatus('Prüfe Daten …');
-  showProgress('Prüfe Daten …', 1, 3);
+  setStatus(t('status_checking'));
+  showProgress(t('status_checking'), 1, 3);
 
   try {
     const mode = currentMode();
 
     // 1) FULL PREVIEW (immer ohne student_id) -> füllt Dropdown korrekt
     const full = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
-    showProgress('Prüfe Daten …', 2, 3);
+    showProgress(t('status_checking'), 2, 3);
 
     // ✅ cache complete list
     __fullStudentList = Array.isArray(full.students) ? full.students : [];
@@ -471,8 +527,8 @@ async function check(){
     lastPreview = merged;
     updateWarnBoxFromPreview(merged);
     const cnt = __fullStudentList.length || 0;
-    setStatus(`OK. ${cnt} Schüler gefunden.`);
-    showProgress('Prüfen fertig', 3, 3);
+    setStatus(tfmt('status_ok_students', null, { count: cnt }));
+    showProgress(t('status_check_done'), 3, 3);
     return merged;
 
   } catch (e) {
@@ -486,13 +542,13 @@ async function check(){
       if (warnBox) warnBox.style.display = 'none';
       if (btnWarnDetails) btnWarnDetails.style.display = 'none';
       hideProgress();
-      setStatus('Hinweis.');
-      setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
+      setStatus(t('status_info'));
+      setInfo(msg + t('admin_template_hint'));
       return null;
     }
 
     hideProgress();
-    setStatus('Fehler: ' + msg);
+    setStatus(tfmt('status_error', null, { message: msg }));
     throw e;
   }
 }
@@ -545,7 +601,7 @@ function buildMissingHtml(preview, q){
 
   const parts = [];
   for (const s of byStudent) {
-    const studentName = (s.student_name || ('ID ' + s.student_id)).toString();
+    const studentName = (s.student_name || tfmt('student_id_label', null, { id: s.student_id })).toString();
     const fields = Array.isArray(s.missing_fields) ? s.missing_fields : [];
     if (!fields.length) continue;
 
@@ -558,20 +614,20 @@ function buildMissingHtml(preview, q){
     const showN = 60;
     const items = filteredFields.slice(0, showN).map(f => {
       const label = (f.label || f.field_name || '').toString();
-      const req = Number(f.is_required || 0) === 1 ? ' (Pflicht)' : '';
+      const req = Number(f.is_required || 0) === 1 ? t('required_suffix') : '';
       return `<li style="margin:2px 0;">${escapeHtml(label)}${req}</li>`;
     }).join('');
 
     const moreCount = filteredFields.length - showN;
     const more = moreCount > 0
-      ? `<div class="muted" style="margin-top:6px;">… und ${moreCount} weitere</div>`
+      ? `<div class="muted" style="margin-top:6px;">${tfmt('more_entries', null, { count: moreCount })}</div>`
       : '';
 
     parts.push(`
       <details data-student="${escapeHtml(studentName)}" open>
         <summary style="cursor:pointer; padding:8px 10px; border:1px solid #eee; border-radius:10px; margin:8px 0; background:#fafafa;">
           <strong>${escapeHtml(studentName)}</strong>
-          <span class="muted"> – ${filteredFields.length} fehlend</span>
+          <span class="muted">${tfmt('missing_count_suffix', null, { count: filteredFields.length })}</span>
         </summary>
         <div style="padding:4px 10px 10px 10px;">
           <ul style="margin:6px 0 0 18px; padding:0;">${items}</ul>
@@ -580,7 +636,7 @@ function buildMissingHtml(preview, q){
       </details>
     `);
   }
-  return parts.join('') || '<div class="muted">Keine passenden Treffer.</div>';
+  return parts.join('') || `<div class="muted">${t('missing_none')}</div>`;
 }
 
 function openMissingModal(preview){
@@ -591,7 +647,7 @@ function openMissingModal(preview){
 
     __missingRenderSource = preview;
 
-    if (modalSummary) modalSummary.textContent = `Insgesamt ${total} fehlende Einträge bei ${studentsWith} Schüler(n).`;
+    if (modalSummary) modalSummary.textContent = tfmt('missing_summary', null, { total, students: studentsWith });
 
     if (elMissingSearch) elMissingSearch.value = '';
     if (modalList) modalList.innerHTML = buildMissingHtml(preview, '');
@@ -805,8 +861,7 @@ function formatDate(parts, expectedFmt){
   const y = parts.y, m = parts.m, d = parts.d;
   const yy = String(y).slice(-2);
 
-  // Export UI is German; if you later make it language-aware, swap this.
-  const lang = 'de';
+  const lang = EXPORT_LANG || 'de';
 
   return fmt
     .replaceAll('YYYY', String(y))
@@ -1303,8 +1358,8 @@ async function exportNow(){
   const selectedStudentId = elStudent?.value;
 
   setInfo('');
-  setStatus('Lade Exportdaten …');
-  showProgress('Lade Exportdaten …', 0, 1);
+  setStatus(t('status_load_export'));
+  showProgress(t('status_load_export'), 0, 1);
 
   let data;
   try {
@@ -1315,8 +1370,8 @@ async function exportNow(){
     const msg = (e?.message || String(e));
     if (isNonFatalBusinessError(msg)) {
       hideProgress();
-      setStatus('Hinweis.');
-      setInfo(msg + ' (Admin: bitte der Klasse eine Vorlage zuweisen.)');
+      setStatus(t('status_info'));
+      setInfo(msg + t('admin_template_hint'));
       return;
     }
     throw e;
@@ -1333,49 +1388,49 @@ async function exportNow(){
   }
 
   const students = data.students || [];
-  if (!students.length) throw new Error('Keine Schüler gefunden (Filter?).');
+  if (!students.length) throw new Error(t('error_no_students'));
 
   const needZip = (mode === 'zip');
-  setStatus('Lade Bibliotheken …');
-  showProgress('Lade Bibliotheken …', 0, 1);
+  setStatus(t('status_load_libs'));
+  showProgress(t('status_load_libs'), 0, 1);
   await loadLibsIfNeeded(needZip);
-  showProgress('Bibliotheken geladen', 1, 1);
+  showProgress(t('status_libs_loaded'), 1, 1);
 
-  setStatus('Lade PDF-Vorlage …');
-  showProgress('Lade PDF-Vorlage …', 0, 1);
+  setStatus(t('status_load_template'));
+  showProgress(t('status_load_template'), 0, 1);
   const tplResp = await fetch(data.pdf_url, { credentials: 'same-origin' });
-  if (!tplResp.ok) throw new Error('PDF-Vorlage konnte nicht geladen werden.');
+  if (!tplResp.ok) throw new Error(t('error_template_load'));
   const templateBytes = new Uint8Array(await tplResp.arrayBuffer());
-  showProgress('PDF-Vorlage geladen', 1, 1);
+  showProgress(t('status_template_loaded'), 1, 1);
 
-  const baseName = safeFilename((data.class?.display || 'Klasse') + ' ' + (data.class?.school_year || ''));
-  const suffix = onlySubmittedFlag() ? ' - nur abgegebene' : '';
+  const baseName = safeFilename((data.class?.display || t('class_label_fallback')) + ' ' + (data.class?.school_year || ''));
+  const suffix = onlySubmittedFlag() ? t('only_submitted_suffix') : '';
 
   if (mode === 'zip') {
-    setStatus('Erzeuge PDFs …');
-    showProgress('Erzeuge PDFs …', 0, students.length);
+    setStatus(t('status_create_pdfs'));
+    showProgress(t('status_create_pdfs'), 0, students.length);
     const zip = new window.JSZip();
     let done = 0;
     for (const s of students){
       const bytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const fn = safeFilename(s.name) || ('Schueler-' + s.id);
+      const fn = safeFilename(s.name) || tfmt('student_filename_fallback', null, { id: s.id });
       zip.file(fn + '.pdf', bytes);
       done++;
-      setStatus(`Erzeuge PDFs … ${done}/${students.length}`);
-      showProgress('Erzeuge PDFs …', done, students.length);
+      setStatus(`${t('status_create_pdfs')} ${done}/${students.length}`);
+      showProgress(t('status_create_pdfs'), done, students.length);
     }
-    setStatus('ZIP packen …');
-    showProgress('ZIP packen …', students.length, students.length);
+    setStatus(t('status_zip_packing'));
+    showProgress(t('status_zip_packing'), students.length, students.length);
     const out = await zip.generateAsync({ type: 'uint8array' });
     downloadBytes(out, baseName + suffix + '.zip', 'application/zip');
-    setStatus('Fertig. ZIP wurde heruntergeladen.');
-    showProgress('Fertig', students.length, students.length);
+    setStatus(t('status_zip_done'));
+    showProgress(t('status_done'), students.length, students.length);
     return;
   }
 
   if (mode === 'merged') {
-    setStatus('Erzeuge eine zusammengeführte PDF …');
-    showProgress('Zusammenführen …', 0, students.length);
+    setStatus(t('status_merge_pdf'));
+    showProgress(t('status_merging'), 0, students.length);
     const { PDFDocument } = window.PDFLib;
     const merged = await PDFDocument.create();
     let done = 0;
@@ -1385,18 +1440,18 @@ async function exportNow(){
       const pages = await merged.copyPages(src, src.getPageIndices());
       pages.forEach(p => merged.addPage(p));
       done++;
-      setStatus(`Zusammenführen … ${done}/${students.length}`);
-      showProgress('Zusammenführen …', done, students.length);
+      setStatus(`${t('status_merging')} ${done}/${students.length}`);
+      showProgress(t('status_merging'), done, students.length);
     }
     const out = await merged.save();
     downloadBytes(out, baseName + suffix + '.pdf', 'application/pdf');
-    setStatus('Fertig. PDF wurde heruntergeladen.');
-    showProgress('Fertig', students.length, students.length);
+    setStatus(t('status_pdf_done'));
+    showProgress(t('status_done'), students.length, students.length);
     return;
   }
 
-  setStatus('Erzeuge PDF …');
-  showProgress('Erzeuge PDF …', 0, 1);
+  setStatus(t('status_create_pdf'));
+  showProgress(t('status_create_pdf'), 0, 1);
   const chosenId = elStudent?.value;
   let s = students[0];
   if (chosenId) {
@@ -1404,10 +1459,10 @@ async function exportNow(){
     if (found) s = found;
   }
   const out = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-  const fn = safeFilename(s.name) || ('Schueler-' + s.id);
+  const fn = safeFilename(s.name) || tfmt('student_filename_fallback', null, { id: s.id });
   downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
-  setStatus('Fertig. PDF wurde heruntergeladen.');
-  showProgress('Fertig', 1, 1);
+  setStatus(t('status_pdf_done'));
+  showProgress(t('status_done'), 1, 1);
 }
 
 if (btnExport) {
@@ -1424,7 +1479,7 @@ if (btnExport) {
       if (preview && totalMissing > 0) {
         const proceed = await openMissingModal(preview);
         if (!proceed) {
-          setStatus('Export abgebrochen.');
+          setStatus(t('status_export_cancelled'));
           return;
         }
       }
@@ -1432,8 +1487,8 @@ if (btnExport) {
       await exportNow();
 
     } catch (e) {
-      showProgress('Fehler', 0, 1);
-      setStatus('Fehler: ' + (e?.message || e));
+      showProgress(t('progress_error'), 0, 1);
+      setStatus(tfmt('status_error', null, { message: (e?.message || e) }));
     } finally {
       btnExport.disabled = false;
       if (btnCheck) btnCheck.disabled = false;

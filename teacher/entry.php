@@ -47,21 +47,24 @@ if (($u['role'] ?? '') !== 'admin') {
     $hasOwnClass = ($classId > 0 && in_array($classId, $ownClassIds, true));
 
     if ($classId > 0 && !$hasOwnClass) {
-      render_teacher_header('Eingaben');
+      render_teacher_header(t('teacher.entry.title'));
       ?>
         <div class=<"card">
             <div class="row-actions" style="float: right;">
               <?php if (!$delegatedMode): ?>
-                  <button class="btn" type="button" id="btnDelegationsTop">Delegieren…</button>
+                  <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action'))?></button>
                 <?php else: ?>
-                  <button class="btn" type="button" id="btnDelegationDoneTop">Delegation abschließen…</button>
+                  <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation'))?></button>
                 <?php endif; ?>
             </div>
-          <h1><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+          <h1><?=h($delegatedMode ? t('teacher.entry.heading_delegated') : t('teacher.entry.heading_fill'))?></h1>
         </div>
       <div class="card">
-        <h1 style="margin-top:0;">Delegationen sind getrennt</h1>
-        <p class="muted">Diese Seite zeigt <strong>nur deine eigenen Klassen</strong>. Delegierte Fachbereiche findest du in der <a href="<?=h(url('teacher/delegations.php'))?>">Delegations-Inbox</a>.</p>
+        <h1 style="margin-top:0;"><?=h(t('teacher.entry.delegations_separate'))?></h1>
+        <p class="muted">
+          <?=h(t('teacher.entry.own_classes_only'))?>
+          <?=str_replace('{link}', '<a href="' . h(url('teacher/delegations.php')) . '">' . h(t('teacher.entry.delegations_inbox')) . '</a>', t('teacher.entry.delegations_inbox_hint'))?>
+        </p>
       </div>
       <?php
       render_teacher_footer();
@@ -70,13 +73,13 @@ if (($u['role'] ?? '') !== 'admin') {
   } else {
     // Delegated work: class_id must be provided and must be accessible via delegation.
     if ($classId <= 0) {
-      render_teacher_header('Delegation');
+      render_teacher_header(t('teacher.entry.delegation_title'));
       ?>
       <div class="card">
-          <h1 style="margin-top:0;"><?= $delegatedMode ? 'Delegation bearbeiten' : 'Eingaben ausfüllen' ?></h1>
+          <h1 style="margin-top:0;"><?=h($delegatedMode ? t('teacher.entry.heading_delegated') : t('teacher.entry.heading_fill'))?></h1>
         </div>
       <div class="card">
-        <div class="alert danger"><strong>Keine Klasse ausgewählt.</strong></div>
+        <div class="alert danger"><strong><?=h(t('teacher.entry.no_class_selected'))?></strong></div>
       </div>
       <?php
       render_teacher_footer();
@@ -85,7 +88,7 @@ if (($u['role'] ?? '') !== 'admin') {
 
     if (!user_can_access_class($pdo, $userId, $classId)) {
       http_response_code(403);
-      echo '403 Forbidden';
+      echo h(t('teacher.entry.forbidden'));
       exit;
     }
 
@@ -106,7 +109,7 @@ function class_display(array $c): string {
 
 if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
-  echo '403 Forbidden';
+  echo h(t('teacher.entry.forbidden'));
   exit;
 }
 
@@ -300,12 +303,12 @@ function finalmarks_parse_blocks(array $blocks): array {
         $key = finalmarks_subject_key($label);
         if ($key === null) {
           $unknownSubjects[] = $label;
-          $warnings[] = 'Unbekanntes Fach: ' . $label;
+          $warnings[] = str_replace('{label}', $label, t('teacher.entry.finalmarks.warning.unknown_subject'));
           continue;
         }
         if (isset($subjects[$key])) {
           $duplicateSubjects[] = $label;
-          $warnings[] = 'Doppeltes Fach: ' . $label . ' (letzte Note übernommen)';
+          $warnings[] = str_replace('{label}', $label, t('teacher.entry.finalmarks.warning.duplicate_subject'));
         }
         $subjects[$key] = ['label' => $label, 'grade' => $grade];
         continue;
@@ -316,13 +319,13 @@ function finalmarks_parse_blocks(array $blocks): array {
         $grade = trim($m[2]);
         if (!in_array($grade, $validGrades, true)) {
           $invalidGrades[] = $label . ' ' . $grade;
-          $warnings[] = 'Ungültige Note: ' . $label . ' ' . $grade;
+          $warnings[] = str_replace(['{label}', '{grade}'], [$label, $grade], t('teacher.entry.finalmarks.warning.invalid_grade'));
         }
       }
     }
 
     if (!$subjects) {
-      $warnings[] = 'Keine Noten gefunden';
+      $warnings[] = t('teacher.entry.finalmarks.warning.no_grades');
     }
 
     $results[] = [
@@ -342,10 +345,10 @@ if ($childMode && ($u['role'] ?? '') !== 'admin') {
   $isClassTeacher = $classId > 0 && user_is_class_teacher_entry($pdo, $userId, $classId);
   if (!$isClassTeacher) {
     http_response_code(403);
-    render_teacher_header(t('teacher.child_entry.title', 'Schülerfelder'));
+    render_teacher_header(t('teacher.child_entry.title'));
     ?>
     <div class="card">
-      <div class="alert danger"><strong>403 Forbidden.</strong></div>
+      <div class="alert danger"><strong><?=h(t('teacher.entry.forbidden'))?></strong></div>
     </div>
     <?php
     render_teacher_footer();
@@ -375,18 +378,18 @@ if ($finalmarksFormSchoolYear === '') {
 
 if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['finalmarks_action'])) {
   if ($delegatedMode) {
-    $finalmarksErrors[] = 'Delegierte dürfen keine Endnoten aus XSchool importieren.';
+    $finalmarksErrors[] = t('teacher.entry.finalmarks.error.delegated_no_import');
   } else {
     $action = (string)$_POST['finalmarks_action'];
     $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
 
     if ($classId <= 0) {
-      $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
+      $finalmarksErrors[] = t('teacher.entry.finalmarks.error.select_class_first');
     } elseif ($action === 'preview') {
     $blocksJson = (string)($_POST['finalmarks_blocks'] ?? '');
     $blocks = $blocksJson !== '' ? json_decode($blocksJson, true) : [];
     if (!is_array($blocks) || !$blocks) {
-      $finalmarksErrors[] = 'PDF konnte nicht gelesen werden (Browser-Parser).';
+      $finalmarksErrors[] = t('teacher.entry.finalmarks.error.pdf_parse_failed');
     } else {
       $token = bin2hex(random_bytes(16));
       $parsed = finalmarks_parse_blocks($blocks);
@@ -394,7 +397,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       $stClass->execute([$classId]);
       $templateId = (int)($stClass->fetchColumn() ?: 0);
       if ($templateId <= 0) {
-        $finalmarksErrors[] = 'Für diese Klasse ist keine Vorlage hinterlegt.';
+        $finalmarksErrors[] = t('teacher.entry.finalmarks.error.template_missing');
       }
       if (!$finalmarksErrors) {
         $_SESSION['finalmarks_import'][$token] = [
@@ -556,7 +559,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
           if ($status === 'FOUND_IN_CLASS' && $matchedStudent) {
             $reportId = $reportByStudent[(int)($matchedStudent['id'] ?? 0)] ?? null;
             if (!$reportId) {
-              $warnings[] = 'Kein Bericht für Schuljahr/Abschnitt gefunden.';
+              $warnings[] = t('teacher.entry.finalmarks.error.report_missing');
             }
             $matchedStudentIds[] = (int)($matchedStudent['id'] ?? 0);
           }
@@ -564,7 +567,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
             $grade = (string)($entry['grade'] ?? '');
             $field = $subjectFields[$key] ?? null;
             if ($field === null) {
-              $warnings[] = 'Kein Notenfeld für Fach ' . $key . ' gefunden.';
+              $warnings[] = str_replace('{subject}', $key, t('teacher.entry.finalmarks.error.subject_missing'));
               $ignoredNotes++;
             } else {
               $listId = finalmarks_option_list_id_from_meta($field['meta']);
@@ -573,7 +576,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
                 $stOpt->execute([$listId, $grade]);
                 $optId = (int)($stOpt->fetchColumn() ?: 0);
                 if ($optId <= 0) {
-                  $warnings[] = 'Note nicht in Optionsliste: ' . $key . ' ' . $grade;
+                  $warnings[] = str_replace(['{subject}', '{grade}'], [$key, $grade], t('teacher.entry.finalmarks.error.grade_not_in_list'));
                   $ignoredNotes++;
                 } else {
                   if ($status === 'FOUND_IN_CLASS' && $reportId) {
@@ -648,20 +651,20 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
     $token = trim((string)($_POST['finalmarks_token'] ?? ''));
     $sessionData = $_SESSION['finalmarks_import'][$token] ?? null;
     if (!$sessionData || !is_array($sessionData)) {
-      $finalmarksErrors[] = 'Import-Token ist ungültig oder abgelaufen.';
+      $finalmarksErrors[] = t('teacher.entry.finalmarks.error.token_invalid');
     } elseif ((int)($sessionData['class_id'] ?? 0) !== $classId) {
-      $finalmarksErrors[] = 'Klassen-Kontext stimmt nicht.';
+      $finalmarksErrors[] = t('teacher.entry.finalmarks.error.class_context_mismatch');
     }
 
     if (!$finalmarksErrors) {
       $finalmarksFormSchoolYear = trim((string)($sessionData['school_year'] ?? $finalmarksFormSchoolYear));
       $templateId = (int)($sessionData['template_id'] ?? 0);
       if ($templateId <= 0) {
-        $finalmarksErrors[] = 'Vorlage für Klasse fehlt.';
+        $finalmarksErrors[] = t('teacher.entry.finalmarks.error.template_missing_short');
       }
       $blocks = (array)($sessionData['blocks'] ?? []);
       if (!$blocks) {
-        $finalmarksErrors[] = 'Gespeicherte PDF-Daten fehlen.';
+        $finalmarksErrors[] = t('teacher.entry.finalmarks.error.pdf_data_missing');
       } else {
         $parsed = finalmarks_parse_blocks($blocks);
       }
@@ -792,7 +795,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       }
 
       if (!$rowsToInsert) {
-        $finalmarksErrors[] = 'Keine importierbaren Noten gefunden.';
+        $finalmarksErrors[] = t('teacher.entry.finalmarks.error.no_importable_grades');
       } else {
         $pdo->beginTransaction();
         $stmt = $pdo->prepare(
@@ -843,57 +846,57 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 }
 
 $pageTitle = $childMode
-  ? t('teacher.child_entry.title', 'Schülerfelder')
-  : t('teacher.entry.title', 'Eingaben');
+  ? t('teacher.child_entry.title')
+  : t('teacher.entry.title');
 render_teacher_header($pageTitle);
 ?>
 
 <div class="card">
   <div class="row-actions" style="float: right;">
     <?php if (!$delegatedMode): ?>
-        <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action', 'Delegieren…'))?></button>
+        <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action'))?></button>
       <?php else: ?>
-        <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation', 'Delegation abschließen…'))?></button>
+        <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation'))?></button>
       <?php endif; ?>
     <?php if (!$delegatedMode): ?>
       <?php if ($childMode): ?>
           <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-            <?=h(t('teacher.child_entry.to_teacher', 'Lehrkraftfelder'))?>
+            <?=h(t('teacher.child_entry.to_teacher'))?>
           </a>
         <?php else: ?>
           <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-            <?=h(t('teacher.child_entry.to_child', 'Schülerfelder'))?>
+            <?=h(t('teacher.child_entry.to_child'))?>
           </a>
         <?php endif; ?>
     <?php endif; ?>
   </div>
-  <h1><?=h($childMode ? t('teacher.child_entry.heading', 'Schülerfelder bearbeiten') : ($delegatedMode ? t('teacher.entry.heading_delegated', 'Delegation bearbeiten') : t('teacher.entry.heading_fill', 'Eingaben ausfüllen')))?></h1>
+  <h1><?=h($childMode ? t('teacher.child_entry.heading') : ($delegatedMode ? t('teacher.entry.heading_delegated') : t('teacher.entry.heading_fill')))?></h1>
 </div>
 
 <?php if ($childMode): ?>
     <div class="alert danger">
-      <strong><?=h(t('teacher.child_entry.warning_title', 'Achtung:'))?></strong>
-      <?=h(t('teacher.child_entry.warning_text', 'Diese Eingaben sind für die Schüler bestimmt. Schüler können diese Einträge in ihrem Bereich sehen.'))?>
+      <strong><?=h(t('teacher.child_entry.warning_title'))?></strong>
+      <?=h(t('teacher.child_entry.warning_text'))?>
     </div>
 <?php endif; ?>
 
 <div class="card">
 
   <?php if ($delegatedMode): ?>
-    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation', 'Delegation:'))?></strong> <?=h(t('teacher.entry.delegation_notice', 'Du siehst hier nur die an dich delegierten Fachbereiche. Andere Bereiche sind schreibgeschützt.'))?></div>
+    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h(t('teacher.entry.delegation_notice'))?></div>
   <?php endif; ?>
   <p class="muted" style="margin-top:-6px;">
-    <?=h(t('teacher.entry.tips', 'Tipps:'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next', 'zum schnellen Springen'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev', 'zurück'))?> ·
+    <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
     <?php if ($childMode): ?>
-      <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view', 'Ansicht wechseln'))?>
+      <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
     <?php else: ?>
-      <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child', 'Schülereingaben ein/aus'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view', 'Ansicht wechseln'))?>
+      <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
     <?php endif; ?>
   </p>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <div style="min-width:260px;">
-      <label class="label">Klasse</label>
+      <label class="label"><?=h(t('teacher.entry.class_label'))?></label>
       <select class="input" id="classSelect" style="width:100%;" <?= $delegatedMode ? 'disabled' : '' ?>>
         <?php foreach ($classes as $c): $id = (int)$c['id']; ?>
           <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>><?=h((string)$c['school_year'] . ' · ' . class_display($c))?></option>
@@ -902,7 +905,7 @@ render_teacher_header($pageTitle);
     </div>
 
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> Speichern…</span>
+      <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('teacher.entry.save_status_saving'))?></span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
   </div>
@@ -910,13 +913,13 @@ render_teacher_header($pageTitle);
 
 <?php if ($isTeacherRole && !$childMode && !$delegatedMode): ?>
   <div class="card">
-    <h2 style="margin-top:0;">Endnoten aus XSchool für diese Klasse importieren</h2>
+    <h2 style="margin-top:0;"><?=h(t('teacher.entry.finalmarks.title'))?></h2>
     <?php if ($classId <= 0): ?>
-      <div class="alert">Bitte zuerst eine Klasse auswählen.</div>
+      <div class="alert"><?=h(t('teacher.entry.finalmarks.error.select_class_first'))?></div>
     <?php else: ?>
       <?php if ($finalmarksErrors): ?>
         <div class="alert danger">
-          <strong>Fehler beim Import:</strong>
+          <strong><?=h(t('teacher.entry.finalmarks.error_prefix'))?></strong>
           <ul style="margin:8px 0 0 18px;">
             <?php foreach ($finalmarksErrors as $err): ?>
               <li><?=h($err)?></li>
@@ -929,11 +932,11 @@ render_teacher_header($pageTitle);
           <strong><?=h($finalmarksSuccess)?></strong>
           <?php if ($finalmarksSummary): ?>
             <div class="muted" style="margin-top:6px;">
-              Einträge: <?=h((string)($finalmarksSummary['rows'] ?? 0))?> ·
-              Neu: <?=h((string)($finalmarksSummary['inserted'] ?? 0))?> ·
-              Aktualisiert: <?=h((string)($finalmarksSummary['updated'] ?? 0))?> ·
-              Übersprungene Schüler: <?=h((string)($finalmarksSummary['skipped_students'] ?? 0))?> ·
-              Übersprungene Noten: <?=h((string)($finalmarksSummary['skipped_notes'] ?? 0))?>
+              <?=h(t('teacher.entry.finalmarks.summary.entries'))?>: <?=h((string)($finalmarksSummary['rows'] ?? 0))?> ·
+              <?=h(t('teacher.entry.finalmarks.summary.inserted'))?>: <?=h((string)($finalmarksSummary['inserted'] ?? 0))?> ·
+              <?=h(t('teacher.entry.finalmarks.summary.updated'))?>: <?=h((string)($finalmarksSummary['updated'] ?? 0))?> ·
+              <?=h(t('teacher.entry.finalmarks.summary.skipped_students'))?>: <?=h((string)($finalmarksSummary['skipped_students'] ?? 0))?> ·
+              <?=h(t('teacher.entry.finalmarks.summary.skipped_notes'))?>: <?=h((string)($finalmarksSummary['skipped_notes'] ?? 0))?>
             </div>
           <?php endif; ?>
         </div>
@@ -945,24 +948,24 @@ render_teacher_header($pageTitle);
         <input type="hidden" name="finalmarks_file_name" id="finalmarksFileName" value="">
         <div class="row" style="gap:10px;align-items: flex-start;flex-wrap:wrap;display: inline-flex;">
           <div>
-            <label class="label" for="finalmarksPdf">PDF-Datei</label>
+            <label class="label" for="finalmarksPdf"><?=h(t('teacher.entry.finalmarks.pdf_label'))?></label>
             <input class="input" type="file" id="finalmarksPdf" name="finalmarks_pdf" accept="application/pdf" required>
           </div>
           <div>
-            <label class="label" for="finalmarksYear">Schuljahr</label>
-            <input class="input" type="text" id="finalmarksYear" name="school_year" value="<?=h($finalmarksFormSchoolYear)?>" placeholder="z.B. 2025/26">
+            <label class="label" for="finalmarksYear"><?=h(t('teacher.entry.finalmarks.school_year_label'))?></label>
+            <input class="input" type="text" id="finalmarksYear" name="school_year" value="<?=h($finalmarksFormSchoolYear)?>" placeholder="<?=h(t('teacher.entry.finalmarks.school_year_placeholder'))?>">
           </div>
             <div>
                 
                 <label class="label" for="finalmarksSubmitbtn">&nbsp;</label>
-          <button class="btn" type="submit" id="finalmarksSubmitbtn">PDF auslesen &amp; prüfen</button>
+          <button class="btn" type="submit" id="finalmarksSubmitbtn"><?=h(t('teacher.entry.finalmarks.read_button'))?></button>
             </div>
         </div>
       </form>
 
       <?php if ($finalmarksPreview !== null && $finalmarksSummary): ?>
         <div style="margin-top:16px;">
-          <h3 style="margin:0 0 8px;">PDF → DB Prüfung</h3>
+          <h3 style="margin:0 0 8px;"><?=h(t('teacher.entry.finalmarks.review_title'))?></h3>
           <form method="post">
             <input type="hidden" name="finalmarks_action" value="commit">
             <input type="hidden" name="finalmarks_token" value="<?=h($finalmarksToken)?>">
@@ -971,12 +974,12 @@ render_teacher_header($pageTitle);
               <table class="table" style="margin:0;">
                 <thead>
                   <tr>
-                    <th>PDF-Name</th>
-                    <th>Status</th>
-                    <th>DB-Schüler</th>
-                    <th>Noten</th>
-                    <th>Warnungen</th>
-                    <th>Importieren</th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.pdf_name'))?></th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.status'))?></th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.student'))?></th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.grades'))?></th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.warnings'))?></th>
+                    <th><?=h(t('teacher.entry.finalmarks.table.import'))?></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -992,7 +995,7 @@ render_teacher_header($pageTitle);
                       <td>
                         <?php if ($status !== 'FOUND_IN_CLASS'): ?>
                           <select class="input finalmarks-manual-select" name="finalmarks_manual_map[<?=h((string)$row['page_index'])?>]" data-row="<?=h((string)$row['page_index'])?>">
-                            <option value="">Schüler auswählen…</option>
+                            <option value=""><?=h(t('teacher.entry.finalmarks.table.student_placeholder'))?></option>
                             <?php foreach ($remainingStudents ?? [] as $cand): ?>
                               <option value="<?=h((string)($cand['id'] ?? ''))?>"><?=h(finalmarks_student_display($cand))?></option>
                             <?php endforeach; ?>
@@ -1015,7 +1018,7 @@ render_teacher_header($pageTitle);
                             elseif ($gradestatus === 'diff') $style = 'background: rgba(245, 124, 0, 0.18); color: #e65100;';
                             elseif ($gradestatus === 'new') $style = 'background: rgba(30, 136, 229, 0.15); color: #0d47a1;';
                           ?>
-                          <span class="pill-mini" style="margin-right:4px; <?=h($style)?>" title="<?=h($existing !== '' ? ('Vorhanden: ' . $existing) : 'Neu')?>"><?=h($key)?>:<?=h($grade)?></span>
+                          <span class="pill-mini" style="margin-right:4px; <?=h($style)?>" title="<?=h($existing !== '' ? str_replace('{grade}', $existing, t('teacher.entry.finalmarks.table.existing')) : t('teacher.entry.finalmarks.table.new'))?>"><?=h($key)?>:<?=h($grade)?></span>
                         <?php endforeach; ?>
                       <?php else: ?>
                         —
@@ -1047,17 +1050,17 @@ render_teacher_header($pageTitle);
 
             <div class="row" style="gap:12px; align-items:center; flex-wrap:wrap; margin-top:12px;">
               <div class="muted">
-                Seiten: <?=h((string)($finalmarksSummary['pages'] ?? 0))?> ·
-                FOUND_IN_CLASS: <?=h((string)($finalmarksSummary['status_counts']['FOUND_IN_CLASS'] ?? 0))?> ·
-                FOUND_NOT_IN_CLASS: <?=h((string)($finalmarksSummary['status_counts']['FOUND_NOT_IN_CLASS'] ?? 0))?> ·
-                NOT_FOUND: <?=h((string)($finalmarksSummary['status_counts']['NOT_FOUND'] ?? 0))?> ·
-                AMBIGUOUS: <?=h((string)($finalmarksSummary['status_counts']['AMBIGUOUS'] ?? 0))?> ·
-                Importierbare Noten: <?=h((string)($finalmarksSummary['importable_notes'] ?? 0))?> ·
-                Ignorierte Noten: <?=h((string)($finalmarksSummary['ignored_notes'] ?? 0))?>
+                <?=h(t('teacher.entry.finalmarks.summary.pages'))?>: <?=h((string)($finalmarksSummary['pages'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.status_found_in_class'))?>: <?=h((string)($finalmarksSummary['status_counts']['FOUND_IN_CLASS'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.status_found_not_in_class'))?>: <?=h((string)($finalmarksSummary['status_counts']['FOUND_NOT_IN_CLASS'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.status_not_found'))?>: <?=h((string)($finalmarksSummary['status_counts']['NOT_FOUND'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.status_ambiguous'))?>: <?=h((string)($finalmarksSummary['status_counts']['AMBIGUOUS'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.importable'))?>: <?=h((string)($finalmarksSummary['importable_notes'] ?? 0))?> ·
+                <?=h(t('teacher.entry.finalmarks.summary.ignored'))?>: <?=h((string)($finalmarksSummary['ignored_notes'] ?? 0))?>
               </div>
             </div>
 
-            <button class="btn primary" type="submit" style="margin-top:12px;" <?= $finalmarksHasImportable ? '' : 'disabled' ?>>Endnoten endgültig importieren</button>
+            <button class="btn primary" type="submit" style="margin-top:12px;" <?= $finalmarksHasImportable ? '' : 'disabled' ?>><?=h(t('teacher.entry.finalmarks.commit_button'))?></button>
           </form>
         </div>
         <script>
@@ -1098,34 +1101,34 @@ render_teacher_header($pageTitle);
 <div class="card" id="snippetBar" style="display:none;">
   <div class="row" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
     <div style="flex:1; min-width:240px;">
-      <label class="label">Textbaustein-Titel</label>
-      <input class="input" id="snippetTitle" type="text" placeholder="z.B. Schülerziel" style="width:100%;">
+      <label class="label"><?=h(t('teacher.entry.snippets.title_label'))?></label>
+      <input class="input" id="snippetTitle" type="text" placeholder="<?=h(t('teacher.entry.snippets.title_placeholder'))?>" style="width:100%;">
     </div>
     <div style="flex:1; min-width:200px;">
-      <label class="label">Kategorie</label>
-      <input class="input" id="snippetCategory" list="snippetCategoryList" type="text" placeholder="optional" style="width:100%;">
+      <label class="label"><?=h(t('teacher.entry.snippets.category_label'))?></label>
+      <input class="input" id="snippetCategory" list="snippetCategoryList" type="text" placeholder="<?=h(t('teacher.entry.snippets.category_placeholder'))?>" style="width:100%;">
       <datalist id="snippetCategoryList"></datalist>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-      <button class="btn" type="button" id="btnSnippetSave" disabled>Textbaustein speichern</button>
-      <button class="btn secondary" type="button" id="btnSnippetToggle">Bausteine anzeigen</button>
+      <button class="btn" type="button" id="btnSnippetSave" disabled><?=h(t('teacher.entry.snippets.save'))?></button>
+      <button class="btn secondary" type="button" id="btnSnippetToggle"><?=h(t('teacher.entry.snippets.show'))?></button>
     </div>
   </div>
-  <div class="muted" id="snippetSelection" style="margin-top:8px;">Kein Text markiert. Markiere einen Text in einem Eingabefeld oder nutze die rechte Maustaste.</div>
+  <div class="muted" id="snippetSelection" style="margin-top:8px;"><?=h(t('teacher.entry.snippets.selection_hint'))?></div>
 </div>
 
 <div id="errBox" class="card" style="display:none;"><div class="alert danger"><strong id="errMsg"></strong></div></div>
 <div id="loadingOverlay" class="loading-overlay" style="display:none;">
-  <div class="loading-pill"><span class="spin"></span> Lade…</div>
+  <div class="loading-pill"><span class="spin"></span> <?=h(t('teacher.entry.loading'))?></div>
 </div>
 
 <div class="card" id="snippetDrawer" style="display:none;">
   <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
     <div>
-      <h2 style="margin:0;">Textbausteine</h2>
-      <div class="muted">Rechtsklick auf ein Textfeld öffnet ein Einfüge-Menü. Auswahl hier kopiert in das zuletzt fokussierte Feld.</div>
+      <h2 style="margin:0;"><?=h(t('teacher.entry.snippets.drawer_title'))?></h2>
+      <div class="muted"><?=h(t('teacher.entry.snippets.drawer_hint'))?></div>
     </div>
-    <button class="btn secondary" type="button" id="btnSnippetClose">Schließen</button>
+    <button class="btn secondary" type="button" id="btnSnippetClose"><?=h(t('teacher.entry.snippets.close'))?></button>
   </div>
   <div id="snippetList" style="margin-top:10px; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:10px;"></div>
 </div>
@@ -1135,33 +1138,33 @@ render_teacher_header($pageTitle);
     <div class="modal-card">
       <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
         <div>
-          <h3 style="margin:0;">KI-Vorschläge</h3>
-          <div class="muted" id="aiMeta">Vorschläge werden geladen…</div>
+          <h3 style="margin:0;"><?=h(t('teacher.entry.ai.title'))?></h3>
+          <div class="muted" id="aiMeta"><?=h(t('teacher.entry.ai.loading'))?></div>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top: 10px;">
           <a class="btn secondary ai-btn" type="button" id="btnAiRefresh" style="display:none;">
             <svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>
-            Neu generieren
+            <?=h(t('teacher.entry.ai.refresh'))?>
           </a>
-          <a class="btn secondary" type="button" id="btnAiClose">Schließen</a>
+          <a class="btn secondary" type="button" id="btnAiClose"><?=h(t('teacher.entry.ai.close'))?></a>
         </div>
       </div>
       <div id="aiStatus" class="alert" style="margin-top:10px; display:none;"></div>
     <div class="ai-grid" style="margin-top:10px;">
       <div class="ai-card">
-        <div class="h">Stärken</div>
+        <div class="h"><?=h(t('teacher.entry.ai.strengths'))?></div>
         <div id="aiStrengths" class="c">-</div>
       </div>
       <div class="ai-card">
-        <div class="h">Ziele</div>
+        <div class="h"><?=h(t('teacher.entry.ai.goals'))?></div>
         <div id="aiGoals" class="c">-</div>
       </div>
       <div class="ai-card">
-        <div class="h">Schritte</div>
+        <div class="h"><?=h(t('teacher.entry.ai.steps'))?></div>
         <div id="aiSteps" class="c">-</div>
       </div>
     </div>
-    <p class="muted" style="margin-top:10px;">Tipp: Einzelne Vorschläge anklicken, um sie in die Zwischenablage zu kopieren und anschließend in ein Feld einzufügen.</p>
+    <p class="muted" style="margin-top:10px;"><?=h(t('teacher.entry.ai.tip'))?></p>
   </div>
 </div>
 
@@ -1170,37 +1173,37 @@ render_teacher_header($pageTitle);
   <div class="modal-backdrop" data-close="1"></div>
   <div class="modal-card">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
-      <h3 style="margin:0;">Delegation-Status</h3>
+      <h3 style="margin:0;"><?=h(t('teacher.entry.delegation_done.title'))?></h3>
     </div>
 
     <div class="muted" style="margin-top:6px;">
-      Markiere deine delegierten Fachbereiche als <strong>fertig</strong> (optional mit Kommentar).
+      <?=str_replace('{status}', '<strong>' . h(t('teacher.entry.status.done')) . '</strong>', t('teacher.entry.delegation_done.hint'))?>
     </div>
 
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:240px;">
-        <label class="label">Fach/Gruppe</label>
+        <label class="label"><?=h(t('teacher.entry.delegation_done.group_label'))?></label>
         <select class="input" id="dlgDoneGroup" style="width:100%;"></select>
       </div>
       <div style="min-width:160px;">
-        <label class="label">Status</label>
+        <label class="label"><?=h(t('teacher.entry.delegation_done.status_label'))?></label>
         <select class="input" id="dlgDoneStatus" style="width:100%;">
-          <option value="open">offen</option>
-          <option value="done">fertig</option>
+          <option value="open"><?=h(t('teacher.entry.status.open'))?></option>
+          <option value="done"><?=h(t('teacher.entry.status.done'))?></option>
         </select>
       </div>
       <div style="flex:1; min-width:240px;">
-        <label class="label">Kommentar</label>
-        <input class="input" id="dlgDoneNote" type="text" placeholder="z.B. Deutsch komplett, bitte prüfen…" style="width:100%;">
+        <label class="label"><?=h(t('teacher.entry.delegation_done.comment_label'))?></label>
+        <input class="input" id="dlgDoneNote" type="text" placeholder="<?=h(t('teacher.entry.delegation_done.comment_placeholder'))?>" style="width:100%;">
       </div>
       <div style="display:flex; gap:8px; margin-top: 10px;">
-        <button class="btn secondary" type="button" data-close="1">Schließen</button>
-        <button class="btn" type="button" id="dlgDoneSave">Speichern</button>
+        <button class="btn secondary" type="button" data-close="1"><?=h(t('teacher.entry.dialog.close'))?></button>
+        <button class="btn" type="button" id="dlgDoneSave"><?=h(t('teacher.entry.dialog.save'))?></button>
       </div>
     </div>
 
     <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
-      <div class="muted" style="margin-bottom:8px;">Meine Delegationen</div>
+      <div class="muted" style="margin-bottom:8px;"><?=h(t('teacher.entry.delegation_done.list_title'))?></div>
       <div id="dlgDoneList" style="display:flex; flex-direction:column; gap:8px;"></div>
     </div>
   </div>
@@ -1212,42 +1215,41 @@ render_teacher_header($pageTitle);
       <div class="modal-backdrop" data-close="1"></div>
       <div class="modal-card">
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
-          <h3 style="margin:0;">Fachbereiche delegieren</h3>
+          <h3 style="margin:0;"><?=h(t('teacher.entry.delegation_edit.title'))?></h3>
         </div>
         <div class="muted" style="margin-top:6px;">
-          Hier kannst du pro <strong>Fach/Gruppe</strong> mehrere Kollegen als Bearbeiter festlegen.
-          Delegierte Gruppen sind für andere Lehrkräfte <strong>schreibgeschützt</strong> (Admin darf immer).
+          <?=t('teacher.entry.delegation_edit.hint')?>
         </div>
 
         <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
           <div style="min-width:240px;">
-            <label class="label">Fach/Gruppe</label>
+            <label class="label"><?=h(t('teacher.entry.delegation_edit.group_label'))?></label>
             <select class="input" id="dlgGroup" style="width:100%;"></select>
           </div>
           <div style="min-width:280px;">
-            <label class="label">Kollegen</label>
+            <label class="label"><?=h(t('teacher.entry.delegation_edit.users_label'))?></label>
             <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
-            <div class="muted" style="font-size:12px; margin-top:4px;">Keine Auswahl = Delegation aufheben</div>
+            <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_edit.clear_hint'))?></div>
           </div>
           <div style="min-width:160px;">
-            <label class="label">Status</label>
+            <label class="label"><?=h(t('teacher.entry.delegation_edit.status_label'))?></label>
             <select class="input" id="dlgStatus" style="width:100%;">
-              <option value="open">offen</option>
-              <option value="done">fertig</option>
+              <option value="open"><?=h(t('teacher.entry.status.open'))?></option>
+              <option value="done"><?=h(t('teacher.entry.status.done'))?></option>
             </select>
           </div>
           <div style="flex:1; min-width:240px;">
-            <label class="label">Notiz</label>
-            <input class="input" id="dlgNote" type="text" placeholder="z.B. Deutsch fertig, Mathe offen…" style="width:100%;">
+            <label class="label"><?=h(t('teacher.entry.delegation_edit.note_label'))?></label>
+            <input class="input" id="dlgNote" type="text" placeholder="<?=h(t('teacher.entry.delegation_edit.note_placeholder'))?>" style="width:100%;">
           </div>
       <div style="display:flex; gap:8px; margin-top: 10px;">
-        <button class="btn secondary" type="button" data-close="1">Schließen</button>
-        <button class="btn" type="button" id="dlgSave">Speichern</button>
+        <button class="btn secondary" type="button" data-close="1"><?=h(t('teacher.entry.dialog.close'))?></button>
+        <button class="btn" type="button" id="dlgSave"><?=h(t('teacher.entry.dialog.save'))?></button>
       </div>
         </div>
 
         <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
-          <div class="muted" style="margin-bottom:8px;">Aktuelle Delegationen</div>
+          <div class="muted" style="margin-bottom:8px;"><?=h(t('teacher.entry.delegation_edit.list_title'))?></div>
           <div id="dlgList" style="display:flex; flex-direction:column; gap:8px;"></div>
         </div>
       </div>
@@ -1257,8 +1259,8 @@ render_teacher_header($pageTitle);
   <div id="classFieldsBox" class="card" style="margin:12px 0; display:none;">
     <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
       <div>
-        <h2>Klassenfelder (für alle Schüler)</h2>
-        <div style="opacity:.85; font-size:13px;">Diese Werte gelten für die gesamte Klasse und können in Labels/Hilfetexten per <code>{{Feldname}}</code> referenziert werden.</div>
+        <h2><?=h(t('teacher.entry.class_fields.title'))?></h2>
+        <div style="opacity:.85; font-size:13px;"><?=t('teacher.entry.class_fields.hint')?></div>
       </div>
     </div>
 
@@ -1271,32 +1273,32 @@ render_teacher_header($pageTitle);
   </div>
 
 <div id="app" class="card" style="display:none;">
-    <h2>Schülerfelder</h2>
+    <h2><?=h(t('teacher.entry.student_fields.title'))?></h2>
       <?php if (!$childMode): ?>
         <label id="showStudentEntries" class="pill-mini" style="cursor:pointer; user-select:none;">
-          <input type="checkbox" id="toggleChild" style="margin-right:8px;"> Schülereingaben anzeigen
+          <input type="checkbox" id="toggleChild" style="margin-right:8px;"> <?=h(t('teacher.entry.show_child_entries'))?>
         </label>
       <?php else: ?>
         <span id="showStudentEntries" style="display:none;"></span>
       <?php endif; ?>
-  <div id="metaTop" class="muted" style="margin-bottom:10px;">Lade…</div>
+  <div id="metaTop" class="muted" style="margin-bottom:10px;"><?=h(t('teacher.entry.loading'))?></div>
   <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
     <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> nur offene
+      <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> <?=h(t('teacher.entry.only_open'))?>
     </label>
     <label class="pill-mini" for="optionButtonsToggle" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> Optionen als Buttons
+      <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> <?=h(t('teacher.entry.option_buttons'))?>
     </label>
   </div>
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
     <div style="min-width:260px;">
-      <label class="label">Ansicht</label>
+      <label class="label"><?=h(t('teacher.entry.view_label'))?></label>
       <select class="input" id="viewSelect" style="width:100%;">
         <?php if (!$childMode): ?>
-          <option value="grades">Notenübersicht</option>
+          <option value="grades"><?=h(t('teacher.entry.view_grades'))?></option>
         <?php endif; ?>
-        <option value="student">Nach Schüler</option>
-        <option value="item">Nach Item/Fach</option>
+        <option value="student"><?=h(t('teacher.entry.view_students'))?></option>
+        <option value="item"><?=h(t('teacher.entry.view_items'))?></option>
       </select>
     </div>
   </div>
@@ -1310,24 +1312,24 @@ render_teacher_header($pageTitle);
   <div id="viewGrades" style="display:none;">
     <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:260px;">
-        <label class="label">Fach/Gruppe</label>
+        <label class="label"><?=h(t('teacher.entry.group_label'))?></label>
         <select class="input" id="gradeGroupSelect" style="width:100%;"></select>
       </div>
 
       <div style="min-width:260px;">
-        <label class="label">Tabelle</label>
+        <label class="label"><?=h(t('teacher.entry.table_label'))?></label>
         <select class="input" id="gradeOrientation" style="width:100%;">
-          <option value="students_rows">Schüler: Zeilen · Notenfelder: Spalten</option>
-          <option value="students_cols">Notenfelder: Zeilen · Schüler: Spalten</option>
+          <option value="students_rows"><?=h(t('teacher.entry.grade_orientation.rows'))?></option>
+          <option value="students_cols"><?=h(t('teacher.entry.grade_orientation.cols'))?></option>
         </select>
       </div>
 
       <div style="min-width:220px;">
-        <label class="label">Suche</label>
-        <input class="input" id="gradeSearch" type="search" placeholder="Notenfeld…" style="width:100%;">
+        <label class="label"><?=h(t('teacher.entry.search_label'))?></label>
+        <input class="input" id="gradeSearch" type="search" placeholder="<?=h(t('teacher.entry.search_grade_placeholder'))?>" style="width:100%;">
       </div>
       <div class="muted" style="padding-bottom:10px;">
-        Nur <strong>Notenfelder</strong>. Tab springt durch die Zellen.
+        <?=t('teacher.entry.grades_hint')?>
       </div>
     </div>
 
@@ -1355,10 +1357,10 @@ render_teacher_header($pageTitle);
     <div style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
-          <input class="input" id="studentSearch" type="search" placeholder="Schüler suchen…" style="width:100%;">
+          <input class="input" id="studentSearch" type="search" placeholder="<?=h(t('teacher.entry.student_search_placeholder'))?>" style="width:100%;">
         </div>
         <div style="margin-top:8px;">
-          <label class="label" for="studentGroupSelect">Fach/Gruppe</label>
+          <label class="label" for="studentGroupSelect"><?=h(t('teacher.entry.group_label'))?></label>
           <select class="input" id="studentGroupSelect" style="width:100%;"></select>
         </div>
         <div id="studentList" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
@@ -1368,10 +1370,10 @@ render_teacher_header($pageTitle);
             <div class="pill-mini" id="studentBadge" style="font-weight: bold">—</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn secondary" type="button" id="btnPdfEntry">
-              <?=h(t('teacher.students.btn_pdf_entry', 'PDF-Formular'))?>
+              <?=h(t('teacher.students.btn_pdf_entry'))?>
             </button>
-            <button class="btn secondary" type="button" id="btnPrevStudent">← Vorherige</button>
-            <button class="btn secondary" type="button" id="btnNextStudent">Nächste →</button>
+            <button class="btn secondary" type="button" id="btnPrevStudent"><?=h(t('teacher.entry.prev_student'))?></button>
+            <button class="btn secondary" type="button" id="btnNextStudent"><?=h(t('teacher.entry.next_student'))?></button>
           </div>
         </div>
 
@@ -1384,14 +1386,14 @@ render_teacher_header($pageTitle);
   <div id="viewItem" style="display:none;">
     <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:260px;">
-        <label class="label">Fach/Gruppe</label>
+        <label class="label"><?=h(t('teacher.entry.group_label'))?></label>
         <select class="input" id="groupSelect" style="width:100%;"></select>
       </div>
       <div style="min-width:220px;">
-        <label class="label">Suche</label>
-        <input class="input" id="itemSearch" type="search" placeholder="Item / Feldname…" style="width:100%;">
+        <label class="label"><?=h(t('teacher.entry.search_label'))?></label>
+        <input class="input" id="itemSearch" type="search" placeholder="<?=h(t('teacher.entry.item_search_placeholder'))?>" style="width:100%;">
       </div>
-      <div class="muted" id="itemHint" style="padding-bottom:10px;">Tab springt durch die Zellen (Zeile → Spalten).</div>
+      <div class="muted" id="itemHint" style="padding-bottom:10px;"><?=h(t('teacher.entry.item_hint'))?></div>
     </div>
 
     <div style="overflow:auto; margin-top:12px; border:1px solid var(--border); border-radius:12px;">
@@ -1591,13 +1593,128 @@ render_teacher_header($pageTitle);
 
   // ✅ NEW: UI language for option label rendering (de/en)
   const UI_LANG = <?= json_encode(ui_lang()) ?>;
+  const I18N = <?=json_encode([
+    'status_open' => t('teacher.entry.status.open'),
+    'status_done' => t('teacher.entry.status.done'),
+    'delegation_edit' => t('teacher.entry.delegation_edit.edit_button'),
+    'delegation_clear' => t('teacher.entry.delegation_edit.clear_button'),
+    'delegation_done_empty' => t('teacher.entry.delegation_done.empty'),
+    'delegation_empty' => t('teacher.entry.delegation_edit.empty'),
+    'snippet_no_text' => t('teacher.entry.snippets.no_text'),
+    'snippet_no_text_fallback' => t('teacher.entry.snippets.no_text_fallback'),
+    'snippet_no_target' => t('teacher.entry.snippets.no_target'),
+    'snippet_empty' => t('teacher.entry.snippets.empty'),
+    'snippet_menu_title' => t('teacher.entry.snippets.menu_title'),
+    'snippet_menu_title_placeholder' => t('teacher.entry.snippets.menu_title_placeholder'),
+    'snippet_menu_category_placeholder' => t('teacher.entry.snippets.menu_category_placeholder'),
+    'snippet_menu_save' => t('teacher.entry.snippets.menu_save'),
+    'snippet_selection' => t('teacher.entry.snippets.selection'),
+    'snippet_default_category' => t('teacher.entry.snippets.default_category'),
+    'snippet_untitled' => t('teacher.entry.snippets.untitled'),
+    'snippet_generated' => t('teacher.entry.snippets.generated'),
+    'snippet_insert_current' => t('teacher.entry.snippets.insert_current'),
+    'ai_copy_success' => t('teacher.entry.ai.copy_success'),
+    'ai_copy_fail' => t('teacher.entry.ai.copy_fail'),
+    'ai_none' => t('teacher.entry.ai.none'),
+    'ai_empty' => t('teacher.entry.ai.empty'),
+    'ai_require_options' => t('teacher.entry.ai.require_options'),
+    'ai_cached' => t('teacher.entry.ai.cached_notice'),
+    'ai_loading' => t('teacher.entry.ai.loading_status'),
+    'ai_loaded' => t('teacher.entry.ai.loaded_notice'),
+    'ai_error' => t('teacher.entry.ai.error'),
+    'ai_option_ideas' => t('teacher.entry.ai.option_ideas'),
+    'ai_open' => t('teacher.entry.ai.open'),
+    'ai_open_disabled_title' => t('teacher.entry.ai.open_disabled_title'),
+    'ai_dialog_title' => t('teacher.entry.ai.dialog_title'),
+    'ai_banner_title' => t('teacher.entry.ai.banner_title'),
+    'class_label' => t('teacher.entry.class_label'),
+    'grade_level' => t('teacher.entry.grade_level'),
+    'field_fallback' => t('teacher.entry.field_fallback'),
+    'field_label' => t('teacher.entry.field_label'),
+    'option_fallback' => t('teacher.entry.option_fallback'),
+    'yes_no' => t('teacher.entry.yes_no'),
+    'filter_all' => t('teacher.entry.filter_all'),
+    'student_label' => t('teacher.entry.student_label'),
+    'student_header' => t('teacher.entry.student_header'),
+    'name_label' => t('teacher.entry.name_label'),
+    'edit' => t('teacher.entry.edit'),
+    'delete' => t('teacher.entry.delete'),
+    'prompt_new_child_value' => t('teacher.entry.prompt_new_child_value'),
+    'prompt_clear_child_value' => t('teacher.entry.prompt_clear_child_value'),
+    'merge_prompt_title' => t('teacher.entry.merge_prompt.title'),
+    'merge_prompt_choice' => t('teacher.entry.merge_prompt.choice'),
+    'save_child_unlocking' => t('teacher.entry.save.child_unlocking'),
+    'save_child_unlocked' => t('teacher.entry.save.child_unlocked'),
+    'save_child_unlock_error' => t('teacher.entry.save.child_unlock_error'),
+    'save_child_deleting' => t('teacher.entry.save.child_deleting'),
+    'save_child_updating' => t('teacher.entry.save.child_updating'),
+    'save_child_deleted' => t('teacher.entry.save.child_deleted'),
+    'save_child_updated' => t('teacher.entry.save.child_updated'),
+    'save_child_save_error' => t('teacher.entry.save.child_save_error'),
+    'save_saving' => t('teacher.entry.save.saving'),
+    'save_saved_at' => t('teacher.entry.save.saved_at'),
+    'save_error_offline' => t('teacher.entry.save.error_offline'),
+    'save_error' => t('teacher.entry.save.error'),
+    'error_save' => t('teacher.entry.error_save'),
+    'error_unlock' => t('teacher.entry.error_unlock'),
+    'error_update' => t('teacher.entry.error_update'),
+    'save_idle' => t('teacher.entry.save.idle'),
+    'progress_child_complete' => t('teacher.entry.progress.child_complete'),
+    'progress_delegated_complete' => t('teacher.entry.progress.delegated_complete'),
+    'progress_forms_complete' => t('teacher.entry.progress.forms_complete'),
+    'progress_class_fields' => t('teacher.entry.progress.class_fields'),
+    'progress_missing_child' => t('teacher.entry.progress.missing_child'),
+    'progress_missing_teacher' => t('teacher.entry.progress.missing_teacher'),
+    'progress_status_line' => t('teacher.entry.progress.status_line'),
+    'progress_badge_open' => t('teacher.entry.progress.badge_open'),
+    'student_badge_child' => t('teacher.entry.progress.student_badge_child'),
+    'student_badge_both' => t('teacher.entry.progress.student_badge_both'),
+    'no_results' => t('teacher.entry.no_results'),
+    'no_students_found' => t('teacher.entry.no_students_found'),
+    'unlock_child' => t('teacher.entry.unlock_child'),
+    'locked_cannot_edit' => t('teacher.entry.locked_cannot_edit'),
+    'locked_teacher_can_edit' => t('teacher.entry.locked_teacher_can_edit'),
+    'locked_title' => t('teacher.entry.locked_title'),
+    'locked_notice' => t('teacher.entry.locked_notice'),
+    'notice_label' => t('teacher.entry.notice_label'),
+    'child_missing_title' => t('teacher.entry.child_missing_title'),
+    'child_missing_fields' => t('teacher.entry.child_missing_fields'),
+    'child_missing_more' => t('teacher.entry.child_missing_more'),
+    'ai_require_options_start' => t('teacher.entry.ai.require_options_start'),
+    'delegated_badge' => t('teacher.entry.delegated_badge'),
+    'delegated_badge_done' => t('teacher.entry.delegated_badge_done'),
+    'readonly_badge' => t('teacher.entry.readonly_badge'),
+    'delegate_action_short' => t('teacher.entry.delegate_action_short'),
+    'group_progress' => t('teacher.entry.group_progress'),
+    'role_child' => t('teacher.entry.role_child'),
+    'role_teacher' => t('teacher.entry.role_teacher'),
+    'no_open_fields' => t('teacher.entry.no_open_fields'),
+    'no_options' => t('teacher.entry.no_options'),
+    'no_grade_fields' => t('teacher.entry.no_grade_fields'),
+    'grade_header' => t('teacher.entry.grade_header'),
+    'item_header' => t('teacher.entry.item_header'),
+    'no_items_found' => t('teacher.entry.no_items_found'),
+    'no_delegations' => t('teacher.entry.no_delegations'),
+    'no_delegations_class' => t('teacher.entry.no_delegations_class'),
+    'no_class_available' => t('teacher.entry.no_class_available'),
+    'status_locked' => t('teacher.entry.status.locked'),
+    'status_submitted' => t('teacher.entry.status.submitted'),
+    'status_draft' => t('teacher.entry.status.draft'),
+    'meta_top' => t('teacher.entry.meta_top'),
+    'template_fallback' => t('teacher.entry.template_fallback'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+  const tEntry = (key) => I18N[key] ?? key;
+  const tfmtEntry = (key, vars = {}) => {
+    const base = tEntry(key);
+    return base.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
+  };
 
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
   const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
-  const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm', 'Schülereingabe "{label}" wirklich löschen?'))?>;
-  const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear', 'Zurücksetzen'))?>;
+  const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm'))?>;
+  const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
 
@@ -1958,7 +2075,7 @@ render_teacher_header($pageTitle);
   function childLabel(field){
     if (!field || !field.child) return '';
     const c = field.child;
-    return String(c.label || c.field_name || 'Schülerfeld');
+    return String(c.label || c.field_name || tEntry('field_fallback'));
   }
 
   function childFieldDisplay(f, raw){
@@ -2022,10 +2139,10 @@ render_teacher_header($pageTitle);
 
     return `
       <div class="child">
-        <div><strong>Schüler:</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+        <div><strong>${esc(tEntry('student_label'))}</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
         <div class="child-actions" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
-          <button class="btn secondary" type="button" data-edit-child="${esc(reportId)}" ${baseAttrs}>Bearbeiten</button>
-          <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>Löschen</button>
+          <button class="btn secondary" type="button" data-edit-child="${esc(reportId)}" ${baseAttrs}>${esc(tEntry('edit'))}</button>
+          <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>${esc(tEntry('delete'))}</button>
         </div>
       </div>
     `;
@@ -2068,11 +2185,11 @@ render_teacher_header($pageTitle);
 
     if (!decision) {
       const msg = [
-        'Für dieses Feld gibt es bereits einen Schüler-Wert:',
+        tEntry('merge_prompt_title'),
         '',
         childDisplay(f, childRaw) || childRaw,
         '',
-        'Sollen beide Werte kombiniert werden (OK) oder der Schüler-Wert überschrieben werden (Abbrechen)?'
+        tEntry('merge_prompt_choice')
       ].join('\n');
       decision = window.confirm(msg) ? 'combine' : 'overwrite';
     }
@@ -2400,18 +2517,18 @@ render_teacher_header($pageTitle);
     if (!reportId) return;
 
     try {
-      setSaveStatus('saving', '⏳ Schülereingabe wird freigeschaltet …');
+      setSaveStatus('saving', tEntry('save_child_unlocking'));
       const res = await api('unlock_child_entry', { report_instance_id: reportId });
       if (res && res.status) {
         const hit = (state.students || []).find(s => Number(s.report_instance_id || 0) === Number(reportId));
         if (hit) hit.status = String(res.status);
         renderStudentView();
       }
-      setSaveStatus('ok', '✔ Schülereingabe freigegeben');
+      setSaveStatus('ok', tEntry('save_child_unlocked'));
     } catch (e) {
       console.error(e);
-      showErr(e?.message || 'Fehler beim Freischalten.');
-      setSaveStatus('error', '❌ Konnte nicht freigeschaltet werden');
+      showErr(e?.message || tEntry('error_unlock'));
+      setSaveStatus('error', tEntry('save_child_unlock_error'));
     }
   }
 
@@ -2626,7 +2743,7 @@ render_teacher_header($pageTitle);
     const shouldRender = opts.render !== false;
 
     try {
-      setSaveStatus('saving', deleting ? '⏳ Schülereingabe wird gelöscht …' : '⏳ Schülereingabe wird aktualisiert …');
+      setSaveStatus('saving', deleting ? tEntry('save_child_deleting') : tEntry('save_child_updating'));
       const res = await api('child_value_update', {
         report_instance_id: rid,
         child_field_id: fid,
@@ -2646,11 +2763,11 @@ render_teacher_header($pageTitle);
       } else {
         onChildValueChanged(rid);
       }
-      setSaveStatus('ok', deleting ? '✔ Schülereingabe gelöscht' : '✔ Schülereingabe aktualisiert');
+      setSaveStatus('ok', deleting ? tEntry('save_child_deleted') : tEntry('save_child_updated'));
     } catch (e) {
       console.error(e);
-      showErr(e?.message || 'Fehler beim Aktualisieren.');
-      setSaveStatus('error', '❌ Konnte nicht gespeichert werden');
+      showErr(e?.message || tEntry('error_update'));
+      setSaveStatus('error', tEntry('save_child_save_error'));
     }
   }
 
@@ -2662,9 +2779,9 @@ render_teacher_header($pageTitle);
         ev.preventDefault();
         const rid = Number(btn.getAttribute('data-edit-child') || 0);
         const fid = Number(btn.getAttribute('data-child-field') || 0);
-        const lbl = String(btn.getAttribute('data-child-label') || 'Schülereingabe');
+        const lbl = String(btn.getAttribute('data-child-label') || tEntry('field_fallback'));
         const current = childVal(rid, fid);
-        const next = window.prompt(`Neuer Schülerwert für "${lbl}":`, current);
+        const next = window.prompt(tfmtEntry('prompt_new_child_value', { label: lbl }), current);
         if (next === null) return;
         await updateChildValue(rid, fid, next, lbl);
       });
@@ -2675,8 +2792,8 @@ render_teacher_header($pageTitle);
         ev.preventDefault();
         const rid = Number(btn.getAttribute('data-delete-child') || 0);
         const fid = Number(btn.getAttribute('data-child-field') || 0);
-        const lbl = String(btn.getAttribute('data-child-label') || 'Schülereingabe');
-        const confirmMsg = String(CHILD_CLEAR_CONFIRM || 'Schülereingabe "{label}" wirklich löschen?')
+        const lbl = String(btn.getAttribute('data-child-label') || tEntry('field_fallback'));
+        const confirmMsg = String(CHILD_CLEAR_CONFIRM || tfmtEntry('prompt_clear_child_value', { label: lbl }))
           .replace('{label}', lbl);
         if (!window.confirm(confirmMsg)) return;
         await updateChildValue(rid, fid, null, lbl);
@@ -2689,7 +2806,7 @@ render_teacher_header($pageTitle);
     if (!entries.length) return '';
 
       const rows = entries.map(e => {
-        const role = (e.source === 'child') ? 'Schüler' : 'Lehrkraft';
+        const role = (e.source === 'child') ? tEntry('role_child') : tEntry('role_teacher');
         const ts = formatDateTime(e.created_at);
         const val = String(e.text ?? '');
         return `
@@ -2851,14 +2968,14 @@ render_teacher_header($pageTitle);
     const pct = Math.round((complete / total) * 100);
     formsProgressWrap.style.display = '';
     if (formsProgressText) {
-        if (CHILD_MODE) {
-          formsProgressText.textContent = `Schülerfelder vollständig: ${complete}/${total}`;
-        } else {
-          formsProgressText.textContent = DELEGATED_MODE
-            ? `Delegierte Aufgaben vollständig: ${complete}/${total}`
-            : `Formulare vollständig: ${complete}/${total}`;
-        }
+      if (CHILD_MODE) {
+        formsProgressText.textContent = tfmtEntry('progress_child_complete', { complete, total });
+      } else if (DELEGATED_MODE) {
+        formsProgressText.textContent = tfmtEntry('progress_delegated_complete', { complete, total });
+      } else {
+        formsProgressText.textContent = tfmtEntry('progress_forms_complete', { complete, total });
       }
+    }
     if (formsProgressPct) formsProgressPct.textContent = `${pct}%`;
     formsProgressBar.style.width = `${pct}%`;
     formsProgressBar.classList.toggle('ok', complete === total);
@@ -2887,7 +3004,9 @@ render_teacher_header($pageTitle);
     const pct = Math.round((done / total) * 100);
 
     classFieldsProgressWrap.style.display = '';
-    if (classFieldsProgressText) classFieldsProgressText.textContent = `Klassenfelder: ${done}/${total} (offen: ${missing})`;
+    if (classFieldsProgressText) {
+      classFieldsProgressText.textContent = tfmtEntry('progress_class_fields', { done, total, missing });
+    }
     if (classFieldsProgressPct) classFieldsProgressPct.textContent = `${pct}%`;
     classFieldsProgressBar.style.width = `${pct}%`;
     classFieldsProgressBar.classList.toggle('ok', missing === 0);
@@ -2910,12 +3029,18 @@ render_teacher_header($pageTitle);
     const childMissing = Number(student.progress_child_missing || 0);
 
     const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
-    const missingLabel = CHILD_MODE ? `Schüler offen: ${childMissing}` : `Lehrer offen: ${teacherMissing}`;
+    const missingLabel = CHILD_MODE
+      ? tfmtEntry('progress_missing_child', { count: childMissing })
+      : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
 
     const sub = row.querySelector('.js-srow-sub');
     if (sub) {
       const statusLbl = String(sub.getAttribute('data-statuslbl') || '');
-      sub.textContent = `Status: ${statusLbl} · offen: ${prog.missing} · ${missingLabel}`;
+      sub.textContent = tfmtEntry('progress_status_line', {
+        status: statusLbl,
+        missing: prog.missing,
+        missingLabel,
+      });
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -2926,7 +3051,7 @@ render_teacher_header($pageTitle);
 
     const badge = row.querySelector('.js-prog-badge');
     if (badge) {
-      badge.textContent = prog.complete ? '✓' : `offen: ${prog.missing}`;
+      badge.textContent = prog.complete ? '✓' : tfmtEntry('progress_badge_open', { missing: prog.missing });
       badge.classList.toggle('ok', !!prog.complete);
     }
   }
@@ -2937,7 +3062,13 @@ render_teacher_header($pageTitle);
     if (CHILD_MODE) {
       const prog = activeProgressForStudent(Number(s.report_instance_id || 0));
       const chk = prog.complete ? '✓' : '';
-      studentBadge.textContent = `${s.name} · Schülerfelder: ${prog.done}/${prog.total} · offen: ${prog.missing} ${chk}`.trim();
+      studentBadge.textContent = tfmtEntry('student_badge_child', {
+        name: s.name,
+        done: prog.done,
+        total: prog.total,
+        missing: prog.missing,
+        check: chk,
+      }).trim();
       return;
     }
     const tDone = Number(s.progress_teacher_done || 0);
@@ -2948,7 +3079,15 @@ render_teacher_header($pageTitle);
     const oTotal = Number(s.progress_overall_total || 0);
     const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
-    studentBadge.textContent = `${s.name} · Lehrer: ${tDone}/${tTotal} · Schüler: ${cDone}/${cTotal} · offen: ${oMissing} ${chk}`.trim();
+    studentBadge.textContent = tfmtEntry('student_badge_both', {
+      name: s.name,
+      teacherDone: tDone,
+      teacherTotal: tTotal,
+      childDone: cDone,
+      childTotal: cTotal,
+      missing: oMissing,
+      check: chk,
+    }).trim();
   }
 
   function updatePdfEntryButton(student){
@@ -2997,7 +3136,7 @@ render_teacher_header($pageTitle);
       ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
-      setSaveStatus('saving', '⏳ speichert …');
+      setSaveStatus('saving', tEntry('save_saving'));
       try {
         await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
@@ -3005,12 +3144,12 @@ render_teacher_header($pageTitle);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
         addHistoryEntry(reportId, fieldId, displayVal, 'teacher', combinedValue);
         lastSaveAt = new Date();
-        setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
+        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
       } catch (e) {
         showErr(e.message || String(e));
-        const msg = String(e?.message || 'Fehler beim Speichern');
+        const msg = String(e?.message || tEntry('error_save'));
         const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
+        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
       } finally {
         ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
         if (ui.saveInFlight === 0) setSaving(false);
@@ -3050,7 +3189,7 @@ render_teacher_header($pageTitle);
       ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
-      setSaveStatus('saving', '⏳ speichert …');
+      setSaveStatus('saving', tEntry('save_saving'));
       try {
         const res = await api('child_value_update', {
           report_instance_id: reportId,
@@ -3061,12 +3200,12 @@ render_teacher_header($pageTitle);
         state.values_child[ridKey][fidKey] = res.value_text ?? '';
         addHistoryEntry(reportId, fieldId, res.value_text || '', 'child', res.raw_value_text ?? null, res.value_json ?? null);
         lastSaveAt = new Date();
-        setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
+        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
       } catch (e) {
         showErr(e.message || String(e));
-        const msg = String(e?.message || 'Fehler beim Speichern');
+        const msg = String(e?.message || tEntry('error_save'));
         const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
+        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
       } finally {
         ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
         if (ui.saveInFlight === 0) setSaving(false);
@@ -3097,7 +3236,7 @@ render_teacher_header($pageTitle);
       ui.pendingPayloads.delete(key);
       ui.saveInFlight++;
       setSaving(true);
-      setSaveStatus('saving', '⏳ speichert …');
+      setSaveStatus('saving', tEntry('save_saving'));
       try {
         await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
         const fDef = state.fieldMap?.[String(fieldId)];
@@ -3105,12 +3244,12 @@ render_teacher_header($pageTitle);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
         addHistoryEntry(rid, fieldId, displayVal, 'teacher', combinedValue);
         lastSaveAt = new Date();
-        setSaveStatus('ok', `✔ gespeichert um ${formatTime(lastSaveAt)}`);
+        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
       } catch (e) {
         showErr(e.message || String(e));
-        const msg = String(e?.message || 'Fehler beim Speichern');
+        const msg = String(e?.message || tEntry('error_save'));
         const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? '❌ Fehler (offline)' : `❌ Fehler: ${msg}`);
+        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
       } finally {
         ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
         if (ui.saveInFlight === 0) setSaving(false);
@@ -3180,7 +3319,7 @@ render_teacher_header($pageTitle);
           const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
 
           if (!res.valid) {
-            inp.setCustomValidity('Ungültiger Wert');
+            inp.setCustomValidity(tEntry('invalid_value'));
             inp.reportValidity();
             inp.value = teacherDisplay(f, inp.dataset.actual ?? '');
             return;
@@ -3357,7 +3496,7 @@ render_teacher_header($pageTitle);
       if (!reportId || !fieldId) return;
 
       const f = state.fieldMap[String(fieldId)];
-      const labelText = String(f?.label || f?.field_name || 'Schülerfeld');
+      const labelText = String(f?.label || f?.field_name || tEntry('field_fallback'));
 
       if (f && String(f.field_type || '') === 'grade') {
         inp.classList.add('gradeInput');
@@ -3375,7 +3514,7 @@ render_teacher_header($pageTitle);
           const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
 
           if (!res.valid) {
-            inp.setCustomValidity('Ungültiger Wert');
+            inp.setCustomValidity(tEntry('invalid_value'));
             inp.reportValidity();
             inp.value = childFieldDisplay(f, inp.dataset.actual ?? '');
             return;
@@ -3464,7 +3603,7 @@ render_teacher_header($pageTitle);
       if (disabled) return;
 
       const f = state.fieldMap[String(fieldId)];
-      const labelText = String(f?.label || f?.field_name || 'Schülerfeld');
+      const labelText = String(f?.label || f?.field_name || tEntry('field_fallback'));
       const val = String(card.getAttribute('data-value') || '');
 
       const select = () => {
@@ -3554,11 +3693,11 @@ render_teacher_header($pageTitle);
     const trimmed = current.trim();
     const preview = trimmed.length > 120 ? trimmed.slice(0, 120) + '…' : trimmed;
     if (preview) {
-      snippetSelection.textContent = `Auswahl: "${preview}"`;
+      snippetSelection.textContent = tfmtEntry('snippet_selection', { preview });
     } else if (lastSnippetTarget) {
-      snippetSelection.textContent = 'Kein Text markiert – aktuelles Feld wird genutzt.';
+      snippetSelection.textContent = tEntry('snippet_no_text_fallback');
     } else {
-      snippetSelection.textContent = 'Kein Text markiert.';
+      snippetSelection.textContent = tEntry('snippet_no_text');
     }
     if (btnSnippetSave) {
       const fallbackText = lastSnippetTarget ? String(lastSnippetTarget.value || '').trim() : '';
@@ -3593,7 +3732,7 @@ render_teacher_header($pageTitle);
 
   function insertSnippetText(target, text){
     const el = target || lastSnippetTarget;
-    if (!el) { alert('Kein Ziel-Feld gewählt.'); return; }
+    if (!el) { alert(tEntry('snippet_no_target')); return; }
     const snippet = String(text ?? '');
     const start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
     const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
@@ -3613,12 +3752,12 @@ render_teacher_header($pageTitle);
     const list = state.text_snippets || [];
     snippetList.innerHTML = '';
     if (!list.length) {
-      snippetList.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
+      snippetList.innerHTML = `<div class="muted">${esc(tEntry('snippet_empty'))}</div>`;
       return;
     }
     const grouped = {};
     list.forEach(s => {
-      const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : 'Allgemein';
+      const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : tEntry('snippet_default_category');
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(s);
     });
@@ -3629,13 +3768,13 @@ render_teacher_header($pageTitle);
         card.className = 'snippet-card';
         card.innerHTML = `
           <div class="h">
-            <div style="font-weight:800;">${esc(s.title || '(ohne Titel)')}</div>
+            <div style="font-weight:800;">${esc(s.title || tEntry('snippet_untitled'))}</div>
             <span class="pill-mini">${esc(cat)}</span>
           </div>
           <div class="txt">${esc(s.content || '')}</div>
-          <div class="c">${esc(s.created_by_name || '')}${s.is_generated ? ' · automatisch' : ''}</div>
+          <div class="c">${esc(s.created_by_name || '')}${s.is_generated ? ` · ${esc(tEntry('snippet_generated'))}` : ''}</div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn secondary" type="button">In aktuelles Feld einfügen</button>
+            <button class="btn secondary" type="button">${esc(tEntry('snippet_insert_current'))}</button>
           </div>
         `;
         card.querySelector('button')?.addEventListener('click', () => {
@@ -3663,9 +3802,9 @@ render_teacher_header($pageTitle);
       aiStatus.className = 'alert';
       aiStatus.textContent = '';
     }
-    if (aiStrengths) aiStrengths.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
-    if (aiGoals) aiGoals.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
-    if (aiSteps) aiSteps.innerHTML = '<span class="muted">Noch keine Vorschläge.</span>';
+    if (aiStrengths) aiStrengths.innerHTML = `<span class="muted">${esc(tEntry('ai_empty'))}</span>`;
+    if (aiGoals) aiGoals.innerHTML = `<span class="muted">${esc(tEntry('ai_empty'))}</span>`;
+    if (aiSteps) aiSteps.innerHTML = `<span class="muted">${esc(tEntry('ai_empty'))}</span>`;
     if (btnAiRefresh) btnAiRefresh.disabled = false;
   }
 
@@ -3684,17 +3823,17 @@ render_teacher_header($pageTitle);
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      aiStatus.textContent = 'In Zwischenablage kopiert.';
+      aiStatus.textContent = tEntry('ai_copy_success');
       aiStatus.className = 'alert success';
       aiStatus.style.display = 'block';
     } catch (e) {
         const ok = copyHttp(text);
         if(ok) {
-            aiStatus.textContent = 'In Zwischenablage kopiert.';
+            aiStatus.textContent = tEntry('ai_copy_success');
             aiStatus.className = 'alert success';
             aiStatus.style.display = 'block';
         } else {
-            aiStatus.textContent = 'Konnte nicht kopieren. Bitte manuell markieren (Strg+C).' + e;
+            aiStatus.textContent = tfmtEntry('ai_copy_fail', { error: e });
             aiStatus.className = 'alert danger';
             aiStatus.style.display = 'block';
         }
@@ -3726,7 +3865,7 @@ render_teacher_header($pageTitle);
     el.innerHTML = '';
     const items = Array.isArray(list) ? list.filter(x => String(x).trim() !== '') : [];
     if (!items.length) {
-      el.innerHTML = '<span class="muted">Keine Vorschläge.</span>';
+      el.innerHTML = `<span class="muted">${esc(tEntry('ai_none'))}</span>`;
       return;
     }
     items.forEach(txt => {
@@ -3743,13 +3882,18 @@ render_teacher_header($pageTitle);
     if (!student || !student.report_instance_id) return;
     aiCurrentStudent = student;
     const reportId = student.report_instance_id;
-    const gradeInfo = state.class_grade_level ? `Klassenstufe ${state.class_grade_level}` : 'Klasse';
-    openAiDialog(`Vorschläge für ${student.name} · ${gradeInfo}`);
+    const gradeInfo = state.class_grade_level
+      ? tfmtEntry('grade_level', { grade: state.class_grade_level })
+      : tEntry('class_label');
+    openAiDialog(tfmtEntry('ai_dialog_title', { name: student.name, gradeInfo }));
 
     const optionStatus = optionCompletionForStudent(reportId);
     if (optionStatus.missing > 0) {
       if (aiStatus) {
-        aiStatus.textContent = `Bitte zuerst alle Options-Felder ausfüllen (${optionStatus.missing}/${optionStatus.total} offen).`;
+        aiStatus.textContent = tfmtEntry('ai_require_options', {
+          missing: optionStatus.missing,
+          total: optionStatus.total,
+        });
         aiStatus.style.display = 'block';
         aiStatus.className = 'alert danger';
       }
@@ -3762,7 +3906,7 @@ render_teacher_header($pageTitle);
       renderAiList(aiGoals, cached.goals || []);
       renderAiList(aiSteps, cached.steps || []);
       if (aiStatus) {
-        aiStatus.textContent = 'Vorschläge aus dem Zwischenspeicher. „Neu generieren“ lädt frische Ideen.';
+        aiStatus.textContent = tEntry('ai_cached');
         aiStatus.className = 'alert info';
         aiStatus.style.display = 'block';
       }
@@ -3770,7 +3914,7 @@ render_teacher_header($pageTitle);
     }
 
     if (aiStatus) {
-      aiStatus.textContent = 'KI lädt…';
+      aiStatus.textContent = tEntry('ai_loading');
       aiStatus.style.display = 'block';
       aiStatus.className = 'alert';
     }
@@ -3786,13 +3930,13 @@ render_teacher_header($pageTitle);
       renderAiList(aiGoals, j.suggestions?.goals || []);
       renderAiList(aiSteps, j.suggestions?.steps || []);
       if (aiStatus) {
-        aiStatus.textContent = 'Vorschläge geladen. Klicke, um zu kopieren.';
+        aiStatus.textContent = tEntry('ai_loaded');
         aiStatus.className = 'alert success';
         aiStatus.style.display = 'block';
       }
     } catch (e) {
       if (aiStatus) {
-        aiStatus.textContent = e?.message || 'Fehler bei KI-Vorschlag';
+        aiStatus.textContent = e?.message || tEntry('ai_error');
         aiStatus.className = 'alert danger';
         aiStatus.style.display = 'block';
       }
@@ -3814,12 +3958,12 @@ render_teacher_header($pageTitle);
       const preview = trimmedSel.length > 240 ? trimmedSel.slice(0, 240) + '…' : trimmedSel;
       const derivedTitle = preview.length > 60 ? preview.slice(0, 60) + '…' : preview;
       saveBox.innerHTML = `
-        <div style="font-weight:800;">Textbaustein aus Auswahl speichern</div>
+        <div style="font-weight:800;">${esc(tEntry('snippet_menu_title'))}</div>
         <div class="muted" style="font-size:12px;">${esc(preview)}</div>
         <div class="row" style="align-items:center;">
-          <input class="input" type="text" placeholder="Titel" style="flex:1; min-width:180px;">
-          <input class="input" type="text" placeholder="Kategorie (optional)" style="flex:1; min-width:160px;">
-          <button class="btn" type="button">Speichern</button>
+          <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_title_placeholder'))}" style="flex:1; min-width:180px;">
+          <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_category_placeholder'))}" style="flex:1; min-width:160px;">
+          <button class="btn" type="button">${esc(tEntry('snippet_menu_save'))}</button>
         </div>
       `;
       const titleInput = saveBox.querySelector('input');
@@ -3843,11 +3987,11 @@ render_teacher_header($pageTitle);
     }
 
     if (!list.length) {
-      snippetMenu.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
+      snippetMenu.innerHTML = `<div class="muted">${esc(tEntry('snippet_empty'))}</div>`;
     } else {
       const grouped = {};
       list.forEach(s => {
-        const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : 'Allgemein';
+        const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : tEntry('snippet_default_category');
         if (!grouped[cat]) grouped[cat] = [];
         grouped[cat].push(s);
       });
@@ -3858,7 +4002,7 @@ render_teacher_header($pageTitle);
         items.forEach(s => {
           const div = document.createElement('div');
           div.className = 'item';
-          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${esc(s.title || '(ohne Titel)')}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
+          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${esc(s.title || tEntry('snippet_untitled'))}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
           div.addEventListener('click', () => {
             insertSnippetText(target, s.content || '');
             hideSnippetMenu();
@@ -3948,7 +4092,7 @@ render_teacher_header($pageTitle);
 
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
-      return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">Ja / Nein</span></label>`;
+      return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">${esc(tEntry('yes_no'))}</span></label>`;
     }
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
@@ -3967,7 +4111,7 @@ render_teacher_header($pageTitle);
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
-          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const lbl = optionLabel(opts, oVal) || oVal || tEntry('option_fallback');
           return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
         });
         const hasAnyIcon = opts.some(o => !!(o && o.icon_url));
@@ -3975,7 +4119,7 @@ render_teacher_header($pageTitle);
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
-          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const lbl = optionLabel(opts, oVal) || oVal || tEntry('option_fallback');
           const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const matchesChild = childValRaw && (childValRaw === oVal || childValRaw === lblDe || childValRaw === lblEn || childValRaw === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
@@ -3992,7 +4136,7 @@ render_teacher_header($pageTitle);
 
         return `
           <div class="opts" data-option-block="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${disabledAttr}>
-            ${cards || '<div class="muted">Keine Optionen.</div>'}
+            ${cards || `<div class="muted">${esc(tEntry('no_options'))}</div>`}
           </div>
         `;
       }
@@ -4026,7 +4170,7 @@ render_teacher_header($pageTitle);
 
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
-      return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">Ja / Nein</span></label>`;
+      return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">${esc(tEntry('yes_no'))}</span></label>`;
     }
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
@@ -4044,7 +4188,7 @@ render_teacher_header($pageTitle);
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
-          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const lbl = optionLabel(opts, oVal) || oVal || tEntry('option_fallback');
           return currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl;
         });
         const hasAnyIcon = opts.some(o => !!(o && o.icon_url));
@@ -4052,7 +4196,7 @@ render_teacher_header($pageTitle);
           const oVal = String(o?.value ?? '');
           const lblDe = String(o?.label ?? '').trim();
           const lblEn = String(o?.label_en ?? '').trim();
-          const lbl = optionLabel(opts, oVal) || oVal || 'Option';
+          const lbl = optionLabel(opts, oVal) || oVal || tEntry('option_fallback');
           const selected = currentVal !== '' && (currentVal === oVal || currentVal === lblDe || currentVal === lblEn || currentVal === lbl);
           const dis = (locked || !canEdit) ? 'disabled' : '';
           const tabIndex = (selected || (!hasSelected && idx === 0)) ? '0' : '-1';
@@ -4067,7 +4211,7 @@ render_teacher_header($pageTitle);
 
         return `
           <div class="opts" data-option-block="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${disabledAttr}>
-            ${cards || '<div class="muted">Keine Optionen.</div>'}
+            ${cards || `<div class="muted">${esc(tEntry('no_options'))}</div>`}
           </div>
         `;
       }
@@ -4215,7 +4359,7 @@ render_teacher_header($pageTitle);
       studentGroupSelect.innerHTML = '';
       const optAll = document.createElement('option');
       optAll.value = 'ALL';
-      optAll.textContent = 'Alle';
+      optAll.textContent = tEntry('filter_all');
       studentGroupSelect.appendChild(optAll);
       const options = collectGroupFilterOptions();
       options.forEach(optData => {
@@ -4265,7 +4409,7 @@ render_teacher_header($pageTitle);
       const v = activeFieldValue(reportId, f.id);
       const canEditField = (Number(f.can_edit || 0) === 1);
       const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
-      const lbl = resolveLabelTemplate(String(f.label || f.field_name || 'Feld'));
+      const lbl = resolveLabelTemplate(String(f.label || f.field_name || tEntry('field_label')));
       const help = resolveLabelTemplate(String(f.help_text || ''));
       const missingCls = (v === '') ? 'missing' : '';
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
@@ -4339,7 +4483,11 @@ render_teacher_header($pageTitle);
   function render(){
     elApp.style.display = 'block';
     const groups = activeGroups();
-    elMetaTop.textContent = `${state.template?.name ?? 'Template'} · ${state.students.length} Schüler · ${groups.reduce((a,g)=>a+g.fields.length,0)} Felder`;
+    elMetaTop.textContent = tfmtEntry('meta_top', {
+      template: state.template?.name ?? tEntry('template_fallback'),
+      students: state.students.length,
+      fields: groups.reduce((a, g) => a + g.fields.length, 0),
+    });
 
     // ✅ always render class fields (independent from view)
     renderClassFields();
@@ -4393,7 +4541,9 @@ render_teacher_header($pageTitle);
       const div = document.createElement('div');
       div.className = 'srow' + (idx === ui.activeStudentIndex ? ' active' : '');
       const status = String(s.status || 'draft');
-      const statusLbl = (status === 'locked') ? 'gesperrt' : (status === 'submitted' ? 'abgegeben' : 'Entwurf');
+      const statusLbl = (status === 'locked')
+        ? tEntry('status_locked')
+        : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
       const reportId = Number(s.report_instance_id || 0);
       const prog = CHILD_MODE ? activeProgressForStudent(reportId) : {
         total: Number(s.progress_overall_total || 0),
@@ -4406,19 +4556,19 @@ render_teacher_header($pageTitle);
       const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
       const complete = !!prog.complete;
       const missingLabel = CHILD_MODE
-        ? `Schüler offen: ${childMissing}`
-        : `Lehrer offen: ${teacherMissing}`;
+        ? tfmtEntry('progress_missing_child', { count: childMissing })
+        : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">Status: ${esc(statusLbl)} · offen: ${esc(prog.missing)} · ${esc(missingLabel)}</div>
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
         </div>
-        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : ('offen: ' + prog.missing)}</span>
+        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : esc(tfmtEntry('progress_badge_open', { missing: prog.missing }))}</span>
       `;
       div.addEventListener('click', () => {
         ui.activeStudentIndex = idx;
@@ -4429,8 +4579,8 @@ render_teacher_header($pageTitle);
 
     const s = activeStudent();
     if (!s) {
-      studentBadge.textContent = 'Keine Treffer';
-      studentForm.innerHTML = '<div class="alert">Keine Schüler gefunden.</div>';
+      studentBadge.textContent = tEntry('no_results');
+      studentForm.innerHTML = `<div class="alert">${esc(tEntry('no_students_found'))}</div>`;
       updatePdfEntryButton(null);
       return;
     }
@@ -4456,36 +4606,38 @@ render_teacher_header($pageTitle);
     }
     const unlockBtn = DELEGATED_MODE
       ? ''
-      : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">Schülereingabe freischalten</button></div>`;
+      : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
 
     let html = '';
     if (childLocked) {
       const info = CHILD_MODE
-        ? 'Schülereingabe kann nicht mehr geändert werden.'
-        : 'Schülereingabe ist gesperrt. Lehrkraft kann weiterhin ergänzen.';
-      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>Dieser Bericht ist gesperrt (Schüler).</strong> ${info}${unlockBtn}</div>`;
+        ? tEntry('locked_cannot_edit')
+        : tEntry('locked_teacher_can_edit');
+      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>${esc(tEntry('locked_title'))}</strong> ${esc(info)}${unlockBtn}</div>`;
     } else if (status === 'submitted') {
-      html += `<div class="alert info"><strong>Hinweis:</strong> Schülereingabe ist abgegeben. Lehrkraft kann weiterhin ergänzen, solange nicht gesperrt.${unlockBtn}</div>`;
+      html += `<div class="alert info"><strong>${esc(tEntry('notice_label'))}</strong> ${esc(tEntry('locked_notice'))}${unlockBtn}</div>`;
     } else if (childMissingFields.length > 0) {
       const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
-      const more = childMissingFields.length > 8 ? ` … (${childMissingFields.length - 8} weitere)` : '';
-      html += `<div class="alert warning"><strong>Schülereingabe fehlt noch.</strong> Offene Felder: ${missingList}${more}</div>`;
+      const more = childMissingFields.length > 8
+        ? ` … (${esc(tfmtEntry('child_missing_more', { count: childMissingFields.length - 8 }))})`
+        : '';
+      html += `<div class="alert warning"><strong>${esc(tEntry('child_missing_title'))}</strong> ${esc(tEntry('child_missing_fields'))} ${missingList}${more}</div>`;
     }
 
     const optionStatus = optionCompletionForStudent(reportId);
     if (state.ai_enabled && !CHILD_MODE) {
       const missingOpt = optionStatus.total > 0 ? optionStatus.missing : 0;
       const aiSubtitle = missingOpt > 0
-        ? `Bitte zuerst alle Options-Felder ausfüllen (${missingOpt}/${optionStatus.total} offen), dann KI starten.`
-        : 'Optionen-basierte Ideen für Stärken, Ziele und nächste Schritte (klassenstufengerecht).';
+        ? tfmtEntry('ai_require_options_start', { missing: missingOpt, total: optionStatus.total })
+        : tEntry('ai_option_ideas');
       const aiButton = missingOpt > 0
-        ? `<a class="btn secondary ai-btn" type="button" disabled title="Bitte alle Options-Felder ausfüllen">${AI_ICON} KI öffnen</a>`
-        : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} KI öffnen</a>`;
+        ? `<a class="btn secondary ai-btn" type="button" disabled title="${esc(tEntry('ai_open_disabled_title'))}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`
+        : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`;
       html += `
         <div class="ai-banner">
           <div>
-            <div class="t">${AI_ICON} KI-Vorschläge für ${esc(s.name)}</div>
-            <div class="muted">${aiSubtitle}</div>
+            <div class="t">${AI_ICON} ${esc(tfmtEntry('ai_banner_title', { name: s.name }))}</div>
+            <div class="muted">${esc(aiSubtitle)}</div>
           </div>
           ${aiButton}
         </div>
@@ -4511,17 +4663,17 @@ render_teacher_header($pageTitle);
       const delNames = delegationNames(del);
       const delDone = delegationAllDone(del);
       const delBadge = delNames
-        ? `<span class="badge-del">Delegiert: ${esc(delNames)}${delDone ? ' · fertig' : ''}</span>`
+        ? `<span class="badge-del">${esc(tfmtEntry(delDone ? 'delegated_badge_done' : 'delegated_badge', { names: delNames, status: tEntry('status_done') }))}</span>`
         : '';
-      const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 schreibgeschützt</span>` : '';
+      const lockBadge = (!canEditGroup && !locked) ? `<span class="badge-del">🔒 ${esc(tEntry('readonly_badge'))}</span>` : '';
       const delegBtn = (!CHILD_MODE && CAN_DELEGATE)
-  ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">Delegieren</button>`
+  ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(g.key)}" style="padding:6px 10px; font-size:12px;">${esc(tEntry('delegate_action_short'))}</button>`
   : '';
       html += `
           <div class="section-h" style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
             <div class="t">${esc(g.title)} ${delBadge} ${lockBadge}</div>
             <div style="display:flex; gap:10px; align-items:center;">
-              <div class="s">${_gtDone}/${_gtTotal} (offen: ${_gtMiss})</div>
+              <div class="s">${esc(tfmtEntry('group_progress', { done: _gtDone, total: _gtTotal, missing: _gtMiss }))}</div>
               ${delegBtn}
             </div>
           </div>
@@ -4530,7 +4682,7 @@ render_teacher_header($pageTitle);
       html += renderStudentFields(fields, reportId, locked);
     });
 
-    studentForm.innerHTML = html || '<div class="alert">Keine offenen Felder gefunden.</div>';
+    studentForm.innerHTML = html || `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
     
     studentForm.querySelectorAll('[data-open-deleg]').forEach(b => {
         b.addEventListener('click', (ev) => {
@@ -4567,9 +4719,9 @@ render_teacher_header($pageTitle);
         ev.preventDefault();
         const rid = Number(btn.getAttribute('data-clear-child') || 0);
         const fid = Number(btn.getAttribute('data-child-field') || 0);
-        const lbl = String(btn.getAttribute('data-child-label') || 'Schülerfeld');
+        const lbl = String(btn.getAttribute('data-child-label') || tEntry('field_fallback'));
         if (!rid || !fid) return;
-        const confirmMsg = String(CHILD_CLEAR_CONFIRM || 'Schülereingabe "{label}" wirklich löschen?')
+        const confirmMsg = String(CHILD_CLEAR_CONFIRM || tfmtEntry('prompt_clear_child_value', { label: lbl }))
           .replace('{label}', lbl);
         if (!window.confirm(confirmMsg)) return;
         await updateChildValue(rid, fid, null, lbl, { render: false });
@@ -4674,7 +4826,7 @@ render_teacher_header($pageTitle);
     }
 
     if (fields.length === 0 || sCols.length === 0) {
-      gradeHead.innerHTML = '<tr><th class="sticky">—</th><th>Keine Notenfelder gefunden</th></tr>';
+      gradeHead.innerHTML = `<tr><th class="sticky">—</th><th>${esc(tEntry('no_grade_fields'))}</th></tr>`;
       gradeBody.innerHTML = '';
       return;
     }
@@ -4684,13 +4836,15 @@ render_teacher_header($pageTitle);
       const tr = document.createElement('tr');
       const th0 = document.createElement('th');
       th0.className = 'sticky';
-      th0.textContent = 'Notenfeld';
+      th0.textContent = tEntry('grade_header');
       tr.appendChild(th0);
 
       sCols.forEach(s => {
         const th = document.createElement('th');
         const status = String(s.status || 'draft');
-        const statusLbl = (status === 'locked') ? 'gesperrt' : (status === 'submitted' ? 'abgegeben' : 'Entwurf');
+        const statusLbl = (status === 'locked')
+          ? tEntry('status_locked')
+          : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
         th.innerHTML = `<div style="font-weight:800;">${esc(s.name)}</div><div class="muted" style="font-size:12px;">${esc(statusLbl)}</div>`;
         tr.appendChild(th);
       });
@@ -4749,7 +4903,7 @@ render_teacher_header($pageTitle);
     const tr1 = document.createElement('tr');
     const th0 = document.createElement('th');
     th0.className = 'sticky';
-    th0.textContent = 'Schüler';
+    th0.textContent = tEntry('student_header');
     tr1.appendChild(th0);
 
     const groupOrder = [];
@@ -4771,7 +4925,7 @@ render_teacher_header($pageTitle);
     const tr2 = document.createElement('tr');
     const thS = document.createElement('th');
     thS.className = 'sticky';
-    thS.innerHTML = `<span class="muted">Name</span>`;
+    thS.innerHTML = `<span class="muted">${esc(tEntry('name_label'))}</span>`;
     tr2.appendChild(thS);
 
     fields.forEach(f => {
@@ -4789,7 +4943,9 @@ render_teacher_header($pageTitle);
       const tdName = document.createElement('td');
       tdName.className = 'sticky';
       const status = String(s.status || 'draft');
-      const statusLbl = (status === 'locked') ? 'gesperrt' : (status === 'submitted' ? 'abgegeben' : 'Entwurf');
+      const statusLbl = (status === 'locked')
+        ? tEntry('status_locked')
+        : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
       tdName.innerHTML = `<div style="font-weight:800;">${esc(s.name)}</div><div class="muted" style="font-size:12px;">${esc(statusLbl)}</div>`;
       tr.appendChild(tdName);
 
@@ -4844,7 +5000,7 @@ render_teacher_header($pageTitle);
     }
 
     if (fields.length === 0 || sCols.length === 0) {
-      itemHead.innerHTML = '<tr><th class="sticky">—</th><th>Keine Items gefunden</th></tr>';
+      itemHead.innerHTML = `<tr><th class="sticky">—</th><th>${esc(tEntry('no_items_found'))}</th></tr>`;
       itemBody.innerHTML = '';
       return;
     }
@@ -4853,7 +5009,7 @@ render_teacher_header($pageTitle);
     const tr = document.createElement('tr');
     const th0 = document.createElement('th');
     th0.className = 'sticky';
-    th0.textContent = 'Item';
+    th0.textContent = tEntry('item_header');
     tr.appendChild(th0);
     sCols.forEach(s => {
       const th = document.createElement('th');
@@ -4912,7 +5068,7 @@ render_teacher_header($pageTitle);
     try {
       clearErr();
       elApp.style.display = 'none';
-      setSaveStatus('idle', 'Automatisches Speichern ist aktiv. Kein „Speichern“ nötig.');
+      setSaveStatus('idle', tEntry('save_idle'));
       const j = await api('load', { class_id: classId });
 
       state.class_id = classId;
@@ -4975,11 +5131,11 @@ render_teacher_header($pageTitle);
       if (DELEGATED_MODE && (!state.groups || state.groups.length === 0)) {
         elApp.style.display = 'block';
         if (classFieldsBox) classFieldsBox.style.display = 'none';
-        elMetaTop.textContent = 'Keine Delegationen vorhanden.';
+        elMetaTop.textContent = tEntry('no_delegations');
         viewGrades.style.display = 'none';
         viewStudent.style.display = 'none';
         viewItem.style.display = 'none';
-        showErr('Für dich sind in dieser Klasse keine delegierten Fachbereiche vorhanden.');
+        showErr(tEntry('no_delegations_class'));
         return;
       }
       
@@ -5107,7 +5263,7 @@ function closeDelegations(){
       const del = g.delegation || null;
       const mine = delegationSelfEntry(del);
       const delNames = delegationNames(del);
-      const statusLbl = (mine && mine.status === 'done') ? 'fertig' : 'offen';
+      const statusLbl = (mine && mine.status === 'done') ? tEntry('status_done') : tEntry('status_open');
       const note = String(mine?.note || '').trim();
 
       rows.push(`
@@ -5116,12 +5272,12 @@ function closeDelegations(){
             <div class="t">${esc(g.title || g.key)}</div>
             <div class="s">${delNames ? '→ ' + esc(delNames) + ' · ' : ''}${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
           </div>
-          <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">Bearbeiten</button>
+          <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">${esc(tEntry('delegation_edit'))}</button>
         </div>
       `);
     });
 
-    dlgDoneList.innerHTML = rows.length ? rows.join('') : `<div class="muted">Keine delegierten Gruppen gefunden.</div>`;
+    dlgDoneList.innerHTML = rows.length ? rows.join('') : `<div class="muted">${esc(tEntry('delegation_done_empty'))}</div>`;
 
     dlgDoneList.querySelectorAll('[data-done-edit]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -5156,7 +5312,7 @@ function renderDelegationsList(){
       if (!nm) return '';
       return (u.status === 'done') ? `${nm} ✓` : nm;
     }).filter(Boolean).join(', ');
-    const statusLbl = delegationAllDone(del) ? 'fertig' : 'offen';
+    const statusLbl = delegationAllDone(del) ? tEntry('status_done') : tEntry('status_open');
     const note = String(del.note || '').trim();
     rows.push(`
       <div class="del-row">
@@ -5164,11 +5320,11 @@ function renderDelegationsList(){
           <div class="t">${esc(g.title || g.key)}</div>
           <div class="s">→ ${esc(names)} · ${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
         </div>
-        <button class="btn secondary" type="button" data-clear-deleg="${esc(g.key)}">Aufheben</button>
+        <button class="btn secondary" type="button" data-clear-deleg="${esc(g.key)}">${esc(tEntry('delegation_clear'))}</button>
       </div>
     `);
   });
-  dlgList.innerHTML = rows.length ? rows.join('') : `<div class="muted">Keine Delegationen gesetzt.</div>`;
+  dlgList.innerHTML = rows.length ? rows.join('') : `<div class="muted">${esc(tEntry('delegation_empty'))}</div>`;
 
   dlgList.querySelectorAll('[data-clear-deleg]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -5271,7 +5427,7 @@ if (dlgSave) {
   if (btnSnippetSave) {
     btnSnippetSave.addEventListener('click', async () => {
       const rawText = (lastSnippetSelection && lastSnippetSelection.trim()) || (lastSnippetTarget ? String(lastSnippetTarget.value || '').trim() : '');
-      if (!rawText) { alert('Kein Text markiert.'); return; }
+      if (!rawText) { alert(tEntry('snippet_no_text')); return; }
       const titleTyped = snippetTitle ? String(snippetTitle.value || '').trim() : '';
       const cat = snippetCategory ? String(snippetCategory.value || '').trim() : '';
       const derivedTitle = titleTyped !== '' ? titleTyped : (rawText.length > 40 ? rawText.slice(0, 40) + '…' : rawText);
@@ -5395,7 +5551,7 @@ if (dlgSave) {
   if (initialClassId > 0) {
     loadClass(initialClassId).catch(e => showErr(e.message || String(e)));
   } else {
-    showErr('Keine Klasse verfügbar.');
+    showErr(tEntry('no_class_available'));
   }
 })();
 </script>
@@ -5410,6 +5566,8 @@ if (dlgSave) {
   const finalmarksBlocks = document.getElementById('finalmarksBlocks');
   const finalmarksFileHash = document.getElementById('finalmarksFileHash');
   const finalmarksFileName = document.getElementById('finalmarksFileName');
+  const FINALMARKS_SELECT_PDF = <?=json_encode(t('teacher.entry.finalmarks.select_pdf_alert'))?>;
+  const FINALMARKS_PARSE_ERROR = <?=json_encode(t('teacher.entry.finalmarks.parse_error_alert'))?>;
 
   async function fileHashHex(buffer) {
     if (!crypto?.subtle) return '';
@@ -5452,7 +5610,7 @@ if (dlgSave) {
       ev.preventDefault();
       const file = finalmarksPdf.files && finalmarksPdf.files[0];
       if (!file) {
-        alert('Bitte eine PDF-Datei auswählen.');
+        alert(FINALMARKS_SELECT_PDF);
         return;
       }
       try {
@@ -5464,7 +5622,7 @@ if (dlgSave) {
         finalmarksForm.submit();
       } catch (err) {
         finalmarksForm.dataset.parsed = '';
-        alert('PDF konnte im Browser nicht gelesen werden.');
+        alert(FINALMARKS_PARSE_ERROR);
       }
     });
   }

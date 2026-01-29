@@ -72,11 +72,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $upd = $pdo->prepare($sql);
       $upd->execute($params);
-      $alerts[] = 'Sammelfreigabe durchgeführt: ' . $upd->rowCount() . ' Links aktiviert.';
+      $alerts[] = strtr(t('admin.parent_requests.bulk_ok', 'Sammelfreigabe durchgeführt: {count} Links aktiviert.'), [
+        '{count}' => (string)$upd->rowCount(),
+      ]);
       goto done_post;
     }
     $linkId = (int)($_POST['link_id'] ?? 0);
-    if ($linkId <= 0) throw new RuntimeException('Link-ID fehlt.');
+    if ($linkId <= 0) throw new RuntimeException(t('admin.parent_requests.error.link_id_missing', 'Link-ID fehlt.'));
 
     $stLink = $pdo->prepare(
       "SELECT ppl.*, s.class_id\n" .
@@ -86,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
     $stLink->execute([$linkId]);
     $link = $stLink->fetch(PDO::FETCH_ASSOC);
-    if (!$link) throw new RuntimeException('Freigabe nicht gefunden.');
+    if (!$link) throw new RuntimeException(t('admin.parent_requests.error.not_found', 'Freigabe nicht gefunden.'));
 
     if ($action === 'approve') {
       $days = (int)($_POST['valid_days'] ?? 14);
@@ -100,19 +102,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         "WHERE id=?"
       );
       $upd->execute([$userId, $expiresAt, $linkId]);
-      $alerts[] = 'Freigabe aktiviert.';
+      $alerts[] = t('admin.parent_requests.ok.approved', 'Freigabe aktiviert.');
     }
 
     if ($action === 'revoke') {
       $upd = $pdo->prepare("UPDATE parent_portal_links SET status='revoked', updated_at=NOW() WHERE id=?");
       $upd->execute([$linkId]);
-      $alerts[] = 'Freigabe wurde beendet.';
+      $alerts[] = t('admin.parent_requests.ok.revoked', 'Freigabe wurde beendet.');
     }
 
     if ($action === 'expire') {
       $upd = $pdo->prepare("UPDATE parent_portal_links SET status='expired', updated_at=NOW() WHERE id=?");
       $upd->execute([$linkId]);
-      $alerts[] = 'Freigabe wurde abgelaufen markiert.';
+      $alerts[] = t('admin.parent_requests.ok.expired', 'Freigabe wurde abgelaufen markiert.');
     }
 
     if ($action === 'extend') {
@@ -124,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $newExpiry = end_of_day_after_days($days, $start);
       $upd = $pdo->prepare("UPDATE parent_portal_links SET expires_at=?, updated_at=NOW() WHERE id=?");
       $upd->execute([$newExpiry, $linkId]);
-      $alerts[] = 'Gültigkeit wurde verlängert.';
+      $alerts[] = t('admin.parent_requests.ok.extended', 'Gültigkeit wurde verlängert.');
     }
 
     done_post:
@@ -246,37 +248,37 @@ render_admin_header($pageTitle);
 <?php endif; ?>
 
 <div class="card">
-    <h2>Filtern</h2>
+    <h2><?=h(t('admin.parent_requests.filter_title', 'Filtern'))?></h2>
   <div class="row" style="gap:10px;">
     <a class="btn <?= $statusFilter==='open'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=open'))?>"><?=h(t('admin.parent_requests.filter_open', 'Ausstehend'))?></a>
     <a class="btn <?= $statusFilter==='approved'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=approved'))?>"><?=h(t('admin.parent_requests.filter_approved', 'Aktiv'))?></a>
     <a class="btn <?= $statusFilter==='all'?'primary':'secondary' ?>" href="<?=h(url('admin/parent_requests.php?status=all'))?>"><?=h(t('admin.parent_requests.filter_all', 'Alle'))?></a>
     <form method="get" style="display:flex; gap:8px; align-items:center;margin-top: 20px;">
       <input type="hidden" name="status" value="<?=h($statusFilter)?>">
-      <label class="muted" style="font-size:12px;">Klasse</label>
+      <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.filter_class_label', 'Klasse'))?></label>
       <select name="class_id" class="input">
-        <option value="0">Alle</option>
+        <option value="0"><?=h(t('admin.parent_requests.filter_all_classes', 'Alle'))?></option>
         <?php foreach ($classes as $c): ?>
           <option value="<?= (int)$c['id'] ?>" <?= $filterClassId===(int)$c['id'] ? 'selected' : '' ?>><?=h((string)$c['school_year'])?> · <?=h(parent_admin_class_display($c))?></option>
         <?php endforeach; ?>
       </select>
-      <button class="btn secondary" type="submit">Filtern</button>
+      <button class="btn secondary" type="submit"><?=h(t('admin.parent_requests.filter_apply', 'Filtern'))?></button>
     </form>
   </div>
 </div>
 
 <div class="card">
-    <h2>Freischaltung</h2>
+    <h2><?=h(t('admin.parent_requests.bulk_title', 'Freischaltung'))?></h2>
   <form method="post" class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="approve_all">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
     <div>
-      <label class="muted" style="font-size:12px;">Gültig für</label>
+      <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.bulk_valid_for', 'Gültig für'))?></label>
     </div>
     <div>
-      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
-      <button class="btn primary" type="submit">Alle angezeigten Anfragen freigeben</button>
+      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;"><?=h(t('admin.parent_requests.bulk_days', 'Tage'))?></span>
+      <button class="btn primary" type="submit"><?=h(t('admin.parent_requests.bulk_submit', 'Alle angezeigten Anfragen freigeben'))?></button>
     </div>
   </form>
 </div>
@@ -381,29 +383,29 @@ render_admin_header($pageTitle);
 </div>
 
 <div class="card" style="margin-top:14px;" id="meetingFeedbackSection">
-  <h2>Feedback zum Lernentwicklungsgespräch</h2>
-  <p class="muted" style="margin-top:0;">Freitexte aus dem Eltern-Feedbackbogen. Bei anonymen Rückmeldungen werden keine Namen angezeigt.</p>
+  <h2><?=h(t('admin.parent_requests.meeting_title', 'Feedback zum Lernentwicklungsgespräch'))?></h2>
+  <p class="muted" style="margin-top:0;"><?=h(t('admin.parent_requests.meeting_intro', 'Freitexte aus dem Eltern-Feedbackbogen. Bei anonymen Rückmeldungen werden keine Namen angezeigt.'))?></p>
   <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap; padding:12px; border:1px solid var(--border); border-radius:10px; background:#f7f9fc;">
     <input type="hidden" name="status" value="<?=h($statusFilter)?>">
     <input type="hidden" name="class_id" value="<?= (int)$filterClassId ?>">
     <?php if ($meetingFeedbackId > 0): ?>
       <input type="hidden" name="meeting_feedback_id" value="<?= (int)$meetingFeedbackId ?>">
     <?php endif; ?>
-    <label class="muted" style="font-size:12px;">Schuljahr</label>
+    <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.meeting_year_label', 'Schuljahr'))?></label>
     <select name="meeting_feedback_year" class="input" onchange="this.form.submit();">
-      <option value="">Alle</option>
+      <option value=""><?=h(t('admin.parent_requests.meeting_all', 'Alle'))?></option>
       <?php foreach ($availableYears as $year): ?>
         <option value="<?=h($year)?>" <?= $meetingFeedbackYear === $year ? 'selected' : '' ?>><?=h($year)?></option>
       <?php endforeach; ?>
     </select>
-    <label class="muted" style="font-size:12px;">Auswertungsebene</label>
+    <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.meeting_scope_label', 'Auswertungsebene'))?></label>
     <select name="meeting_feedback_scope" class="input" onchange="this.form.submit();">
-      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>>Alle</option>
-      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
-      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>>Klasse</option>
+      <option value="all" <?= $meetingFeedbackScope === 'all' ? 'selected' : '' ?>><?=h(t('admin.parent_requests.meeting_scope_all', 'Alle'))?></option>
+      <option value="grade" <?= $meetingFeedbackScope === 'grade' ? 'selected' : '' ?>><?=h(t('admin.parent_requests.meeting_scope_grade', 'Klassenstufe'))?></option>
+      <option value="class" <?= $meetingFeedbackScope === 'class' ? 'selected' : '' ?>><?=h(t('admin.parent_requests.meeting_scope_class', 'Klasse'))?></option>
     </select>
     <?php if ($meetingFeedbackScope === 'grade'): ?>
-      <label class="muted" style="font-size:12px;">Klassenstufe</label>
+      <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.meeting_grade_label', 'Klassenstufe'))?></label>
       <select name="meeting_feedback_grade" class="input" onchange="this.form.submit();">
         <option value="">—</option>
         <?php foreach ($availableGrades as $g): ?>
@@ -412,7 +414,7 @@ render_admin_header($pageTitle);
       </select>
     <?php endif; ?>
     <?php if ($meetingFeedbackScope === 'class'): ?>
-      <label class="muted" style="font-size:12px;">Klasse</label>
+      <label class="muted" style="font-size:12px;"><?=h(t('admin.parent_requests.meeting_class_label', 'Klasse'))?></label>
       <select name="meeting_feedback_class" class="input" onchange="this.form.submit();">
         <option value="">—</option>
         <?php foreach ($classes as $c): ?>
@@ -424,20 +426,20 @@ render_admin_header($pageTitle);
   </form>
   <?php if ($meetingFeedbackId > 0): ?>
     <div style="margin-top:8px;">
-      <a class="btn secondary" href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => null]))?>">Filter zurücksetzen</a>
+      <a class="btn secondary" href="<?=h(admin_feedback_query_url(['meeting_feedback_id' => null]))?>"><?=h(t('admin.parent_requests.meeting_reset', 'Filter zurücksetzen'))?></a>
     </div>
   <?php endif; ?>
   <?php
     $meetingTotal = (int)($meetingStats['total'] ?? 0);
     $renderPie = function(string $key, string $title) use ($meetingStats, $meetingTotal) {
       $segments = [
-        1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
-        2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
-        3 => ['label' => 'Stimme eher zu', 'color' => '#558dfc'],
-        4 => ['label' => 'Stimme völlig zu', 'color' => '#16bc00'],
+        1 => ['label' => t('admin.parent_requests.meeting_option_1', 'Stimme nicht zu'), 'color' => '#d32f2f'],
+        2 => ['label' => t('admin.parent_requests.meeting_option_2', 'Stimme eher nicht zu'), 'color' => '#f57c00'],
+        3 => ['label' => t('admin.parent_requests.meeting_option_3', 'Stimme eher zu'), 'color' => '#558dfc'],
+        4 => ['label' => t('admin.parent_requests.meeting_option_4', 'Stimme völlig zu'), 'color' => '#16bc00'],
       ];
       if ($meetingTotal <= 0) {
-        echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+        echo '<div class="muted">' . h(t('admin.parent_requests.meeting_none', 'Noch keine Rückmeldungen vorhanden.')) . '</div>';
         return;
       }
       $offset = 0;
@@ -471,22 +473,22 @@ render_admin_header($pageTitle);
   ?>
   <?php
     echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
-    $renderPie('q1', '1. Das Gespräch war verständlich und informativ.');
-    $renderPie('q2', '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.');
-    $renderPie('q3', '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.');
+    $renderPie('q1', t('admin.parent_requests.meeting_q1', '1. Das Gespräch war verständlich und informativ.'));
+    $renderPie('q2', t('admin.parent_requests.meeting_q2', '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.'));
+    $renderPie('q3', t('admin.parent_requests.meeting_q3', '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.'));
     echo '</div>';
   ?>
   <?php if (!$meetingFeedbackTexts): ?>
-    <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+    <p class="muted"><?=h(t('admin.parent_requests.meeting_no_texts', 'Keine Freitext-Rückmeldungen vorhanden.'))?></p>
   <?php else: ?>
     <div class="responsive-table">
       <table>
         <thead>
           <tr>
-            <th>Schüler</th>
-            <th>Klasse</th>
-            <th>Nachricht</th>
-            <th>Datum</th>
+            <th><?=h(t('admin.parent_requests.meeting_table_student', 'Schüler'))?></th>
+            <th><?=h(t('admin.parent_requests.meeting_table_class', 'Klasse'))?></th>
+            <th><?=h(t('admin.parent_requests.meeting_table_message', 'Nachricht'))?></th>
+            <th><?=h(t('admin.parent_requests.meeting_table_date', 'Datum'))?></th>
           </tr>
         </thead>
         <tbody>
@@ -494,7 +496,7 @@ render_admin_header($pageTitle);
             <?php
               $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
               $studentName = $isAnonymous
-                ? 'Anonym'
+                ? t('admin.parent_requests.meeting_anonymous', 'Anonym')
                 : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
               $classLabel = parent_admin_class_display($row);
             ?>

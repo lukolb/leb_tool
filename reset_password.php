@@ -23,15 +23,15 @@ function load_token_user(string $rawToken): array {
   );
   $q->execute([$hash]);
   $row = $q->fetch();
-  if (!$row) throw new RuntimeException('Ungültiger oder abgelaufener Link.');
-  if ($row['used_at'] !== null) throw new RuntimeException('Dieser Link wurde bereits verwendet.');
-  if (strtotime((string)$row['expires_at']) < time()) throw new RuntimeException('Dieser Link ist abgelaufen.');
-  if ($row['deleted_at'] !== null || (int)$row['is_active'] !== 1) throw new RuntimeException('Konto ist deaktiviert oder gelöscht.');
+  if (!$row) throw new RuntimeException(t('auth.reset.invalid_or_expired'));
+  if ($row['used_at'] !== null) throw new RuntimeException(t('auth.reset.already_used'));
+  if (strtotime((string)$row['expires_at']) < time()) throw new RuntimeException(t('auth.reset.expired'));
+  if ($row['deleted_at'] !== null || (int)$row['is_active'] !== 1) throw new RuntimeException(t('auth.reset.account_inactive'));
   return $row;
 }
 
 if (!is_string($token) || strlen($token) < 20) {
-  $err = 'Ungültiger Link.';
+  $err = t('auth.reset.invalid_link');
 } else {
   try {
     $row = load_token_user($token);
@@ -45,12 +45,12 @@ if (!is_string($token) || strlen($token) < 20) {
       $p1 = (string)($_POST['password'] ?? '');
       $p2 = (string)($_POST['password2'] ?? '');
 
-      if (strlen($p1) < 10) throw new RuntimeException('Passwort muss mindestens 10 Zeichen haben.');
-      if ($p1 !== $p2) throw new RuntimeException('Passwörter stimmen nicht überein.');
+      if (strlen($p1) < 10) throw new RuntimeException(t('auth.reset.password_too_short'));
+      if ($p1 !== $p2) throw new RuntimeException(t('auth.reset.password_mismatch'));
 
       $cfg = app_config();
       $pepper = $cfg['app']['password_pepper'] ?? '';
-      if ($pepper === '') throw new RuntimeException('Konfiguration (password_pepper) fehlt.');
+      if ($pepper === '') throw new RuntimeException(t('auth.reset.pepper_missing'));
 
       $hash = password_hash($p1 . $pepper, PASSWORD_DEFAULT);
       $pdo = db();
@@ -70,7 +70,7 @@ if (!is_string($token) || strlen($token) < 20) {
       }
 
       audit('password_set', $userId);
-      $ok = 'Passwort wurde gesetzt. Du kannst dich jetzt anmelden.';
+      $ok = t('auth.reset.ok');
       $showForm = false;
     }
 
@@ -85,11 +85,11 @@ $org = $b['org_name'] ?? 'LEG Tool';
 $logo = $b['logo_path'] ?? '';
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?=h($org)?> – Passwort setzen</title>
+  <title><?=h($org)?> – <?=h(t('auth.reset.title'))?></title>
   <?php render_favicons(); ?>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
   <style>:root{--primary:<?=h($b['primary'] ?? '#0b57d0')?>;--secondary:<?=h($b['secondary'] ?? '#111111')?>;}</style>
@@ -100,38 +100,38 @@ $logo = $b['logo_path'] ?? '';
       <?php if ($logo): ?><img src="<?=h(url($logo))?>" alt="<?=h($org)?>"><?php endif; ?>
       <div>
         <div class="brand-title"><?=h($org)?></div>
-        <div class="brand-subtitle">Passwort setzen</div>
+        <div class="brand-subtitle"><?=h(t('auth.reset.brand_subtitle'))?></div>
       </div>
     </div>
   </div>
 
   <div class="container">
     <div class="card">
-      <h1>Passwort setzen</h1>
+      <h1><?=h(t('auth.reset.heading'))?></h1>
 
       <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
       <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
       <?php if ($showForm): ?>
         <p class="muted">
-          Konto: <strong><?=h($userEmail)?></strong>
+          <?=h(t('auth.reset.account_label'))?>: <strong><?=h($userEmail)?></strong>
         </p>
         <form method="post" autocomplete="off">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-          <label>Neues Passwort (min. 10 Zeichen)</label>
+          <label><?=h(t('auth.reset.password_label'))?></label>
           <input name="password" type="password" required>
 
-          <label>Passwort wiederholen</label>
+          <label><?=h(t('auth.reset.password_repeat_label'))?></label>
           <input name="password2" type="password" required>
 
           <div class="actions">
-            <button class="btn primary" type="submit">Speichern</button>
-            <a class="btn secondary" href="<?=h(url('login.php'))?>">Abbrechen</a>
+            <button class="btn primary" type="submit"><?=h(t('auth.reset.save'))?></button>
+            <a class="btn secondary" href="<?=h(url('login.php'))?>"><?=h(t('auth.reset.cancel'))?></a>
           </div>
         </form>
       <?php else: ?>
         <div class="actions">
-          <a class="btn primary" href="<?=h(url('login.php'))?>">Zum Login</a>
+          <a class="btn primary" href="<?=h(url('login.php'))?>"><?=h(t('auth.reset.to_login'))?></a>
         </div>
       <?php endif; ?>
     </div>

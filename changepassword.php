@@ -15,28 +15,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $p1 = (string)($_POST['p1'] ?? '');
     $p2 = (string)($_POST['p2'] ?? '');
-    if (mb_strlen($p1) < 10) throw new RuntimeException('Passwort muss mindestens 10 Zeichen haben.');
-    if ($p1 !== $p2) throw new RuntimeException('Passwörter stimmen nicht überein.');
+    if (mb_strlen($p1) < 10) throw new RuntimeException(t('auth.change.password_too_short'));
+    if ($p1 !== $p2) throw new RuntimeException(t('auth.change.password_mismatch'));
 
     $hash = password_hash($p1 . $pepper, PASSWORD_DEFAULT);
     $uid = (int)($_SESSION['user']['id'] ?? 0);
-    if ($uid <= 0) throw new RuntimeException('Ungültige Sitzung.');
+    if ($uid <= 0) throw new RuntimeException(t('auth.change.invalid_session'));
 
     $st = $pdo->prepare("UPDATE users SET password_hash=? WHERE id=? LIMIT 1");
     $st->execute([$hash, $uid]);
 
-    $ok = 'Passwort aktualisiert.';
+    $ok = t('auth.change.ok');
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
 }
 ?>
 <!doctype html>
-<html lang="de">
+<html lang="<?=h(ui_lang())?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Passwort ändern</title>
+  <title><?=h(t('auth.change.title'))?></title>
   <?php render_favicons(); ?>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:24px; max-width:520px;}
@@ -49,20 +49,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </style>
 </head>
 <body>
-  <h1>Passwort ändern</h1>
+  <h1><?=h(t('auth.change.heading'))?></h1>
 
   <?php if ($err): ?><div class="err"><?=h($err)?></div><?php endif; ?>
-  <?php if ($ok): ?><div class="ok"><?=h($ok)?> <a href="<?= h(url('admin/index.php')) ?>">Weiter</a></div><?php endif; ?>
+  <?php if ($ok): ?><div class="ok"><?=h($ok)?> <a href="<?= h(url('admin/index.php')) ?>"><?=h(t('auth.change.continue'))?></a></div><?php endif; ?>
 
   <div class="card">
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>">
-      <label>Neues Passwort (min. 10 Zeichen)</label>
+      <label><?=h(t('auth.change.password_label'))?></label>
       <input type="password" name="p1" required>
-      <label>Neues Passwort wiederholen</label>
+      <label><?=h(t('auth.change.password_repeat_label'))?></label>
       <input type="password" name="p2" required>
       <div style="margin-top:14px;">
-        <button type="submit">Speichern</button>
+        <button type="submit"><?=h(t('auth.change.save'))?></button>
       </div>
     </form>
   </div>
