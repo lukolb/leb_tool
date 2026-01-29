@@ -1053,6 +1053,12 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         }
       } catch (e) {}
 
+      try {
+        if (typeof form.updateFieldAppearances === 'function') {
+          form.updateFieldAppearances(fallbackFont || undefined);
+        }
+      } catch (e) {}
+
       const fields = form.getFields();
       for (const field of fields) {
         if (PDFLib?.PDFRadioGroup && field instanceof PDFLib.PDFRadioGroup) continue;
@@ -1074,11 +1080,6 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           try { field.defaultUpdateAppearances(font); } catch (e) {}
         }
       }
-      try {
-        if (typeof form.updateFieldAppearances === 'function') {
-          form.updateFieldAppearances();
-        }
-      } catch (e) {}
     }
 
     function renderPages(bytes){

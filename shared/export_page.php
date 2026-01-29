@@ -464,6 +464,12 @@ async function updateTextFieldAppearances(pdfDoc, form){
     }
   } catch (e) {}
 
+  try {
+    if (typeof form.updateFieldAppearances === 'function') {
+      form.updateFieldAppearances(fallbackFont || undefined);
+    }
+  } catch (e) {}
+
   const fields = form.getFields();
   for (const field of fields) {
     if (PDFLib?.PDFRadioGroup && field instanceof PDFLib.PDFRadioGroup) continue;
@@ -485,11 +491,6 @@ async function updateTextFieldAppearances(pdfDoc, form){
       try { field.defaultUpdateAppearances(font); } catch (e) {}
     }
   }
-  try {
-    if (typeof form.updateFieldAppearances === 'function') {
-      form.updateFieldAppearances();
-    }
-  } catch (e) {}
 }
 
 function isNonFatalBusinessError(msg){
