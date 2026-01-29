@@ -818,6 +818,7 @@ $parentJs = [
   'signature_active_stays' => t('teacher.parents.js.signature_active_stays'),
   'signature_pill_active' => t('teacher.parents.signature.active_saved'),
   'signature_pill_empty' => t('teacher.parents.signature.none_saved'),
+  'missing_label' => t('teacher.parents.js.missing_label'),
 ];
 render_teacher_header($pageTitle);
 $introText = $parentAutoApprove
@@ -967,7 +968,7 @@ $introText = $parentAutoApprove
                   </span>
                 <?php else: ?>
                   <?php if ($totalAcks === 0): ?>
-                    <span class="muted">–</span>
+                    <span class="muted"><?=h(t('teacher.parents.empty_dash'))?></span>
                   <?php endif; ?>
                 <?php endif; ?>
               </td>
@@ -1517,7 +1518,7 @@ $introText = $parentAutoApprove
         <details data-student="${escapeHtml(studentName)}" open>
           <summary style="cursor:pointer; padding:8px 10px; border:1px solid #eee; border-radius:10px; margin:8px 0; background:#fafafa;">
             <strong>${escapeHtml(studentName)}</strong>
-            <span class="muted"> – ${filteredFields.length} fehlend</span>
+            <span class="muted"> – ${filteredFields.length} ${(PARENTS_TX?.missing_label || 'missing')}</span>
           </summary>
           <div style="padding:4px 10px 10px 10px;">
             <ul style="margin:6px 0 0 18px; padding:0;">${items}</ul>
