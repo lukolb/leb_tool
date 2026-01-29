@@ -3319,7 +3319,7 @@ render_teacher_header($pageTitle);
           const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
 
           if (!res.valid) {
-            inp.setCustomValidity('Ungültiger Wert');
+            inp.setCustomValidity(tEntry('invalid_value'));
             inp.reportValidity();
             inp.value = teacherDisplay(f, inp.dataset.actual ?? '');
             return;
@@ -3514,7 +3514,7 @@ render_teacher_header($pageTitle);
           const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
 
           if (!res.valid) {
-            inp.setCustomValidity('Ungültiger Wert');
+            inp.setCustomValidity(tEntry('invalid_value'));
             inp.reportValidity();
             inp.value = childFieldDisplay(f, inp.dataset.actual ?? '');
             return;
