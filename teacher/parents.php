@@ -79,9 +79,17 @@ function build_parent_mail_html(string $template, array $student, string $link, 
 
 function build_feedback_reply_mailto(array $emails, string $studentName, string $message, string $createdAt): ?string {
   if (!$emails) return null;
-  $subject = 'Re: Eltern-Rückmeldung zum Lernentwicklungsbericht von ' . $studentName;
-  $replyText = trim($message) !== '' ? $message : '—';
-  $body = "Hallo,\n\n\n\n---\nIhre Rückmeldung vom {$createdAt}:\n" . $replyText;
+  $subject = str_replace(
+    '{student}',
+    $studentName,
+    t('teacher.parents.reply_subject', 'Re: Eltern-Rückmeldung zum Lernentwicklungsbericht von {student}')
+  );
+  $replyText = trim($message) !== '' ? $message : t('teacher.parents.reply_body_empty', '—');
+  $body = str_replace(
+    ['{created_at}', '{message}'],
+    [$createdAt, $replyText],
+    t('teacher.parents.reply_body', "Hallo,\n\n\n\n---\nIhre Rückmeldung vom {created_at}:\n{message}")
+  );
   $recipients = implode(',', $emails);
   $query = 'subject=' . rawurlencode($subject) . '&body=' . rawurlencode($body);
   return 'mailto:' . $recipients . '?' . $query;
@@ -118,10 +126,10 @@ function meeting_feedback_stats(PDO $pdo, string $whereSql, array $params): arra
 
 function meeting_feedback_option_labels(): array {
   return [
-    4 => 'Stimme völlig zu / Strongly agree',
-    3 => 'Stimme eher zu / Agree',
-    2 => 'Stimme eher nicht zu / Disagree',
-    1 => 'Stimme nicht zu / Strongly disagree',
+    4 => t('teacher.parents.meeting.option.4', 'Stimme völlig zu / Strongly agree'),
+    3 => t('teacher.parents.meeting.option.3', 'Stimme eher zu / Agree'),
+    2 => t('teacher.parents.meeting.option.2', 'Stimme eher nicht zu / Disagree'),
+    1 => t('teacher.parents.meeting.option.1', 'Stimme nicht zu / Strongly disagree'),
   ];
 }
 
@@ -140,17 +148,17 @@ function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): arra
 function render_meeting_feedback_pies(array $stats, array $questions): void {
   $total = (int)($stats['total'] ?? 0);
   $segments = [
-    1 => ['label' => 'Stimme nicht zu', 'color' => '#d32f2f'],
-    2 => ['label' => 'Stimme eher nicht zu', 'color' => '#f57c00'],
-    3 => ['label' => 'Stimme eher zu', 'color' => '#558dfc'],
-    4 => ['label' => 'Stimme völlig zu', 'color' => '#16bc00'],
+    1 => ['label' => t('teacher.parents.meeting.segment.1', 'Stimme nicht zu'), 'color' => '#d32f2f'],
+    2 => ['label' => t('teacher.parents.meeting.segment.2', 'Stimme eher nicht zu'), 'color' => '#f57c00'],
+    3 => ['label' => t('teacher.parents.meeting.segment.3', 'Stimme eher zu'), 'color' => '#558dfc'],
+    4 => ['label' => t('teacher.parents.meeting.segment.4', 'Stimme völlig zu'), 'color' => '#16bc00'],
   ];
   echo '<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:12px;">';
   foreach ($questions as $key => $title) {
     if ($total <= 0) {
       echo '<div style="flex:1; min-width:220px; padding:12px; border:1px solid var(--border); border-radius:8px; background:#fff;">';
       echo '<div style="font-weight:600; margin-bottom:10px;">' . h($title) . '</div>';
-      echo '<div class="muted">Noch keine Rückmeldungen vorhanden.</div>';
+      echo '<div class="muted">' . h(t('teacher.parents.meeting.none', 'Noch keine Rückmeldungen vorhanden.')) . '</div>';
       echo '</div>';
       continue;
     }
@@ -253,8 +261,8 @@ $mailForm = [
   'mode' => 'class',
   'class_id' => $classId > 0 ? $classId : 0,
   'student_id' => 0,
-  'subject' => 'Lernentwicklungsbericht für {{student_name}} - Student Progress Report for {{student_name}}',
-  'body' => "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist gültig bis {{link_expires_de}}. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid until {{link_expires_us}}. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n",
+  'subject' => t('teacher.parents.mail_subject_default', 'Lernentwicklungsbericht für {{student_name}} - Student Progress Report for {{student_name}}'),
+  'body' => t('teacher.parents.mail_body_default', "Liebe Eltern,\n\nüber den folgenden Link können Sie auf den Lernebtwicklungsbericht für {{student_name}} zugreifen:\n\n{{parent_link}}\n\nDer Link ist gültig bis {{link_expires_de}}. Bei Rückfragen melden Sie sich gerne.\n\nViele Grüße,\n\n\n\nDear Parents,\n\nYou can access the Student Progress Report for {{student_name}} via the following link:\n\n{{parent_link}}\n\nThe link is valid until {{link_expires_us}}. If you have any questions, please feel free to contact us.\n\nKind regards,\n\n"),
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -265,11 +273,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_signature') {
       if (!$signatureConfigured) {
-        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+        throw new RuntimeException(t('teacher.parents.signature.not_configured', 'Signatur-Funktion ist nicht konfiguriert.'));
       }
       $signaturePayload = read_signature_payload_from_post();
       if (!$signaturePayload) {
-        throw new RuntimeException('Signaturdaten fehlen.');
+        throw new RuntimeException(t('teacher.parents.signature.missing', 'Signaturdaten fehlen.'));
       }
       signature_store_payload($pdo, $userId, $signaturePurpose, $signaturePayload);
       if (is_ajax_request()) {
@@ -277,11 +285,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['ok' => true]);
         exit;
       }
-      $alerts[] = 'Grafische Signatur gespeichert.';
+      $alerts[] = t('teacher.parents.signature.saved', 'Grafische Signatur gespeichert.');
     }
     if ($action === 'load_signature') {
       if (!$signatureConfigured) {
-        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+        throw new RuntimeException(t('teacher.parents.signature.not_configured', 'Signatur-Funktion ist nicht konfiguriert.'));
       }
       $payload = signature_get_active_payload($pdo, $userId, $signaturePurpose);
       header('Content-Type: application/json');
@@ -295,16 +303,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $signaturePayload = read_signature_payload_from_post();
       if ($signaturePayload) {
         signature_store_payload($pdo, $userId, $signaturePurpose, $signaturePayload);
-        $alerts[] = 'Grafische Signatur gespeichert.';
+        $alerts[] = t('teacher.parents.signature.saved', 'Grafische Signatur gespeichert.');
       }
     }
 
     if ($action === 'delete_signature') {
       if (!$signatureConfigured) {
-        throw new RuntimeException('Signatur-Funktion ist nicht konfiguriert.');
+        throw new RuntimeException(t('teacher.parents.signature.not_configured', 'Signatur-Funktion ist nicht konfiguriert.'));
       }
       signature_deactivate($pdo, $userId, $signaturePurpose);
-      $alerts[] = 'Grafische Signatur wurde gelöscht.';
+      $alerts[] = t('teacher.parents.signature.deleted', 'Grafische Signatur wurde gelöscht.');
     } elseif ($action === 'save_signature') {
       // handled above
     } elseif ($action === 'send_parent_email') {
@@ -319,23 +327,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $subjectTemplate = trim((string)$mailForm['subject']);
       $bodyTemplate = trim((string)$mailForm['body']);
       if ($subjectTemplate === '' || $bodyTemplate === '') {
-        throw new RuntimeException('Betreff und Nachricht sind erforderlich.');
+        throw new RuntimeException(t('teacher.parents.mail.required', 'Betreff und Nachricht sind erforderlich.'));
       }
 
       $studentsToSend = [];
       if ($sendMode === 'single') {
         $studentId = $mailForm['student_id'];
-        if ($studentId <= 0) throw new RuntimeException('Schüler fehlt.');
+        if ($studentId <= 0) throw new RuntimeException(t('teacher.parents.error.student_missing', 'Schüler fehlt.'));
         $stStudent = $pdo->prepare(
           "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
           "FROM students WHERE id=? LIMIT 1"
         );
         $stStudent->execute([$studentId]);
         $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
-        if (!$studentRow) throw new RuntimeException('Schüler nicht gefunden.');
+        if (!$studentRow) throw new RuntimeException(t('teacher.parents.error.student_not_found', 'Schüler nicht gefunden.'));
         $studentClassId = (int)($studentRow['class_id'] ?? 0);
         if ($role !== 'admin' && !in_array($studentClassId, $accessibleClassIds, true)) {
-          throw new RuntimeException('Keine Berechtigung.');
+          throw new RuntimeException(t('teacher.parents.error.no_access', 'Keine Berechtigung.'));
         }
         $studentsToSend = [$studentRow];
       } else {
@@ -345,14 +353,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $classIds = $accessibleClassIds;
         } else {
           $cid = (int)$targetClassId;
-          if ($cid <= 0) throw new RuntimeException('Klasse fehlt.');
+          if ($cid <= 0) throw new RuntimeException(t('teacher.parents.error.class_missing', 'Klasse fehlt.'));
           if ($role !== 'admin' && !in_array($cid, $accessibleClassIds, true)) {
-            throw new RuntimeException('Keine Berechtigung.');
+            throw new RuntimeException(t('teacher.parents.error.no_access', 'Keine Berechtigung.'));
           }
           $classIds = [$cid];
         }
 
-        if (!$classIds) throw new RuntimeException('Keine Klassen verfügbar.');
+        if (!$classIds) throw new RuntimeException(t('teacher.parents.error.classes_missing', 'Keine Klassen verfügbar.'));
         $in = implode(',', array_fill(0, count($classIds), '?'));
         $stStudents = $pdo->prepare(
           "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
@@ -363,7 +371,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $studentsToSend = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
       }
 
-      if (!$studentsToSend) throw new RuntimeException('Keine Schüler gefunden.');
+      if (!$studentsToSend) throw new RuntimeException(t('teacher.parents.error.no_students', 'Keine Schüler gefunden.'));
 
       $linkStmt = $pdo->prepare(
         "SELECT token, expires_at\n" .
@@ -434,19 +442,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
       }
 
-      $alertMsg = 'Serienmail versendet: ' . $sent . ' E-Mails. Ohne Link: ' . $skippedNoLink . ', ohne E-Mail: ' . $skippedNoEmail . '.';
+      $alertMsg = str_replace(
+        ['{sent}', '{skipped_link}', '{skipped_email}'],
+        [(string)$sent, (string)$skippedNoLink, (string)$skippedNoEmail],
+        t('teacher.parents.mail.sent_summary', 'Serienmail versendet: {sent} E-Mails. Ohne Link: {skipped_link}, ohne E-Mail: {skipped_email}.')
+      );
       $missingNames = array_values(array_filter(array_unique(array_merge($skippedNoLinkNames, $skippedNoEmailNames, $failedStudentNames))));
       if ($missingNames) {
-        $alertMsg .= ' Keine Mail an: ' . implode(', ', $missingNames) . '.';
+        $alertMsg .= ' ' . str_replace(
+          '{names}',
+          implode(', ', $missingNames),
+          t('teacher.parents.mail.missing_names', 'Keine Mail an: {names}.')
+        );
       }
       $alerts[] = $alertMsg;
       if ($failed > 0) {
-        $errors[] = $failed . ' E-Mails konnten nicht versendet werden.';
+        $errors[] = str_replace(
+          '{count}',
+          (string)$failed,
+          t('teacher.parents.mail.failed', '{count} E-Mails konnten nicht versendet werden.')
+        );
       }
     } elseif ($action === 'request_all') {
       $targetClassId = (int)($_POST['class_id'] ?? 0);
-      if ($targetClassId <= 0) throw new RuntimeException('Klasse fehlt.');
-      if ($role !== 'admin' && !user_can_access_class($pdo, $userId, $targetClassId)) throw new RuntimeException('Keine Berechtigung.');
+      if ($targetClassId <= 0) throw new RuntimeException(t('teacher.parents.error.class_missing', 'Klasse fehlt.'));
+      if ($role !== 'admin' && !user_can_access_class($pdo, $userId, $targetClassId)) throw new RuntimeException(t('teacher.parents.error.no_access', 'Keine Berechtigung.'));
 
       $days = (int)($_POST['valid_days'] ?? 14);
       if ($days < 1) $days = 1;
@@ -500,30 +520,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         $created++;
       }
-      $prefix = $parentAutoApprove ? 'Sammelfreischaltung' : 'Sammelanfrage';
-      $alerts[] = $prefix . ' erstellt: ' . $created . ' neu, ' . $skippedActive . ' bereits aktiv, ' . $skippedReport . ' ohne Bericht.';
+      $prefix = $parentAutoApprove
+        ? t('teacher.parents.bulk_auto_approve', 'Sammelfreischaltung')
+        : t('teacher.parents.bulk_request_prefix', 'Sammelanfrage');
+      $alerts[] = str_replace(
+        ['{prefix}', '{created}', '{skipped_active}', '{skipped_report}'],
+        [$prefix, (string)$created, (string)$skippedActive, (string)$skippedReport],
+        t('teacher.parents.bulk_result', '{prefix} erstellt: {created} neu, {skipped_active} bereits aktiv, {skipped_report} ohne Bericht.')
+      );
     } else {
       $studentId = (int)($_POST['student_id'] ?? 0);
 
       if ($studentId <= 0) {
-        throw new RuntimeException('Schüler fehlt.');
+        throw new RuntimeException(t('teacher.parents.error.student_missing', 'Schüler fehlt.'));
       }
 
       $stStudent = $pdo->prepare("SELECT id, class_id, first_name, last_name FROM students WHERE id=? LIMIT 1");
       $stStudent->execute([$studentId]);
       $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
       if (!$studentRow) {
-        throw new RuntimeException('Schüler nicht gefunden.');
+        throw new RuntimeException(t('teacher.parents.error.student_not_found', 'Schüler nicht gefunden.'));
       }
 
       $studentClassId = (int)($studentRow['class_id'] ?? 0);
       if ($role !== 'admin' && ($studentClassId <= 0 || !user_can_access_class($pdo, $userId, $studentClassId))) {
-        throw new RuntimeException('Keine Berechtigung.');
+        throw new RuntimeException(t('teacher.parents.error.no_access', 'Keine Berechtigung.'));
       }
 
       if ($action === 'request_link') {
         $report = latest_report_for_student($pdo, $studentId);
-        if (!$report) throw new RuntimeException('Es gibt noch keinen Berichtseintrag für diese Person.');
+        if (!$report) throw new RuntimeException(t('teacher.parents.error.no_report', 'Es gibt noch keinen Berichtseintrag für diese Person.'));
 
         $days = (int)($_POST['valid_days'] ?? 14);
         if ($days < 1) $days = 1;
@@ -551,13 +577,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $approvedAt,
         ]);
         $alerts[] = $parentAutoApprove
-          ? 'Elternmodus wurde freigeschaltet.'
-          : 'Elternmodus angefragt. Admin-Bestätigung erforderlich.';
+          ? t('teacher.parents.request.approved', 'Elternmodus wurde freigeschaltet.')
+          : t('teacher.parents.request.pending', 'Elternmodus angefragt. Admin-Bestätigung erforderlich.');
       }
 
       if ($action === 'extend_link') {
         $linkId = (int)($_POST['link_id'] ?? 0);
-        if ($linkId <= 0) throw new RuntimeException('Link fehlt.');
+        if ($linkId <= 0) throw new RuntimeException(t('teacher.parents.error.link_missing', 'Link fehlt.'));
         $days = (int)($_POST['extend_days'] ?? 7);
         if ($days < 1) $days = 1;
         if ($days > 120) $days = 120;
@@ -570,10 +596,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
         $stLink->execute([$linkId, $studentId]);
         $linkRow = $stLink->fetch(PDO::FETCH_ASSOC);
-        if (!$linkRow) throw new RuntimeException('Freigabe nicht gefunden.');
+        if (!$linkRow) throw new RuntimeException(t('teacher.parents.error.link_not_found', 'Freigabe nicht gefunden.'));
         $linkStatus = (string)($linkRow['status'] ?? '');
         if (!in_array($linkStatus, ['approved', 'expired'], true)) {
-          throw new RuntimeException('Freigabe kann nicht verlängert werden.');
+          throw new RuntimeException(t('teacher.parents.error.link_extend_forbidden', 'Freigabe kann nicht verlängert werden.'));
         }
 
         $base = $linkRow['expires_at'] ?? null;
@@ -582,7 +608,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $nextStatus = $linkStatus === 'expired' ? 'approved' : $linkStatus;
         $upd = $pdo->prepare("UPDATE parent_portal_links SET status=?, expires_at=?, updated_at=NOW() WHERE id=?");
         $upd->execute([$nextStatus, $newExpiry, $linkId]);
-        $alerts[] = 'Gültigkeit wurde verlängert.';
+        $alerts[] = t('teacher.parents.link_extended', 'Gültigkeit wurde verlängert.');
       }
 
     }
@@ -592,7 +618,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($linkId > 0) {
         $upd = $pdo->prepare("UPDATE parent_portal_links SET status='revoked', updated_at=NOW() WHERE id=? LIMIT 1");
         $upd->execute([$linkId]);
-        $alerts[] = 'Elternzugriff wurde beendet.';
+        $alerts[] = t('teacher.parents.link_revoked', 'Elternzugriff wurde beendet.');
       }
     }
 
@@ -607,7 +633,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           "WHERE pf.id=? AND s.class_id=?"
         );
         $upd->execute([$userId, $feedbackId, $studentClassId]);
-        $alerts[] = 'Feedback wurde als geprüft markiert.';
+        $alerts[] = t('teacher.parents.feedback_reviewed', 'Feedback wurde als geprüft markiert.');
       }
     }
 
