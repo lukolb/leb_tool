@@ -39,6 +39,21 @@ function normalize_role(string $s): string {
   return in_array($s, ['admin','teacher'], true) ? $s : 'teacher';
 }
 
+function detect_csv_delimiter(string $sample): string {
+  $delimiters = [',', ';', "\t", '|'];
+  $best = ',';
+  $max = 0;
+  foreach ($delimiters as $delim) {
+    $fields = str_getcsv($sample, $delim);
+    $count = count($fields);
+    if ($count > $max) {
+      $max = $count;
+      $best = $delim;
+    }
+  }
+  return $best;
+}
+
 function create_user(PDO $pdo, string $email, string $name, string $role, bool $sendInvite = true): int {
   // users can be created without password, they set it via email token
   $pdo->prepare("INSERT INTO users (email, display_name, role, is_active) VALUES (?, ?, ?, 1)")
@@ -137,11 +152,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $fh = fopen($tmp, 'r');
       if (!$fh) throw new RuntimeException(t('admin.users.error.csv_unreadable'));
 
+      $sample = '';
+      while (!feof($fh)) {
+        $sample = (string)fgets($fh);
+        if (trim($sample) !== '') break;
+      }
+      $delimiter = detect_csv_delimiter($sample);
+      rewind($fh);
+
       $header = fgetcsv($fh);
       if (!$header) throw new RuntimeException(t('admin.users.error.csv_empty'));
 
       $map = [];
       foreach ($header as $i => $col) {
+        $col = preg_replace('/^\xEF\xBB\xBF/', '', (string)$col);
         $map[strtolower(trim((string)$col))] = $i;
       }
 
@@ -154,8 +178,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $created = 0;
       $skipped = 0;
       $errors = [];
+      $skippedDetails = [];
 
-      while (($row = fgetcsv($fh)) !== false) {
+      while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
         $email = normalize_email((string)($row[$map['email']] ?? ''));
         $name  = normalize_name((string)($row[$map['name']] ?? ''));
         $role  = normalize_role((string)($row[$map['role']] ?? 'teacher'));
@@ -167,7 +192,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $q = $pdo->prepare("SELECT id FROM users WHERE email=? AND deleted_at IS NULL LIMIT 1");
         $q->execute([$email]);
-        if ($q->fetch()) { $skipped++; continue; }
+        if ($q->fetch()) {
+          $skipped++;
+          $skippedDetails[] = "{$email}: " . t('admin.users.skip_duplicate', 'existiert bereits.');
+          continue;
+        }
 
         try {
           create_user($pdo, $email, $name, $role, true);
@@ -179,7 +208,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       fclose($fh);
 
       audit('admin_user_bulk_import', $currentId, ['created'=>$created,'skipped'=>$skipped,'errors'=>count($errors)]);
-      $_SESSION['bulk_import_result'] = ['created'=>$created,'skipped'=>$skipped,'errors'=>$errors];
+      $_SESSION['bulk_import_result'] = [
+        'created'=>$created,
+        'skipped'=>$skipped,
+        'errors'=>$errors,
+        'skipped_details'=>$skippedDetails
+      ];
       redirect('admin/users.php');
     }
 
@@ -217,10 +251,8 @@ render_admin_header(t('admin.users.title'));
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
-
-<div class="card">
-  <?php if ($bulk): ?>
-    <div class="alert">
+<?php if ($bulk): ?>
+    <div class="alert <?=h($bulk['created'] > 0 ? 'success' : 'danger')?>">
       <?=h(str_replace(['{created}', '{skipped}'], [ (string)$bulk['created'], (string)$bulk['skipped'] ], t('admin.users.bulk.summary')))?>
       <?php if (!empty($bulk['errors'])): ?>
         <details style="margin-top:8px;">
@@ -230,9 +262,20 @@ render_admin_header(t('admin.users.title'));
           </ul>
         </details>
       <?php endif; ?>
+      <?php if (!empty($bulk['skipped_details'])): ?>
+        <details style="margin-top:8px;">
+          <summary><?=h(strtr(t('admin.users.skipped_details', 'Übersprungene Einträge anzeigen ({count})'), [
+            '{count}' => (string)count($bulk['skipped_details'])
+          ]))?></summary>
+          <ul>
+            <?php foreach ($bulk['skipped_details'] as $detail): ?><li><?=h((string)$detail)?></li><?php endforeach; ?>
+          </ul>
+        </details>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 
+<div class="card">
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
       <h2 style="margin-top:0;"><?=h(t('admin.users.create_heading'))?></h2>

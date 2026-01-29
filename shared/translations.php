@@ -797,6 +797,8 @@ function translations_catalog(): array {
       'admin.template_fields.page_next' => 'Nächste Seite',
       'admin.template_fields.page_label' => 'Seite',
       'admin.template_fields.page_tip' => 'Tipp: Klick ins PDF → Feld finden',
+      'admin.users.skip_duplicate' => 'existiert bereits.',
+      'admin.users.skipped_details' => 'Übersprungene Einträge anzeigen ({count})',
 
       // Parent portal
       'parent.portal.title' => 'Elternmodus – Vorschau',
@@ -2701,6 +2703,8 @@ function translations_catalog(): array {
       'admin.template_fields.page_next' => 'Next page',
       'admin.template_fields.page_label' => 'Page',
       'admin.template_fields.page_tip' => 'Tip: click in the PDF → find field',
+      'admin.users.skip_duplicate' => 'already exists.',
+      'admin.users.skipped_details' => 'Show skipped entries ({count})',
 
       // Parent portal
       'parent.portal.title' => 'Parent mode – preview',
