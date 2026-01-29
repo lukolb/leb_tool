@@ -374,12 +374,15 @@ if ($finalmarksFormSchoolYear === '') {
 }
 
 if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['finalmarks_action'])) {
-  $action = (string)$_POST['finalmarks_action'];
-  $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
+  if ($delegatedMode) {
+    $finalmarksErrors[] = 'Delegierte dürfen keine Endnoten aus XSchool importieren.';
+  } else {
+    $action = (string)$_POST['finalmarks_action'];
+    $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
 
-  if ($classId <= 0) {
-    $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
-  } elseif ($action === 'preview') {
+    if ($classId <= 0) {
+      $finalmarksErrors[] = 'Bitte zuerst eine Klasse auswählen.';
+    } elseif ($action === 'preview') {
     $blocksJson = (string)($_POST['finalmarks_blocks'] ?? '');
     $blocks = $blocksJson !== '' ? json_decode($blocksJson, true) : [];
     if (!is_array($blocks) || !$blocks) {
@@ -835,6 +838,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         // Token invalidieren
       }
     }
+    }
   }
 }
 
@@ -904,7 +908,7 @@ render_teacher_header($pageTitle);
   </div>
 </div>
 
-<?php if ($isTeacherRole && !$childMode): ?>
+<?php if ($isTeacherRole && !$childMode && !$delegatedMode): ?>
   <div class="card">
     <h2 style="margin-top:0;">Endnoten aus XSchool für diese Klasse importieren</h2>
     <?php if ($classId <= 0): ?>
