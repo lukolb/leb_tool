@@ -374,7 +374,7 @@ render_admin_header('Admin – Settings');
         <label>Primary Color</label>
         <div class="grid" style="grid-template-columns:140px 1fr;">
           <div>
-            <input id="primaryPicker" type="color" value="<?=h((string)$primary)?>" aria-label="Primary Color Picker" style="height:42px; padding:0; border-radius:12px;">
+            <input id="primaryPicker" type="color" value="<?=h((string)$primary)?>" aria-label="<?=h(t('admin.settings.primary_color_picker'))?>" style="height:42px; padding:0; border-radius:12px;">
           </div>
           <div>
             <input id="primaryHex" name="brand_primary" value="<?=h((string)$primary)?>" required placeholder="#0b57d0">
@@ -387,7 +387,7 @@ render_admin_header('Admin – Settings');
         <label>Secondary Color</label>
         <div class="grid" style="grid-template-columns:140px 1fr;">
           <div>
-            <input id="secondaryPicker" type="color" value="<?=h((string)$secondary)?>" aria-label="Secondary Color Picker" style="height:42px; padding:0; border-radius:12px;">
+            <input id="secondaryPicker" type="color" value="<?=h((string)$secondary)?>" aria-label="<?=h(t('admin.settings.secondary_color_picker'))?>" style="height:42px; padding:0; border-radius:12px;">
           </div>
           <div>
             <input id="secondaryHex" name="brand_secondary" value="<?=h((string)$secondary)?>" required placeholder="#111111">
