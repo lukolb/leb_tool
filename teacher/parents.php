@@ -803,10 +803,26 @@ $missingTx = [
   'summary' => t('teacher.parents.missing_summary', 'Insgesamt {total} fehlende Einträge bei {students} Schüler(n).'),
   'check_failed' => t('teacher.parents.missing_check_failed', 'Prüfung fehlgeschlagen. Trotzdem fortfahren?'),
 ];
+$parentJs = [
+  'request_failed' => t('teacher.parents.js.request_failed'),
+  'required_suffix' => t('teacher.parents.js.required_suffix'),
+  'more_items' => t('teacher.parents.js.more_items'),
+  'missing_no_matches' => t('teacher.parents.js.no_matches'),
+  'signature_deleted' => t('teacher.parents.js.signature_deleted'),
+  'signature_prompt' => t('teacher.parents.js.signature_prompt'),
+  'signature_not_ready' => t('teacher.parents.js.signature_not_ready'),
+  'signature_save_failed' => t('teacher.parents.js.signature_save_failed'),
+  'signature_save_failed_generic' => t('teacher.parents.js.signature_save_failed_generic'),
+  'signature_saved' => t('teacher.parents.js.signature_saved'),
+  'signature_active_keep' => t('teacher.parents.js.signature_active_keep'),
+  'signature_active_stays' => t('teacher.parents.js.signature_active_stays'),
+  'signature_pill_active' => t('teacher.parents.signature.active_saved'),
+  'signature_pill_empty' => t('teacher.parents.signature.none_saved'),
+];
 render_teacher_header($pageTitle);
 $introText = $parentAutoApprove
-  ? 'Elternmodus wird automatisch freigeschaltet und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.'
-  : 'Elternmodus wird von dir angefragt, von der Admin bestätigt und ist zeitlich begrenzt. Eltern sehen den ausgefüllten Bericht als nicht herunterladbare PDF-Vorschau und können moderierte Rückfragen oder eine Lesebestätigung senden.';
+  ? t('teacher.parents.intro.auto_approve')
+  : t('teacher.parents.intro.manual');
 ?>
 <div class="card">
   <h1><?=h($pageTitle)?></h1>
@@ -823,7 +839,7 @@ $introText = $parentAutoApprove
 <?php endif; ?>
 
 <div class="card" style="margin-bottom:14px;">
-  <h2><?=h(t('teacher.parents.class_label', 'Klasse'))?></h2>
+  <h2><?=h(t('teacher.parents.class_label'))?></h2>
   <form method="get" class="row">
     <div>
       <select name="class_id" class="input" onchange="this.closest('form').submit();">
@@ -839,35 +855,35 @@ $introText = $parentAutoApprove
 
 <?php if ($signatureEnabled): ?>
   <div class="card" style="margin-bottom:14px;">
-    <h2>Grafische Lehrkraft-Unterschrift</h2>
+    <h2><?=h(t('teacher.parents.signature.title'))?></h2>
     <?php if (!$signatureConfigured): ?>
-      <div class="alert warn">Die Signatur-Funktion ist nicht konfiguriert. Bitte SIGNATURE_MASTER_KEY setzen.</div>
+      <div class="alert warn"><?=h(t('teacher.parents.signature.not_configured_hint'))?></div>
     <?php else: ?>
       <p class="muted" style="max-width:760px;">
-        Optional kann eine handschriftliche Unterschrift im Eltern-PDF angezeigt werden. Die Signatur wird als Vektordaten gespeichert und beim nächsten Export verwendet.
+        <?=h(t('teacher.parents.signature.description'))?>
       </p>
       <label style="display:flex; gap:8px; align-items:center;">
         <input type="checkbox" id="signatureToggle" <?= $signatureActive ? 'checked' : '' ?>>
-        <span>Grafische Unterschrift hinzufügen</span>
+        <span><?=h(t('teacher.parents.signature.toggle'))?></span>
       </label>
       <div id="signaturePadWrap" style="<?= $signatureActive ? '' : 'display:none;' ?>">
         <div class="signature-pad">
-          <canvas id="signatureCanvas" aria-label="Unterschrift"></canvas>
+          <canvas id="signatureCanvas" aria-label="<?=h(t('teacher.parents.signature.canvas_aria'))?>"></canvas>
         </div>
         <div class="row" style="gap:8px; margin-top:8px; align-items:center;">
-          <button class="btn secondary" type="button" id="signatureClearBtn">Löschen</button>
-          <button class="btn primary" type="button" id="signatureApplyBtn">Übernehmen</button>
+          <button class="btn secondary" type="button" id="signatureClearBtn"><?=h(t('teacher.parents.signature.clear'))?></button>
+          <button class="btn primary" type="button" id="signatureApplyBtn"><?=h(t('teacher.parents.signature.apply'))?></button>
           <span id="signatureStatus" class="muted" style="font-size:12px;"></span>
         </div>
       </div>
       <div class="row" style="gap:8px; align-items:center; margin-top:8px;">
         <span id="signatureSavedPill" class="pill <?= $signatureActive ? 'green' : '' ?>" style="<?= $signatureActive ? '' : 'background:#f1f3f5;' ?>">
-          <?= $signatureActive ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert' ?>
+          <?= $signatureActive ? h(t('teacher.parents.signature.active_saved')) : h(t('teacher.parents.signature.none_saved')) ?>
         </span>
         <form method="post" style="margin:0;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
           <input type="hidden" name="action" value="delete_signature">
-          <button class="btn danger" type="submit" onclick="return confirm('Grafische Signatur wirklich löschen?');">Signatur löschen</button>
+          <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.signature.delete_confirm'))?>');"><?=h(t('teacher.parents.signature.delete'))?></button>
         </form>
       </div>
     <?php endif; ?>
@@ -876,7 +892,7 @@ $introText = $parentAutoApprove
 
 <?php if ($classId > 0 && $students): ?>
 <div class="card" style="margin-bottom:14px;">
-    <h2>Klassen-Freischaltung</h2>
+    <h2><?=h(t('teacher.parents.bulk_title'))?></h2>
   <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="request_all">
@@ -886,31 +902,31 @@ $introText = $parentAutoApprove
       <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
     <?php endif; ?>
     <div>
-      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days', 'Freischalten für'))?></label>
+      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.bulk_days'))?></label>
     </div>
     <div>
-      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
-      <button class="btn primary" type="submit"><?=h(t('teacher.parents.bulk_request', 'Alle Zugänge dieser Klasse anfragen'))?></button>
+      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;"><?=h(t('teacher.parents.days'))?></span>
+      <button class="btn primary" type="submit"><?=h(t('teacher.parents.bulk_request'))?></button>
     </div>
   </form>
 </div>
 <?php endif; ?>
 
 <details class="card" open id="teacherParentsApprovals" data-storage-key="teacherParentsApprovals">
-  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.table_title', 'Freigaben'))?></summary>
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.table_title'))?></summary>
   <div style="margin-top:12px;">
     <?php if (!$students): ?>
-      <p class="muted"><?=h(t('teacher.parents.no_students', 'Keine Schülerdaten gefunden.'))?></p>
+      <p class="muted"><?=h(t('teacher.parents.no_students'))?></p>
     <?php else: ?>
       <div class="responsive-table">
         <table>
           <thead>
             <tr>
-              <th><?=h(t('teacher.parents.student', 'Schüler'))?></th>
-              <th><?=h(t('teacher.parents.status', 'Status'))?></th>
-              <th><?=h(t('teacher.parents.expires', 'Gültig bis'))?></th>
-              <th><?=h(t('teacher.parents.feedback', 'Feedback'))?></th>
-              <th><?=h(t('teacher.parents.actions', 'Aktionen'))?></th>
+              <th><?=h(t('teacher.parents.student'))?></th>
+              <th><?=h(t('teacher.parents.status'))?></th>
+              <th><?=h(t('teacher.parents.expires'))?></th>
+              <th><?=h(t('teacher.parents.feedback'))?></th>
+              <th><?=h(t('teacher.parents.actions'))?></th>
             </tr>
           </thead>
           <tbody>
@@ -919,10 +935,10 @@ $introText = $parentAutoApprove
             $link = $linkId > 0 ? ($linkMap[$linkId] ?? null) : null;
             $status = $link['status'] ?? '-';
             $statusLabel = $status;
-            if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested', 'Angefragt');
-            if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved', 'Freigeschaltet');
-            if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked', 'Beendet');
-            if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired', 'Abgelaufen');
+            if ($status === 'requested') $statusLabel = t('teacher.parents.status.requested');
+            if ($status === 'approved') $statusLabel = t('teacher.parents.status.approved');
+            if ($status === 'revoked') $statusLabel = t('teacher.parents.status.revoked');
+            if ($status === 'expired') $statusLabel = t('teacher.parents.status.expired');
               $statusColor = $status;
               if ($status === 'requested') $statusColor = 'blue';
               if ($status === 'approved') $statusColor = 'green';
@@ -942,12 +958,12 @@ $introText = $parentAutoApprove
               <td>
                 <?php if ($totalAcks > 0): ?>
                   <span class="pill" style="background:#e6f4ea; border:1px solid var(--border);"<?= render_local_datetime_title_attr($ackLatest, 'd.m.Y H:i') ?>>
-                    <?=h(t('teacher.parents.feedback.ack', 'Lesebestätigung'))?>
+                    <?=h(t('teacher.parents.feedback.ack'))?>
                   </span>
                 <?php endif; ?>
                 <?php if ($totalQuestions > 0): ?>
                   <span class="pill" style="background:<?= $pending>0 ? '#fff3cd' : '#e6f4ea' ?>; border:1px solid var(--border);">
-                    <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending', 'offen/gesamt'))?>
+                    <?=h($pending . ' / ' . $totalQuestions)?> <?=h(t('teacher.parents.feedback.pending'))?>
                   </span>
                 <?php else: ?>
                   <?php if ($totalAcks === 0): ?>
@@ -959,25 +975,25 @@ $introText = $parentAutoApprove
                 <?php if ($status === 'approved' && $shareUrl): ?>
                   <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                     <input type="text" readonly value="<?=h($shareUrl)?>" style="min-width:240px;">
-                    <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');">Kopieren</button>
+                    <button class="btn secondary" type="button" onclick="copyToClipboard('<?=h($shareUrl)?>');"><?=h(t('teacher.parents.copy'))?></button>
                     <form method="post" style="margin:0; display:flex; gap:6px; align-items:center;">
                       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                       <input type="hidden" name="action" value="extend_link">
                       <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
                       <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                      <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
-                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                      <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;"><?=h(t('teacher.parents.days'))?></span>
+                      <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend'))?></button>
                     </form>
                     <form method="post" style="margin:0;">
                       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                       <input type="hidden" name="action" value="revoke_link">
                       <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
                       <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                      <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm', 'Zugriff wirklich beenden?'))?>');"><?=h(t('teacher.parents.revoke', 'Beenden'))?></button>
+                      <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.parents.revoke_confirm'))?>');"><?=h(t('teacher.parents.revoke'))?></button>
                     </form>
                   </div>
                   <div class="muted" style="font-size:12px; margin-top:4px;">
-                    <?=h(t('teacher.parents.note_readonly', 'Nur Vorschau, kein Download. Rückmeldungen sind moderiert.'))?>
+                    <?=h(t('teacher.parents.note_readonly'))?>
                   </div>
                 <?php elseif ($status === 'expired'): ?>
                   <form method="post" style="margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -985,11 +1001,11 @@ $introText = $parentAutoApprove
                     <input type="hidden" name="action" value="extend_link">
                     <input type="hidden" name="student_id" value="<?= (int)$s['id'] ?>">
                     <input type="hidden" name="link_id" value="<?= (int)$linkId ?>">
-                    <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;">Tage</span>
-                    <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend', 'Verlängern'))?></button>
+                    <input type="number" name="extend_days" value="7" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 10px;font-size: 13px;"><?=h(t('teacher.parents.days'))?></span>
+                    <button class="btn secondary" type="submit"><?=h(t('teacher.parents.extend'))?></button>
                   </form>
                 <?php elseif ($status === 'requested'): ?>
-                  <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin', 'Wartet auf Admin-Freigabe'))?></span>
+                  <span class="pill" style="background:#fff3cd; border:1px solid #ffe08a;"><?=h(t('teacher.parents.pending_admin'))?></span>
                 <?php else: ?>
                   <form method="post" class="row parent-request-form" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -1000,11 +1016,11 @@ $introText = $parentAutoApprove
                       <input type="hidden" name="signature_payload" value="" class="signature-payload-input">
                     <?php endif; ?>
                     <div>
-                      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days', 'Freischalten für'))?></label>
+                      <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.valid_days'))?></label>
                     </div>
                     <div>
-                      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;">Tage</span>
-                      <button class="btn primary" type="submit"><?=h(t('teacher.parents.request', 'Elternmodus anfragen'))?></button>
+                      <input type="number" name="valid_days" value="14" min="1" max="120" style="width:90px;padding-right:35px; text-align:right;"></input><span style="margin-left: -40px;margin-right: 20px;font-size: 13px;"><?=h(t('teacher.parents.days'))?></span>
+                      <button class="btn primary" type="submit"><?=h(t('teacher.parents.request'))?></button>
                     </div>
                   </form>
                 <?php endif; ?>
@@ -1019,21 +1035,21 @@ $introText = $parentAutoApprove
 </details>
 
 <details class="card" style="margin-top:14px;" open id="teacherParentsFeedback" data-storage-key="teacherParentsFeedback">
-  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.feedback_title', 'Eltern-Rückmeldung'))?></summary>
+  <summary style="cursor:pointer; font-weight:600; padding:6px 0;"><?=h(t('teacher.parents.feedback_title'))?></summary>
   <div style="margin-top:12px;">
-    <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint', 'Rückmeldungen werden hier gesammelt. Markiere sie nach Sichtung als geprüft.'))?></p>
+    <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.feedback_hint'))?></p>
     <?php if (!$feedbackList): ?>
-      <p class="muted"><?=h(t('teacher.parents.feedback_none', 'Noch keine Rückmeldungen.'))?></p>
+      <p class="muted"><?=h(t('teacher.parents.feedback_none'))?></p>
     <?php else: ?>
       <div class="responsive-table">
         <table>
           <thead>
             <tr>
-              <th><?=h(t('teacher.parents.feedback_student', 'Schüler'))?></th>
-              <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg', 'Nachricht'))?></th>
-              <th><?=h(t('teacher.parents.feedback_msg_date', 'Datum'))?></th>
-              <th><?=h(t('teacher.parents.feedback_state', 'Status'))?></th>
-              <th><?=h(t('teacher.parents.feedback_actions', 'Aktionen'))?></th>
+              <th><?=h(t('teacher.parents.feedback_student'))?></th>
+              <th style="width: 30%;"><?=h(t('teacher.parents.feedback_msg'))?></th>
+              <th><?=h(t('teacher.parents.feedback_msg_date'))?></th>
+              <th><?=h(t('teacher.parents.feedback_state'))?></th>
+              <th><?=h(t('teacher.parents.feedback_actions'))?></th>
             </tr>
           </thead>
           <tbody>
@@ -1051,7 +1067,7 @@ $introText = $parentAutoApprove
                 <td><strong><?=h($feedbackStudent)?></strong></td>
                 <td>
                   <?php if (trim((string)($fb['message'] ?? '')) === ''): ?>
-                    <span class="muted">–</span>
+                    <span class="muted"><?=h(t('teacher.parents.empty_dash'))?></span>
                   <?php else: ?>
                     <?= nl2br(h((string)$fb['message'])) ?>
                   <?php endif; ?>
@@ -1059,17 +1075,17 @@ $introText = $parentAutoApprove
                 <td><?= render_local_datetime((string)$fb['created_at'], 'd.m.Y H:i') ?></td>
                 <td>
                   <?php if ((int)($fb['is_reviewed'] ?? 0) === 1): ?>
-                    <span class="pill green"><?=h(t('teacher.parents.reviewed', 'Geprüft'))?></span>
+                    <span class="pill green"><?=h(t('teacher.parents.reviewed'))?></span>
                   <?php else: ?>
-                    <span class="pill yellow"><?=h(t('teacher.parents.pending_review', 'Offen'))?></span>
+                    <span class="pill yellow"><?=h(t('teacher.parents.pending_review'))?></span>
                   <?php endif; ?>
                 </td>
                 <td>
                   <div style="display:flex; flex-direction:column; gap:6px;">
                     <?php if ($replyLink): ?>
-                      <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail', 'Per Mail antworten'))?></a>
+                      <a class="btn secondary" href="<?=h($replyLink)?>"><?=h(t('teacher.parents.reply_mail'))?></a>
                     <?php else: ?>
-                      <span class="muted">–</span>
+                      <span class="muted"><?=h(t('teacher.parents.empty_dash'))?></span>
                     <?php endif; ?>
                     <?php if ((int)($fb['is_reviewed'] ?? 0) === 0): ?>
                       <form method="post" style="margin:0;">
@@ -1077,7 +1093,7 @@ $introText = $parentAutoApprove
                         <input type="hidden" name="action" value="mark_feedback_reviewed">
                         <input type="hidden" name="feedback_id" value="<?= (int)$fb['id'] ?>">
                         <input type="hidden" name="student_id" value="<?= (int)($fb['student_id'] ?? 0) ?>">
-                        <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed', 'Als geprüft markieren'))?></button>
+                        <button class="btn secondary" type="submit"><?=h(t('teacher.parents.mark_reviewed'))?></button>
                       </form>
                     <?php endif; ?>
                   </div>
@@ -1093,85 +1109,85 @@ $introText = $parentAutoApprove
 
 <?php if ($meetingFeedbackEnabled): ?>
   <div class="card" style="margin-top:14px;" id="meetingFeedbackSection">
-    <h2>Feedback zum Lernentwicklungsgespräch</h2>
-    <p class="muted" style="margin-top:0;">Auswertung des Feedbackbogens für Eltern. Jede Rückmeldung kann nur einmal pro Kind abgegeben werden.</p>
+    <h2><?=h(t('teacher.parents.meeting.title'))?></h2>
+    <p class="muted" style="margin-top:0;"><?=h(t('teacher.parents.meeting.description'))?></p>
     <div style="margin-top:8px;">
-      <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>" data-meeting-reset style="<?= $meetingFeedbackId > 0 ? '' : 'display:none;' ?>">Filter zurücksetzen</a>
+      <a class="btn secondary" href="<?=h(teacher_feedback_query_url(['meeting_feedback_id' => null]))?>" data-meeting-reset style="<?= $meetingFeedbackId > 0 ? '' : 'display:none;' ?>"><?=h(t('teacher.parents.meeting.reset'))?></a>
     </div>
 
     <?php if ($classId <= 0): ?>
-      <p class="muted">Keine Klasse ausgewählt.</p>
+      <p class="muted"><?=h(t('teacher.parents.meeting.no_class'))?></p>
     <?php else: ?>
-      <h3 style="margin-top:10px;">Klasse <?=h(trim($selectedClassYear . ' · ' . $selectedClassLabel))?></h3>
+      <h3 style="margin-top:10px;"><?=h(t('teacher.parents.meeting.class_title'))?> <?=h(trim($selectedClassYear . ' · ' . $selectedClassLabel))?></h3>
       <?php
         render_meeting_feedback_pies($meetingStatsClass ?? [], [
-          'q1' => '1. Das Gespräch war verständlich und informativ.',
-          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+          'q1' => t('teacher.parents.meeting.q1'),
+          'q2' => t('teacher.parents.meeting.q2'),
+          'q3' => t('teacher.parents.meeting.q3'),
         ]);
       ?>
     <?php endif; ?>
 
     <?php if ($role === 'admin'): ?>
       <hr style="margin:20px 0;">
-      <h3 style="margin-top:0;">Klassenstufe</h3>
+      <h3 style="margin-top:0;"><?=h(t('teacher.parents.meeting.grade_title'))?></h3>
       <form method="get" class="row" style="gap:12px; align-items:center;">
         <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
-        <label class="muted" style="font-size:12px;">Stufe auswählen</label>
+        <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.meeting.grade_select'))?></label>
         <select name="grade_level" class="input" onchange="this.form.submit();">
-          <option value="">—</option>
+          <option value=""><?=h(t('teacher.parents.select_placeholder'))?></option>
           <?php foreach ($availableGrades as $g): ?>
             <option value="<?= (int)$g ?>" <?= ($gradeLevel !== null && (int)$gradeLevel === (int)$g) ? 'selected' : '' ?>><?=h((string)$g)?></option>
           <?php endforeach; ?>
         </select>
       </form>
       <?php if ($gradeLevel === null): ?>
-        <p class="muted">Keine Klassenstufe ausgewählt.</p>
+        <p class="muted"><?=h(t('teacher.parents.meeting.no_grade'))?></p>
       <?php else: ?>
         <?php
           render_meeting_feedback_pies($meetingStatsGrade ?? [], [
-            'q1' => '1. Das Gespräch war verständlich und informativ.',
-            'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-            'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+            'q1' => t('teacher.parents.meeting.q1'),
+            'q2' => t('teacher.parents.meeting.q2'),
+            'q3' => t('teacher.parents.meeting.q3'),
           ]);
         ?>
       <?php endif; ?>
 
       <hr style="margin:20px 0;">
-      <h3 style="margin-top:0;">Gesamt</h3>
+      <h3 style="margin-top:0;"><?=h(t('teacher.parents.meeting.overall_title'))?></h3>
       <?php
         render_meeting_feedback_pies($meetingStatsOverall ?? [], [
-          'q1' => '1. Das Gespräch war verständlich und informativ.',
-          'q2' => '2. Ich weiß jetzt, wie ich mein Kind zuhause weiter unterstützen kann.',
-          'q3' => '3. Die besprochenen nächsten Schritte sind für mich nachvollziehbar.',
+          'q1' => t('teacher.parents.meeting.q1'),
+          'q2' => t('teacher.parents.meeting.q2'),
+          'q3' => t('teacher.parents.meeting.q3'),
         ]);
       ?>
 
       <hr style="margin:20px 0;">
-      <h3 style="margin-top:0;">Freitexte</h3>
+      <h3 style="margin-top:0;"><?=h(t('teacher.parents.meeting.free_text_title'))?></h3>
       <form method="get" class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
         <input type="hidden" name="class_id" value="<?= (int)$classId ?>">
         <?php if ($gradeLevel !== null): ?>
           <input type="hidden" name="grade_level" value="<?= (int)$gradeLevel ?>">
         <?php endif; ?>
-        <label class="muted" style="font-size:12px;">Ansicht</label>
+        <label class="muted" style="font-size:12px;"><?=h(t('teacher.parents.meeting.scope_label'))?></label>
         <select name="feedback_scope" class="input" onchange="this.form.submit();">
-          <option value="class" <?= $meetingTextScope === 'class' ? 'selected' : '' ?>>Klasse</option>
-          <option value="grade" <?= $meetingTextScope === 'grade' ? 'selected' : '' ?>>Klassenstufe</option>
-          <option value="all" <?= $meetingTextScope === 'all' ? 'selected' : '' ?>>Alle</option>
+          <option value="class" <?= $meetingTextScope === 'class' ? 'selected' : '' ?>><?=h(t('teacher.parents.meeting.scope_class'))?></option>
+          <option value="grade" <?= $meetingTextScope === 'grade' ? 'selected' : '' ?>><?=h(t('teacher.parents.meeting.scope_grade'))?></option>
+          <option value="all" <?= $meetingTextScope === 'all' ? 'selected' : '' ?>><?=h(t('teacher.parents.meeting.scope_all'))?></option>
         </select>
       </form>
       <?php if (!$meetingTextsAdmin): ?>
-        <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+        <p class="muted"><?=h(t('teacher.parents.meeting.no_free_text'))?></p>
       <?php else: ?>
         <div class="responsive-table">
           <table>
             <thead>
               <tr>
-                <th>Schüler</th>
-                <th>Klasse</th>
-                <th>Nachricht</th>
-                <th>Datum</th>
+                <th><?=h(t('teacher.parents.student'))?></th>
+                <th><?=h(t('teacher.parents.class_label'))?></th>
+                <th><?=h(t('teacher.parents.feedback_msg'))?></th>
+                <th><?=h(t('teacher.parents.feedback_msg_date'))?></th>
               </tr>
             </thead>
             <tbody>
@@ -1179,7 +1195,7 @@ $introText = $parentAutoApprove
                 <?php
                   $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
                   $studentName = $isAnonymous
-                    ? 'Anonym'
+                    ? t('teacher.parents.meeting.anonymous')
                     : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
                   $classLabel = parent_class_display($row);
                 ?>
@@ -1201,17 +1217,17 @@ $introText = $parentAutoApprove
     <?php endif; ?>
 
     <hr style="margin:20px 0;">
-    <h3 style="margin-top:0;">Freitexte (Klasse)</h3>
+    <h3 style="margin-top:0;"><?=h(t('teacher.parents.meeting.free_text_class_title'))?></h3>
     <?php if (!$meetingTextsClass): ?>
-      <p class="muted">Keine Freitext-Rückmeldungen vorhanden.</p>
+      <p class="muted"><?=h(t('teacher.parents.meeting.no_free_text'))?></p>
     <?php else: ?>
       <div class="responsive-table">
         <table>
           <thead>
             <tr>
-              <th>Schüler</th>
-              <th>Nachricht</th>
-              <th>Datum</th>
+              <th><?=h(t('teacher.parents.student'))?></th>
+              <th><?=h(t('teacher.parents.feedback_msg'))?></th>
+              <th><?=h(t('teacher.parents.feedback_msg_date'))?></th>
             </tr>
           </thead>
           <tbody>
@@ -1219,7 +1235,7 @@ $introText = $parentAutoApprove
               <?php
                 $isAnonymous = $meetingFeedbackAnonymous || ((int)($row['is_anonymous'] ?? 0) === 1);
                 $studentName = $isAnonymous
-                  ? 'Anonym'
+                  ? t('teacher.parents.meeting.anonymous')
                   : trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
               ?>
               <tr data-meeting-id="<?= (int)($row['id'] ?? 0) ?>">
@@ -1371,6 +1387,7 @@ $introText = $parentAutoApprove
   const EXPORT_API_URL = <?= json_encode(url('teacher/ajax/export_api.php')) ?>;
   const CSRF = <?= json_encode(csrf_token()) ?>;
   const MISSING_TX = <?= json_encode($missingTx, JSON_UNESCAPED_UNICODE) ?>;
+  const PARENTS_TX = <?= json_encode($parentJs, JSON_UNESCAPED_UNICODE) ?>;
   const CURRENT_CLASS_ID = <?= (int)$classId ?>;
 
   document.querySelectorAll('details[data-storage-key]').forEach((el) => {
@@ -1461,7 +1478,7 @@ $introText = $parentAutoApprove
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data?.ok !== true) {
-      const msg = data?.error || data?.message || 'Request failed';
+      const msg = data?.error || data?.message || PARENTS_TX?.request_failed || 'Request failed';
       throw new Error(msg);
     }
     return data;
@@ -1487,13 +1504,13 @@ $introText = $parentAutoApprove
       const showN = 60;
       const items = filteredFields.slice(0, showN).map(f => {
         const label = (f.label || f.field_name || '').toString();
-        const req = Number(f.is_required || 0) === 1 ? ' (Pflicht)' : '';
+        const req = Number(f.is_required || 0) === 1 ? (PARENTS_TX?.required_suffix || ' (required)') : '';
         return `<li style="margin:2px 0;">${escapeHtml(label)}${req}</li>`;
       }).join('');
 
       const moreCount = filteredFields.length - showN;
       const more = moreCount > 0
-        ? `<div class="muted" style="margin-top:6px;">… und ${moreCount} weitere</div>`
+        ? `<div class="muted" style="margin-top:6px;">${(PARENTS_TX?.more_items || '… and {count} more').replace('{count}', String(moreCount))}</div>`
         : '';
 
       parts.push(`
@@ -1509,7 +1526,7 @@ $introText = $parentAutoApprove
         </details>
       `);
     }
-    return parts.join('') || '<div class="muted">Keine passenden Treffer.</div>';
+    return parts.join('') || `<div class="muted">${PARENTS_TX?.missing_no_matches || 'No matching results.'}</div>`;
   }
 
   function formatMissingSummary(total, students){
@@ -1684,7 +1701,7 @@ $introText = $parentAutoApprove
 
     function setSavedState(saved){
       if (!savedPill) return;
-      savedPill.textContent = saved ? 'Aktive Signatur gespeichert' : 'Keine Signatur gespeichert';
+      savedPill.textContent = saved ? (PARENTS_TX?.signature_pill_active || '') : (PARENTS_TX?.signature_pill_empty || '');
       if (saved) {
         savedPill.classList.add('green');
         savedPill.style.background = '';
@@ -1815,13 +1832,13 @@ $introText = $parentAutoApprove
       state.strokes = [];
       state.current = null;
       redraw();
-      setStatus('Signatur gelöscht.');
+      setStatus(PARENTS_TX?.signature_deleted || '');
       setFormPayload('');
     }
 
     async function applyPad(){
       if (!state.strokes.length) {
-        setStatus('Bitte zuerst unterschreiben.');
+        setStatus(PARENTS_TX?.signature_prompt || '');
         return;
       }
       let rect = canvas.getBoundingClientRect();
@@ -1830,7 +1847,7 @@ $introText = $parentAutoApprove
         rect = canvas.getBoundingClientRect();
       }
       if (!rect.width || !rect.height) {
-        setStatus('Signaturfeld ist nicht bereit.');
+        setStatus(PARENTS_TX?.signature_not_ready || '');
         return;
       }
       let ratio = rect.height > 0 ? (rect.width / rect.height) : null;
@@ -1854,15 +1871,15 @@ $introText = $parentAutoApprove
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-          const errMsg = data?.error || data?.message || 'Speichern fehlgeschlagen.';
+          const errMsg = data?.error || data?.message || (PARENTS_TX?.signature_save_failed || 'Speichern fehlgeschlagen.');
           throw new Error(errMsg);
         }
-        if (!data || data.ok !== true) throw new Error(data?.error || 'Signatur konnte nicht gespeichert werden.');
+        if (!data || data.ok !== true) throw new Error(data?.error || (PARENTS_TX?.signature_save_failed_generic || 'Signatur konnte nicht gespeichert werden.'));
         setFormPayload('');
-        setStatus('Signatur gespeichert.');
+        setStatus(PARENTS_TX?.signature_saved || '');
         setSavedState(true);
       } catch (e) {
-        setStatus(e?.message || 'Signatur konnte nicht gespeichert werden.');
+        setStatus(e?.message || (PARENTS_TX?.signature_save_failed_generic || 'Signatur konnte nicht gespeichert werden.'));
       }
     }
 
@@ -1915,11 +1932,11 @@ $introText = $parentAutoApprove
       if (toggle.checked) {
         padWrap.style.display = '';
         resizeCanvas();
-        setStatus(hasActiveSignature ? 'Vorhandene Signatur bleibt aktiv (neu aufnehmen überschreibt).' : '');
+        setStatus(hasActiveSignature ? (PARENTS_TX?.signature_active_keep || '') : '');
       } else {
         padWrap.style.display = 'none';
         setFormPayload('');
-        setStatus(hasActiveSignature ? 'Aktive Signatur bleibt gespeichert.' : '');
+        setStatus(hasActiveSignature ? (PARENTS_TX?.signature_active_stays || '') : '');
       }
     });
 
