@@ -232,7 +232,7 @@ function get_student_and_class(PDO $pdo, int $studentId): array {
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
+  if (!$row) throw new RuntimeException(t('student.wizard.error.student_not_found'));
   return $row;
 }
 
@@ -293,14 +293,14 @@ function template_for_student(PDO $pdo, int $studentId): array {
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
+  if (!$row) throw new RuntimeException(t('student.wizard.error.student_not_found'));
 
   $tid = (int)($row['tid'] ?? 0);
   if ($tid <= 0) {
-    throw new RuntimeException('Für deine Klasse wurde noch keine Vorlage zugeordnet. Bitte wende dich an deine Lehrkraft.');
+    throw new RuntimeException(t('student.wizard.error.no_template'));
   }
   if ((int)($row['is_active'] ?? 0) !== 1) {
-    throw new RuntimeException('Die Vorlage deiner Klasse ist aktuell inaktiv. Bitte wende dich an deine Lehrkraft.');
+    throw new RuntimeException(t('student.wizard.error.template_inactive'));
   }
 
   return [
@@ -383,7 +383,7 @@ function ensure_editable_or_throw(PDO $pdo, int $reportId): void {
   $st = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
   $st->execute([$reportId]);
   $status = (string)($st->fetchColumn() ?: '');
-  if ($status !== 'draft') throw new RuntimeException('Abgabe bereits erfolgt oder gesperrt.');
+  if ($status !== 'draft') throw new RuntimeException(t('student.wizard.error.already_submitted'));
 }
 
 function get_report_status(PDO $pdo, int $reportId): string {
@@ -595,7 +595,7 @@ try {
   $pdo = db();
   $studentId = (int)($_SESSION['student']['id'] ?? 0);
   $lang = ui_lang();
-  if ($studentId <= 0) throw new RuntimeException('Nicht eingeloggt.');
+  if ($studentId <= 0) throw new RuntimeException(t('student.wizard.error.not_logged_in'));
 
   $data = read_json_body();
   if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
@@ -604,7 +604,7 @@ try {
 
   $action = (string)($data['action'] ?? '');
   if (!in_array($action, ['bootstrap','save_value','submit'], true)) {
-    throw new RuntimeException('Ungültige Aktion.');
+    throw new RuntimeException(t('student.wizard.error.invalid_action'));
   }
 
   $tpl = template_for_student($pdo, $studentId);
@@ -616,12 +616,12 @@ try {
     $cfg = app_config();
     $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
   }
-  if ($schoolYear === '') throw new RuntimeException('Schuljahr konnte nicht ermittelt werden.');
+  if ($schoolYear === '') throw new RuntimeException(t('student.wizard.error.school_year_missing'));
   $classId = (int)($studentRow['class_id'] ?? 0);
 
   $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
   
-  if ((int)$ctx['report_instance_id'] < 0) throw new RuntimeException('Kein Bericht verfügbar.');
+  if ((int)$ctx['report_instance_id'] < 0) throw new RuntimeException(t('student.wizard.error.report_unavailable'));
   
   $reportId = (int)$ctx['report_instance_id'];
 
@@ -878,7 +878,7 @@ try {
     }
   }
   if (!all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds)) {
-    throw new RuntimeException('Bitte fülle zuerst alle Felder aus.');
+    throw new RuntimeException(t('student.wizard.error.fields_required'));
   }
 
   $pdo->prepare(

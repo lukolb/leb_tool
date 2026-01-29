@@ -356,6 +356,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     'student_value_aria' => t('teacher.pdf_entry.student_value_aria'),
     'save_success' => t('teacher.pdf_entry.save_success'),
     'save_failed' => t('teacher.pdf_entry.save_failed'),
+    'ready' => t('teacher.pdf_entry.ready'),
+    'load_failed' => t('teacher.pdf_entry.load_failed'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
   const tPdf = (key) => I18N[key] ?? key;
   const tfmtPdf = (key, vars = {}) => {

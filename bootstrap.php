@@ -1209,14 +1209,19 @@ function build_set_password_email(string $name, string $email, string $link): st
   $safeName = h($name);
   $safeEmail = h($email);
   $safeLink = h($link);
+  $title = strtr(t('auth.email.set_password.title'), ['{org}' => $org]);
+  $greeting = strtr(t('auth.email.greeting'), ['{name}' => $safeName]);
+  $intro = strtr(t('auth.email.set_password.intro'), ['{email}' => $safeEmail]);
+  $button = t('auth.email.set_password.button');
+  $note = t('auth.email.set_password.note');
 
   return <<<HTML
   <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; line-height:1.4">
-    <h2 style="margin:0 0 10px 0;">{$org} – Konto erstellt</h2>
-    <p>Hallo {$safeName},</p>
-    <p>für dich wurde ein Konto (<strong>{$safeEmail}</strong>) angelegt. Bitte setze dein Passwort über diesen Link:</p>
-    <p><a href="{$safeLink}" style="display:inline-block; padding:10px 14px; background:{$primary}; color:#fff; text-decoration:none; border-radius:10px;">Passwort setzen</a></p>
-    <p class="muted" style="color:#666;">Der Link ist 48 h gültig.</p>
+    <h2 style="margin:0 0 10px 0;">{$title}</h2>
+    <p>{$greeting}</p>
+    <p>{$intro}</p>
+    <p><a href="{$safeLink}" style="display:inline-block; padding:10px 14px; background:{$primary}; color:#fff; text-decoration:none; border-radius:10px;">{$button}</a></p>
+    <p class="muted" style="color:#666;">{$note}</p>
   </div>
 HTML;
 }
@@ -1229,14 +1234,19 @@ function build_reset_link_email(string $name, string $email, string $link): stri
   $safeName = h($name);
   $safeEmail = h($email);
   $safeLink = h($link);
+  $title = strtr(t('auth.email.reset.title'), ['{org}' => $org]);
+  $greeting = strtr(t('auth.email.greeting'), ['{name}' => $safeName]);
+  $intro = strtr(t('auth.email.reset.intro'), ['{email}' => $safeEmail]);
+  $button = t('auth.email.reset.button');
+  $note = t('auth.email.reset.note');
 
   return <<<HTML
   <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; line-height:1.4">
-    <h2 style="margin:0 0 10px 0;">{$org} – Passwort zurücksetzen</h2>
-    <p>Hallo {$safeName},</p>
-    <p>für dein Konto (<strong>{$safeEmail}</strong>) wurde ein Passwort-Reset angefordert. Nutze diesen Link:</p>
-    <p><a href="{$safeLink}" style="display:inline-block; padding:10px 14px; background:{$primary}; color:#fff; text-decoration:none; border-radius:10px;">Passwort zurücksetzen</a></p>
-    <p style="color:#666;">Wenn du das nicht warst, ignoriere diese E-Mail.</p>
+    <h2 style="margin:0 0 10px 0;">{$title}</h2>
+    <p>{$greeting}</p>
+    <p>{$intro}</p>
+    <p><a href="{$safeLink}" style="display:inline-block; padding:10px 14px; background:{$primary}; color:#fff; text-decoration:none; border-radius:10px;">{$button}</a></p>
+    <p style="color:#666;">{$note}</p>
   </div>
 HTML;
 }

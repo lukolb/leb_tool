@@ -15,20 +15,61 @@ $previewStudentId = (int)($_GET['preview_student_id'] ?? 0);
 $err = '';
 $ok  = '';
 
+$tx = [
+  'title' => t('admin.template_mappings.title', 'Stammdaten-Mapping'),
+  'back_templates' => t('admin.template_mappings.back_templates', '← zurück zu den Templates'),
+  'description' => t('admin.template_mappings.description', 'Hier legst du fest, wie Stammdaten (z.B. Vor- und Nachname, Klasse) automatisch in PDF-Felder übernommen werden. Pro PDF-Feld kannst du einen Text mit Platzhaltern definieren. Platzhalter werden als <code>{{student.first_name}}</code> geschrieben.'),
+  'template_label' => t('admin.template_mappings.template_label', 'Template'),
+  'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
+  'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
+  'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. So sind auch Kombinationen möglich, und du kannst denselben Wert in mehrere Felder schreiben, indem du mehrere Felder mit demselben Platzhalter belegst. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
+  'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
+  'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
+  'bulk_placeholder' => t('admin.template_mappings.bulk_placeholder', '{{student.first_name}} {{student.last_name}}'),
+  'bulk_apply' => t('admin.template_mappings.bulk_apply', 'Auf markierte Felder anwenden'),
+  'bulk_clear' => t('admin.template_mappings.bulk_clear', 'Markierte leeren'),
+  'table_field' => t('admin.template_mappings.table_field', 'PDF-Formfeld'),
+  'table_template' => t('admin.template_mappings.table_template', 'Binding-Template'),
+  'table_preview' => t('admin.template_mappings.table_preview', 'Vorschau'),
+  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Platzhalter: <code>{{student.first_name}}</code>, <code>{{student.last_name}}</code>, <code>{{class.display}}</code> …'),
+  'save' => t('admin.template_mappings.save', 'Speichern'),
+  'preview_title' => t('admin.template_mappings.preview_title', 'Vorschau'),
+  'preview_hint' => t('admin.template_mappings.preview_hint', 'Wähle einen Schüler aus, um die Platzhalter-Ersetzungen zu prüfen.'),
+  'preview_student_label' => t('admin.template_mappings.preview_student_label', 'Schüler'),
+  'preview_select' => t('admin.template_mappings.preview_select', '— Vorschau-Schüler auswählen —'),
+  'preview_reset' => t('admin.template_mappings.preview_reset', 'Zurücksetzen'),
+  'preview_table_placeholder' => t('admin.template_mappings.preview_table_placeholder', 'Platzhalter'),
+  'preview_table_value' => t('admin.template_mappings.preview_table_value', 'Wert'),
+  'template_inactive' => t('admin.template_mappings.template_inactive', '[inaktiv]'),
+  'system_student_first' => t('admin.template_mappings.system.student_first_name', 'Schüler: Vorname'),
+  'system_student_last' => t('admin.template_mappings.system.student_last_name', 'Schüler: Nachname'),
+  'system_student_dob' => t('admin.template_mappings.system.student_dob', 'Schüler: Geburtsdatum'),
+  'system_class_year' => t('admin.template_mappings.system.class_school_year', 'Klasse: Schuljahr'),
+  'system_class_grade' => t('admin.template_mappings.system.class_grade_level', 'Klasse: Klassenstufe'),
+  'system_class_label' => t('admin.template_mappings.system.class_label', 'Klasse: Bezeichnung (a/b/...)'),
+  'system_class_display' => t('admin.template_mappings.system.class_display', 'Klasse: Anzeige (z.B. 1a)'),
+  'system_student_prefix' => t('admin.template_mappings.system.student_prefix', 'Schüler'),
+  'ok_saved' => t('admin.template_mappings.ok_saved', 'Mapping gespeichert.'),
+  'error_invalid_action' => t('admin.template_mappings.error_invalid_action', 'Ungültige Aktion.'),
+  'error_template_missing' => t('admin.template_mappings.error_template_missing', 'template_id fehlt.'),
+];
+
 // IMPORTANT: Keys must match resolve_system_binding_value() in bootstrap.php
 $SYSTEM_KEYS = [
-  'student.first_name'    => 'Schüler: Vorname',
-  'student.last_name'     => 'Schüler: Nachname',
-  'student.date_of_birth' => 'Schüler: Geburtsdatum',
-  'class.school_year'     => 'Klasse: Schuljahr',
-  'class.grade_level'     => 'Klasse: Klassenstufe',
-  'class.label'           => 'Klasse: Bezeichnung (a/b/...)',
-  'class.display'         => 'Klasse: Anzeige (z.B. 1a)',
+  'student.first_name'    => $tx['system_student_first'],
+  'student.last_name'     => $tx['system_student_last'],
+  'student.date_of_birth' => $tx['system_student_dob'],
+  'class.school_year'     => $tx['system_class_year'],
+  'class.grade_level'     => $tx['system_class_grade'],
+  'class.label'           => $tx['system_class_label'],
+  'class.display'         => $tx['system_class_display'],
 ];
 foreach ($customStudentFields as $cf) {
   $key = trim((string)($cf['field_key'] ?? ''));
   if ($key === '') continue;
-  $SYSTEM_KEYS['student.custom.' . $key] = 'Schüler: ' . trim((string)($cf['label'] ?? $key));
+  $SYSTEM_KEYS['student.custom.' . $key] = $tx['system_student_prefix'] . ': ' . trim((string)($cf['label'] ?? $key));
 }
 
 function meta_read_map(?string $json): array {
@@ -163,10 +204,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
-    if ($action !== 'save_bindings') throw new RuntimeException('Ungültige Aktion.');
+    if ($action !== 'save_bindings') throw new RuntimeException($tx['error_invalid_action']);
 
     $templateId = (int)($_POST['template_id'] ?? 0);
-    if ($templateId <= 0) throw new RuntimeException('template_id fehlt.');
+    if ($templateId <= 0) throw new RuntimeException($tx['error_template_missing']);
 
     $tpls = $_POST['tpl'] ?? [];
     if (!is_array($tpls)) $tpls = [];
@@ -208,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'mode' => 'tpl',
     ]);
 
-    $ok = 'Mapping gespeichert.';
+    $ok = $tx['ok_saved'];
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
@@ -232,26 +273,23 @@ if ($template) {
 }
 $preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId) : null;
 
-render_admin_header('Stammdaten-Mapping');
+render_admin_header($tx['title']);
 ?>
 
 <div class="card">
     <div class="row-actions" style="float: right;">
-        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← zurück zu den Templates</a>
+        <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>"><?=h($tx['back_templates'])?></a>
     </div>
-  <h1>Stammdaten-Mapping</h1>
-  <p class="muted">
-    Hier legst du fest, wie Stammdaten (z.B. Vor- und Nachname, Klasse) automatisch in PDF-Felder übernommen werden.
-    Pro PDF-Feld kannst du einen Text mit Platzhaltern definieren. Platzhalter werden als <code>{{student.first_name}}</code> geschrieben.
-  </p>
+  <h1><?=h($tx['title'])?></h1>
+  <p class="muted"><?= $tx['description'] ?></p>
 </div>
 
 <div class="card">
   <form method="get" class="row-actions" style="align-items:flex-end;">
     <div style="min-width:340px;">
-      <label for="template_id" class="muted" style="display:block;margin-bottom:6px;">Template</label>
+      <label for="template_id" class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['template_label'])?></label>
       <select name="template_id" id="template_id" onchange="this.closest('form').submit()">
-        <option value="0">— Template auswählen —</option>
+        <option value="0"><?=h($tx['template_select'])?></option>
         <?php foreach ($templates as $t):
           $tid = (int)$t['id'];
           $active = (int)($t['is_active'] ?? 0) === 1;
@@ -259,14 +297,14 @@ render_admin_header('Stammdaten-Mapping');
           $ver  = (string)($t['template_version'] ?? '');
         ?>
           <option value="<?=h((string)$tid)?>" <?=$tid===$templateId?'selected':''?>>
-            <?=h($name)?><?= $ver!=='' ? ' (v'.h($ver).')' : '' ?><?= $active ? '' : ' [inaktiv]' ?>
+            <?=h($name)?><?= $ver!=='' ? ' (v'.h($ver).')' : '' ?><?= $active ? '' : ' ' . h($tx['template_inactive']) ?>
           </option>
         <?php endforeach; ?>
       </select>
     </div>
     <div class="actions" style="justify-content:flex-start;">
       <?php if ($template): ?>
-        <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$template['id']))?>">Felder bearbeiten</a>
+        <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$template['id']))?>"><?=h($tx['fields_edit'])?></a>
       <?php endif; ?>
     </div>
   </form>
@@ -280,17 +318,18 @@ render_admin_header('Stammdaten-Mapping');
 
 <?php if ($template): ?>
   <div class="card">
-    <h2 style="margin-top:0;">Mapping für: <?=h((string)$template['name'])?> (v<?=h((string)$template['template_version'])?>)</h2>
+    <h2 style="margin-top:0;"><?=h(strtr($tx['mapping_for'], [
+      '{template}' => (string)$template['name'],
+      '{version}' => (string)$template['template_version'],
+    ]))?></h2>
 
     <p class="muted" style="margin-top:-4px;">
-      Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>.
-      So sind auch Kombinationen möglich, und du kannst denselben Wert in mehrere Felder schreiben, indem du mehrere Felder mit demselben Platzhalter belegst.
-      Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).
+      <?= $tx['tip'] ?>
     </p>
 
     <div class="row-actions" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
       <div>
-        <label class="muted" style="display:block;margin-bottom:6px;">Platzhalter einfügen</label>
+        <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['placeholder_label'])?></label>
         <select id="phSelect">
           <?php foreach ($SYSTEM_KEYS as $k => $lab): ?>
             <option value="<?=h('{{'.$k.'}}')?>"><?=h($lab)?> — <?=h($k)?></option>
@@ -299,17 +338,17 @@ render_admin_header('Stammdaten-Mapping');
       </div>
 
       <div class="actions" style="justify-content:flex-start;">
-        <button type="button" class="btn secondary" id="phInsertBtn">In das aktive Feld einfügen</button>
+        <button type="button" class="btn secondary" id="phInsertBtn"><?=h($tx['insert_btn'])?></button>
       </div>
 
       <div style="flex:1; min-width:260px;">
-        <label class="muted" style="display:block;margin-bottom:6px;">Bulk-Template (für markierte Felder)</label>
-        <input type="text" id="bulkTpl" class="input" placeholder="{{student.first_name}} {{student.last_name}}" />
+        <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['bulk_label'])?></label>
+        <input type="text" id="bulkTpl" class="input" placeholder="<?=h($tx['bulk_placeholder'])?>" />
       </div>
 
       <div class="actions" style="justify-content:flex-start;">
-        <button type="button" class="btn secondary" id="bulkApplyBtn">Auf markierte Felder anwenden</button>
-        <button type="button" class="btn secondary" id="bulkClearBtn">Markierte leeren</button>
+        <button type="button" class="btn secondary" id="bulkApplyBtn"><?=h($tx['bulk_apply'])?></button>
+        <button type="button" class="btn secondary" id="bulkClearBtn"><?=h($tx['bulk_clear'])?></button>
       </div>
     </div>
 
@@ -322,9 +361,9 @@ render_admin_header('Stammdaten-Mapping');
         <thead>
           <tr>
             <th style="width:40px;"><input type="checkbox" id="checkAll"></th>
-            <th style="width:360px;">PDF-Formfeld</th>
-            <th>Binding-Template</th>
-            <th style="width:220px;">Vorschau</th>
+            <th style="width:360px;"><?=h($tx['table_field'])?></th>
+            <th><?=h($tx['table_template'])?></th>
+            <th style="width:220px;"><?=h($tx['table_preview'])?></th>
           </tr>
         </thead>
         <tbody>
@@ -353,11 +392,11 @@ render_admin_header('Stammdaten-Mapping');
                   data-fid="<?=h((string)$fid)?>"
                   name="tpl[<?=h((string)$fid)?>]"
                   value="<?=h($tpl)?>"
-                  placeholder="z.B. {{student.first_name}} {{student.last_name}}"
+                  placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
                   autocomplete="off"
                 >
                 <div class="muted" style="margin-top:6px;">
-                  Platzhalter: <code>{{student.first_name}}</code>, <code>{{student.last_name}}</code>, <code>{{class.display}}</code> …
+                  <?= $tx['placeholder_hint'] ?>
                 </div>
               </td>
               <td>
@@ -373,23 +412,21 @@ render_admin_header('Stammdaten-Mapping');
       </table>
 
       <div class="actions" style="justify-content:flex-start;">
-        <button class="btn primary" type="submit">Speichern</button>
+        <button class="btn primary" type="submit"><?=h($tx['save'])?></button>
       </div>
     </form>
   </div>
 
   <div class="card">
-    <h2 style="margin-top:0;">Vorschau</h2>
-    <p class="muted" style="margin-top:-4px;">
-      Wähle einen Schüler aus, um die Platzhalter-Ersetzungen zu prüfen.
-    </p>
+    <h2 style="margin-top:0;"><?=h($tx['preview_title'])?></h2>
+    <p class="muted" style="margin-top:-4px;"><?=h($tx['preview_hint'])?></p>
 
     <form method="get" class="row-actions" style="align-items:flex-end;">
       <input type="hidden" name="template_id" value="<?=h((string)$templateId)?>">
       <div style="min-width:340px;">
-        <label class="muted" style="display:block;margin-bottom:6px;">Schüler</label>
+        <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['preview_student_label'])?></label>
         <select name="preview_student_id" onchange="this.closest('form').submit()">
-          <option value="0">— Vorschau-Schüler auswählen —</option>
+          <option value="0"><?=h($tx['preview_select'])?></option>
           <?php foreach ($studentsForPreview as $s):
             $sid = (int)$s['id'];
             $t = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
@@ -403,7 +440,7 @@ render_admin_header('Stammdaten-Mapping');
       </div>
       <div class="actions" style="justify-content:flex-start;">
         <?php if ($previewStudentId > 0): ?>
-          <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$templateId))?>">Zurücksetzen</a>
+          <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$templateId))?>"><?=h($tx['preview_reset'])?></a>
         <?php endif; ?>
       </div>
     </form>
@@ -412,8 +449,8 @@ render_admin_header('Stammdaten-Mapping');
       <table class="table" style="margin-top:12px;">
         <thead>
           <tr>
-            <th>Platzhalter</th>
-            <th>Wert</th>
+            <th><?=h($tx['preview_table_placeholder'])?></th>
+            <th><?=h($tx['preview_table_value'])?></th>
           </tr>
         </thead>
         <tbody>

@@ -107,11 +107,12 @@ $qrTx = [
         $loginUrl = $token ? absolute_url('student/login.php?token=' . urlencode($token)) : '';
       ?>
       <div class="qr-card">
-        <div class="qr-box" data-url="<?=h($loginUrl)?>"></div>
+          <a href="<?=h($loginUrl)?>" target="_blank"><div class="qr-box" data-url="<?=h($loginUrl)?>"></div></a>
         <div class="qr-meta">
           <div class="qr-name"><?=h((string)$s['first_name'])?> <?=h((string)$s['last_name'])?></div>
           <div class="qr-small"><?=h($qrTx['school_year'])?> <?=h((string)$class['school_year'])?> · <?=h($qrTx['class_label'])?> <?=h(class_display($class))?></div>
           <div class="qr-small"><?=h($qrTx['alt_no_camera'])?></div>
+          <div class="qr-small"><a href="<?=h(absolute_url(''))?>" target="_blank"><?=h(absolute_url(''))?></a></div>
           <div class="qr-code"><?=h($loginCode ?: $qrTx['dash'])?></div>
         </div>
       </div>

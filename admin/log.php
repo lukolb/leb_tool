@@ -350,7 +350,9 @@ try {
   $st = $pdo->query("SELECT id, display_name, email FROM users WHERE deleted_at IS NULL ORDER BY display_name ASC, email ASC");
   $users = $st->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-  $err = 'Konnte Filterdaten nicht laden: ' . $e->getMessage();
+  $err = strtr(t('admin.log.error.filter_data', 'Konnte Filterdaten nicht laden: {message}'), [
+    '{message}' => $e->getMessage(),
+  ]);
 }
 
 /**
@@ -373,7 +375,9 @@ try {
     $offset = ($page - 1) * $perPage;
   }
 } catch (Throwable $e) {
-  $err = $err ?: ('Konnte Anzahl nicht bestimmen: ' . $e->getMessage());
+  $err = $err ?: strtr(t('admin.log.error.count_failed', 'Konnte Anzahl nicht bestimmen: {message}'), [
+    '{message}' => $e->getMessage(),
+  ]);
 }
 
 /**
@@ -405,7 +409,9 @@ try {
 
   $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-  $err = $err ?: ('Konnte Logs nicht laden: ' . $e->getMessage());
+  $err = $err ?: strtr(t('admin.log.error.load_failed', 'Konnte Logs nicht laden: {message}'), [
+    '{message}' => $e->getMessage(),
+  ]);
 }
 
 /**
@@ -536,11 +542,17 @@ try {
       $stt = trim((string)($x['status'] ?? ''));
 
       $parts = [];
-      if ($student !== '') $parts[] = 'Schüler: ' . $student;
-      if ($tpl !== '') $parts[] = 'Template: ' . $tpl . ($ver > 0 ? (' v' . $ver) : '');
-      if ($sy !== '') $parts[] = 'Jahr: ' . $sy;
-      if ($pl !== '') $parts[] = 'Periode: ' . $pl;
-      if ($stt !== '') $parts[] = 'Status: ' . $stt;
+      if ($student !== '') {
+        $parts[] = strtr(t('admin.log.summary.student', 'Schüler: {name}'), ['{name}' => $student]);
+      }
+      if ($tpl !== '') {
+        $parts[] = strtr(t('admin.log.summary.template', 'Template: {name}'), [
+          '{name}' => $tpl . ($ver > 0 ? (' v' . $ver) : ''),
+        ]);
+      }
+      if ($sy !== '') $parts[] = strtr(t('admin.log.summary.year', 'Jahr: {value}'), ['{value}' => $sy]);
+      if ($pl !== '') $parts[] = strtr(t('admin.log.summary.period', 'Periode: {value}'), ['{value}' => $pl]);
+      if ($stt !== '') $parts[] = strtr(t('admin.log.summary.status', 'Status: {value}'), ['{value}' => $stt]);
 
       $maps['report_instances'][$id] = implode(' · ', $parts);
     }
@@ -566,9 +578,17 @@ try {
 
       $fieldText = $label !== '' ? $label : ($fname !== '' ? $fname : '');
       $parts = [];
-      if ($fieldText !== '') $parts[] = 'Feld: ' . $fieldText;
-      if ($fname !== '' && $fieldText !== $fname) $parts[] = 'Key: ' . $fname;
-      if ($tpl !== '') $parts[] = 'Template: ' . $tpl . ($ver > 0 ? (' v' . $ver) : '');
+      if ($fieldText !== '') {
+        $parts[] = strtr(t('admin.log.summary.field', 'Feld: {label}'), ['{label}' => $fieldText]);
+      }
+      if ($fname !== '' && $fieldText !== $fname) {
+        $parts[] = strtr(t('admin.log.summary.key', 'Key: {value}'), ['{value}' => $fname]);
+      }
+      if ($tpl !== '') {
+        $parts[] = strtr(t('admin.log.summary.template', 'Template: {name}'), [
+          '{name}' => $tpl . ($ver > 0 ? (' v' . $ver) : ''),
+        ]);
+      }
 
       $maps['template_fields'][$id] = implode(' · ', $parts);
     }
@@ -582,7 +602,13 @@ try {
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $x) {
       $id = (int)$x['id'];
       $nm = trim((string)($x['name'] ?? ''));
-      $maps['option_lists'][$id] = $nm !== '' ? ('Optionenliste: ' . $nm) : ('Optionenliste #' . $id);
+      if ($nm !== '') {
+        $maps['option_lists'][$id] = strtr(t('admin.log.summary.option_list', 'Optionenliste: {name}'), ['{name}' => $nm]);
+      } else {
+        $maps['option_lists'][$id] = strtr(t('admin.log.summary.option_list_id', 'Optionenliste #{id}'), [
+          '{id}' => (string)$id,
+        ]);
+      }
     }
   }
 
@@ -596,7 +622,7 @@ try {
       $fn = trim((string)($x['filename'] ?? ''));
       $ext= trim((string)($x['file_ext'] ?? ''));
       $name = $fn !== '' ? $fn : ('icon_' . $id . ($ext ? ('.' . $ext) : ''));
-      $maps['icons'][$id] = 'Icon: ' . $name;
+      $maps['icons'][$id] = strtr(t('admin.log.summary.icon', 'Icon: {name}'), ['{name}' => $name]);
     }
   }
 
@@ -608,13 +634,13 @@ try {
  * Compact "active filters" label
  */
 $active = [];
-if ($fromDate !== '') $active[] = 'von ' . $fromDate;
-if ($toDate !== '') $active[] = 'bis ' . $toDate;
-if ($event !== '') $active[] = 'event=' . $event;
-if ($userId > 0)  $active[] = 'user_id=' . $userId;
-if ($q !== '')    $active[] = 'q=' . $q;
-if ($showIp)      $active[] = 'IP an';
-$activeText = $active ? implode(' · ', $active) : 'keine';
+if ($fromDate !== '') $active[] = strtr(t('admin.log.filter.from', 'von {date}'), ['{date}' => $fromDate]);
+if ($toDate !== '') $active[] = strtr(t('admin.log.filter.to', 'bis {date}'), ['{date}' => $toDate]);
+if ($event !== '') $active[] = strtr(t('admin.log.filter.event', 'event={value}'), ['{value}' => $event]);
+if ($userId > 0)  $active[] = strtr(t('admin.log.filter.user_id', 'user_id={value}'), ['{value}' => (string)$userId]);
+if ($q !== '')    $active[] = strtr(t('admin.log.filter.query', 'q={value}'), ['{value}' => $q]);
+if ($showIp)      $active[] = t('admin.log.filter.ip_on', 'IP an');
+$activeText = $active ? implode(' · ', $active) : t('admin.log.filter.none', 'keine');
 
 /**
  * Sort header helper
@@ -630,7 +656,7 @@ function sort_link(string $label, string $key, string $currentSort, string $curr
   return '<a href="' . h($href) . '" style="text-decoration:none; color:inherit;">' . h($label . $arrow) . '</a>';
 }
 
-render_admin_header('Admin – Audit-Log');
+render_admin_header(t('admin.log.title', 'Admin – Audit-Log'));
 ?>
 <style>
   .filters-compact .label{font-size:12px; margin-bottom:4px}
@@ -651,14 +677,14 @@ render_admin_header('Admin – Audit-Log');
 <div class="card">
   <div class="filters-head">
     <div>
-      <h1>Audit-Log</h1>
-      <div class="muted" style="margin-top:4px;">Alle Veränderungen in der Datenbank werden protokolliert. Das entsprechende Protokoll wird hier angezeigt.</div>
+      <h1><?=h(t('admin.log.heading', 'Audit-Log'))?></h1>
+      <div class="muted" style="margin-top:4px;"><?=h(t('admin.log.intro', 'Alle Veränderungen in der Datenbank werden protokolliert. Das entsprechende Protokoll wird hier angezeigt.'))?></div>
     </div>
 
     <div class="hint">
-      <span class="chip">Filter: <?=h($activeText)?></span>
+      <span class="chip"><?=h(strtr(t('admin.log.filter_chip', 'Filter: {filters}'), ['{filters}' => $activeText]))?></span>
       <button class="btn secondary" type="button" id="btnToggleFilters">
-        <?= $filtersOpen ? 'Filter einklappen' : 'Filter anzeigen' ?>
+        <?= $filtersOpen ? h(t('admin.log.filters_collapse', 'Filter einklappen')) : h(t('admin.log.filters_expand', 'Filter anzeigen')) ?>
       </button>
     </div>
   </div>
@@ -668,23 +694,23 @@ render_admin_header('Admin – Audit-Log');
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card" id="filtersCard" style="<?= $filtersOpen ? '' : 'display:none;' ?>">
-  <h2>Filter</h2>
+  <h2><?=h(t('admin.log.filters_title', 'Filter'))?></h2>
 
   <form method="get" class="filters-compact" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-top:6px;">
     <div class="field sm">
-      <label class="label">Von</label>
+      <label class="label"><?=h(t('admin.log.filter_from', 'Von'))?></label>
       <input type="date" name="from" value="<?=h($fromDate)?>">
     </div>
 
     <div class="field sm">
-      <label class="label">Bis</label>
+      <label class="label"><?=h(t('admin.log.filter_to', 'Bis'))?></label>
       <input type="date" name="to" value="<?=h($toDate)?>">
     </div>
 
     <div class="field">
-      <label class="label">Event</label>
+      <label class="label"><?=h(t('admin.log.filter_event', 'Event'))?></label>
       <select name="event">
-        <option value="">— alle —</option>
+        <option value=""><?=h(t('admin.log.filter_event_all', '— alle —'))?></option>
         <?php foreach (($eventTypes ?? []) as $et): ?>
           <option value="<?=h((string)$et)?>" <?=($event === (string)$et ? 'selected' : '')?>><?=h((string)$et)?></option>
         <?php endforeach; ?>
@@ -692,9 +718,9 @@ render_admin_header('Admin – Audit-Log');
     </div>
 
     <div class="field lg">
-      <label class="label">Benutzer</label>
+      <label class="label"><?=h(t('admin.log.filter_user', 'Benutzer'))?></label>
       <select name="user_id">
-        <option value="0">— alle —</option>
+        <option value="0"><?=h(t('admin.log.filter_user_all', '— alle —'))?></option>
         <?php foreach (($users ?? []) as $u): ?>
           <?php
             $uid = (int)($u['id'] ?? 0);
@@ -709,14 +735,14 @@ render_admin_header('Admin – Audit-Log');
     </div>
 
     <div class="field flex">
-      <label class="label">Freitext (event/user/details)</label>
-      <input type="text" name="q" value="<?=h($q)?>" placeholder="…">
+      <label class="label"><?=h(t('admin.log.filter_query', 'Freitext (event/user/details)'))?></label>
+      <input type="text" name="q" value="<?=h($q)?>" placeholder="<?=h(t('admin.log.filter_query_placeholder', '…'))?>">
     </div>
 
     <div class="field sm">
       <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:#fff; margin: 0;">
         <input type="checkbox" name="show_ip" value="1" <?= $showIp ? 'checked' : '' ?>>
-        <span>IP anzeigen</span>
+        <span><?=h(t('admin.log.filter_show_ip', 'IP anzeigen'))?></span>
       </label>
     </div>
 
@@ -726,8 +752,8 @@ render_admin_header('Admin – Audit-Log');
       <input type="hidden" name="dir" value="<?=h($dir)?>">
       <input type="hidden" name="filters_open" value="1" id="filtersOpenField">
 
-      <button class="btn primary" type="submit">Filtern</button>
-      <a class="btn secondary" href="<?=h(url('admin/log.php'))?>">Zurücksetzen</a>
+      <button class="btn primary" type="submit"><?=h(t('admin.log.filter_apply', 'Filtern'))?></button>
+      <a class="btn secondary" href="<?=h(url('admin/log.php'))?>"><?=h(t('admin.log.filter_reset', 'Zurücksetzen'))?></a>
     </div>
   </form>
 </div>
@@ -735,7 +761,7 @@ render_admin_header('Admin – Audit-Log');
 <div class="card">
   <div class="row-actions" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <div class="muted">
-      <?=h((string)$totalRows)?> Einträge · Seite <?=h((string)$page)?> / <?=h((string)$totalPages)?>
+      <?=h((string)$totalRows)?> <?=h(t('admin.log.entries_label', 'Einträge'))?> · <?=h(t('admin.log.page_label', 'Seite'))?> <?=h((string)$page)?> / <?=h((string)$totalPages)?>
     </div>
 
     <div class="row-actions" style="gap:6px;">
@@ -780,18 +806,18 @@ render_admin_header('Admin – Audit-Log');
     <table class="table" style="min-width:<?= $showIp ? '1150px' : '1020px' ?>;">
       <thead>
         <tr>
-          <th style="white-space:nowrap;"><?= sort_link('Zeit', 'created_at', $sort, $dir) ?></th>
-          <th style="white-space:nowrap;"><?= sort_link('Event', 'event', $sort, $dir) ?></th>
-          <th><?= sort_link('Benutzer', 'user', $sort, $dir) ?></th>
+          <th style="white-space:nowrap;"><?= sort_link(t('admin.log.table.time', 'Zeit'), 'created_at', $sort, $dir) ?></th>
+          <th style="white-space:nowrap;"><?= sort_link(t('admin.log.table.event', 'Event'), 'event', $sort, $dir) ?></th>
+          <th><?= sort_link(t('admin.log.table.user', 'Benutzer'), 'user', $sort, $dir) ?></th>
           <?php if ($showIp): ?>
-            <th style="white-space:nowrap;"><?= sort_link('IP', 'ip', $sort, $dir) ?></th>
+            <th style="white-space:nowrap;"><?= sort_link(t('admin.log.table.ip', 'IP'), 'ip', $sort, $dir) ?></th>
           <?php endif; ?>
-          <th>Details (aufgelöst)</th>
+          <th><?=h(t('admin.log.table.details', 'Details (aufgelöst)'))?></th>
         </tr>
       </thead>
       <tbody>
         <?php if (!$rows): ?>
-          <tr><td colspan="<?= $showIp ? 5 : 4 ?>" class="muted">Keine Einträge gefunden.</td></tr>
+          <tr><td colspan="<?= $showIp ? 5 : 4 ?>" class="muted"><?=h(t('admin.log.table.empty', 'Keine Einträge gefunden.'))?></td></tr>
         <?php else: ?>
           <?php foreach ($rows as $r): ?>
             <?php
@@ -819,14 +845,14 @@ render_admin_header('Admin – Audit-Log');
               <td style="white-space:nowrap;"><?= render_local_datetime($dt, 'd.m.Y H:i') ?></td>
 
               <td style="white-space:nowrap;">
-                <a class="linklike" href="<?=h($urlEvent)?>" title="Nach diesem Event filtern">
+                <a class="linklike" href="<?=h($urlEvent)?>" title="<?=h(t('admin.log.table.filter_event', 'Nach diesem Event filtern'))?>">
                   <code><?=h($ev)?></code>
                 </a>
               </td>
 
               <td style="white-space:nowrap;">
                 <?php if ($urlUser !== ''): ?>
-                  <a class="linklike" href="<?=h($urlUser)?>" title="Nach diesem Benutzer filtern">
+                  <a class="linklike" href="<?=h($urlUser)?>" title="<?=h(t('admin.log.table.filter_user', 'Nach diesem Benutzer filtern'))?>">
                     <?=h($userLabel)?>
                   </a>
                 <?php else: ?>
@@ -844,7 +870,7 @@ render_admin_header('Admin – Audit-Log');
                 <?php else: ?>
                   <details>
                     <summary class="muted" style="cursor:pointer; user-select:none;">
-                      <?=h($sum !== '' ? $sum : 'anzeigen')?>
+                      <?=h($sum !== '' ? $sum : t('admin.log.details.show', 'anzeigen'))?>
                     </summary>
                     <div style="margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:12px; background:#f8f9fb;">
                       <?=render_details_kv($details, $maps)?>
@@ -863,10 +889,10 @@ render_admin_header('Admin – Audit-Log');
     <div class="row-actions" style="justify-content:flex-end; gap:6px; margin-top:12px;">
       <a class="btn secondary <?=($page<=1?'disabled':'')?>"
          href="<?=h($page>1 ? page_url(['page' => $page - 1]) : '#')?>"
-         <?=($page<=1 ? 'aria-disabled="true" onclick="return false;"' : '')?>>Vorherige</a>
+         <?=($page<=1 ? 'aria-disabled="true" onclick="return false;"' : '')?>><?=h(t('admin.log.pagination.prev', 'Vorherige'))?></a>
       <a class="btn secondary <?=($page>=$totalPages?'disabled':'')?>"
          href="<?=h($page<$totalPages ? page_url(['page' => $page + 1]) : '#')?>"
-         <?=($page>=$totalPages ? 'aria-disabled="true" onclick="return false;"' : '')?>>Nächste</a>
+         <?=($page>=$totalPages ? 'aria-disabled="true" onclick="return false;"' : '')?>><?=h(t('admin.log.pagination.next', 'Nächste'))?></a>
     </div>
   <?php endif; ?>
 </div>
@@ -886,7 +912,7 @@ render_admin_header('Admin – Audit-Log');
   function setOpen(open){
     if (!card) return;
     card.style.display = open ? '' : 'none';
-    if (btn) btn.textContent = open ? 'Filter einklappen' : 'Filter anzeigen';
+    if (btn) btn.textContent = open ? <?= json_encode(t('admin.log.filters_collapse', 'Filter einklappen')) ?> : <?= json_encode(t('admin.log.filters_expand', 'Filter anzeigen')) ?>;
     if (field) field.value = open ? '1' : '';
     try { localStorage.setItem('admin_audit_filters_open', open ? '1' : '0'); } catch(e){}
   }

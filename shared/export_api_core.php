@@ -41,8 +41,8 @@ function enforce_class_access(PDO $pdo, int $classId, bool $enforce, int $userId
   if (!$enforce) return;
   $u = current_user();
   if (($u['role'] ?? '') === 'admin') return;
-  if ($userId <= 0) throw new RuntimeException('Keine Berechtigung.');
-  if (!user_can_access_class($pdo, $userId, $classId)) throw new RuntimeException('Keine Berechtigung.');
+  if ($userId <= 0) throw new RuntimeException(t('export.api.error.forbidden', 'Keine Berechtigung.'));
+  if (!user_can_access_class($pdo, $userId, $classId)) throw new RuntimeException(t('export.api.error.forbidden', 'Keine Berechtigung.'));
 }
 
 function template_for_class(PDO $pdo, int $classId): array {
@@ -56,13 +56,13 @@ function template_for_class(PDO $pdo, int $classId): array {
   );
   $st->execute([$classId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$row) throw new RuntimeException('Klasse nicht gefunden.');
+  if (!$row) throw new RuntimeException(t('export.api.error.class_not_found', 'Klasse nicht gefunden.'));
   $tplId = (int)($row['template_id'] ?? 0);
-  if ($tplId <= 0) throw new RuntimeException('Für diese Klasse wurde keine Vorlage zugeordnet.');
+  if ($tplId <= 0) throw new RuntimeException(t('export.api.error.no_template', 'Für diese Klasse wurde keine Vorlage zugeordnet.'));
 
   $st2 = $pdo->prepare("SELECT is_active FROM templates WHERE id=? LIMIT 1");
   $st2->execute([$tplId]);
-  if ((int)$st2->fetchColumn() !== 1) throw new RuntimeException('Die zugeordnete Vorlage ist inaktiv.');
+  if ((int)$st2->fetchColumn() !== 1) throw new RuntimeException(t('export.api.error.template_inactive', 'Die zugeordnete Vorlage ist inaktiv.'));
 
   return $row;
 }

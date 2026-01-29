@@ -14,13 +14,20 @@ function read_json_body(): array {
   return is_array($data) ? $data : [];
 }
 
+function t_lang(string $key, string $lang, ?string $fallback = null): string {
+  $catalog = translations_catalog();
+  $translations = $catalog[$lang] ?? [];
+  if (array_key_exists($key, $translations)) return (string)$translations[$key];
+  return $fallback ?? $key;
+}
+
 function json_out(array $payload, int $status = 200): never {
   http_response_code($status);
   echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
 
-function ai_provider_config(): array {
+function ai_provider_config(string $lang): array {
   $cfg = app_config();
   $ai = is_array($cfg['ai'] ?? null) ? $cfg['ai'] : [];
 
@@ -33,10 +40,10 @@ function ai_provider_config(): array {
   $timeout = (int)($ai['timeout_seconds'] ?? 20);
 
   if (!$enabled || !$studentEnabled) {
-    throw new RuntimeException('KI ist deaktiviert.');
+    throw new RuntimeException(t_lang('student.ai.error.disabled', $lang));
   }
   if ($apiKey === '') {
-    throw new RuntimeException('AI API Key nicht konfiguriert.');
+    throw new RuntimeException(t_lang('student.ai.error.api_key_missing', $lang));
   }
 
   return [
@@ -48,7 +55,7 @@ function ai_provider_config(): array {
   ];
 }
 
-function ai_chat_completion(array $messages, array $aiCfg): string {
+function ai_chat_completion(array $messages, array $aiCfg, string $lang): string {
   $url = $aiCfg['base_url'] . '/v1/chat/completions';
   $payload = [
     'model' => $aiCfg['model'],
@@ -74,17 +81,17 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   if ($resp === false) {
     $err = curl_error($ch);
     curl_close($ch);
-    throw new RuntimeException('AI Request fehlgeschlagen: ' . $err);
+    throw new RuntimeException(strtr(t_lang('student.ai.error.request_failed', $lang), ['{error}' => $err]));
   }
   curl_close($ch);
 
   $json = json_decode((string)$resp, true);
   if (!is_array($json)) {
-    throw new RuntimeException('AI Antwort unverständlich.');
+    throw new RuntimeException(t_lang('student.ai.error.response_unreadable', $lang));
   }
   if ($httpCode >= 400) {
-    $msg = (string)($json['error']['message'] ?? 'Fehler beim AI-Provider.');
-    throw new RuntimeException('AI Fehler: ' . $msg);
+    $msg = (string)($json['error']['message'] ?? t_lang('student.ai.error.provider_message_fallback', $lang));
+    throw new RuntimeException(strtr(t_lang('student.ai.error.provider_error', $lang), ['{message}' => $msg]));
   }
 
   $choices = $json['choices'] ?? [];
@@ -94,13 +101,13 @@ function ai_chat_completion(array $messages, array $aiCfg): string {
   }
   $content = trim($content);
   if ($content === '') {
-    throw new RuntimeException('AI hat keine Antwort geliefert.');
+    throw new RuntimeException(t_lang('student.ai.error.empty_response', $lang));
   }
 
   return $content;
 }
 
-function student_context(PDO $pdo, int $studentId): array {
+function student_context(PDO $pdo, int $studentId, string $lang): array {
   $st = $pdo->prepare(
     "SELECT s.id, s.class_id, c.template_id, c.grade_level\n" .
     "FROM students s\n" .
@@ -109,14 +116,15 @@ function student_context(PDO $pdo, int $studentId): array {
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$row) throw new RuntimeException('Schüler nicht gefunden.');
+  if (!$row) throw new RuntimeException(t_lang('student.ai.error.student_not_found', $lang));
   return $row;
 }
 
 try {
   $pdo = db();
+  $lang = ui_lang();
   $studentId = (int)($_SESSION['student']['id'] ?? 0);
-  if ($studentId <= 0) throw new RuntimeException('Nicht eingeloggt.');
+  if ($studentId <= 0) throw new RuntimeException(t_lang('student.ai.error.not_logged_in', $lang));
 
   $data = read_json_body();
   if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
@@ -124,14 +132,14 @@ try {
   csrf_verify();
 
   $fieldId = (int)($data['template_field_id'] ?? 0);
-  if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
+  if ($fieldId <= 0) throw new RuntimeException(t_lang('student.ai.error.missing_field_id', $lang));
 
-  $lang = (string)($data['lang'] ?? ui_lang());
+  $lang = (string)($data['lang'] ?? $lang);
   $lang = ($lang === 'en') ? 'en' : 'de';
 
-  $ctx = student_context($pdo, $studentId);
+  $ctx = student_context($pdo, $studentId, $lang);
   $templateId = (int)($ctx['template_id'] ?? 0);
-  if ($templateId <= 0) throw new RuntimeException('Keine Vorlage verfügbar.');
+  if ($templateId <= 0) throw new RuntimeException(t_lang('student.ai.error.no_template', $lang));
 
   $st = $pdo->prepare(
     "SELECT id, field_name, field_type, label, label_en, help_text\n" .
@@ -141,7 +149,7 @@ try {
   );
   $st->execute([$fieldId, $templateId]);
   $field = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$field) throw new RuntimeException('Feld nicht erlaubt.');
+  if (!$field) throw new RuntimeException(t_lang('student.ai.error.field_not_allowed', $lang));
 
   $label = '';
   if ($lang === 'en') {
@@ -154,24 +162,25 @@ try {
   $type = strtolower(trim((string)($field['field_type'] ?? '')));
   $expectsChoice = in_array($type, ['radio','select','grade','checkbox'], true);
   $inputHint = $expectsChoice
-    ? (($lang === 'en') ? 'The student should select one of the given options.' : 'Das Kind soll eine der vorgegebenen Optionen auswählen.')
-    : (($lang === 'en') ? 'The student should write a short answer in their own words.' : 'Das Kind soll eine kurze Antwort in eigenen Worten schreiben.');
+    ? t_lang('student.ai.prompt.input_hint.choice', $lang)
+    : t_lang('student.ai.prompt.input_hint.text', $lang);
 
   $grade = isset($ctx['grade_level']) ? (int)$ctx['grade_level'] : 0;
   $gradeInfo = $grade > 0 ? (string)$grade : '';
 
-  $sys = ($lang === 'en')
-    ? 'You explain competencies for students to self-assess. Be neutral and non-judgmental. Use a friendly tone, 1-3 short sentences, age-appropriate for the given grade, no lists. End with a simple question prompting the student to answer the item.'
-    : 'Du erklärst Kompetenzen für die Selbsteinschätzung. Sei neutral und nicht wertend. Freundlicher Ton, 1-3 kurze Sätze, altersgerecht für die angegebene Klassenstufe, keine Listen. Am Ende steht immer eine einfache Frage, die zur Antwort auf das Item auffordert.';
-  $user = ($lang === 'en')
-    ? "Explain this competency in simple terms for a student, without judging. {$inputHint} Grade: {$gradeInfo}. Competency: {$label}. Help text: {$help}. End with a short prompt question like \"How well can you do this already?\" or \"Choose how well you can do this.\""
-    : "Erkläre diese Kompetenz in einfachen Worten, ohne zu bewerten. {$inputHint} Klassenstufe: {$gradeInfo}. Kompetenz: {$label}. Hilfetext: {$help}. Beende mit einer kurzen Aufforderungsfrage wie „Wie gut kannst du das schon?“ oder „Wähle aus, wie gut du das schon kannst.“";
+  $sys = t_lang('student.ai.prompt.system', $lang);
+  $user = strtr(t_lang('student.ai.prompt.user', $lang), [
+    '{input_hint}' => $inputHint,
+    '{grade}' => $gradeInfo,
+    '{label}' => $label,
+    '{help}' => $help,
+  ]);
 
-  $aiCfg = ai_provider_config();
+  $aiCfg = ai_provider_config($lang);
   $text = ai_chat_completion([
     ['role' => 'system', 'content' => $sys],
     ['role' => 'user', 'content' => $user],
-  ], $aiCfg);
+  ], $aiCfg, $lang);
 
   json_out(['ok' => true, 'text' => $text]);
 } catch (Throwable $e) {
