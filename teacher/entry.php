@@ -3742,6 +3742,10 @@ render_teacher_header($pageTitle);
       });
 
       if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        if (MEETING_MODE) {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', () => autoResizeTextarea(inp));
+        }
         inp.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
             ev.preventDefault();
@@ -3933,6 +3937,10 @@ render_teacher_header($pageTitle);
       });
 
       if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        if (MEETING_MODE) {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', () => autoResizeTextarea(inp));
+        }
         inp.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
             ev.preventDefault();
@@ -4449,6 +4457,15 @@ render_teacher_header($pageTitle);
     return n ? `maxlength="${esc(String(n))}"` : '';
   }
 
+  function autoResizeTextarea(el){
+    if (!el) return;
+    el.style.height = 'auto';
+    const styles = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || Number.parseFloat(styles.fontSize) || 0;
+    const extraLine = lineHeight > 0 ? lineHeight : 0;
+    el.style.height = `${el.scrollHeight + extraLine}px`;
+  }
+
   function renderInputHtml(f, reportId, value, locked, canEdit=true){
     const dis = (locked || !canEdit) ? 'disabled' : '';
     const common = `class="input" data-teacher-input="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${dis}`;
@@ -4467,8 +4484,8 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      const rows = MEETING_MODE ? 10 : 4;
-      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; min-height:280px;' : '';
+      const rows = MEETING_MODE ? 1 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; overflow:hidden; resize:none; height:auto;' : '';
       return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
@@ -4552,8 +4569,8 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      const rows = MEETING_MODE ? 10 : 4;
-      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; min-height:280px;' : '';
+      const rows = MEETING_MODE ? 1 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; overflow:hidden; resize:none; height:auto;' : '';
       return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
