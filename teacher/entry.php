@@ -2200,6 +2200,11 @@ render_teacher_header($pageTitle);
     mergeDecisions: new Map(),
   };
 
+  if (MEETING_MODE) {
+    ui.studentMissingOnly = false;
+    ui.optionMode = 'buttons';
+  }
+
   let meetingState = {
     steps: [],
     activeStep: 0,
@@ -2829,6 +2834,10 @@ render_teacher_header($pageTitle);
 
   function applyStoredView(){
     if (!viewSelect) return;
+    if (MEETING_MODE) {
+      viewSelect.value = 'student';
+      return;
+    }
     const saved = normalizeViewMode(localStorage.getItem(VIEW_STORAGE_KEY));
     viewSelect.value = saved;
   }
@@ -3294,6 +3303,10 @@ render_teacher_header($pageTitle);
 
   function updateFormsProgressUI(){
     if (!formsProgressWrap || !formsProgressBar) return;
+    if (MEETING_MODE) {
+      formsProgressWrap.style.display = 'none';
+      return;
+    }
 
     const total = Number(state.progress_summary?.students_total ?? (state.students || []).length);
     const complete = CHILD_MODE
@@ -4430,6 +4443,11 @@ render_teacher_header($pageTitle);
 
     const type = String(f.field_type || 'text');
 
+    if (MEETING_MODE && type === 'grade') {
+      const shown = teacherDisplay(f, value);
+      return `<div class="input" data-static="1" aria-readonly="true">${esc(shown)}</div>`;
+    }
+
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
       return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">${esc(tEntry('yes_no'))}</span></label>`;
@@ -4507,6 +4525,11 @@ render_teacher_header($pageTitle);
     const common = `class="input" data-child-input="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${dis}`;
 
     const type = String(f.field_type || 'text');
+
+    if (MEETING_MODE && type === 'grade') {
+      const shown = childFieldDisplay(f, value);
+      return `<div class="input" data-static="1" aria-readonly="true">${esc(shown)}</div>`;
+    }
 
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
@@ -4838,6 +4861,9 @@ render_teacher_header($pageTitle);
     // ✅ progress: how many forms are complete
     updateFormsProgressUI();
 
+    if (MEETING_MODE && viewSelect) {
+      viewSelect.value = 'student';
+    }
     ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
     if (CHILD_MODE && ui.view === 'grades') {
       ui.view = 'student';
@@ -5134,9 +5160,7 @@ render_teacher_header($pageTitle);
   function updateMeetingStudentBadge(){
     const s = activeStudent();
     if (!s || !meetingStudentBadge) return;
-    const missing = Number(s.progress_teacher_missing || 0);
-    const missingLabel = tfmtEntry('progress_missing_teacher', { count: missing });
-    meetingStudentBadge.textContent = `${s.name} · ${missingLabel}`;
+    meetingStudentBadge.textContent = `${s.name}`;
   }
 
   function ensureMeetingStudentSelect(list){
