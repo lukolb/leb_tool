@@ -14,6 +14,8 @@ $classId = (int)($_GET['class_id'] ?? 0);
 $delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
 $childMode = ((int)($_GET['child'] ?? 0) === 1);
 $childEditOverride = ((int)($_GET['child_edit'] ?? 0) === 1);
+$meetingMode = ((int)($_GET['meeting'] ?? 0) === 1);
+if ($meetingMode && $childMode) $meetingMode = false;
 
 $jsDelegatedMode = $delegatedMode ? 1 : 0;
 $jsUserId = $userId;
@@ -848,30 +850,79 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 $pageTitle = $childMode
   ? t('teacher.child_entry.title')
   : t('teacher.entry.title');
+
+$meetingParams = ['meeting' => 1];
+if ($classId > 0) $meetingParams['class_id'] = $classId;
+if ($delegatedMode) $meetingParams['delegated'] = 1;
+$meetingUrl = url('teacher/entry.php' . ($meetingParams ? ('?' . http_build_query($meetingParams)) : ''));
+
+$meetingExitParams = [];
+if ($classId > 0) $meetingExitParams['class_id'] = $classId;
+if ($delegatedMode) $meetingExitParams['delegated'] = 1;
+$meetingExitUrl = url('teacher/entry.php' . ($meetingExitParams ? ('?' . http_build_query($meetingExitParams)) : ''));
+
 render_teacher_header($pageTitle);
 ?>
 
-<div class="card">
+<div class="card" id="meetingHeaderCard">
   <div class="row-actions" style="float: right;">
-    <?php if (!$delegatedMode): ?>
+    <?php if ($meetingMode): ?>
+      <button
+        class="btn secondary"
+        type="button"
+        id="btnMeetingFullscreen"
+        data-label-enter="<?=h(t('teacher.entry.meeting_fullscreen'))?>"
+        data-label-exit="<?=h(t('teacher.entry.meeting_fullscreen_exit'))?>"
+      >
+        <?=h(t('teacher.entry.meeting_fullscreen'))?>
+      </button>
+      <a class="btn" id="btnMeetingExit" href="<?=h($meetingExitUrl)?>">
+        <?=h(t('teacher.entry.meeting_exit'))?>
+      </a>
+    <?php else: ?>
+      <?php if (!$delegatedMode): ?>
         <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action'))?></button>
       <?php else: ?>
         <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation'))?></button>
       <?php endif; ?>
-    <?php if (!$delegatedMode): ?>
-      <?php if ($childMode): ?>
-          <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-            <?=h(t('teacher.child_entry.to_teacher'))?>
-          </a>
-        <?php else: ?>
-          <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
-            <?=h(t('teacher.child_entry.to_child'))?>
-          </a>
-        <?php endif; ?>
+      <?php if (!$delegatedMode): ?>
+        <?php if ($childMode): ?>
+            <a class="btn secondary" data-switch-view="teacher" href="<?=h(url('teacher/entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+              <?=h(t('teacher.child_entry.to_teacher'))?>
+            </a>
+          <?php else: ?>
+            <a class="btn secondary" data-switch-view="child" href="<?=h(url('teacher/child_entry.php' . ($classId > 0 ? ('?class_id=' . (int)$classId) : '')))?>">
+              <?=h(t('teacher.child_entry.to_child'))?>
+            </a>
+          <?php endif; ?>
+          <?php if (!$childMode): ?>
+            <a class="btn secondary" id="btnMeetingView" href="<?=h($meetingUrl)?>">
+              <?=h(t('teacher.entry.meeting_view'))?>
+            </a>
+          <?php endif; ?>
+      <?php endif; ?>
     <?php endif; ?>
   </div>
-  <h1><?=h($childMode ? t('teacher.child_entry.heading') : ($delegatedMode ? t('teacher.entry.heading_delegated') : t('teacher.entry.heading_fill')))?></h1>
+  <h1>
+    <?=h($meetingMode ? t('teacher.entry.meeting_heading') : ($childMode ? t('teacher.child_entry.heading') : ($delegatedMode ? t('teacher.entry.heading_delegated') : t('teacher.entry.heading_fill'))))?>
+  </h1>
+  <?php if ($meetingMode): ?>
+    <div class="muted" style="margin-top:6px;"><?=h(t('teacher.entry.meeting_hint'))?></div>
+  <?php endif; ?>
 </div>
+
+<?php if ($meetingMode): ?>
+  <button
+    class="btn secondary"
+    type="button"
+    id="btnMeetingFullscreenFloat"
+    data-label-enter="<?=h(t('teacher.entry.meeting_fullscreen'))?>"
+    data-label-exit="<?=h(t('teacher.entry.meeting_fullscreen_exit'))?>"
+    aria-label="<?=h(t('teacher.entry.meeting_fullscreen'))?>"
+  >
+    <?=h(t('teacher.entry.meeting_fullscreen'))?>
+  </button>
+<?php endif; ?>
 
 <?php if ($childMode): ?>
     <div class="alert danger">
@@ -880,19 +931,21 @@ render_teacher_header($pageTitle);
     </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" id="classSelectCard">
 
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h(t('teacher.entry.delegation_notice'))?></div>
   <?php endif; ?>
-  <p class="muted" style="margin-top:-6px;">
-    <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
-    <?php if ($childMode): ?>
-      <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
-    <?php else: ?>
-      <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
-    <?php endif; ?>
-  </p>
+  <?php if (!$meetingMode): ?>
+    <p class="muted" style="margin-top:-6px;">
+      <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
+      <?php if ($childMode): ?>
+        <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
+      <?php else: ?>
+        <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
+      <?php endif; ?>
+    </p>
+  <?php endif; ?>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
     <div style="min-width:260px;">
@@ -911,7 +964,7 @@ render_teacher_header($pageTitle);
   </div>
 </div>
 
-<?php if ($isTeacherRole && !$childMode && !$delegatedMode): ?>
+<?php if ($isTeacherRole && !$childMode && !$delegatedMode && !$meetingMode): ?>
   <div class="card">
     <h2 style="margin-top:0;"><?=h(t('teacher.entry.finalmarks.title'))?></h2>
     <?php if ($classId <= 0): ?>
@@ -1282,7 +1335,7 @@ render_teacher_header($pageTitle);
         <span id="showStudentEntries" style="display:none;"></span>
       <?php endif; ?>
   <div id="metaTop" class="muted" style="margin-bottom:10px;"><?=h(t('teacher.entry.loading'))?></div>
-  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+  <div id="entryFilterRow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
     <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
       <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> <?=h(t('teacher.entry.only_open'))?>
     </label>
@@ -1290,7 +1343,7 @@ render_teacher_header($pageTitle);
       <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> <?=h(t('teacher.entry.option_buttons'))?>
     </label>
   </div>
-  <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
+  <div class="row" id="viewSelectRow" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
     <div style="min-width:260px;">
       <label class="label"><?=h(t('teacher.entry.view_label'))?></label>
       <select class="input" id="viewSelect" style="width:100%;">
@@ -1354,7 +1407,7 @@ render_teacher_header($pageTitle);
 
   <!-- Student view -->
   <div id="viewStudent" style="display:none;">
-    <div style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
+    <div id="studentViewGrid" style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
           <input class="input" id="studentSearch" type="search" placeholder="<?=h(t('teacher.entry.student_search_placeholder'))?>" style="width:100%;">
@@ -1378,6 +1431,38 @@ render_teacher_header($pageTitle);
         </div>
 
         <div id="studentForm"></div>
+      </div>
+    </div>
+
+    <div id="meetingWizShell" class="meeting-wiz" style="display:none;">
+      <div class="meeting-sidebar">
+        <div class="card">
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div>
+              <label class="label" for="meetingStudentSelect"><?=h(t('teacher.entry.student_label'))?></label>
+              <select class="input" id="meetingStudentSelect" style="width:100%;"></select>
+              <div class="row" style="gap:6px; margin-top:8px;">
+                <button class="btn secondary" type="button" id="btnMeetingStudentPrev"><?=h(t('teacher.entry.prev_student'))?></button>
+                <button class="btn secondary" type="button" id="btnMeetingStudentNext"><?=h(t('teacher.entry.next_student'))?></button>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;" class="meeting-nav" id="meetingNav"></div>
+        </div>
+      </div>
+      <div class="meeting-content">
+        <div class="card">
+          <div class="row-actions" style="justify-content:space-between; margin-bottom:10px;">
+            <div class="pill-mini" id="meetingStudentBadge" style="font-weight:bold;">—</div>
+          </div>
+          <h2 id="meetingStepTitle">—</h2>
+          <div class="step-meta" id="meetingStepSub"></div>
+          <div id="meetingStepBody"></div>
+          <div class="meeting-actions">
+            <button class="btn secondary" type="button" id="btnMeetingPrev"><?=h(t('teacher.entry.meeting_prev_step'))?></button>
+            <button class="btn primary" type="button" id="btnMeetingNext"><?=h(t('teacher.entry.meeting_next_step'))?></button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1409,6 +1494,109 @@ render_teacher_header($pageTitle);
   <?php if ($childMode): ?>
   body.page{
     background: #fdecec;
+  }
+  <?php endif; ?>
+  <?php if ($meetingMode): ?>
+  body.page.meeting-mode{
+    background: #f4f7ff;
+  }
+  body.page.meeting-mode .fixedHeader{
+    display: none;
+  }
+  body.page.meeting-mode .container{
+    max-width: 100%;
+    padding: 16px 20px 24px;
+  }
+  body.page.meeting-mode #classSelectCard,
+  body.page.meeting-mode #classFieldsBox,
+  body.page.meeting-mode #entryFilterRow,
+  body.page.meeting-mode #viewSelectRow,
+  body.page.meeting-mode #viewGrades,
+  body.page.meeting-mode #viewItem,
+  body.page.meeting-mode #showStudentEntries,
+  body.page.meeting-mode #studentViewGrid{
+    display: none !important;
+  }
+  body.page.meeting-mode #meetingWizShell{
+    display: grid !important;
+  }
+  body.page.meeting-fullscreen #meetingHeaderCard{
+    display: none !important;
+  }
+  body.page.meeting-mode #btnMeetingFullscreenFloat{
+    display: none;
+  }
+  body.page.meeting-fullscreen #btnMeetingExit{
+    display: none !important;
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreen{
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10001;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 20px;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgba(16,24,40,0.2);
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreen{
+    display: none !important;
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreenFloat{
+    display: inline-flex !important;
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10001;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 20px;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgba(16,24,40,0.2);
+  }
+  body.page.meeting-mode .history-inline,
+  body.page.meeting-mode .child-actions{
+    display: none !important;
+  }
+  body.page.meeting-mode .meeting-content,
+  body.page.meeting-mode .meeting-sidebar{
+    font-size: 17px;
+  }
+  body.page.meeting-mode .meeting-nav-item{
+    font-size: 16px;
+  }
+  body.page.meeting-mode .meeting-nav-item .sub{
+    font-size: 13px;
+  }
+  body.page.meeting-mode #meetingStepTitle{
+    font-size: 24px;
+  }
+  body.page.meeting-mode #meetingStepSub{
+    font-size: 16px;
+    color: rgba(0,0,0,0.7);
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+  body.page.meeting-mode .field{
+    border-left: 4px solid rgba(11,87,208,0.55);
+  }
+  body.page.meeting-mode .field .lbl{
+    
+  }
+  body.page.meeting-mode .field.show-child .child{
+    display:block;
+    border-left: 4px solid rgba(11,122,11,0.6);
+    background: rgba(11,122,11,0.08);
+    color: #0b5f2a;
+    padding-left: 8px;
+  }
+  body.page.meeting-mode .field.show-child .child strong{
+    color: #0b7a0b;
   }
   <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
@@ -1472,10 +1660,21 @@ render_teacher_header($pageTitle);
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
   .opt:hover{ background: rgba(0,0,0,0.02); }
-  .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
-  .opt.child-val{ box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35); }
-  .opt.child-val .lbl{ color: #0b7a0b; }
-  .opt.selected.child-val{ outline-color: rgba(11, 122, 11, 0.35); }
+  .opt.selected{
+    outline: 2px solid rgba(11,87,208,0.45);
+    background: rgba(11,87,208,0.16);
+    border-color: rgba(11,87,208,0.35);
+  }
+  .opt.child-val{
+    border-color: rgba(11, 122, 11, 0.6);
+    background: rgba(11, 122, 11, 0.18);
+    box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35);
+  }
+  .opt.child-val .lbl{  }
+  .opt.selected.child-val{
+      outline-color: rgba(11, 122, 11, 0.55);
+      background: linear-gradient(134deg, rgba(11, 122, 11, 0.18) 0%, rgba(11, 122, 11, 0.3) 50%, rgba(11,87,208,0.3) 51%, rgba(11,87,208,0.16) 100%);
+  }
   .opt:disabled{ opacity:0.5; cursor:not-allowed; }
   .opt .lbl{ font-weight:750; }
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
@@ -1583,6 +1782,51 @@ render_teacher_header($pageTitle);
     font-weight:900;
   }
   .subgroup-label{ color: rgba(0,0,0,0.7); font-size:12px; }
+  .meeting-wiz{
+    display:grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap:14px;
+    align-items:start;
+  }
+  .meeting-nav{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    margin-top:10px;
+  }
+  .meeting-nav-item{
+    padding:8px 10px;
+    border-radius:10px;
+    border:1px solid transparent;
+    cursor:pointer;
+    font-weight:600;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    background: transparent;
+    text-align: left;
+    width: 100%;
+  }
+  .meeting-nav-item .sub{
+    color:var(--muted);
+    font-size:12px;
+    font-weight:500;
+  }
+  .meeting-nav-item:hover{ background: rgba(0,0,0,0.04); }
+  .meeting-nav-item.active{
+    background: rgba(11,87,208,0.08);
+    border-color: rgba(11,87,208,0.25);
+    color: var(--primary);
+  }
+  .meeting-actions{
+    display:flex;
+    gap:8px;
+    justify-content:flex-end;
+    margin-top:14px;
+  }
+  @media (max-width: 980px){
+    .meeting-wiz{ grid-template-columns: 1fr; }
+  }
 </style>
 
 <script>
@@ -1717,6 +1961,7 @@ render_teacher_header($pageTitle);
   const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
+  const MEETING_MODE = (<?=json_encode($meetingMode ? 1 : 0)?> === 1);
 
   const elApp = document.getElementById('app');
   const classFieldsBox = document.getElementById('classFieldsBox');
@@ -1774,12 +2019,99 @@ render_teacher_header($pageTitle);
   const gradeColGroupBody = document.getElementById('gradeColGroupBody');
   const gradeHeadScroller = document.getElementById('gradeHeadScroller');
   const fixedHeader = document.querySelector('.fixedHeader');
+  const btnMeetingFullscreen = document.getElementById('btnMeetingFullscreen');
+  const btnMeetingExit = document.getElementById('btnMeetingExit');
+  const btnMeetingFullscreenFloat = document.getElementById('btnMeetingFullscreenFloat');
+  const meetingWizShell = document.getElementById('meetingWizShell');
+  const meetingNav = document.getElementById('meetingNav');
+  const meetingStepTitle = document.getElementById('meetingStepTitle');
+  const meetingStepSub = document.getElementById('meetingStepSub');
+  const meetingStepBody = document.getElementById('meetingStepBody');
+  const meetingStudentBadge = document.getElementById('meetingStudentBadge');
+  const meetingStudentSelect = document.getElementById('meetingStudentSelect');
+  const btnMeetingPrev = document.getElementById('btnMeetingPrev');
+  const btnMeetingNext = document.getElementById('btnMeetingNext');
+  const btnMeetingStudentPrev = document.getElementById('btnMeetingStudentPrev');
+  const btnMeetingStudentNext = document.getElementById('btnMeetingStudentNext');
+
+  if (MEETING_MODE) {
+    document.body.classList.add('meeting-mode');
+  }
 
   if (gradeBodyScroller) {
     gradeBodyScroller.addEventListener('scroll', syncGradeHeaderScroll);
   }
   window.addEventListener('resize', scheduleGradeSync);
   window.addEventListener('resize', updateFixedHeaderHeight);
+
+  function updateMeetingFullscreenLabel(){
+    const enterLabel = btnMeetingFullscreen?.dataset.labelEnter || btnMeetingFullscreenFloat?.dataset.labelEnter || '';
+    const exitLabel = btnMeetingFullscreen?.dataset.labelExit || btnMeetingFullscreenFloat?.dataset.labelExit || '';
+    const isFull = !!document.fullscreenElement;
+    document.body.classList.toggle('meeting-fullscreen', isFull);
+    const setBtn = (btn) => {
+      if (!btn) return;
+      if (isFull) {
+        btn.textContent = '⤫';
+        btn.setAttribute('aria-label', exitLabel);
+        btn.setAttribute('title', exitLabel);
+      } else {
+        btn.textContent = enterLabel;
+        btn.removeAttribute('title');
+        btn.setAttribute('aria-label', enterLabel);
+      }
+    };
+    setBtn(btnMeetingFullscreen);
+    setBtn(btnMeetingFullscreenFloat);
+  }
+
+  if (MEETING_MODE) {
+    if (viewSelect) {
+      viewSelect.value = 'student';
+      viewSelect.disabled = true;
+    }
+    updateMeetingFullscreenLabel();
+    document.addEventListener('fullscreenchange', updateMeetingFullscreenLabel);
+    const toggleFullscreen = async () => {
+        const root = document.documentElement;
+        if (!document.fullscreenElement && root.requestFullscreen) {
+          try { await root.requestFullscreen(); } catch (e) {}
+        } else if (document.exitFullscreen) {
+          try { await document.exitFullscreen(); } catch (e) {}
+        }
+      };
+    if (btnMeetingFullscreen) {
+      btnMeetingFullscreen.addEventListener('click', toggleFullscreen);
+    }
+    if (btnMeetingFullscreenFloat) {
+      btnMeetingFullscreenFloat.addEventListener('click', toggleFullscreen);
+    }
+    if (btnMeetingPrev) {
+      btnMeetingPrev.addEventListener('click', () => meetingStepMove(-1));
+    }
+    if (btnMeetingNext) {
+      btnMeetingNext.addEventListener('click', () => meetingStepMove(1));
+    }
+    if (btnMeetingStudentPrev) {
+      btnMeetingStudentPrev.addEventListener('click', () => {
+        ui.activeStudentIndex = Math.max(0, ui.activeStudentIndex - 1);
+        renderMeetingView();
+      });
+    }
+    if (btnMeetingStudentNext) {
+      btnMeetingStudentNext.addEventListener('click', () => {
+        const maxIdx = Math.max(0, currentStudents().length - 1);
+        ui.activeStudentIndex = Math.min(maxIdx, ui.activeStudentIndex + 1);
+        renderMeetingView();
+      });
+    }
+    if (meetingStudentSelect) {
+      meetingStudentSelect.addEventListener('change', () => {
+        ui.activeStudentIndex = Number(meetingStudentSelect.value || 0);
+        renderMeetingView();
+      });
+    }
+  }
 
   const studentSearch = document.getElementById('studentSearch');
   const studentGroupSelect = document.getElementById('studentGroupSelect');
@@ -1866,6 +2198,12 @@ render_teacher_header($pageTitle);
     pendingPayloads: new Map(),
     saveInFlight: 0,
     mergeDecisions: new Map(),
+  };
+
+  let meetingState = {
+    steps: [],
+    activeStep: 0,
+    activeStudentId: 0,
   };
 
   function mergeDecisionKey(reportId, fieldId){
@@ -2130,6 +2468,8 @@ render_teacher_header($pageTitle);
 
   function childInfoHtml(f, reportId){
     if (!f || !f.child || !f.child.id) return '';
+    const type = String(f.field_type || '');
+    if (type === 'radio' || type === 'select' || type === 'grade') return '';
     const childId = Number(f.child.id);
     const rawChild = childVal(reportId, childId);
     const shownChild = rawChild ? childDisplay(f, rawChild) : '';
@@ -4393,13 +4733,14 @@ render_teacher_header($pageTitle);
     return (list || []).filter(f => String(f.subgroup || '').trim() === sub);
   }
 
-  function renderStudentFields(fields, reportId, locked){
+  function renderStudentFields(fields, reportId, locked, opts = {}){
+    const showSubgroups = opts.showSubgroups !== false;
     let html = '';
     let currentSubKey = '';
     (fields || []).forEach(f => {
       const subKey = String(f.subgroup || '').trim();
       const subLabel = subgroupLabelForLang(subKey, f.subgroup_title_en);
-      if (subKey && subKey !== currentSubKey) {
+      if (showSubgroups && subKey && subKey !== currentSubKey) {
         html += `<div class="subgroup-h">${esc(subLabel)}</div>`;
         currentSubKey = subKey;
       } else if (!subKey) {
@@ -4420,10 +4761,11 @@ render_teacher_header($pageTitle);
       const actionsHtml = (combinedHtml || historyHtml || clearBtn)
         ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
         : '';
+        const helpDisp = MEETING_MODE ? '' : `<div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>`;
       html += `
         <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
           <div class="lbl">${esc(lbl)}</div>
-          <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
+          ${helpDisp}
           ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
           ${actionsHtml}
           ${childInfo}
@@ -4434,7 +4776,7 @@ render_teacher_header($pageTitle);
   }
 
   function renderClassFields(){
-    if (CHILD_MODE) {
+    if (CHILD_MODE || MEETING_MODE) {
       if (classFieldsBox) classFieldsBox.style.display = 'none';
       if (classFieldsForm) classFieldsForm.innerHTML = '';
       return;
@@ -4501,7 +4843,7 @@ render_teacher_header($pageTitle);
       ui.view = 'student';
       viewSelect.value = 'student';
     }
-    ui.showChild = CHILD_MODE ? false : !!(toggleChild && toggleChild.checked);
+    ui.showChild = MEETING_MODE ? true : (CHILD_MODE ? false : !!(toggleChild && toggleChild.checked));
 
     viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
     viewStudent.style.display = (ui.view === 'student') ? 'block' : 'none';
@@ -4520,8 +4862,10 @@ render_teacher_header($pageTitle);
     else elApp.classList.remove('show-child');
 
     if (ui.view === 'grades') renderGradesView();
-    else if (ui.view === 'student') renderStudentView();
-    else renderItemView();
+    else if (ui.view === 'student') {
+      if (MEETING_MODE) renderMeetingView();
+      else renderStudentView();
+    } else renderItemView();
   }
 
   function renderStudentView(){
@@ -4756,6 +5100,215 @@ render_teacher_header($pageTitle);
     }
     wireActiveInputs(studentForm);
 
+  }
+
+  function collectMeetingSteps(reportId){
+    const steps = [];
+    activeGroupsForReport(reportId).forEach(g => {
+      const fields = Array.isArray(g.fields) ? g.fields : [];
+      if (!fields.length) return;
+      const subgroupMap = new Map();
+      fields.forEach(f => {
+        const sub = String(f.subgroup || '').trim();
+        const key = sub !== '' ? sub : '__none__';
+        if (!subgroupMap.has(key)) subgroupMap.set(key, []);
+        subgroupMap.get(key).push(f);
+      });
+      subgroupMap.forEach((subFields, subKey) => {
+        const subgroup = subKey === '__none__' ? '' : subKey;
+        const subgroupLabel = subgroup
+          ? subgroupLabelForLang(subgroup, subFields[0]?.subgroup_title_en)
+          : '';
+        steps.push({
+          id: `${g.key}::${subgroup}`,
+          group: g,
+          subgroup,
+          subgroupLabel,
+          fields: subFields,
+        });
+      });
+    });
+    return steps;
+  }
+
+  function updateMeetingStudentBadge(){
+    const s = activeStudent();
+    if (!s || !meetingStudentBadge) return;
+    const missing = Number(s.progress_teacher_missing || 0);
+    const missingLabel = tfmtEntry('progress_missing_teacher', { count: missing });
+    meetingStudentBadge.textContent = `${s.name} · ${missingLabel}`;
+  }
+
+  function ensureMeetingStudentSelect(list){
+    if (!meetingStudentSelect) return;
+    meetingStudentSelect.innerHTML = '';
+    list.forEach((s, idx) => {
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      opt.textContent = s.name;
+      meetingStudentSelect.appendChild(opt);
+    });
+    meetingStudentSelect.value = String(Math.max(0, Math.min(ui.activeStudentIndex, list.length - 1)));
+  }
+
+  function meetingStepMove(delta){
+    if (!meetingState.steps.length) return;
+    const next = Math.max(0, Math.min(meetingState.activeStep + delta, meetingState.steps.length - 1));
+    if (next === meetingState.activeStep) return;
+    meetingState.activeStep = next;
+    renderMeetingView();
+  }
+
+  function renderMeetingView(){
+    const list = currentStudents();
+    if (!meetingWizShell || !meetingStepBody || !meetingNav) return;
+    if (!list.length) {
+      if (meetingStudentSelect) meetingStudentSelect.innerHTML = '';
+      meetingStepTitle.textContent = '—';
+      meetingStepSub.textContent = '';
+      meetingStepSub.style.display = 'none';
+      meetingStepBody.innerHTML = `<div class="alert">${esc(tEntry('no_students_found'))}</div>`;
+      return;
+    }
+
+    if (ui.activeStudentIndex < 0) ui.activeStudentIndex = 0;
+    if (ui.activeStudentIndex >= list.length) ui.activeStudentIndex = list.length - 1;
+
+    ensureMeetingStudentSelect(list);
+
+    const hasPrevStudent = ui.activeStudentIndex > 0;
+    const hasNextStudent = ui.activeStudentIndex < list.length - 1;
+    if (btnMeetingStudentPrev) btnMeetingStudentPrev.disabled = !hasPrevStudent;
+    if (btnMeetingStudentNext) btnMeetingStudentNext.disabled = !hasNextStudent;
+
+    const s = activeStudent();
+    if (!s) {
+      meetingStepBody.innerHTML = `<div class="alert">${esc(tEntry('no_students_found'))}</div>`;
+      return;
+    }
+
+    updateMeetingStudentBadge();
+
+    const reportId = s.report_instance_id;
+    if (meetingState.activeStudentId !== s.id) {
+      meetingState.activeStudentId = s.id;
+      meetingState.steps = collectMeetingSteps(reportId);
+      meetingState.activeStep = 0;
+    }
+
+    if (!meetingState.steps.length) {
+      meetingStepTitle.textContent = '—';
+      meetingStepSub.textContent = '';
+      meetingStepSub.style.display = 'none';
+      meetingStepBody.innerHTML = `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
+      meetingNav.innerHTML = '';
+      return;
+    }
+
+    if (meetingState.activeStep >= meetingState.steps.length) {
+      meetingState.activeStep = meetingState.steps.length - 1;
+    }
+
+    meetingNav.innerHTML = '';
+    meetingState.steps.forEach((step, idx) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'meeting-nav-item' + (idx === meetingState.activeStep ? ' active' : '');
+      item.innerHTML = `
+        <span>${esc(step.group.title || step.group.key)}</span>
+        ${step.subgroupLabel ? `<span class="sub">${esc(step.subgroupLabel)}</span>` : ''}
+      `;
+      item.addEventListener('click', () => {
+        meetingState.activeStep = idx;
+        renderMeetingView();
+      });
+      meetingNav.appendChild(item);
+    });
+
+    const step = meetingState.steps[meetingState.activeStep];
+    meetingStepTitle.textContent = String(step.group.title || step.group.key || '');
+    meetingStepSub.textContent = step.subgroupLabel ? String(step.subgroupLabel) : '';
+    meetingStepSub.style.display = step.subgroupLabel ? '' : 'none';
+
+    const status = String(s.status || 'draft');
+    const childLocked = isStudentInputLocked(status);
+    const locked = isTeacherInputLocked(status);
+    let html = '';
+    if (!MEETING_MODE) {
+      let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
+      const unlockBtn = DELEGATED_MODE
+        ? ''
+        : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
+
+      if (childLocked) {
+        const info = CHILD_MODE
+          ? tEntry('locked_cannot_edit')
+          : tEntry('locked_teacher_can_edit');
+        html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>${esc(tEntry('locked_title'))}</strong> ${esc(info)}${unlockBtn}</div>`;
+      } else if (status === 'submitted') {
+        html += `<div class="alert info"><strong>${esc(tEntry('notice_label'))}</strong> ${esc(tEntry('locked_notice'))}${unlockBtn}</div>`;
+      } else if (childMissingFields.length > 0) {
+        const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
+        const more = childMissingFields.length > 8
+          ? ` … (${esc(tfmtEntry('child_missing_more', { count: childMissingFields.length - 8 }))})`
+          : '';
+        html += `<div class="alert warning"><strong>${esc(tEntry('child_missing_title'))}</strong> ${esc(tEntry('child_missing_fields'))} ${missingList}${more}</div>`;
+      }
+
+      if (state.ai_enabled && !CHILD_MODE) {
+        const optionStatus = optionCompletionForStudent(reportId);
+        const missingOpt = optionStatus.total > 0 ? optionStatus.missing : 0;
+        const aiSubtitle = missingOpt > 0
+          ? tfmtEntry('ai_require_options_start', { missing: missingOpt, total: optionStatus.total })
+          : tEntry('ai_option_ideas');
+        const aiButton = missingOpt > 0
+          ? `<a class="btn secondary ai-btn" type="button" disabled title="${esc(tEntry('ai_open_disabled_title'))}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`
+          : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`;
+        html += `
+          <div class="ai-banner">
+            <div>
+              <div class="t">${AI_ICON} ${esc(tfmtEntry('ai_banner_title', { name: s.name }))}</div>
+              <div class="muted">${esc(aiSubtitle)}</div>
+            </div>
+            ${aiButton}
+          </div>
+        `;
+      }
+    }
+
+    html += renderStudentFields(step.fields, reportId, locked, { showSubgroups: false });
+    meetingStepBody.innerHTML = html || `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
+
+    if (!CHILD_MODE) {
+      wireChildValueControls(meetingStepBody);
+    }
+    wireActiveInputs(meetingStepBody);
+
+    if (ui.showChild) {
+      meetingStepBody.querySelectorAll('[data-fieldwrap="1"]').forEach(el => {
+        el.classList.add('show-child');
+      });
+    }
+
+    meetingStepBody.querySelectorAll('[data-ai-student]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-ai-student') || 0);
+        const stu = (state.students || []).find(x => Number(x.report_instance_id || 0) === rid);
+        if (stu) requestAiSuggestionsForStudent(stu);
+      });
+    });
+
+    meetingStepBody.querySelectorAll('[data-unlock-child]').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        const rid = Number(btn.getAttribute('data-unlock-child') || 0);
+        if (rid > 0) await unlockChildEntry(rid);
+      });
+    });
+
+    if (btnMeetingPrev) btnMeetingPrev.disabled = meetingState.activeStep <= 0;
+    if (btnMeetingNext) btnMeetingNext.disabled = meetingState.activeStep >= meetingState.steps.length - 1;
   }
 
   function syncGradeHeaderScroll(){
