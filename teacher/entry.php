@@ -1579,12 +1579,14 @@ render_teacher_header($pageTitle);
   body.page.meeting-mode #meetingStepSub{
     font-size: 16px;
     color: rgba(0,0,0,0.7);
+    margin-bottom: 15px;
+    font-weight: 600;
   }
   body.page.meeting-mode .field{
     border-left: 4px solid rgba(11,87,208,0.55);
   }
   body.page.meeting-mode .field .lbl{
-    color: #0b57d0;
+    
   }
   body.page.meeting-mode .field.show-child .child{
     display:block;
@@ -1668,8 +1670,11 @@ render_teacher_header($pageTitle);
     background: rgba(11, 122, 11, 0.18);
     box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35);
   }
-  .opt.child-val .lbl{ color: #0b7a0b; }
-  .opt.selected.child-val{ outline-color: rgba(11, 122, 11, 0.55); }
+  .opt.child-val .lbl{  }
+  .opt.selected.child-val{
+      outline-color: rgba(11, 122, 11, 0.55);
+      background: linear-gradient(134deg, rgba(11, 122, 11, 0.18) 0%, rgba(11, 122, 11, 0.3) 50%, rgba(11,87,208,0.3) 51%, rgba(11,87,208,0.16) 100%);
+  }
   .opt:disabled{ opacity:0.5; cursor:not-allowed; }
   .opt .lbl{ font-weight:750; }
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
@@ -4756,10 +4761,11 @@ render_teacher_header($pageTitle);
       const actionsHtml = (combinedHtml || historyHtml || clearBtn)
         ? `<div class="field-actions">${combinedHtml}${historyHtml}${clearBtn}</div>`
         : '';
+        const helpDisp = MEETING_MODE ? '' : `<div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>`;
       html += `
         <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
           <div class="lbl">${esc(lbl)}</div>
-          <div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
+          ${helpDisp}
           ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
           ${actionsHtml}
           ${childInfo}
