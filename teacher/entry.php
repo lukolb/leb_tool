@@ -864,7 +864,7 @@ $meetingExitUrl = url('teacher/entry.php' . ($meetingExitParams ? ('?' . http_bu
 render_teacher_header($pageTitle);
 ?>
 
-<div class="card">
+<div class="card" id="classSelectCard">
   <div class="row-actions" style="float: right;">
     <?php if ($meetingMode): ?>
       <button
@@ -1494,6 +1494,7 @@ render_teacher_header($pageTitle);
     max-width: 100%;
     padding: 16px 20px 24px;
   }
+  body.page.meeting-mode #classSelectCard,
   body.page.meeting-mode #classFieldsBox,
   body.page.meeting-mode #entryFilterRow,
   body.page.meeting-mode #viewSelectRow,
@@ -4718,7 +4719,7 @@ render_teacher_header($pageTitle);
       ui.view = 'student';
       viewSelect.value = 'student';
     }
-    ui.showChild = CHILD_MODE ? false : !!(toggleChild && toggleChild.checked);
+    ui.showChild = MEETING_MODE ? true : (CHILD_MODE ? false : !!(toggleChild && toggleChild.checked));
 
     viewGrades.style.display = (ui.view === 'grades') ? 'block' : 'none';
     viewStudent.style.display = (ui.view === 'student') ? 'block' : 'none';
@@ -5108,45 +5109,47 @@ render_teacher_header($pageTitle);
     const status = String(s.status || 'draft');
     const childLocked = isStudentInputLocked(status);
     const locked = isTeacherInputLocked(status);
-    let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
-    const unlockBtn = DELEGATED_MODE
-      ? ''
-      : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
-
     let html = '';
-    if (childLocked) {
-      const info = CHILD_MODE
-        ? tEntry('locked_cannot_edit')
-        : tEntry('locked_teacher_can_edit');
-      html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>${esc(tEntry('locked_title'))}</strong> ${esc(info)}${unlockBtn}</div>`;
-    } else if (status === 'submitted') {
-      html += `<div class="alert info"><strong>${esc(tEntry('notice_label'))}</strong> ${esc(tEntry('locked_notice'))}${unlockBtn}</div>`;
-    } else if (childMissingFields.length > 0) {
-      const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
-      const more = childMissingFields.length > 8
-        ? ` … (${esc(tfmtEntry('child_missing_more', { count: childMissingFields.length - 8 }))})`
-        : '';
-      html += `<div class="alert warning"><strong>${esc(tEntry('child_missing_title'))}</strong> ${esc(tEntry('child_missing_fields'))} ${missingList}${more}</div>`;
-    }
+    if (!MEETING_MODE) {
+      let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
+      const unlockBtn = DELEGATED_MODE
+        ? ''
+        : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
 
-    if (state.ai_enabled && !CHILD_MODE) {
-      const optionStatus = optionCompletionForStudent(reportId);
-      const missingOpt = optionStatus.total > 0 ? optionStatus.missing : 0;
-      const aiSubtitle = missingOpt > 0
-        ? tfmtEntry('ai_require_options_start', { missing: missingOpt, total: optionStatus.total })
-        : tEntry('ai_option_ideas');
-      const aiButton = missingOpt > 0
-        ? `<a class="btn secondary ai-btn" type="button" disabled title="${esc(tEntry('ai_open_disabled_title'))}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`
-        : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`;
-      html += `
-        <div class="ai-banner">
-          <div>
-            <div class="t">${AI_ICON} ${esc(tfmtEntry('ai_banner_title', { name: s.name }))}</div>
-            <div class="muted">${esc(aiSubtitle)}</div>
+      if (childLocked) {
+        const info = CHILD_MODE
+          ? tEntry('locked_cannot_edit')
+          : tEntry('locked_teacher_can_edit');
+        html += `<div class="alert ${CHILD_MODE ? 'danger' : 'info'}"><strong>${esc(tEntry('locked_title'))}</strong> ${esc(info)}${unlockBtn}</div>`;
+      } else if (status === 'submitted') {
+        html += `<div class="alert info"><strong>${esc(tEntry('notice_label'))}</strong> ${esc(tEntry('locked_notice'))}${unlockBtn}</div>`;
+      } else if (childMissingFields.length > 0) {
+        const missingList = childMissingFields.slice(0, 8).map(esc).join(', ');
+        const more = childMissingFields.length > 8
+          ? ` … (${esc(tfmtEntry('child_missing_more', { count: childMissingFields.length - 8 }))})`
+          : '';
+        html += `<div class="alert warning"><strong>${esc(tEntry('child_missing_title'))}</strong> ${esc(tEntry('child_missing_fields'))} ${missingList}${more}</div>`;
+      }
+
+      if (state.ai_enabled && !CHILD_MODE) {
+        const optionStatus = optionCompletionForStudent(reportId);
+        const missingOpt = optionStatus.total > 0 ? optionStatus.missing : 0;
+        const aiSubtitle = missingOpt > 0
+          ? tfmtEntry('ai_require_options_start', { missing: missingOpt, total: optionStatus.total })
+          : tEntry('ai_option_ideas');
+        const aiButton = missingOpt > 0
+          ? `<a class="btn secondary ai-btn" type="button" disabled title="${esc(tEntry('ai_open_disabled_title'))}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`
+          : `<a class="btn secondary ai-btn" type="button" data-ai-student="${esc(reportId)}">${AI_ICON} ${esc(tEntry('ai_open'))}</a>`;
+        html += `
+          <div class="ai-banner">
+            <div>
+              <div class="t">${AI_ICON} ${esc(tfmtEntry('ai_banner_title', { name: s.name }))}</div>
+              <div class="muted">${esc(aiSubtitle)}</div>
+            </div>
+            ${aiButton}
           </div>
-          ${aiButton}
-        </div>
-      `;
+        `;
+      }
     }
 
     html += renderStudentFields(step.fields, reportId, locked, { showSubgroups: false });
@@ -5156,6 +5159,12 @@ render_teacher_header($pageTitle);
       wireChildValueControls(meetingStepBody);
     }
     wireActiveInputs(meetingStepBody);
+
+    if (ui.showChild) {
+      meetingStepBody.querySelectorAll('[data-fieldwrap="1"]').forEach(el => {
+        el.classList.add('show-child');
+      });
+    }
 
     meetingStepBody.querySelectorAll('[data-ai-student]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
