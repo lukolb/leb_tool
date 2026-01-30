@@ -528,9 +528,9 @@ render_admin_header(t('admin.template_fields.title'));
             <th class="sticky-col-0" style="width:46px;"><?=h(t('admin.template_fields.table.select'))?></th>
             <th class="sticky-col-1"><?=h(t('admin.template_fields.table.field_name'))?></th>
             <th style="min-width:200px;"><?=h(t('admin.template_fields.table.group'))?></th>
+            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
             <th style="min-width:200px;"><?=h(t('admin.template_fields.table.subgroup'))?></th>
             <th style="min-width:220px;"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
-            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
             <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label_en'))?></th>
@@ -1654,15 +1654,15 @@ function renderTable(){
           </div>
         `;
 
-        // Linke, sticky Zelle: deckt ✓ + Feldname ab
+        // Linke, sticky Zelle: deckt ✓ + Feldname + Gruppenspalten ab
         const tdLeft = document.createElement('td');
         tdLeft.className = 'group-sticky';
-        tdLeft.colSpan = 5;
+        tdLeft.colSpan = 6;
         tdLeft.innerHTML = html;
 
         // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
         const tdRight = document.createElement('td');
-        tdRight.colSpan = 11;
+        tdRight.colSpan = 10;
         tdRight.innerHTML = '&nbsp;'; // nur Fläche
 
         // Klick-Handling auf der ganzen Zeile (nicht nur links)
@@ -2122,8 +2122,8 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Untergruppe | Untergruppe EN | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdSub, tdSubEn, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Gruppentitel EN | Untergruppe | Untergruppe EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdGE, tdSub, tdSubEn, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
