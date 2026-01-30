@@ -528,14 +528,14 @@ render_admin_header(t('admin.template_fields.title'));
             <th class="sticky-col-0" style="width:46px;"><?=h(t('admin.template_fields.table.select'))?></th>
             <th class="sticky-col-1"><?=h(t('admin.template_fields.table.field_name'))?></th>
             <th style="min-width:200px;"><?=h(t('admin.template_fields.table.group'))?></th>
+            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
             <th style="min-width:200px;"><?=h(t('admin.template_fields.table.subgroup'))?></th>
             <th style="min-width:220px;"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
-            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
-            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label_en'))?></th>
-            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
             <th style="min-width:420px;"><?=h(t('admin.template_fields.table.help'))?></th>
+            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
+            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
             <th><?=h(t('admin.template_fields.table.child'))?></th>
             <th><?=h(t('admin.template_fields.table.teacher'))?></th>
             <th><?=h(t('admin.template_fields.table.class_field'))?></th>
@@ -980,7 +980,7 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
       name,
       type: info.type || 'radio',
       label: name,
-      help_text: info.hint || '',
+      help_text: '',
       multiline: info.type === 'multiline' ? true : !!info.multiline,
       sort: fields.length + idx + 1,
       meta
@@ -1654,15 +1654,15 @@ function renderTable(){
           </div>
         `;
 
-        // Linke, sticky Zelle: deckt ✓ + Feldname ab
+        // Linke, sticky Zelle: deckt ✓ + Feldname + Gruppenspalten ab
         const tdLeft = document.createElement('td');
         tdLeft.className = 'group-sticky';
-        tdLeft.colSpan = 5;
+        tdLeft.colSpan = 6;
         tdLeft.innerHTML = html;
 
         // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
         const tdRight = document.createElement('td');
-        tdRight.colSpan = 11;
+        tdRight.colSpan = 10;
         tdRight.innerHTML = '&nbsp;'; // nur Fläche
 
         // Klick-Handling auf der ganzen Zeile (nicht nur links)
@@ -1906,24 +1906,6 @@ function renderTable(){
     });
     tdGE.appendChild(inpGE);
 
-    const tdT = document.createElement('td');
-    const selT = document.createElement('select');
-    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
-      const o=document.createElement('option'); o.value=t; o.textContent=t;
-      if (t===f.type) o.selected=true;
-      selT.appendChild(o);
-    });
-    selT.addEventListener('click',(e)=>e.stopPropagation());
-    selT.addEventListener('change',(e)=>{
-      e.stopPropagation();
-      fields[idx].type = selT.value;
-      if (selT.value === 'multiline') fields[idx].multiline = 1;
-      markDirty(f.id);
-      renderTable();
-      scanForSplitCandidate();
-    });
-    tdT.appendChild(selT);
-
     const tdL = document.createElement('td');
     const inpL = document.createElement('input');
     inpL.type = 'text';
@@ -1959,6 +1941,18 @@ function renderTable(){
     });
     tdLE.appendChild(inpLE);
 
+    const tdH = document.createElement('td');
+    const inpH = document.createElement('input');
+    inpH.type = 'text';
+    inpH.value = f.help_text || '';
+    inpH.addEventListener('click',(e)=>e.stopPropagation());
+    inpH.addEventListener('input',(e)=>{
+      e.stopPropagation();
+      fields[idx].help_text = inpH.value;
+      markDirty(f.id);
+    });
+    tdH.appendChild(inpH);
+
     // System binding
     const tdB = document.createElement('td');
     const selB = document.createElement('select');
@@ -1987,17 +1981,23 @@ function renderTable(){
     });
     tdB.appendChild(selB);
 
-    const tdH = document.createElement('td');
-    const inpH = document.createElement('input');
-    inpH.type = 'text';
-    inpH.value = f.help_text || '';
-    inpH.addEventListener('click',(e)=>e.stopPropagation());
-    inpH.addEventListener('input',(e)=>{
-      e.stopPropagation();
-      fields[idx].help_text = inpH.value;
-      markDirty(f.id);
+    const tdT = document.createElement('td');
+    const selT = document.createElement('select');
+    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
+      const o=document.createElement('option'); o.value=t; o.textContent=t;
+      if (t===f.type) o.selected=true;
+      selT.appendChild(o);
     });
-    tdH.appendChild(inpH);
+    selT.addEventListener('click',(e)=>e.stopPropagation());
+    selT.addEventListener('change',(e)=>{
+      e.stopPropagation();
+      fields[idx].type = selT.value;
+      if (selT.value === 'multiline') fields[idx].multiline = 1;
+      markDirty(f.id);
+      renderTable();
+      scanForSplitCandidate();
+    });
+    tdT.appendChild(selT);
 
     const tdC = document.createElement('td');
     const cbC = document.createElement('input');
@@ -2122,8 +2122,8 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Untergruppe | Untergruppe EN | Gruppentitel EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdSub, tdSubEn, tdGE, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Gruppentitel EN | Untergruppe | Untergruppe EN | Label | Label EN | Help | Stammfeld | Typ | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdGE, tdSub, tdSubEn, tdL, tdLE, tdH, tdB, tdT, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
@@ -2486,6 +2486,7 @@ dateModal.addEventListener('close', ()=>{
 
 /* ---------- Preview resizer ---------- */
 const LS_KEY = 'template_fields_preview_ratio_v2';
+const LS_PREVIEW_HIDDEN_KEY = 'template_fields_preview_hidden_v1';
 
 function applyPreviewRatio(ratio){
   const r = clamp(Number(ratio)||0.45, 0.22, 0.70);
@@ -2494,10 +2495,25 @@ function applyPreviewRatio(ratio){
   if (!layout2.classList.contains('hide-preview')) setTimeout(()=>renderPage(), 60);
 }
 
+function applyPreviewHidden(hidden, persist = true){
+  layout2.classList.toggle('hide-preview', hidden);
+  previewCard.style.display = hidden ? 'none' : '';
+  colResizer.style.display = hidden ? 'none' : '';
+  btnTogglePreview.textContent = hidden ? tAdmin('preview_show') : tAdmin('preview_hide');
+  if (persist) {
+    try { localStorage.setItem(LS_PREVIEW_HIDDEN_KEY, hidden ? '1' : '0'); } catch(e) {}
+  }
+  if (!hidden) setTimeout(()=>renderPage(), 80);
+}
+
 (function initResizer(){
   try {
     const saved = localStorage.getItem(LS_KEY);
     if (saved) applyPreviewRatio(Number(saved));
+  } catch(e) {}
+  try {
+    const hidden = localStorage.getItem(LS_PREVIEW_HIDDEN_KEY) === '1';
+    if (hidden) applyPreviewHidden(true, false);
   } catch(e) {}
 
   let dragging = false;
@@ -2656,11 +2672,8 @@ btnClearGroupFilter.addEventListener('click', ()=>{
 });
 
 btnTogglePreview.addEventListener('click', ()=>{
-  const hidden = layout2.classList.toggle('hide-preview');
-  previewCard.style.display = hidden ? 'none' : '';
-  colResizer.style.display = hidden ? 'none' : '';
-  btnTogglePreview.textContent = hidden ? tAdmin('preview_show') : tAdmin('preview_hide');
-  if (!hidden) setTimeout(()=>renderPage(), 80);
+  const hidden = !layout2.classList.contains('hide-preview');
+  applyPreviewHidden(hidden);
 });
 
 /* ---------- Load ---------- */
