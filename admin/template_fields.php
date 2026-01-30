@@ -531,11 +531,11 @@ render_admin_header(t('admin.template_fields.title'));
             <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
             <th style="min-width:200px;"><?=h(t('admin.template_fields.table.subgroup'))?></th>
             <th style="min-width:220px;"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
-            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label'))?></th>
             <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label_en'))?></th>
-            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
             <th style="min-width:420px;"><?=h(t('admin.template_fields.table.help'))?></th>
+            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
+            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
             <th><?=h(t('admin.template_fields.table.child'))?></th>
             <th><?=h(t('admin.template_fields.table.teacher'))?></th>
             <th><?=h(t('admin.template_fields.table.class_field'))?></th>
@@ -980,7 +980,7 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
       name,
       type: info.type || 'radio',
       label: name,
-      help_text: info.hint || '',
+      help_text: '',
       multiline: info.type === 'multiline' ? true : !!info.multiline,
       sort: fields.length + idx + 1,
       meta
@@ -1906,24 +1906,6 @@ function renderTable(){
     });
     tdGE.appendChild(inpGE);
 
-    const tdT = document.createElement('td');
-    const selT = document.createElement('select');
-    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
-      const o=document.createElement('option'); o.value=t; o.textContent=t;
-      if (t===f.type) o.selected=true;
-      selT.appendChild(o);
-    });
-    selT.addEventListener('click',(e)=>e.stopPropagation());
-    selT.addEventListener('change',(e)=>{
-      e.stopPropagation();
-      fields[idx].type = selT.value;
-      if (selT.value === 'multiline') fields[idx].multiline = 1;
-      markDirty(f.id);
-      renderTable();
-      scanForSplitCandidate();
-    });
-    tdT.appendChild(selT);
-
     const tdL = document.createElement('td');
     const inpL = document.createElement('input');
     inpL.type = 'text';
@@ -1959,6 +1941,18 @@ function renderTable(){
     });
     tdLE.appendChild(inpLE);
 
+    const tdH = document.createElement('td');
+    const inpH = document.createElement('input');
+    inpH.type = 'text';
+    inpH.value = f.help_text || '';
+    inpH.addEventListener('click',(e)=>e.stopPropagation());
+    inpH.addEventListener('input',(e)=>{
+      e.stopPropagation();
+      fields[idx].help_text = inpH.value;
+      markDirty(f.id);
+    });
+    tdH.appendChild(inpH);
+
     // System binding
     const tdB = document.createElement('td');
     const selB = document.createElement('select');
@@ -1987,17 +1981,23 @@ function renderTable(){
     });
     tdB.appendChild(selB);
 
-    const tdH = document.createElement('td');
-    const inpH = document.createElement('input');
-    inpH.type = 'text';
-    inpH.value = f.help_text || '';
-    inpH.addEventListener('click',(e)=>e.stopPropagation());
-    inpH.addEventListener('input',(e)=>{
-      e.stopPropagation();
-      fields[idx].help_text = inpH.value;
-      markDirty(f.id);
+    const tdT = document.createElement('td');
+    const selT = document.createElement('select');
+    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
+      const o=document.createElement('option'); o.value=t; o.textContent=t;
+      if (t===f.type) o.selected=true;
+      selT.appendChild(o);
     });
-    tdH.appendChild(inpH);
+    selT.addEventListener('click',(e)=>e.stopPropagation());
+    selT.addEventListener('change',(e)=>{
+      e.stopPropagation();
+      fields[idx].type = selT.value;
+      if (selT.value === 'multiline') fields[idx].multiline = 1;
+      markDirty(f.id);
+      renderTable();
+      scanForSplitCandidate();
+    });
+    tdT.appendChild(selT);
 
     const tdC = document.createElement('td');
     const cbC = document.createElement('input');
@@ -2122,8 +2122,8 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
-    // ✓ | Feldname | Gruppe | Gruppentitel EN | Untergruppe | Untergruppe EN | Typ | Label | Label EN | Stammfeld | Help | Kind | Lehrer | Klassenfeld | Req | Extras
-    tr.append(tdS, tdN, tdG, tdGE, tdSub, tdSubEn, tdT, tdL, tdLE, tdB, tdH, tdC, tdTe, tdK, tdR, tdX);
+    // ✓ | Feldname | Gruppe | Gruppentitel EN | Untergruppe | Untergruppe EN | Label | Label EN | Help | Stammfeld | Typ | Kind | Lehrer | Klassenfeld | Req | Extras
+    tr.append(tdS, tdN, tdG, tdGE, tdSub, tdSubEn, tdL, tdLE, tdH, tdB, tdT, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
 }
