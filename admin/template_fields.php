@@ -2486,6 +2486,7 @@ dateModal.addEventListener('close', ()=>{
 
 /* ---------- Preview resizer ---------- */
 const LS_KEY = 'template_fields_preview_ratio_v2';
+const LS_PREVIEW_HIDDEN_KEY = 'template_fields_preview_hidden_v1';
 
 function applyPreviewRatio(ratio){
   const r = clamp(Number(ratio)||0.45, 0.22, 0.70);
@@ -2494,10 +2495,25 @@ function applyPreviewRatio(ratio){
   if (!layout2.classList.contains('hide-preview')) setTimeout(()=>renderPage(), 60);
 }
 
+function applyPreviewHidden(hidden, persist = true){
+  layout2.classList.toggle('hide-preview', hidden);
+  previewCard.style.display = hidden ? 'none' : '';
+  colResizer.style.display = hidden ? 'none' : '';
+  btnTogglePreview.textContent = hidden ? tAdmin('preview_show') : tAdmin('preview_hide');
+  if (persist) {
+    try { localStorage.setItem(LS_PREVIEW_HIDDEN_KEY, hidden ? '1' : '0'); } catch(e) {}
+  }
+  if (!hidden) setTimeout(()=>renderPage(), 80);
+}
+
 (function initResizer(){
   try {
     const saved = localStorage.getItem(LS_KEY);
     if (saved) applyPreviewRatio(Number(saved));
+  } catch(e) {}
+  try {
+    const hidden = localStorage.getItem(LS_PREVIEW_HIDDEN_KEY) === '1';
+    if (hidden) applyPreviewHidden(true, false);
   } catch(e) {}
 
   let dragging = false;
@@ -2656,11 +2672,8 @@ btnClearGroupFilter.addEventListener('click', ()=>{
 });
 
 btnTogglePreview.addEventListener('click', ()=>{
-  const hidden = layout2.classList.toggle('hide-preview');
-  previewCard.style.display = hidden ? 'none' : '';
-  colResizer.style.display = hidden ? 'none' : '';
-  btnTogglePreview.textContent = hidden ? tAdmin('preview_show') : tAdmin('preview_hide');
-  if (!hidden) setTimeout(()=>renderPage(), 80);
+  const hidden = !layout2.classList.contains('hide-preview');
+  applyPreviewHidden(hidden);
 });
 
 /* ---------- Load ---------- */
