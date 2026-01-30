@@ -4467,7 +4467,9 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
+      const rows = MEETING_MODE ? 10 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; min-height:280px;' : '';
+      return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -4550,7 +4552,9 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
+      const rows = MEETING_MODE ? 10 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; min-height:280px;' : '';
+      return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
