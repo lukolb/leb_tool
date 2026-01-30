@@ -255,12 +255,19 @@ tr.tpl-inactive { opacity: 0.65; }
                 <?=h($t['pdf_original_filename'] ?: t('admin.templates.pdf_fallback'))?>
               </a>
             </td>
-            <td style="white-space:nowrap;">
-              <a class="btn secondary js-extract" type="button"
-                 data-template-id="<?=h((string)$t['id'])?>"
-                 data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
-              <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
-              <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
+            <td>
+              <div class="action-menu">
+                <button class="btn secondary action-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false">
+                  <?=h(t('admin.templates.table.actions'))?> <span aria-hidden="true">▾</span>
+                </button>
+                <template class="action-menu-template">
+                  <a class="btn primary js-extract" type="button"
+                     data-template-id="<?=h((string)$t['id'])?>"
+                     data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
+                  <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
+                  <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
+                </template>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -268,6 +275,8 @@ tr.tpl-inactive { opacity: 0.65; }
     </table>
   <?php endif; ?>
 </div>
+
+<div id="rowActionMenu" class="action-dropdown-menu hidden" role="menu" aria-hidden="true"></div>
 
 <div class="card" id="wizard" style="display:none;">
   <h2><?=h(t('admin.templates.wizard.heading'))?></h2>
@@ -420,6 +429,78 @@ tr.tpl-inactive { opacity: 0.65; }
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const menu = document.getElementById('rowActionMenu');
+  if (!menu) return;
+
+  let currentButton = null;
+
+  const closeMenu = () => {
+    if (!currentButton) return;
+    currentButton.setAttribute('aria-expanded', 'false');
+    currentButton = null;
+    menu.classList.add('hidden');
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    menu.innerHTML = '';
+  };
+
+  const positionMenu = () => {
+    if (!currentButton) return;
+    const rect = currentButton.getBoundingClientRect();
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const maxLeft = scrollX + document.documentElement.clientWidth - menu.offsetWidth - 8;
+    const left = Math.max(scrollX + 8, Math.min(rect.right + scrollX - menu.offsetWidth, maxLeft));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${rect.bottom + scrollY}px`;
+  };
+
+  const openMenu = (button, template) => {
+    if (currentButton === button) {
+      closeMenu();
+      return;
+    }
+    if (currentButton) {
+      currentButton.setAttribute('aria-expanded', 'false');
+    }
+    menu.innerHTML = '';
+    if (template && template.content) {
+      menu.appendChild(template.content.cloneNode(true));
+    }
+    menu.classList.remove('hidden');
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    button.setAttribute('aria-expanded', 'true');
+    currentButton = button;
+    positionMenu();
+  };
+
+  document.addEventListener('click', function (event) {
+    const button = event.target.closest('.action-menu-toggle');
+    if (button) {
+      event.preventDefault();
+      const wrapper = button.closest('.action-menu');
+      const template = wrapper ? wrapper.querySelector('.action-menu-template') : null;
+      openMenu(button, template);
+      return;
+    }
+    if (menu.contains(event.target)) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      closeMenu();
+    }
+  });
+
+  window.addEventListener('resize', closeMenu);
+  window.addEventListener('scroll', closeMenu, true);
+});
+</script>
 
 <script type="module">
 import * as pdfjsLib from "<?=h(url('assets/pdfjs/pdf.min.mjs'))?>";
@@ -1056,40 +1137,45 @@ btnTogglePreview.addEventListener('click', ()=>{
   }
 });
 
-document.querySelectorAll('.js-extract').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    btn.disabled=true;
-    try{
-      currentTemplateId = parseInt(btn.dataset.templateId,10);
-      currentPdfUrl = btn.dataset.pdfUrl;
+const handleExtractClick = async (btn) => {
+  btn.disabled = true;
+  try{
+    currentTemplateId = parseInt(btn.dataset.templateId,10);
+    currentPdfUrl = btn.dataset.pdfUrl;
 
-      if (!currentTemplateId || Number.isNaN(currentTemplateId)) throw new Error(tTpl('wizard_missing_id'));
+    if (!currentTemplateId || Number.isNaN(currentTemplateId)) throw new Error(tTpl('wizard_missing_id'));
 
-      fields = await extractFieldsFromPdf();
-      fields = fields.map(f=>({ ...f, can_child_edit:0, can_teacher_edit:1, label:f.label||f.name, help_text:f.help_text||'', type: FIELD_TYPES.includes(f.type)?f.type:'radio' }));
+    fields = await extractFieldsFromPdf();
+    fields = fields.map(f=>({ ...f, can_child_edit:0, can_teacher_edit:1, label:f.label||f.name, help_text:f.help_text||'', type: FIELD_TYPES.includes(f.type)?f.type:'radio' }));
 
-      filterText=''; fieldFilter.value='';
-      copyFromTemplate.value=''; copyResult.textContent='';
+    filterText=''; fieldFilter.value='';
+    copyFromTemplate.value=''; copyResult.textContent='';
 
-      cpType.checked=true; cpLabel.checked=true; cpHelp.checked=true; cpRights.checked=true; cpMeta.checked=true;
+    cpType.checked=true; cpLabel.checked=true; cpHelp.checked=true; cpRights.checked=true; cpMeta.checked=true;
 
-      previewVisible=true;
-      wizGrid.classList.remove('is-preview-hidden');
-      wizPreviewCol.classList.remove('is-hidden');
-      btnTogglePreview.textContent = tTpl('preview_hide');
+    previewVisible=true;
+    wizGrid.classList.remove('is-preview-hidden');
+    wizPreviewCol.classList.remove('is-hidden');
+    btnTogglePreview.textContent = tTpl('preview_hide');
 
-      showAllWidgetHighlights=true;
-      btnToggleHighlights.textContent = tTpl('highlight_on');
+    showAllWidgetHighlights=true;
+    btnToggleHighlights.textContent = tTpl('highlight_on');
 
-      wizard.style.display='block';
-      renderTable();
-      await loadPdf();
-    } catch(e){
-      alert(tTpl('extract_error') + (e && e.message ? e.message : e));
-    } finally {
-      btn.disabled=false;
-    }
-  });
+    wizard.style.display='block';
+    renderTable();
+    await loadPdf();
+  } catch(e){
+    alert(tTpl('extract_error') + (e && e.message ? e.message : e));
+  } finally {
+    btn.disabled=false;
+  }
+};
+
+document.addEventListener('click', (event) => {
+  const btn = event.target.closest('.js-extract');
+  if (!btn) return;
+  event.preventDefault();
+  handleExtractClick(btn);
 });
 
 btnChildNone.addEventListener('click', ()=>setChildVisible(0));
