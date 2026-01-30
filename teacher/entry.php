@@ -1606,10 +1606,18 @@ render_teacher_header($pageTitle);
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
   .opt:hover{ background: rgba(0,0,0,0.02); }
-  .opt.selected{ outline: 2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
-  .opt.child-val{ box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35); }
+  .opt.selected{
+    outline: 2px solid rgba(11,87,208,0.45);
+    background: rgba(11,87,208,0.16);
+    border-color: rgba(11,87,208,0.35);
+  }
+  .opt.child-val{
+    border-color: rgba(11, 122, 11, 0.6);
+    background: rgba(11, 122, 11, 0.18);
+    box-shadow: 0 0 0 1px rgba(11, 122, 11, 0.35);
+  }
   .opt.child-val .lbl{ color: #0b7a0b; }
-  .opt.selected.child-val{ outline-color: rgba(11, 122, 11, 0.35); }
+  .opt.selected.child-val{ outline-color: rgba(11, 122, 11, 0.55); }
   .opt:disabled{ opacity:0.5; cursor:not-allowed; }
   .opt .lbl{ font-weight:750; }
   .opt .ico{ width:26px; height:26px; border-radius:10px; background: rgba(0,0,0,0.04); display:inline-flex; align-items:center; justify-content:center; }
@@ -2384,6 +2392,8 @@ render_teacher_header($pageTitle);
 
   function childInfoHtml(f, reportId){
     if (!f || !f.child || !f.child.id) return '';
+    const type = String(f.field_type || '');
+    if (type === 'radio' || type === 'select' || type === 'grade') return '';
     const childId = Number(f.child.id);
     const rawChild = childVal(reportId, childId);
     const shownChild = rawChild ? childDisplay(f, rawChild) : '';
