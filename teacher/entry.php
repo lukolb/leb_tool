@@ -2853,6 +2853,18 @@ render_teacher_header($pageTitle);
       const base = <?=json_encode(url('teacher/child_entry.php'))?>;
       link.href = classId > 0 ? `${base}?class_id=${classId}` : base;
     });
+    updateMeetingLink(classId);
+  }
+
+  function updateMeetingLink(classIdOverride){
+    const meetingLink = document.getElementById('btnMeetingView');
+    if (!meetingLink) return;
+    const classId = Number(classIdOverride ?? classSelect?.value ?? 0);
+    const base = <?=json_encode(url('teacher/entry.php'))?>;
+    const params = new URLSearchParams();
+    params.set('meeting', '1');
+    if (classId > 0) params.set('class_id', String(classId));
+    meetingLink.href = `${base}?${params.toString()}`;
   }
 
   function saveViewSelection(){
@@ -6038,6 +6050,7 @@ if (dlgSave) {
     toggleChild.addEventListener('change', () => render());
   }
   updateSwitchLinks();
+  updateMeetingLink();
   if (classSelect) {
     classSelect.addEventListener('change', updateSwitchLinks);
   }
