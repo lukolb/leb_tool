@@ -864,7 +864,7 @@ $meetingExitUrl = url('teacher/entry.php' . ($meetingExitParams ? ('?' . http_bu
 render_teacher_header($pageTitle);
 ?>
 
-<div class="card" id="classSelectCard">
+<div class="card">
   <div class="row-actions" style="float: right;">
     <?php if ($meetingMode): ?>
       <button
@@ -918,7 +918,7 @@ render_teacher_header($pageTitle);
     </div>
 <?php endif; ?>
 
-<div class="card">
+<div class="card" id="classSelectCard">
 
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h(t('teacher.entry.delegation_notice'))?></div>
