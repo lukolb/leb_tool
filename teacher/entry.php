@@ -1598,6 +1598,24 @@ render_teacher_header($pageTitle);
   body.page.meeting-mode .field.show-child .child strong{
     color: #0b7a0b;
   }
+  body.page.meeting-mode .opts{
+    flex-wrap: nowrap;
+    gap: 12px;
+  }
+  body.page.meeting-mode .opt{
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: center;
+    font-size: 1rem;
+    padding: 10px 12px;
+  }
+  body.page.meeting-mode .opt .ico{
+    width: 34px;
+    height: 34px;
+  }
+  body.page.meeting-mode .opt .ico.placeholder{
+    font-size: 16px;
+  }
   <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
   @keyframes s{ to{ transform: rotate(360deg); } }
@@ -1702,6 +1720,9 @@ render_teacher_header($pageTitle);
     border-width:6px; border-style:solid;
     border-color:#fff transparent transparent transparent;
   }
+  .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
+  .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
+  .combined-inline-text{ font-size:14px; line-height:1.5; }
 
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
@@ -3004,6 +3025,14 @@ render_teacher_header($pageTitle);
     const html = combined
       ? esc(String(combined)).replace(/\n/g, '<br>')
       : '<span class="muted">—</span>';
+    if (DELEGATED_MODE) {
+      return `
+        <div class="combined-inline">
+          <div class="combined-inline-label">Gesamtwert</div>
+          <div class="combined-inline-text">${html}</div>
+        </div>
+      `;
+    }
     return `
       <span class="combined-tip" data-tip="1">
         <button type="button" class="btn ghost icon combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
