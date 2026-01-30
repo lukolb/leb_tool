@@ -864,7 +864,7 @@ $meetingExitUrl = url('teacher/entry.php' . ($meetingExitParams ? ('?' . http_bu
 render_teacher_header($pageTitle);
 ?>
 
-<div class="card">
+<div class="card" id="meetingHeaderCard">
   <div class="row-actions" style="float: right;">
     <?php if ($meetingMode): ?>
       <button
@@ -1507,6 +1507,25 @@ render_teacher_header($pageTitle);
   body.page.meeting-mode #meetingWizShell{
     display: grid !important;
   }
+  body.page.meeting-fullscreen #meetingHeaderCard{
+    display: none !important;
+  }
+  body.page.meeting-fullscreen #btnMeetingExit{
+    display: none !important;
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreen{
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10001;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 20px;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgba(16,24,40,0.2);
+  }
   body.page.meeting-mode .history-inline,
   body.page.meeting-mode .child-actions{
     display: none !important;
@@ -1990,7 +2009,17 @@ render_teacher_header($pageTitle);
     if (!btnMeetingFullscreen) return;
     const enterLabel = btnMeetingFullscreen.dataset.labelEnter || '';
     const exitLabel = btnMeetingFullscreen.dataset.labelExit || '';
-    btnMeetingFullscreen.textContent = document.fullscreenElement ? exitLabel : enterLabel;
+    const isFull = !!document.fullscreenElement;
+    document.body.classList.toggle('meeting-fullscreen', isFull);
+    if (isFull) {
+      btnMeetingFullscreen.textContent = '⤫';
+      btnMeetingFullscreen.setAttribute('aria-label', exitLabel);
+      btnMeetingFullscreen.setAttribute('title', exitLabel);
+    } else {
+      btnMeetingFullscreen.textContent = enterLabel;
+      btnMeetingFullscreen.removeAttribute('title');
+      btnMeetingFullscreen.setAttribute('aria-label', enterLabel);
+    }
   }
 
   if (MEETING_MODE) {
