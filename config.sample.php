@@ -43,7 +43,9 @@ return [
     'tts_voice_de' => '', // vits-web Voice-ID, z.B. "de_DE-thorsten-medium", leer = Auto
     'tts_voice_en' => '', // vits-web Voice-ID, z.B. "en_US-lessac-medium", leer = Auto
     'tts_voice' => '', // legacy fallback (Deutsch)
-    'tts_rate' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
+    'tts_rate_de' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
+    'tts_rate_en' => 1.0, // 1.0 = normal, 0.5 = langsam, 1.5 = schnell
+    'tts_rate' => 1.0, // legacy fallback
   ],
   'parent' => [
     // Eltern dürfen eine signierte, schreibgeschützte PDF herunterladen.

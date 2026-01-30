@@ -89,9 +89,12 @@ $orgName = (string)($brand['org_name'] ?? 'LEB Tool');
 $logoPath = (string)($brand['logo_path'] ?? '');
 $primary = (string)($brand['primary'] ?? '#0b57d0');
 $secondary = (string)($brand['secondary'] ?? '#111111');
-$ttsRate = (float)($studentCfg['tts_rate'] ?? 0.95);
-if ($ttsRate <= 0) $ttsRate = 1.0;
-$ttsRate = max(0.5, min(1.5, $ttsRate));
+$ttsRateDe = (float)($studentCfg['tts_rate_de'] ?? ($studentCfg['tts_rate'] ?? 0.95));
+$ttsRateEn = (float)($studentCfg['tts_rate_en'] ?? ($studentCfg['tts_rate'] ?? 0.95));
+if ($ttsRateDe <= 0) $ttsRateDe = 1.0;
+if ($ttsRateEn <= 0) $ttsRateEn = 1.0;
+$ttsRateDe = max(0.5, min(1.5, $ttsRateDe));
+$ttsRateEn = max(0.5, min(1.5, $ttsRateEn));
 $ttsVoicePrefDe = trim((string)($studentCfg['tts_voice_de'] ?? ($studentCfg['tts_voice'] ?? '')));
 $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 ?>
@@ -505,7 +508,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const STUDENT_ACTIVE = <?=json_encode($isActive)?>;
   const REPORT_STATUS = <?=json_encode($reportStatus)?>;
   const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
-  const TTS_RATE = Number(<?=json_encode($ttsRate)?>) || 1;
+  const TTS_RATE_DE = Number(<?=json_encode($ttsRateDe)?>) || 1;
+  const TTS_RATE_EN = Number(<?=json_encode($ttsRateEn)?>) || 1;
+  function ttsRateForLang(){
+    return currentLang === 'en' ? TTS_RATE_EN : TTS_RATE_DE;
+  }
   const TTS_VOICE_PREF_DE = <?=json_encode($ttsVoicePrefDe)?>;
   const TTS_VOICE_PREF_EN = <?=json_encode($ttsVoicePrefEn)?>;
   const VITS_MODULE_URL = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
@@ -839,7 +846,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const blob = await session.predict(normalized);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.playbackRate = TTS_RATE;
+      audio.playbackRate = ttsRateForLang();
       audio.onended = () => {
         URL.revokeObjectURL(url);
         updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
@@ -875,7 +882,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!normalized) return false;
     stopTts();
     const utter = new SpeechSynthesisUtterance(normalized);
-    utter.rate = TTS_RATE;
+    utter.rate = ttsRateForLang();
     utter.pitch = 1;
     utter.lang = currentLang === 'en' ? 'en-US' : 'de-DE';
     const voice = pickVoice(utter.lang, voicePrefForLang());

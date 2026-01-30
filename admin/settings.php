@@ -148,12 +148,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $ttsVoiceDe = trim((string)($_POST['tts_voice_de'] ?? ($cfg['student']['tts_voice_de'] ?? ($cfg['student']['tts_voice'] ?? ''))));
     $ttsVoiceEn = trim((string)($_POST['tts_voice_en'] ?? ($cfg['student']['tts_voice_en'] ?? '')));
-    $ttsRate = (float)($_POST['tts_rate'] ?? ($cfg['student']['tts_rate'] ?? 1.0));
-    if ($ttsRate <= 0) $ttsRate = 1.0;
+    $ttsRateDe = (float)($_POST['tts_rate_de'] ?? ($cfg['student']['tts_rate_de'] ?? ($cfg['student']['tts_rate'] ?? 1.0)));
+    $ttsRateEn = (float)($_POST['tts_rate_en'] ?? ($cfg['student']['tts_rate_en'] ?? ($cfg['student']['tts_rate'] ?? 1.0)));
+    if ($ttsRateDe <= 0) $ttsRateDe = 1.0;
+    if ($ttsRateEn <= 0) $ttsRateEn = 1.0;
     $cfg['student']['tts_voice_de'] = $ttsVoiceDe;
     $cfg['student']['tts_voice_en'] = $ttsVoiceEn;
     $cfg['student']['tts_voice'] = $ttsVoiceDe;
-    $cfg['student']['tts_rate'] = max(0.5, min(1.5, $ttsRate));
+    $cfg['student']['tts_rate_de'] = max(0.5, min(1.5, $ttsRateDe));
+    $cfg['student']['tts_rate_en'] = max(0.5, min(1.5, $ttsRateEn));
+    $cfg['student']['tts_rate'] = $cfg['student']['tts_rate_de'];
 
     // ---- Parent portal settings ----
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
@@ -277,9 +281,12 @@ $groupTitles = $studentCfg['group_titles'] ?? [];
 if (!is_array($groupTitles)) $groupTitles = [];
 $ttsVoicePrefDe = trim((string)($studentCfg['tts_voice_de'] ?? ($studentCfg['tts_voice'] ?? '')));
 $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
-$ttsRate = (float)($studentCfg['tts_rate'] ?? 1.0);
-if ($ttsRate <= 0) $ttsRate = 1.0;
-$ttsRate = max(0.5, min(1.5, $ttsRate));
+$ttsRateDe = (float)($studentCfg['tts_rate_de'] ?? ($studentCfg['tts_rate'] ?? 1.0));
+$ttsRateEn = (float)($studentCfg['tts_rate_en'] ?? ($studentCfg['tts_rate'] ?? 1.0));
+if ($ttsRateDe <= 0) $ttsRateDe = 1.0;
+if ($ttsRateEn <= 0) $ttsRateEn = 1.0;
+$ttsRateDe = max(0.5, min(1.5, $ttsRateDe));
+$ttsRateEn = max(0.5, min(1.5, $ttsRateEn));
 
 $vitsVoiceIds = load_vits_voice_ids();
 $vitsVoiceIdsDe = filter_vits_voice_ids($vitsVoiceIds, ['de_DE-']);
@@ -580,10 +587,15 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
     <label><?=h(t('admin.settings.tts.rate_label', 'Lesegeschwindigkeit'))?></label>
     <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
-      <input id="ttsRateInput" type="range" name="tts_rate" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRate)?>">
-      <span id="ttsRateLabel" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRate, 2))?></span>
+      <input id="ttsRateInputDe" type="range" name="tts_rate_de" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateDe)?>">
+      <span id="ttsRateLabelDe" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateDe, 2))?></span>
     </div>
-    <p class="muted"><?=h(t('admin.settings.tts.rate_hint', '0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
+    <p class="muted"><?=h(t('admin.settings.tts.rate_de_hint', 'Deutsch: 0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
+    <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px; margin-top:8px;">
+      <input id="ttsRateInputEn" type="range" name="tts_rate_en" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateEn)?>">
+      <span id="ttsRateLabelEn" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateEn, 2))?></span>
+    </div>
+    <p class="muted"><?=h(t('admin.settings.tts.rate_en_hint', 'Englisch: 0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
 
     <label style="margin-top:10px;"><?=h(t('admin.settings.tts.sample_label', 'Vorleseprobe'))?></label>
     <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:6px; flex-wrap:wrap;">
@@ -601,12 +613,22 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
   <script>
     (function(){
-      const input = document.getElementById('ttsRateInput');
-      const label = document.getElementById('ttsRateLabel');
-      if (input && label) {
-        const render = () => { const v = Number(input.value || 1); label.textContent = '×' + v.toFixed(2); };
-        input.addEventListener('input', render);
-        render();
+      const inputDe = document.getElementById('ttsRateInputDe');
+      const labelDe = document.getElementById('ttsRateLabelDe');
+      const inputEn = document.getElementById('ttsRateInputEn');
+      const labelEn = document.getElementById('ttsRateLabelEn');
+      const render = (input, label) => {
+        if (!input || !label) return;
+        const v = Number(input.value || 1);
+        label.textContent = '×' + v.toFixed(2);
+      };
+      if (inputDe && labelDe) {
+        inputDe.addEventListener('input', () => render(inputDe, labelDe));
+        render(inputDe, labelDe);
+      }
+      if (inputEn && labelEn) {
+        inputEn.addEventListener('input', () => render(inputEn, labelEn));
+        render(inputEn, labelEn);
       }
     })();
   </script>
@@ -617,7 +639,8 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       const playBtnEn = document.getElementById('ttsSamplePlayEn');
       const stopBtn = document.getElementById('ttsSampleStop');
       const status = document.getElementById('ttsSampleStatus');
-      const rateInput = document.getElementById('ttsRateInput');
+      const rateInputDe = document.getElementById('ttsRateInputDe');
+      const rateInputEn = document.getElementById('ttsRateInputEn');
       const voiceDe = document.getElementById('ttsVoiceDe');
       const voiceEn = document.getElementById('ttsVoiceEn');
       const vitsModuleUrl = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
@@ -684,8 +707,8 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         return voiceDe?.value || '';
       }
 
-      function currentRate(){
-        const raw = Number(rateInput?.value || 1);
+      function currentRate(locale){
+        const raw = Number((locale === 'en' ? rateInputEn : rateInputDe)?.value || 1);
         if (!Number.isFinite(raw) || raw <= 0) return 1;
         return Math.max(0.5, Math.min(1.5, raw));
       }
@@ -739,7 +762,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
           return session.predict(normalized).then((blob) => {
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
-            audio.playbackRate = currentRate();
+            audio.playbackRate = currentRate(locale);
             audio.onended = () => {
               URL.revokeObjectURL(url);
               vitsAudio = null;
@@ -773,7 +796,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         const utter = new SpeechSynthesisUtterance(normalized);
         const lang = currentLang(locale);
         utter.lang = lang;
-        utter.rate = currentRate();
+        utter.rate = currentRate(locale);
         const preferredName = locale === 'en' ? voiceEn?.value : voiceDe?.value;
         const voice = pickVoice(lang, preferredName || '');
         if (voice) utter.voice = voice;
