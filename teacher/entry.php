@@ -1507,6 +1507,43 @@ render_teacher_header($pageTitle);
   body.page.meeting-mode #meetingWizShell{
     display: grid !important;
   }
+  body.page.meeting-mode .history-inline,
+  body.page.meeting-mode .child-actions{
+    display: none !important;
+  }
+  body.page.meeting-mode .meeting-content,
+  body.page.meeting-mode .meeting-sidebar{
+    font-size: 17px;
+  }
+  body.page.meeting-mode .meeting-nav-item{
+    font-size: 16px;
+  }
+  body.page.meeting-mode .meeting-nav-item .sub{
+    font-size: 13px;
+  }
+  body.page.meeting-mode #meetingStepTitle{
+    font-size: 24px;
+  }
+  body.page.meeting-mode #meetingStepSub{
+    font-size: 16px;
+    color: rgba(0,0,0,0.7);
+  }
+  body.page.meeting-mode .field{
+    border-left: 4px solid rgba(11,87,208,0.55);
+  }
+  body.page.meeting-mode .field .lbl{
+    color: #0b57d0;
+  }
+  body.page.meeting-mode .field.show-child .child{
+    display:block;
+    border-left: 4px solid rgba(11,122,11,0.6);
+    background: rgba(11,122,11,0.08);
+    color: #0b5f2a;
+    padding-left: 8px;
+  }
+  body.page.meeting-mode .field.show-child .child strong{
+    color: #0b7a0b;
+  }
   <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
   @keyframes s{ to{ transform: rotate(360deg); } }
