@@ -586,15 +586,9 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <p class="muted"><?=h(t('admin.settings.tts.rate_hint', '0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
 
     <label style="margin-top:10px;"><?=h(t('admin.settings.tts.sample_label', 'Vorleseprobe'))?></label>
-    <div class="grid" style="grid-template-columns: 1fr auto; gap:10px; align-items:center;">
-      <textarea id="ttsSampleText" rows="3" style="resize:vertical;"><?=h(t('admin.settings.tts.sample_text_default', 'Dies ist eine Vorleseprobe für die gewählte Stimme.'))?></textarea>
-      <select id="ttsSampleLang" class="input" style="min-width:180px;">
-        <option value="de"><?=h(t('admin.settings.tts.sample_lang_de', 'Deutsch'))?></option>
-        <option value="en"><?=h(t('admin.settings.tts.sample_lang_en', 'Englisch'))?></option>
-      </select>
-    </div>
-    <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap;">
-      <button class="btn secondary" type="button" id="ttsSamplePlay"><?=h(t('admin.settings.tts.sample_play', 'Vorlesen'))?></button>
+    <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:6px; flex-wrap:wrap;">
+      <button class="btn secondary" type="button" id="ttsSamplePlayDe"><?=h(t('admin.settings.tts.sample_play_de', 'Deutsch vorlesen'))?></button>
+      <button class="btn secondary" type="button" id="ttsSamplePlayEn"><?=h(t('admin.settings.tts.sample_play_en', 'Englisch vorlesen'))?></button>
       <button class="btn secondary" type="button" id="ttsSampleStop"><?=h(t('admin.settings.tts.sample_stop', 'Stopp'))?></button>
       <span id="ttsSampleStatus" class="muted"><?=h(t('admin.settings.tts.sample_status_ready', 'Bereit.'))?></span>
     </div>
@@ -619,20 +613,20 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
   <script>
     (function(){
-      const playBtn = document.getElementById('ttsSamplePlay');
+      const playBtnDe = document.getElementById('ttsSamplePlayDe');
+      const playBtnEn = document.getElementById('ttsSamplePlayEn');
       const stopBtn = document.getElementById('ttsSampleStop');
       const status = document.getElementById('ttsSampleStatus');
-      const sampleText = document.getElementById('ttsSampleText');
-      const sampleLang = document.getElementById('ttsSampleLang');
       const rateInput = document.getElementById('ttsRateInput');
       const voiceDe = document.getElementById('ttsVoiceDe');
       const voiceEn = document.getElementById('ttsVoiceEn');
       const vitsModuleUrl = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
+      const tSampleTextDe = <?=json_encode(t('admin.settings.tts.sample_text_de', 'Dies ist eine Vorleseprobe für die gewählte Stimme.'))?>;
+      const tSampleTextEn = <?=json_encode(t('admin.settings.tts.sample_text_en', 'This is a sample for the selected voice.'))?>;
       const tSampleReady = <?=json_encode(t('admin.settings.tts.sample_status_ready', 'Bereit.'))?>;
       const tSampleLoading = <?=json_encode(t('admin.settings.tts.sample_status_loading', 'Vorlesemodell wird geladen …'))?>;
       const tSampleReading = <?=json_encode(t('admin.settings.tts.sample_status_reading', 'Liest gerade …'))?>;
       const tSampleStopped = <?=json_encode(t('admin.settings.tts.sample_status_stopped', 'Vorlesen wurde gestoppt.'))?>;
-      const tSampleTextMissing = <?=json_encode(t('admin.settings.tts.sample_status_text_missing', 'Bitte einen Text für die Vorleseprobe eingeben.'))?>;
       const webSpeechSupported = typeof window !== 'undefined'
         && 'speechSynthesis' in window
         && 'SpeechSynthesisUtterance' in window;
@@ -681,13 +675,12 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         return voices[0] || null;
       }
 
-      function currentLang(){
-        return sampleLang && sampleLang.value === 'en' ? 'en-US' : 'de-DE';
+      function currentLang(locale){
+        return locale === 'en' ? 'en-US' : 'de-DE';
       }
 
-      function currentVoiceId(){
-        if (!sampleLang) return '';
-        if (sampleLang.value === 'en') return voiceEn?.value || '';
+      function currentVoiceId(locale){
+        if (locale === 'en') return voiceEn?.value || '';
         return voiceDe?.value || '';
       }
 
@@ -735,10 +728,10 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         });
       }
 
-      function speakWithVits(text){
+      function speakWithVits(text, locale){
         const normalized = typeof text === 'string' ? text.trim() : '';
         if (!normalized) return Promise.resolve(false);
-        const voiceId = currentVoiceId() || (sampleLang?.value === 'en' ? 'en_US-lessac-medium' : 'de_DE-thorsten-medium');
+        const voiceId = currentVoiceId(locale) || (locale === 'en' ? 'en_US-lessac-medium' : 'de_DE-thorsten-medium');
         return ensureVitsSession(voiceId).then((session) => {
           if (!session) return false;
           stopAll();
@@ -772,16 +765,16 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         });
       }
 
-      function speakWithWebSpeech(text){
+      function speakWithWebSpeech(text, locale){
         if (!webSpeechSupported) return false;
         const normalized = typeof text === 'string' ? text.trim() : '';
         if (!normalized) return false;
         stopAll();
         const utter = new SpeechSynthesisUtterance(normalized);
-        const lang = currentLang();
+        const lang = currentLang(locale);
         utter.lang = lang;
         utter.rate = currentRate();
-        const preferredName = sampleLang?.value === 'en' ? voiceEn?.value : voiceDe?.value;
+        const preferredName = locale === 'en' ? voiceEn?.value : voiceDe?.value;
         const voice = pickVoice(lang, preferredName || '');
         if (voice) utter.voice = voice;
         utter.onstart = () => setStatus(tSampleReading);
@@ -791,19 +784,16 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         return true;
       }
 
-      function speakSample(){
-        const text = sampleText?.value || '';
-        if (text.trim() === '') {
-          setStatus(tSampleTextMissing);
-          return;
-        }
+      function speakSample(locale){
+        const text = locale === 'en' ? tSampleTextEn : tSampleTextDe;
         setStatus(tSampleReading);
-        speakWithVits(text).then((ok) => {
-          if (!ok) speakWithWebSpeech(text);
+        speakWithVits(text, locale).then((ok) => {
+          if (!ok) speakWithWebSpeech(text, locale);
         });
       }
 
-      if (playBtn) playBtn.addEventListener('click', speakSample);
+      if (playBtnDe) playBtnDe.addEventListener('click', () => speakSample('de'));
+      if (playBtnEn) playBtnEn.addEventListener('click', () => speakSample('en'));
       if (stopBtn) stopBtn.addEventListener('click', stopAll);
       if (webSpeechSupported && typeof speechSynthesis.addEventListener === 'function') {
         speechSynthesis.addEventListener('voiceschanged', () => setStatus(tSampleReady));
