@@ -911,6 +911,19 @@ render_teacher_header($pageTitle);
   <?php endif; ?>
 </div>
 
+<?php if ($meetingMode): ?>
+  <button
+    class="btn secondary"
+    type="button"
+    id="btnMeetingFullscreenFloat"
+    data-label-enter="<?=h(t('teacher.entry.meeting_fullscreen'))?>"
+    data-label-exit="<?=h(t('teacher.entry.meeting_fullscreen_exit'))?>"
+    aria-label="<?=h(t('teacher.entry.meeting_fullscreen'))?>"
+  >
+    <?=h(t('teacher.entry.meeting_fullscreen'))?>
+  </button>
+<?php endif; ?>
+
 <?php if ($childMode): ?>
     <div class="alert danger">
       <strong><?=h(t('teacher.child_entry.warning_title'))?></strong>
@@ -1510,10 +1523,30 @@ render_teacher_header($pageTitle);
   body.page.meeting-fullscreen #meetingHeaderCard{
     display: none !important;
   }
+  body.page.meeting-mode #btnMeetingFullscreenFloat{
+    display: none;
+  }
   body.page.meeting-fullscreen #btnMeetingExit{
     display: none !important;
   }
   body.page.meeting-fullscreen #btnMeetingFullscreen{
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10001;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 20px;
+    font-weight: 800;
+    box-shadow: 0 8px 24px rgba(16,24,40,0.2);
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreen{
+    display: none !important;
+  }
+  body.page.meeting-fullscreen #btnMeetingFullscreenFloat{
+    display: inline-flex !important;
     position: fixed;
     top: 16px;
     right: 16px;
@@ -1983,6 +2016,7 @@ render_teacher_header($pageTitle);
   const fixedHeader = document.querySelector('.fixedHeader');
   const btnMeetingFullscreen = document.getElementById('btnMeetingFullscreen');
   const btnMeetingExit = document.getElementById('btnMeetingExit');
+  const btnMeetingFullscreenFloat = document.getElementById('btnMeetingFullscreenFloat');
   const meetingWizShell = document.getElementById('meetingWizShell');
   const meetingNav = document.getElementById('meetingNav');
   const meetingStepTitle = document.getElementById('meetingStepTitle');
@@ -2006,20 +2040,24 @@ render_teacher_header($pageTitle);
   window.addEventListener('resize', updateFixedHeaderHeight);
 
   function updateMeetingFullscreenLabel(){
-    if (!btnMeetingFullscreen) return;
-    const enterLabel = btnMeetingFullscreen.dataset.labelEnter || '';
-    const exitLabel = btnMeetingFullscreen.dataset.labelExit || '';
+    const enterLabel = btnMeetingFullscreen?.dataset.labelEnter || btnMeetingFullscreenFloat?.dataset.labelEnter || '';
+    const exitLabel = btnMeetingFullscreen?.dataset.labelExit || btnMeetingFullscreenFloat?.dataset.labelExit || '';
     const isFull = !!document.fullscreenElement;
     document.body.classList.toggle('meeting-fullscreen', isFull);
-    if (isFull) {
-      btnMeetingFullscreen.textContent = '⤫';
-      btnMeetingFullscreen.setAttribute('aria-label', exitLabel);
-      btnMeetingFullscreen.setAttribute('title', exitLabel);
-    } else {
-      btnMeetingFullscreen.textContent = enterLabel;
-      btnMeetingFullscreen.removeAttribute('title');
-      btnMeetingFullscreen.setAttribute('aria-label', enterLabel);
-    }
+    const setBtn = (btn) => {
+      if (!btn) return;
+      if (isFull) {
+        btn.textContent = '⤫';
+        btn.setAttribute('aria-label', exitLabel);
+        btn.setAttribute('title', exitLabel);
+      } else {
+        btn.textContent = enterLabel;
+        btn.removeAttribute('title');
+        btn.setAttribute('aria-label', enterLabel);
+      }
+    };
+    setBtn(btnMeetingFullscreen);
+    setBtn(btnMeetingFullscreenFloat);
   }
 
   if (MEETING_MODE) {
@@ -2029,15 +2067,19 @@ render_teacher_header($pageTitle);
     }
     updateMeetingFullscreenLabel();
     document.addEventListener('fullscreenchange', updateMeetingFullscreenLabel);
-    if (btnMeetingFullscreen) {
-      btnMeetingFullscreen.addEventListener('click', async () => {
+    const toggleFullscreen = async () => {
         const root = document.documentElement;
         if (!document.fullscreenElement && root.requestFullscreen) {
           try { await root.requestFullscreen(); } catch (e) {}
         } else if (document.exitFullscreen) {
           try { await document.exitFullscreen(); } catch (e) {}
         }
-      });
+      };
+    if (btnMeetingFullscreen) {
+      btnMeetingFullscreen.addEventListener('click', toggleFullscreen);
+    }
+    if (btnMeetingFullscreenFloat) {
+      btnMeetingFullscreenFloat.addEventListener('click', toggleFullscreen);
     }
     if (btnMeetingPrev) {
       btnMeetingPrev.addEventListener('click', () => meetingStepMove(-1));
