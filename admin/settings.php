@@ -570,37 +570,40 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <input type="hidden" name="action" value="save">
 
     <label><?=h(t('admin.settings.tts.voice_de_label', 'Standard-Stimme (Deutsch)'))?></label>
-    <select id="ttsVoiceDe" name="tts_voice_de">
-      <option value=""><?=h(t('admin.settings.tts.voice_auto', 'Automatisch (Standard)'))?></option>
-      <?php foreach ($vitsVoiceIdsDe as $voiceId): ?>
-        <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefDe ? 'selected' : ''?>><?=h($voiceId)?></option>
-      <?php endforeach; ?>
-    </select>
-    <label style="margin-top:10px;"><?=h(t('admin.settings.tts.voice_en_label', 'Standard-Stimme (Englisch)'))?></label>
-    <select id="ttsVoiceEn" name="tts_voice_en">
-      <option value=""><?=h(t('admin.settings.tts.voice_auto', 'Automatisch (Standard)'))?></option>
-      <?php foreach ($vitsVoiceIdsEn as $voiceId): ?>
-        <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefEn ? 'selected' : ''?>><?=h($voiceId)?></option>
-      <?php endforeach; ?>
-    </select>
-    <p class="muted"><?=h(t('admin.settings.tts.voice_hint', 'Die Auswahl verwendet die Voice-IDs von vits-web (z.B. de_DE-thorsten-medium).'))?></p>
-
-    <label><?=h(t('admin.settings.tts.rate_label', 'Lesegeschwindigkeit'))?></label>
-    <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
-      <input id="ttsRateInputDe" type="range" name="tts_rate_de" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateDe)?>">
-      <span id="ttsRateLabelDe" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateDe, 2))?></span>
+    <div class="grid" style="grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap:10px; align-items:center;">
+      <select id="ttsVoiceDe" name="tts_voice_de">
+        <option value=""><?=h(t('admin.settings.tts.voice_auto', 'Automatisch (Standard)'))?></option>
+        <?php foreach ($vitsVoiceIdsDe as $voiceId): ?>
+          <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefDe ? 'selected' : ''?>><?=h($voiceId)?></option>
+        <?php endforeach; ?>
+      </select>
+      <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
+        <input id="ttsRateInputDe" type="range" name="tts_rate_de" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateDe)?>">
+        <span id="ttsRateLabelDe" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateDe, 2))?></span>
+      </div>
+      <button class="btn secondary" type="button" id="ttsSamplePlayDe"><?=h(t('admin.settings.tts.sample_play_de', 'Deutsch vorlesen'))?></button>
     </div>
     <p class="muted"><?=h(t('admin.settings.tts.rate_de_hint', 'Deutsch: 0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
-    <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px; margin-top:8px;">
-      <input id="ttsRateInputEn" type="range" name="tts_rate_en" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateEn)?>">
-      <span id="ttsRateLabelEn" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateEn, 2))?></span>
+
+    <label style="margin-top:10px;"><?=h(t('admin.settings.tts.voice_en_label', 'Standard-Stimme (Englisch)'))?></label>
+    <div class="grid" style="grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap:10px; align-items:center;">
+      <select id="ttsVoiceEn" name="tts_voice_en">
+        <option value=""><?=h(t('admin.settings.tts.voice_auto', 'Automatisch (Standard)'))?></option>
+        <?php foreach ($vitsVoiceIdsEn as $voiceId): ?>
+          <option value="<?=h($voiceId)?>" <?= $voiceId === $ttsVoicePrefEn ? 'selected' : ''?>><?=h($voiceId)?></option>
+        <?php endforeach; ?>
+      </select>
+      <div class="grid" style="grid-template-columns: 1fr auto; align-items:center; gap:10px;">
+        <input id="ttsRateInputEn" type="range" name="tts_rate_en" min="0.5" max="1.5" step="0.05" value="<?=h((string)$ttsRateEn)?>">
+        <span id="ttsRateLabelEn" class="pill" style="min-width:70px; text-align:center;">×<?=h(number_format($ttsRateEn, 2))?></span>
+      </div>
+      <button class="btn secondary" type="button" id="ttsSamplePlayEn"><?=h(t('admin.settings.tts.sample_play_en', 'Englisch vorlesen'))?></button>
     </div>
     <p class="muted"><?=h(t('admin.settings.tts.rate_en_hint', 'Englisch: 0,5 = langsam, 1,0 = normal, 1,5 = schnell.'))?></p>
+    <p class="muted"><?=h(t('admin.settings.tts.voice_hint', 'Die Auswahl verwendet die Voice-IDs von vits-web (z.B. de_DE-thorsten-medium).'))?></p>
 
     <label style="margin-top:10px;"><?=h(t('admin.settings.tts.sample_label', 'Vorleseprobe'))?></label>
     <div class="actions" style="justify-content:flex-start; gap:10px; margin-top:6px; flex-wrap:wrap;">
-      <button class="btn secondary" type="button" id="ttsSamplePlayDe"><?=h(t('admin.settings.tts.sample_play_de', 'Deutsch vorlesen'))?></button>
-      <button class="btn secondary" type="button" id="ttsSamplePlayEn"><?=h(t('admin.settings.tts.sample_play_en', 'Englisch vorlesen'))?></button>
       <button class="btn secondary" type="button" id="ttsSampleStop"><?=h(t('admin.settings.tts.sample_stop', 'Stopp'))?></button>
       <span id="ttsSampleStatus" class="muted"><?=h(t('admin.settings.tts.sample_status_ready', 'Bereit.'))?></span>
     </div>
