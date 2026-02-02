@@ -1524,7 +1524,11 @@ async function exportNow(){
     for (const s of students){
       const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
       const flattenedBytes = await flattenPdfBytes(filledBytes);
-      const src = await PDFDocument.load(flattenedBytes);
+      let sourceBytes = flattenedBytes;
+      if (isBookletMerged) {
+        sourceBytes = await createBookletPdf(flattenedBytes);
+      }
+      const src = await PDFDocument.load(sourceBytes);
       const pages = await merged.copyPages(src, src.getPageIndices());
       pages.forEach(p => merged.addPage(p));
       done++;
@@ -1532,16 +1536,7 @@ async function exportNow(){
       showProgress(t('status_merging'), done, students.length);
     }
     const out = await merged.save();
-    if (isBookletMerged) {
-      setStatus(t('status_create_booklet'));
-      showProgress(t('status_create_booklet'), 1, 2);
-      const bookletBytes = await createBookletPdf(out);
-      downloadBytes(bookletBytes, baseName + suffix + bookletSuffix + '.pdf', 'application/pdf');
-      setStatus(t('status_pdf_done'));
-      showProgress(t('status_done'), students.length, students.length);
-      return;
-    }
-    downloadBytes(out, baseName + suffix + '.pdf', 'application/pdf');
+    downloadBytes(out, baseName + suffix + (isBookletMerged ? bookletSuffix : '') + '.pdf', 'application/pdf');
     setStatus(t('status_pdf_done'));
     showProgress(t('status_done'), students.length, students.length);
     return;
