@@ -31,6 +31,10 @@ $tx = [
   'mode.merged_sub' => t('teacher.export.mode.merged_sub', 'alle Schüler in einer Datei'),
   'mode.single' => t('teacher.export.mode.single', 'Einzel-Export'),
   'mode.single_sub' => t('teacher.export.mode.single_sub', 'nur eine ausgewählte Person'),
+  'mode.booklet_single' => t('teacher.export.mode.booklet_single', 'Broschürendruck (einzeln)'),
+  'mode.booklet_single_sub' => t('teacher.export.mode.booklet_single_sub', 'eine ausgewählte Person als Broschüre'),
+  'mode.booklet_merged' => t('teacher.export.mode.booklet_merged', 'Broschürendruck (Klasse)'),
+  'mode.booklet_merged_sub' => t('teacher.export.mode.booklet_merged_sub', 'alle Schüler als Broschüren-PDF'),
   'filter_label' => t('teacher.export.filter_label', 'Filter'),
   'filter_only_submitted' => t('teacher.export.filter_only_submitted', 'Nur abgegebene (submitted)'),
   'student_label' => t('teacher.export.student_label', 'Schüler'),
@@ -78,6 +82,7 @@ $txJs = [
   'status_merging' => t('teacher.export.js.status_merging', 'Zusammenführen …'),
   'status_pdf_done' => t('teacher.export.js.status_pdf_done', 'Fertig. PDF wurde heruntergeladen.'),
   'status_create_pdf' => t('teacher.export.js.status_create_pdf', 'Erzeuge PDF …'),
+  'status_create_booklet' => t('teacher.export.js.status_create_booklet', 'Erzeuge Broschüren-PDF …'),
   'status_export_cancelled' => t('teacher.export.js.status_export_cancelled', 'Export abgebrochen.'),
   'progress_error' => t('teacher.export.js.progress_error', 'Fehler'),
   'admin_template_hint' => t('teacher.export.js.admin_template_hint', ' (Admin: bitte der Klasse eine Vorlage zuweisen.)'),
@@ -89,6 +94,7 @@ $txJs = [
   'student_id_label' => t('teacher.export.js.student_id_label', 'ID {id}'),
   'class_label_fallback' => t('teacher.export.js.class_label_fallback', 'Klasse'),
   'only_submitted_suffix' => t('teacher.export.js.only_submitted_suffix', ' - nur abgegebene'),
+  'booklet_suffix' => t('teacher.export.booklet_suffix', ' Broschuere'),
   'student_filename_fallback' => t('teacher.export.js.student_filename_fallback', 'Schueler-{id}'),
   'non_fatal_no_template' => t('export.api.error.no_template', 'Für diese Klasse wurde keine Vorlage zugeordnet.'),
   'non_fatal_no_students' => t('teacher.export.js.non_fatal_no_students', 'Keine Schüler gefunden'),
@@ -161,6 +167,18 @@ function export_class_display(array $c): string {
           <input type="radio" name="mode" value="single">
           <span class="export-main"><?=h($tx['mode.single'])?></span>
           <span class="export-sub"><?=h($tx['mode.single_sub'])?></span>
+        </label>
+
+        <label class="export-row">
+          <input type="radio" name="mode" value="booklet_single">
+          <span class="export-main"><?=h($tx['mode.booklet_single'])?></span>
+          <span class="export-sub"><?=h($tx['mode.booklet_single_sub'])?></span>
+        </label>
+
+        <label class="export-row">
+          <input type="radio" name="mode" value="booklet_merged">
+          <span class="export-main"><?=h($tx['mode.booklet_merged'])?></span>
+          <span class="export-sub"><?=h($tx['mode.booklet_merged_sub'])?></span>
         </label>
       </div>
     </div>
@@ -349,13 +367,16 @@ function currentMode(){
   const r = document.querySelector('input[name="mode"]:checked');
   return r ? r.value : 'zip';
 }
+function modeNeedsStudent(mode){
+  return mode === 'single' || mode === 'booklet_single';
+}
 function updateModeUI(){
   if (!elStudentWrap) return;
-  elStudentWrap.style.display = (currentMode() === 'single') ? '' : 'none';
+  elStudentWrap.style.display = modeNeedsStudent(currentMode()) ? '' : 'none';
 }
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
   updateModeUI();
-  if (currentMode() === 'single') check().catch(()=>{});
+  if (modeNeedsStudent(currentMode())) check().catch(()=>{});
 }));
 updateModeUI();
 
@@ -511,7 +532,7 @@ async function check(){
     // 2) Single: warnings_summary für ausgewählten Schüler nachziehen, ohne Liste zu zerstören
     let merged = full;
 
-    if (mode === 'single' && elStudent && elStudent.value && !__refiningSinglePreview) {
+    if (modeNeedsStudent(mode) && elStudent && elStudent.value && !__refiningSinglePreview) {
       const sid = Number(elStudent.value || 0);
       if (sid > 0) {
         __refiningSinglePreview = true;
@@ -563,7 +584,7 @@ if (elOnlySubmitted) elOnlySubmitted.addEventListener('change', () => { check().
 
 if (elStudent) {
   elStudent.addEventListener('change', () => {
-    if (currentMode() === 'single') check().catch(()=>{});
+    if (modeNeedsStudent(currentMode())) check().catch(()=>{});
   });
 }
 
@@ -1351,6 +1372,52 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   return await pdfDoc.save();
 }
 
+async function createBookletPdf(srcBytes){
+  const { PDFDocument } = window.PDFLib;
+  const src = await PDFDocument.load(srcBytes);
+  const pageCount = src.getPageCount();
+  if (!pageCount) return srcBytes;
+
+  const firstSize = src.getPage(0).getSize();
+  const width = firstSize.width;
+  const height = firstSize.height;
+
+  const pad = (4 - (pageCount % 4)) % 4;
+  for (let i = 0; i < pad; i += 1) {
+    src.addPage([width, height]);
+  }
+
+  const total = src.getPageCount();
+  const sheets = total / 4;
+  const out = await PDFDocument.create();
+
+  const embed = async (index) => {
+    const page = src.getPage(index);
+    return await out.embedPage(page);
+  };
+
+  for (let s = 0; s < sheets; s += 1) {
+    const rightIndex = s * 2;
+    const leftIndex = total - 1 - (s * 2);
+    const backLeftIndex = s * 2 + 1;
+    const backRightIndex = total - 2 - (s * 2);
+
+    const front = out.addPage([width * 2, height]);
+    const leftPage = await embed(leftIndex);
+    const rightPage = await embed(rightIndex);
+    front.drawPage(leftPage, { x: 0, y: 0, width, height });
+    front.drawPage(rightPage, { x: width, y: 0, width, height });
+
+    const back = out.addPage([width * 2, height]);
+    const backLeft = await embed(backLeftIndex);
+    const backRight = await embed(backRightIndex);
+    back.drawPage(backLeft, { x: 0, y: 0, width, height });
+    back.drawPage(backRight, { x: width, y: 0, width, height });
+  }
+
+  return await out.save();
+}
+
 async function exportNow(){
   hideProgress();
   const mode = currentMode();
@@ -1364,7 +1431,7 @@ async function exportNow(){
   let data;
   try {
     const payload = { action: 'data', class_id: classId, only_submitted: onlySubmittedFlag() };
-    if (mode === 'single' && selectedStudentId) payload.student_id = Number(selectedStudentId);
+    if (modeNeedsStudent(mode) && selectedStudentId) payload.student_id = Number(selectedStudentId);
     data = await apiFetch(payload);
   } catch (e) {
     const msg = (e?.message || String(e));
@@ -1381,7 +1448,7 @@ async function exportNow(){
   __fieldMetaMap = (data.field_meta && typeof data.field_meta === 'object') ? data.field_meta : (__fieldMetaMap || {});
 
   // ✅ FIX: Dropdown nicht mit single-response überschreiben
-  if (mode === 'single') {
+  if (modeNeedsStudent(mode)) {
     fillStudentSelect(__fullStudentList, selectedStudentId);
   } else {
     fillStudentSelect(data.students || [], selectedStudentId);
@@ -1391,6 +1458,9 @@ async function exportNow(){
   if (!students.length) throw new Error(t('error_no_students'));
 
   const needZip = (mode === 'zip');
+  const isBookletSingle = (mode === 'booklet_single');
+  const isBookletMerged = (mode === 'booklet_merged');
+  const isBooklet = isBookletSingle || isBookletMerged;
   setStatus(t('status_load_libs'));
   showProgress(t('status_load_libs'), 0, 1);
   await loadLibsIfNeeded(needZip);
@@ -1405,6 +1475,7 @@ async function exportNow(){
 
   const baseName = safeFilename((data.class?.display || t('class_label_fallback')) + ' ' + (data.class?.school_year || ''));
   const suffix = onlySubmittedFlag() ? t('only_submitted_suffix') : '';
+  const bookletSuffix = isBooklet ? (t('booklet_suffix') || '') : '';
 
   if (mode === 'zip') {
     setStatus(t('status_create_pdfs'));
@@ -1428,7 +1499,7 @@ async function exportNow(){
     return;
   }
 
-  if (mode === 'merged') {
+  if (mode === 'merged' || isBookletMerged) {
     setStatus(t('status_merge_pdf'));
     showProgress(t('status_merging'), 0, students.length);
     const { PDFDocument } = window.PDFLib;
@@ -1444,6 +1515,15 @@ async function exportNow(){
       showProgress(t('status_merging'), done, students.length);
     }
     const out = await merged.save();
+    if (isBookletMerged) {
+      setStatus(t('status_create_booklet'));
+      showProgress(t('status_create_booklet'), 1, 2);
+      const bookletBytes = await createBookletPdf(out);
+      downloadBytes(bookletBytes, baseName + suffix + bookletSuffix + '.pdf', 'application/pdf');
+      setStatus(t('status_pdf_done'));
+      showProgress(t('status_done'), students.length, students.length);
+      return;
+    }
     downloadBytes(out, baseName + suffix + '.pdf', 'application/pdf');
     setStatus(t('status_pdf_done'));
     showProgress(t('status_done'), students.length, students.length);
@@ -1460,7 +1540,14 @@ async function exportNow(){
   }
   const out = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
   const fn = safeFilename(s.name) || tfmt('student_filename_fallback', null, { id: s.id });
-  downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
+  if (isBookletSingle) {
+    setStatus(t('status_create_booklet'));
+    showProgress(t('status_create_booklet'), 1, 2);
+    const bookletBytes = await createBookletPdf(out);
+    downloadBytes(bookletBytes, fn + suffix + bookletSuffix + '.pdf', 'application/pdf');
+  } else {
+    downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
+  }
   setStatus(t('status_pdf_done'));
   showProgress(t('status_done'), 1, 1);
 }
@@ -1505,7 +1592,7 @@ if (btnExport) {
 
   if (elOnlySubmitted && onlySub) elOnlySubmitted.checked = true;
 
-  if (mode === 'merged' || mode === 'zip' || mode === 'single') {
+  if (mode === 'merged' || mode === 'zip' || mode === 'single' || mode === 'booklet_single' || mode === 'booklet_merged') {
     const r = document.querySelector('input[name="mode"][value="' + mode + '"]');
     if (r) r.checked = true;
   }
@@ -1517,7 +1604,7 @@ if (btnExport) {
     if (studentId && elStudent) {
       const opt = Array.from(elStudent.options).find(o => String(o.value) === studentId);
       if (opt) elStudent.value = studentId;
-      if (currentMode() === 'single') check().catch(()=>{});
+      if (modeNeedsStudent(currentMode())) check().catch(()=>{});
     }
   }).catch(()=>{});
 })();
