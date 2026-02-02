@@ -1377,6 +1377,11 @@ async function createBookletPdf(srcBytes){
   const src = await PDFDocument.load(srcBytes);
   const pageCount = src.getPageCount();
   if (!pageCount) return srcBytes;
+  try {
+    const form = src.getForm();
+    try { form.updateFieldAppearances(); } catch (e) {}
+    try { form.flatten(); } catch (e) {}
+  } catch (e) {}
 
   const firstSize = src.getPage(0).getSize();
   const width = firstSize.width;
