@@ -1598,6 +1598,24 @@ render_teacher_header($pageTitle);
   body.page.meeting-mode .field.show-child .child strong{
     color: #0b7a0b;
   }
+  body.page.meeting-mode .opts{
+    flex-wrap: nowrap;
+    gap: 12px;
+  }
+  body.page.meeting-mode .opt{
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: center;
+    font-size: 1rem;
+    padding: 10px 12px;
+  }
+  body.page.meeting-mode .opt .ico{
+    width: 34px;
+    height: 34px;
+  }
+  body.page.meeting-mode .opt .ico.placeholder{
+    font-size: 16px;
+  }
   <?php endif; ?>
   .spin{ width:16px; height:16px; border-radius:999px; border:2px solid rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.65); display:inline-block; animation: s 0.8s linear infinite; }
   @keyframes s{ to{ transform: rotate(360deg); } }
@@ -1702,6 +1720,9 @@ render_teacher_header($pageTitle);
     border-width:6px; border-style:solid;
     border-color:#fff transparent transparent transparent;
   }
+  .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
+  .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
+  .combined-inline-text{ font-size:14px; line-height:1.5; }
 
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
@@ -2199,6 +2220,11 @@ render_teacher_header($pageTitle);
     saveInFlight: 0,
     mergeDecisions: new Map(),
   };
+
+  if (MEETING_MODE) {
+    ui.studentMissingOnly = false;
+    ui.optionMode = 'buttons';
+  }
 
   let meetingState = {
     steps: [],
@@ -2829,6 +2855,10 @@ render_teacher_header($pageTitle);
 
   function applyStoredView(){
     if (!viewSelect) return;
+    if (MEETING_MODE) {
+      viewSelect.value = 'student';
+      return;
+    }
     const saved = normalizeViewMode(localStorage.getItem(VIEW_STORAGE_KEY));
     viewSelect.value = saved;
   }
@@ -2844,6 +2874,18 @@ render_teacher_header($pageTitle);
       const base = <?=json_encode(url('teacher/child_entry.php'))?>;
       link.href = classId > 0 ? `${base}?class_id=${classId}` : base;
     });
+    updateMeetingLink(classId);
+  }
+
+  function updateMeetingLink(classIdOverride){
+    const meetingLink = document.getElementById('btnMeetingView');
+    if (!meetingLink) return;
+    const classId = Number(classIdOverride ?? classSelect?.value ?? 0);
+    const base = <?=json_encode(url('teacher/entry.php'))?>;
+    const params = new URLSearchParams();
+    params.set('meeting', '1');
+    if (classId > 0) params.set('class_id', String(classId));
+    meetingLink.href = `${base}?${params.toString()}`;
   }
 
   function saveViewSelection(){
@@ -2983,6 +3025,14 @@ render_teacher_header($pageTitle);
     const html = combined
       ? esc(String(combined)).replace(/\n/g, '<br>')
       : '<span class="muted">—</span>';
+    if (DELEGATED_MODE) {
+      return `
+        <div class="combined-inline">
+          <div class="combined-inline-label">Gesamtwert</div>
+          <div class="combined-inline-text">${html}</div>
+        </div>
+      `;
+    }
     return `
       <span class="combined-tip" data-tip="1">
         <button type="button" class="btn ghost icon combined-tip-btn js-combined-tip" aria-label="Gesamtwert anzeigen">👥</button>
@@ -3294,6 +3344,10 @@ render_teacher_header($pageTitle);
 
   function updateFormsProgressUI(){
     if (!formsProgressWrap || !formsProgressBar) return;
+    if (MEETING_MODE) {
+      formsProgressWrap.style.display = 'none';
+      return;
+    }
 
     const total = Number(state.progress_summary?.students_total ?? (state.students || []).length);
     const complete = CHILD_MODE
@@ -3717,6 +3771,10 @@ render_teacher_header($pageTitle);
       });
 
       if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        if (MEETING_MODE) {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', () => autoResizeTextarea(inp));
+        }
         inp.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
             ev.preventDefault();
@@ -3908,6 +3966,10 @@ render_teacher_header($pageTitle);
       });
 
       if ((inp.tagName || '').toLowerCase() === 'textarea') {
+        if (MEETING_MODE) {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', () => autoResizeTextarea(inp));
+        }
         inp.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter' && (ev.ctrlKey || ev.altKey)) {
             ev.preventDefault();
@@ -4424,11 +4486,25 @@ render_teacher_header($pageTitle);
     return n ? `maxlength="${esc(String(n))}"` : '';
   }
 
+  function autoResizeTextarea(el){
+    if (!el) return;
+    el.style.height = 'auto';
+    const styles = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || Number.parseFloat(styles.fontSize) || 0;
+    const extraLine = lineHeight > 0 ? lineHeight : 0;
+    el.style.height = `${el.scrollHeight + extraLine}px`;
+  }
+
   function renderInputHtml(f, reportId, value, locked, canEdit=true){
     const dis = (locked || !canEdit) ? 'disabled' : '';
     const common = `class="input" data-teacher-input="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}" ${dis}`;
 
     const type = String(f.field_type || 'text');
+
+    if (MEETING_MODE && type === 'grade') {
+      const shown = teacherDisplay(f, value);
+      return `<div class="input" data-static="1" aria-readonly="true">${esc(shown)}</div>`;
+    }
 
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
@@ -4437,7 +4513,9 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
+      const rows = MEETING_MODE ? 1 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; overflow:hidden; resize:none; height:auto;' : '';
+      return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -4508,6 +4586,11 @@ render_teacher_header($pageTitle);
 
     const type = String(f.field_type || 'text');
 
+    if (MEETING_MODE && type === 'grade') {
+      const shown = childFieldDisplay(f, value);
+      return `<div class="input" data-static="1" aria-readonly="true">${esc(shown)}</div>`;
+    }
+
     if (type === 'checkbox') {
       const checked = (String(value) === '1') ? 'checked' : '';
       return `<label style="display:flex; align-items:center; gap:10px;"><input type="checkbox" ${common} value="1" ${checked} onchange="this.value=this.checked?'1':'0'"> <span class="muted">${esc(tEntry('yes_no'))}</span></label>`;
@@ -4515,7 +4598,9 @@ render_teacher_header($pageTitle);
 
     if (type === 'multiline' || Number(f.is_multiline||0) === 1) {
       const maxAttr = maxLenAttr(f);
-      return `<textarea rows="4" ${common} ${maxAttr} style="width:100%;">${esc(value)}</textarea>`;
+      const rows = MEETING_MODE ? 1 : 4;
+      const meetingStyle = MEETING_MODE ? 'font-size:1.1rem; line-height:1.5; overflow:hidden; resize:none; height:auto;' : '';
+      return `<textarea rows="${rows}" ${common} ${maxAttr} style="width:100%; ${meetingStyle}">${esc(value)}</textarea>`;
     }
 
     if (type === 'radio' || type === 'select' || type === 'grade') {
@@ -4838,6 +4923,9 @@ render_teacher_header($pageTitle);
     // ✅ progress: how many forms are complete
     updateFormsProgressUI();
 
+    if (MEETING_MODE && viewSelect) {
+      viewSelect.value = 'student';
+    }
     ui.view = (viewSelect.value === 'item') ? 'item' : (viewSelect.value === 'student' ? 'student' : 'grades');
     if (CHILD_MODE && ui.view === 'grades') {
       ui.view = 'student';
@@ -5134,9 +5222,7 @@ render_teacher_header($pageTitle);
   function updateMeetingStudentBadge(){
     const s = activeStudent();
     if (!s || !meetingStudentBadge) return;
-    const missing = Number(s.progress_teacher_missing || 0);
-    const missingLabel = tfmtEntry('progress_missing_teacher', { count: missing });
-    meetingStudentBadge.textContent = `${s.name} · ${missingLabel}`;
+    meetingStudentBadge.textContent = `${s.name}`;
   }
 
   function ensureMeetingStudentSelect(list){
@@ -6014,6 +6100,7 @@ if (dlgSave) {
     toggleChild.addEventListener('change', () => render());
   }
   updateSwitchLinks();
+  updateMeetingLink();
   if (classSelect) {
     classSelect.addEventListener('change', updateSwitchLinks);
   }
