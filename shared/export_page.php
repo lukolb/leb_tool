@@ -1423,6 +1423,17 @@ async function createBookletPdf(srcBytes){
   return await out.save();
 }
 
+async function flattenPdfBytes(srcBytes){
+  const { PDFDocument } = window.PDFLib;
+  const doc = await PDFDocument.load(srcBytes);
+  try {
+    const form = doc.getForm();
+    try { form.updateFieldAppearances(); } catch (e) {}
+    try { form.flatten(); } catch (e) {}
+  } catch (e) {}
+  return await doc.save();
+}
+
 async function exportNow(){
   hideProgress();
   const mode = currentMode();
@@ -1512,7 +1523,8 @@ async function exportNow(){
     let done = 0;
     for (const s of students){
       const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const src = await PDFDocument.load(filledBytes);
+      const flattenedBytes = await flattenPdfBytes(filledBytes);
+      const src = await PDFDocument.load(flattenedBytes);
       const pages = await merged.copyPages(src, src.getPageIndices());
       pages.forEach(p => merged.addPage(p));
       done++;
