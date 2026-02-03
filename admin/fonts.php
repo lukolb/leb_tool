@@ -246,6 +246,34 @@ function resolveBaseFontName(field, fontKey, PDFName, form) {
   return fontKey;
 }
 
+function collectFontsFromResources(resourceDict, PDFName) {
+  const names = [];
+  try {
+    const fonts = resourceDict?.lookup?.(PDFName.of('Font'));
+    if (!fonts || typeof fonts.keys !== 'function') return names;
+    const keys = fonts.keys();
+    for (const k of keys) {
+      const font = fonts.lookup(PDFName.of(pdfNameToString(k)));
+      const base = font?.lookup?.(PDFName.of('BaseFont')) || font?.dict?.lookup?.(PDFName.of('BaseFont'));
+      const baseName = base ? pdfNameToString(base) : '';
+      if (baseName) names.push(baseName);
+    }
+  } catch (e) {}
+  return names;
+}
+
+function collectFontsFromDa(daString) {
+  const names = [];
+  const da = (daString ?? '').toString();
+  if (!da) return names;
+  const re = new RegExp('\\\\/([^\\\\s]+)\\\\s+[\\\\d.]+\\\\s+Tf', 'g');
+  let m;
+  while ((m = re.exec(da))) {
+    if (m[1]) names.push(m[1]);
+  }
+  return names;
+}
+
 async function loadManifest() {
   const resp = await fetch(FONT_MANIFEST_URL, { credentials: 'same-origin' });
   if (!resp.ok) throw new Error('Font manifest not available.');
@@ -270,18 +298,38 @@ async function extractFontsFromTemplate(templateId) {
   const form = pdfDoc.getForm();
   const fonts = new Set();
   const fields = form.getFields();
+
+  try {
+    const formDa = form?.acroForm?.dict?.lookup?.(PDFName.of('DA'));
+    if (formDa) {
+      collectFontsFromDa(pdfStringToText(formDa)).forEach((name) => fonts.add(normalizeFontKey(name)));
+    }
+  } catch (e) {}
+
+  try {
+    const dr = form?.acroForm?.dict?.lookup?.(PDFName.of('DR'));
+    collectFontsFromResources(dr, PDFName).forEach((name) => fonts.add(normalizeFontKey(name)));
+  } catch (e) {}
+
   for (const field of fields) {
     const da = extractDaString(field, PDFName);
+    collectFontsFromDa(da).forEach((name) => fonts.add(normalizeFontKey(name)));
+
     const fontName = parseDaFontName(da);
-    let baseName = fontName;
-    if (!baseName) {
-      baseName = resolveBaseFontName(field, fontName, PDFName, form);
+    if (fontName) {
+      const norm = normalizeFontKey(fontName);
+      if (norm) fonts.add(norm);
     }
-    const norm = normalizeFontKey(baseName);
-    if (!norm) continue;
-    if (!STANDARD_FONTS.has(norm)) fonts.add(norm);
+
+    const baseName = resolveBaseFontName(field, fontName, PDFName, form);
+    if (baseName) fonts.add(normalizeFontKey(baseName));
+
+    try {
+      const dr = field?.acroField?.dict?.lookup?.(PDFName.of('DR'));
+      collectFontsFromResources(dr, PDFName).forEach((name) => fonts.add(normalizeFontKey(name)));
+    } catch (e) {}
   }
-  return Array.from(fonts);
+  return Array.from(fonts).filter((name) => name && !STANDARD_FONTS.has(name));
 }
 
 if (fontFileInput) {
