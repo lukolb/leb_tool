@@ -4,8 +4,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/font_utils.php';
 
-require_login();
-
 header('Content-Type: application/json; charset=utf-8');
 
 $manifest = load_font_manifest();

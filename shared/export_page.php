@@ -286,7 +286,7 @@ const CSRF = <?= json_encode($csrf) ?>;
 const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
 const EXPORT_API_URL = <?= json_encode($exportApiUrl) ?>;
 const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
-const FONTKIT_URL = 'https://unpkg.com/fontkit@2.0.2/dist/fontkit.umd.min.js';
+const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
 const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
 const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
@@ -1007,7 +1007,7 @@ async function loadFontManifest(){
 }
 
 async function ensureFontkit(){
-  if (window.fontkit) return window.fontkit;
+  if (window.fontkit || window.PDFLib?.fontkit) return window.fontkit;
   await new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = FONTKIT_URL;
@@ -1015,24 +1015,56 @@ async function ensureFontkit(){
     s.onerror = () => reject(new Error('fontkit load failed'));
     document.head.appendChild(s);
   });
+  if (window.PDFLib?.registerFontkit && window.fontkit) {
+    try { window.PDFLib.registerFontkit(window.fontkit); } catch (e) {}
+  }
   return window.fontkit;
 }
 
-async function ensureEmbeddedFont(pdfDoc, fontInfo){
-  if (!fontInfo?.url) return null;
-  const key = normalizeFontName(fontInfo.name || fontInfo.key || '');
+function standardFontNameMap(PDFLib){
+  if (!PDFLib?.StandardFonts) return {};
+  return {
+    'helvetica': PDFLib.StandardFonts.Helvetica,
+    'helvetica-bold': PDFLib.StandardFonts.HelveticaBold,
+    'helvetica-oblique': PDFLib.StandardFonts.HelveticaOblique,
+    'helvetica-boldoblique': PDFLib.StandardFonts.HelveticaBoldOblique,
+    'times-roman': PDFLib.StandardFonts.TimesRoman,
+    'times-bold': PDFLib.StandardFonts.TimesBold,
+    'times-italic': PDFLib.StandardFonts.TimesItalic,
+    'times-bolditalic': PDFLib.StandardFonts.TimesBoldItalic,
+    'courier': PDFLib.StandardFonts.Courier,
+    'courier-bold': PDFLib.StandardFonts.CourierBold,
+    'courier-oblique': PDFLib.StandardFonts.CourierOblique,
+    'courier-boldoblique': PDFLib.StandardFonts.CourierBoldOblique,
+    'symbol': PDFLib.StandardFonts.Symbol,
+    'zapfdingbats': PDFLib.StandardFonts.ZapfDingbats,
+  };
+}
+
+async function getEmbeddedFont(pdfDoc, fontName, manifest){
+  const key = normalizeFontName(fontName);
   if (!key) return null;
   if (__embeddedFonts.has(key)) return __embeddedFonts.get(key);
-  await ensureFontkit();
-  const res = await fetch(fontInfo.url, { credentials: 'same-origin' });
-  if (!res.ok) return null;
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  try {
-    pdfDoc.registerFontkit(window.fontkit);
-  } catch (e) {}
-  const font = await pdfDoc.embedFont(bytes);
-  __embeddedFonts.set(key, font);
-  return font;
+
+  const PDFLib = window.PDFLib;
+  const standardMap = standardFontNameMap(PDFLib);
+  if (standardMap[key] && typeof pdfDoc.embedFont === 'function') {
+    const font = await pdfDoc.embedFont(standardMap[key]);
+    __embeddedFonts.set(key, font);
+    return font;
+  }
+
+  const custom = manifest.get(key);
+  if (custom?.url && typeof pdfDoc.embedFont === 'function') {
+    await ensureFontkit();
+    const res = await fetch(custom.url, { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const bytes = await res.arrayBuffer();
+    const font = await pdfDoc.embedFont(bytes);
+    __embeddedFonts.set(key, font);
+    return font;
+  }
+  return null;
 }
 
 async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
@@ -1050,15 +1082,14 @@ async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
     const da = getFieldDefaultAppearance(field, PDFName);
     const fontKey = parseDaFontKey(da);
     const base = resolveBaseFontName(field, fontKey, PDFName, form);
-    const normalized = normalizeFontName(base);
-    let font = fallbackFont;
-
-    if (normalized && fontManifest.has(normalized)) {
-      try {
-        const embedded = await ensureEmbeddedFont(pdfDoc, fontManifest.get(normalized));
-        if (embedded) font = embedded;
-      } catch (e) {}
+    let font = null;
+    if (base) {
+      font = await getEmbeddedFont(pdfDoc, base, fontManifest);
     }
+    if (!font && fontKey) {
+      font = await getEmbeddedFont(pdfDoc, fontKey, fontManifest);
+    }
+    if (!font) font = fallbackFont;
 
     try {
       if (font && typeof field.updateAppearances === 'function') {
