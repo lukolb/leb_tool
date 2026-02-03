@@ -199,7 +199,7 @@ const pdfStringToText = (val) => {
 
 const parseDaFontKey = (da) => {
   if (!da) return '';
-  const match = /\\/([^\\s]+)\\s+[\\d.]+\\s+Tf/.exec(da);
+  const match = new RegExp('\\\\/([^\\\\s]+)\\\\s+[\\\\d.]+\\\\s+Tf').exec(da);
   return match ? match[1] : '';
 };
 
