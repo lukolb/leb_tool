@@ -169,7 +169,7 @@ const STANDARD_FONTS = new Set([
 const normalizeFontName = (name) => {
   if (!name) return '';
   let n = String(name).trim();
-  n = n.replace(/^\\//, '');
+  n = n.replace(/^\/+/, '');
   n = n.replace(/^[A-Z]{6}\\+/, '');
   n = n.replace(/\\s+/g, ' ');
   n = n.toLowerCase().trim();
