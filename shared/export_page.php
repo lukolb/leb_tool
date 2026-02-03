@@ -336,6 +336,9 @@ let __missingRenderSource = null;
 let __exportInProgress = false;
 let __wakeLock = null;
 let __keepAliveWorker = null;
+let __audioContext = null;
+let __audioOsc = null;
+let __audioGain = null;
 
 // ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
 let __fullStudentList = [];
@@ -404,6 +407,36 @@ function stopKeepAlive(){
   if (!__keepAliveWorker) return;
   try { __keepAliveWorker.terminate(); } catch (e) {}
   __keepAliveWorker = null;
+}
+
+function startAudioKeepAlive(){
+  if (__audioContext) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    osc.frequency.value = 220;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    __audioContext = ctx;
+    __audioOsc = osc;
+    __audioGain = gain;
+  } catch (e) {
+    __audioContext = null;
+    __audioOsc = null;
+    __audioGain = null;
+  }
+}
+
+function stopAudioKeepAlive(){
+  if (!__audioContext) return;
+  try { __audioOsc?.stop(); } catch (e) {}
+  try { __audioContext.close(); } catch (e) {}
+  __audioContext = null;
+  __audioOsc = null;
+  __audioGain = null;
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1622,6 +1655,7 @@ if (btnExport) {
       if (btnCheck) btnCheck.disabled = true;
       __exportInProgress = true;
       startKeepAlive();
+      startAudioKeepAlive();
       await requestWakeLock();
 
       const preview = await check();
@@ -1646,6 +1680,7 @@ if (btnExport) {
       __exportInProgress = false;
       releaseWakeLock();
       stopKeepAlive();
+      stopAudioKeepAlive();
       btnExport.disabled = false;
       if (btnCheck) btnCheck.disabled = false;
     }
