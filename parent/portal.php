@@ -1200,6 +1200,14 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       return name;
     }
 
+    function expandFontKeys(base){
+      if (!base) return [];
+      const keys = new Set([base]);
+      keys.add(base.replace(/-/g, '_'));
+      keys.add(base.replace(/_/g, '-'));
+      return Array.from(keys);
+    }
+
     function pdfStringToText(val){
       if (!val) return '';
       if (typeof val.decodeText === 'function') return val.decodeText();
@@ -1254,7 +1262,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       (data.fonts || []).forEach((f) => {
         const key = normalizeFontName(f.name || f.key || '');
         if (!key) return;
-        map.set(key, f);
+        expandFontKeys(key).forEach((k) => map.set(k, f));
       });
       __fontManifest = map;
       return map;
@@ -1296,27 +1304,34 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     }
 
     async function getEmbeddedFont(pdfDoc, fontName, manifest){
-      const key = normalizeFontName(fontName);
-      if (!key) return null;
-      if (__embeddedFonts.has(key)) return __embeddedFonts.get(key);
+      const baseKey = normalizeFontName(fontName);
+      if (!baseKey) return null;
+      const lookupKeys = expandFontKeys(baseKey);
+      for (const key of lookupKeys) {
+        if (__embeddedFonts.has(key)) return __embeddedFonts.get(key);
+      }
 
       const PDFLib = window.PDFLib;
       const standardMap = standardFontNameMap(PDFLib);
-      if (standardMap[key] && typeof pdfDoc.embedFont === 'function') {
-        const font = await pdfDoc.embedFont(standardMap[key]);
-        __embeddedFonts.set(key, font);
-        return font;
+      for (const key of lookupKeys) {
+        if (standardMap[key] && typeof pdfDoc.embedFont === 'function') {
+          const font = await pdfDoc.embedFont(standardMap[key]);
+          __embeddedFonts.set(key, font);
+          return font;
+        }
       }
 
-      const custom = manifest.get(key);
-      if (custom?.url && typeof pdfDoc.embedFont === 'function') {
-        await ensureFontkit();
-        const res = await fetch(custom.url, { credentials: 'same-origin' });
-        if (!res.ok) return null;
-        const bytes = await res.arrayBuffer();
-        const font = await pdfDoc.embedFont(bytes);
-        __embeddedFonts.set(key, font);
-        return font;
+      for (const key of lookupKeys) {
+        const custom = manifest.get(key);
+        if (custom?.url && typeof pdfDoc.embedFont === 'function') {
+          await ensureFontkit();
+          const res = await fetch(custom.url, { credentials: 'same-origin' });
+          if (!res.ok) return null;
+          const bytes = await res.arrayBuffer();
+          const font = await pdfDoc.embedFont(bytes);
+          __embeddedFonts.set(key, font);
+          return font;
+        }
       }
       return null;
     }
