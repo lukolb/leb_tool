@@ -285,6 +285,8 @@ function export_class_display(array $c): string {
 const CSRF = <?= json_encode($csrf) ?>;
 const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
 const EXPORT_API_URL = <?= json_encode($exportApiUrl) ?>;
+const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
+const FONTKIT_URL = 'https://unpkg.com/fontkit@2.0.2/dist/fontkit.umd.min.js';
 const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
 const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
@@ -930,6 +932,144 @@ function pdfNameToString(name){
   return String(name).replace(/^\//, '');
 }
 
+let __fontManifest = null;
+let __embeddedFonts = new Map();
+
+function normalizeFontName(raw){
+  if (!raw) return '';
+  let name = String(raw).trim();
+  name = name.replace(/^\//, '');
+  name = name.replace(/^[A-Z]{6}\+/, '');
+  name = name.replace(/\s+/g, ' ');
+  name = name.toLowerCase().trim();
+  name = name.replace(/[^a-z0-9._-]+/g, '_').replace(/^[_\-.]+|[_\-.]+$/g, '');
+  return name;
+}
+
+function pdfStringToText(val){
+  if (!val) return '';
+  if (typeof val.decodeText === 'function') return val.decodeText();
+  if (typeof val.asString === 'function') return val.asString();
+  if (typeof val.value === 'string') return val.value;
+  return String(val);
+}
+
+function parseDaFontKey(daText){
+  if (!daText) return '';
+  const m = /\/([^\s]+)\s+[\d.]+\s+Tf/.exec(daText);
+  return m ? m[1] : '';
+}
+
+function getFieldDefaultAppearance(field, PDFName){
+  try {
+    const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+    if (da) return pdfStringToText(da);
+  } catch (e) {}
+  try {
+    const widgets = field?.acroField?.getWidgets?.() || [];
+    for (const w of widgets) {
+      const da = w?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) return pdfStringToText(da);
+    }
+  } catch (e) {}
+  return '';
+}
+
+function resolveBaseFontName(field, fontKey, PDFName, form){
+  if (!fontKey) return '';
+  try {
+    const dr = field?.acroField?.dict?.lookup?.(PDFName.of('DR'))
+      || form?.acroForm?.dict?.lookup?.(PDFName.of('DR'));
+    const fonts = dr?.lookup?.(PDFName.of('Font'));
+    const font = fonts?.lookup?.(PDFName.of(fontKey));
+    const base = font?.lookup?.(PDFName.of('BaseFont')) || font?.dict?.lookup?.(PDFName.of('BaseFont'));
+    if (base) return pdfNameToString(base);
+  } catch (e) {}
+  return fontKey;
+}
+
+async function loadFontManifest(){
+  if (__fontManifest) return __fontManifest;
+  const resp = await fetch(FONT_MANIFEST_URL, { credentials: 'same-origin' });
+  if (!resp.ok) {
+    __fontManifest = new Map();
+    return __fontManifest;
+  }
+  const data = await resp.json();
+  const map = new Map();
+  (data.fonts || []).forEach((f) => {
+    const key = normalizeFontName(f.name || f.key || '');
+    if (!key) return;
+    map.set(key, f);
+  });
+  __fontManifest = map;
+  return map;
+}
+
+async function ensureFontkit(){
+  if (window.fontkit) return window.fontkit;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = FONTKIT_URL;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('fontkit load failed'));
+    document.head.appendChild(s);
+  });
+  return window.fontkit;
+}
+
+async function ensureEmbeddedFont(pdfDoc, fontInfo){
+  if (!fontInfo?.url) return null;
+  const key = normalizeFontName(fontInfo.name || fontInfo.key || '');
+  if (!key) return null;
+  if (__embeddedFonts.has(key)) return __embeddedFonts.get(key);
+  await ensureFontkit();
+  const res = await fetch(fontInfo.url, { credentials: 'same-origin' });
+  if (!res.ok) return null;
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  try {
+    pdfDoc.registerFontkit(window.fontkit);
+  } catch (e) {}
+  const font = await pdfDoc.embedFont(bytes);
+  __embeddedFonts.set(key, font);
+  return font;
+}
+
+async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
+  const PDFLib = window.PDFLib;
+  const { PDFName, PDFTextField, PDFDropdown, PDFOptionList } = PDFLib;
+  const fontManifest = await loadFontManifest();
+
+  const fields = form.getFields();
+  for (const field of fields) {
+    const isText = PDFTextField && field instanceof PDFTextField;
+    const isDropdown = PDFDropdown && field instanceof PDFDropdown;
+    const isOptionList = PDFOptionList && field instanceof PDFOptionList;
+    if (!isText && !isDropdown && !isOptionList) continue;
+
+    const da = getFieldDefaultAppearance(field, PDFName);
+    const fontKey = parseDaFontKey(da);
+    const base = resolveBaseFontName(field, fontKey, PDFName, form);
+    const normalized = normalizeFontName(base);
+    let font = fallbackFont;
+
+    if (normalized && fontManifest.has(normalized)) {
+      try {
+        const embedded = await ensureEmbeddedFont(pdfDoc, fontManifest.get(normalized));
+        if (embedded) font = embedded;
+      } catch (e) {}
+    }
+
+    try {
+      if (font && typeof field.updateAppearances === 'function') {
+        field.updateAppearances(font);
+      } else if (typeof field.updateAppearances === 'function') {
+        field.updateAppearances();
+      }
+    } catch (e) {}
+  }
+}
+
 function pdfArrayToNumbers(arr, PDFArray, PDFNumber){
   if (!arr) return null;
   const isPdfArray = PDFArray && arr instanceof PDFArray;
@@ -1361,7 +1501,7 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
     }
   } catch (e) {}
   try {
-    form.updateFieldAppearances(appearanceFont || undefined);
+    await updateFieldAppearancesWithFonts(form, pdfDoc, appearanceFont || undefined);
   } catch (e) {}
   try {
     applyRadioCrossAppearances(pdfDoc, form, { debug: DEBUG_PDF });

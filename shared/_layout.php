@@ -21,7 +21,8 @@ function nav_items_for_role(string $role): array {
       ['label'=>t('nav.reports'), 'href'=>'admin/templates.php', 'files'=>[
         'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php'
       ], 'children'=>[
-        ['label'=>t('nav.templates'),      'href'=>'admin/templates.php',      'files'=>['templates.php','template_fields.php','template_mappings.php']],
+      ['label'=>t('nav.templates'),      'href'=>'admin/templates.php',      'files'=>['templates.php','template_fields.php','template_mappings.php']],
+      ['label'=>t('nav.fonts'),          'href'=>'admin/fonts.php',          'files'=>['fonts.php']],
         ['label'=>t('nav.option_lists'),   'href'=>'admin/icon_library.php',   'files'=>['icon_library.php']],
         ['label'=>t('nav.student_fields'), 'href'=>'admin/student_fields.php', 'files'=>['student_fields.php']],
         ['label'=>t('nav.text_snippets'),  'href'=>'admin/text_snippets.php',  'files'=>['text_snippets.php']],
