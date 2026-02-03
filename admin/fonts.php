@@ -173,7 +173,7 @@ const normalizeFontName = (name) => {
   n = n.replace(/^[A-Z]{6}\\+/, '');
   n = n.replace(/\\s+/g, ' ');
   n = n.toLowerCase().trim();
-  n = n.replace(/[^a-z0-9._-]+/g, '_').replace(/^[_\\-.]+|[_\\-.]+$/g, '');
+  n = n.replace(/[^a-z0-9._-]+/g, '_').replace(/^[_\\.-]+|[_\\.-]+$/g, '');
   return n;
 };
 
