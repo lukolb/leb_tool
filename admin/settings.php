@@ -179,6 +179,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
     }
 
+    // ---- Export settings ----
+    if ($action === 'save' && isset($_POST['export_allow_editable_present'])) {
+      if (!isset($cfg['export']) || !is_array($cfg['export'])) $cfg['export'] = [];
+      $cfg['export']['allow_editable_pdf'] = isset($_POST['export_allow_editable']);
+    }
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -274,6 +280,8 @@ $parentSignatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $parentMeetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 $parentMeetingFeedbackRequired = (bool)($parentCfg['meeting_feedback_required'] ?? false);
 $parentMeetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
+$exportCfg = $cfg['export'] ?? [];
+$exportAllowEditable = (bool)($exportCfg['allow_editable_pdf'] ?? false);
 $signatureCfg = $cfg['signature'] ?? [];
 $signatureMasterKeySet = trim((string)($signatureCfg['master_key'] ?? '')) !== '';
 
@@ -554,6 +562,26 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         }
       })();
     </script>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.export.title', 'PDF-Export'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.export.desc', 'Lege fest, ob exportierte PDFs schreibgeschützt sind oder weiterhin bearbeitet werden können.'))?></p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="export_allow_editable_present" value="1">
+
+    <label class="chk">
+      <input type="checkbox" name="export_allow_editable" value="1" <?=$exportAllowEditable ? 'checked' : ''?>> <?=h(t('admin.settings.export.allow_editable', 'PDFs nach Export bearbeitbar lassen'))?>
+    </label>
+    <p class="muted"><?=h(t('admin.settings.export.allow_editable_hint', 'Standard: Exportierte PDFs werden automatisch „geflattet“ und sind nicht mehr editierbar.'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

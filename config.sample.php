@@ -61,6 +61,10 @@ return [
     // Feedbackbogen anonym erfassen (Eltern sehen Hinweis im Portal).
     'meeting_feedback_anonymous' => false,
   ],
+  'export' => [
+    // Wenn true, bleiben Export-PDFs editierbar (keine automatische Flattening-Konvertierung).
+    'allow_editable_pdf' => false,
+  ],
   'signature' => [
     // 32-Byte Master-Key (hex/base64 oder raw). Kann auch via SIGNATURE_MASTER_KEY gesetzt werden.
     'master_key' => '',

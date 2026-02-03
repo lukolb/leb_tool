@@ -100,6 +100,10 @@ $txJs = [
   'non_fatal_no_students' => t('teacher.export.js.non_fatal_no_students', 'Keine Schüler gefunden'),
 ];
 
+$cfg = app_config();
+$exportCfg = $cfg['export'] ?? [];
+$allowEditablePdf = (bool)($exportCfg['allow_editable_pdf'] ?? false);
+
 function export_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -282,6 +286,7 @@ const CSRF = <?= json_encode($csrf) ?>;
 const DEBUG_PDF = <?= $debugPdf ? 'true' : 'false' ?>;
 const EXPORT_API_URL = <?= json_encode($exportApiUrl) ?>;
 const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
+const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
 
 function t(key, fallback){
@@ -1377,11 +1382,6 @@ async function createBookletPdf(srcBytes){
   const src = await PDFDocument.load(srcBytes);
   const pageCount = src.getPageCount();
   if (!pageCount) return srcBytes;
-  try {
-    const form = src.getForm();
-    try { form.updateFieldAppearances(); } catch (e) {}
-    try { form.flatten(); } catch (e) {}
-  } catch (e) {}
 
   const firstSize = src.getPage(0).getSize();
   const width = firstSize.width;
@@ -1432,6 +1432,11 @@ async function flattenPdfBytes(srcBytes){
     try { form.flatten(); } catch (e) {}
   } catch (e) {}
   return await doc.save();
+}
+
+async function maybeFlattenPdfBytes(srcBytes){
+  if (ALLOW_EDITABLE_PDF) return srcBytes;
+  return await flattenPdfBytes(srcBytes);
 }
 
 async function exportNow(){
@@ -1500,8 +1505,9 @@ async function exportNow(){
     let done = 0;
     for (const s of students){
       const bytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
+      const finalBytes = await maybeFlattenPdfBytes(bytes);
       const fn = safeFilename(s.name) || tfmt('student_filename_fallback', null, { id: s.id });
-      zip.file(fn + '.pdf', bytes);
+      zip.file(fn + '.pdf', finalBytes);
       done++;
       setStatus(`${t('status_create_pdfs')} ${done}/${students.length}`);
       showProgress(t('status_create_pdfs'), done, students.length);
@@ -1523,10 +1529,10 @@ async function exportNow(){
     let done = 0;
     for (const s of students){
       const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const flattenedBytes = await flattenPdfBytes(filledBytes);
-      let sourceBytes = flattenedBytes;
+      const finalBytes = await maybeFlattenPdfBytes(filledBytes);
+      let sourceBytes = finalBytes;
       if (isBookletMerged) {
-        sourceBytes = await createBookletPdf(flattenedBytes);
+        sourceBytes = await createBookletPdf(finalBytes);
       }
       const src = await PDFDocument.load(sourceBytes);
       const pages = await merged.copyPages(src, src.getPageIndices());
@@ -1551,14 +1557,15 @@ async function exportNow(){
     if (found) s = found;
   }
   const out = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
+  const finalBytes = await maybeFlattenPdfBytes(out);
   const fn = safeFilename(s.name) || tfmt('student_filename_fallback', null, { id: s.id });
   if (isBookletSingle) {
     setStatus(t('status_create_booklet'));
     showProgress(t('status_create_booklet'), 1, 2);
-    const bookletBytes = await createBookletPdf(out);
+    const bookletBytes = await createBookletPdf(finalBytes);
     downloadBytes(bookletBytes, fn + suffix + bookletSuffix + '.pdf', 'application/pdf');
   } else {
-    downloadBytes(out, fn + suffix + '.pdf', 'application/pdf');
+    downloadBytes(finalBytes, fn + suffix + '.pdf', 'application/pdf');
   }
   setStatus(t('status_pdf_done'));
   showProgress(t('status_done'), 1, 1);
