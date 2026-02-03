@@ -1325,6 +1325,11 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         const custom = manifest.get(key);
         if (custom?.url && typeof pdfDoc.embedFont === 'function') {
           await ensureFontkit();
+          try {
+            if (typeof pdfDoc.registerFontkit === 'function' && window.fontkit) {
+              pdfDoc.registerFontkit(window.fontkit);
+            }
+          } catch (e) {}
           const res = await fetch(custom.url, { credentials: 'same-origin' });
           if (!res.ok) return null;
           const bytes = await res.arrayBuffer();
