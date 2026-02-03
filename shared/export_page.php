@@ -335,6 +335,7 @@ let lastPreview = null;
 let __missingRenderSource = null;
 let __exportInProgress = false;
 let __wakeLock = null;
+let __keepAliveWorker = null;
 
 // ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
 let __fullStudentList = [];
@@ -383,6 +384,26 @@ function releaseWakeLock(){
   if (!__wakeLock) return;
   try { __wakeLock.release(); } catch (e) {}
   __wakeLock = null;
+}
+
+function startKeepAlive(){
+  if (__keepAliveWorker) return;
+  try {
+    const blob = new Blob([
+      'setInterval(() => { try { postMessage("tick"); } catch (e) {} }, 15000);'
+    ], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    __keepAliveWorker = new Worker(url);
+    __keepAliveWorker.addEventListener('message', () => {});
+  } catch (e) {
+    __keepAliveWorker = null;
+  }
+}
+
+function stopKeepAlive(){
+  if (!__keepAliveWorker) return;
+  try { __keepAliveWorker.terminate(); } catch (e) {}
+  __keepAliveWorker = null;
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1600,6 +1621,7 @@ if (btnExport) {
       btnExport.disabled = true;
       if (btnCheck) btnCheck.disabled = true;
       __exportInProgress = true;
+      startKeepAlive();
       await requestWakeLock();
 
       const preview = await check();
@@ -1623,6 +1645,7 @@ if (btnExport) {
     } finally {
       __exportInProgress = false;
       releaseWakeLock();
+      stopKeepAlive();
       btnExport.disabled = false;
       if (btnCheck) btnCheck.disabled = false;
     }
