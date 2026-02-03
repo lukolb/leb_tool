@@ -334,11 +334,6 @@ const btnCollapseAll = document.getElementById('btnCollapseAll');
 let lastPreview = null;
 let __missingRenderSource = null;
 let __exportInProgress = false;
-let __wakeLock = null;
-let __keepAliveWorker = null;
-let __audioContext = null;
-let __audioOsc = null;
-let __audioGain = null;
 
 // ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
 let __fullStudentList = [];
@@ -373,77 +368,6 @@ function setInfo(msg){
   if (msg) { infoText.textContent = msg; infoBox.style.display = ''; }
   else infoBox.style.display = 'none';
 }
-
-async function requestWakeLock(){
-  if (!('wakeLock' in navigator)) return;
-  if (__wakeLock) return;
-  try {
-    __wakeLock = await navigator.wakeLock.request('screen');
-    __wakeLock.addEventListener('release', () => { __wakeLock = null; });
-  } catch (e) {}
-}
-
-function releaseWakeLock(){
-  if (!__wakeLock) return;
-  try { __wakeLock.release(); } catch (e) {}
-  __wakeLock = null;
-}
-
-function startKeepAlive(){
-  if (__keepAliveWorker) return;
-  try {
-    const blob = new Blob([
-      'setInterval(() => { try { postMessage("tick"); } catch (e) {} }, 15000);'
-    ], { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    __keepAliveWorker = new Worker(url);
-    __keepAliveWorker.addEventListener('message', () => {});
-  } catch (e) {
-    __keepAliveWorker = null;
-  }
-}
-
-function stopKeepAlive(){
-  if (!__keepAliveWorker) return;
-  try { __keepAliveWorker.terminate(); } catch (e) {}
-  __keepAliveWorker = null;
-}
-
-function startAudioKeepAlive(){
-  if (__audioContext) return;
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    gain.gain.value = 0.0001;
-    osc.frequency.value = 220;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    __audioContext = ctx;
-    __audioOsc = osc;
-    __audioGain = gain;
-  } catch (e) {
-    __audioContext = null;
-    __audioOsc = null;
-    __audioGain = null;
-  }
-}
-
-function stopAudioKeepAlive(){
-  if (!__audioContext) return;
-  try { __audioOsc?.stop(); } catch (e) {}
-  try { __audioContext.close(); } catch (e) {}
-  __audioContext = null;
-  __audioOsc = null;
-  __audioGain = null;
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && __exportInProgress) {
-    requestWakeLock().catch(()=>{});
-  }
-});
 
 function currentMode(){
   const r = document.querySelector('input[name="mode"]:checked');
@@ -1654,9 +1578,6 @@ if (btnExport) {
       btnExport.disabled = true;
       if (btnCheck) btnCheck.disabled = true;
       __exportInProgress = true;
-      startKeepAlive();
-      startAudioKeepAlive();
-      await requestWakeLock();
 
       const preview = await check();
 
@@ -1678,9 +1599,6 @@ if (btnExport) {
       setStatus(tfmt('status_error', null, { message: (e?.message || e) }));
     } finally {
       __exportInProgress = false;
-      releaseWakeLock();
-      stopKeepAlive();
-      stopAudioKeepAlive();
       btnExport.disabled = false;
       if (btnCheck) btnCheck.disabled = false;
     }
