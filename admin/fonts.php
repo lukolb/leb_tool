@@ -148,6 +148,7 @@ render_admin_header(t('admin.fonts.title'));
 <script>
 const FONT_MANIFEST_URL = <?=json_encode(url('shared/font_manifest.php'))?>;
 const TEMPLATE_FILE_URL = <?=json_encode(url('admin/file.php?template_id='))?>;
+const FONT_CSRF = <?=json_encode(csrf_token())?>;
 
 const fontFileInput = document.getElementById('fontFileInput');
 const fontNameInput = document.getElementById('fontNameInput');
@@ -345,6 +346,88 @@ if (fontFileInput) {
   });
 }
 
+function buildMissingUploadRow(name) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'row';
+  wrapper.style.gap = '8px';
+  wrapper.style.alignItems = 'center';
+  wrapper.style.marginTop = '6px';
+
+  const label = document.createElement('div');
+  label.textContent = name;
+  label.style.fontWeight = '600';
+  label.style.minWidth = '220px';
+
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.enctype = 'multipart/form-data';
+  form.style.display = 'flex';
+  form.style.alignItems = 'center';
+  form.style.gap = '8px';
+
+  const csrf = document.createElement('input');
+  csrf.type = 'hidden';
+  csrf.name = 'csrf_token';
+  csrf.value = FONT_CSRF;
+
+  const action = document.createElement('input');
+  action.type = 'hidden';
+  action.name = 'action';
+  action.value = 'upload_font';
+
+  const fontName = document.createElement('input');
+  fontName.type = 'hidden';
+  fontName.name = 'font_name';
+  fontName.value = name;
+
+  const fontFamily = document.createElement('input');
+  fontFamily.type = 'hidden';
+  fontFamily.name = 'font_family';
+  fontFamily.value = '';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.name = 'font';
+  fileInput.accept = '.ttf,.otf,font/ttf,font/otf';
+  fileInput.required = true;
+
+  const submit = document.createElement('button');
+  submit.className = 'btn secondary';
+  submit.type = 'submit';
+  submit.textContent = <?=json_encode(t('admin.fonts.upload_button'))?>;
+
+  const hint = document.createElement('div');
+  hint.className = 'muted';
+  hint.style.fontSize = '12px';
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const font = window.fontkit.create(new Uint8Array(buf));
+      const detectedName = font.postscriptName || font.fullName || font.familyName || name;
+      fontName.value = detectedName;
+      fontFamily.value = font.familyName || '';
+      hint.textContent = `Name: ${detectedName}`;
+    } catch (e) {
+      hint.textContent = '';
+    }
+  });
+
+  form.appendChild(csrf);
+  form.appendChild(action);
+  form.appendChild(fontName);
+  form.appendChild(fontFamily);
+  form.appendChild(fileInput);
+  form.appendChild(submit);
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(form);
+  wrapper.appendChild(hint);
+  return wrapper;
+}
+
 if (btnCheckFonts) {
   btnCheckFonts.addEventListener('click', async () => {
     fontMissingList.innerHTML = '';
@@ -368,18 +451,14 @@ if (btnCheckFonts) {
 
       const missing = required.filter((name) => !available.has(name));
       fontCheckResults.textContent = <?=json_encode(t('admin.fonts.check_done'))?>;
-      const list = document.createElement('ul');
-      missing.forEach((name) => {
-        const li = document.createElement('li');
-        li.textContent = name;
-        list.appendChild(li);
-      });
       if (missing.length) {
         const title = document.createElement('div');
         title.textContent = <?=json_encode(t('admin.fonts.missing_heading'))?>;
         title.style.fontWeight = '600';
         fontMissingList.appendChild(title);
-        fontMissingList.appendChild(list);
+        missing.forEach((name) => {
+          fontMissingList.appendChild(buildMissingUploadRow(name));
+        });
       } else {
         fontMissingList.textContent = <?=json_encode(t('admin.fonts.none_missing'))?>;
       }
