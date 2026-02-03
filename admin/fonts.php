@@ -166,7 +166,7 @@ const STANDARD_FONTS = new Set([
   'symbol','zapfdingbats'
 ]);
 
-const normalizeFontName = (name) => {
+const normalizeFontKey = (name) => {
   if (!name) return '';
   let n = String(name).trim();
   n = n.replace(new RegExp('^/+', 'g'), '');
@@ -197,11 +197,26 @@ const pdfStringToText = (val) => {
   return String(val);
 };
 
-const parseDaFontKey = (da) => {
+const parseDaFontName = (da) => {
   if (!da) return '';
   const match = new RegExp('\\\\/([^\\\\s]+)\\\\s+[\\\\d.]+\\\\s+Tf').exec(da);
   return match ? match[1] : '';
 };
+
+function extractDaString(field, PDFName) {
+  try {
+    const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+    if (da) return pdfStringToText(da);
+  } catch (e) {}
+  try {
+    const widgets = field?.acroField?.getWidgets?.() || [];
+    for (const w of widgets) {
+      const da = w?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) return pdfStringToText(da);
+    }
+  } catch (e) {}
+  return '';
+}
 
 function getFieldDefaultAppearance(field, PDFName) {
   try {
@@ -237,7 +252,7 @@ async function loadManifest() {
   const data = await resp.json();
   const map = new Map();
   (data.fonts || []).forEach((f) => {
-    const key = normalizeFontName(f.name || f.key || '');
+    const key = normalizeFontKey(f.name || f.key || '');
     if (!key) return;
     map.set(key, f);
   });
@@ -256,10 +271,13 @@ async function extractFontsFromTemplate(templateId) {
   const fonts = new Set();
   const fields = form.getFields();
   for (const field of fields) {
-    const da = getFieldDefaultAppearance(field, PDFName);
-    const fontKey = parseDaFontKey(da);
-    const baseName = resolveBaseFontName(field, fontKey, PDFName, form);
-    const norm = normalizeFontName(baseName);
+    const da = extractDaString(field, PDFName);
+    const fontName = parseDaFontName(da);
+    let baseName = fontName;
+    if (!baseName) {
+      baseName = resolveBaseFontName(field, fontName, PDFName, form);
+    }
+    const norm = normalizeFontKey(baseName);
     if (!norm) continue;
     if (!STANDARD_FONTS.has(norm)) fonts.add(norm);
   }
