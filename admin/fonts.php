@@ -183,7 +183,8 @@ const pdfNameToString = (pdfName) => {
   if (typeof pdfName.asString === 'function') return pdfName.asString();
   if (typeof pdfName.value === 'string') return pdfName.value;
   const s = String(pdfName);
-  return s.startsWith('/') ? s.slice(1) : s;
+  if (s[0] === '/') return s.slice(1);
+  return s;
 };
 
 const pdfStringToText = (val) => {
