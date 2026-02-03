@@ -333,6 +333,8 @@ const btnCollapseAll = document.getElementById('btnCollapseAll');
 
 let lastPreview = null;
 let __missingRenderSource = null;
+let __exportInProgress = false;
+let __wakeLock = null;
 
 // ✅ Cache der kompletten Schülerliste (damit single-export sie nicht überschreibt)
 let __fullStudentList = [];
@@ -367,6 +369,27 @@ function setInfo(msg){
   if (msg) { infoText.textContent = msg; infoBox.style.display = ''; }
   else infoBox.style.display = 'none';
 }
+
+async function requestWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  if (__wakeLock) return;
+  try {
+    __wakeLock = await navigator.wakeLock.request('screen');
+    __wakeLock.addEventListener('release', () => { __wakeLock = null; });
+  } catch (e) {}
+}
+
+function releaseWakeLock(){
+  if (!__wakeLock) return;
+  try { __wakeLock.release(); } catch (e) {}
+  __wakeLock = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && __exportInProgress) {
+    requestWakeLock().catch(()=>{});
+  }
+});
 
 function currentMode(){
   const r = document.querySelector('input[name="mode"]:checked');
@@ -1576,6 +1599,8 @@ if (btnExport) {
     try {
       btnExport.disabled = true;
       if (btnCheck) btnCheck.disabled = true;
+      __exportInProgress = true;
+      await requestWakeLock();
 
       const preview = await check();
 
@@ -1596,6 +1621,8 @@ if (btnExport) {
       showProgress(t('progress_error'), 0, 1);
       setStatus(tfmt('status_error', null, { message: (e?.message || e) }));
     } finally {
+      __exportInProgress = false;
+      releaseWakeLock();
       btnExport.disabled = false;
       if (btnCheck) btnCheck.disabled = false;
     }
