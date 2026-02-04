@@ -1222,6 +1222,19 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       return m ? m[1] : '';
     }
 
+    function parseDaFontSize(daText){
+      if (!daText) return 0;
+      const m = /\/[^\s]+\s+([\d.]+)\s+Tf/.exec(daText);
+      return m ? Number(m[1]) : 0;
+    }
+
+    function applyLineHeightToDa(daText, lineHeight){
+      if (!daText) return daText;
+      const da = String(daText);
+      const cleaned = da.replace(/[\d.]+\s+TL\b/g, '').trim();
+      return `${cleaned} ${lineHeight} TL`.trim();
+    }
+
     function getFieldDefaultAppearance(field, PDFName){
       try {
         const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
@@ -1343,7 +1356,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
     async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
       const PDFLib = window.PDFLib;
-      const { PDFName, PDFTextField, PDFDropdown, PDFOptionList } = PDFLib;
+      const { PDFName, PDFTextField, PDFDropdown, PDFOptionList, PDFString } = PDFLib;
       const fontManifest = await loadFontManifest();
 
       const fields = form.getFields();
@@ -1366,6 +1379,16 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         if (!font) font = fallbackFont;
 
         try {
+          if (PDFTextField && field instanceof PDFTextField) {
+            const fontSize = parseDaFontSize(da) || Number(field.getFontSize?.() || 0) || 12;
+            if (font && typeof font.heightAtSize === 'function') {
+              const desired = Math.max(fontSize * 1.05, font.heightAtSize(fontSize));
+              const nextDa = applyLineHeightToDa(da, desired);
+              if (nextDa && PDFString && field?.acroField?.dict) {
+                field.acroField.dict.set(PDFName.of('DA'), PDFString.of(nextDa));
+              }
+            }
+          }
           if (font && typeof field.updateAppearances === 'function') {
             field.updateAppearances(font);
           } else if (typeof field.updateAppearances === 'function') {
