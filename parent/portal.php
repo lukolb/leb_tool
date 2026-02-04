@@ -1247,6 +1247,100 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       }
     }
 
+    function buildTextFieldAppearanceProvider(PDFLib, { lineHeight, fontSize, textColorValues } = {}){
+      if (!PDFLib) return null;
+      const {
+        adjustDimsForRotation,
+        reduceRotation,
+        rotateInPlace,
+        layoutMultilineText,
+        layoutSinglelineText,
+        layoutCombedText,
+        drawTextField,
+        componentsToColor,
+        rgb,
+      } = PDFLib;
+      return (field, widget, font) => {
+        const rect = widget.getRectangle();
+        const appearance = widget.getAppearanceCharacteristics?.();
+        const borderStyle = widget.getBorderStyle?.();
+        const borderWidth = borderStyle?.getWidth?.() ?? 0;
+        const rotation = reduceRotation?.(appearance?.getRotation?.()) ?? 0;
+        const dims = adjustDimsForRotation?.(rect, rotation) || rect;
+        const width = dims.width ?? rect.width;
+        const height = dims.height ?? rect.height;
+        const padding = field.isCombed?.() ? 0 : 1;
+        const bounds = {
+          x: borderWidth + padding,
+          y: borderWidth + padding,
+          width: width - 2 * (borderWidth + padding),
+          height: height - 2 * (borderWidth + padding),
+        };
+        const text = field.getText?.() ?? '';
+        const alignment = field.getAlignment?.();
+        const borderColor = appearance?.getBorderColor?.();
+        const backgroundColor = appearance?.getBackgroundColor?.();
+        const textColor = textColorValues && textColorValues.length
+          ? componentsToColor?.(textColorValues)
+          : rgb?.(0, 0, 0);
+
+        let textLines = [];
+        let nextFontSize = fontSize || field.getFontSize?.() || 12;
+        if (field.isMultiline?.()) {
+          const layout = layoutMultilineText(text, {
+            alignment,
+            fontSize: nextFontSize,
+            font,
+            bounds,
+          });
+          const desiredLineHeight = Number(lineHeight) || layout.lineHeight;
+          const firstY = layout.lines?.[0]?.y ?? bounds.y + bounds.height - desiredLineHeight;
+          textLines = (layout.lines || []).map((line, idx) => ({
+            ...line,
+            y: firstY - idx * desiredLineHeight,
+          }));
+          nextFontSize = layout.fontSize;
+        } else if (field.isCombed?.()) {
+          const layout = layoutCombedText(text, {
+            fontSize: nextFontSize,
+            font,
+            bounds,
+            cellCount: field.getMaxLength?.() || 0,
+          });
+          textLines = layout.cells || [];
+          nextFontSize = layout.fontSize;
+        } else {
+          const layout = layoutSinglelineText(text, {
+            alignment,
+            fontSize: nextFontSize,
+            font,
+            bounds,
+          });
+          textLines = layout.line ? [layout.line] : [];
+          nextFontSize = layout.fontSize;
+        }
+
+        const drawOptions = {
+          x: 0 + borderWidth / 2,
+          y: 0 + borderWidth / 2,
+          width: width - borderWidth,
+          height: height - borderWidth,
+          borderWidth: borderWidth || 0,
+          borderColor: borderColor ? componentsToColor?.(borderColor) : undefined,
+          textColor,
+          font: font?.name,
+          fontSize: nextFontSize,
+          color: backgroundColor ? componentsToColor?.(backgroundColor) : undefined,
+          textLines,
+          padding,
+        };
+
+        const rotated = rotateInPlace?.({ ...rect, rotation }) || [];
+        const drawn = drawTextField(drawOptions);
+        return [...rotated, ...drawn];
+      };
+    }
+
     function getFieldDefaultAppearance(field, PDFName){
       try {
         const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
@@ -1393,14 +1487,24 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         try {
           if (PDFTextField && field instanceof PDFTextField) {
             const fontSize = parseDaFontSize(da) || Number(field.getFontSize?.() || 0) || 12;
+            if (typeof field.setFontSize === 'function') {
+              field.setFontSize(fontSize);
+            }
             if (font && typeof font.heightAtSize === 'function') {
               const fontHeight = font.heightAtSize(fontSize);
               const desired = Math.max(fontSize * 1.1, fontHeight + fontSize * 0.1);
               const nextDa = applyLineHeightToDa(da, desired);
               applyDaToField(field, PDFName, PDFString, nextDa);
-            }
-            if (typeof field.setFontSize === 'function') {
-              field.setFontSize(fontSize);
+              const textColor = parseDaColor(da);
+              const provider = buildTextFieldAppearanceProvider(PDFLib, {
+                lineHeight: desired,
+                fontSize,
+                textColorValues: textColor?.values || null,
+              });
+              if (provider && typeof field.updateAppearances === 'function') {
+                field.updateAppearances(font, provider);
+                continue;
+              }
             }
           }
           if (font && typeof field.updateAppearances === 'function') {
