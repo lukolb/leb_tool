@@ -981,6 +981,15 @@ function applyLineHeightToDa(daText, lineHeight){
   return `${cleaned} ${lineHeight} TL`.trim();
 }
 
+function applyDaToField(field, PDFName, PDFString, da){
+  if (!da || !PDFName || !PDFString || !field?.acroField?.dict) return;
+  field.acroField.dict.set(PDFName.of('DA'), PDFString.of(da));
+  const widgets = field?.acroField?.getWidgets?.() || [];
+  for (const w of widgets) {
+    w?.dict?.set?.(PDFName.of('DA'), PDFString.of(da));
+  }
+}
+
 function getFieldDefaultAppearance(field, PDFName){
   try {
     const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
@@ -1128,11 +1137,9 @@ async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
       if (PDFTextField && field instanceof PDFTextField) {
         const fontSize = parseDaFontSize(da) || Number(field.getFontSize?.() || 0) || 12;
         if (font && typeof font.heightAtSize === 'function') {
-          const desired = Math.max(fontSize * 1.05, font.heightAtSize(fontSize));
+          const desired = Math.max(fontSize * 1.2, font.heightAtSize(fontSize));
           const nextDa = applyLineHeightToDa(da, desired);
-          if (nextDa && PDFString && field?.acroField?.dict) {
-            field.acroField.dict.set(PDFName.of('DA'), PDFString.of(nextDa));
-          }
+          applyDaToField(field, PDFName, PDFString, nextDa);
         }
       }
       if (font && typeof field.updateAppearances === 'function') {
