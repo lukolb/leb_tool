@@ -1238,6 +1238,9 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     function applyDaToField(field, PDFName, PDFString, da){
       if (!da || !PDFName || !PDFString || !field?.acroField?.dict) return;
       field.acroField.dict.set(PDFName.of('DA'), PDFString.of(da));
+      if (typeof field.acroField.setDefaultAppearance === 'function') {
+        field.acroField.setDefaultAppearance(da);
+      }
       const widgets = field?.acroField?.getWidgets?.() || [];
       for (const w of widgets) {
         w?.dict?.set?.(PDFName.of('DA'), PDFString.of(da));
