@@ -1138,7 +1138,7 @@ async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
         const fontSize = parseDaFontSize(da) || Number(field.getFontSize?.() || 0) || 12;
         if (font && typeof font.heightAtSize === 'function') {
           const fontHeight = font.heightAtSize(fontSize);
-          const desired = Math.max(fontSize * 1.4, fontHeight + fontSize * 0.2);
+          const desired = Math.max(fontSize * 1.1, fontHeight + fontSize * 0.1);
           const nextDa = applyLineHeightToDa(da, desired);
           applyDaToField(field, PDFName, PDFString, nextDa);
         }
