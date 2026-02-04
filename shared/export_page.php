@@ -1721,7 +1721,8 @@ async function exportNow(){
     let done = 0;
     for (const s of students){
       const filledBytes = await fillPdfForStudent(templateBytes, s, __fieldMetaMap);
-      const finalBytes = await maybeFlattenPdfBytes(filledBytes);
+      // Always flatten merged PDFs to avoid duplicate field names across students.
+      const finalBytes = await flattenPdfBytes(filledBytes);
       let sourceBytes = finalBytes;
       if (isBookletMerged) {
         sourceBytes = await createBookletPdf(finalBytes);
