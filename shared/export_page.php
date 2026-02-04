@@ -1137,9 +1137,13 @@ async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
       if (PDFTextField && field instanceof PDFTextField) {
         const fontSize = parseDaFontSize(da) || Number(field.getFontSize?.() || 0) || 12;
         if (font && typeof font.heightAtSize === 'function') {
-          const desired = Math.max(fontSize * 1.2, font.heightAtSize(fontSize));
+          const fontHeight = font.heightAtSize(fontSize);
+          const desired = Math.max(fontSize * 1.4, fontHeight + fontSize * 0.2);
           const nextDa = applyLineHeightToDa(da, desired);
           applyDaToField(field, PDFName, PDFString, nextDa);
+        }
+        if (typeof field.setFontSize === 'function') {
+          field.setFontSize(fontSize);
         }
       }
       if (font && typeof field.updateAppearances === 'function') {
