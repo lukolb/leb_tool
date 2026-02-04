@@ -1754,6 +1754,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       const PDFLib = window.PDFLib;
       const { PDFDocument, PDFName, PDFBool } = PDFLib;
 
+      __embeddedFonts = new Map();
       const pdfDoc = await PDFDocument.load(tpl);
       const form = pdfDoc.getForm();
 
