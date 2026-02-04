@@ -1382,6 +1382,7 @@ let __didDump = false;
  * ✅ NEW: pass fieldMetaMap so we can normalize dates before filling
  */
 async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
+  __embeddedFonts = new Map();
   const PDFLib = window.PDFLib;
   const {
     PDFDocument,
