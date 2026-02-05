@@ -95,6 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($schoolYear === '') {
         throw new RuntimeException(t('admin.settings.deadlines.error.school_year_missing', 'Schuljahr fehlt.'));
       }
+      if (!db_has_table($pdo, 'submission_deadlines')) {
+        throw new RuntimeException(t('admin.settings.deadlines.error.table_missing', 'Die Fristen-Tabelle konnte nicht angelegt werden. Bitte Datenbankrechte prüfen.'));
+      }
       $deadlineTypes = submission_deadline_types();
       $actorId = (int)current_user()['id'];
       foreach ($deadlineTypes as $key => $meta) {
