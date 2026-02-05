@@ -6,6 +6,8 @@ require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_admin();
 
+$pdo = db();
+
 $cfgPath = __DIR__ . '/../config.php';
 $cfg = app_config();
 
@@ -23,6 +25,11 @@ function sanitize_intro_html(string $html): string {
   // Keep it simple: remove scripts
   $html = preg_replace('~<script\b[^>]*>.*?</script>~is', '', $html) ?? $html;
   return trim($html);
+}
+
+function deadline_input_value(?string $dbDateTime): string {
+  $dt = db_datetime_to_user_datetime($dbDateTime);
+  return $dt ? $dt->format('Y-m-d\TH:i') : '';
 }
 
 
@@ -83,6 +90,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $action = $_POST['action'] ?? 'save';
 
+    if ($action === 'save_deadlines') {
+      $schoolYear = trim((string)($_POST['deadline_school_year'] ?? ''));
+      if ($schoolYear === '') {
+        throw new RuntimeException(t('admin.settings.deadlines.error.school_year_missing', 'Schuljahr fehlt.'));
+      }
+      if (!db_has_table($pdo, 'submission_deadlines')) {
+        throw new RuntimeException(t('admin.settings.deadlines.error.table_missing', 'Die Fristen-Tabelle konnte nicht angelegt werden. Bitte Datenbankrechte prüfen.'));
+      }
+      $deadlineTypes = submission_deadline_types();
+      $actorId = (int)current_user()['id'];
+      foreach ($deadlineTypes as $key => $meta) {
+        $inputKey = 'deadline_' . $key;
+        $input = trim((string)($_POST[$inputKey] ?? ''));
+        if ($input === '') {
+          $pdo->prepare("DELETE FROM submission_deadlines WHERE school_year=? AND deadline_key=?")
+            ->execute([$schoolYear, $key]);
+          continue;
+        }
+        $local = parse_user_datetime_local($input);
+        if (!$local) {
+          $label = (string)($meta['label'] ?? $key);
+          throw new RuntimeException(str_replace('{label}', $label, t('admin.settings.deadlines.error.invalid_datetime', 'Ungültiges Datum/Zeit für {label}.')));
+        }
+        $dbDt = user_local_datetime_to_db($local) ?? $local;
+        $dueAt = $dbDt->format('Y-m-d H:i:s');
+        $pdo->prepare(
+          "INSERT INTO submission_deadlines (school_year, deadline_key, due_at, created_by_user_id, updated_by_user_id, created_at, updated_at)\n" .
+          "VALUES (?, ?, ?, ?, ?, NOW(), NOW())\n" .
+          "ON DUPLICATE KEY UPDATE due_at=VALUES(due_at), updated_by_user_id=VALUES(updated_by_user_id), updated_at=NOW()"
+        )->execute([$schoolYear, $key, $dueAt, $actorId, $actorId]);
+      }
+
+      if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
+      $cfg['student']['show_deadline'] = isset($_POST['student_show_deadline']);
+      $cfg['app']['brand'] = $cfg['app']['brand'] ?? [];
+
+      $export = "<?php\n// config.php (updated by admin/settings.php)\nreturn " . var_export($cfg, true) . ";\n";
+      if (file_put_contents($cfgPath, $export, LOCK_EX) === false) {
+        throw new RuntimeException(t('admin.settings.error.config_write_failed', 'Konnte config.php nicht schreiben (Rechte?).'));
+      }
+
+      $ok = t('admin.settings.deadlines.ok', 'Fristen gespeichert.');
+      audit('deadline_update', $actorId, ['school_year'=>$schoolYear]);
+      $cfg = app_config(true);
+    } else {
     // ---- Branding ----
     $brand = $cfg['app']['brand'] ?? [];
     $brand['org_name'] = trim((string)($_POST['org_name'] ?? ($brand['org_name'] ?? t('admin.settings.default_org', 'LEB Tool'))));
@@ -158,6 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['student']['tts_rate_de'] = max(0.5, min(1.5, $ttsRateDe));
     $cfg['student']['tts_rate_en'] = max(0.5, min(1.5, $ttsRateEn));
     $cfg['student']['tts_rate'] = $cfg['student']['tts_rate_de'];
+    $cfg['student']['show_deadline'] = isset($_POST['student_show_deadline']);
 
     // ---- Parent portal settings ----
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
@@ -245,6 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
     $cfg = app_config(true);
+    }
 
   } catch (Throwable $e) {
     $err = t('admin.settings.error.prefix', 'Fehler: ') . $e->getMessage();
@@ -258,6 +312,17 @@ $secondary = $brand['secondary'] ?? '#111111';
 $logo = $brand['logo_path'] ?? '';
 $defaultSY = $cfg['app']['default_school_year'] ?? '';
 $schoolTimezone = $cfg['app']['timezone'] ?? 'America/New_York';
+
+$deadlineTypes = submission_deadline_types();
+$availableDeadlineYears = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
+if (!is_array($availableDeadlineYears)) $availableDeadlineYears = [];
+$availableDeadlineYears = array_values(array_filter(array_map('trim', $availableDeadlineYears), fn($v) => $v !== ''));
+$selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $defaultSY ?? ($availableDeadlineYears[0] ?? '')));
+$deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear) : [];
+$deadlineInputValues = [];
+foreach ($deadlineTypes as $key => $meta) {
+  $deadlineInputValues[$key] = deadline_input_value($deadlineRows[$key]['due_at'] ?? null);
+}
 
 $mail = $cfg['mail'] ?? [];
 $fromEmail = $mail['from_email'] ?? t('admin.settings.mail.fallback_email', 'no-reply@example.org');
@@ -295,6 +360,7 @@ if ($ttsRateDe <= 0) $ttsRateDe = 1.0;
 if ($ttsRateEn <= 0) $ttsRateEn = 1.0;
 $ttsRateDe = max(0.5, min(1.5, $ttsRateDe));
 $ttsRateEn = max(0.5, min(1.5, $ttsRateEn));
+$showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
 
 $vitsVoiceIds = load_vits_voice_ids();
 $vitsVoiceIdsDe = filter_vits_voice_ids($vitsVoiceIds, ['de_DE-']);
@@ -414,6 +480,45 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.deadlines.title', 'Fristen pro Schuljahr'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.deadlines.desc', 'Lege Abgabefristen für Schüler, Delegationen und Lehrkräfte fest.'))?></p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save_deadlines">
+
+    <div class="grid">
+      <div>
+        <label><?=h(t('admin.settings.deadlines.school_year_label', 'Schuljahr'))?></label>
+        <input name="deadline_school_year" list="deadlineYearList" value="<?=h($selectedDeadlineYear)?>" placeholder="<?=h(t('admin.settings.deadlines.school_year_placeholder', 'z.B. 2025/26'))?>" required>
+        <datalist id="deadlineYearList">
+          <?php foreach ($availableDeadlineYears as $year): ?>
+            <option value="<?=h((string)$year)?>"></option>
+          <?php endforeach; ?>
+        </datalist>
+      </div>
+      <?php foreach ($deadlineTypes as $key => $meta): ?>
+        <div>
+          <label><?=h((string)($meta['label'] ?? $key))?></label>
+          <input type="datetime-local" name="deadline_<?=h($key)?>" value="<?=h($deadlineInputValues[$key] ?? '')?>">
+        </div>
+      <?php endforeach; ?>
+    </div>
+    <p class="muted"><?=h(t('admin.settings.deadlines.timezone_hint', 'Zeiten werden in der Schul-Zeitzone gespeichert.'))?></p>
+    <p class="muted"><?=h(t('admin.settings.deadlines.clear_hint', 'Leere Felder löschen bestehende Fristen.'))?></p>
+
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>> <?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?>
+    </label>
+    <p class="muted"><?=h(t('admin.settings.student_deadline.show_hint', 'Wenn aktiviert, wird die Schüler-Frist in der Startansicht platzsparend angezeigt (nicht im Leseanfänger-Modus).'))?></p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.deadlines.save', 'Fristen speichern'))?></button>
     </div>
   </form>
 </div>

@@ -47,6 +47,14 @@ function format_minutes_short(?float $minutes): string {
   return $m . ' min';
 }
 
+function class_label(array $c): string {
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $label = (string)($c['label'] ?? '');
+  if ($grade !== null && $label !== '') return $grade . $label;
+  $name = (string)($c['name'] ?? '');
+  return $name !== '' ? $name : '';
+}
+
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
@@ -399,6 +407,40 @@ $overall['avg_minutes'] = $overall['avg_minutes_count'] > 0 ? ($overall['avg_min
 $selectedClassId = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
 if ($selectedClassId !== 0 && !isset($progressByClass[$selectedClassId])) $selectedClassId = 0;
 
+$cfg = app_config();
+$deadlineTypes = submission_deadline_types();
+$deadlineSchoolYear = '';
+$deadlineScopeLabel = '';
+if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
+  $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
+  $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
+  $deadlineScopeLabel = class_label($classRow);
+}
+if ($deadlineSchoolYear === '') {
+  $years = array_values(array_unique(array_filter(array_map(
+    static fn($c) => trim((string)($c['school_year'] ?? '')),
+    $classes
+  ), static fn($v) => $v !== '')));
+  if (count($years) === 1) $deadlineSchoolYear = $years[0];
+}
+if ($deadlineSchoolYear === '') {
+  $deadlineSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+}
+$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear) : [];
+
+$scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
+$classTabs = [
+  ['id' => 0, 'label' => t('teacher.progress.tab_all', 'Gesamt')],
+];
+foreach ($progressByClass as $cid => $p) {
+  $c = $p['class'] ?? [];
+  $label = (string)($c['name'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $clabel = (string)($c['label'] ?? '');
+  $display = ($grade !== null && $clabel !== '') ? ($grade . $clabel) : ($label !== '' ? $label : ('#' . $cid));
+  $classTabs[] = ['id' => $cid, 'label' => $display];
+}
+
 render_teacher_header(t('teacher.title'));
 ?>
 
@@ -409,20 +451,67 @@ render_teacher_header(t('teacher.title'));
   </div>
 </div>
 
-<?php
-  $scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
-  $classTabs = [
-    ['id' => 0, 'label' => t('teacher.progress.tab_all', 'Gesamt')],
-  ];
-  foreach ($progressByClass as $cid => $p) {
-    $c = $p['class'] ?? [];
-    $label = (string)($c['name'] ?? '');
-    $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
-    $clabel = (string)($c['label'] ?? '');
-    $display = ($grade !== null && $clabel !== '') ? ($grade . $clabel) : ($label !== '' ? $label : ('#' . $cid));
-    $classTabs[] = ['id' => $cid, 'label' => $display];
-  }
-?>
+<?php if ($deadlineSchoolYear !== ''): ?>
+  <div class="card">
+    <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
+    <p class="muted">
+      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?>
+      <?php if ($deadlineScopeLabel !== ''): ?>
+        · <?=h($deadlineScopeLabel)?>
+      <?php endif; ?>
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th><?=h(t('deadline.table.type', 'Bereich'))?></th>
+            <th><?=h(t('deadline.table.due_at', 'Fällig am'))?></th>
+            <th><?=h(t('deadline.table.remaining', 'Restzeit'))?></th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($deadlineTypes as $key => $meta): ?>
+            <?php $row = $deadlineRows[$key] ?? null; ?>
+            <?php $info = deadline_remaining_info($row['due_at'] ?? null); ?>
+            <?php
+              $done = false;
+              $na = false;
+              if ($key === 'student') {
+                $total = (int)($scope['forms_total'] ?? 0);
+                $done = $total > 0 && (int)($scope['students_done'] ?? 0) >= $total;
+                $na = $total === 0;
+              } elseif ($key === 'teacher') {
+                $total = (int)($scope['forms_total'] ?? 0);
+                $done = $total > 0 && (int)($scope['teachers_done'] ?? 0) >= $total;
+                $na = $total === 0;
+              } elseif ($key === 'delegation') {
+                $total = (int)($scope['delegations_total'] ?? 0);
+                $done = $total > 0 && (int)($scope['delegations_done'] ?? 0) >= $total;
+                $na = $total === 0;
+              }
+            ?>
+            <tr>
+              <td><?=h((string)($meta['label'] ?? $key))?></td>
+              <td><?=render_local_datetime($row['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?></td>
+              <td>
+                <?php if ($info): ?>
+                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
+                <?php elseif (!$done && !$na): ?>
+                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
+                <?php endif; ?>
+                <?php if ($done): ?>
+                  <span class="badge ok"><?=h(t('deadline.status.done', 'Erledigt'))?></span>
+                <?php elseif ($na): ?>
+                  <span class="muted"><?=h(t('deadline.status.na', 'Keine Aufgaben'))?></span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<?php endif; ?>
 
 <div class="card">
   <h2><?=h(t('teacher.progress.headline', 'Aktueller Bearbeitungsstand'))?></h2>

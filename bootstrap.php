@@ -429,6 +429,87 @@ function end_of_day_after_days(int $days, ?DateTimeImmutable $base = null): stri
   return ($dbTarget ?? $target)->format('Y-m-d H:i:s');
 }
 
+function submission_deadline_types(): array {
+  return [
+    'student' => ['label' => t('deadline.type.student', 'Schüler-Abgabe')],
+    'delegation' => ['label' => t('deadline.type.delegation', 'Delegations-Abgabe')],
+    'teacher' => ['label' => t('deadline.type.teacher', 'Lehrkraft-Abgabe')],
+  ];
+}
+
+function fetch_submission_deadlines(PDO $pdo, string $schoolYear): array {
+  $schoolYear = trim($schoolYear);
+  if ($schoolYear === '') return [];
+  if (!db_has_table($pdo, 'submission_deadlines')) return [];
+  $st = $pdo->prepare("SELECT deadline_key, due_at FROM submission_deadlines WHERE school_year=?");
+  $st->execute([$schoolYear]);
+  $rows = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $key = (string)($row['deadline_key'] ?? '');
+    if ($key === '') continue;
+    $rows[$key] = $row;
+  }
+  return $rows;
+}
+
+function parse_user_datetime_local(?string $input): ?DateTimeImmutable {
+  $value = trim((string)$input);
+  if ($value === '') return null;
+  $tz = user_timezone();
+  $formats = ['Y-m-d\TH:i', 'Y-m-d H:i'];
+  foreach ($formats as $format) {
+    $dt = DateTimeImmutable::createFromFormat($format, $value, $tz);
+    if ($dt instanceof DateTimeImmutable) return $dt;
+  }
+  try {
+    return new DateTimeImmutable($value, $tz);
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
+function deadline_remaining_info(?string $dbDateTime, ?DateTimeImmutable $now = null): ?array {
+  $dt = db_datetime_to_user_datetime($dbDateTime);
+  if (!$dt) return null;
+  $now = $now ?: new DateTimeImmutable('now', user_timezone());
+  $diffSeconds = $dt->getTimestamp() - $now->getTimestamp();
+  $absSeconds = abs($diffSeconds);
+  if ($absSeconds < 60) {
+    $value = 1;
+    $unit = 'minute';
+  } elseif ($absSeconds < 3600) {
+    $value = (int)ceil($absSeconds / 60);
+    $unit = 'minute';
+  } elseif ($absSeconds < 86400) {
+    $value = (int)ceil($absSeconds / 3600);
+    $unit = 'hour';
+  } else {
+    $value = (int)ceil($absSeconds / 86400);
+    $unit = 'day';
+  }
+  $unitKey = $value === 1 ? 'deadline.unit.' . $unit : 'deadline.unit.' . $unit . '_plural';
+  $unitLabel = t($unitKey, $unit);
+  $timeLabel = $value . ' ' . $unitLabel;
+  $template = $diffSeconds >= 0
+    ? t('deadline.remaining.in', 'noch {time}')
+    : t('deadline.remaining.overdue', '{time} überfällig');
+  $label = str_replace('{time}', $timeLabel, $template);
+  if ($diffSeconds <= 0) {
+    $status = 'red';
+  } elseif ($diffSeconds <= 3 * 86400) {
+    $status = 'red';
+  } elseif ($diffSeconds <= 7 * 86400) {
+    $status = 'yellow';
+  } else {
+    $status = 'green';
+  }
+  return [
+    'label' => $label,
+    'status' => $status,
+    'seconds' => $diffSeconds,
+  ];
+}
+
 function render_history_replace_state_script(): void {
   echo "\n  <script data-history-replace-state>\n";
   echo "    if (window.history && window.history.replaceState) {\n";
@@ -703,6 +784,26 @@ function ensure_schema(PDO $pdo): void {
         "  PRIMARY KEY (id),\n" .
         "  UNIQUE KEY uq_class_child_group_unlock (class_id, school_year, period_label, group_key),\n" .
         "  KEY idx_class_child_group_unlock_class (class_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+    // --- submission_deadlines: per-school-year deadlines for submissions
+    if (!db_has_table($pdo, 'submission_deadlines')) {
+      $pdo->exec(
+        "CREATE TABLE submission_deadlines (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  deadline_key VARCHAR(40) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  due_at DATETIME DEFAULT NULL,\n" .
+        "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  updated_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_submission_deadlines_year_key (school_year, deadline_key),\n" .
+        "  KEY idx_submission_deadlines_year (school_year),\n" .
+        "  KEY idx_submission_deadlines_due (due_at)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
     }
