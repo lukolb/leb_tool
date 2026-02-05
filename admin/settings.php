@@ -119,6 +119,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         )->execute([$schoolYear, $key, $dueAt, $actorId, $actorId]);
       }
 
+      if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
+      $cfg['student']['show_deadline'] = isset($_POST['student_show_deadline']);
+      $cfg['app']['brand'] = $cfg['app']['brand'] ?? [];
+
+      $export = "<?php\n// config.php (updated by admin/settings.php)\nreturn " . var_export($cfg, true) . ";\n";
+      if (file_put_contents($cfgPath, $export, LOCK_EX) === false) {
+        throw new RuntimeException(t('admin.settings.error.config_write_failed', 'Konnte config.php nicht schreiben (Rechte?).'));
+      }
+
       $ok = t('admin.settings.deadlines.ok', 'Fristen gespeichert.');
       audit('deadline_update', $actorId, ['school_year'=>$schoolYear]);
       $cfg = app_config(true);
