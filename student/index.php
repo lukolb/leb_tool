@@ -43,6 +43,11 @@ if ($schoolYear === '') {
   $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
 }
 
+$deadlineTypes = submission_deadline_types();
+$deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear) : [];
+$studentDeadline = $deadlineRows['student'] ?? null;
+$studentDeadlineInfo = deadline_remaining_info($studentDeadline['due_at'] ?? null);
+
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
 $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
@@ -416,6 +421,26 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
             <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
+      <?php if ($schoolYear !== ''): ?>
+        <p class="muted">
+          <?=h(str_replace('{year}', $schoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?>
+        </p>
+      <?php endif; ?>
+      <div class="row-actions">
+        <span class="pill"><?=h((string)($deadlineTypes['student']['label'] ?? t('deadline.type.student', 'Schüler-Abgabe')))?></span>
+        <?php if ($studentDeadlineInfo): ?>
+          <span class="badge <?=h($studentDeadlineInfo['status'])?>"><?=h($studentDeadlineInfo['label'])?></span>
+        <?php else: ?>
+          <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
+        <?php endif; ?>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        <?=h(t('deadline.table.due_at', 'Fällig am'))?>: <?=render_local_datetime($studentDeadline['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?>
       </div>
     </div>
 
