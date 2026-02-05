@@ -198,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['student']['tts_rate_de'] = max(0.5, min(1.5, $ttsRateDe));
     $cfg['student']['tts_rate_en'] = max(0.5, min(1.5, $ttsRateEn));
     $cfg['student']['tts_rate'] = $cfg['student']['tts_rate_de'];
+    $cfg['student']['show_deadline'] = isset($_POST['student_show_deadline']);
 
     // ---- Parent portal settings ----
     if ($action === 'save' && isset($_POST['parent_download_enabled_present'])) {
@@ -347,6 +348,7 @@ if ($ttsRateDe <= 0) $ttsRateDe = 1.0;
 if ($ttsRateEn <= 0) $ttsRateEn = 1.0;
 $ttsRateDe = max(0.5, min(1.5, $ttsRateDe));
 $ttsRateEn = max(0.5, min(1.5, $ttsRateEn));
+$showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
 
 $vitsVoiceIds = load_vits_voice_ids();
 $vitsVoiceIdsDe = filter_vits_voice_ids($vitsVoiceIds, ['de_DE-']);
@@ -722,6 +724,11 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <span id="ttsSampleStatus" class="muted"><?=h(t('admin.settings.tts.sample_status_ready', 'Bereit.'))?></span>
     </div>
     <p class="muted"><?=h(t('admin.settings.tts.sample_hint', 'Die Vorleseprobe nutzt vits-web (falls verfügbar), sonst die Browser-Stimme.'))?></p>
+
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>> <?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?>
+    </label>
+    <p class="muted"><?=h(t('admin.settings.student_deadline.show_hint', 'Wenn aktiviert, wird die Schüler-Frist in der Startansicht platzsparend angezeigt (nicht im Leseanfänger-Modus).'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

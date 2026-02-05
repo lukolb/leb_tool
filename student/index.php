@@ -43,10 +43,16 @@ if ($schoolYear === '') {
   $schoolYear = (string)($cfg['app']['default_school_year'] ?? '');
 }
 
+$cfg = app_config();
+$brand = $cfg['app']['brand'] ?? [];
+$studentCfg = $cfg['student'] ?? [];
+
 $deadlineTypes = submission_deadline_types();
 $deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear) : [];
 $studentDeadline = $deadlineRows['student'] ?? null;
 $studentDeadlineInfo = deadline_remaining_info($studentDeadline['due_at'] ?? null);
+$showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
+$showStudentDeadlineInline = $showStudentDeadline && !empty($studentDeadline['due_at']);
 
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
@@ -87,9 +93,6 @@ if (!$isActive) {
   $lockedText = t('student.locked.pending_text', 'Deine Lehrkraft hat die Eingabe noch nicht freigegeben. Bitte versuche es später noch einmal.');
 }
 
-$cfg = app_config();
-$brand = $cfg['app']['brand'] ?? [];
-$studentCfg = $cfg['student'] ?? [];
 $orgName = (string)($brand['org_name'] ?? 'LEB Tool');
 $logoPath = (string)($brand['logo_path'] ?? '');
 $primary = (string)($brand['primary'] ?? '#0b57d0');
@@ -203,6 +206,17 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     .content h2{ margin-top:0; }
     .step-meta{ color:var(--muted); font-size:12px; margin: -4px 0 10px; }
 
+    .deadline-inline{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+      font-size:12px;
+      margin:8px 0 0;
+    }
+    .deadline-inline .label{ font-weight:700; }
+    .deadline-inline .date{ color:var(--muted); }
+
     .ai-help-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .ai-help-btn{ border:1px solid var(--border); background:#fff; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; cursor:pointer; }
     .ai-help-btn:hover{ background: rgba(11,87,208,0.06); }
@@ -315,6 +329,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
     body.beginner-mode .tts-title,
     body.beginner-mode .tts-status{ display:none; }
+    body.beginner-mode .deadline-inline{ display:none; }
     body.beginner-mode #ttsButton{
       width:72px;
       height:72px;
@@ -424,25 +439,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       </div>
     </div>
 
-    <div class="card">
-      <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
-      <?php if ($schoolYear !== ''): ?>
-        <p class="muted">
-          <?=h(str_replace('{year}', $schoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?>
-        </p>
-      <?php endif; ?>
-      <div class="row-actions">
-        <span class="pill"><?=h((string)($deadlineTypes['student']['label'] ?? t('deadline.type.student', 'Schüler-Abgabe')))?></span>
-        <?php if ($studentDeadlineInfo): ?>
-          <span class="badge <?=h($studentDeadlineInfo['status'])?>"><?=h($studentDeadlineInfo['label'])?></span>
-        <?php else: ?>
-          <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
-        <?php endif; ?>
+    <?php if ($showStudentDeadlineInline && $studentDeadlineInfo): ?>
+      <div class="deadline-inline">
+        <span class="label"><?=h(t('deadline.student.compact_label', 'Frist'))?></span>
+        <span class="badge <?=h($studentDeadlineInfo['status'])?>"><?=h($studentDeadlineInfo['label'])?></span>
+        <span class="date"><?=render_local_datetime($studentDeadline['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?></span>
       </div>
-      <div class="muted" style="margin-top:6px;">
-        <?=h(t('deadline.table.due_at', 'Fällig am'))?>: <?=render_local_datetime($studentDeadline['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?>
-      </div>
-    </div>
+    <?php endif; ?>
 
     <!-- Locked-only container -->
     <div id="lockedOnly" class="card" style="display:<?= $canUseWizard ? 'none' : 'block' ?>;">
