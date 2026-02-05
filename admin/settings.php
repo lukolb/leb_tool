@@ -500,6 +500,11 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <p class="muted"><?=h(t('admin.settings.deadlines.timezone_hint', 'Zeiten werden in der Schul-Zeitzone gespeichert.'))?></p>
     <p class="muted"><?=h(t('admin.settings.deadlines.clear_hint', 'Leere Felder löschen bestehende Fristen.'))?></p>
 
+    <label class="chk" style="margin-top:10px;">
+      <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>> <?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?>
+    </label>
+    <p class="muted"><?=h(t('admin.settings.student_deadline.show_hint', 'Wenn aktiviert, wird die Schüler-Frist in der Startansicht platzsparend angezeigt (nicht im Leseanfänger-Modus).'))?></p>
+
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.deadlines.save', 'Fristen speichern'))?></button>
     </div>
@@ -724,11 +729,6 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <span id="ttsSampleStatus" class="muted"><?=h(t('admin.settings.tts.sample_status_ready', 'Bereit.'))?></span>
     </div>
     <p class="muted"><?=h(t('admin.settings.tts.sample_hint', 'Die Vorleseprobe nutzt vits-web (falls verfügbar), sonst die Browser-Stimme.'))?></p>
-
-    <label class="chk" style="margin-top:10px;">
-      <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>> <?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?>
-    </label>
-    <p class="muted"><?=h(t('admin.settings.student_deadline.show_hint', 'Wenn aktiviert, wird die Schüler-Frist in der Startansicht platzsparend angezeigt (nicht im Leseanfänger-Modus).'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
