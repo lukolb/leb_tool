@@ -346,6 +346,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const classId = <?=json_encode($classId)?>;
   const studentId = <?=json_encode($studentId)?>;
+  const DELEGATED_MODE = <?= $delegatedMode ? 'true' : 'false' ?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const UI_LANG = <?=json_encode(ui_lang())?>;
   const I18N = <?=json_encode([
@@ -467,7 +468,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   }
 
   async function api(action, payload, options = {}){
-    const body = { action, csrf_token: csrf, ...payload };
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
+    const body = { action, csrf_token: csrf, ...delegated, ...payload };
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },

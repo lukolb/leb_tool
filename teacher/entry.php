@@ -2771,10 +2771,11 @@ render_teacher_header($pageTitle);
 
   async function api(action, payload, options = {}){
     const keepalive = !!options.keepalive;
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
+      body: JSON.stringify({ action, csrf_token: csrf, ...delegated, ...payload }),
       keepalive
     });
     const j = await res.json().catch(()=>null);
@@ -2783,7 +2784,8 @@ render_teacher_header($pageTitle);
   }
 
   function fireAndForget(action, payload){
-    const body = JSON.stringify({ action, csrf_token: csrf, ...payload });
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
+    const body = JSON.stringify({ action, csrf_token: csrf, ...delegated, ...payload });
     if (navigator.sendBeacon) {
       const blob = new Blob([body], { type: 'application/json' });
       navigator.sendBeacon(apiUrl, blob);
