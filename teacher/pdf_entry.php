@@ -316,18 +316,21 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     </div>
     <div class="muted" style="margin-top:6px;"><?=h(t('teacher.pdf_entry.autosave_hint'))?></div>
     <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-      <label class="pdf-toggle" title="<?=h(t('teacher.entry.show_student_values_hint'))?>">
+      <label class="toggle-switch" title="<?=h(t('teacher.entry.show_student_values_hint'))?>">
         <input type="checkbox" id="toggleStudentValues" />
-        <?=h(t('teacher.entry.show_student_values'))?>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.show_student_values'))?></span>
       </label>
-      <label class="pdf-toggle">
+      <label class="toggle-switch">
         <input type="checkbox" id="toggleStudentEdit" />
-        <?=h(t('teacher.entry.edit_student_values'))?>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.edit_student_values'))?></span>
       </label>
       <?php if ($delegatedMode && $delegationShowOtherFieldsReadonly): ?>
-        <label class="pdf-toggle">
+        <label class="toggle-switch">
           <input type="checkbox" id="toggleDelegationOtherFields" />
-          <?=h(t('teacher.entry.delegation_show_other_fields'))?>
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
         </label>
       <?php endif; ?>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('teacher.entry.save_status_saving'))?></span>

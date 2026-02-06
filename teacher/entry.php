@@ -943,9 +943,10 @@ render_teacher_header($pageTitle);
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h($delegationNotice)?></div>
     <?php if ($delegationShowOtherFieldsReadonly): ?>
-      <label class="row" style="gap:8px; margin-top:8px;">
+      <label class="toggle-switch" style="margin-top:8px;">
         <input type="checkbox" id="toggleDelegationOtherFields" checked>
-        <span><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
       </label>
       <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_show_other_fields_hint'))?></div>
     <?php endif; ?>
@@ -1343,7 +1344,11 @@ render_teacher_header($pageTitle);
     <h2><?=h(t('teacher.entry.student_fields.title'))?></h2>
       <?php if (!$childMode): ?>
         <label id="showStudentEntries" class="pill-mini" style="cursor:pointer; user-select:none;">
-          <input type="checkbox" id="toggleChild" style="margin-right:8px;"> <?=h(t('teacher.entry.show_child_entries'))?>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleChild">
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.show_child_entries'))?></span>
+        </label>
         </label>
       <?php else: ?>
         <span id="showStudentEntries" style="display:none;"></span>
@@ -1351,10 +1356,18 @@ render_teacher_header($pageTitle);
   <div id="metaTop" class="muted" style="margin-bottom:10px;"><?=h(t('teacher.entry.loading'))?></div>
   <div id="entryFilterRow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
     <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> <?=h(t('teacher.entry.only_open'))?>
+      <label class="toggle-switch">
+        <input type="checkbox" id="studentMissingOnly">
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.only_open'))?></span>
+      </label>
     </label>
     <label class="pill-mini" for="optionButtonsToggle" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> <?=h(t('teacher.entry.option_buttons'))?>
+      <label class="toggle-switch">
+        <input type="checkbox" id="optionButtonsToggle">
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.option_buttons'))?></span>
+      </label>
     </label>
   </div>
   <div class="row" id="viewSelectRow" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
