@@ -1961,6 +1961,7 @@ render_teacher_header($pageTitle);
     'progress_missing_teacher' => t('teacher.entry.progress.missing_teacher'),
     'progress_status_line' => t('teacher.entry.progress.status_line'),
     'progress_badge_open' => t('teacher.entry.progress.badge_open'),
+    'progress_open_breakdown' => t('teacher.entry.progress.open_breakdown'),
     'student_badge_child' => t('teacher.entry.progress.student_badge_child'),
     'student_badge_both' => t('teacher.entry.progress.student_badge_both'),
     'no_results' => t('teacher.entry.no_results'),
@@ -2383,11 +2384,20 @@ render_teacher_header($pageTitle);
     return out;
   }
 
+  function isEditableField(field, group){
+    const groupEditable = Number(group?.can_edit || 0) === 1;
+    const fieldEditable = Number(field?.can_edit || 0) === 1;
+    return groupEditable && fieldEditable;
+  }
+
   function activeProgressFieldIds(reportId){
     const ids = [];
     const groups = CHILD_MODE ? activeGroupsForReport(reportId) : activeGroups();
     groups.forEach(g => {
-      (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
+      (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
+        ids.push(Number(f.id));
+      });
     });
     return ids;
   }
@@ -2425,6 +2435,7 @@ render_teacher_header($pageTitle);
 
     (state.groups || []).forEach(g => {
       (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
         const type = String(f.field_type || '');
         const hasOptions = Array.isArray(f.options) && f.options.length > 0;
         if (!hasOptions) return;
@@ -3314,19 +3325,20 @@ render_teacher_header($pageTitle);
   function teacherProgressFieldIds(){
     const ids = [];
     activeGroups().forEach(g => {
-      (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
+      (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
+        ids.push(Number(f.id));
+      });
     });
     return ids;
   }
 
   function computeDoneFromTeacherValues(reportId, fieldIds){
-    const ridKey = String(reportId);
-    const row = CHILD_MODE ? (state.values_child[ridKey] || {}) : (state.values_teacher[ridKey] || {});
     let done = 0;
-    for (const fid of fieldIds) {
-      const v = row[String(fid)];
+    fieldIds.forEach(fid => {
+      const v = activeFieldValue(reportId, fid);
       if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') done++;
-    }
+    });
     return done;
   }
 
@@ -3454,6 +3466,30 @@ render_teacher_header($pageTitle);
     classFieldsProgressBar.classList.toggle('ok', missing === 0);
   }
 
+  function shouldShowOpenBreakdown(){
+    return !CHILD_MODE && !DELEGATED_MODE && !!state.is_class_teacher;
+  }
+
+  function progressBreakdownForStudent(student){
+    if (!student) return null;
+    const reportId = Number(student.report_instance_id || 0);
+    let ownMissing = 0;
+    let delegatedMissing = 0;
+    activeGroups().forEach(g => {
+      (g.fields || []).forEach(f => {
+        const missing = String(activeFieldValue(reportId, f.id) ?? '').trim() === '';
+        if (isEditableField(f, g)) {
+          if (missing) ownMissing++;
+        } else if (missing) {
+          delegatedMissing++;
+        }
+      });
+    });
+    const childMissing = Number(student.progress_child_missing || 0);
+    const totalMissing = ownMissing + delegatedMissing + childMissing;
+    return { totalMissing, childMissing, delegatedMissing, ownMissing };
+  }
+
   function updateStudentRowUI(student){
     if (!student) return;
     const row = document.getElementById(`srow-${student.id}`);
@@ -3483,6 +3519,19 @@ render_teacher_header($pageTitle);
         missing: prog.missing,
         missingLabel,
       });
+    }
+
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
+    const breakdownEl = row.querySelector('.js-srow-breakdown');
+    if (breakdownEl) {
+      breakdownEl.textContent = breakdown
+        ? tfmtEntry('progress_open_breakdown', {
+            total: breakdown.totalMissing,
+            child: breakdown.childMissing,
+            delegated: breakdown.delegatedMissing,
+            own: breakdown.ownMissing,
+          })
+        : '';
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -5038,12 +5087,22 @@ render_teacher_header($pageTitle);
       const missingLabel = CHILD_MODE
         ? tfmtEntry('progress_missing_child', { count: childMissing })
         : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
+      const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+      const breakdownHtml = breakdown
+        ? `<div class="sub muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
+            total: breakdown.totalMissing,
+            child: breakdown.childMissing,
+            delegated: breakdown.delegatedMissing,
+            own: breakdown.ownMissing,
+          }))}</div>`
+        : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
           <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}</div>
+          ${breakdownHtml}
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
@@ -5127,15 +5186,19 @@ render_teacher_header($pageTitle);
     activeGroupsForReport(reportId).forEach(g => {
       if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
-      fields = ui.studentMissingOnly
-        ? fields.filter(f => isActiveFieldMissing(reportId, f.id))
-        : fields;
+      const progressFields = fields.filter(f => isEditableField(f, g));
+      if (ui.studentMissingOnly) {
+        fields = progressFields.filter(f => isActiveFieldMissing(reportId, f.id));
+      }
 
       if (!fields.length) return;
 
-      const _gtTotal = fields.length;
+      const _gtTotal = progressFields.length;
       let _gtDone = 0;
-      fields.forEach(_f => { const _v = activeFieldValue(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
+      progressFields.forEach(_f => {
+        const _v = activeFieldValue(reportId, _f.id);
+        if (String(_v).trim() !== '') _gtDone++;
+      });
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
