@@ -97,7 +97,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     pointer-events: auto;
     --radio-color: royalblue;
   }
-  .pdf-field.is-readonly:not(.is-student) {
+  .pdf-field.is-readonly {
     color: #2b4a77;
     border: none;
     background-color: transparent;
@@ -108,7 +108,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   .pdf-field.is-readonly input {
       background-color: transparent !important;
   }
-  .pdf-field.is-readonly:not(.is-student) {
+  .pdf-field.is-readonly {
     --radio-color: lightsteelblue;
   }
   .pdf-field.is-system {
@@ -472,6 +472,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     const fields = state.all_fields || state.fields || [];
     const allowedChildIds = new Set();
     fields.forEach((field) => {
+      if (Number(field.system_bound || 0) === 1) return;
+      if (String(field.scope || '') === 'class') return;
       if (Number(field.child_only || 0) === 1) return;
       if (Number(field.can_edit || 0) !== 1) return;
       const childFieldId = Number(field.child_field_id || 0);
@@ -482,6 +484,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       return;
     }
     state.fields = fields.filter((field) => {
+      if (Number(field.system_bound || 0) === 1) return true;
+      if (String(field.scope || '') === 'class') return true;
       if (Number(field.child_only || 0) === 1) {
         return allowedChildIds.has(Number(field.id || 0));
       }
