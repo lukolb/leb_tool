@@ -670,7 +670,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     });
 
     let updated = false;
-    state.fields = (state.fields || []).map((f) => {
+    const baseFields = state.all_fields || state.fields || [];
+    const enriched = baseFields.map((f) => {
       const widgets = (widgetMap.get(f.field_name) || []).map((w) => ({
         page: normalizePage(w.pNum),
         rect: w.rect,
@@ -689,6 +690,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       updated = true;
       return { ...f, page: hit.page, rect: hit.rect, ...withWidgets };
     });
+    state.all_fields = enriched;
+    applyDelegationFieldVisibility();
 
     if (updated) {
       await renderPages();
