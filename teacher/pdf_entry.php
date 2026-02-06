@@ -723,10 +723,17 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return type === 'radio' || (type === 'select' && options.length <= 10);
   }
 
+  function canEditPdfField(field){
+    const isChildOnly = Number(field.child_only || 0) === 1;
+    if (DELEGATED_MODE && isChildOnly) return false;
+    return !!field.can_edit;
+  }
+
   function createRadioWidget(field, optionValue, optionLabel, currentValue, groupName){
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field pdf-field--widget';
-    if (!field.can_edit) wrapper.classList.add('is-readonly');
+    const canEdit = canEditPdfField(field);
+    if (!canEdit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
     if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
@@ -736,7 +743,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     input.value = String(optionValue ?? '');
     input.checked = String(currentValue ?? '') === String(optionValue ?? '');
     input.setAttribute('aria-label', String(optionLabel || field.label || field.field_name || ''));
-    if (!field.can_edit) input.disabled = true;
+    if (!canEdit) input.disabled = true;
     bindRadioToggle(input, field, groupName);
 
     wrapper.appendChild(input);
@@ -746,7 +753,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function createFieldInput(field, value){
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field';
-    if (!field.can_edit) wrapper.classList.add('is-readonly');
+    const canEdit = canEditPdfField(field);
+    if (!canEdit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
     if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
@@ -778,7 +786,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         input.name = name;
         input.value = String(opt.value ?? '');
         input.checked = resolvedValue === input.value;
-        if (!field.can_edit) input.disabled = true;
+        if (!canEdit) input.disabled = true;
         bindRadioToggle(input, field, name);
         const text = document.createElement('span');
         text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
@@ -819,11 +827,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
     if (el && el.tagName !== 'DIV') {
       el.setAttribute('aria-label', String(field.label || field.field_name || ''));
-      if (!field.can_edit) el.disabled = true;
+      if (!canEdit) el.disabled = true;
     }
 
     const handler = () => {
-      if (!field.can_edit) return;
+      if (!canEdit) return;
       let nextVal = '';
       if (type === 'checkbox') {
         nextVal = el.checked ? '1' : '0';
@@ -843,7 +851,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
-    if (type === 'date' && field.can_edit) {
+    if (type === 'date' && canEdit) {
       initDatePicker(el, field);
     }
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
@@ -1093,6 +1101,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
   function queueSave(field, value){
     if (!state) return;
+    if (!canEditPdfField(field)) return;
     const isChildOnly = Number(field.child_only || 0) === 1;
     const target = isChildOnly ? (state.values_child = state.values_child || {}) : (state.values = state.values || {});
     target[field.id] = value;
@@ -1123,6 +1132,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     updateSavingIndicator();
     try {
       if (!state) return;
+      if (!canEditPdfField(field)) {
+        showSaveStatus(tPdf('save_failed'), true);
+        return;
+      }
       if (Number(field.child_only || 0) === 1) {
         const res = await api('child_value_update', {
           report_instance_id: state.student.report_instance_id,
