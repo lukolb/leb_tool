@@ -13,6 +13,9 @@ $userId = (int)($u['id'] ?? 0);
 $classId = (int)($_GET['class_id'] ?? 0);
 $studentId = (int)($_GET['student_id'] ?? 0);
 $delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
+$cfg = app_config();
+$delegationCfg = $cfg['delegation'] ?? [];
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 
 if ($classId <= 0 || $studentId <= 0) {
   render_teacher_header(t('teacher.pdf_entry.title'));
@@ -321,6 +324,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         <input type="checkbox" id="toggleStudentEdit" />
         <?=h(t('teacher.entry.edit_student_values'))?>
       </label>
+      <?php if ($delegatedMode && $delegationShowOtherFieldsReadonly): ?>
+        <label class="pdf-toggle">
+          <input type="checkbox" id="toggleDelegationOtherFields" />
+          <?=h(t('teacher.entry.delegation_show_other_fields'))?>
+        </label>
+      <?php endif; ?>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('teacher.entry.save_status_saving'))?></span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
@@ -347,6 +356,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const classId = <?=json_encode($classId)?>;
   const studentId = <?=json_encode($studentId)?>;
   const DELEGATED_MODE = <?= $delegatedMode ? 'true' : 'false' ?>;
+  const DELEGATED_READONLY_VISIBLE = <?= $delegationShowOtherFieldsReadonly ? 'true' : 'false' ?>;
+  const DELEGATION_OTHER_FIELDS_KEY = 'delegation_show_other_fields';
   const csrf = <?=json_encode(csrf_token())?>;
   const UI_LANG = <?=json_encode(ui_lang())?>;
   const I18N = <?=json_encode([
@@ -373,6 +384,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
   const toggleStudentEdit = document.getElementById('toggleStudentEdit');
+  const toggleDelegationOtherFields = document.getElementById('toggleDelegationOtherFields');
   const toggleStudentEditWrap = toggleStudentEdit ? toggleStudentEdit.closest('label') : null;
   const studentEditWarning = document.getElementById('studentEditWarning');
   const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm'))?>;
@@ -392,6 +404,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let showStudentValues = false;
   let allowStudentEdit = false;
   let isDelegatedView = false;
+  let delegatedShowOtherFields = DELEGATED_READONLY_VISIBLE;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -430,6 +443,36 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     } catch {
       // ignore storage errors
     }
+  }
+
+  function initDelegationFieldToggle(){
+    if (!DELEGATED_MODE || !DELEGATED_READONLY_VISIBLE || !toggleDelegationOtherFields) return;
+    const stored = window.localStorage.getItem(DELEGATION_OTHER_FIELDS_KEY);
+    if (stored !== null) delegatedShowOtherFields = stored === '1';
+    toggleDelegationOtherFields.checked = delegatedShowOtherFields;
+    toggleDelegationOtherFields.addEventListener('change', () => {
+      delegatedShowOtherFields = toggleDelegationOtherFields.checked;
+      window.localStorage.setItem(DELEGATION_OTHER_FIELDS_KEY, delegatedShowOtherFields ? '1' : '0');
+      applyDelegationFieldVisibility();
+      renderPages({ preserveScroll: true });
+    });
+  }
+
+  function applyDelegationFieldVisibility(){
+    if (!state) return;
+    if (!DELEGATED_MODE || !DELEGATED_READONLY_VISIBLE) {
+      state.fields = state.all_fields || state.fields || [];
+      return;
+    }
+    const fields = state.all_fields || state.fields || [];
+    if (delegatedShowOtherFields) {
+      state.fields = fields;
+      return;
+    }
+    state.fields = fields.filter((field) => {
+      if (Number(field.child_only || 0) === 1) return true;
+      return Number(field.can_edit || 0) === 1;
+    });
   }
 
   function setSaving(active){
@@ -1117,6 +1160,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const data = await api('load_pdf', { class_id: classId, student_id: studentId });
       state = data;
       isDelegatedView = Boolean(data?.delegated_view);
+      if (state && Array.isArray(state.fields)) {
+        state.all_fields = state.fields.slice();
+      }
+      applyDelegationFieldVisibility();
       if (isDelegatedView) {
         allowStudentEdit = false;
         if (toggleStudentEdit) {
@@ -1217,6 +1264,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     showStudentValues = true;
     if (toggleStudentValues) toggleStudentValues.checked = true;
   }
+
+  initDelegationFieldToggle();
 
   document.addEventListener('keydown', (event) => {
   if (!event.altKey) return;

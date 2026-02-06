@@ -942,6 +942,13 @@ render_teacher_header($pageTitle);
 
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h($delegationNotice)?></div>
+    <?php if ($delegationShowOtherFieldsReadonly): ?>
+      <label class="row" style="gap:8px; margin-top:8px;">
+        <input type="checkbox" id="toggleDelegationOtherFields" checked>
+        <span><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
+      </label>
+      <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_show_other_fields_hint'))?></div>
+    <?php endif; ?>
   <?php endif; ?>
   <?php if (!$meetingMode): ?>
     <p class="muted" style="margin-top:-6px;">
@@ -1863,6 +1870,7 @@ render_teacher_header($pageTitle);
   const CURRENT_USER_ID = Number(<?= (int)$jsUserId ?>);
   const CAN_DELEGATE = (<?= (int)$jsCanDelegate ?> === 1);
   const DELEGATED_READONLY_VISIBLE = (<?= (int)$jsDelegationShowOtherFieldsReadonly ?> === 1);
+  const DELEGATION_OTHER_FIELDS_KEY = 'delegation_show_other_fields';
 
   // ✅ NEW: UI language for option label rendering (de/en)
   const UI_LANG = <?= json_encode(ui_lang()) ?>;
@@ -2148,6 +2156,7 @@ render_teacher_header($pageTitle);
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
   const btnPdfEntry = document.getElementById('btnPdfEntry');
+  const delegationOtherFieldsToggle = document.getElementById('toggleDelegationOtherFields');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
   const studentMissingOnly = document.getElementById('studentMissingOnly');
@@ -2275,6 +2284,22 @@ render_teacher_header($pageTitle);
   let aiCache = new Map();
   let aiCurrentStudent = null;
   let aiLoading = false;
+  let delegatedShowOtherFields = DELEGATED_READONLY_VISIBLE;
+
+  if (DELEGATED_MODE && DELEGATED_READONLY_VISIBLE) {
+    const stored = window.localStorage.getItem(DELEGATION_OTHER_FIELDS_KEY);
+    if (stored !== null) delegatedShowOtherFields = stored === '1';
+    if (delegationOtherFieldsToggle) {
+      delegationOtherFieldsToggle.checked = delegatedShowOtherFields;
+      delegationOtherFieldsToggle.addEventListener('change', () => {
+        delegatedShowOtherFields = delegationOtherFieldsToggle.checked;
+        window.localStorage.setItem(DELEGATION_OTHER_FIELDS_KEY, delegatedShowOtherFields ? '1' : '0');
+        if (state.class_id) {
+          loadClass(state.class_id);
+        }
+      });
+    }
+  }
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
 
@@ -5726,7 +5751,7 @@ render_teacher_header($pageTitle);
       
       // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
       // unless read-only visibility is enabled for other fields.
-      if (DELEGATED_MODE && !DELEGATED_READONLY_VISIBLE) {
+      if (DELEGATED_MODE && (!DELEGATED_READONLY_VISIBLE || !delegatedShowOtherFields)) {
         const uid = CURRENT_USER_ID;
         state.groups = (state.groups || []).filter(g => {
           const delUids = Array.isArray(g?.delegation?.user_ids)
@@ -5773,7 +5798,7 @@ render_teacher_header($pageTitle);
 
       // In delegated mode: class fields should not be visible/editable here
       // unless read-only visibility is enabled.
-      if (DELEGATED_MODE && !DELEGATED_READONLY_VISIBLE) {
+      if (DELEGATED_MODE && (!DELEGATED_READONLY_VISIBLE || !delegatedShowOtherFields)) {
         state.class_fields = null;
       }
 
