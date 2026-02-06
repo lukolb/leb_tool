@@ -334,6 +334,11 @@ const btnExpandAll = document.getElementById('btnExpandAll');
 const btnCollapseAll = document.getElementById('btnCollapseAll');
 
 let lastPreview = null;
+
+function resetPreview() {
+  lastPreview = null;
+  updateWarnBoxFromPreview(null);
+}
 let __missingRenderSource = null;
 let __exportInProgress = false;
 
@@ -384,7 +389,7 @@ function updateModeUI(){
 }
 document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => {
   updateModeUI();
-  if (modeNeedsStudent(currentMode())) check().catch(()=>{});
+  resetPreview();
 }));
 updateModeUI();
 
@@ -588,11 +593,11 @@ if (btnCheck) {
     finally { btnCheck.disabled = false; }
   });
 }
-if (elOnlySubmitted) elOnlySubmitted.addEventListener('change', () => { check().catch(()=>{}); });
+if (elOnlySubmitted) elOnlySubmitted.addEventListener('change', resetPreview);
 
 if (elStudent) {
   elStudent.addEventListener('change', () => {
-    if (modeNeedsStudent(currentMode())) check().catch(()=>{});
+    if (modeNeedsStudent(currentMode())) resetPreview();
   });
 }
 
@@ -1815,12 +1820,10 @@ if (btnExport) {
 
   if (!elClass) return;
 
-  check().then(() => {
-    if (studentId && elStudent) {
-      const opt = Array.from(elStudent.options).find(o => String(o.value) === studentId);
-      if (opt) elStudent.value = studentId;
-      if (modeNeedsStudent(currentMode())) check().catch(()=>{});
-    }
-  }).catch(()=>{});
+  if (studentId && elStudent) {
+    const opt = Array.from(elStudent.options).find(o => String(o.value) === studentId);
+    if (opt) elStudent.value = studentId;
+  }
+  resetPreview();
 })();
 </script>
