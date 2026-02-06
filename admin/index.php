@@ -45,7 +45,7 @@ function load_completion_field_sets(PDO $pdo, array $templateIds): array {
 
   $ph = implode(',', array_fill(0, count($templateIds), '?'));
   $st = $pdo->prepare(
-    "SELECT id, template_id, can_child_edit, can_teacher_edit, meta_json
+    "SELECT id, template_id, can_child_edit, can_teacher_edit, is_required, meta_json
        FROM template_fields
       WHERE template_id IN ($ph)"
   );
@@ -58,6 +58,7 @@ function load_completion_field_sets(PDO $pdo, array $templateIds): array {
     $meta = meta_read($r['meta_json'] ?? null);
     if (is_system_bound($meta) || is_class_field($meta)) continue;
     if (!isset($out[$tplId])) $out[$tplId] = ['child' => [], 'teacher' => []];
+    if ((int)($r['is_required'] ?? 0) !== 1) continue;
     if ((int)$r['can_child_edit'] === 1) $out[$tplId]['child'][] = $fid;
     if ((int)$r['can_teacher_edit'] === 1) $out[$tplId]['teacher'][] = $fid;
   }

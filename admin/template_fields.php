@@ -467,7 +467,7 @@ render_admin_header(t('admin.template_fields.title'));
             </select>
           </div>
           <div>
-            <label class="muted2"><?=h(t('admin.template_fields.bulk_rights_required'))?></label>
+            <label class="muted2"><?=h(t('admin.template_fields.bulk_rights_optional'))?></label>
             <select id="bulkRequired">
               <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
               <option value="1"><?=h(t('admin.template_fields.option_yes'))?></option>
@@ -539,7 +539,7 @@ render_admin_header(t('admin.template_fields.title'));
             <th><?=h(t('admin.template_fields.table.child'))?></th>
             <th><?=h(t('admin.template_fields.table.teacher'))?></th>
             <th><?=h(t('admin.template_fields.table.class_field'))?></th>
-            <th><?=h(t('admin.template_fields.table.required'))?></th>
+            <th><?=h(t('admin.template_fields.table.optional'))?></th>
             <th style="min-width:420px;"><?=h(t('admin.template_fields.table.extras'))?></th>
           </tr>
         </thead>
@@ -2054,11 +2054,11 @@ function renderTable(){
     const tdR = document.createElement('td');
     const cbR = document.createElement('input');
     cbR.type = 'checkbox';
-    cbR.checked = f.required === 1;
+    cbR.checked = f.required === 0;
     cbR.addEventListener('click',(e)=>e.stopPropagation());
     cbR.addEventListener('change',(e)=>{
       e.stopPropagation();
-      fields[idx].required = cbR.checked ? 1 : 0;
+      fields[idx].required = cbR.checked ? 0 : 1;
       markDirty(f.id);
     });
     tdR.appendChild(cbR);
@@ -2246,7 +2246,7 @@ function buildBulkPatch(){
 
   if (bulkChild.value !== '') patch.can_child_edit = Number(bulkChild.value);
   if (bulkTeacher.value !== '') patch.can_teacher_edit = Number(bulkTeacher.value);
-  if (bulkRequired.value !== '') patch.required = Number(bulkRequired.value);
+  if (bulkRequired.value !== '') patch.required = bulkRequired.value === '1' ? 0 : 1;
 
   if (bulkDateMode.value) {
     patch.meta_merge.date_format_mode = bulkDateMode.value;

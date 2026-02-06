@@ -375,7 +375,7 @@ CREATE TABLE IF NOT EXISTS `template_fields` (
   `label_en` VARCHAR(255) NULL,
   `help_text` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `is_multiline` tinyint(1) NOT NULL DEFAULT '0',
-  `is_required` tinyint(1) NOT NULL DEFAULT '0',
+  `is_required` tinyint(1) NOT NULL DEFAULT '1',
   `can_child_edit` tinyint(1) NOT NULL DEFAULT '0',
   `can_teacher_edit` tinyint(1) NOT NULL DEFAULT '1',
   `allowed_roles_json` $JSON COLLATE utf8mb4_unicode_ci,

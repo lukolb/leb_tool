@@ -87,9 +87,9 @@ try {
 
   $ins = $pdo->prepare("
     INSERT INTO template_fields
-      (template_id, field_name, field_type, label, help_text, is_multiline, meta_json, sort_order, can_child_edit, can_teacher_edit)
+      (template_id, field_name, field_type, label, help_text, is_multiline, is_required, meta_json, sort_order, can_child_edit, can_teacher_edit)
     VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       field_type = VALUES(field_type),
       label = VALUES(label),
@@ -150,6 +150,7 @@ try {
       $label,
       $help,
       $isMultiline,
+      1,
       $metaJson,
       $sort,
       $canChild,
