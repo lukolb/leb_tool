@@ -321,11 +321,13 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         <span class="toggle-slider" aria-hidden="true"></span>
         <span class="toggle-label"><?=h(t('teacher.entry.show_student_values'))?></span>
       </label>
-      <label class="toggle-switch">
-        <input type="checkbox" id="toggleStudentEdit" />
-        <span class="toggle-slider" aria-hidden="true"></span>
-        <span class="toggle-label"><?=h(t('teacher.entry.edit_student_values'))?></span>
-      </label>
+      <?php if (!$delegatedMode): ?>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleStudentEdit" />
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.edit_student_values'))?></span>
+        </label>
+      <?php endif; ?>
       <?php if ($delegatedMode && $delegationShowOtherFieldsReadonly): ?>
         <label class="toggle-switch">
           <input type="checkbox" id="toggleDelegationOtherFields" />
@@ -468,12 +470,21 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       return;
     }
     const fields = state.all_fields || state.fields || [];
+    const allowedChildIds = new Set();
+    fields.forEach((field) => {
+      if (Number(field.child_only || 0) === 1) return;
+      if (Number(field.can_edit || 0) !== 1) return;
+      const childFieldId = Number(field.child_field_id || 0);
+      if (childFieldId > 0) allowedChildIds.add(childFieldId);
+    });
     if (delegatedShowOtherFields) {
       state.fields = fields;
       return;
     }
     state.fields = fields.filter((field) => {
-      if (Number(field.child_only || 0) === 1) return true;
+      if (Number(field.child_only || 0) === 1) {
+        return allowedChildIds.has(Number(field.id || 0));
+      }
       return Number(field.can_edit || 0) === 1;
     });
   }
