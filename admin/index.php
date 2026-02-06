@@ -99,12 +99,14 @@ function load_lock_field_sets(PDO $pdo, array $templateIds): array {
     if ((int)$r['can_child_edit'] === 1) {
       $out['child'][$tplId][] = [
         'id' => (int)$r['id'],
+        'template_id' => $tplId,
         'field_name' => (string)($r['field_name'] ?? ''),
       ];
     }
     if ((int)$r['can_teacher_edit'] === 1) {
       $out['teacher'][$tplId][] = [
         'id' => (int)$r['id'],
+        'template_id' => $tplId,
         'field_name' => (string)($r['field_name'] ?? ''),
         'field_type' => (string)($r['field_type'] ?? ''),
         'meta_json' => $r['meta_json'] ?? null,
@@ -196,28 +198,46 @@ function teacher_value_locks_child(PDO $pdo, array $teacherField, ?array $teache
   return !empty($map['by_id'][$optId]['lock_child']);
 }
 
-function locked_child_field_ids_for_reports(PDO $pdo, array $teacherFields, array $childFields, array $reportIds): array {
+function locked_child_field_ids_for_reports(PDO $pdo, array $teacherFields, array $childFields, array $reportIds, array $reportTemplateMap): array {
   if (!$reportIds) return [];
-  $teacherByBase = [];
+  $teacherByTpl = [];
   $teacherFieldIds = [];
   foreach ($teacherFields as $f) {
     $fid = (int)($f['id'] ?? 0);
     if ($fid <= 0) continue;
+    $tplId = (int)($f['template_id'] ?? 0);
+    if ($tplId <= 0) continue;
     $teacherFieldIds[] = $fid;
     $base = base_field_key((string)($f['field_name'] ?? ''));
-    if ($base !== '' && !isset($teacherByBase[$base])) $teacherByBase[$base] = $f;
+    if ($base === '') continue;
+    if (!isset($teacherByTpl[$tplId])) $teacherByTpl[$tplId] = [];
+    if (!isset($teacherByTpl[$tplId][$base])) $teacherByTpl[$tplId][$base] = $f;
   }
-  if (!$teacherFieldIds || !$teacherByBase) return [];
+  if (!$teacherFieldIds || !$teacherByTpl) return [];
   $teacherValues = load_teacher_values_raw($pdo, $reportIds, $teacherFieldIds);
   if (!$teacherValues) return [];
+
+  $childByTpl = [];
+  foreach ($childFields as $cf) {
+    $tplId = (int)($cf['template_id'] ?? 0);
+    if ($tplId <= 0) continue;
+    $base = base_field_key((string)($cf['field_name'] ?? ''));
+    if ($base === '') continue;
+    if (!isset($childByTpl[$tplId])) $childByTpl[$tplId] = [];
+    $childByTpl[$tplId][] = $cf;
+  }
 
   $lockCache = [];
   $out = [];
   foreach ($reportIds as $rid) {
     $ridKey = (string)(int)$rid;
+    $tplId = (int)($reportTemplateMap[$ridKey] ?? 0);
+    if ($tplId <= 0) continue;
     $reportTeacherValues = $teacherValues[$ridKey] ?? [];
     if (!$reportTeacherValues) continue;
-    foreach ($childFields as $cf) {
+    $teacherByBase = $teacherByTpl[$tplId] ?? [];
+    if (!$teacherByBase) continue;
+    foreach (($childByTpl[$tplId] ?? []) as $cf) {
       $cfId = (int)($cf['id'] ?? 0);
       if ($cfId <= 0) continue;
       $base = base_field_key((string)($cf['field_name'] ?? ''));
@@ -280,12 +300,14 @@ function build_progress(PDO $pdo, array $classes): array {
   $stReports->execute($classIds);
   $reports = [];
   $reportIds = [];
+  $reportTemplateMap = [];
   foreach ($stReports->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $rid = (int)$r['id'];
     $tplId = (int)$r['template_id'];
     $cid = (int)$r['class_id'];
     if (!isset($progress[$cid])) continue;
     $reportIds[] = $rid;
+    $reportTemplateMap[(string)$rid] = $tplId;
     $reqChild = isset($fieldSets[$tplId]) ? count($fieldSets[$tplId]['child']) : 0;
     $reqTeacher = isset($fieldSets[$tplId]) ? count($fieldSets[$tplId]['teacher']) : 0;
     $reports[$rid] = [
@@ -314,7 +336,7 @@ function build_progress(PDO $pdo, array $classes): array {
     foreach ($lockFieldSets['child'] as $fields) {
       foreach ($fields as $f) $allChildFields[] = $f;
     }
-    $lockedChildIdsByReport = locked_child_field_ids_for_reports($pdo, $allTeacherFields, $allChildFields, $reportIds);
+    $lockedChildIdsByReport = locked_child_field_ids_for_reports($pdo, $allTeacherFields, $allChildFields, $reportIds, $reportTemplateMap);
     foreach ($reports as $rid => &$info) {
       $locked = $lockedChildIdsByReport[(string)$rid] ?? [];
       $info['locked_child_ids'] = $locked;
