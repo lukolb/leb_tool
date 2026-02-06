@@ -171,23 +171,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['mail']['from_name']  = $fromName;
 
     // ---- AI suggestions (key only) ----
-    $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
-    $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
-    $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
-    $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
-    $aiEnabled = (isset($_POST['ai_enabled']) || $_POST['ai_key'])
-      ? (int)$_POST['ai_enabled']
-      : (int)($cfg['ai']['enabled'] ?? 1);
-    $aiStudentEnabled = isset($_POST['ai_student_enabled'])
-      ? 1
-      : 0;
-    if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
-    $cfg['ai']['enabled'] = ($aiEnabled === 1);
-    $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
-    $cfg['ai']['api_key'] = $aiKey;
-    $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
-    $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
-    $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+    $hasAiPayload = isset($_POST['ai_form']);
+    if ($hasAiPayload) {
+      $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+      $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
+      $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
+      $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
+      $aiEnabled = (isset($_POST['ai_enabled']) || trim((string)($_POST['ai_key'] ?? '')) !== '')
+        ? (isset($_POST['ai_enabled']) ? 1 : 0)
+        : (int)($cfg['ai']['enabled'] ?? 1);
+      $aiStudentEnabled = isset($_POST['ai_student_enabled']) ? 1 : 0;
+      if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+      $cfg['ai']['enabled'] = ($aiEnabled === 1);
+      $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
+      $cfg['ai']['api_key'] = $aiKey;
+      $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
+      $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
+      $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+    }
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -236,6 +237,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save' && isset($_POST['export_allow_editable_present'])) {
       if (!isset($cfg['export']) || !is_array($cfg['export'])) $cfg['export'] = [];
       $cfg['export']['allow_editable_pdf'] = isset($_POST['export_allow_editable']);
+    }
+
+    // ---- Delegation settings ----
+    if ($action === 'save' && isset($_POST['delegation_settings_present'])) {
+      if (!isset($cfg['delegation']) || !is_array($cfg['delegation'])) $cfg['delegation'] = [];
+      $cfg['delegation']['show_other_fields_readonly'] = isset($_POST['delegation_show_other_fields_readonly']);
     }
 
     // ---- Logo actions ----
@@ -329,6 +336,7 @@ $fromEmail = $mail['from_email'] ?? t('admin.settings.mail.fallback_email', 'no-
 $fromName  = $mail['from_name'] ?? ($org ?: t('admin.settings.default_org', 'LEB Tool'));
 
 $studentCfg = $cfg['student'] ?? [];
+$delegationCfg = $cfg['delegation'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
@@ -337,6 +345,8 @@ $aiStudentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['studen
 $aiProvider = $ai['provider'] ?? 'openai';
 $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
+
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
@@ -512,9 +522,13 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <p class="muted"><?=h(t('admin.settings.deadlines.timezone_hint', 'Zeiten werden in der Schul-Zeitzone gespeichert.'))?></p>
     <p class="muted"><?=h(t('admin.settings.deadlines.clear_hint', 'Leere Felder löschen bestehende Fristen.'))?></p>
 
-    <label class="chk" style="margin-top:10px;">
-      <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>> <?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?>
-    </label>
+    <div class="chk" style="margin-top:10px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="student_show_deadline" value="1" <?=$showStudentDeadline ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.student_deadline.show_label', 'Frist in Schüleransicht anzeigen'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.student_deadline.show_hint', 'Wenn aktiviert, wird die Schüler-Frist in der Startansicht platzsparend angezeigt (nicht im Leseanfänger-Modus).'))?></p>
 
     <div class="actions">
@@ -555,15 +569,24 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <form method="post" autocomplete="off" id="aiForm">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
+    <input type="hidden" name="ai_form" value="1">
 
-    <label class="chk">
-      <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>> <?=h(t('admin.settings.ai.enable_teacher', 'KI-Vorschläge für Lehrkräfte aktivieren'))?>
-    </label>
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="ai_enabled" value="1" <?=$aiEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.ai.enable_teacher', 'KI-Vorschläge für Lehrkräfte aktivieren'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.ai.enable_teacher_hint', 'Wenn deaktiviert, wird der KI-Button ausgeblendet und es werden keine externen Tokens verbraucht.'))?></p>
 
-    <label class="chk" style="margin-top:8px;">
-      <input type="checkbox" name="ai_student_enabled" value="1" <?=$aiStudentEnabled ? 'checked' : ''?>> <?=h(t('admin.settings.ai.enable_student', 'KI-Erklärungen für Schüler aktivieren'))?>
-    </label>
+    <div class="chk" style="margin-top:8px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="ai_student_enabled" value="1" <?=$aiStudentEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.ai.enable_student', 'KI-Erklärungen für Schüler aktivieren'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.ai.enable_student_hint', 'Steuert die KI-Kurzerklärung im Schülerbereich (separat vom Lehrkräfte-Feature).'))?></p>
 
     <label><?=h(t('admin.settings.ai.provider_label', 'Provider'))?></label>
@@ -599,30 +622,54 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="parent_download_enabled_present" value="1">
 
-    <label class="chk">
-      <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>> <?=h(t('admin.settings.parent.download_enable', 'Download-Button in der Elternansicht anzeigen'))?>
-    </label>
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_download_enabled" value="1" <?=$parentDownloadEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.download_enable', 'Download-Button in der Elternansicht anzeigen'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.download_hint', 'Der Download erzeugt eine signierte, nicht bearbeitbare PDF-Version.'))?></p>
-    <label class="chk" style="margin-top:10px;">
-      <input type="checkbox" name="parent_auto_approve_requests" value="1" <?=$parentAutoApprove ? 'checked' : ''?>> <?=h(t('admin.settings.parent.auto_approve', 'Anfragen automatisch freigeben (keine Admin-Bestätigung erforderlich)'))?>
-    </label>
+    <div class="chk" style="margin-top:10px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_auto_approve_requests" value="1" <?=$parentAutoApprove ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.auto_approve', 'Anfragen automatisch freigeben (keine Admin-Bestätigung erforderlich)'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.auto_approve_hint', 'Wenn aktiviert, werden neue Elternzugänge direkt freigeschaltet.'))?></p>
-    <label class="chk" style="margin-top:10px;">
-      <input type="checkbox" name="parent_signature_enabled" value="1" <?=$parentSignatureEnabled ? 'checked' : ''?>> <?=h(t('admin.settings.parent.signature_enable', 'Grafische Lehrkraft-Unterschrift aktivieren'))?>
-    </label>
+    <div class="chk" style="margin-top:10px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_signature_enabled" value="1" <?=$parentSignatureEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.signature_enable', 'Grafische Lehrkraft-Unterschrift aktivieren'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.signature_hint', 'Lehrkräfte können dann eine handschriftliche Signatur erfassen, die im Eltern-PDF über dem Unterschriftenfeld platziert wird.'))?></p>
 
-    <label class="chk" style="margin-top:10px;">
-      <input type="checkbox" name="parent_meeting_feedback_enabled" value="1" <?=$parentMeetingFeedbackEnabled ? 'checked' : ''?>> <?=h(t('admin.settings.parent.meeting_feedback_enable', 'Feedbackbogen nach dem Lernentwicklungsgespräch aktivieren'))?>
-    </label>
+    <div class="chk" style="margin-top:10px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_meeting_feedback_enabled" value="1" <?=$parentMeetingFeedbackEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.meeting_feedback_enable', 'Feedbackbogen nach dem Lernentwicklungsgespräch aktivieren'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.meeting_feedback_hint', 'Eltern können dann einen kurzen Feedbackbogen ausfüllen. Ergebnisse werden für Lehrkräfte und Admins ausgewertet.'))?></p>
-    <label class="chk" style="margin-top:6px;">
-      <input type="checkbox" name="parent_meeting_feedback_required" value="1" <?=$parentMeetingFeedbackRequired ? 'checked' : ''?> <?= $parentMeetingFeedbackEnabled ? '' : 'disabled' ?>> <?=h(t('admin.settings.parent.meeting_feedback_required', 'Feedbackbogen verpflichtend vor Berichtszugriff'))?>
-    </label>
+    <div class="chk" style="margin-top:6px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_meeting_feedback_required" value="1" <?=$parentMeetingFeedbackRequired ? 'checked' : ''?> <?= $parentMeetingFeedbackEnabled ? '' : 'disabled' ?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.meeting_feedback_required', 'Feedbackbogen verpflichtend vor Berichtszugriff'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.meeting_feedback_required_hint', 'Wenn aktiviert, müssen Eltern den Feedbackbogen ausfüllen, bevor sie den Bericht sehen können.'))?></p>
-    <label class="chk" style="margin-top:6px;">
-      <input type="checkbox" name="parent_meeting_feedback_anonymous" value="1" <?=$parentMeetingFeedbackAnonymous ? 'checked' : ''?>> <?=h(t('admin.settings.parent.meeting_feedback_anonymous', 'Feedback anonym erfassen'))?>
-    </label>
+    <div class="chk" style="margin-top:6px;">
+      <label class="toggle-switch">
+        <input type="checkbox" name="parent_meeting_feedback_anonymous" value="1" <?=$parentMeetingFeedbackAnonymous ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.parent.meeting_feedback_anonymous', 'Feedback anonym erfassen'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.parent.meeting_feedback_anonymous_hint', 'Hinweistext in der Elternansicht: Feedback wird anonym ausgewertet.'))?></p>
 
     <label style="margin-top:10px;"><?=h(t('admin.settings.parent.signature_key_label', 'SIGNATURE_MASTER_KEY (32 Byte, Hex/Base64 möglich)'))?></label>
@@ -683,10 +730,38 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="export_allow_editable_present" value="1">
 
-    <label class="chk">
-      <input type="checkbox" name="export_allow_editable" value="1" <?=$exportAllowEditable ? 'checked' : ''?>> <?=h(t('admin.settings.export.allow_editable', 'PDFs nach Export bearbeitbar lassen'))?>
-    </label>
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="export_allow_editable" value="1" <?=$exportAllowEditable ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.export.allow_editable', 'PDFs nach Export bearbeitbar lassen'))?></span>
+      </label>
+    </div>
     <p class="muted"><?=h(t('admin.settings.export.allow_editable_hint', 'Standard: Exportierte PDFs werden automatisch „geflattet“ und sind nicht mehr editierbar.'))?></p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.delegations.title', 'Delegationen'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.delegations.desc', 'Steuere, ob Delegierte zusätzlich alle übrigen Felder schreibgeschützt sehen dürfen.'))?></p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="delegation_settings_present" value="1">
+
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="delegation_show_other_fields_readonly" value="1" <?=$delegationShowOtherFieldsReadonly ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.delegations.show_other_fields_readonly', 'Nicht delegierte Felder schreibgeschützt anzeigen'))?></span>
+      </label>
+    </div>
+    <p class="muted"><?=h(t('admin.settings.delegations.show_other_fields_readonly_hint', 'Wenn aktiviert, sehen Delegierte alle anderen Fachbereiche schreibgeschützt; Bearbeitung bleibt auf delegierte Felder beschränkt.'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

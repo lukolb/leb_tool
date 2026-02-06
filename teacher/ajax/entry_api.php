@@ -989,13 +989,36 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
 
   $groupKey = group_key_from_meta($meta);
   $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
-  if (!$assigned) return true;
+  $isClassTeacher = user_is_class_teacher($pdo, $uid, $classId);
+  if (!$assigned) return $isClassTeacher;
 
   if (is_free_text_field($fieldType, $isMultiline)) {
-    return in_array($uid, $assigned, true) || user_is_class_teacher($pdo, $uid, $classId);
+    return in_array($uid, $assigned, true) || $isClassTeacher;
   }
 
   return in_array($uid, $assigned, true);
+}
+
+function can_user_edit_field_in_view(
+  PDO $pdo,
+  array $currentUser,
+  int $classId,
+  string $schoolYear,
+  string $periodLabel,
+  array $meta,
+  string $fieldType,
+  int $isMultiline,
+  bool $delegatedView
+): bool {
+  if (!$delegatedView) {
+    return can_user_edit_field($pdo, $currentUser, $classId, $schoolYear, $periodLabel, $meta, $fieldType, $isMultiline);
+  }
+  if (($currentUser['role'] ?? '') === 'admin') return true;
+  $uid = (int)($currentUser['id'] ?? 0);
+  if ($uid <= 0) return false;
+  $groupKey = group_key_from_meta($meta);
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  return $assigned && in_array($uid, $assigned, true);
 }
 
 function is_free_text_field(string $fieldType, int $isMultiline): bool {
@@ -1724,6 +1747,7 @@ try {
   if ($action === 'load') {
     $classId = (int)($data['class_id'] ?? 0);
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
@@ -1880,7 +1904,7 @@ try {
         ];
       }
 
-      $canEditClassField = can_user_edit_field(
+      $canEditClassField = can_user_edit_field_in_view(
         $pdo,
         $u,
         $classId,
@@ -1888,7 +1912,8 @@ try {
         $periodLabel,
         $m0,
         (string)($f0['field_type'] ?? ''),
-        (int)($f0['is_multiline'] ?? 0)
+        (int)($f0['is_multiline'] ?? 0),
+        $delegatedView
       );
 
       $classFieldsDefs[] = [
@@ -1956,7 +1981,7 @@ try {
       $base = base_field_key((string)$f['field_name']);
       $child = ($base !== '' && isset($childByBase[$base])) ? $childByBase[$base] : null;
 
-      $canEditField = can_user_edit_field(
+      $canEditField = can_user_edit_field_in_view(
         $pdo,
         $u,
         $classId,
@@ -1964,7 +1989,8 @@ try {
         $periodLabel,
         $meta,
         (string)($f['field_type'] ?? ''),
-        (int)($f['is_multiline'] ?? 0)
+        (int)($f['is_multiline'] ?? 0),
+        $delegatedView
       );
 
       $groups[$gKey]['fields'][] = [
@@ -2204,6 +2230,7 @@ try {
     $classId = (int)($data['class_id'] ?? 0);
     $studentId = (int)($data['student_id'] ?? 0);
     if ($classId <= 0 || $studentId <= 0) throw new RuntimeException('class_id/student_id fehlt.');
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
@@ -2266,6 +2293,9 @@ try {
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
     $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
+    $cfg = app_config();
+    $delegationCfg = $cfg['delegation'] ?? [];
+    $delegateShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
     $delegateGroupKeys = [];
     if ($delegateOnly && $delegations) {
       foreach ($delegations as $gk => $del) {
@@ -2307,6 +2337,8 @@ try {
       $childFieldByBase,
       $delegateOnly,
       $delegateGroupKeys,
+      $delegateShowOtherFieldsReadonly,
+      $delegatedView,
       &$optCache,
       &$iconCache,
       &$fields,
@@ -2320,6 +2352,7 @@ try {
       $groupKey = group_key_from_meta($meta);
       if (
         $delegateOnly
+        && !$delegateShowOtherFieldsReadonly
         && !$isSystemBound
         && !in_array($groupKey, $delegateGroupKeys, true)
       ) {
@@ -2369,7 +2402,7 @@ try {
       $isMultiline = (int)($f['is_multiline'] ?? 0);
       $canEditField = false;
       if ($canEditOverride && !$isSystemBound) {
-        $canEditField = can_user_edit_field(
+        $canEditField = can_user_edit_field_in_view(
           $pdo,
           $u,
           $classId,
@@ -2377,7 +2410,8 @@ try {
           $periodLabel,
           $meta,
           $type,
-          $isMultiline
+          $isMultiline,
+          $delegatedView
         );
       }
 
@@ -3092,6 +3126,7 @@ if ($action === 'delegations_save') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
     $fieldId = (int)($data['template_field_id'] ?? 0);
     if ($classId <= 0 || $reportId <= 0 || $fieldId <= 0) throw new RuntimeException('class_id/report_instance_id/template_field_id fehlt.');
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
@@ -3139,7 +3174,7 @@ if ($action === 'delegations_save') {
     $gKey = group_key_from_meta($meta);
     $type = (string)($frow['field_type'] ?? '');
     $isMultiline = (int)($frow['is_multiline'] ?? 0);
-    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline)) {
+    if (!can_user_edit_field_in_view($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline, $delegatedView)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
@@ -3217,6 +3252,7 @@ if ($action === 'delegations_save') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
     $fieldId = (int)($data['template_field_id'] ?? 0);
     if ($reportId <= 0 || $fieldId <= 0) throw new RuntimeException('report_instance_id/template_field_id fehlt.');
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
 
     $st = $pdo->prepare(
       "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
@@ -3233,10 +3269,7 @@ if ($action === 'delegations_save') {
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
-    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
-      throw new RuntimeException('Keine Berechtigung.');
-    }
-    if (($u['role'] ?? '') !== 'admin' && !user_is_class_teacher($pdo, $userId, $classId)) {
+    if (($u['role'] ?? '') !== 'admin' && !$delegatedView && !user_is_class_teacher($pdo, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
@@ -3267,7 +3300,7 @@ if ($action === 'delegations_save') {
     $gKey = group_key_from_meta($meta);
     $type = (string)($frow['field_type'] ?? '');
     $isMultiline = (int)($frow['is_multiline'] ?? 0);
-    if (!can_user_edit_field($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline)) {
+    if (!can_user_edit_field_in_view($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline, $delegatedView)) {
       throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
     }
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
@@ -3345,11 +3378,15 @@ if ($action === 'delegations_save') {
   if ($action === 'child_value_update') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
     $fieldId = (int)($data['child_field_id'] ?? 0);
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
     $deleteValue = array_key_exists('value_text', $data) ? ($data['value_text'] === null) : false;
     $valueText = array_key_exists('value_text', $data) ? (string)$data['value_text'] : null;
 
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
     if ($fieldId <= 0) throw new RuntimeException('child_field_id fehlt.');
+    if ($delegatedView && ($u['role'] ?? '') !== 'admin') {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $st = $pdo->prepare(
       "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id,
@@ -3436,7 +3473,11 @@ if ($action === 'delegations_save') {
 
   if ($action === 'unlock_child_entry') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+    if ($delegatedView && ($u['role'] ?? '') !== 'admin') {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $st = $pdo->prepare(
       "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id

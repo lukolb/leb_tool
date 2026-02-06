@@ -13,6 +13,9 @@ $userId = (int)($u['id'] ?? 0);
 $classId = (int)($_GET['class_id'] ?? 0);
 $studentId = (int)($_GET['student_id'] ?? 0);
 $delegatedMode = ((int)($_GET['delegated'] ?? 0) === 1);
+$cfg = app_config();
+$delegationCfg = $cfg['delegation'] ?? [];
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 
 if ($classId <= 0 || $studentId <= 0) {
   render_teacher_header(t('teacher.pdf_entry.title'));
@@ -94,7 +97,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     pointer-events: auto;
     --radio-color: royalblue;
   }
-  .pdf-field.is-readonly:not(.is-student) {
+  .pdf-field.is-readonly {
     color: #2b4a77;
     border: none;
     background-color: transparent;
@@ -107,6 +110,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   }
   .pdf-field.is-readonly:not(.is-student) {
     --radio-color: lightsteelblue;
+  }
+  .pdf-field.is-readonly.is-student {
+    --radio-color: yellowgreen;
   }
   .pdf-field.is-system {
     color: #2b4a77;
@@ -313,14 +319,25 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     </div>
     <div class="muted" style="margin-top:6px;"><?=h(t('teacher.pdf_entry.autosave_hint'))?></div>
     <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-      <label class="pdf-toggle" title="<?=h(t('teacher.entry.show_student_values_hint'))?>">
+      <label class="toggle-switch" title="<?=h(t('teacher.entry.show_student_values_hint'))?>">
         <input type="checkbox" id="toggleStudentValues" />
-        <?=h(t('teacher.entry.show_student_values'))?>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.show_student_values'))?></span>
       </label>
-      <label class="pdf-toggle">
-        <input type="checkbox" id="toggleStudentEdit" />
-        <?=h(t('teacher.entry.edit_student_values'))?>
-      </label>
+      <?php if (!$delegatedMode): ?>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleStudentEdit" />
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.edit_student_values'))?></span>
+        </label>
+      <?php endif; ?>
+      <?php if ($delegatedMode && $delegationShowOtherFieldsReadonly): ?>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleDelegationOtherFields" />
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
+        </label>
+      <?php endif; ?>
       <span class="pill-mini" id="savePill" style="display:none;"><span class="spin"></span> <?=h(t('teacher.entry.save_status_saving'))?></span>
       <div class="save-status" id="saveStatus" aria-live="polite" style="display:none;"></div>
     </div>
@@ -346,6 +363,9 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const classId = <?=json_encode($classId)?>;
   const studentId = <?=json_encode($studentId)?>;
+  const DELEGATED_MODE = <?= $delegatedMode ? 'true' : 'false' ?>;
+  const DELEGATED_READONLY_VISIBLE = <?= $delegationShowOtherFieldsReadonly ? 'true' : 'false' ?>;
+  const DELEGATION_OTHER_FIELDS_KEY = 'delegation_show_other_fields';
   const csrf = <?=json_encode(csrf_token())?>;
   const UI_LANG = <?=json_encode(ui_lang())?>;
   const I18N = <?=json_encode([
@@ -372,6 +392,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const saveStatus = document.getElementById('saveStatus');
   const toggleStudentValues = document.getElementById('toggleStudentValues');
   const toggleStudentEdit = document.getElementById('toggleStudentEdit');
+  const toggleDelegationOtherFields = document.getElementById('toggleDelegationOtherFields');
   const toggleStudentEditWrap = toggleStudentEdit ? toggleStudentEdit.closest('label') : null;
   const studentEditWarning = document.getElementById('studentEditWarning');
   const studentEditConfirmText = <?=json_encode(t('teacher.entry.edit_student_values_confirm'))?>;
@@ -391,6 +412,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let showStudentValues = false;
   let allowStudentEdit = false;
   let isDelegatedView = false;
+  let delegatedShowOtherFields = DELEGATED_READONLY_VISIBLE;
 
   function showError(msg){
     if (!errBox || !errMsg) return;
@@ -431,6 +453,49 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
   }
 
+  function initDelegationFieldToggle(){
+    if (!DELEGATED_MODE || !DELEGATED_READONLY_VISIBLE || !toggleDelegationOtherFields) return;
+    const stored = window.localStorage.getItem(DELEGATION_OTHER_FIELDS_KEY);
+    if (stored !== null) delegatedShowOtherFields = stored === '1';
+    toggleDelegationOtherFields.checked = delegatedShowOtherFields;
+    toggleDelegationOtherFields.addEventListener('change', () => {
+      delegatedShowOtherFields = toggleDelegationOtherFields.checked;
+      window.localStorage.setItem(DELEGATION_OTHER_FIELDS_KEY, delegatedShowOtherFields ? '1' : '0');
+      applyDelegationFieldVisibility();
+      renderPages({ preserveScroll: true });
+    });
+  }
+
+  function applyDelegationFieldVisibility(){
+    if (!state) return;
+    if (!DELEGATED_MODE || !DELEGATED_READONLY_VISIBLE) {
+      state.fields = state.all_fields || state.fields || [];
+      return;
+    }
+    const fields = state.all_fields || state.fields || [];
+    const allowedChildIds = new Set();
+    fields.forEach((field) => {
+      if (Number(field.system_bound || 0) === 1) return;
+      if (String(field.scope || '') === 'class') return;
+      if (Number(field.child_only || 0) === 1) return;
+      if (Number(field.can_edit || 0) !== 1) return;
+      const childFieldId = Number(field.child_field_id || 0);
+      if (childFieldId > 0) allowedChildIds.add(childFieldId);
+    });
+    if (delegatedShowOtherFields) {
+      state.fields = fields;
+      return;
+    }
+    state.fields = fields.filter((field) => {
+      if (Number(field.system_bound || 0) === 1) return true;
+      if (String(field.scope || '') === 'class') return true;
+      if (Number(field.child_only || 0) === 1) {
+        return allowedChildIds.has(Number(field.id || 0));
+      }
+      return Number(field.can_edit || 0) === 1;
+    });
+  }
+
   function setSaving(active){
     if (!savePill) return;
     savePill.style.display = active ? '' : 'none';
@@ -467,7 +532,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   }
 
   async function api(action, payload, options = {}){
-    const body = { action, csrf_token: csrf, ...payload };
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
+    const body = { action, csrf_token: csrf, ...delegated, ...payload };
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
@@ -622,7 +688,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     });
 
     let updated = false;
-    state.fields = (state.fields || []).map((f) => {
+    const baseFields = state.all_fields || state.fields || [];
+    const enriched = baseFields.map((f) => {
       const widgets = (widgetMap.get(f.field_name) || []).map((w) => ({
         page: normalizePage(w.pNum),
         rect: w.rect,
@@ -641,6 +708,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       updated = true;
       return { ...f, page: hit.page, rect: hit.rect, ...withWidgets };
     });
+    state.all_fields = enriched;
+    applyDelegationFieldVisibility();
 
     if (updated) {
       await renderPages();
@@ -675,10 +744,17 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     return type === 'radio' || (type === 'select' && options.length <= 10);
   }
 
+  function canEditPdfField(field){
+    const isChildOnly = Number(field.child_only || 0) === 1;
+    if (DELEGATED_MODE && isChildOnly) return false;
+    return !!field.can_edit;
+  }
+
   function createRadioWidget(field, optionValue, optionLabel, currentValue, groupName){
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field pdf-field--widget';
-    if (!field.can_edit) wrapper.classList.add('is-readonly');
+    const canEdit = canEditPdfField(field);
+    if (!canEdit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
     if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
@@ -688,7 +764,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     input.value = String(optionValue ?? '');
     input.checked = String(currentValue ?? '') === String(optionValue ?? '');
     input.setAttribute('aria-label', String(optionLabel || field.label || field.field_name || ''));
-    if (!field.can_edit) input.disabled = true;
+    if (!canEdit) input.disabled = true;
     bindRadioToggle(input, field, groupName);
 
     wrapper.appendChild(input);
@@ -698,7 +774,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   function createFieldInput(field, value){
     const wrapper = document.createElement('div');
     wrapper.className = 'pdf-field';
-    if (!field.can_edit) wrapper.classList.add('is-readonly');
+    const canEdit = canEditPdfField(field);
+    if (!canEdit) wrapper.classList.add('is-readonly');
     if (Number(field.child_only || 0) === 1) wrapper.classList.add('is-student');
     if (Number(field.system_bound || 0) === 1) wrapper.classList.add('is-system');
 
@@ -730,7 +807,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
         input.name = name;
         input.value = String(opt.value ?? '');
         input.checked = resolvedValue === input.value;
-        if (!field.can_edit) input.disabled = true;
+        if (!canEdit) input.disabled = true;
         bindRadioToggle(input, field, name);
         const text = document.createElement('span');
         text.textContent = String(opt.label_resolved ?? opt.label ?? opt.value ?? '');
@@ -771,11 +848,11 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
     if (el && el.tagName !== 'DIV') {
       el.setAttribute('aria-label', String(field.label || field.field_name || ''));
-      if (!field.can_edit) el.disabled = true;
+      if (!canEdit) el.disabled = true;
     }
 
     const handler = () => {
-      if (!field.can_edit) return;
+      if (!canEdit) return;
       let nextVal = '';
       if (type === 'checkbox') {
         nextVal = el.checked ? '1' : '0';
@@ -795,7 +872,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
-    if (type === 'date' && field.can_edit) {
+    if (type === 'date' && canEdit) {
       initDatePicker(el, field);
     }
     if (isTextField(field) && String(field.delegate_other || '').trim() !== '') {
@@ -1045,6 +1122,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
 
   function queueSave(field, value){
     if (!state) return;
+    if (!canEditPdfField(field)) return;
     const isChildOnly = Number(field.child_only || 0) === 1;
     const target = isChildOnly ? (state.values_child = state.values_child || {}) : (state.values = state.values || {});
     target[field.id] = value;
@@ -1075,6 +1153,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     updateSavingIndicator();
     try {
       if (!state) return;
+      if (!canEditPdfField(field)) {
+        showSaveStatus(tPdf('save_failed'), true);
+        return;
+      }
       if (Number(field.child_only || 0) === 1) {
         const res = await api('child_value_update', {
           report_instance_id: state.student.report_instance_id,
@@ -1115,6 +1197,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const data = await api('load_pdf', { class_id: classId, student_id: studentId });
       state = data;
       isDelegatedView = Boolean(data?.delegated_view);
+      if (state && Array.isArray(state.fields)) {
+        state.all_fields = state.fields.slice();
+      }
+      applyDelegationFieldVisibility();
       if (isDelegatedView) {
         allowStudentEdit = false;
         if (toggleStudentEdit) {
@@ -1215,6 +1301,8 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     showStudentValues = true;
     if (toggleStudentValues) toggleStudentValues.checked = true;
   }
+
+  initDelegationFieldToggle();
 
   document.addEventListener('keydown', (event) => {
   if (!event.altKey) return;

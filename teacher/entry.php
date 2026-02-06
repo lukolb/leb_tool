@@ -20,6 +20,13 @@ if ($meetingMode && $childMode) $meetingMode = false;
 $jsDelegatedMode = $delegatedMode ? 1 : 0;
 $jsUserId = $userId;
 $jsCanDelegate = $delegatedMode ? 0 : 1;
+$cfg = app_config();
+$delegationCfg = $cfg['delegation'] ?? [];
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
+$jsDelegationShowOtherFieldsReadonly = $delegationShowOtherFieldsReadonly ? 1 : 0;
+$delegationNotice = $delegationShowOtherFieldsReadonly
+  ? t('teacher.entry.delegation_notice_readonly')
+  : t('teacher.entry.delegation_notice');
 
 if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
@@ -932,10 +939,6 @@ render_teacher_header($pageTitle);
 <?php endif; ?>
 
 <div class="card" id="classSelectCard">
-
-  <?php if ($delegatedMode): ?>
-    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h(t('teacher.entry.delegation_notice'))?></div>
-  <?php endif; ?>
   <?php if (!$meetingMode): ?>
     <p class="muted" style="margin-top:-6px;">
       <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
@@ -945,6 +948,18 @@ render_teacher_header($pageTitle);
         <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
       <?php endif; ?>
     </p>
+  <?php endif; ?>
+
+  <?php if ($delegatedMode): ?>
+    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h($delegationNotice)?></div>
+    <?php if ($delegationShowOtherFieldsReadonly): ?>
+      <label class="toggle-switch" style="margin-top:8px;">
+        <input type="checkbox" id="toggleDelegationOtherFields" checked>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.delegation_show_other_fields'))?></span>
+      </label>
+      <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_show_other_fields_hint'))?></div>
+    <?php endif; ?>
   <?php endif; ?>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
@@ -1329,7 +1344,11 @@ render_teacher_header($pageTitle);
     <h2><?=h(t('teacher.entry.student_fields.title'))?></h2>
       <?php if (!$childMode): ?>
         <label id="showStudentEntries" class="pill-mini" style="cursor:pointer; user-select:none;">
-          <input type="checkbox" id="toggleChild" style="margin-right:8px;"> <?=h(t('teacher.entry.show_child_entries'))?>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggleChild">
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-label"><?=h(t('teacher.entry.show_child_entries'))?></span>
+        </label>
         </label>
       <?php else: ?>
         <span id="showStudentEntries" style="display:none;"></span>
@@ -1337,10 +1356,18 @@ render_teacher_header($pageTitle);
   <div id="metaTop" class="muted" style="margin-bottom:10px;"><?=h(t('teacher.entry.loading'))?></div>
   <div id="entryFilterRow" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
     <label class="pill-mini" for="studentMissingOnly" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="studentMissingOnly" style="margin-right:6px;"> <?=h(t('teacher.entry.only_open'))?>
+      <label class="toggle-switch">
+        <input type="checkbox" id="studentMissingOnly">
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.only_open'))?></span>
+      </label>
     </label>
     <label class="pill-mini" for="optionButtonsToggle" style="cursor:pointer; user-select:none; white-space:nowrap;">
-      <input type="checkbox" id="optionButtonsToggle" style="margin-right:6px;"> <?=h(t('teacher.entry.option_buttons'))?>
+      <label class="toggle-switch">
+        <input type="checkbox" id="optionButtonsToggle">
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('teacher.entry.option_buttons'))?></span>
+      </label>
     </label>
   </div>
   <div class="row" id="viewSelectRow" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px;">
@@ -1855,6 +1882,8 @@ render_teacher_header($pageTitle);
   const DELEGATED_MODE = (<?= (int)$jsDelegatedMode ?> === 1);
   const CURRENT_USER_ID = Number(<?= (int)$jsUserId ?>);
   const CAN_DELEGATE = (<?= (int)$jsCanDelegate ?> === 1);
+  const DELEGATED_READONLY_VISIBLE = (<?= (int)$jsDelegationShowOtherFieldsReadonly ?> === 1);
+  const DELEGATION_OTHER_FIELDS_KEY = 'delegation_show_other_fields';
 
   // ✅ NEW: UI language for option label rendering (de/en)
   const UI_LANG = <?= json_encode(ui_lang()) ?>;
@@ -1932,6 +1961,7 @@ render_teacher_header($pageTitle);
     'progress_missing_teacher' => t('teacher.entry.progress.missing_teacher'),
     'progress_status_line' => t('teacher.entry.progress.status_line'),
     'progress_badge_open' => t('teacher.entry.progress.badge_open'),
+    'progress_open_breakdown' => t('teacher.entry.progress.open_breakdown'),
     'student_badge_child' => t('teacher.entry.progress.student_badge_child'),
     'student_badge_both' => t('teacher.entry.progress.student_badge_both'),
     'no_results' => t('teacher.entry.no_results'),
@@ -2140,6 +2170,7 @@ render_teacher_header($pageTitle);
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
   const btnPdfEntry = document.getElementById('btnPdfEntry');
+  const delegationOtherFieldsToggle = document.getElementById('toggleDelegationOtherFields');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
   const studentMissingOnly = document.getElementById('studentMissingOnly');
@@ -2267,6 +2298,22 @@ render_teacher_header($pageTitle);
   let aiCache = new Map();
   let aiCurrentStudent = null;
   let aiLoading = false;
+  let delegatedShowOtherFields = DELEGATED_READONLY_VISIBLE;
+
+  if (DELEGATED_MODE && DELEGATED_READONLY_VISIBLE) {
+    const stored = window.localStorage.getItem(DELEGATION_OTHER_FIELDS_KEY);
+    if (stored !== null) delegatedShowOtherFields = stored === '1';
+    if (delegationOtherFieldsToggle) {
+      delegationOtherFieldsToggle.checked = delegatedShowOtherFields;
+      delegationOtherFieldsToggle.addEventListener('change', () => {
+        delegatedShowOtherFields = delegationOtherFieldsToggle.checked;
+        window.localStorage.setItem(DELEGATION_OTHER_FIELDS_KEY, delegatedShowOtherFields ? '1' : '0');
+        if (state.class_id) {
+          loadClass(state.class_id);
+        }
+      });
+    }
+  }
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
 
@@ -2337,11 +2384,20 @@ render_teacher_header($pageTitle);
     return out;
   }
 
+  function isEditableField(field, group){
+    const groupEditable = Number(group?.can_edit || 0) === 1;
+    const fieldEditable = Number(field?.can_edit || 0) === 1;
+    return groupEditable && fieldEditable;
+  }
+
   function activeProgressFieldIds(reportId){
     const ids = [];
     const groups = CHILD_MODE ? activeGroupsForReport(reportId) : activeGroups();
     groups.forEach(g => {
-      (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
+      (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
+        ids.push(Number(f.id));
+      });
     });
     return ids;
   }
@@ -2379,6 +2435,7 @@ render_teacher_header($pageTitle);
 
     (state.groups || []).forEach(g => {
       (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
         const type = String(f.field_type || '');
         const hasOptions = Array.isArray(f.options) && f.options.length > 0;
         if (!hasOptions) return;
@@ -2502,14 +2559,20 @@ render_teacher_header($pageTitle);
     const label = childLabel(f);
     const baseAttrs = `data-child-field="${esc(childId)}" data-child-label="${esc(label)}"`;
     const deleteDisabled = rawChild ? '' : 'disabled';
-
-    return `
-      <div class="child">
-        <div><strong>${esc(tEntry('student_label'))}</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+    const actionsAllowed = !DELEGATED_MODE;
+    const actionsHtml = actionsAllowed
+      ? `
         <div class="child-actions" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
           <button class="btn secondary" type="button" data-edit-child="${esc(reportId)}" ${baseAttrs}>${esc(tEntry('edit'))}</button>
           <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>${esc(tEntry('delete'))}</button>
         </div>
+      `
+      : '';
+
+    return `
+      <div class="child">
+        <div><strong>${esc(tEntry('student_label'))}</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+        ${actionsHtml}
       </div>
     `;
   }
@@ -2763,10 +2826,11 @@ render_teacher_header($pageTitle);
 
   async function api(action, payload, options = {}){
     const keepalive = !!options.keepalive;
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
+      body: JSON.stringify({ action, csrf_token: csrf, ...delegated, ...payload }),
       keepalive
     });
     const j = await res.json().catch(()=>null);
@@ -2775,7 +2839,8 @@ render_teacher_header($pageTitle);
   }
 
   function fireAndForget(action, payload){
-    const body = JSON.stringify({ action, csrf_token: csrf, ...payload });
+    const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
+    const body = JSON.stringify({ action, csrf_token: csrf, ...delegated, ...payload });
     if (navigator.sendBeacon) {
       const blob = new Blob([body], { type: 'application/json' });
       navigator.sendBeacon(apiUrl, blob);
@@ -3266,19 +3331,20 @@ render_teacher_header($pageTitle);
   function teacherProgressFieldIds(){
     const ids = [];
     activeGroups().forEach(g => {
-      (g.fields || []).forEach(f => { ids.push(Number(f.id)); });
+      (g.fields || []).forEach(f => {
+        if (!isEditableField(f, g)) return;
+        ids.push(Number(f.id));
+      });
     });
     return ids;
   }
 
   function computeDoneFromTeacherValues(reportId, fieldIds){
-    const ridKey = String(reportId);
-    const row = CHILD_MODE ? (state.values_child[ridKey] || {}) : (state.values_teacher[ridKey] || {});
     let done = 0;
-    for (const fid of fieldIds) {
-      const v = row[String(fid)];
+    fieldIds.forEach(fid => {
+      const v = activeFieldValue(reportId, fid);
       if (v !== null && typeof v !== 'undefined' && String(v).trim() !== '') done++;
-    }
+    });
     return done;
   }
 
@@ -3406,6 +3472,30 @@ render_teacher_header($pageTitle);
     classFieldsProgressBar.classList.toggle('ok', missing === 0);
   }
 
+  function shouldShowOpenBreakdown(){
+    return !CHILD_MODE && !DELEGATED_MODE && !!state.is_class_teacher;
+  }
+
+  function progressBreakdownForStudent(student){
+    if (!student) return null;
+    const reportId = Number(student.report_instance_id || 0);
+    let ownMissing = 0;
+    let delegatedMissing = 0;
+    activeGroups().forEach(g => {
+      (g.fields || []).forEach(f => {
+        const missing = String(activeFieldValue(reportId, f.id) ?? '').trim() === '';
+        if (isEditableField(f, g)) {
+          if (missing) ownMissing++;
+        } else if (missing) {
+          delegatedMissing++;
+        }
+      });
+    });
+    const childMissing = Number(student.progress_child_missing || 0);
+    const totalMissing = ownMissing + delegatedMissing + childMissing;
+    return { totalMissing, childMissing, delegatedMissing, ownMissing };
+  }
+
   function updateStudentRowUI(student){
     if (!student) return;
     const row = document.getElementById(`srow-${student.id}`);
@@ -3435,6 +3525,19 @@ render_teacher_header($pageTitle);
         missing: prog.missing,
         missingLabel,
       });
+    }
+
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
+    const breakdownEl = row.querySelector('.js-srow-breakdown');
+    if (breakdownEl) {
+      breakdownEl.textContent = breakdown
+        ? tfmtEntry('progress_open_breakdown', {
+            total: breakdown.totalMissing,
+            child: breakdown.childMissing,
+            delegated: breakdown.delegatedMissing,
+            own: breakdown.ownMissing,
+          })
+        : '';
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -4840,7 +4943,7 @@ render_teacher_header($pageTitle);
       const missingCls = (v === '') ? 'missing' : '';
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
       const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
-      const clearBtn = CHILD_MODE
+      const clearBtn = (CHILD_MODE && !DELEGATED_MODE)
         ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
         : '';
       const actionsHtml = (combinedHtml || historyHtml || clearBtn)
@@ -4990,12 +5093,22 @@ render_teacher_header($pageTitle);
       const missingLabel = CHILD_MODE
         ? tfmtEntry('progress_missing_child', { count: childMissing })
         : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
+      const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+      const breakdownHtml = breakdown
+        ? `<div class="sub muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
+            total: breakdown.totalMissing,
+            child: breakdown.childMissing,
+            delegated: breakdown.delegatedMissing,
+            own: breakdown.ownMissing,
+          }))}</div>`
+        : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
           <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}</div>
+          ${breakdownHtml}
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
@@ -5079,15 +5192,19 @@ render_teacher_header($pageTitle);
     activeGroupsForReport(reportId).forEach(g => {
       if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
-      fields = ui.studentMissingOnly
-        ? fields.filter(f => isActiveFieldMissing(reportId, f.id))
-        : fields;
+      const progressFields = fields.filter(f => isEditableField(f, g));
+      if (ui.studentMissingOnly) {
+        fields = progressFields.filter(f => isActiveFieldMissing(reportId, f.id));
+      }
 
       if (!fields.length) return;
 
-      const _gtTotal = fields.length;
+      const _gtTotal = progressFields.length;
       let _gtDone = 0;
-      fields.forEach(_f => { const _v = activeFieldValue(reportId, _f.id); if (String(_v).trim() !== '') _gtDone++; });
+      progressFields.forEach(_f => {
+        const _v = activeFieldValue(reportId, _f.id);
+        if (String(_v).trim() !== '') _gtDone++;
+      });
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
@@ -5183,7 +5300,7 @@ render_teacher_header($pageTitle);
       });
     });
 
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(studentForm);
     }
     wireActiveInputs(studentForm);
@@ -5365,7 +5482,7 @@ render_teacher_header($pageTitle);
     html += renderStudentFields(step.fields, reportId, locked, { showSubgroups: false });
     meetingStepBody.innerHTML = html || `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
 
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(meetingStepBody);
     }
     wireActiveInputs(meetingStepBody);
@@ -5532,7 +5649,7 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
     return;
@@ -5614,7 +5731,7 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
   }
@@ -5697,7 +5814,7 @@ render_teacher_header($pageTitle);
     });
 
     wireActiveInputs(itemBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(itemBody);
     }
   }
@@ -5715,7 +5832,8 @@ render_teacher_header($pageTitle);
       state.groups = j.groups;
       
       // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
-      if (DELEGATED_MODE) {
+      // unless read-only visibility is enabled for other fields.
+      if (DELEGATED_MODE && (!DELEGATED_READONLY_VISIBLE || !delegatedShowOtherFields)) {
         const uid = CURRENT_USER_ID;
         state.groups = (state.groups || []).filter(g => {
           const delUids = Array.isArray(g?.delegation?.user_ids)
@@ -5761,7 +5879,8 @@ render_teacher_header($pageTitle);
       });
 
       // In delegated mode: class fields should not be visible/editable here
-      if (DELEGATED_MODE) {
+      // unless read-only visibility is enabled.
+      if (DELEGATED_MODE && (!DELEGATED_READONLY_VISIBLE || !delegatedShowOtherFields)) {
         state.class_fields = null;
       }
 

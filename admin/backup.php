@@ -370,6 +370,7 @@ function renderSettingsOptions(){
     { key: 'student', label: tBackup('settings_student') },
     { key: 'parent', label: tBackup('settings_parent') },
     { key: 'signature', label: tBackup('settings_signature') },
+    { key: 'delegation', label: tBackup('settings_delegation') },
   ];
   const wrap = document.createElement('div');
   wrap.className = 'grid';

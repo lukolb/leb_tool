@@ -132,6 +132,7 @@ function export_settings_payload(): array {
     'student' => $cfg['student'] ?? [],
     'parent' => $cfg['parent'] ?? [],
     'signature' => $cfg['signature'] ?? [],
+    'delegation' => $cfg['delegation'] ?? [],
   ];
   return $out;
 }
@@ -152,7 +153,7 @@ function apply_settings_payload(array $payload, array $allowed): void {
     $cfg['app']['default_school_year'] = $payload['app']['default_school_year'] ?? ($cfg['app']['default_school_year'] ?? '');
     $cfg['app']['uploads_dir'] = $payload['app']['uploads_dir'] ?? ($cfg['app']['uploads_dir'] ?? 'uploads');
   }
-  foreach (['mail','ai','student','parent','signature'] as $key) {
+  foreach (['mail','ai','student','parent','signature','delegation'] as $key) {
     if (!isset($allowedSet[$key])) continue;
     if (isset($payload[$key]) && is_array($payload[$key])) {
       $cfg[$key] = $payload[$key];
