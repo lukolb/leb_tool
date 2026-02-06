@@ -375,7 +375,7 @@ function load_class_values(PDO $pdo, int $classReportInstanceId): array {
 }
 
 function missing_fields_for_student(array $templateFields, array $values, array &$nonEditableOut = null, array $lockedFieldNames = []): array {
-  // IMPORTANT: warn on ALL fields (not only required)
+  // IMPORTANT: warn only on required fields
   $missing = [];
   $nonEditable = [];
   foreach ($templateFields as $f) {
@@ -386,6 +386,7 @@ function missing_fields_for_student(array $templateFields, array $values, array 
     $type = (string)($f['field_type'] ?? 'text');
     $label = (string)($f['label'] ?? $name);
     $required = (int)($f['is_required'] ?? 0) === 1;
+    if (!$required) continue;
 
     $canChild = (int)($f['can_child_edit'] ?? 0) === 1;
     $canTeacher = (int)($f['can_teacher_edit'] ?? 0) === 1;
