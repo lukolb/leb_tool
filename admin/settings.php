@@ -383,54 +383,6 @@ if (is_file($introAbs)) {
 
 render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 ?>
-<style>
-  .toggle-switch{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    cursor:pointer;
-    user-select:none;
-  }
-  .toggle-switch input{
-    position:absolute;
-    opacity:0;
-    pointer-events:none;
-  }
-  .toggle-slider{
-    width:44px;
-    height:24px;
-    border-radius:999px;
-    background:#d9dde2;
-    position:relative;
-    transition:background 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.12);
-  }
-  .toggle-slider::after{
-    content:'';
-    position:absolute;
-    top:2px;
-    left:2px;
-    width:20px;
-    height:20px;
-    border-radius:50%;
-    background:#fff;
-    box-shadow:0 2px 6px rgba(0,0,0,0.25);
-    transition:transform 0.2s ease;
-  }
-  .toggle-switch input:checked + .toggle-slider{
-    background:linear-gradient(135deg, #17d255, #11b645);
-  }
-  .toggle-switch input:checked + .toggle-slider::after{
-    transform:translateX(20px);
-  }
-  .toggle-switch input:disabled + .toggle-slider{
-    opacity:0.5;
-    box-shadow:none;
-  }
-  .toggle-switch input:disabled ~ .toggle-label{
-    opacity:0.6;
-  }
-</style>
 <div class="card">
     <h1><?=h(t('admin.settings.heading', 'Einstellungen'))?></h1>
 </div>
