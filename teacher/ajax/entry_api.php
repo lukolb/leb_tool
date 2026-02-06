@@ -3378,11 +3378,15 @@ if ($action === 'delegations_save') {
   if ($action === 'child_value_update') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
     $fieldId = (int)($data['child_field_id'] ?? 0);
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
     $deleteValue = array_key_exists('value_text', $data) ? ($data['value_text'] === null) : false;
     $valueText = array_key_exists('value_text', $data) ? (string)$data['value_text'] : null;
 
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
     if ($fieldId <= 0) throw new RuntimeException('child_field_id fehlt.');
+    if ($delegatedView && ($u['role'] ?? '') !== 'admin') {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $st = $pdo->prepare(
       "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id,
@@ -3469,7 +3473,11 @@ if ($action === 'delegations_save') {
 
   if ($action === 'unlock_child_entry') {
     $reportId = (int)($data['report_instance_id'] ?? 0);
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
     if ($reportId <= 0) throw new RuntimeException('report_instance_id fehlt.');
+    if ($delegatedView && ($u['role'] ?? '') !== 'admin') {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
 
     $st = $pdo->prepare(
       "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id

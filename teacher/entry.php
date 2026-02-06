@@ -2559,14 +2559,20 @@ render_teacher_header($pageTitle);
     const label = childLabel(f);
     const baseAttrs = `data-child-field="${esc(childId)}" data-child-label="${esc(label)}"`;
     const deleteDisabled = rawChild ? '' : 'disabled';
-
-    return `
-      <div class="child">
-        <div><strong>${esc(tEntry('student_label'))}</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+    const actionsAllowed = !DELEGATED_MODE;
+    const actionsHtml = actionsAllowed
+      ? `
         <div class="child-actions" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
           <button class="btn secondary" type="button" data-edit-child="${esc(reportId)}" ${baseAttrs}>${esc(tEntry('edit'))}</button>
           <button class="btn secondary" type="button" data-delete-child="${esc(reportId)}" ${baseAttrs} ${deleteDisabled}>${esc(tEntry('delete'))}</button>
         </div>
+      `
+      : '';
+
+    return `
+      <div class="child">
+        <div><strong>${esc(tEntry('student_label'))}</strong> ${shownChild ? esc(shownChild) : '<span class="muted">—</span>'}</div>
+        ${actionsHtml}
       </div>
     `;
   }
@@ -4937,7 +4943,7 @@ render_teacher_header($pageTitle);
       const missingCls = (v === '') ? 'missing' : '';
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
       const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
-      const clearBtn = CHILD_MODE
+      const clearBtn = (CHILD_MODE && !DELEGATED_MODE)
         ? `<button class="btn secondary" type="button" data-clear-child="${esc(reportId)}" data-child-field="${esc(f.id)}" data-child-label="${esc(lbl)}">${esc(CHILD_CLEAR_LABEL)}</button>`
         : '';
       const actionsHtml = (combinedHtml || historyHtml || clearBtn)
@@ -5294,7 +5300,7 @@ render_teacher_header($pageTitle);
       });
     });
 
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(studentForm);
     }
     wireActiveInputs(studentForm);
@@ -5476,7 +5482,7 @@ render_teacher_header($pageTitle);
     html += renderStudentFields(step.fields, reportId, locked, { showSubgroups: false });
     meetingStepBody.innerHTML = html || `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
 
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(meetingStepBody);
     }
     wireActiveInputs(meetingStepBody);
@@ -5643,7 +5649,7 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
     return;
@@ -5725,7 +5731,7 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
   }
@@ -5808,7 +5814,7 @@ render_teacher_header($pageTitle);
     });
 
     wireActiveInputs(itemBody);
-    if (!CHILD_MODE) {
+    if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(itemBody);
     }
   }
