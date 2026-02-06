@@ -939,6 +939,16 @@ render_teacher_header($pageTitle);
 <?php endif; ?>
 
 <div class="card" id="classSelectCard">
+  <?php if (!$meetingMode): ?>
+    <p class="muted" style="margin-top:-6px;">
+      <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
+      <?php if ($childMode): ?>
+        <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
+      <?php else: ?>
+        <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
+      <?php endif; ?>
+    </p>
+  <?php endif; ?>
 
   <?php if ($delegatedMode): ?>
     <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h($delegationNotice)?></div>
@@ -950,16 +960,6 @@ render_teacher_header($pageTitle);
       </label>
       <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_show_other_fields_hint'))?></div>
     <?php endif; ?>
-  <?php endif; ?>
-  <?php if (!$meetingMode): ?>
-    <p class="muted" style="margin-top:-6px;">
-      <?=h(t('teacher.entry.tips'))?> <strong>Tab</strong> <?=h(t('teacher.entry.tip_next'))?> · <strong>Shift+Tab</strong> <?=h(t('teacher.entry.tip_prev'))?> ·
-      <?php if ($childMode): ?>
-        <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
-      <?php else: ?>
-        <strong>Alt+S</strong> <?=h(t('teacher.entry.tip_toggle_child'))?> · <strong>Alt+M</strong> <?=h(t('teacher.entry.tip_switch_view'))?>
-      <?php endif; ?>
-    </p>
   <?php endif; ?>
 
   <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">

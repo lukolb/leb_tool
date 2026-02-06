@@ -112,7 +112,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     --radio-color: lightsteelblue;
   }
   .pdf-field.is-readonly.is-student {
-    --radio-color: #b8e6b8;
+    --radio-color: yellowgreen;
   }
   .pdf-field.is-system {
     color: #2b4a77;
