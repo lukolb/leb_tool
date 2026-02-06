@@ -989,10 +989,11 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
 
   $groupKey = group_key_from_meta($meta);
   $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
-  if (!$assigned) return true;
+  $isClassTeacher = user_is_class_teacher($pdo, $uid, $classId);
+  if (!$assigned) return $isClassTeacher;
 
   if (is_free_text_field($fieldType, $isMultiline)) {
-    return in_array($uid, $assigned, true) || user_is_class_teacher($pdo, $uid, $classId);
+    return in_array($uid, $assigned, true) || $isClassTeacher;
   }
 
   return in_array($uid, $assigned, true);
@@ -2266,6 +2267,9 @@ try {
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
     $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
+    $cfg = app_config();
+    $delegationCfg = $cfg['delegation'] ?? [];
+    $delegateShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
     $delegateGroupKeys = [];
     if ($delegateOnly && $delegations) {
       foreach ($delegations as $gk => $del) {
@@ -2320,6 +2324,7 @@ try {
       $groupKey = group_key_from_meta($meta);
       if (
         $delegateOnly
+        && !$delegateShowOtherFieldsReadonly
         && !$isSystemBound
         && !in_array($groupKey, $delegateGroupKeys, true)
       ) {

@@ -238,6 +238,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['export']['allow_editable_pdf'] = isset($_POST['export_allow_editable']);
     }
 
+    // ---- Delegation settings ----
+    if ($action === 'save' && isset($_POST['delegation_settings_present'])) {
+      if (!isset($cfg['delegation']) || !is_array($cfg['delegation'])) $cfg['delegation'] = [];
+      $cfg['delegation']['show_other_fields_readonly'] = isset($_POST['delegation_show_other_fields_readonly']);
+    }
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -329,6 +335,7 @@ $fromEmail = $mail['from_email'] ?? t('admin.settings.mail.fallback_email', 'no-
 $fromName  = $mail['from_name'] ?? ($org ?: t('admin.settings.default_org', 'LEB Tool'));
 
 $studentCfg = $cfg['student'] ?? [];
+$delegationCfg = $cfg['delegation'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
@@ -337,6 +344,8 @@ $aiStudentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['studen
 $aiProvider = $ai['provider'] ?? 'openai';
 $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
+
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
@@ -687,6 +696,26 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <input type="checkbox" name="export_allow_editable" value="1" <?=$exportAllowEditable ? 'checked' : ''?>> <?=h(t('admin.settings.export.allow_editable', 'PDFs nach Export bearbeitbar lassen'))?>
     </label>
     <p class="muted"><?=h(t('admin.settings.export.allow_editable_hint', 'Standard: Exportierte PDFs werden automatisch „geflattet“ und sind nicht mehr editierbar.'))?></p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.delegations.title', 'Delegationen'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.delegations.desc', 'Steuere, ob Delegierte zusätzlich alle übrigen Felder schreibgeschützt sehen dürfen.'))?></p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="delegation_settings_present" value="1">
+
+    <label class="chk">
+      <input type="checkbox" name="delegation_show_other_fields_readonly" value="1" <?=$delegationShowOtherFieldsReadonly ? 'checked' : ''?>> <?=h(t('admin.settings.delegations.show_other_fields_readonly', 'Nicht delegierte Felder schreibgeschützt anzeigen'))?>
+    </label>
+    <p class="muted"><?=h(t('admin.settings.delegations.show_other_fields_readonly_hint', 'Wenn aktiviert, sehen Delegierte alle anderen Fachbereiche schreibgeschützt; Bearbeitung bleibt auf delegierte Felder beschränkt.'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

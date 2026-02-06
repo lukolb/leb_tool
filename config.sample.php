@@ -89,4 +89,8 @@ return [
     'from_email' => 'no-reply@example.org',
     'from_name'  => 'LEG Tool',
   ],
+  'delegation' => [
+    // Wenn aktiviert, sehen Delegierte alle übrigen Felder schreibgeschützt.
+    'show_other_fields_readonly' => false,
+  ],
 ];

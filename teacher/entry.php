@@ -20,6 +20,13 @@ if ($meetingMode && $childMode) $meetingMode = false;
 $jsDelegatedMode = $delegatedMode ? 1 : 0;
 $jsUserId = $userId;
 $jsCanDelegate = $delegatedMode ? 0 : 1;
+$cfg = app_config();
+$delegationCfg = $cfg['delegation'] ?? [];
+$delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
+$jsDelegationShowOtherFieldsReadonly = $delegationShowOtherFieldsReadonly ? 1 : 0;
+$delegationNotice = $delegationShowOtherFieldsReadonly
+  ? t('teacher.entry.delegation_notice_readonly')
+  : t('teacher.entry.delegation_notice');
 
 if (($u['role'] ?? '') === 'admin') {
   $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
@@ -934,7 +941,7 @@ render_teacher_header($pageTitle);
 <div class="card" id="classSelectCard">
 
   <?php if ($delegatedMode): ?>
-    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h(t('teacher.entry.delegation_notice'))?></div>
+    <div class="alert" style="margin-top:10px;"><strong><?=h(t('teacher.entry.delegation'))?></strong> <?=h($delegationNotice)?></div>
   <?php endif; ?>
   <?php if (!$meetingMode): ?>
     <p class="muted" style="margin-top:-6px;">
@@ -1855,6 +1862,7 @@ render_teacher_header($pageTitle);
   const DELEGATED_MODE = (<?= (int)$jsDelegatedMode ?> === 1);
   const CURRENT_USER_ID = Number(<?= (int)$jsUserId ?>);
   const CAN_DELEGATE = (<?= (int)$jsCanDelegate ?> === 1);
+  const DELEGATED_READONLY_VISIBLE = (<?= (int)$jsDelegationShowOtherFieldsReadonly ?> === 1);
 
   // ✅ NEW: UI language for option label rendering (de/en)
   const UI_LANG = <?= json_encode(ui_lang()) ?>;
@@ -5715,7 +5723,8 @@ render_teacher_header($pageTitle);
       state.groups = j.groups;
       
       // In delegated mode: show ONLY groups delegated to current user (hide everything else completely)
-      if (DELEGATED_MODE) {
+      // unless read-only visibility is enabled for other fields.
+      if (DELEGATED_MODE && !DELEGATED_READONLY_VISIBLE) {
         const uid = CURRENT_USER_ID;
         state.groups = (state.groups || []).filter(g => {
           const delUids = Array.isArray(g?.delegation?.user_ids)
@@ -5761,7 +5770,8 @@ render_teacher_header($pageTitle);
       });
 
       // In delegated mode: class fields should not be visible/editable here
-      if (DELEGATED_MODE) {
+      // unless read-only visibility is enabled.
+      if (DELEGATED_MODE && !DELEGATED_READONLY_VISIBLE) {
         state.class_fields = null;
       }
 
