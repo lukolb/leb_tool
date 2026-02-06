@@ -171,23 +171,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg['mail']['from_name']  = $fromName;
 
     // ---- AI suggestions (key only) ----
-    $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
-    $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
-    $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
-    $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
-    $aiEnabled = (isset($_POST['ai_enabled']) || $_POST['ai_key'])
-      ? (int)$_POST['ai_enabled']
-      : (int)($cfg['ai']['enabled'] ?? 1);
-    $aiStudentEnabled = isset($_POST['ai_student_enabled'])
-      ? 1
-      : 0;
-    if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
-    $cfg['ai']['enabled'] = ($aiEnabled === 1);
-    $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
-    $cfg['ai']['api_key'] = $aiKey;
-    $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
-    $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
-    $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+    $hasAiPayload = isset($_POST['ai_form']);
+    if ($hasAiPayload) {
+      $aiKey = trim((string)($_POST['ai_key'] ?? ($cfg['ai']['api_key'] ?? '')));
+      $aiProvider = trim((string)($_POST['ai_provider'] ?? ($cfg['ai']['provider'] ?? 'openai')));
+      $aiBaseUrl = trim((string)($_POST['ai_base_url'] ?? ($cfg['ai']['base_url'] ?? 'https://api.openai.com')));
+      $aiModel = trim((string)($_POST['ai_model'] ?? ($cfg['ai']['model'] ?? 'gpt-4o-mini')));
+      $aiEnabled = (isset($_POST['ai_enabled']) || trim((string)($_POST['ai_key'] ?? '')) !== '')
+        ? (isset($_POST['ai_enabled']) ? 1 : 0)
+        : (int)($cfg['ai']['enabled'] ?? 1);
+      $aiStudentEnabled = isset($_POST['ai_student_enabled']) ? 1 : 0;
+      if (!isset($cfg['ai']) || !is_array($cfg['ai'])) $cfg['ai'] = [];
+      $cfg['ai']['enabled'] = ($aiEnabled === 1);
+      $cfg['ai']['student_enabled'] = ($aiStudentEnabled === 1);
+      $cfg['ai']['api_key'] = $aiKey;
+      $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
+      $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
+      $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+    }
 
     // ---- Student wizard settings ----
     if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -568,6 +569,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <form method="post" autocomplete="off" id="aiForm">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
+    <input type="hidden" name="ai_form" value="1">
 
     <div class="chk">
       <label class="toggle-switch">
