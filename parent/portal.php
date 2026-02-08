@@ -130,8 +130,8 @@ function parent_is_class_field(array $meta): bool {
 /**
  * ✅ NEW: find class report instance (student_id IS NULL, period_label=class_report_period_label(class_id))
  */
-function parent_find_class_report_instance_id(PDO $pdo, int $templateId, int $classId, string $schoolYear): ?int {
-  $periodLabel = class_report_period_label($classId);
+function parent_find_class_report_instance_id(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): ?int {
+  $periodLabel = class_report_period_label($classId, normalize_class_period_label($periodLabel));
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
@@ -439,6 +439,7 @@ if ($canPreview) {
   // ✅ NEW: determine class-wide field names for this template
   $templateId = (int)($link['template_id'] ?? 0);
   $reportSchoolYear = (string)($link['report_school_year'] ?? '');
+  $reportPeriodLabel = normalize_class_period_label($link['period_label'] ?? 'Standard');
   $classFieldNames = [];
 
   if ($templateId > 0) {
@@ -462,7 +463,7 @@ if ($canPreview) {
 
   // ✅ NEW: merge class-wide values on top (override for class fields)
   if ($templateId > 0 && $reportSchoolYear !== '' && $classFieldNames) {
-    $classRiId = parent_find_class_report_instance_id($pdo, $templateId, (int)($link['class_id'] ?? 0), $reportSchoolYear);
+    $classRiId = parent_find_class_report_instance_id($pdo, $templateId, (int)($link['class_id'] ?? 0), $reportSchoolYear, $reportPeriodLabel);
     if ($classRiId) {
       $classValues = parent_load_values_for_report($pdo, (int)$classRiId);
       foreach ($classFieldNames as $fname => $_) {

@@ -93,8 +93,15 @@ function url_with_lang(string $lang): string {
   return $path . ($newQs ? ('?' . $newQs) : '');
 }
 
-function class_report_period_label(int $classId): string {
-  return '__class__:' . $classId;
+function normalize_class_period_label(?string $s): string {
+  $s = trim((string)$s);
+  return $s !== '' ? $s : 'Standard';
+}
+
+function class_report_period_label(int $classId, ?string $periodLabel = null): string {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  if ($periodLabel === 'Standard') return '__class__:' . $classId;
+  return '__class__:' . $classId . ':' . $periodLabel;
 }
 
 // One-shot: allow switching language via ?lang=de|en
@@ -527,7 +534,10 @@ function ensure_schema(PDO $pdo): void {
   $did = true;
 
   try {
-    // --- classes: add grade_level + label (keeps legacy `name`)
+    // --- classes: add period_label + grade_level + label (keeps legacy `name`)
+    if (!db_has_column($pdo, 'classes', 'period_label')) {
+      $pdo->exec("ALTER TABLE classes ADD COLUMN period_label VARCHAR(50) NOT NULL DEFAULT 'Standard' AFTER school_year");
+    }
     if (!db_has_column($pdo, 'classes', 'grade_level')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN grade_level INT NULL AFTER school_year");
     }

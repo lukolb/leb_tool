@@ -618,6 +618,7 @@ CREATE TABLE IF NOT EXISTS `text_snippets` (
 CREATE TABLE IF NOT EXISTS `classes` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
   `grade_level` int DEFAULT NULL,
   `label` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,

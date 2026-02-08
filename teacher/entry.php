@@ -29,11 +29,11 @@ $delegationNotice = $delegationShowOtherFieldsReadonly
   : t('teacher.entry.delegation_notice');
 
 if (($u['role'] ?? '') === 'admin') {
-  $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $st = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll(PDO::FETCH_ASSOC);
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
      FROM classes c
      JOIN user_class_assignments uca ON uca.class_id=c.id
      WHERE uca.user_id=? AND c.is_active=1
@@ -102,7 +102,7 @@ if (($u['role'] ?? '') !== 'admin') {
     }
 
     // IMPORTANT: Do not show other classes here.
-    $stc = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+    $stc = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
     $stc->execute([$classId]);
     $only = $stc->fetch(PDO::FETCH_ASSOC);
     $classes = $only ? [$only] : [];
@@ -380,6 +380,7 @@ foreach ($classes as $c) {
     break;
   }
 }
+$classPeriodLabel = normalize_class_period_label($currentClass ? ($currentClass['period_label'] ?? 'Standard') : 'Standard');
 $finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
 if ($finalmarksFormSchoolYear === '') {
   $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
@@ -2214,7 +2215,7 @@ render_teacher_header($pageTitle);
     text_snippets: [],
     delegation_users: [],
     delegations: [],
-    period_label: 'Standard',
+    period_label: <?=json_encode($classPeriodLabel)?>,
     students: [],
     values_teacher: {},
     values_teacher_own: {},
@@ -5847,7 +5848,7 @@ render_teacher_header($pageTitle);
       
       state.delegation_users = j.delegation_users || [];
       state.delegations = j.delegations || [];
-      state.period_label = j.period_label || 'Standard';
+      state.period_label = j.period_label || <?=json_encode($classPeriodLabel)?>;
 
       // reset group selects (delegation badges etc.)
       groupSelect.innerHTML = '';

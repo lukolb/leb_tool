@@ -217,6 +217,7 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
   $templateId = (int)$tpl['id'];
   $schoolYear = class_school_year($pdo, $classId);
   if ($schoolYear === '') $schoolYear = date('Y');
+  $periodLabel = class_period_label($pdo, $classId);
 
   $stClass = $pdo->prepare("SELECT grade_level FROM classes WHERE id=? LIMIT 1");
   $stClass->execute([$classId]);
@@ -232,7 +233,7 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
 
   $reportIds = [];
   foreach ($studentIds as $sid) {
-    $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $userId);
+    $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId);
     if (is_array($ri) && isset($ri['id'])) $reportIds[] = (int)$ri['id'];
   }
   $reportToStudent = [];
@@ -1402,8 +1403,15 @@ function class_school_year(PDO $pdo, int $classId): string {
   return (string)($st->fetchColumn() ?: '');
 }
 
-function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
-  $periodLabel = class_report_period_label($classId);
+function class_period_label(PDO $pdo, int $classId): string {
+  $st = $pdo->prepare("SELECT period_label FROM classes WHERE id=? LIMIT 1");
+  $st->execute([$classId]);
+  return normalize_class_period_label($st->fetchColumn() ?: 'Standard');
+}
+
+function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $periodLabel = class_report_period_label($classId, $periodLabel);
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
@@ -1423,15 +1431,16 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   return (int)$pdo->lastInsertId();
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, int $userId): array {
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label='Standard'
+     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear]);
+  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
 
   if ($ri) {
@@ -1440,8 +1449,8 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
 
   $pdo->prepare(
     "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
-     VALUES (?, ?, 'Standard', ?, 'locked', NULL, ?, NOW(), NOW(), NOW())"
-  )->execute([$templateId, $studentId, $schoolYear, $userId]);
+     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())"
+  )->execute([$templateId, $studentId, $periodLabel, $schoolYear, $userId]);
 
   $rid = (int)$pdo->lastInsertId();
   return ['id' => $rid, 'status' => 'locked'];
@@ -1758,7 +1767,8 @@ try {
     $schoolYear = class_school_year($pdo, $classId);
     if ($schoolYear === '') $schoolYear = date('Y');
 
-    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+    $periodLabel = class_period_label($pdo, $classId);
+    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear, $periodLabel);
 
     $optCache = []; // listId => option definitions
     $iconCache = []; // iconId => url
@@ -1778,7 +1788,7 @@ try {
     foreach ($studentsRaw as $s) {
       $sid = (int)$s['id'];
       $name = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
-      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $userId);
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId);
       $students[] = [
         'id' => $sid,
         'name' => $name,
@@ -1830,7 +1840,7 @@ try {
       $classFieldIdsEditable[] = (int)$f0['id'];
     }
 
-    $periodLabel = 'Standard';
+    $periodLabel = class_period_label($pdo, $classId);
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $delegationUsers = load_teachers_for_delegation($pdo);
 
@@ -2304,9 +2314,9 @@ try {
       }
     }
 
-    $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $userId);
+    $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $periodLabel, $userId);
     $reportId = (int)($ri['id'] ?? 0);
-    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+    $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear, $periodLabel);
     if ($reportId > 0) {
       apply_system_bindings($pdo, $reportId);
     }
@@ -3149,7 +3159,7 @@ if ($action === 'delegations_save') {
     if ((int)($ri['template_id'] ?? 0) !== $templateId) throw new RuntimeException('Vorlagenkonflikt.');
     if ($ri['student_id'] !== null) throw new RuntimeException('Kein Klassen-Report.');
     if ((string)($ri['school_year'] ?? '') !== $schoolYear) throw new RuntimeException('Schuljahr-Konflikt.');
-    $expectedLabel = class_report_period_label($classId);
+    $expectedLabel = class_report_period_label($classId, class_period_label($pdo, $classId));
     if ((string)($ri['period_label'] ?? '') !== $expectedLabel) throw new RuntimeException('Perioden-Konflikt.');
 
     $st = $pdo->prepare(

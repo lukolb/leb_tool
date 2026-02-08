@@ -22,6 +22,16 @@ function normalize_label(string $s): string {
   $s = preg_replace('/\s+/', '', $s);
   return $s;
 }
+function normalize_period_label(string $s): string {
+  $s = normalize_class_period_label($s);
+  return in_array($s, ['Standard', 'H2'], true) ? $s : 'Standard';
+}
+function period_label_options(): array {
+  return [
+    'Standard' => t('admin.classes.period.h1', '1. Halbjahr'),
+    'H2' => t('admin.classes.period.h2', '2. Halbjahr'),
+  ];
+}
 function computed_name(?int $grade, string $label): string {
   $label = normalize_label($label);
   if ($grade === null || $grade <= 0 || $label === '') return trim((string)$grade . $label);
@@ -149,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $gradeLevel = (int)($_POST['grade_level'] ?? 0);
       $label = normalize_label((string)($_POST['label'] ?? ''));
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
       if ($gradeLevel <= 0) throw new RuntimeException(t('admin.classes.error.grade_missing'));
       if ($label === '') throw new RuntimeException(t('admin.classes.error.label_missing'));
@@ -162,8 +173,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // NEW: student wizard display per class
       $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
 
-      $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)")
-          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $wizardDisplay]);
+      $pdo->prepare("INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)")
+          ->execute([$schoolYear, $periodLabel, $gradeLevel, $label, $name, $templateId, $wizardDisplay]);
       $classId = (int)$pdo->lastInsertId();
 
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -181,6 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'school_year'=>$schoolYear,
         'grade_level'=>$gradeLevel,
         'label'=>$label,
+        'period_label'=>$periodLabel,
         'template_id'=>$templateId,
         'student_wizard_display'=>$wizardDisplay
       ]);
@@ -192,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $gradeFrom = (int)($_POST['grade_from'] ?? 0);
       $gradeTo   = (int)($_POST['grade_to'] ?? 0);
       $labelsRaw = (string)($_POST['labels'] ?? '');
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
       if ($gradeFrom <= 0 || $gradeTo <= 0) throw new RuntimeException(t('admin.classes.error.grade_range_missing'));
       if ($gradeTo < $gradeFrom) [$gradeFrom, $gradeTo] = [$gradeTo, $gradeFrom];
@@ -225,8 +238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($q->fetch()) { $skipped++; continue; }
 
           $name = computed_name($g, $lab);
-          $pdo->prepare("INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)")
-              ->execute([$schoolYear, $g, $lab, $name, $templateId, $wizardDisplay]);
+          $pdo->prepare("INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)")
+              ->execute([$schoolYear, $periodLabel, $g, $lab, $name, $templateId, $wizardDisplay]);
           $cid = (int)$pdo->lastInsertId();
 
           foreach ($teacherIds as $tid) {
@@ -243,6 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'grade_from'=>$gradeFrom,
         'grade_to'=>$gradeTo,
         'labels'=>$labels,
+        'period_label'=>$periodLabel,
         'created'=>$created,
         'skipped'=>$skipped,
         'template_id'=>$templateId,
@@ -269,6 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $gradeLevel = (int)($_POST['grade_level'] ?? 0);
       $label = normalize_label((string)($_POST['label'] ?? ''));
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
       $isActive = ((int)($_POST['is_active'] ?? 1) === 1) ? 1 : 0;
 
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
@@ -284,8 +299,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // NEW: student wizard display per class (editable)
       $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
 
-      $pdo->prepare("UPDATE classes SET school_year=?, grade_level=?, label=?, name=?, template_id=?, student_wizard_display=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
-          ->execute([$schoolYear, $gradeLevel, $label, $name, $templateId, $wizardDisplay, $isActive, $isActive, $classId]);
+      $pdo->prepare("UPDATE classes SET school_year=?, period_label=?, grade_level=?, label=?, name=?, template_id=?, student_wizard_display=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
+          ->execute([$schoolYear, $periodLabel, $gradeLevel, $label, $name, $templateId, $wizardDisplay, $isActive, $isActive, $classId]);
 
       // Update assignments
       $teacherIds = $_POST['teacher_ids'] ?? [];
@@ -304,7 +319,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'is_active'=>$isActive,
         'teacher_ids'=>$teacherIds,
         'template_id'=>$templateId,
-        'student_wizard_display'=>$wizardDisplay
+        'student_wizard_display'=>$wizardDisplay,
+        'period_label'=>$periodLabel
       ]);
       $ok = t('admin.classes.ok.updated');
     }
@@ -415,7 +431,7 @@ render_admin_header(t('admin.classes.title'));
   <div class="grid" style="grid-template-columns: 1fr; gap:14px;">
     <div class="panel" style="border-bottom: solid lightgray; padding-bottom: 20px;">
       <h3 style="margin-top:0;"><?=h(t('admin.classes.create_single_heading'))?></h3>
-      <form method="post" id="createClassSingle" class="grid" style="grid-template-columns: 1fr 120px 120px 1fr 1fr 1fr; gap:12px;">
+      <form method="post" id="createClassSingle" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_single">
 
@@ -430,6 +446,15 @@ render_admin_header(t('admin.classes.title'));
         <div>
           <label><?=h(t('admin.classes.label_label'))?></label>
           <input name="label" type="text" placeholder="<?=h(t('admin.classes.label_placeholder'))?>" required>
+        </div>
+        <div>
+          <label><?=h(t('admin.classes.period_label', 'Halbjahr'))?></label>
+          <?php $periodOptions = period_label_options(); ?>
+          <select name="period_label">
+            <?php foreach ($periodOptions as $val => $lbl): ?>
+              <option value="<?=h($val)?>"><?=h($lbl)?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
 
         <div>
@@ -476,7 +501,7 @@ render_admin_header(t('admin.classes.title'));
 
     <div class="panel">
       <h3 style="margin-top:0;"><?=h(t('admin.classes.create_bulk_heading'))?></h3>
-      <form id="createClassBulk" method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 1fr 1fr; gap:12px;">
+      <form id="createClassBulk" method="post" class="grid" style="grid-template-columns: 1fr 160px 160px 1fr 160px 1fr 1fr; gap:12px;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="create_bulk">
 
@@ -496,6 +521,15 @@ render_admin_header(t('admin.classes.title'));
           <label><?=h(t('admin.classes.labels_label'))?></label>
           <input name="labels" type="text" placeholder="<?=h(t('admin.classes.labels_placeholder'))?>" required>
           <div class="muted" style="margin-top:6px;"><?=h(t('admin.classes.labels_examples'))?>: <code>a-b</code>, <code>a,b</code></div>
+        </div>
+        <div>
+          <label><?=h(t('admin.classes.period_label', 'Halbjahr'))?></label>
+          <?php $periodOptions = period_label_options(); ?>
+          <select name="period_label">
+            <?php foreach ($periodOptions as $val => $lbl): ?>
+              <option value="<?=h($val)?>"><?=h($lbl)?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
 
         <div>
@@ -567,6 +601,7 @@ render_admin_header(t('admin.classes.title'));
             <tr>
               <th><?=h(t('admin.classes.table.class'))?></th>
               <th><?=h(t('admin.classes.table.template'))?></th>
+              <th><?=h(t('admin.classes.period_label', 'Halbjahr'))?></th>
               <th><?=h(t('admin.classes.table.teachers'))?></th>
               <th><?=h(t('admin.classes.table.students'))?></th>
               <th><?=h(t('admin.classes.table.wizard'))?></th>
@@ -592,6 +627,7 @@ render_admin_header(t('admin.classes.title'));
                   }
                 ?>
               </td>
+              <td><?=h(period_label_options()[normalize_period_label((string)($c['period_label'] ?? 'Standard'))] ?? (string)($c['period_label'] ?? ''))?></td>
               <td><?=h((string)($c['teacher_names'] ?? '—'))?></td>
               <td><?=h((string)$c['student_count'])?></td>
               <td>
@@ -636,7 +672,7 @@ render_admin_header(t('admin.classes.title'));
   <div class="card" id="editClass">
     <h2 style="margin-top:0;"><?=h(str_replace('{class}', (string)$editClass['school_year'] . ' · ' . class_display($editClass), t('admin.classes.edit_heading')))?></h2>
 
-    <form id="classEditForm" method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr; gap:12px;">
+    <form id="classEditForm" method="post" class="grid" style="grid-template-columns: 1fr 120px 120px 160px 1fr 1fr 1fr 1fr; gap:12px;">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="update_class">
       <input type="hidden" name="class_id" value="<?=h((string)$editClass['id'])?>">
@@ -652,6 +688,16 @@ render_admin_header(t('admin.classes.title'));
       <div>
         <label><?=h(t('admin.classes.label_label'))?></label>
         <input name="label" type="text" value="<?=h((string)($editClass['label'] ?? ''))?>" required>
+      </div>
+      <div>
+        <label><?=h(t('admin.classes.period_label', 'Halbjahr'))?></label>
+        <?php $curPeriod = normalize_period_label((string)($editClass['period_label'] ?? 'Standard')); ?>
+        <?php $periodOptions = period_label_options(); ?>
+        <select name="period_label">
+          <?php foreach ($periodOptions as $val => $lbl): ?>
+            <option value="<?=h($val)?>" <?=$curPeriod===$val?'selected':''?>><?=h($lbl)?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
       <div>
         <label><?=h(t('admin.classes.status_label'))?></label>

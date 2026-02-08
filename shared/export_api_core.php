@@ -47,7 +47,7 @@ function enforce_class_access(PDO $pdo, int $classId, bool $enforce, int $userId
 
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
-    "SELECT c.id AS class_id, c.school_year, c.grade_level, c.label, c.name AS class_name,
+    "SELECT c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name,
             t.id AS template_id, t.name AS template_name, t.template_version
      FROM classes c
      LEFT JOIN templates t ON t.id=c.template_id
@@ -67,15 +67,16 @@ function template_for_class(PDO $pdo, int $classId): array {
   return $row;
 }
 
-function find_report_instance(PDO $pdo, int $templateId, int $studentId, string $schoolYear): ?array {
+function find_report_instance(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
     "SELECT id, template_id, student_id, school_year, period_label, status
      FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label='Standard'
+     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear]);
+  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
   if ($ri) return $ri;
 
@@ -353,10 +354,10 @@ function is_class_field_export(array $meta): bool {
   return false;
 }
 
-function find_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): ?int {
+function find_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): ?int {
   // Class-wide values are stored in a dedicated report instance:
   // student_id IS NULL, period_label = class_report_period_label(class_id), school_year = class school year.
-  $periodLabel = class_report_period_label($classId);
+  $periodLabel = class_report_period_label($classId, normalize_class_period_label($periodLabel));
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
@@ -435,7 +436,8 @@ function missing_fields_for_student(array $templateFields, array $values, array 
   return $missing;
 }
 
-function load_students_for_export(PDO $pdo, int $classId, int $templateId, string $schoolYear, ?int $onlyStudentId, bool $onlySubmitted): array {
+function load_students_for_export(PDO $pdo, int $classId, int $templateId, string $schoolYear, string $periodLabel, ?int $onlyStudentId, bool $onlySubmitted): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $whereStudent = '';
   if ($onlyStudentId && $onlyStudentId > 0) $whereStudent = " AND s.id=? ";
 
@@ -449,14 +451,14 @@ function load_students_for_export(PDO $pdo, int $classId, int $templateId, strin
        ON ri.student_id=s.id
       AND ri.template_id=?
       AND ri.school_year=?
-      AND ri.period_label='Standard'
+      AND ri.period_label=?
      WHERE s.class_id=? AND s.is_active=1
      $whereStudent
      $whereSubmitted
      ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC";
 
   $stmt = $pdo->prepare($sql);
-  $params = [$templateId, $schoolYear, $classId];
+  $params = [$templateId, $schoolYear, $periodLabel, $classId];
   if ($onlyStudentId && $onlyStudentId > 0) $params[] = $onlyStudentId;
   $stmt->execute($params);
   return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -490,7 +492,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
     'version' => (string)($row['template_version'] ?? ''),
   ];
 
-  $students = load_students_for_export($pdo, $classId, $templateId, $schoolYear, $onlyStudentId, $onlySubmitted);
+  $students = load_students_for_export($pdo, $classId, $templateId, $schoolYear, (string)($row['period_label'] ?? 'Standard'), $onlyStudentId, $onlySubmitted);
   $tf = load_template_fields($pdo, $templateId);
 
   // ✅ NEW: Provide field meta to frontend (date formats etc.)
@@ -509,7 +511,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   // Load class-wide values once (and merge them into each student's values for export)
   $classValues = [];
   if ($includeValues && $classFieldNames) {
-    $classRiId = find_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+    $classRiId = find_class_report_instance($pdo, $templateId, $classId, $schoolYear, (string)($row['period_label'] ?? 'Standard'));
     if ($classRiId) {
       $classValues = load_class_values($pdo, (int)$classRiId);
     }
@@ -527,7 +529,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
     $name = trim((string)($s['first_name'] ?? '') . ' ' . (string)($s['last_name'] ?? ''));
     if ($name === '') $name = 'Schüler ' . $sid;
 
-    $ri = find_report_instance($pdo, $templateId, $sid, $schoolYear);
+    $ri = find_report_instance($pdo, $templateId, $sid, $schoolYear, (string)($row['period_label'] ?? 'Standard'));
     $values = [];
     $status = $ri ? (string)($ri['status'] ?? '') : ((string)($s['report_status'] ?? ''));
 

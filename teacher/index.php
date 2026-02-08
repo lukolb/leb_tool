@@ -67,12 +67,12 @@ try {
 
 // Load classes assigned to teacher (admins see all)
 if (($u['role'] ?? '') === 'admin') {
-  $st = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $st = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll();
   $hasOwnClasses = !empty($classes);
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id,
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.template_id,
             uca.user_id AS assigned_user_id, d.user_id AS delegated_user_id
      FROM classes c
      LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
@@ -368,11 +368,12 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
   }
 
   $stDelegatedGroups = $pdo->prepare(
-    "SELECT class_id, group_key
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-        AND user_id=?"
+    "SELECT d.class_id, d.group_key
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+        AND d.user_id=?"
   );
   $stDelegatedGroups->execute(array_merge($classIds, [$userId]));
   foreach ($stDelegatedGroups->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -414,7 +415,8 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
     "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, s.class_id
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-      WHERE ri.period_label='Standard'
+       JOIN classes c ON c.id=s.class_id
+      WHERE ri.period_label=c.period_label
         AND s.class_id IN ($inClass)"
   );
   $stReports->execute($classIds);
@@ -567,13 +569,14 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
   }
 
   $stDelRecent = $pdo->prepare(
-    "SELECT class_id, COUNT(*) AS c
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-        AND user_id=?
-        AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY class_id"
+    "SELECT d.class_id, COUNT(*) AS c
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+        AND d.user_id=?
+        AND d.updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      GROUP BY d.class_id"
   );
   $stDelRecent->execute(array_merge($classIds, [$userId]));
   foreach ($stDelRecent->fetchAll(PDO::FETCH_ASSOC) as $r) {

@@ -295,7 +295,8 @@ function build_progress(PDO $pdo, array $classes): array {
     "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, s.class_id
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-      WHERE ri.period_label='Standard'
+       JOIN classes c ON c.id=s.class_id
+      WHERE ri.period_label=c.period_label
         AND s.class_id IN ($inClass)"
   );
   $stReports->execute($classIds);
@@ -415,11 +416,12 @@ function build_progress(PDO $pdo, array $classes): array {
 
   // delegations
   $stDel = $pdo->prepare(
-    "SELECT class_id, status, COUNT(*) AS c
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-      GROUP BY class_id, status"
+    "SELECT d.class_id, d.status, COUNT(*) AS c
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+      GROUP BY d.class_id, d.status"
   );
   $stDel->execute($classIds);
   foreach ($stDel->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -431,12 +433,13 @@ function build_progress(PDO $pdo, array $classes): array {
   }
 
   $stDelRecent = $pdo->prepare(
-    "SELECT class_id, COUNT(*) AS c
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-        AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY class_id"
+    "SELECT d.class_id, COUNT(*) AS c
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+        AND d.updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      GROUP BY d.class_id"
   );
   $stDelRecent->execute($classIds);
   foreach ($stDelRecent->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -459,7 +462,7 @@ function build_progress(PDO $pdo, array $classes): array {
   return $progress;
 }
 
-$classesStmt = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+$classesStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
 $classes = $classesStmt->fetchAll();
 
 $progressByClass = build_progress($pdo, $classes);

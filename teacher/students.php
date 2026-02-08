@@ -114,8 +114,9 @@ function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, st
   return ['active' => true, 'map' => $map];
 }
 
-function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int $templateId, string $schoolYear): array {
+function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int $templateId, string $schoolYear, string $periodLabel): array {
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  $periodLabel = normalize_class_period_label($periodLabel);
   if (!$studentIds || $templateId <= 0 || $schoolYear === '') return [];
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
@@ -125,9 +126,9 @@ function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int 
      WHERE student_id IN ($in)
        AND template_id=?
        AND school_year=?
-       AND period_label='Standard'";
+       AND period_label=?";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge($studentIds, [$templateId, $schoolYear]));
+  $q->execute(array_merge($studentIds, [$templateId, $schoolYear, $periodLabel]));
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -225,7 +226,7 @@ if (!user_can_access_class($pdo, $userId, $classId)) {
   exit;
 }
 
-$clsSt = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+$clsSt = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
 $clsSt->execute([$classId]);
 $class = $clsSt->fetch();
 if (!$class) {
@@ -238,6 +239,7 @@ if (!$class) {
 $err = '';
 $ok = '';
 $importSkippedDetails = [];
+$periodLabel = normalize_class_period_label($class['period_label'] ?? 'Standard');
 $addFormValues = [
   'first_name' => '',
   'last_name' => '',
@@ -503,7 +505,8 @@ function get_active_template(PDO $pdo, int $classId): ?array {
   return $t ?: null;
 }
 
-function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, int $userId): void {
+function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId): void {
+  $periodLabel = normalize_class_period_label($periodLabel);
   // Create report_instances for all active students (idempotent via INSERT IGNORE)
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
@@ -512,14 +515,15 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
 
   $ins = $pdo->prepare(
     "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
-     VALUES (?, ?, 'Standard', ?, 'locked', ?, ?, NOW())"
+     VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())"
   );
   foreach ($ids as $sid) {
-    $ins->execute([$templateId, $sid, $schoolYear, $userId, $userId]);
+    $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
   }
 }
 
-function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, int $userId, string $mode): int {
+function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, string $mode): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
   // mode: 'lock' => draft -> locked, keep submitted untouched
   // mode: 'unlock' => locked -> draft, keep submitted untouched
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
@@ -533,18 +537,18 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
     $sql =
       "UPDATE report_instances
        SET status='locked', locked_by_user_id=?, locked_at=NOW()
-       WHERE template_id=? AND school_year=? AND period_label='Standard'
+       WHERE template_id=? AND school_year=? AND period_label=?
          AND student_id IN ($in)
          AND status='draft'";
-    $params = array_merge([$userId, $templateId, $schoolYear], $studentIds);
+    $params = array_merge([$userId, $templateId, $schoolYear, $periodLabel], $studentIds);
   } else {
     $sql =
       "UPDATE report_instances
        SET status='draft', locked_by_user_id=NULL, locked_at=NULL
-       WHERE template_id=? AND school_year=? AND period_label='Standard'
+       WHERE template_id=? AND school_year=? AND period_label=?
          AND student_id IN ($in)
          AND status='locked'";
-    $params = array_merge([$templateId, $schoolYear], $studentIds);
+    $params = array_merge([$templateId, $schoolYear, $periodLabel], $studentIds);
   }
 
   $q = $pdo->prepare($sql);
@@ -552,14 +556,15 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
   return $q->rowCount();
 }
 
-function class_child_status_counts(PDO $pdo, int $templateId, int $classId, string $schoolYear): array {
+function class_child_status_counts(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
   $st->execute([$classId]);
   $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   $total = count($studentIds);
   if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
-  $statusMap = load_child_status_map($pdo, $studentIds);
+  $statusMap = load_child_status_map($pdo, $studentIds, $periodLabel);
 
   $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
   foreach ($statusMap as $status) {
@@ -573,7 +578,8 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
 /**
  * NEW: per-student child status map + badge rendering
  */
-function load_child_status_map(PDO $pdo, array $studentIds): array {
+function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
@@ -582,9 +588,10 @@ function load_child_status_map(PDO $pdo, array $studentIds): array {
     "SELECT student_id, status, created_at, updated_at, id
      FROM report_instances
      WHERE student_id IN ($in)
+       AND period_label=?
      ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute($studentIds);
+  $q->execute(array_merge($studentIds, [$periodLabel]));
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -597,9 +604,10 @@ function load_child_status_map(PDO $pdo, array $studentIds): array {
 
 
 /**
- * NEW: report_instance_id map per student (for active template / school year / Standard)
+ * NEW: report_instance_id map per student (for active template / school year / period label)
  */
-function load_report_instance_map(PDO $pdo, array $studentIds): array {
+function load_report_instance_map(PDO $pdo, array $studentIds, string $periodLabel): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
@@ -608,9 +616,10 @@ function load_report_instance_map(PDO $pdo, array $studentIds): array {
     "SELECT student_id, id AS report_instance_id, status, created_at, updated_at
      FROM report_instances
      WHERE student_id IN ($in)
+       AND period_label=?
      ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute($studentIds);
+  $q->execute(array_merge($studentIds, [$periodLabel]));
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -673,10 +682,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = (string)($class['school_year'] ?? '');
       if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
 
-      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $userId);
+      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId);
 
       $mode = ($action === 'child_lock_class') ? 'lock' : 'unlock';
-      $changed = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $userId, $mode);
+      $changed = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $mode);
 
       audit('teacher_child_' . $mode . '_class', $userId, [
         'class_id'=>$classId,
@@ -711,11 +720,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $selected = array_values(array_intersect($selected, $validKeys));
 
       $pdo->beginTransaction();
-      $periodLabel = 'Standard';
+      $classPeriodLabel = $periodLabel;
       $pdo->prepare(
         "DELETE FROM class_child_group_unlocks
          WHERE class_id=? AND school_year=? AND period_label=?"
-      )->execute([$classId, $schoolYear, $periodLabel]);
+      )->execute([$classId, $schoolYear, $classPeriodLabel]);
 
       $ins = $pdo->prepare(
         "INSERT INTO class_child_group_unlocks
@@ -724,7 +733,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       );
       foreach ($validKeys as $gk) {
         $isUnlocked = in_array($gk, $selected, true) ? 1 : 0;
-        $ins->execute([$classId, $schoolYear, $periodLabel, $gk, $isUnlocked, $userId, $userId]);
+        $ins->execute([$classId, $schoolYear, $classPeriodLabel, $gk, $isUnlocked, $userId, $userId]);
       }
       $pdo->commit();
 
@@ -1203,21 +1212,21 @@ $tplIdForUi = $activeTpl ? (int)$activeTpl['id'] : 0;
 $schoolYearUi = (string)($class['school_year'] ?? '');
 if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_school_year'] ?? '');
 
-$counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
+$counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi, $periodLabel) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
-$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds) : [];
+$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds, $periodLabel) : [];
 
-$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds) : [];
+$reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds, $periodLabel) : [];
 $studentFormValueCounts = $students ? load_student_form_value_counts($pdo, $studentIds) : [];
 
 $groupProgress = [];
 $childGroups = $tplIdForUi ? load_child_groups_for_template($pdo, $tplIdForUi, ui_lang()) : [];
 $groupUnlockInfo = ($tplIdForUi && $schoolYearUi !== '')
-  ? load_child_group_unlocks($pdo, $classId, $schoolYearUi, 'Standard')
+  ? load_child_group_unlocks($pdo, $classId, $schoolYearUi, $periodLabel)
   : ['active' => false, 'map' => []];
 if ($childGroups && $studentIds && $tplIdForUi) {
-  $groupReportMap = load_report_instance_map_for_template($pdo, $studentIds, $tplIdForUi, $schoolYearUi);
+  $groupReportMap = load_report_instance_map_for_template($pdo, $studentIds, $tplIdForUi, $schoolYearUi, $periodLabel);
   $groupProgress = build_child_group_progress($pdo, $childGroups, $studentIds, $groupReportMap);
 }
 
