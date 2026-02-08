@@ -39,6 +39,13 @@ function format_minutes_admin(?float $minutes): string {
   return $m . ' min';
 }
 
+function period_label_display_admin(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function load_completion_field_sets(PDO $pdo, array $templateIds): array {
   $templateIds = array_values(array_unique(array_filter(array_map('intval', $templateIds), fn($x)=>$x>0)));
   if (!$templateIds) return [];
@@ -515,7 +522,8 @@ render_admin_header('Admin – Dashboard');
     $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
     $clabel = (string)($c['label'] ?? '');
     $display = ($grade !== null && $clabel !== '') ? ($grade . $clabel) : ($label !== '' ? $label : ('#' . $cid));
-    $classTabs[] = ['id' => $cid, 'label' => $display];
+    $period = period_label_display_admin($c['period_label'] ?? 'Standard');
+    $classTabs[] = ['id' => $cid, 'label' => $display . ' · ' . $period];
   }
 ?>
 

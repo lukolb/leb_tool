@@ -37,6 +37,13 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ((string)$grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
 
+function class_period_label_display(array $c): string {
+  $val = normalize_class_period_label($c['period_label'] ?? 'Standard');
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function enforce_class_access(PDO $pdo, int $classId, bool $enforce, int $userId): void {
   if (!$enforce) return;
   $u = current_user();
@@ -474,16 +481,18 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   $class = [
     'id' => (int)$row['class_id'],
     'school_year' => $schoolYear,
+    'period_label' => (string)($row['period_label'] ?? 'Standard'),
     'grade_level' => $row['grade_level'],
     'label' => $row['label'],
     'name' => $row['class_name'],
     'display' => class_display([
       'id'=>$row['class_id'],
       'school_year'=>$schoolYear,
+      'period_label'=>(string)($row['period_label'] ?? 'Standard'),
       'grade_level'=>$row['grade_level'],
       'label'=>$row['label'],
       'name'=>$row['class_name']
-    ]),
+    ]) . ' · ' . class_period_label_display($row),
   ];
 
   $template = [

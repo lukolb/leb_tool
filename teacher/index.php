@@ -55,6 +55,13 @@ function class_label(array $c): string {
   return $name !== '' ? $name : '';
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
@@ -637,6 +644,9 @@ if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])
   $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
   $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
   $deadlineScopeLabel = class_label($classRow);
+  if ($deadlineScopeLabel !== '') {
+    $deadlineScopeLabel .= ' · ' . period_label_display($classRow['period_label'] ?? 'Standard');
+  }
 }
 if ($deadlineSchoolYear === '') {
   $years = array_values(array_unique(array_filter(array_map(
@@ -660,6 +670,7 @@ foreach ($progressByClass as $cid => $p) {
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $clabel = (string)($c['label'] ?? '');
   $display = ($grade !== null && $clabel !== '') ? ($grade . $clabel) : ($label !== '' ? $label : ('#' . $cid));
+  $display .= ' · ' . period_label_display($c['period_label'] ?? 'Standard');
   $classTabs[] = ['id' => $cid, 'label' => $display];
 }
 
@@ -833,6 +844,7 @@ render_teacher_header(t('teacher.title'));
         <thead>
           <tr>
             <th><?=h(t('teacher.table.school_year'))?></th>
+            <th><?=h(t('admin.classes.period_label', 'Halbjahr'))?></th>
             <th><?=h(t('teacher.table.class'))?></th>
             <th><?=h(t('teacher.table.actions'))?></th>
           </tr>
@@ -847,6 +859,7 @@ render_teacher_header(t('teacher.title'));
         ?>
           <tr>
             <td><?=h((string)$c['school_year'])?></td>
+            <td><?=h(period_label_display($c['period_label'] ?? 'Standard'))?></td>
             <td><?=h($display)?></td>
             <td>
               <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.table.students'))?></a>
