@@ -550,6 +550,11 @@ render_admin_header('Admin – Dashboard');
       .progress-fill{ height:100%; background: var(--primary, #0b57d0); }
       .progress-fill.teacher{ background: #6c5ce7; }
       .progress-fill.delegation{ background: #1e8e3e; }
+      .progress-pie{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#1f2937; background: var(--border); margin-top:8px; }
+      .progress-pie span{ background:#fff; border-radius:999px; padding:2px 6px; box-shadow:0 0 0 1px rgba(0,0,0,0.05); }
+      .progress-pie.student{ background: conic-gradient(var(--primary, #0b57d0) 0deg, var(--primary, #0b57d0) calc(var(--percent) * 1deg), var(--border) 0deg); }
+      .progress-pie.teacher{ background: conic-gradient(#6c5ce7 0deg, #6c5ce7 calc(var(--percent) * 1deg), var(--border) 0deg); }
+      .progress-pie.delegation{ background: conic-gradient(#1e8e3e 0deg, #1e8e3e calc(var(--percent) * 1deg), var(--border) 0deg); }
     </style>
     <div class="stats-grid">
       <div class="stat-box">
@@ -562,8 +567,8 @@ render_admin_header('Admin – Dashboard');
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?></div>
-        <div class="progress-bar" role="img" aria-label="<?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?> <?=h((string)$studentsBar)?>%">
-          <div class="progress-fill" style="width:<?=h((string)$studentsBar)?>%;"></div>
+        <div class="progress-pie student" role="img" aria-label="<?=h(t('admin.progress.students_done', 'fertige Schülereingaben'))?> <?=h((string)$studentsBar)?>%" style="--percent: <?=h((string)round($studentsBar * 3.6, 2))?>deg;">
+          <span><?=h((string)$studentsBar)?>%</span>
         </div>
       </div>
       <div class="stat-box">
@@ -572,8 +577,8 @@ render_admin_header('Admin – Dashboard');
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
-        <div class="progress-bar" role="img" aria-label="<?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?> <?=h((string)$teachersBar)?>%">
-          <div class="progress-fill teacher" style="width:<?=h((string)$teachersBar)?>%;"></div>
+        <div class="progress-pie teacher" role="img" aria-label="<?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?> <?=h((string)$teachersBar)?>%" style="--percent: <?=h((string)round($teachersBar * 3.6, 2))?>deg;">
+          <span><?=h((string)$teachersBar)?>%</span>
         </div>
       </div>
       <div class="stat-box">
@@ -586,8 +591,8 @@ render_admin_header('Admin – Dashboard');
           <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)<?php endif; ?></span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?></div>
-        <div class="progress-bar" role="img" aria-label="<?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?> <?=h((string)$delegationsBar)?>%">
-          <div class="progress-fill delegation" style="width:<?=h((string)$delegationsBar)?>%;"></div>
+        <div class="progress-pie delegation" role="img" aria-label="<?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?> <?=h((string)$delegationsBar)?>%" style="--percent: <?=h((string)round($delegationsBar * 3.6, 2))?>deg;">
+          <span><?=h((string)$delegationsBar)?>%</span>
         </div>
       </div>
       <div class="stat-box">
