@@ -608,6 +608,11 @@ $st = $pdo->prepare(
           s.created_at,
           c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
    FROM students s
+   INNER JOIN (
+     SELECT MAX(id) AS id
+     FROM students
+     GROUP BY CASE WHEN master_student_id IS NULL OR master_student_id=0 THEN id ELSE master_student_id END
+   ) sm ON sm.id = s.id
    LEFT JOIN classes c ON c.id=s.class_id
    $where
    ORDER BY $orderSql
