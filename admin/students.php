@@ -590,18 +590,28 @@ $orderSql = match($sort) {
 
 $params = [];
 $where = "WHERE 1=1";
+$subParams = [];
+$whereSub = "WHERE 1=1";
 if ($q !== '') {
   $where .= " AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.external_ref LIKE ?)";
   $params[] = "%{$q}%"; $params[] = "%{$q}%"; $params[] = "%{$q}%";
+  $whereSub .= " AND (s2.first_name LIKE ? OR s2.last_name LIKE ? OR s2.external_ref LIKE ?)";
+  $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%";
 }
 if ($schoolYear !== '') {
   $where .= " AND c.school_year = ?";
   $params[] = $schoolYear;
+  $whereSub .= " AND c2.school_year = ?";
+  $subParams[] = $schoolYear;
 }
 if ($classId > 0) {
   $where .= " AND s.class_id = ?";
   $params[] = $classId;
+  $whereSub .= " AND s2.class_id = ?";
+  $subParams[] = $classId;
 }
+
+$paramsSql = array_merge($subParams, $params);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.external_ref, s.is_active,
@@ -609,16 +619,18 @@ $st = $pdo->prepare(
           c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
    FROM students s
    INNER JOIN (
-     SELECT MAX(id) AS id
-     FROM students
-     GROUP BY CASE WHEN master_student_id IS NULL OR master_student_id=0 THEN id ELSE master_student_id END
+     SELECT MAX(s2.id) AS id
+     FROM students s2
+     LEFT JOIN classes c2 ON c2.id=s2.class_id
+     $whereSub
+     GROUP BY CASE WHEN s2.master_student_id IS NULL OR s2.master_student_id=0 THEN s2.id ELSE s2.master_student_id END
    ) sm ON sm.id = s.id
    LEFT JOIN classes c ON c.id=s.class_id
    $where
    ORDER BY $orderSql
    LIMIT 500"
 );
-$st->execute($params);
+$st->execute($paramsSql);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $masterIds = [];
