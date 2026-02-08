@@ -64,6 +64,19 @@ function parse_labels(string $raw): array {
   }
   return array_values(array_unique($out));
 }
+function ensure_master_id(PDO $pdo, int $studentId): int {
+  if ($studentId <= 0) return 0;
+  $q = $pdo->prepare("SELECT id, master_student_id FROM students WHERE id=? LIMIT 1");
+  $q->execute([$studentId]);
+  $row = $q->fetch(PDO::FETCH_ASSOC);
+  if (!$row) return $studentId;
+
+  $master = $row['master_student_id'] !== null ? (int)$row['master_student_id'] : 0;
+  if ($master > 0) return $master;
+
+  $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$studentId, $studentId]);
+  return $studentId;
+}
 
 /**
  * NEW: Wizard display normalize helper (per-class column classes.student_wizard_display)
@@ -149,6 +162,8 @@ $templates = $pdo->query(
    ORDER BY is_active DESC, template_version DESC, id DESC"
 )->fetchAll(PDO::FETCH_ASSOC);
 
+$years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
+
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
@@ -233,8 +248,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if ($lab === '') continue;
 
           // Skip if exists
-          $q = $pdo->prepare("SELECT id FROM classes WHERE school_year=? AND grade_level=? AND label=? LIMIT 1");
-          $q->execute([$schoolYear, $g, $lab]);
+          $q = $pdo->prepare("SELECT id FROM classes WHERE school_year=? AND period_label=? AND grade_level=? AND label=? LIMIT 1");
+          $q->execute([$schoolYear, $periodLabel, $g, $lab]);
           if ($q->fetch()) { $skipped++; continue; }
 
           $name = computed_name($g, $lab);
@@ -267,6 +282,156 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [(string)$created, (string)$skipped],
         t('admin.classes.ok.bulk_created')
       );
+    }
+
+    elseif ($action === 'switch_period') {
+      $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
+      $targetPeriod = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
+      $templateOverrideRaw = (int)($_POST['template_id'] ?? 0);
+      $templateOverride = $templateOverrideRaw > 0 ? assert_template_selectable($pdo, $templateOverrideRaw, null) : null;
+
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+
+      $stClasses = $pdo->prepare(
+        "SELECT id, school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled
+         FROM classes
+         WHERE school_year=? AND is_active=1"
+      );
+      $stClasses->execute([$schoolYear]);
+      $classesToSwitch = $stClasses->fetchAll(PDO::FETCH_ASSOC);
+      if (!$classesToSwitch) throw new RuntimeException(t('admin.classes.switch.no_active', 'Keine aktiven Klassen für dieses Schuljahr.'));
+
+      $created = 0;
+      $updated = 0;
+      $archived = 0;
+      $skipped = 0;
+      $studentsCopied = 0;
+      $teachersCopied = 0;
+
+      $pdo->beginTransaction();
+
+      foreach ($classesToSwitch as $c) {
+        $sourcePeriod = normalize_period_label((string)($c['period_label'] ?? 'Standard'));
+        if ($sourcePeriod === $targetPeriod) { $skipped++; continue; }
+
+        $stExisting = $pdo->prepare(
+          "SELECT id, template_id
+           FROM classes
+           WHERE school_year=? AND period_label=? AND grade_level=? AND label=?
+           LIMIT 1"
+        );
+        $stExisting->execute([
+          $schoolYear,
+          $targetPeriod,
+          (int)($c['grade_level'] ?? 0),
+          (string)($c['label'] ?? ''),
+        ]);
+        $target = $stExisting->fetch(PDO::FETCH_ASSOC);
+
+        $targetClassId = 0;
+        $newTemplateId = $templateOverride ?? (int)($c['template_id'] ?? 0);
+
+        if ($target) {
+          $targetClassId = (int)$target['id'];
+          if ($templateOverride !== null) {
+            $pdo->prepare("UPDATE classes SET template_id=? WHERE id=?")->execute([$newTemplateId, $targetClassId]);
+          }
+          $pdo->prepare("UPDATE classes SET is_active=1, inactive_at=NULL WHERE id=?")->execute([$targetClassId]);
+          $updated++;
+        } else {
+          $pdo->prepare(
+            "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+          )->execute([
+            $schoolYear,
+            $targetPeriod,
+            (int)($c['grade_level'] ?? 0),
+            (string)($c['label'] ?? ''),
+            (string)($c['name'] ?? ''),
+            $newTemplateId > 0 ? $newTemplateId : null,
+            (string)($c['student_wizard_display'] ?? 'groups'),
+            $c['student_intro_html'] ?? null,
+            (int)($c['tts_enabled'] ?? 0),
+          ]);
+          $targetClassId = (int)$pdo->lastInsertId();
+          $created++;
+        }
+
+        // Copy teacher assignments
+        $stTeachers = $pdo->prepare("SELECT user_id FROM user_class_assignments WHERE class_id=?");
+        $stTeachers->execute([(int)$c['id']]);
+        $teacherIds = array_map(fn($r)=>(int)$r['user_id'], $stTeachers->fetchAll(PDO::FETCH_ASSOC));
+        foreach ($teacherIds as $tid) {
+          if ($tid <= 0) continue;
+          $pdo->prepare("INSERT IGNORE INTO user_class_assignments (user_id, class_id) VALUES (?, ?)")
+              ->execute([$tid, $targetClassId]);
+          $teachersCopied++;
+        }
+
+        // Copy students
+        $stStudents = $pdo->prepare(
+          "SELECT id, master_student_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active
+           FROM students
+           WHERE class_id=?"
+        );
+        $stStudents->execute([(int)$c['id']]);
+        $students = $stStudents->fetchAll(PDO::FETCH_ASSOC);
+
+        $insStudent = $pdo->prepare(
+          "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+
+        foreach ($students as $s) {
+          $sid = (int)($s['id'] ?? 0);
+          if ($sid <= 0) continue;
+          $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
+          if ($master <= 0) $master = ensure_master_id($pdo, $sid);
+
+          $chk = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
+          $chk->execute([$targetClassId, $master]);
+          if ($chk->fetch()) continue;
+
+          $insStudent->execute([
+            $master,
+            $targetClassId,
+            (string)($s['first_name'] ?? ''),
+            (string)($s['last_name'] ?? ''),
+            (string)($s['date_of_birth'] ?? ''),
+            $s['email_student'] ?? null,
+            $s['email_parent1'] ?? null,
+            $s['email_parent2'] ?? null,
+            (int)($s['is_active'] ?? 1),
+          ]);
+          $newStudentId = (int)$pdo->lastInsertId();
+          $copiedCustom = copy_student_custom_values($pdo, $sid, $newStudentId);
+          if (!$copiedCustom) save_student_custom_values($pdo, $newStudentId, [], true);
+          $studentsCopied++;
+        }
+
+        $pdo->prepare("UPDATE classes SET is_active=0, inactive_at=NOW() WHERE id=?")->execute([(int)$c['id']]);
+        $archived++;
+      }
+
+      $pdo->commit();
+
+      audit('admin_classes_switch_period', $userId, [
+        'school_year' => $schoolYear,
+        'target_period' => $targetPeriod,
+        'template_id' => $templateOverride,
+        'created' => $created,
+        'updated' => $updated,
+        'archived' => $archived,
+        'skipped' => $skipped,
+        'students_copied' => $studentsCopied,
+        'teachers_copied' => $teachersCopied,
+      ]);
+
+      $ok = strtr(t('admin.classes.switch.ok', 'Halbjahr gewechselt: {created} neu, {updated} aktualisiert, {archived} archiviert.'), [
+        '{created}' => (string)$created,
+        '{updated}' => (string)$updated,
+        '{archived}' => (string)$archived,
+      ]);
     }
 
     elseif ($action === 'update_class') {
@@ -574,6 +739,55 @@ render_admin_header(t('admin.classes.title'));
       </form>
     </div>
   </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.switch_heading', 'Halbjahr wechseln'))?></h2>
+  <p class="muted"><?=h(t('admin.classes.switch_desc', 'Archiviert das aktuelle Halbjahr (setzt Klassen inaktiv) und legt die nächste Periode mit denselben Schülern & Lehrkräften an.'))?></p>
+
+  <form method="post" class="grid" style="grid-template-columns: 1fr 160px 1fr auto; gap:12px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="switch_period">
+
+    <div>
+      <label><?=h(t('admin.classes.switch_school_year', 'Schuljahr'))?></label>
+      <select name="school_year" required>
+        <option value=""><?=h(t('admin.classes.switch_school_year_placeholder', '— Schuljahr wählen —'))?></option>
+        <?php foreach ($years as $y): ?>
+          <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.classes.period_label', 'Halbjahr'))?></label>
+      <?php $periodOptions = period_label_options(); ?>
+      <select name="period_label">
+        <?php foreach ($periodOptions as $val => $lbl): ?>
+          <option value="<?=h($val)?>"><?=h($lbl)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.classes.switch_template_label', 'Vorlage für neues Halbjahr'))?></label>
+      <select name="template_id">
+        <option value="0"><?=h(t('admin.classes.switch_template_keep', 'Vorlage der bisherigen Klasse behalten'))?></option>
+        <?php foreach ($templates as $tpl): $tid=(int)$tpl['id']; $inactive=((int)($tpl['is_active'] ?? 0)!==1); ?>
+          <option value="<?=h((string)$tid)?>" <?=($inactive ? 'disabled' : '')?>>
+            <?=h((string)$tpl['name'])?>
+            <?=((int)$tpl['template_version']>0 ? ' (v'.h((string)$tpl['template_version']).')' : '')?>
+            <?=($inactive ? ' – ' . h(t('admin.classes.template_inactive_badge')) : '')?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+      <div class="muted"><?=h(t('admin.classes.switch_template_hint', 'Optional: kann später pro Klasse angepasst werden.'))?></div>
+    </div>
+
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('admin.classes.switch_confirm', 'Halbjahr jetzt für alle aktiven Klassen des Schuljahres wechseln?'))?>');"><?=h(t('admin.classes.switch_button', 'Halbjahr wechseln'))?></button>
+    </div>
+  </form>
 </div>
 
 <div class="card">

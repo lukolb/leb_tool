@@ -346,12 +346,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->beginTransaction();
 
+      $periodLabel = 'Standard';
+      $stPeriod = $pdo->prepare("SELECT period_label FROM classes WHERE school_year=? AND is_active=1 ORDER BY id DESC LIMIT 1");
+      $stPeriod->execute([$schoolYear]);
+      $periodLabel = normalize_class_period_label((string)($stPeriod->fetchColumn() ?: 'Standard'));
+
       $classLookup = $pdo->prepare(
-        "SELECT id FROM classes WHERE school_year=? AND grade_level=? AND label=? LIMIT 1"
+        "SELECT id FROM classes WHERE school_year=? AND period_label=? AND grade_level=? AND label=? LIMIT 1"
       );
       $classInsert = $pdo->prepare(
-        "INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active)
-         VALUES (?, ?, ?, ?, NULL, 'groups', 1)"
+        "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active)
+         VALUES (?, ?, ?, ?, ?, NULL, 'groups', 1)"
       );
 
       $checkStudent = $pdo->prepare(
@@ -436,11 +441,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             continue;
           }
 
-          $classLookup->execute([$schoolYear, $grade, $label]);
+          $classLookup->execute([$schoolYear, $periodLabel, $grade, $label]);
           $classId = $classLookup->fetchColumn();
           if (!$classId) {
             $name = computed_class_name($grade, $label);
-            $classInsert->execute([$schoolYear, $grade, $label, $name]);
+            $classInsert->execute([$schoolYear, $periodLabel, $grade, $label, $name]);
             $classId = (int)$pdo->lastInsertId();
             $createdClasses++;
             $importSummary['classes'][$classId] = [

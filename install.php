@@ -631,8 +631,8 @@ CREATE TABLE IF NOT EXISTS `classes` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_classes_year_name` (`school_year`,`name`),
-  UNIQUE KEY `uq_classes_year_grade_label` (`school_year`,`grade_level`,`label`),
+  UNIQUE KEY `uq_classes_year_name_period` (`school_year`,`period_label`,`name`),
+  UNIQUE KEY `uq_classes_year_grade_label_period` (`school_year`,`period_label`,`grade_level`,`label`),
   KEY `idx_classes_active_year` (`is_active`,`school_year`),
   KEY `idx_classes_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

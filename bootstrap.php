@@ -545,9 +545,34 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("ALTER TABLE classes ADD COLUMN label VARCHAR(10) NULL AFTER grade_level");
     }
 
-    // Helpful unique index: (school_year, grade_level, label)
-    if (!db_has_index($pdo, 'classes', 'uq_classes_year_grade_label')) {
-      $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_grade_label ON classes (school_year, grade_level, label)");
+    // Helpful unique indexes: allow multiple half-years per class
+    if (db_has_index($pdo, 'classes', 'uq_classes_year_name')) {
+      try {
+        $pdo->exec("DROP INDEX uq_classes_year_name ON classes");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (!db_has_index($pdo, 'classes', 'uq_classes_year_name_period')) {
+      try {
+        $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_name_period ON classes (school_year, period_label, name)");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (db_has_index($pdo, 'classes', 'uq_classes_year_grade_label')) {
+      try {
+        $pdo->exec("DROP INDEX uq_classes_year_grade_label ON classes");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (!db_has_index($pdo, 'classes', 'uq_classes_year_grade_label_period')) {
+      try {
+        $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_grade_label_period ON classes (school_year, period_label, grade_level, label)");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
     }
 
     // --- students: add master_student_id to support rollover/copy without re-entry
