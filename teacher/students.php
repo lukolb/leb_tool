@@ -490,6 +490,13 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 /**
  * Child input lock/unlock helpers (class-wide)
  */
@@ -1240,7 +1247,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     <a class="btn secondary" href="<?=h(url($toClassesUrl))?>"><?=h(t('teacher.students.back_to_classes', '← zurück zu den Klassen'))?></a>
   </div>
     
-    <h1><?=h(t('teacher.students.class_heading', 'Klasse'))?> <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?>)</span></h1>
+    <h1><?=h(t('teacher.students.class_heading', 'Klasse'))?> <?=h(class_display($class))?> <span class="muted">(<?=h((string)$class['school_year'])?> · <?=h(period_label_display($class['period_label'] ?? 'Standard'))?>)</span></h1>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>

@@ -116,6 +116,13 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
   http_response_code(403);
   echo h(t('teacher.entry.forbidden'));
@@ -968,7 +975,9 @@ render_teacher_header($pageTitle);
       <label class="label"><?=h(t('teacher.entry.class_label'))?></label>
       <select class="input" id="classSelect" style="width:100%;" <?= $delegatedMode ? 'disabled' : '' ?>>
         <?php foreach ($classes as $c): $id = (int)$c['id']; ?>
-          <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>><?=h((string)$c['school_year'] . ' · ' . class_display($c))?></option>
+          <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>>
+            <?=h((string)$c['school_year'] . ' · ' . period_label_display($c['period_label'] ?? 'Standard') . ' · ' . class_display($c))?>
+          </option>
         <?php endforeach; ?>
       </select>
     </div>
