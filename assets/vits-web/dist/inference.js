@@ -12,6 +12,7 @@ export class TtsSession {
   #ort;
   #ortSession;
   #progressCallback;
+  #maxPhonemeId;
 
   constructor({ voiceId, progress }) {
     this.voiceId = voiceId;
@@ -38,6 +39,7 @@ export class TtsSession {
     const path = PATH_MAP[this.voiceId];
     const modelConfigBlob = await getBlob(`${HF_BASE}/${path}.json`);
     this.#modelConfig = JSON.parse(await modelConfigBlob.text());
+    this.#maxPhonemeId = this.resolveMaxPhonemeId(this.#modelConfig);
 
     const modelBlob = await getBlob(
       `${HF_BASE}/${path}`,
@@ -53,7 +55,7 @@ export class TtsSession {
 
     const input = JSON.stringify([{ text: text.trim() }]);
 
-    const phonemeIds = await new Promise(async (resolve) => {
+    const rawPhonemeIds = await new Promise(async (resolve) => {
       const module = await this.#createPiperPhonemize({
         print: (data) => {
           resolve(JSON.parse(data).phoneme_ids);
@@ -77,6 +79,10 @@ export class TtsSession {
         '/espeak-ng-data',
       ]);
     });
+    const phonemeIds = this.normalizePhonemeIds(rawPhonemeIds);
+    if (!phonemeIds.length) {
+      throw new Error('No phoneme IDs generated for input text.');
+    }
 
     const speakerId = 0;
     const sampleRate = this.#modelConfig.audio.sample_rate;
@@ -107,6 +113,37 @@ export class TtsSession {
     return new Blob([pcm2wav(pcm, 1, sampleRate)], {
       type: 'audio/x-wav',
     });
+  }
+
+  resolveMaxPhonemeId(modelConfig) {
+    if (!modelConfig) return undefined;
+    if (typeof modelConfig.num_symbols === 'number') {
+      return Math.max(0, Math.floor(modelConfig.num_symbols) - 1);
+    }
+    const map = modelConfig.phoneme_id_map;
+    if (map && typeof map === 'object') {
+      const values = Object.values(map)
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+      if (values.length) {
+        return Math.max(...values);
+      }
+    }
+    return undefined;
+  }
+
+  normalizePhonemeIds(rawIds) {
+    const maxId = this.#maxPhonemeId;
+    const normalized = rawIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id))
+      .map((id) => {
+        const clamped = maxId !== undefined
+          ? Math.min(Math.max(Math.trunc(id), 0), maxId)
+          : Math.trunc(id);
+        return BigInt(clamped);
+      });
+    return BigInt64Array.from(normalized);
   }
 }
 
