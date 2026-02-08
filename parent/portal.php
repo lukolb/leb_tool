@@ -63,6 +63,13 @@ function parent_portal_class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function parent_feedback_ack_exists(PDO $pdo, int $linkId): bool {
   $st = $pdo->prepare("SELECT 1 FROM parent_feedback WHERE link_id=? AND feedback_type='ack' LIMIT 1");
   $st->execute([$linkId]);
@@ -326,6 +333,9 @@ $meetingFeedbackCompleted = $meetingFeedbackEnabled
 $meetingFeedbackBlocking = $meetingFeedbackRequired && !$meetingFeedbackCompleted;
 $canPreview = ($status === 'approved') && !$meetingFeedbackBlocking;
 $hasAck = $allowResponses ? parent_feedback_ack_exists($pdo, (int)$link['id']) : false;
+$reportSchoolYear = (string)($link['report_school_year'] ?? '');
+$reportPeriodLabel = normalize_class_period_label($link['period_label'] ?? 'Standard');
+$reportPeriodDisplay = period_label_display($reportPeriodLabel);
 $meetingForm = [
   'q1' => '',
   'q2' => '',
@@ -438,8 +448,6 @@ if ($canPreview) {
 
   // ✅ NEW: determine class-wide field names for this template
   $templateId = (int)($link['template_id'] ?? 0);
-  $reportSchoolYear = (string)($link['report_school_year'] ?? '');
-  $reportPeriodLabel = normalize_class_period_label($link['period_label'] ?? 'Standard');
   $classFieldNames = [];
 
   if ($templateId > 0) {
@@ -663,7 +671,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       </p>
       <div class="pill"><?=h((string)$link['first_name'] . ' ' . (string)$link['last_name'])?></div>
       <div class="muted" style="margin-top:4px;">
-        <?=h(t('parent.portal.class'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?>
+        <?=h(t('parent.portal.class'))?>: <?=h((string)$link['school_year'])?> · <?=h(parent_portal_class_display($link))?> · <?=h($reportPeriodDisplay)?>
       </div>
       <div class="muted" style="margin-top:12px;">
         <?=h(t('parent.portal.valid_until'))?>: <?= $expiresAt ? render_local_datetime($expiresAt, 'd.m.Y H:i') : h(t('parent.portal.no_expiry')) ?>

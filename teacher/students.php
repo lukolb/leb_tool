@@ -1198,12 +1198,12 @@ foreach ($students as $s) {
 
 // Source classes for copy
 if (($u['role'] ?? '') === 'admin') {
-  $cs = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id<>? ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $cs = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id<>? ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $cs->execute([$classId]);
   $sourceClasses = $cs->fetchAll();
 } else {
   $cs = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
      FROM classes c
      JOIN user_class_assignments uca ON uca.class_id=c.id
      WHERE uca.user_id=? AND c.id<>?
@@ -2185,7 +2185,7 @@ aiSupportLoading = true;
           <select name="source_class_id" id="sourceClass" required>
             <option value=""><?=h(t('teacher.students.copy_choose', '— wählen —'))?></option>
             <?php foreach ($sourceClasses as $c): ?>
-              <option value="<?=h((string)$c['id'])?>"><?=h((string)$c['school_year'])?> · <?=h(class_display($c))?></option>
+              <option value="<?=h((string)$c['id'])?>"><?=h((string)$c['school_year'])?> · <?=h(period_label_display($c['period_label'] ?? 'Standard'))?> · <?=h(class_display($c))?></option>
             <?php endforeach; ?>
           </select>
         </div>

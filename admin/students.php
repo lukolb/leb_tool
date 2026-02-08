@@ -20,11 +20,20 @@ if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
   unset($_SESSION['admin_import_summary']);
 }
 
+function period_label_display_admin(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name = (string)($c['class_name'] ?? '');
-  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : '—');
+  $base = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : '—');
+  $period = period_label_display_admin($c['period_label'] ?? 'Standard');
+  return $base . ' · ' . $period;
 }
 
 function normalize_label(string $s): string {
@@ -597,7 +606,7 @@ if ($classId > 0) {
 $st = $pdo->prepare(
   "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.external_ref, s.is_active,
           s.created_at,
-          c.id AS class_id, c.school_year, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
+          c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
    $where
@@ -617,7 +626,7 @@ $deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
-$classes = $pdo->query("SELECT id, school_year, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
 $templates = $pdo->query(
   "SELECT id, name, template_version, is_active
    FROM templates
@@ -668,7 +677,7 @@ render_admin_header(t('admin.students.title'));
         <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
         <?php foreach ($classes as $c): ?>
           <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
-            <?=h((string)$c['school_year'])?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
+            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
           </option>
         <?php endforeach; ?>
       </select>
