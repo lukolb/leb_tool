@@ -31,9 +31,7 @@ function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name = (string)($c['class_name'] ?? '');
-  $base = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : '—');
-  $period = period_label_display_admin($c['period_label'] ?? 'Standard');
-  return $base . ' · ' . $period;
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : '—');
 }
 
 function normalize_label(string $s): string {
