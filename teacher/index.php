@@ -759,6 +759,17 @@ render_teacher_header(t('teacher.title'));
   <?php if (($scope['forms_total'] ?? 0) === 0 && ($scope['delegations_total'] ?? 0) === 0): ?>
     <div class="alert"><?=h(t('teacher.progress.empty', 'Keine Daten verfügbar.'))?></div>
   <?php else: ?>
+    <?php
+      $studentsBar = is_numeric($scope['students_percent'] ?? null) ? max(0, min(100, (int)$scope['students_percent'])) : 0;
+      $teachersBar = is_numeric($scope['teachers_percent'] ?? null) ? max(0, min(100, (int)$scope['teachers_percent'])) : 0;
+      $delegationsBar = is_numeric($scope['delegations_percent'] ?? null) ? max(0, min(100, (int)$scope['delegations_percent'])) : 0;
+    ?>
+    <style>
+      .progress-bar{ height:6px; background: var(--border); border-radius:999px; overflow:hidden; margin-top:6px; }
+      .progress-fill{ height:100%; background: var(--primary, #0b57d0); }
+      .progress-fill.teacher{ background: #6c5ce7; }
+      .progress-fill.delegation{ background: #1e8e3e; }
+    </style>
     <div class="stats-grid">
       <?php if (!($scope['delegate_only'] ?? false)): ?>
       <div class="stat-box">
@@ -771,6 +782,9 @@ render_teacher_header(t('teacher.title'));
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?></div>
+        <div class="progress-bar" role="img" aria-label="<?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?> <?=h((string)$studentsBar)?>%">
+          <div class="progress-fill" style="width:<?=h((string)$studentsBar)?>%;"></div>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value">
@@ -778,6 +792,9 @@ render_teacher_header(t('teacher.title'));
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
+        <div class="progress-bar" role="img" aria-label="<?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?> <?=h((string)$teachersBar)?>%">
+          <div class="progress-fill teacher" style="width:<?=h((string)$teachersBar)?>%;"></div>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value"><?=h(format_minutes_short($scope['avg_minutes'] ?? null))?></div>
@@ -790,6 +807,9 @@ render_teacher_header(t('teacher.title'));
           <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)<?php endif; ?></span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?></div>
+        <div class="progress-bar" role="img" aria-label="<?=h(t('teacher.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?> <?=h((string)$delegationsBar)?>%">
+          <div class="progress-fill delegation" style="width:<?=h((string)$delegationsBar)?>%;"></div>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value"><?=h((string)($scope['recent_delegations'] ?? 0))?></div>
