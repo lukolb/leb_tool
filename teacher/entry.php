@@ -3528,19 +3528,15 @@ render_teacher_header($pageTitle);
       : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
 
     const sub = row.querySelector('.js-srow-sub');
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
     if (sub) {
       const statusLbl = String(sub.getAttribute('data-statuslbl') || '');
-      sub.textContent = tfmtEntry('progress_status_line', {
+      const statusLine = tfmtEntry('progress_status_line', {
         status: statusLbl,
         missing: prog.missing,
         missingLabel,
       });
-    }
-
-    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
-    const breakdownEl = row.querySelector('.js-srow-breakdown');
-    if (breakdownEl) {
-      breakdownEl.textContent = breakdown
+      const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
             total: breakdown.totalMissing,
             child: breakdown.childMissing,
@@ -3548,6 +3544,7 @@ render_teacher_header($pageTitle);
             own: breakdown.ownMissing,
           })
         : '';
+      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -3569,13 +3566,22 @@ render_teacher_header($pageTitle);
     if (CHILD_MODE) {
       const prog = activeProgressForStudent(Number(s.report_instance_id || 0));
       const chk = prog.complete ? '✓' : '';
+      const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+      const breakdownText = breakdown
+        ? tfmtEntry('progress_open_breakdown', {
+            total: breakdown.totalMissing,
+            child: breakdown.childMissing,
+            delegated: breakdown.delegatedMissing,
+            own: breakdown.ownMissing,
+          })
+        : '';
       studentBadge.textContent = tfmtEntry('student_badge_child', {
         name: s.name,
         done: prog.done,
         total: prog.total,
         missing: prog.missing,
         check: chk,
-      }).trim();
+      }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
       return;
     }
     const tDone = Number(s.progress_teacher_done || 0);
@@ -3586,6 +3592,15 @@ render_teacher_header($pageTitle);
     const oTotal = Number(s.progress_overall_total || 0);
     const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+    const breakdownText = breakdown
+      ? tfmtEntry('progress_open_breakdown', {
+          total: breakdown.totalMissing,
+          child: breakdown.childMissing,
+          delegated: breakdown.delegatedMissing,
+          own: breakdown.ownMissing,
+        })
+      : '';
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
       teacherDone: tDone,
@@ -3594,7 +3609,7 @@ render_teacher_header($pageTitle);
       childTotal: cTotal,
       missing: oMissing,
       check: chk,
-    }).trim();
+    }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
   }
 
   function updatePdfEntryButton(student){
@@ -5105,20 +5120,19 @@ render_teacher_header($pageTitle);
         : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownHtml = breakdown
-        ? `<div class="sub muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
+        ? ` <span class="muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
             total: breakdown.totalMissing,
             child: breakdown.childMissing,
             delegated: breakdown.delegatedMissing,
             own: breakdown.ownMissing,
-          }))}</div>`
+          }))}</span>`
         : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}</div>
-          ${breakdownHtml}
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}${breakdownHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
