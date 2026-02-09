@@ -504,14 +504,14 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.deadlines.title', 'Fristen pro Schuljahr'))?></h2>
   <p class="muted"><?=h(t('admin.settings.deadlines.desc', 'Lege Abgabefristen für Schüler, Delegationen und Lehrkräfte fest.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" id="deadline-form">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_deadlines">
 
     <div class="grid">
       <div>
         <label><?=h(t('admin.settings.deadlines.school_year_label', 'Schuljahr'))?></label>
-        <select name="deadline_school_year" required>
+        <select name="deadline_school_year" required id="deadline-school-year">
           <?php if (!$availableDeadlineYears && $fallbackDeadlineYear !== ''): ?>
             <option value="<?=h($fallbackDeadlineYear)?>" selected><?=h($fallbackDeadlineYear)?></option>
           <?php else: ?>
@@ -523,7 +523,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </div>
       <div>
         <label><?=h(t('admin.settings.deadlines.period_label', 'Halbjahr'))?></label>
-        <select name="deadline_period_label">
+        <select name="deadline_period_label" id="deadline-period-label">
           <?php foreach (['Standard' => t('admin.classes.period.h1', '1. HJ'), 'H2' => t('admin.classes.period.h2', '2. HJ')] as $key => $label): ?>
             <option value="<?=h((string)$key)?>" <?=normalize_class_period_label($selectedDeadlinePeriod) === (string)$key ? 'selected' : ''?>><?=h((string)$label)?></option>
           <?php endforeach; ?>
@@ -552,6 +552,24 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <button class="btn primary" type="submit"><?=h(t('admin.settings.deadlines.save', 'Fristen speichern'))?></button>
     </div>
   </form>
+  <script>
+    (function() {
+      const form = document.getElementById('deadline-form');
+      if (!form) return;
+      const yearSelect = document.getElementById('deadline-school-year');
+      const periodSelect = document.getElementById('deadline-period-label');
+      const handleChange = () => {
+        form.action = <?=json_encode(url('admin/settings.php'))?>;
+        form.method = 'get';
+        const params = new URLSearchParams();
+        if (yearSelect && yearSelect.value) params.set('deadline_year', yearSelect.value);
+        if (periodSelect && periodSelect.value) params.set('deadline_period', periodSelect.value);
+        window.location.href = form.action + (params.toString() ? ('?' + params.toString()) : '');
+      };
+      if (yearSelect) yearSelect.addEventListener('change', handleChange);
+      if (periodSelect) periodSelect.addEventListener('change', handleChange);
+    })();
+  </script>
 </div>
 
 <div class="card">
