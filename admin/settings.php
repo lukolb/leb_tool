@@ -504,14 +504,14 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.deadlines.title', 'Fristen pro Schuljahr'))?></h2>
   <p class="muted"><?=h(t('admin.settings.deadlines.desc', 'Lege Abgabefristen für Schüler, Delegationen und Lehrkräfte fest.'))?></p>
 
-  <form method="post" autocomplete="off" id="deadline-form">
+  <form method="post" autocomplete="off" id="deadline-form" data-fetch-url="<?=h(url('admin/settings.php'))?>">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_deadlines">
 
     <div class="grid">
       <div>
         <label><?=h(t('admin.settings.deadlines.school_year_label', 'Schuljahr'))?></label>
-        <select name="deadline_school_year" required id="deadline-school-year">
+        <select name="deadline_school_year" required id="deadline-school-year" data-deadline-year>
           <?php if (!$availableDeadlineYears && $fallbackDeadlineYear !== ''): ?>
             <option value="<?=h($fallbackDeadlineYear)?>" selected><?=h($fallbackDeadlineYear)?></option>
           <?php else: ?>
@@ -523,7 +523,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </div>
       <div>
         <label><?=h(t('admin.settings.deadlines.period_label', 'Halbjahr'))?></label>
-        <select name="deadline_period_label" id="deadline-period-label">
+        <select name="deadline_period_label" id="deadline-period-label" data-deadline-period>
           <?php foreach (['Standard' => t('admin.classes.period.h1', '1. HJ'), 'H2' => t('admin.classes.period.h2', '2. HJ')] as $key => $label): ?>
             <option value="<?=h((string)$key)?>" <?=normalize_class_period_label($selectedDeadlinePeriod) === (string)$key ? 'selected' : ''?>><?=h((string)$label)?></option>
           <?php endforeach; ?>
@@ -532,7 +532,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <?php foreach ($deadlineTypes as $key => $meta): ?>
         <div>
           <label><?=h((string)($meta['label'] ?? $key))?></label>
-          <input type="datetime-local" name="deadline_<?=h($key)?>" value="<?=h($deadlineInputValues[$key] ?? '')?>">
+          <input type="datetime-local" name="deadline_<?=h($key)?>" value="<?=h($deadlineInputValues[$key] ?? '')?>" data-deadline-input="<?=h($key)?>">
         </div>
       <?php endforeach; ?>
     </div>
@@ -558,14 +558,48 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       if (!form) return;
       const yearSelect = document.getElementById('deadline-school-year');
       const periodSelect = document.getElementById('deadline-period-label');
-      const handleChange = () => {
-        form.action = <?=json_encode(url('admin/settings.php'))?>;
-        form.method = 'get';
+      const fetchUrl = form.getAttribute('data-fetch-url') || '';
+      const inputs = form.querySelectorAll('[data-deadline-input]');
+
+      const setLoading = (isLoading) => {
+        inputs.forEach(input => {
+          input.disabled = isLoading;
+        });
+      };
+
+      const updateInputs = (doc) => {
+        if (!doc) return;
+        inputs.forEach(input => {
+          const key = input.getAttribute('data-deadline-input');
+          if (!key) return;
+          const fresh = doc.querySelector(`[data-deadline-input="${key}"]`);
+          if (fresh instanceof HTMLInputElement) {
+            input.value = fresh.value || '';
+          }
+        });
+      };
+
+      const handleChange = async () => {
+        if (!fetchUrl) return;
         const params = new URLSearchParams();
         if (yearSelect && yearSelect.value) params.set('deadline_year', yearSelect.value);
         if (periodSelect && periodSelect.value) params.set('deadline_period', periodSelect.value);
-        window.location.href = form.action + (params.toString() ? ('?' + params.toString()) : '');
+        const url = fetchUrl + (params.toString() ? ('?' + params.toString()) : '');
+        try {
+          setLoading(true);
+          const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+          if (!res.ok) throw new Error('fetch failed');
+          const html = await res.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          updateInputs(doc);
+        } catch (e) {
+          // ignore fetch errors
+        } finally {
+          setLoading(false);
+        }
       };
+
       if (yearSelect) yearSelect.addEventListener('change', handleChange);
       if (periodSelect) periodSelect.addEventListener('change', handleChange);
     })();
