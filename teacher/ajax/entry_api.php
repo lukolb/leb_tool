@@ -2321,6 +2321,9 @@ try {
     if ($reportId > 0) {
       apply_system_bindings($pdo, $reportId);
     }
+    if ($classReportInstanceId > 0) {
+      apply_system_bindings($pdo, $classReportInstanceId);
+    }
 
     $teacherFields = load_teacher_fields($pdo, $templateId);
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
