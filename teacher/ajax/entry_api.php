@@ -2299,7 +2299,8 @@ try {
     $templateId = (int)$tpl['id'];
     $schoolYear = class_school_year($pdo, $classId);
     if ($schoolYear === '') $schoolYear = date('Y');
-    $periodLabel = 'Standard';
+    $periodLabel = class_period_label($pdo, $classId);
+    $periodLabel = normalize_class_period_label($periodLabel);
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
     $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
     $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
@@ -2349,6 +2350,7 @@ try {
       $delegateGroupKeys,
       $delegateShowOtherFieldsReadonly,
       $delegatedView,
+      $periodLabel,
       &$optCache,
       &$iconCache,
       &$fields,
@@ -2407,7 +2409,7 @@ try {
         }, $optsTeacher);
       }
 
-      $periodLabel = 'Standard';
+      $periodLabel = normalize_class_period_label($periodLabel);
       $type = (string)($f['field_type'] ?? '');
       $isMultiline = (int)($f['is_multiline'] ?? 0);
       $canEditField = false;

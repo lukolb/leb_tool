@@ -36,7 +36,7 @@ if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $cla
 
 $st = $pdo->prepare(
   "SELECT s.id, s.first_name, s.last_name, s.class_id,
-          c.school_year, c.grade_level, c.label, c.name
+          c.school_year, c.period_label, c.grade_level, c.label, c.name
    FROM students s
    JOIN classes c ON c.id=s.class_id
    WHERE s.id=?
@@ -61,6 +61,13 @@ function pdf_entry_class_display(array $c): string {
   $name = (string)($c['name'] ?? '');
   $id = (int)($c['class_id'] ?? ($c['id'] ?? 0));
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . $id));
+}
+
+function pdf_entry_period_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
 $pageTitle = t('teacher.entry.title');
@@ -315,7 +322,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     </div>
     <h1 style="margin-bottom:4px;"><?=h(t('teacher.entry.heading_fill'))?></h1>
     <div class="muted">
-      <?=h($studentName)?> · <?=h((string)($student['school_year'] ?? ''))?> · <?=h(pdf_entry_class_display($student))?>
+      <?=h($studentName)?> · <?=h((string)($student['school_year'] ?? ''))?> · <?=h(pdf_entry_period_display($student['period_label'] ?? 'Standard'))?> · <?=h(pdf_entry_class_display($student))?>
     </div>
     <div class="muted" style="margin-top:6px;"><?=h(t('teacher.pdf_entry.autosave_hint'))?></div>
     <div style="margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
