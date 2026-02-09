@@ -3509,15 +3509,21 @@ render_teacher_header($pageTitle);
     const childTotal = Number(student.progress_child_total || 0);
     const totalMissing = ownMissing + delegatedMissing + childMissing;
     const totalFields = ownTotal + delegatedTotal + childTotal;
+    const ownDone = Math.max(0, ownTotal - ownMissing);
+    const delegatedDone = Math.max(0, delegatedTotal - delegatedMissing);
+    const childDone = Math.max(0, childTotal - childMissing);
     return {
       totalMissing,
       totalFields,
       childMissing,
       childTotal,
+      childDone,
       delegatedMissing,
       delegatedTotal,
+      delegatedDone,
       ownMissing,
       ownTotal,
+      ownDone,
     };
   }
 
@@ -3544,13 +3550,13 @@ render_teacher_header($pageTitle);
       });
       const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
-            childOpen: breakdown.childMissing,
-            childTotal: breakdown.childTotal,
-            delegatedOpen: breakdown.delegatedMissing,
-            delegatedTotal: breakdown.delegatedTotal,
-            ownOpen: breakdown.ownMissing,
-            ownTotal: breakdown.ownTotal,
-          })
+          childDone: breakdown.childDone,
+          childTotal: breakdown.childTotal,
+          delegatedDone: breakdown.delegatedDone,
+          delegatedTotal: breakdown.delegatedTotal,
+          ownDone: breakdown.ownDone,
+          ownTotal: breakdown.ownTotal,
+        })
         : '';
       sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
     }
@@ -3580,18 +3586,17 @@ render_teacher_header($pageTitle);
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
-            childOpen: breakdown.childMissing,
-            childTotal: breakdown.childTotal,
-            delegatedOpen: breakdown.delegatedMissing,
-            delegatedTotal: breakdown.delegatedTotal,
-            ownOpen: breakdown.ownMissing,
-            ownTotal: breakdown.ownTotal,
-          })
+          childDone: breakdown.childDone,
+          childTotal: breakdown.childTotal,
+          delegatedDone: breakdown.delegatedDone,
+          delegatedTotal: breakdown.delegatedTotal,
+          ownDone: breakdown.ownDone,
+          ownTotal: breakdown.ownTotal,
+        })
         : '';
-      const openCount = Math.max(0, prog.total - prog.done);
       studentBadge.textContent = tfmtEntry('student_badge_child', {
         name: s.name,
-        open: openCount,
+        done: Math.max(0, prog.done),
         total: prog.total,
         check: chk,
       }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
@@ -3605,11 +3610,11 @@ render_teacher_header($pageTitle);
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
-      childOpen: breakdown?.childMissing ?? Math.max(0, cTotal - cDone),
+      childDone: breakdown?.childDone ?? Math.max(0, cDone),
       childTotal: breakdown?.childTotal ?? cTotal,
-      delegatedOpen: breakdown?.delegatedMissing ?? 0,
+      delegatedDone: breakdown?.delegatedDone ?? 0,
       delegatedTotal: breakdown?.delegatedTotal ?? 0,
-      ownOpen: breakdown?.ownMissing ?? Math.max(0, tTotal - tDone),
+      ownDone: breakdown?.ownDone ?? Math.max(0, tDone),
       ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
     }).trim();
@@ -5119,11 +5124,11 @@ render_teacher_header($pageTitle);
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownHtml = breakdown
         ? ` <span class="muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
-            childOpen: breakdown.childMissing,
+            childDone: breakdown.childDone,
             childTotal: breakdown.childTotal,
-            delegatedOpen: breakdown.delegatedMissing,
+            delegatedDone: breakdown.delegatedDone,
             delegatedTotal: breakdown.delegatedTotal,
-            ownOpen: breakdown.ownMissing,
+            ownDone: breakdown.ownDone,
             ownTotal: breakdown.ownTotal,
           }))}</span>`
         : '';
