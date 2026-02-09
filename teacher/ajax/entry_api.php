@@ -1467,6 +1467,23 @@ function load_teacher_fields(PDO $pdo, int $templateId): array {
   return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+function load_system_bound_fields(PDO $pdo, int $templateId): array {
+  $st = $pdo->prepare(
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
+     FROM template_fields
+     WHERE template_id=?
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $st->execute([$templateId]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  $out = [];
+  foreach ($rows as $row) {
+    $meta = meta_read($row['meta_json'] ?? null);
+    if (is_system_bound($meta)) $out[] = $row;
+  }
+  return $out;
+}
+
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
     "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json
@@ -1830,6 +1847,17 @@ try {
     }
 
     $teacherFields = load_teacher_fields($pdo, $templateId);
+    $systemFields = load_system_bound_fields($pdo, $templateId);
+    if ($systemFields) {
+      $teacherById = [];
+      foreach ($teacherFields as $row) {
+        $teacherById[(int)($row['id'] ?? 0)] = true;
+      }
+      foreach ($systemFields as $row) {
+        $fid = (int)($row['id'] ?? 0);
+        if ($fid > 0 && !isset($teacherById[$fid])) $teacherFields[] = $row;
+      }
+    }
 
     // ✅ determine EDITABLE class fields (scope=class AND not system-bound)
     $classFieldIdsEditable = [];
