@@ -276,6 +276,17 @@ function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
   return [$map, $duplicates];
 }
 
+function finalmarks_has_grade_fields(PDO $pdo, int $templateId): bool {
+  $st = $pdo->prepare(
+    "SELECT 1
+     FROM template_fields
+     WHERE template_id=? AND field_type IN ('grade','select','radio')
+     LIMIT 1"
+  );
+  $st->execute([$templateId]);
+  return (bool)$st->fetchColumn();
+}
+
 function finalmarks_parse_blocks(array $blocks): array {
   $blocks = array_values(array_filter(array_map('strval', $blocks), fn($b) => trim($b) !== ''));
   $results = [];
@@ -402,8 +413,7 @@ if ($classId > 0) {
   $stClass->execute([$classId]);
   $finalmarksTemplateId = (int)($stClass->fetchColumn() ?: 0);
   if ($finalmarksTemplateId > 0) {
-    [$subjectFields] = finalmarks_subject_fields($pdo, $finalmarksTemplateId);
-    $finalmarksHasSubjects = !empty($subjectFields);
+    $finalmarksHasSubjects = finalmarks_has_grade_fields($pdo, $finalmarksTemplateId);
   }
 
   $addPeriodOption = function(string $schoolYear, string $periodLabel) use (&$finalmarksYearPeriodOptions): void {
