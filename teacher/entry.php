@@ -404,9 +404,6 @@ foreach ($classes as $c) {
 }
 $classPeriodLabel = normalize_class_period_label($currentClass ? ($currentClass['period_label'] ?? 'Standard') : 'Standard');
 $finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
-if ($finalmarksFormSchoolYear === '') {
-  $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
-}
 $finalmarksFormPeriodLabel = $classPeriodLabel;
 if ($classId > 0) {
   $stClass = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
@@ -429,8 +426,6 @@ if ($classId > 0) {
     }
   };
 
-  $addPeriodOption($finalmarksFormSchoolYear, $finalmarksFormPeriodLabel);
-
   $stPeriods = $pdo->prepare(
     "SELECT DISTINCT ri.school_year, ri.period_label
      FROM report_instances ri
@@ -441,6 +436,17 @@ if ($classId > 0) {
   $stPeriods->execute([$classId]);
   foreach ($stPeriods->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $addPeriodOption((string)($row['school_year'] ?? ''), (string)($row['period_label'] ?? 'Standard'));
+  }
+  $addPeriodOption($finalmarksFormSchoolYear, $finalmarksFormPeriodLabel);
+  if ($finalmarksFormSchoolYear === '' && $finalmarksYearPeriodOptions) {
+    $first = reset($finalmarksYearPeriodOptions);
+    $finalmarksFormSchoolYear = (string)($first['school_year'] ?? '');
+    $finalmarksFormPeriodLabel = normalize_class_period_label((string)($first['period_label'] ?? $finalmarksFormPeriodLabel));
+  }
+  if ($finalmarksFormSchoolYear === '') {
+    $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+    $finalmarksFormPeriodLabel = $classPeriodLabel;
+    $addPeriodOption($finalmarksFormSchoolYear, $finalmarksFormPeriodLabel);
   }
 }
 
