@@ -13,14 +13,23 @@ $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
 $meetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 
-$classes = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")
+$classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")
   ->fetchAll(PDO::FETCH_ASSOC);
+
+function period_label_display_admin(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
 
 function parent_admin_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name  = (string)($c['name'] ?? '');
-  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+  $base = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+  $period = period_label_display_admin($c['period_label'] ?? 'Standard');
+  return $base . ' · ' . $period;
 }
 
 function admin_feedback_query_url(array $overrides): string {
@@ -149,7 +158,7 @@ if ($filterClassId > 0) {
 $where = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
 
 $sql =
-  "SELECT ppl.*, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name,\n" .
+  "SELECT ppl.*, s.first_name, s.last_name, c.school_year, c.period_label, c.grade_level, c.label, c.name,\n" .
   "       req.display_name AS requested_by_name, appr.display_name AS approved_by_name,\n" .
   "       (SELECT COUNT(*) FROM parent_feedback pf WHERE pf.link_id=ppl.id AND pf.is_reviewed=0) AS pending_feedback\n" .
   "FROM parent_portal_links ppl\n" .
@@ -219,7 +228,7 @@ $meetingFeedbackWhereTexts = $meetingFeedbackWhere;
 $meetingFeedbackParamsTexts = $meetingFeedbackParams;
 $meetingFeedbackWhereTexts[] = "pmf.message IS NOT NULL AND TRIM(pmf.message)<>''";
 $meetingFeedbackSql =
-  "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.period_label, c.grade_level, c.label, c.name\n" .
   "FROM parent_meeting_feedback pmf\n" .
   "JOIN students s ON s.id=pmf.student_id\n" .
   "JOIN classes c ON c.id=pmf.class_id\n" .

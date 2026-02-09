@@ -41,6 +41,13 @@ function normalize_period_label(?string $s): string {
   return $s !== '' ? $s : 'Standard';
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function load_teachers_for_delegation(PDO $pdo): array {
   $st = $pdo->query(
     "SELECT id, display_name, role
@@ -155,6 +162,7 @@ try {
           'class_id' => $cid,
           'school_year' => (string)($r['school_year'] ?? ''),
           'period_label' => (string)($r['period_label'] ?? ''),
+          'period_label_display' => period_label_display($r['period_label'] ?? 'Standard'),
           'class_title' => class_display([
             'id' => $cid,
             'school_year' => (string)($r['c_school_year'] ?? ''),

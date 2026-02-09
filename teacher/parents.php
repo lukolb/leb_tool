@@ -19,11 +19,20 @@ $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
 $meetingFeedbackEnabled = (bool)($parentCfg['meeting_feedback_enabled'] ?? false);
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function parent_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name  = (string)($c['name'] ?? '');
-  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+  $base = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+  $period = period_label_display($c['period_label'] ?? 'Standard');
+  return $base . ' · ' . $period;
 }
 
 function latest_report_for_student(PDO $pdo, int $studentId): ?array {
@@ -134,7 +143,7 @@ function meeting_feedback_option_labels(): array {
 }
 
 function meeting_feedback_texts(PDO $pdo, string $whereSql, array $params): array {
-  $sql = "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.grade_level, c.label, c.name\n" .
+  $sql = "SELECT pmf.id, pmf.message, pmf.created_at, pmf.is_anonymous, s.first_name, s.last_name, c.school_year, c.period_label, c.grade_level, c.label, c.name\n" .
     "FROM parent_meeting_feedback pmf\n" .
     "JOIN students s ON s.id=pmf.student_id\n" .
     "JOIN classes c ON c.id=pmf.class_id";
@@ -209,11 +218,11 @@ function teacher_feedback_query_url(array $overrides): string {
 // --- classes for teacher/admin ---
 if ($role === 'admin') {
   $classes = $pdo->query(
-    "SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC"
+    "SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC"
   )->fetchAll(PDO::FETCH_ASSOC);
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name\n" .
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name\n" .
     "FROM classes c\n" .
     "JOIN user_class_assignments uca ON uca.class_id=c.id\n" .
     "WHERE uca.user_id=? AND c.is_active=1\n" .

@@ -29,11 +29,11 @@ $delegationNotice = $delegationShowOtherFieldsReadonly
   : t('teacher.entry.delegation_notice');
 
 if (($u['role'] ?? '') === 'admin') {
-  $st = $pdo->query("SELECT id, school_year, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $st = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll(PDO::FETCH_ASSOC);
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
      FROM classes c
      JOIN user_class_assignments uca ON uca.class_id=c.id
      WHERE uca.user_id=? AND c.is_active=1
@@ -102,7 +102,7 @@ if (($u['role'] ?? '') !== 'admin') {
     }
 
     // IMPORTANT: Do not show other classes here.
-    $stc = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+    $stc = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
     $stc->execute([$classId]);
     $only = $stc->fetch(PDO::FETCH_ASSOC);
     $classes = $only ? [$only] : [];
@@ -114,6 +114,13 @@ function class_display(array $c): string {
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name = (string)($c['name'] ?? '');
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
+}
+
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
 if ($classId > 0 && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
@@ -380,6 +387,7 @@ foreach ($classes as $c) {
     break;
   }
 }
+$classPeriodLabel = normalize_class_period_label($currentClass ? ($currentClass['period_label'] ?? 'Standard') : 'Standard');
 $finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
 if ($finalmarksFormSchoolYear === '') {
   $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
@@ -471,7 +479,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         if ($classStudents) {
           $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
           $in = implode(',', array_fill(0, count($studentIds), '?'));
-          $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
+          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
           $stRep = $pdo->prepare(
             "SELECT id, student_id
              FROM report_instances
@@ -706,7 +714,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       if ($classStudents) {
         $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
         $in = implode(',', array_fill(0, count($studentIds), '?'));
-        $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
+        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
         $stRep = $pdo->prepare(
           "SELECT id, student_id
            FROM report_instances
@@ -967,7 +975,9 @@ render_teacher_header($pageTitle);
       <label class="label"><?=h(t('teacher.entry.class_label'))?></label>
       <select class="input" id="classSelect" style="width:100%;" <?= $delegatedMode ? 'disabled' : '' ?>>
         <?php foreach ($classes as $c): $id = (int)$c['id']; ?>
-          <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>><?=h((string)$c['school_year'] . ' · ' . class_display($c))?></option>
+          <option value="<?=h((string)$id)?>" <?= $id===$classId ? 'selected' : '' ?>>
+            <?=h((string)$c['school_year'] . ' · ' . period_label_display($c['period_label'] ?? 'Standard') . ' · ' . class_display($c))?>
+          </option>
         <?php endforeach; ?>
       </select>
     </div>
@@ -2214,7 +2224,7 @@ render_teacher_header($pageTitle);
     text_snippets: [],
     delegation_users: [],
     delegations: [],
-    period_label: 'Standard',
+    period_label: <?=json_encode($classPeriodLabel)?>,
     students: [],
     values_teacher: {},
     values_teacher_own: {},
@@ -3480,20 +3490,45 @@ render_teacher_header($pageTitle);
     if (!student) return null;
     const reportId = Number(student.report_instance_id || 0);
     let ownMissing = 0;
+    let ownTotal = 0;
     let delegatedMissing = 0;
+    let delegatedTotal = 0;
     activeGroups().forEach(g => {
+      const delegatedUsers = Array.isArray(g?.delegation?.users) ? g.delegation.users : [];
+      const delegatedToOthers = delegatedUsers.length > 0
+        && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
       (g.fields || []).forEach(f => {
-        const missing = String(activeFieldValue(reportId, f.id) ?? '').trim() === '';
-        if (isEditableField(f, g)) {
+        const raw = delegatedToOthers ? teacherVal(reportId, f.id) : teacherEditVal(reportId, f.id);
+        const missing = String(raw ?? '').trim() === '';
+        if (!delegatedToOthers && isEditableField(f, g)) {
+          ownTotal++;
           if (missing) ownMissing++;
-        } else if (missing) {
-          delegatedMissing++;
+        } else {
+          delegatedTotal++;
+          if (missing) delegatedMissing++;
         }
       });
     });
-    const childMissing = Number(student.progress_child_missing || 0);
+    const childTotal = Number(student.progress_child_total || 0);
+    const childDone = Math.min(childTotal, Math.max(0, Number(student.progress_child_done || 0)));
+    const childMissing = Math.max(0, Number(student.progress_child_missing ?? (childTotal - childDone)));
     const totalMissing = ownMissing + delegatedMissing + childMissing;
-    return { totalMissing, childMissing, delegatedMissing, ownMissing };
+    const totalFields = ownTotal + delegatedTotal + childTotal;
+    const ownDone = Math.max(0, ownTotal - ownMissing);
+    const delegatedDone = Math.max(0, delegatedTotal - delegatedMissing);
+    return {
+      totalMissing,
+      totalFields,
+      childMissing,
+      childTotal,
+      childDone,
+      delegatedMissing,
+      delegatedTotal,
+      delegatedDone,
+      ownMissing,
+      ownTotal,
+      ownDone,
+    };
   }
 
   function updateStudentRowUI(student){
@@ -3509,35 +3544,25 @@ render_teacher_header($pageTitle);
           missing: Number(student.progress_overall_missing || 0),
           complete: !!student.progress_is_complete,
         };
-    const teacherMissing = Number(student.progress_teacher_missing || 0);
-    const childMissing = Number(student.progress_child_missing || 0);
-
     const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
-    const missingLabel = CHILD_MODE
-      ? tfmtEntry('progress_missing_child', { count: childMissing })
-      : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
-
     const sub = row.querySelector('.js-srow-sub');
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
     if (sub) {
       const statusLbl = String(sub.getAttribute('data-statuslbl') || '');
-      sub.textContent = tfmtEntry('progress_status_line', {
+      const statusLine = tfmtEntry('progress_status_line', {
         status: statusLbl,
-        missing: prog.missing,
-        missingLabel,
       });
-    }
-
-    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
-    const breakdownEl = row.querySelector('.js-srow-breakdown');
-    if (breakdownEl) {
-      breakdownEl.textContent = breakdown
+      const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
-            total: breakdown.totalMissing,
-            child: breakdown.childMissing,
-            delegated: breakdown.delegatedMissing,
-            own: breakdown.ownMissing,
-          })
+          childDone: breakdown.childDone,
+          childTotal: breakdown.childTotal,
+          delegatedDone: breakdown.delegatedDone,
+          delegatedTotal: breakdown.delegatedTotal,
+          ownDone: breakdown.ownDone,
+          ownTotal: breakdown.ownTotal,
+        })
         : '';
+      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -3548,7 +3573,10 @@ render_teacher_header($pageTitle);
 
     const badge = row.querySelector('.js-prog-badge');
     if (badge) {
-      badge.textContent = prog.complete ? '✓' : tfmtEntry('progress_badge_open', { missing: prog.missing });
+      const badgeMissing = CHILD_MODE
+        ? prog.missing
+        : Number(student.progress_teacher_missing || 0);
+      badge.textContent = prog.complete ? '✓' : tfmtEntry('progress_badge_open', { missing: badgeMissing });
       badge.classList.toggle('ok', !!prog.complete);
     }
   }
@@ -3559,30 +3587,39 @@ render_teacher_header($pageTitle);
     if (CHILD_MODE) {
       const prog = activeProgressForStudent(Number(s.report_instance_id || 0));
       const chk = prog.complete ? '✓' : '';
+      const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+      const breakdownText = breakdown
+        ? tfmtEntry('progress_open_breakdown', {
+          childDone: breakdown.childDone,
+          childTotal: breakdown.childTotal,
+          delegatedDone: breakdown.delegatedDone,
+          delegatedTotal: breakdown.delegatedTotal,
+          ownDone: breakdown.ownDone,
+          ownTotal: breakdown.ownTotal,
+        })
+        : '';
       studentBadge.textContent = tfmtEntry('student_badge_child', {
         name: s.name,
-        done: prog.done,
+        done: Math.max(0, prog.done),
         total: prog.total,
-        missing: prog.missing,
         check: chk,
-      }).trim();
+      }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
       return;
     }
     const tDone = Number(s.progress_teacher_done || 0);
     const tTotal = Number(s.progress_teacher_total || 0);
     const cDone = Number(s.progress_child_done || 0);
     const cTotal = Number(s.progress_child_total || 0);
-    const oDone = Number(s.progress_overall_done || 0);
-    const oTotal = Number(s.progress_overall_total || 0);
-    const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
+    const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
-      teacherDone: tDone,
-      teacherTotal: tTotal,
-      childDone: cDone,
-      childTotal: cTotal,
-      missing: oMissing,
+      childDone: breakdown?.childDone ?? Math.max(0, cDone),
+      childTotal: breakdown?.childTotal ?? cTotal,
+      delegatedDone: breakdown?.delegatedDone ?? 0,
+      delegatedTotal: breakdown?.delegatedTotal ?? 0,
+      ownDone: breakdown?.ownDone ?? Math.max(0, tDone),
+      ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
     }).trim();
   }
@@ -5086,34 +5123,30 @@ render_teacher_header($pageTitle);
         missing: Number(s.progress_overall_missing || 0),
         complete: !!s.progress_is_complete,
       };
-      const teacherMissing = Number(s.progress_teacher_missing || 0);
-      const childMissing = Number(s.progress_child_missing || 0);
       const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
       const complete = !!prog.complete;
-      const missingLabel = CHILD_MODE
-        ? tfmtEntry('progress_missing_child', { count: childMissing })
-        : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownHtml = breakdown
-        ? `<div class="sub muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
-            total: breakdown.totalMissing,
-            child: breakdown.childMissing,
-            delegated: breakdown.delegatedMissing,
-            own: breakdown.ownMissing,
-          }))}</div>`
+        ? ` <span class="muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
+            childDone: breakdown.childDone,
+            childTotal: breakdown.childTotal,
+            delegatedDone: breakdown.delegatedDone,
+            delegatedTotal: breakdown.delegatedTotal,
+            ownDone: breakdown.ownDone,
+            ownTotal: breakdown.ownTotal,
+          }))}</span>`
         : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}</div>
-          ${breakdownHtml}
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
         </div>
-        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : esc(tfmtEntry('progress_badge_open', { missing: prog.missing }))}</span>
+        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : esc(tfmtEntry('progress_badge_open', { missing: (CHILD_MODE ? prog.missing : Number(s.progress_teacher_missing || 0)) }))}</span>
       `;
       div.addEventListener('click', () => {
         ui.activeStudentIndex = idx;
@@ -5847,7 +5880,7 @@ render_teacher_header($pageTitle);
       
       state.delegation_users = j.delegation_users || [];
       state.delegations = j.delegations || [];
-      state.period_label = j.period_label || 'Standard';
+      state.period_label = j.period_label || <?=json_encode($classPeriodLabel)?>;
 
       // reset group selects (delegation badges etc.)
       groupSelect.innerHTML = '';

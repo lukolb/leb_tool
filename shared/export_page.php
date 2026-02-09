@@ -110,6 +110,13 @@ function export_class_display(array $c): string {
   $name  = (string)($c['name'] ?? '');
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
+
+function export_period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
 ?>
 
 <style>
@@ -144,7 +151,7 @@ function export_class_display(array $c): string {
       <select id="classId" class="input" style="width:100%;">
         <?php foreach ($classes as $c): ?>
           <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
-            <?=h((string)$c['school_year'])?> · <?=h(export_class_display($c))?>
+            <?=h((string)$c['school_year'])?> · <?=h(export_period_label_display($c['period_label'] ?? 'Standard'))?> · <?=h(export_class_display($c))?>
           </option>
         <?php endforeach; ?>
       </select>
@@ -1826,4 +1833,10 @@ if (btnExport) {
   }
   resetPreview();
 })();
+
+if (elClass) {
+  check().catch(() => {
+    // ignore initial load errors; user can retry via "Prüfen"
+  });
+}
 </script>

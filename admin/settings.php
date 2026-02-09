@@ -92,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_deadlines') {
       $schoolYear = trim((string)($_POST['deadline_school_year'] ?? ''));
+      $periodLabel = normalize_class_period_label($_POST['deadline_period_label'] ?? 'Standard');
       if ($schoolYear === '') {
         throw new RuntimeException(t('admin.settings.deadlines.error.school_year_missing', 'Schuljahr fehlt.'));
       }
@@ -104,8 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $inputKey = 'deadline_' . $key;
         $input = trim((string)($_POST[$inputKey] ?? ''));
         if ($input === '') {
-          $pdo->prepare("DELETE FROM submission_deadlines WHERE school_year=? AND deadline_key=?")
-            ->execute([$schoolYear, $key]);
+          $pdo->prepare("DELETE FROM submission_deadlines WHERE school_year=? AND period_label=? AND deadline_key=?")
+            ->execute([$schoolYear, $periodLabel, $key]);
           continue;
         }
         $local = parse_user_datetime_local($input);
@@ -116,10 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dbDt = user_local_datetime_to_db($local) ?? $local;
         $dueAt = $dbDt->format('Y-m-d H:i:s');
         $pdo->prepare(
-          "INSERT INTO submission_deadlines (school_year, deadline_key, due_at, created_by_user_id, updated_by_user_id, created_at, updated_at)\n" .
-          "VALUES (?, ?, ?, ?, ?, NOW(), NOW())\n" .
+          "INSERT INTO submission_deadlines (school_year, period_label, deadline_key, due_at, created_by_user_id, updated_by_user_id, created_at, updated_at)\n" .
+          "VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())\n" .
           "ON DUPLICATE KEY UPDATE due_at=VALUES(due_at), updated_by_user_id=VALUES(updated_by_user_id), updated_at=NOW()"
-        )->execute([$schoolYear, $key, $dueAt, $actorId, $actorId]);
+        )->execute([$schoolYear, $periodLabel, $key, $dueAt, $actorId, $actorId]);
       }
 
       if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -132,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $ok = t('admin.settings.deadlines.ok', 'Fristen gespeichert.');
-      audit('deadline_update', $actorId, ['school_year'=>$schoolYear]);
+      audit('deadline_update', $actorId, ['school_year'=>$schoolYear, 'period_label'=>$periodLabel]);
       $cfg = app_config(true);
     } else {
     // ---- Branding ----
@@ -324,8 +325,13 @@ $deadlineTypes = submission_deadline_types();
 $availableDeadlineYears = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 if (!is_array($availableDeadlineYears)) $availableDeadlineYears = [];
 $availableDeadlineYears = array_values(array_filter(array_map('trim', $availableDeadlineYears), fn($v) => $v !== ''));
-$selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $defaultSY ?? ($availableDeadlineYears[0] ?? '')));
-$deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear) : [];
+$fallbackDeadlineYear = $defaultSY !== '' ? (string)$defaultSY : (string)($availableDeadlineYears[0] ?? '');
+$selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $fallbackDeadlineYear));
+if ($selectedDeadlineYear === '' && $availableDeadlineYears) {
+  $selectedDeadlineYear = (string)$availableDeadlineYears[0];
+}
+$selectedDeadlinePeriod = normalize_class_period_label($_POST['deadline_period_label'] ?? $_GET['deadline_period'] ?? 'Standard');
+$deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear, $selectedDeadlinePeriod) : [];
 $deadlineInputValues = [];
 foreach ($deadlineTypes as $key => $meta) {
   $deadlineInputValues[$key] = deadline_input_value($deadlineRows[$key]['due_at'] ?? null);
@@ -498,24 +504,35 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.deadlines.title', 'Fristen pro Schuljahr'))?></h2>
   <p class="muted"><?=h(t('admin.settings.deadlines.desc', 'Lege Abgabefristen für Schüler, Delegationen und Lehrkräfte fest.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" id="deadline-form" data-fetch-url="<?=h(url('admin/settings.php'))?>">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_deadlines">
 
     <div class="grid">
       <div>
         <label><?=h(t('admin.settings.deadlines.school_year_label', 'Schuljahr'))?></label>
-        <input name="deadline_school_year" list="deadlineYearList" value="<?=h($selectedDeadlineYear)?>" placeholder="<?=h(t('admin.settings.deadlines.school_year_placeholder', 'z.B. 2025/26'))?>" required>
-        <datalist id="deadlineYearList">
-          <?php foreach ($availableDeadlineYears as $year): ?>
-            <option value="<?=h((string)$year)?>"></option>
+        <select name="deadline_school_year" required id="deadline-school-year" data-deadline-year>
+          <?php if (!$availableDeadlineYears && $fallbackDeadlineYear !== ''): ?>
+            <option value="<?=h($fallbackDeadlineYear)?>" selected><?=h($fallbackDeadlineYear)?></option>
+          <?php else: ?>
+            <?php foreach ($availableDeadlineYears as $year): ?>
+              <option value="<?=h((string)$year)?>" <?=((string)$year === (string)$selectedDeadlineYear) ? 'selected' : ''?>><?=h((string)$year)?></option>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </select>
+      </div>
+      <div>
+        <label><?=h(t('admin.settings.deadlines.period_label', 'Halbjahr'))?></label>
+        <select name="deadline_period_label" id="deadline-period-label" data-deadline-period>
+          <?php foreach (['Standard' => t('admin.classes.period.h1', '1. HJ'), 'H2' => t('admin.classes.period.h2', '2. HJ')] as $key => $label): ?>
+            <option value="<?=h((string)$key)?>" <?=normalize_class_period_label($selectedDeadlinePeriod) === (string)$key ? 'selected' : ''?>><?=h((string)$label)?></option>
           <?php endforeach; ?>
-        </datalist>
+        </select>
       </div>
       <?php foreach ($deadlineTypes as $key => $meta): ?>
         <div>
           <label><?=h((string)($meta['label'] ?? $key))?></label>
-          <input type="datetime-local" name="deadline_<?=h($key)?>" value="<?=h($deadlineInputValues[$key] ?? '')?>">
+          <input type="datetime-local" name="deadline_<?=h($key)?>" value="<?=h($deadlineInputValues[$key] ?? '')?>" data-deadline-input="<?=h($key)?>">
         </div>
       <?php endforeach; ?>
     </div>
@@ -535,6 +552,58 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <button class="btn primary" type="submit"><?=h(t('admin.settings.deadlines.save', 'Fristen speichern'))?></button>
     </div>
   </form>
+  <script>
+    (function() {
+      const form = document.getElementById('deadline-form');
+      if (!form) return;
+      const yearSelect = document.getElementById('deadline-school-year');
+      const periodSelect = document.getElementById('deadline-period-label');
+      const fetchUrl = form.getAttribute('data-fetch-url') || '';
+      const inputs = form.querySelectorAll('[data-deadline-input]');
+
+      const setLoading = (isLoading) => {
+        inputs.forEach(input => {
+          input.disabled = isLoading;
+        });
+      };
+
+      const updateInputs = (doc) => {
+        if (!doc) return;
+        inputs.forEach(input => {
+          const key = input.getAttribute('data-deadline-input');
+          if (!key) return;
+          const fresh = doc.querySelector(`[data-deadline-input="${key}"]`);
+          if (fresh instanceof HTMLInputElement) {
+            input.value = fresh.value || '';
+          }
+        });
+      };
+
+      const handleChange = async () => {
+        if (!fetchUrl) return;
+        const params = new URLSearchParams();
+        if (yearSelect && yearSelect.value) params.set('deadline_year', yearSelect.value);
+        if (periodSelect && periodSelect.value) params.set('deadline_period', periodSelect.value);
+        const url = fetchUrl + (params.toString() ? ('?' + params.toString()) : '');
+        try {
+          setLoading(true);
+          const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+          if (!res.ok) throw new Error('fetch failed');
+          const html = await res.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          updateInputs(doc);
+        } catch (e) {
+          // ignore fetch errors
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (yearSelect) yearSelect.addEventListener('change', handleChange);
+      if (periodSelect) periodSelect.addEventListener('change', handleChange);
+    })();
+  </script>
 </div>
 
 <div class="card">

@@ -93,8 +93,24 @@ function url_with_lang(string $lang): string {
   return $path . ($newQs ? ('?' . $newQs) : '');
 }
 
-function class_report_period_label(int $classId): string {
-  return '__class__:' . $classId;
+function normalize_class_period_label(?string $s): string {
+  $s = trim((string)$s);
+  return $s !== '' ? $s : 'Standard';
+}
+
+function class_report_period_label(int $classId, ?string $periodLabel = null): string {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  if ($periodLabel === 'Standard') return '__class__:' . $classId;
+  return '__class__:' . $classId . ':' . $periodLabel;
+}
+
+function class_id_from_report_period_label(?string $label): int {
+  $label = (string)$label;
+  if (strpos($label, '__class__:') !== 0) return 0;
+  $rest = substr($label, strlen('__class__:'));
+  $parts = explode(':', $rest);
+  $id = (int)($parts[0] ?? 0);
+  return $id > 0 ? $id : 0;
 }
 
 // One-shot: allow switching language via ?lang=de|en
@@ -437,12 +453,13 @@ function submission_deadline_types(): array {
   ];
 }
 
-function fetch_submission_deadlines(PDO $pdo, string $schoolYear): array {
+function fetch_submission_deadlines(PDO $pdo, string $schoolYear, ?string $periodLabel = null): array {
   $schoolYear = trim($schoolYear);
   if ($schoolYear === '') return [];
   if (!db_has_table($pdo, 'submission_deadlines')) return [];
-  $st = $pdo->prepare("SELECT deadline_key, due_at FROM submission_deadlines WHERE school_year=?");
-  $st->execute([$schoolYear]);
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare("SELECT deadline_key, due_at FROM submission_deadlines WHERE school_year=? AND period_label=?");
+  $st->execute([$schoolYear, $periodLabel]);
   $rows = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $key = (string)($row['deadline_key'] ?? '');
@@ -527,7 +544,10 @@ function ensure_schema(PDO $pdo): void {
   $did = true;
 
   try {
-    // --- classes: add grade_level + label (keeps legacy `name`)
+    // --- classes: add period_label + grade_level + label (keeps legacy `name`)
+    if (!db_has_column($pdo, 'classes', 'period_label')) {
+      $pdo->exec("ALTER TABLE classes ADD COLUMN period_label VARCHAR(50) NOT NULL DEFAULT 'Standard' AFTER school_year");
+    }
     if (!db_has_column($pdo, 'classes', 'grade_level')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN grade_level INT NULL AFTER school_year");
     }
@@ -535,9 +555,34 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("ALTER TABLE classes ADD COLUMN label VARCHAR(10) NULL AFTER grade_level");
     }
 
-    // Helpful unique index: (school_year, grade_level, label)
-    if (!db_has_index($pdo, 'classes', 'uq_classes_year_grade_label')) {
-      $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_grade_label ON classes (school_year, grade_level, label)");
+    // Helpful unique indexes: allow multiple half-years per class
+    if (db_has_index($pdo, 'classes', 'uq_classes_year_name')) {
+      try {
+        $pdo->exec("DROP INDEX uq_classes_year_name ON classes");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (!db_has_index($pdo, 'classes', 'uq_classes_year_name_period')) {
+      try {
+        $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_name_period ON classes (school_year, period_label, name)");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (db_has_index($pdo, 'classes', 'uq_classes_year_grade_label')) {
+      try {
+        $pdo->exec("DROP INDEX uq_classes_year_grade_label ON classes");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
+    }
+    if (!db_has_index($pdo, 'classes', 'uq_classes_year_grade_label_period')) {
+      try {
+        $pdo->exec("CREATE UNIQUE INDEX uq_classes_year_grade_label_period ON classes (school_year, period_label, grade_level, label)");
+      } catch (Throwable $e) {
+        // ignore (shared hosting without ALTER privilege)
+      }
     }
 
     // --- students: add master_student_id to support rollover/copy without re-entry
@@ -794,6 +839,7 @@ function ensure_schema(PDO $pdo): void {
         "CREATE TABLE submission_deadlines (\n" .
         "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
         "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  period_label VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
         "  deadline_key VARCHAR(40) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
         "  due_at DATETIME DEFAULT NULL,\n" .
         "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
@@ -801,11 +847,24 @@ function ensure_schema(PDO $pdo): void {
         "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
         "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
         "  PRIMARY KEY (id),\n" .
-        "  UNIQUE KEY uq_submission_deadlines_year_key (school_year, deadline_key),\n" .
-        "  KEY idx_submission_deadlines_year (school_year),\n" .
+        "  UNIQUE KEY uq_submission_deadlines_year_period_key (school_year, period_label, deadline_key),\n" .
+        "  KEY idx_submission_deadlines_year (school_year, period_label),\n" .
         "  KEY idx_submission_deadlines_due (due_at)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
+    } else {
+      if (!db_has_column($pdo, 'submission_deadlines', 'period_label')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD COLUMN period_label VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard' AFTER school_year");
+      }
+      if (db_has_index($pdo, 'submission_deadlines', 'uq_submission_deadlines_year_key')) {
+        $pdo->exec("ALTER TABLE submission_deadlines DROP INDEX uq_submission_deadlines_year_key");
+      }
+      if (!db_has_index($pdo, 'submission_deadlines', 'uq_submission_deadlines_year_period_key')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD UNIQUE KEY uq_submission_deadlines_year_period_key (school_year, period_label, deadline_key)");
+      }
+      if (!db_has_index($pdo, 'submission_deadlines', 'idx_submission_deadlines_year')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD KEY idx_submission_deadlines_year (school_year, period_label)");
+      }
     }
 
   } catch (Throwable $e) {
@@ -1191,9 +1250,10 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
  */
 function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   $ri = $pdo->prepare(
-    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.date_of_birth, s.class_id
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label,
+            s.first_name, s.last_name, s.date_of_birth, s.class_id
      FROM report_instances ri
-     JOIN students s ON s.id=ri.student_id
+     LEFT JOIN students s ON s.id=ri.student_id
      WHERE ri.id=? LIMIT 1"
   );
   $ri->execute([$reportInstanceId]);
@@ -1201,18 +1261,22 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   if (!$row) return;
 
   $classId = (int)($row['class_id'] ?? 0);
+  if ($classId <= 0) {
+    $classId = class_id_from_report_period_label($row['period_label'] ?? null);
+  }
   $class = [];
   if ($classId > 0) {
-    $cs = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+    $cs = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
     $cs->execute([$classId]);
     $class = $cs->fetch(PDO::FETCH_ASSOC) ?: [];
   }
 
+  $studentId = (int)($row['student_id'] ?? 0);
   $student = [
     'first_name' => $row['first_name'] ?? '',
     'last_name' => $row['last_name'] ?? '',
     'date_of_birth' => $row['date_of_birth'] ?? '',
-    'custom_fields' => student_custom_value_map($pdo, (int)$row['student_id']),
+    'custom_fields' => $studentId > 0 ? student_custom_value_map($pdo, $studentId) : [],
   ];
 
   $tf = $pdo->prepare(

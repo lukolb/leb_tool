@@ -285,7 +285,7 @@ function render_intro_placeholders(string $html, array $studentRow): string {
  */
 function template_for_student(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
-    "SELECT c.id AS class_id, c.template_id, t.id AS tid, t.name, t.template_version, t.is_active
+    "SELECT c.id AS class_id, c.template_id, c.period_label, t.id AS tid, t.name, t.template_version, t.is_active
      FROM students s
      INNER JOIN classes c ON c.id=s.class_id
      LEFT JOIN templates t ON t.id=c.template_id
@@ -307,11 +307,13 @@ function template_for_student(PDO $pdo, int $studentId): array {
     'id' => $tid,
     'name' => (string)($row['name'] ?? ''),
     'template_version' => (int)($row['template_version'] ?? 0),
+    'period_label' => normalize_class_period_label($row['period_label'] ?? 'Standard'),
   ];
 }
 
-function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear): int {
-  $periodLabel = class_report_period_label($classId);
+function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $periodLabel = class_report_period_label($classId, $periodLabel);
   $st = $pdo->prepare(
     "SELECT id
      FROM report_instances
@@ -355,15 +357,16 @@ function load_class_lookup(PDO $pdo, int $templateId, int $classReportId): array
   return $out;
 }
 
-function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateId, string $schoolYear): array {
+function find_or_create_report_instance(PDO $pdo, int $studentId, int $templateId, string $schoolYear, string $periodLabel): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
     "SELECT id, status
      FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label='Standard'
+     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
      ORDER BY updated_at DESC, id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear]);
+  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
 
   if ($ri) {
@@ -609,6 +612,7 @@ try {
 
   $tpl = template_for_student($pdo, $studentId);
   $templateId = (int)$tpl['id'];
+  $periodLabel = normalize_class_period_label($tpl['period_label'] ?? 'Standard');
 
   $studentRow = get_student_and_class($pdo, $studentId);
   $schoolYear = (string)($studentRow['school_year'] ?? '');
@@ -619,7 +623,7 @@ try {
   if ($schoolYear === '') throw new RuntimeException(t('student.wizard.error.school_year_missing'));
   $classId = (int)($studentRow['class_id'] ?? 0);
 
-  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear);
+  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear, $periodLabel);
   
   if ((int)$ctx['report_instance_id'] < 0) throw new RuntimeException(t('student.wizard.error.report_unavailable'));
   
@@ -649,7 +653,7 @@ try {
 
     // Merge class-wide values into field_lookup so placeholders can resolve even if the student has no value.
     if ($classId > 0 && $schoolYear !== '') {
-      $classReportId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear);
+      $classReportId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear, $periodLabel);
       $classLookup = load_class_lookup($pdo, $templateId, $classReportId);
 
       foreach ($classLookup as $k => $v) {

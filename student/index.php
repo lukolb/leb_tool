@@ -15,7 +15,7 @@ $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.first_name, s.last_name, s.class_id, s.is_active,
-          c.school_year, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
+          c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
    WHERE s.id=? LIMIT 1"
@@ -47,8 +47,9 @@ $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
 $studentCfg = $cfg['student'] ?? [];
 
+$periodLabel = normalize_class_period_label($me['period_label'] ?? 'Standard');
 $deadlineTypes = submission_deadline_types();
-$deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear) : [];
+$deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear, $periodLabel) : [];
 $studentDeadline = $deadlineRows['student'] ?? null;
 $studentDeadlineInfo = deadline_remaining_info($studentDeadline['due_at'] ?? null);
 $showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
@@ -64,11 +65,11 @@ if ($hasTemplate && $schoolYear !== '') {
   $st = $pdo->prepare(
     "SELECT status\n" .
     " FROM report_instances\n" .
-    " WHERE template_id=? AND student_id=? AND period_label='Standard' AND school_year=?\n" .
+    " WHERE template_id=? AND student_id=? AND period_label=? AND school_year=?\n" .
     " ORDER BY updated_at DESC, id DESC\n" .
     " LIMIT 1"
   );
-  $st->execute([$classTemplateId, $studentId, $schoolYear]);
+  $st->execute([$classTemplateId, $studentId, $periodLabel, $schoolYear]);
   $reportStatus = (string)($st->fetchColumn() ?: 'locked');
 }
 
