@@ -457,10 +457,10 @@ function build_progress(PDO $pdo, array $classes): array {
   // derive averages + percentages
   foreach ($progress as $cid => $p) {
     $forms = max(0, (int)$p['forms_total']);
-    $progress[$cid]['students_percent'] = $forms > 0 ? round(($p['students_done'] / $forms) * 100) : null;
-    $progress[$cid]['teachers_percent'] = $forms > 0 ? round(($p['teachers_done'] / $forms) * 100) : null;
+    $progress[$cid]['students_percent'] = $forms > 0 ? round(($p['students_done'] / $forms) * 100) : 100;
+    $progress[$cid]['teachers_percent'] = $forms > 0 ? round(($p['teachers_done'] / $forms) * 100) : 100;
     $delTotal = max(0, (int)$p['delegations_total']);
-    $progress[$cid]['delegations_percent'] = $delTotal > 0 ? round(($p['delegations_done'] / $delTotal) * 100) : null;
+    $progress[$cid]['delegations_percent'] = $delTotal > 0 ? round(($p['delegations_done'] / $delTotal) * 100) : 100;
     $progress[$cid]['avg_minutes'] = ($p['avg_minutes_count'] > 0)
       ? ($p['avg_minutes_sum'] / $p['avg_minutes_count'])
       : null;
@@ -493,9 +493,9 @@ foreach ($progressByClass as $p) {
   $overall['avg_minutes_sum'] += (float)($p['avg_minutes_sum'] ?? 0.0);
   $overall['avg_minutes_count'] += (int)($p['avg_minutes_count'] ?? 0);
 }
-$overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : null;
-$overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : null;
-$overall['delegations_percent'] = $overall['delegations_total'] > 0 ? round(($overall['delegations_done'] / $overall['delegations_total']) * 100) : null;
+$overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : 100;
+$overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : 100;
+$overall['delegations_percent'] = $overall['delegations_total'] > 0 ? round(($overall['delegations_done'] / $overall['delegations_total']) * 100) : 100;
 $overall['avg_minutes'] = $overall['avg_minutes_count'] > 0 ? ($overall['avg_minutes_sum'] / $overall['avg_minutes_count']) : null;
 
 $selectedClassId = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
@@ -588,7 +588,7 @@ render_admin_header('Admin – Dashboard');
       <div class="stat-box">
         <div class="stat-value">
           <?=h((string)($scope['delegations_done'] ?? 0))?>
-          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)<?php endif; ?></span>
+          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?></div>
         <div class="progress-pie delegation" role="img" aria-label="<?=h(t('admin.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?> <?=h((string)$delegationsBar)?>%" style="--percent: <?=h((string)$delegationsBar)?>;">
