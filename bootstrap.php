@@ -104,6 +104,15 @@ function class_report_period_label(int $classId, ?string $periodLabel = null): s
   return '__class__:' . $classId . ':' . $periodLabel;
 }
 
+function class_id_from_report_period_label(?string $label): int {
+  $label = (string)$label;
+  if (strpos($label, '__class__:') !== 0) return 0;
+  $rest = substr($label, strlen('__class__:'));
+  $parts = explode(':', $rest);
+  $id = (int)($parts[0] ?? 0);
+  return $id > 0 ? $id : 0;
+}
+
 // One-shot: allow switching language via ?lang=de|en
 if (isset($_GET['lang'])) {
   ui_lang_set((string)$_GET['lang']);
@@ -1241,9 +1250,10 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
  */
 function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   $ri = $pdo->prepare(
-    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, s.first_name, s.last_name, s.date_of_birth, s.class_id
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label,
+            s.first_name, s.last_name, s.date_of_birth, s.class_id
      FROM report_instances ri
-     JOIN students s ON s.id=ri.student_id
+     LEFT JOIN students s ON s.id=ri.student_id
      WHERE ri.id=? LIMIT 1"
   );
   $ri->execute([$reportInstanceId]);
@@ -1251,18 +1261,22 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   if (!$row) return;
 
   $classId = (int)($row['class_id'] ?? 0);
+  if ($classId <= 0) {
+    $classId = class_id_from_report_period_label($row['period_label'] ?? null);
+  }
   $class = [];
   if ($classId > 0) {
-    $cs = $pdo->prepare("SELECT id, school_year, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+    $cs = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
     $cs->execute([$classId]);
     $class = $cs->fetch(PDO::FETCH_ASSOC) ?: [];
   }
 
+  $studentId = (int)($row['student_id'] ?? 0);
   $student = [
     'first_name' => $row['first_name'] ?? '',
     'last_name' => $row['last_name'] ?? '',
     'date_of_birth' => $row['date_of_birth'] ?? '',
-    'custom_fields' => student_custom_value_map($pdo, (int)$row['student_id']),
+    'custom_fields' => $studentId > 0 ? student_custom_value_map($pdo, $studentId) : [],
   ];
 
   $tf = $pdo->prepare(

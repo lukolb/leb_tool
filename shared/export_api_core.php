@@ -522,6 +522,9 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   if ($includeValues && $classFieldNames) {
     $classRiId = find_class_report_instance($pdo, $templateId, $classId, $schoolYear, (string)($row['period_label'] ?? 'Standard'));
     if ($classRiId) {
+      if (function_exists('apply_system_bindings')) {
+        apply_system_bindings($pdo, (int)$classRiId);
+      }
       $classValues = load_class_values($pdo, (int)$classRiId);
     }
   }
