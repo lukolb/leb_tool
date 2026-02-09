@@ -1456,11 +1456,12 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
   return ['id' => $rid, 'status' => 'locked'];
 }
 
-function load_teacher_fields(PDO $pdo, int $templateId): array {
+function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
+  $where = $includeReadonly ? '' : ' AND can_teacher_edit=1';
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order, can_teacher_edit
      FROM template_fields
-     WHERE template_id=? AND can_teacher_edit=1
+     WHERE template_id=?$where
      ORDER BY sort_order ASC, id ASC"
   );
   $st->execute([$templateId]);
@@ -2353,7 +2354,7 @@ try {
       apply_system_bindings($pdo, $classReportInstanceId);
     }
 
-    $teacherFields = load_teacher_fields($pdo, $templateId);
+    $teacherFields = load_teacher_fields($pdo, $templateId, true);
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
     $optCache = [];
     $iconCache = [];
@@ -2494,7 +2495,8 @@ try {
     foreach ($teacherFields as $f) {
       $fid = (int)($f['id'] ?? 0);
       if ($fid <= 0 || isset($fieldsById[$fid])) continue;
-      $appendField($f, true, false);
+      $canEditOverride = ((int)($f['can_teacher_edit'] ?? 0) === 1);
+      $appendField($f, $canEditOverride, false);
     }
 
     foreach ($childFields as $f) {
