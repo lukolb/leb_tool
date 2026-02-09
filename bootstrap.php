@@ -444,12 +444,13 @@ function submission_deadline_types(): array {
   ];
 }
 
-function fetch_submission_deadlines(PDO $pdo, string $schoolYear): array {
+function fetch_submission_deadlines(PDO $pdo, string $schoolYear, ?string $periodLabel = null): array {
   $schoolYear = trim($schoolYear);
   if ($schoolYear === '') return [];
   if (!db_has_table($pdo, 'submission_deadlines')) return [];
-  $st = $pdo->prepare("SELECT deadline_key, due_at FROM submission_deadlines WHERE school_year=?");
-  $st->execute([$schoolYear]);
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare("SELECT deadline_key, due_at FROM submission_deadlines WHERE school_year=? AND period_label=?");
+  $st->execute([$schoolYear, $periodLabel]);
   $rows = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
     $key = (string)($row['deadline_key'] ?? '');
@@ -829,6 +830,7 @@ function ensure_schema(PDO $pdo): void {
         "CREATE TABLE submission_deadlines (\n" .
         "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
         "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  period_label VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
         "  deadline_key VARCHAR(40) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
         "  due_at DATETIME DEFAULT NULL,\n" .
         "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
@@ -836,11 +838,24 @@ function ensure_schema(PDO $pdo): void {
         "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
         "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
         "  PRIMARY KEY (id),\n" .
-        "  UNIQUE KEY uq_submission_deadlines_year_key (school_year, deadline_key),\n" .
-        "  KEY idx_submission_deadlines_year (school_year),\n" .
+        "  UNIQUE KEY uq_submission_deadlines_year_period_key (school_year, period_label, deadline_key),\n" .
+        "  KEY idx_submission_deadlines_year (school_year, period_label),\n" .
         "  KEY idx_submission_deadlines_due (due_at)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
+    } else {
+      if (!db_has_column($pdo, 'submission_deadlines', 'period_label')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD COLUMN period_label VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard' AFTER school_year");
+      }
+      if (db_has_index($pdo, 'submission_deadlines', 'uq_submission_deadlines_year_key')) {
+        $pdo->exec("ALTER TABLE submission_deadlines DROP INDEX uq_submission_deadlines_year_key");
+      }
+      if (!db_has_index($pdo, 'submission_deadlines', 'uq_submission_deadlines_year_period_key')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD UNIQUE KEY uq_submission_deadlines_year_period_key (school_year, period_label, deadline_key)");
+      }
+      if (!db_has_index($pdo, 'submission_deadlines', 'idx_submission_deadlines_year')) {
+        $pdo->exec("ALTER TABLE submission_deadlines ADD KEY idx_submission_deadlines_year (school_year, period_label)");
+      }
     }
 
   } catch (Throwable $e) {

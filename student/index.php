@@ -47,8 +47,9 @@ $cfg = app_config();
 $brand = $cfg['app']['brand'] ?? [];
 $studentCfg = $cfg['student'] ?? [];
 
+$periodLabel = normalize_class_period_label($me['period_label'] ?? 'Standard');
 $deadlineTypes = submission_deadline_types();
-$deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear) : [];
+$deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYear, $periodLabel) : [];
 $studentDeadline = $deadlineRows['student'] ?? null;
 $studentDeadlineInfo = deadline_remaining_info($studentDeadline['due_at'] ?? null);
 $showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
@@ -56,7 +57,6 @@ $showStudentDeadlineInline = $showStudentDeadline && !empty($studentDeadline['du
 
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
-$periodLabel = normalize_class_period_label($me['period_label'] ?? 'Standard');
 $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
 $isActive = (int)($me['is_active'] ?? 0) === 1;
 

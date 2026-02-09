@@ -639,10 +639,12 @@ if ($selectedClassId !== 0 && !isset($progressByClass[$selectedClassId])) $selec
 $cfg = app_config();
 $deadlineTypes = submission_deadline_types();
 $deadlineSchoolYear = '';
+$deadlinePeriodLabel = 'Standard';
 $deadlineScopeLabel = '';
 if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
   $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
   $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
+  $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
   $deadlineScopeLabel = class_label($classRow);
   if ($deadlineScopeLabel !== '') {
     $deadlineScopeLabel .= ' · ' . period_label_display($classRow['period_label'] ?? 'Standard');
@@ -658,7 +660,17 @@ if ($deadlineSchoolYear === '') {
 if ($deadlineSchoolYear === '') {
   $deadlineSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
 }
-$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear) : [];
+$deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
+if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
+  $periods = array_values(array_unique(array_filter(array_map(
+    static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
+      ? normalize_class_period_label($c['period_label'] ?? 'Standard')
+      : '',
+    $classes
+  ), static fn($v) => $v !== '')));
+  if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
+}
+$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
 
 $scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
 $classTabs = [
@@ -688,7 +700,7 @@ render_teacher_header(t('teacher.title'));
   <div class="card">
     <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
     <p class="muted">
-      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?>
+      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display($deadlinePeriodLabel))?>
       <?php if ($deadlineScopeLabel !== ''): ?>
         · <?=h($deadlineScopeLabel)?>
       <?php endif; ?>

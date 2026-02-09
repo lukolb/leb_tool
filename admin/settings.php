@@ -92,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_deadlines') {
       $schoolYear = trim((string)($_POST['deadline_school_year'] ?? ''));
+      $periodLabel = normalize_class_period_label($_POST['deadline_period_label'] ?? 'Standard');
       if ($schoolYear === '') {
         throw new RuntimeException(t('admin.settings.deadlines.error.school_year_missing', 'Schuljahr fehlt.'));
       }
@@ -104,8 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $inputKey = 'deadline_' . $key;
         $input = trim((string)($_POST[$inputKey] ?? ''));
         if ($input === '') {
-          $pdo->prepare("DELETE FROM submission_deadlines WHERE school_year=? AND deadline_key=?")
-            ->execute([$schoolYear, $key]);
+          $pdo->prepare("DELETE FROM submission_deadlines WHERE school_year=? AND period_label=? AND deadline_key=?")
+            ->execute([$schoolYear, $periodLabel, $key]);
           continue;
         }
         $local = parse_user_datetime_local($input);
@@ -116,10 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dbDt = user_local_datetime_to_db($local) ?? $local;
         $dueAt = $dbDt->format('Y-m-d H:i:s');
         $pdo->prepare(
-          "INSERT INTO submission_deadlines (school_year, deadline_key, due_at, created_by_user_id, updated_by_user_id, created_at, updated_at)\n" .
-          "VALUES (?, ?, ?, ?, ?, NOW(), NOW())\n" .
+          "INSERT INTO submission_deadlines (school_year, period_label, deadline_key, due_at, created_by_user_id, updated_by_user_id, created_at, updated_at)\n" .
+          "VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())\n" .
           "ON DUPLICATE KEY UPDATE due_at=VALUES(due_at), updated_by_user_id=VALUES(updated_by_user_id), updated_at=NOW()"
-        )->execute([$schoolYear, $key, $dueAt, $actorId, $actorId]);
+        )->execute([$schoolYear, $periodLabel, $key, $dueAt, $actorId, $actorId]);
       }
 
       if (!isset($cfg['student']) || !is_array($cfg['student'])) $cfg['student'] = [];
@@ -132,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $ok = t('admin.settings.deadlines.ok', 'Fristen gespeichert.');
-      audit('deadline_update', $actorId, ['school_year'=>$schoolYear]);
+      audit('deadline_update', $actorId, ['school_year'=>$schoolYear, 'period_label'=>$periodLabel]);
       $cfg = app_config(true);
     } else {
     // ---- Branding ----
@@ -325,7 +326,8 @@ $availableDeadlineYears = $pdo->query("SELECT DISTINCT school_year FROM classes 
 if (!is_array($availableDeadlineYears)) $availableDeadlineYears = [];
 $availableDeadlineYears = array_values(array_filter(array_map('trim', $availableDeadlineYears), fn($v) => $v !== ''));
 $selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $defaultSY ?? ($availableDeadlineYears[0] ?? '')));
-$deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear) : [];
+$selectedDeadlinePeriod = normalize_class_period_label($_POST['deadline_period_label'] ?? $_GET['deadline_period'] ?? 'Standard');
+$deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear, $selectedDeadlinePeriod) : [];
 $deadlineInputValues = [];
 foreach ($deadlineTypes as $key => $meta) {
   $deadlineInputValues[$key] = deadline_input_value($deadlineRows[$key]['due_at'] ?? null);
@@ -511,6 +513,14 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
             <option value="<?=h((string)$year)?>"></option>
           <?php endforeach; ?>
         </datalist>
+      </div>
+      <div>
+        <label><?=h(t('admin.settings.deadlines.period_label', 'Halbjahr'))?></label>
+        <select name="deadline_period_label">
+          <?php foreach (['Standard' => t('admin.classes.period.h1', '1. HJ'), 'H2' => t('admin.classes.period.h2', '2. HJ')] as $key => $label): ?>
+            <option value="<?=h((string)$key)?>" <?=normalize_class_period_label($selectedDeadlinePeriod) === (string)$key ? 'selected' : ''?>><?=h((string)$label)?></option>
+          <?php endforeach; ?>
+        </select>
       </div>
       <?php foreach ($deadlineTypes as $key => $meta): ?>
         <div>
