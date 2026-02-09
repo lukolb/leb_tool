@@ -3490,20 +3490,35 @@ render_teacher_header($pageTitle);
     if (!student) return null;
     const reportId = Number(student.report_instance_id || 0);
     let ownMissing = 0;
+    let ownTotal = 0;
     let delegatedMissing = 0;
+    let delegatedTotal = 0;
     activeGroups().forEach(g => {
       (g.fields || []).forEach(f => {
         const missing = String(activeFieldValue(reportId, f.id) ?? '').trim() === '';
         if (isEditableField(f, g)) {
+          ownTotal++;
           if (missing) ownMissing++;
-        } else if (missing) {
-          delegatedMissing++;
+        } else {
+          delegatedTotal++;
+          if (missing) delegatedMissing++;
         }
       });
     });
     const childMissing = Number(student.progress_child_missing || 0);
+    const childTotal = Number(student.progress_child_total || 0);
     const totalMissing = ownMissing + delegatedMissing + childMissing;
-    return { totalMissing, childMissing, delegatedMissing, ownMissing };
+    const totalFields = ownTotal + delegatedTotal + childTotal;
+    return {
+      totalMissing,
+      totalFields,
+      childMissing,
+      childTotal,
+      delegatedMissing,
+      delegatedTotal,
+      ownMissing,
+      ownTotal,
+    };
   }
 
   function updateStudentRowUI(student){
@@ -3529,10 +3544,12 @@ render_teacher_header($pageTitle);
       });
       const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
-            total: breakdown.totalMissing,
-            child: breakdown.childMissing,
-            delegated: breakdown.delegatedMissing,
-            own: breakdown.ownMissing,
+            childOpen: breakdown.childMissing,
+            childTotal: breakdown.childTotal,
+            delegatedOpen: breakdown.delegatedMissing,
+            delegatedTotal: breakdown.delegatedTotal,
+            ownOpen: breakdown.ownMissing,
+            ownTotal: breakdown.ownTotal,
           })
         : '';
       sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
@@ -3546,7 +3563,10 @@ render_teacher_header($pageTitle);
 
     const badge = row.querySelector('.js-prog-badge');
     if (badge) {
-      badge.textContent = prog.complete ? '✓' : tfmtEntry('progress_badge_open', { missing: prog.missing });
+      const badgeMissing = CHILD_MODE
+        ? prog.missing
+        : Number(student.progress_teacher_missing || 0);
+      badge.textContent = prog.complete ? '✓' : tfmtEntry('progress_badge_open', { missing: badgeMissing });
       badge.classList.toggle('ok', !!prog.complete);
     }
   }
@@ -3560,10 +3580,12 @@ render_teacher_header($pageTitle);
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
-            total: breakdown.totalMissing,
-            child: breakdown.childMissing,
-            delegated: breakdown.delegatedMissing,
-            own: breakdown.ownMissing,
+            childOpen: breakdown.childMissing,
+            childTotal: breakdown.childTotal,
+            delegatedOpen: breakdown.delegatedMissing,
+            delegatedTotal: breakdown.delegatedTotal,
+            ownOpen: breakdown.ownMissing,
+            ownTotal: breakdown.ownTotal,
           })
         : '';
       const openCount = Math.max(0, prog.total - prog.done);
@@ -3581,24 +3603,16 @@ render_teacher_header($pageTitle);
     const cTotal = Number(s.progress_child_total || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
-    const breakdownText = breakdown
-      ? tfmtEntry('progress_open_breakdown', {
-          total: breakdown.totalMissing,
-          child: breakdown.childMissing,
-          delegated: breakdown.delegatedMissing,
-          own: breakdown.ownMissing,
-        })
-      : '';
-    const teacherOpen = Math.max(0, tTotal - tDone);
-    const childOpen = Math.max(0, cTotal - cDone);
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
-      teacherOpen,
-      teacherTotal: tTotal,
-      childOpen,
-      childTotal: cTotal,
+      childOpen: breakdown?.childMissing ?? Math.max(0, cTotal - cDone),
+      childTotal: breakdown?.childTotal ?? cTotal,
+      delegatedOpen: breakdown?.delegatedMissing ?? 0,
+      delegatedTotal: breakdown?.delegatedTotal ?? 0,
+      ownOpen: breakdown?.ownMissing ?? Math.max(0, tTotal - tDone),
+      ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
-    }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
+    }).trim();
   }
 
   function updatePdfEntryButton(student){
@@ -5105,10 +5119,12 @@ render_teacher_header($pageTitle);
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownHtml = breakdown
         ? ` <span class="muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
-            total: breakdown.totalMissing,
-            child: breakdown.childMissing,
-            delegated: breakdown.delegatedMissing,
-            own: breakdown.ownMissing,
+            childOpen: breakdown.childMissing,
+            childTotal: breakdown.childTotal,
+            delegatedOpen: breakdown.delegatedMissing,
+            delegatedTotal: breakdown.delegatedTotal,
+            ownOpen: breakdown.ownMissing,
+            ownTotal: breakdown.ownTotal,
           }))}</span>`
         : '';
 
@@ -5121,7 +5137,7 @@ render_teacher_header($pageTitle);
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
         </div>
-        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : esc(tfmtEntry('progress_badge_open', { missing: prog.missing }))}</span>
+        <span class="badge js-prog-badge${complete ? ' ok' : ''}">${complete ? '✓' : esc(tfmtEntry('progress_badge_open', { missing: (CHILD_MODE ? prog.missing : Number(s.progress_teacher_missing || 0)) }))}</span>
       `;
       div.addEventListener('click', () => {
         ui.activeStudentIndex = idx;
