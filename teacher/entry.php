@@ -3494,9 +3494,13 @@ render_teacher_header($pageTitle);
     let delegatedMissing = 0;
     let delegatedTotal = 0;
     activeGroups().forEach(g => {
+      const delegatedUsers = Array.isArray(g?.delegation?.users) ? g.delegation.users : [];
+      const delegatedToOthers = delegatedUsers.length > 0
+        && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
       (g.fields || []).forEach(f => {
-        const missing = String(activeFieldValue(reportId, f.id) ?? '').trim() === '';
-        if (isEditableField(f, g)) {
+        const raw = delegatedToOthers ? teacherVal(reportId, f.id) : teacherEditVal(reportId, f.id);
+        const missing = String(raw ?? '').trim() === '';
+        if (!delegatedToOthers && isEditableField(f, g)) {
           ownTotal++;
           if (missing) ownMissing++;
         } else {
@@ -3505,13 +3509,13 @@ render_teacher_header($pageTitle);
         }
       });
     });
-    const childMissing = Number(student.progress_child_missing || 0);
     const childTotal = Number(student.progress_child_total || 0);
+    const childDone = Math.min(childTotal, Math.max(0, Number(student.progress_child_done || 0)));
+    const childMissing = Math.max(0, Number(student.progress_child_missing ?? (childTotal - childDone)));
     const totalMissing = ownMissing + delegatedMissing + childMissing;
     const totalFields = ownTotal + delegatedTotal + childTotal;
     const ownDone = Math.max(0, ownTotal - ownMissing);
     const delegatedDone = Math.max(0, delegatedTotal - delegatedMissing);
-    const childDone = Math.max(0, childTotal - childMissing);
     return {
       totalMissing,
       totalFields,

@@ -3159,8 +3159,12 @@ if ($action === 'delegations_save') {
     if ((int)($ri['template_id'] ?? 0) !== $templateId) throw new RuntimeException('Vorlagenkonflikt.');
     if ($ri['student_id'] !== null) throw new RuntimeException('Kein Klassen-Report.');
     if ((string)($ri['school_year'] ?? '') !== $schoolYear) throw new RuntimeException('Schuljahr-Konflikt.');
-    $expectedLabel = class_report_period_label($classId, class_period_label($pdo, $classId));
-    if ((string)($ri['period_label'] ?? '') !== $expectedLabel) throw new RuntimeException('Perioden-Konflikt.');
+    $classPeriodLabel = class_period_label($pdo, $classId);
+    $expectedLabel = class_report_period_label($classId, $classPeriodLabel);
+    $riPeriod = (string)($ri['period_label'] ?? '');
+    if ($riPeriod !== $expectedLabel && $riPeriod !== normalize_class_period_label($classPeriodLabel)) {
+      throw new RuntimeException('Perioden-Konflikt.');
+    }
 
     $st = $pdo->prepare(
       "SELECT id, field_name, field_type, is_multiline, meta_json
@@ -3179,7 +3183,7 @@ if ($action === 'delegations_save') {
 
     // delegation: if a group is delegated, only that colleague (or admin) may edit it
     $schoolYear = (string)($ri['school_year'] ?? '');
-    $periodLabelDeleg = 'Standard';
+    $periodLabelDeleg = normalize_class_period_label($classPeriodLabel);
 
     $gKey = group_key_from_meta($meta);
     $type = (string)($frow['field_type'] ?? '');
