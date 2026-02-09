@@ -739,15 +739,14 @@ render_teacher_header(t('teacher.title'));
               <td><?=h((string)($meta['label'] ?? $key))?></td>
               <td><?=render_local_datetime($row['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?></td>
               <td>
-                <?php if ($info): ?>
-                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
-                <?php elseif (!$done && !$na): ?>
-                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
-                <?php endif; ?>
                 <?php if ($done): ?>
                   <span class="badge ok"><?=h(t('deadline.status.done', 'Erledigt'))?></span>
                 <?php elseif ($na): ?>
                   <span class="muted"><?=h(t('deadline.status.na', 'Keine Aufgaben'))?></span>
+                <?php elseif ($info): ?>
+                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
+                <?php else: ?>
+                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
                 <?php endif; ?>
               </td>
             </tr>
