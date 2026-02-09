@@ -46,6 +46,13 @@ function period_label_display_admin(?string $raw): string {
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
+function class_display_admin(array $c): string {
+  $label = (string)($c['label'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $name = (string)($c['name'] ?? '');
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+}
+
 function load_completion_field_sets(PDO $pdo, array $templateIds): array {
   $templateIds = array_values(array_unique(array_filter(array_map('intval', $templateIds), fn($x)=>$x>0)));
   if (!$templateIds) return [];
@@ -536,7 +543,7 @@ render_admin_header('Admin – Dashboard');
     $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
     $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
     $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
-    $deadlineScopeLabel = class_display($classRow);
+    $deadlineScopeLabel = class_display_admin($classRow);
     if ($deadlineScopeLabel !== '') {
       $deadlineScopeLabel .= ' · ' . period_label_display_admin($classRow['period_label'] ?? 'Standard');
     }
