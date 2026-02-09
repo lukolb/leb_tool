@@ -3519,22 +3519,13 @@ render_teacher_header($pageTitle);
           missing: Number(student.progress_overall_missing || 0),
           complete: !!student.progress_is_complete,
         };
-    const teacherMissing = Number(student.progress_teacher_missing || 0);
-    const childMissing = Number(student.progress_child_missing || 0);
-
     const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
-    const missingLabel = CHILD_MODE
-      ? tfmtEntry('progress_missing_child', { count: childMissing })
-      : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
-
     const sub = row.querySelector('.js-srow-sub');
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(student) : null;
     if (sub) {
       const statusLbl = String(sub.getAttribute('data-statuslbl') || '');
       const statusLine = tfmtEntry('progress_status_line', {
         status: statusLbl,
-        missing: prog.missing,
-        missingLabel,
       });
       const breakdownText = breakdown
         ? tfmtEntry('progress_open_breakdown', {
@@ -3575,11 +3566,11 @@ render_teacher_header($pageTitle);
             own: breakdown.ownMissing,
           })
         : '';
+      const openCount = Math.max(0, prog.total - prog.done);
       studentBadge.textContent = tfmtEntry('student_badge_child', {
         name: s.name,
-        done: prog.done,
+        open: openCount,
         total: prog.total,
-        missing: prog.missing,
         check: chk,
       }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
       return;
@@ -3588,9 +3579,6 @@ render_teacher_header($pageTitle);
     const tTotal = Number(s.progress_teacher_total || 0);
     const cDone = Number(s.progress_child_done || 0);
     const cTotal = Number(s.progress_child_total || 0);
-    const oDone = Number(s.progress_overall_done || 0);
-    const oTotal = Number(s.progress_overall_total || 0);
-    const oMissing = Number(s.progress_overall_missing || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
     const breakdownText = breakdown
@@ -3601,13 +3589,14 @@ render_teacher_header($pageTitle);
           own: breakdown.ownMissing,
         })
       : '';
+    const teacherOpen = Math.max(0, tTotal - tDone);
+    const childOpen = Math.max(0, cTotal - cDone);
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
-      teacherDone: tDone,
+      teacherOpen,
       teacherTotal: tTotal,
-      childDone: cDone,
+      childOpen,
       childTotal: cTotal,
-      missing: oMissing,
       check: chk,
     }).trim() + (breakdownText ? ` · ${breakdownText}` : '');
   }
@@ -5111,13 +5100,8 @@ render_teacher_header($pageTitle);
         missing: Number(s.progress_overall_missing || 0),
         complete: !!s.progress_is_complete,
       };
-      const teacherMissing = Number(s.progress_teacher_missing || 0);
-      const childMissing = Number(s.progress_child_missing || 0);
       const pct = prog.total > 0 ? Math.round((prog.done / prog.total) * 100) : 0;
       const complete = !!prog.complete;
-      const missingLabel = CHILD_MODE
-        ? tfmtEntry('progress_missing_child', { count: childMissing })
-        : tfmtEntry('progress_missing_teacher', { count: teacherMissing });
       const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
       const breakdownHtml = breakdown
         ? ` <span class="muted js-srow-breakdown">${esc(tfmtEntry('progress_open_breakdown', {
@@ -5132,7 +5116,7 @@ render_teacher_header($pageTitle);
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl, missing: prog.missing, missingLabel }))}${breakdownHtml}</div>
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
