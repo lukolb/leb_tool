@@ -636,9 +636,9 @@ render_admin_header('Admin – Dashboard');
       .progress-fill.delegation{ background: #1e8e3e; }
       .progress-pie{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#1f2937; background: var(--border); margin-top:8px; }
       .progress-pie span{ background:#fff; border-radius:999px; padding:2px 6px; box-shadow:0 0 0 1px rgba(0,0,0,0.05); }
-      .progress-pie.student{ background: conic-gradient(var(--primary, #0b57d0) 0deg, var(--primary, #0b57d0) calc(var(--percent) * 3.6deg), var(--border) 0deg); }
-      .progress-pie.teacher{ background: conic-gradient(#6c5ce7 0deg, #6c5ce7 calc(var(--percent) * 3.6deg), var(--border) 0deg); }
-      .progress-pie.delegation{ background: conic-gradient(#1e8e3e 0deg, #1e8e3e calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+      .progress-pie.student{ background: conic-gradient(#1e8e3e 0deg, #1e8e3e calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+      .progress-pie.teacher{ background: conic-gradient(#0b57d0 0deg, #0b57d0 calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+      .progress-pie.delegation{ background: conic-gradient(#f29900 0deg, #f29900 calc(var(--percent) * 3.6deg), var(--border) 0deg); }
     </style>
     <div class="stats-grid">
       <div class="stat-box">
