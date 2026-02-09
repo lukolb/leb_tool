@@ -503,6 +503,24 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     });
   }
 
+  function ensureDisplayValues(){
+    if (!state) return;
+    const mergeDisplay = (values, display) => {
+      const out = { ...(display || {}) };
+      if (values && typeof values === 'object') {
+        Object.keys(values).forEach((key) => {
+          if (!Object.prototype.hasOwnProperty.call(out, key)) {
+            out[key] = values[key];
+          }
+        });
+      }
+      return out;
+    };
+    state.values_display = mergeDisplay(state.values, state.values_display);
+    state.values_child_display = mergeDisplay(state.values_child, state.values_child_display);
+    state.values_delegate_other_display = mergeDisplay(state.values_delegate_other, state.values_delegate_other_display);
+  }
+
   function setSaving(active){
     if (!savePill) return;
     savePill.style.display = active ? '' : 'none';
@@ -1207,6 +1225,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       if (state && Array.isArray(state.fields)) {
         state.all_fields = state.fields.slice();
       }
+      ensureDisplayValues();
       applyDelegationFieldVisibility();
       if (isDelegatedView) {
         allowStudentEdit = false;
