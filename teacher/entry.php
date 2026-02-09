@@ -479,7 +479,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         if ($classStudents) {
           $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
           $in = implode(',', array_fill(0, count($studentIds), '?'));
-          $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
+          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
           $stRep = $pdo->prepare(
             "SELECT id, student_id
              FROM report_instances
@@ -714,7 +714,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       if ($classStudents) {
         $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
         $in = implode(',', array_fill(0, count($studentIds), '?'));
-        $params = array_merge([$templateId, $finalmarksFormSchoolYear, 'Standard'], $studentIds);
+        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
         $stRep = $pdo->prepare(
           "SELECT id, student_id
            FROM report_instances

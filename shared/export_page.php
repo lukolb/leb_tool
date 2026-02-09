@@ -1833,4 +1833,10 @@ if (btnExport) {
   }
   resetPreview();
 })();
+
+if (elClass) {
+  check().catch(() => {
+    // ignore initial load errors; user can retry via "Prüfen"
+  });
+}
 </script>

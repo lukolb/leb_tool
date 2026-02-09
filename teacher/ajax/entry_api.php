@@ -2527,6 +2527,11 @@ try {
       $classFieldMap = array_intersect_key($fieldMapInput, array_flip($classFieldIds));
       $vals = load_input_values($pdo, [$classReportInstanceId], $classFieldMap, 'teacher');
       $classVals = $vals[(string)$classReportInstanceId] ?? [];
+      $systemVals = load_input_values($pdo, [$classReportInstanceId], $classFieldMap, 'system');
+      $classSystemVals = $systemVals[(string)$classReportInstanceId] ?? [];
+      if ($classSystemVals) {
+        $classVals = array_replace($classVals, $classSystemVals);
+      }
       $values = array_replace($values, $classVals);
     }
     if ($values) $values = apply_date_iso_formatting($values, $fieldMapInput);
