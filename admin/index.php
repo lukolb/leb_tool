@@ -527,6 +527,83 @@ render_admin_header('Admin – Dashboard');
   }
 ?>
 
+<?php
+  $deadlineTypes = submission_deadline_types();
+  $deadlineSchoolYear = '';
+  $deadlinePeriodLabel = 'Standard';
+  $deadlineScopeLabel = '';
+  if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
+    $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
+    $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
+    $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
+    $deadlineScopeLabel = class_display($classRow);
+    if ($deadlineScopeLabel !== '') {
+      $deadlineScopeLabel .= ' · ' . period_label_display_admin($classRow['period_label'] ?? 'Standard');
+    }
+  }
+  if ($deadlineSchoolYear === '') {
+    $years = array_values(array_unique(array_filter(array_map(
+      static fn($c) => trim((string)($c['school_year'] ?? '')),
+      $classes
+    ), static fn($v) => $v !== '')));
+    if (count($years) === 1) $deadlineSchoolYear = $years[0];
+  }
+  if ($deadlineSchoolYear === '') {
+    $deadlineSchoolYear = (string)((app_config()['app']['default_school_year'] ?? ''));
+  }
+  $deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
+  if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
+    $periods = array_values(array_unique(array_filter(array_map(
+      static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
+        ? normalize_class_period_label($c['period_label'] ?? 'Standard')
+        : '',
+      $classes
+    ), static fn($v) => $v !== '')));
+    if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
+  }
+  $deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
+?>
+
+<?php if ($deadlineSchoolYear !== ''): ?>
+  <div class="card">
+    <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
+    <p class="muted">
+      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display_admin($deadlinePeriodLabel))?>
+      <?php if ($deadlineScopeLabel !== ''): ?>
+        · <?=h($deadlineScopeLabel)?>
+      <?php endif; ?>
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th><?=h(t('deadline.table.type', 'Bereich'))?></th>
+            <th><?=h(t('deadline.table.due_at', 'Fällig am'))?></th>
+            <th><?=h(t('deadline.table.remaining', 'Restzeit'))?></th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($deadlineTypes as $key => $meta): ?>
+            <?php $row = $deadlineRows[$key] ?? null; ?>
+            <?php $info = deadline_remaining_info($row['due_at'] ?? null); ?>
+            <tr>
+              <td><?=h((string)($meta['label'] ?? $key))?></td>
+              <td><?=render_local_datetime($row['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?></td>
+              <td>
+                <?php if ($info): ?>
+                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
+                <?php else: ?>
+                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<?php endif; ?>
+
 <div class="card">
   <h2><?=h(t('admin.progress.headline', 'Gesamt-Bearbeitungsstand'))?></h2>
   <p class="muted"><?=h(t('admin.progress.description', 'Überblick über alle Berichte und Delegationen.'))?></p>

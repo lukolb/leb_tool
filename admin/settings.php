@@ -325,7 +325,11 @@ $deadlineTypes = submission_deadline_types();
 $availableDeadlineYears = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 if (!is_array($availableDeadlineYears)) $availableDeadlineYears = [];
 $availableDeadlineYears = array_values(array_filter(array_map('trim', $availableDeadlineYears), fn($v) => $v !== ''));
-$selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $defaultSY ?? ($availableDeadlineYears[0] ?? '')));
+$fallbackDeadlineYear = $defaultSY !== '' ? (string)$defaultSY : (string)($availableDeadlineYears[0] ?? '');
+$selectedDeadlineYear = trim((string)($_POST['deadline_school_year'] ?? $_GET['deadline_year'] ?? $fallbackDeadlineYear));
+if ($selectedDeadlineYear === '' && $availableDeadlineYears) {
+  $selectedDeadlineYear = (string)$availableDeadlineYears[0];
+}
 $selectedDeadlinePeriod = normalize_class_period_label($_POST['deadline_period_label'] ?? $_GET['deadline_period'] ?? 'Standard');
 $deadlineRows = $selectedDeadlineYear !== '' ? fetch_submission_deadlines($pdo, $selectedDeadlineYear, $selectedDeadlinePeriod) : [];
 $deadlineInputValues = [];
@@ -507,12 +511,15 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <div class="grid">
       <div>
         <label><?=h(t('admin.settings.deadlines.school_year_label', 'Schuljahr'))?></label>
-        <input name="deadline_school_year" list="deadlineYearList" value="<?=h($selectedDeadlineYear)?>" placeholder="<?=h(t('admin.settings.deadlines.school_year_placeholder', 'z.B. 2025/26'))?>" required>
-        <datalist id="deadlineYearList">
-          <?php foreach ($availableDeadlineYears as $year): ?>
-            <option value="<?=h((string)$year)?>"></option>
-          <?php endforeach; ?>
-        </datalist>
+        <select name="deadline_school_year" required>
+          <?php if (!$availableDeadlineYears && $fallbackDeadlineYear !== ''): ?>
+            <option value="<?=h($fallbackDeadlineYear)?>" selected><?=h($fallbackDeadlineYear)?></option>
+          <?php else: ?>
+            <?php foreach ($availableDeadlineYears as $year): ?>
+              <option value="<?=h((string)$year)?>" <?=((string)$year === (string)$selectedDeadlineYear) ? 'selected' : ''?>><?=h((string)$year)?></option>
+            <?php endforeach; ?>
+          <?php endif; ?>
+        </select>
       </div>
       <div>
         <label><?=h(t('admin.settings.deadlines.period_label', 'Halbjahr'))?></label>
