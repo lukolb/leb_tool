@@ -194,7 +194,8 @@ render_teacher_header($pageTitle);
 
   function openModal(ctx){
     editCtx = ctx;
-    dlgMeta.textContent = `${ctx.class_title} · ${ctx.group_title}`;
+    const periodPart = ctx.period_label_display ? ` · ${ctx.period_label_display}` : '';
+    dlgMeta.textContent = `${ctx.class_title}${periodPart} · ${ctx.group_title}`;
     buildUsersSelect(ctx.user_ids || [], !ctx.can_assign);
     const notes = (ctx.users || []).map(u => {
       const note = String(u.note || '').trim();
@@ -264,6 +265,7 @@ render_teacher_header($pageTitle);
                 data-edit="1"
                 data-class-id="${esc(c.class_id)}"
                 data-period-label="${esc(c.period_label||'')}"
+                data-period-label-display="${esc(c.period_label_display||'')}"
                 data-class-title="${esc(c.class_title||'')}"
                 data-group-key="${esc(g.group_key||'')}"
                 data-group-title="${esc(g.group_title||g.group_key||'')}"
@@ -279,6 +281,7 @@ render_teacher_header($pageTitle);
                 data-edit="1"
                 data-class-id="${esc(c.class_id)}"
                 data-period-label="${esc(c.period_label||'')}"
+                data-period-label-display="${esc(c.period_label_display||'')}"
                 data-class-title="${esc(c.class_title||'')}"
                 data-group-key="${esc(g.group_key||'')}"
                 data-group-title="${esc(g.group_title||g.group_key||'')}"
@@ -311,7 +314,7 @@ render_teacher_header($pageTitle);
       return `
         <div class="inbox-class">
           <h3>${esc(c.class_title)}</h3>
-          <div class="inbox-meta">${esc(c.school_year || '')}${c.period_label ? ' · ' + esc(c.period_label) : ''}</div>
+          <div class="inbox-meta">${esc(c.school_year || '')}${c.period_label_display ? ' · ' + esc(c.period_label_display) : ''}</div>
           ${gHtml}
         </div>
       `;
@@ -325,6 +328,7 @@ render_teacher_header($pageTitle);
         openModal({
           class_id: Number(btn.getAttribute('data-class-id')||'0'),
           period_label: String(btn.getAttribute('data-period-label')||'Standard'),
+          period_label_display: String(btn.getAttribute('data-period-label-display')||''),
           class_title: String(btn.getAttribute('data-class-title')||''),
           group_key: String(btn.getAttribute('data-group-key')||''),
           group_title: String(btn.getAttribute('data-group-title')||''),

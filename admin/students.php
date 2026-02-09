@@ -20,6 +20,13 @@ if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
   unset($_SESSION['admin_import_summary']);
 }
 
+function period_label_display_admin(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -346,12 +353,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->beginTransaction();
 
+      $periodLabel = 'Standard';
+      $stPeriod = $pdo->prepare("SELECT period_label FROM classes WHERE school_year=? AND is_active=1 ORDER BY id DESC LIMIT 1");
+      $stPeriod->execute([$schoolYear]);
+      $periodLabel = normalize_class_period_label((string)($stPeriod->fetchColumn() ?: 'Standard'));
+
       $classLookup = $pdo->prepare(
-        "SELECT id FROM classes WHERE school_year=? AND grade_level=? AND label=? LIMIT 1"
+        "SELECT id FROM classes WHERE school_year=? AND period_label=? AND grade_level=? AND label=? LIMIT 1"
       );
       $classInsert = $pdo->prepare(
-        "INSERT INTO classes (school_year, grade_level, label, name, template_id, student_wizard_display, is_active)
-         VALUES (?, ?, ?, ?, NULL, 'groups', 1)"
+        "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active)
+         VALUES (?, ?, ?, ?, ?, NULL, 'groups', 1)"
       );
 
       $checkStudent = $pdo->prepare(
@@ -436,11 +448,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             continue;
           }
 
-          $classLookup->execute([$schoolYear, $grade, $label]);
+          $classLookup->execute([$schoolYear, $periodLabel, $grade, $label]);
           $classId = $classLookup->fetchColumn();
           if (!$classId) {
             $name = computed_class_name($grade, $label);
-            $classInsert->execute([$schoolYear, $grade, $label, $name]);
+            $classInsert->execute([$schoolYear, $periodLabel, $grade, $label, $name]);
             $classId = (int)$pdo->lastInsertId();
             $createdClasses++;
             $importSummary['classes'][$classId] = [
@@ -576,30 +588,47 @@ $orderSql = match($sort) {
 
 $params = [];
 $where = "WHERE 1=1";
+$subParams = [];
+$whereSub = "WHERE 1=1";
 if ($q !== '') {
   $where .= " AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.external_ref LIKE ?)";
   $params[] = "%{$q}%"; $params[] = "%{$q}%"; $params[] = "%{$q}%";
+  $whereSub .= " AND (s2.first_name LIKE ? OR s2.last_name LIKE ? OR s2.external_ref LIKE ?)";
+  $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%";
 }
 if ($schoolYear !== '') {
   $where .= " AND c.school_year = ?";
   $params[] = $schoolYear;
+  $whereSub .= " AND c2.school_year = ?";
+  $subParams[] = $schoolYear;
 }
 if ($classId > 0) {
   $where .= " AND s.class_id = ?";
   $params[] = $classId;
+  $whereSub .= " AND s2.class_id = ?";
+  $subParams[] = $classId;
 }
+
+$paramsSql = array_merge($subParams, $params);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.external_ref, s.is_active,
           s.created_at,
-          c.id AS class_id, c.school_year, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
+          c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
    FROM students s
+   INNER JOIN (
+     SELECT MAX(s2.id) AS id
+     FROM students s2
+     LEFT JOIN classes c2 ON c2.id=s2.class_id
+     $whereSub
+     GROUP BY CASE WHEN s2.master_student_id IS NULL OR s2.master_student_id=0 THEN s2.id ELSE s2.master_student_id END
+   ) sm ON sm.id = s.id
    LEFT JOIN classes c ON c.id=s.class_id
    $where
    ORDER BY $orderSql
    LIMIT 500"
 );
-$st->execute($params);
+$st->execute($paramsSql);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $masterIds = [];
@@ -612,7 +641,7 @@ $deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
-$classes = $pdo->query("SELECT id, school_year, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
 $templates = $pdo->query(
   "SELECT id, name, template_version, is_active
    FROM templates
@@ -663,7 +692,7 @@ render_admin_header(t('admin.students.title'));
         <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
         <?php foreach ($classes as $c): ?>
           <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
-            <?=h((string)$c['school_year'])?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
+            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
           </option>
         <?php endforeach; ?>
       </select>

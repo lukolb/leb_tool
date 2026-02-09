@@ -20,6 +20,13 @@ function class_display(array $c): string {
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 // NEW: normalize wizard display (per-class)
 function normalize_wizard_display(string $v): string {
   $v = strtolower(trim($v));
@@ -164,6 +171,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
           <thead>
             <tr>
               <th><?=h(t('teacher.classes.table.class', 'Klasse'))?></th>
+              <th><?=h(t('admin.classes.period_label', 'Halbjahr'))?></th>
               <th><?=h(t('teacher.classes.table.status', 'Status'))?></th>
               <th><?=h(t('teacher.classes.table.wizard', 'Wizard'))?></th>
               <th><?=h(t('teacher.classes.table.tts', 'Vorlesen'))?></th>
@@ -174,6 +182,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
           <?php foreach ($items as $c): ?>
             <tr>
               <td><?=h(class_display($c))?></td>
+              <td><?=h(period_label_display($c['period_label'] ?? 'Standard'))?></td>
               <td><?=((int)$c['is_active']===1) ? '<span class="badge">' . h(t('teacher.classes.status.active', 'aktiv')) . '</span>' : '<span class="badge">' . h(t('teacher.classes.status.inactive', 'inaktiv')) . '</span>'?></td>
 
               <td>

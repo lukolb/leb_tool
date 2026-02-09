@@ -55,6 +55,13 @@ function class_label(array $c): string {
   return $name !== '' ? $name : '';
 }
 
+function period_label_display(?string $raw): string {
+  $val = normalize_class_period_label($raw);
+  return $val === 'H2'
+    ? t('admin.classes.period.h2', '2. Halbjahr')
+    : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
@@ -67,12 +74,12 @@ try {
 
 // Load classes assigned to teacher (admins see all)
 if (($u['role'] ?? '') === 'admin') {
-  $st = $pdo->query("SELECT id, school_year, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
+  $st = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
   $classes = $st->fetchAll();
   $hasOwnClasses = !empty($classes);
 } else {
   $st = $pdo->prepare(
-    "SELECT c.id, c.school_year, c.grade_level, c.label, c.name, c.template_id,
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.template_id,
             uca.user_id AS assigned_user_id, d.user_id AS delegated_user_id
      FROM classes c
      LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
@@ -368,11 +375,12 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
   }
 
   $stDelegatedGroups = $pdo->prepare(
-    "SELECT class_id, group_key
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-        AND user_id=?"
+    "SELECT d.class_id, d.group_key
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+        AND d.user_id=?"
   );
   $stDelegatedGroups->execute(array_merge($classIds, [$userId]));
   foreach ($stDelegatedGroups->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -414,7 +422,8 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
     "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, s.class_id
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-      WHERE ri.period_label='Standard'
+       JOIN classes c ON c.id=s.class_id
+      WHERE ri.period_label=c.period_label
         AND s.class_id IN ($inClass)"
   );
   $stReports->execute($classIds);
@@ -567,13 +576,14 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
   }
 
   $stDelRecent = $pdo->prepare(
-    "SELECT class_id, COUNT(*) AS c
-       FROM class_group_delegations
-      WHERE class_id IN ($inClass)
-        AND period_label='Standard'
-        AND user_id=?
-        AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY class_id"
+    "SELECT d.class_id, COUNT(*) AS c
+       FROM class_group_delegations d
+       JOIN classes c ON c.id=d.class_id
+      WHERE d.class_id IN ($inClass)
+        AND d.period_label=c.period_label
+        AND d.user_id=?
+        AND d.updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      GROUP BY d.class_id"
   );
   $stDelRecent->execute(array_merge($classIds, [$userId]));
   foreach ($stDelRecent->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -583,10 +593,10 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
 
   foreach ($progress as $cid => $p) {
     $forms = max(0, (int)$p['forms_total']);
-    $progress[$cid]['students_percent'] = $forms > 0 ? round(($p['students_done'] / $forms) * 100) : null;
-    $progress[$cid]['teachers_percent'] = $forms > 0 ? round(($p['teachers_done'] / $forms) * 100) : null;
+    $progress[$cid]['students_percent'] = $forms > 0 ? round(($p['students_done'] / $forms) * 100) : 100;
+    $progress[$cid]['teachers_percent'] = $forms > 0 ? round(($p['teachers_done'] / $forms) * 100) : 100;
     $delTotal = max(0, (int)$p['delegations_total']);
-    $progress[$cid]['delegations_percent'] = $delTotal > 0 ? round(($p['delegations_done'] / $delTotal) * 100) : null;
+    $progress[$cid]['delegations_percent'] = $delTotal > 0 ? round(($p['delegations_done'] / $delTotal) * 100) : 100;
     $progress[$cid]['avg_minutes'] = ($p['avg_minutes_count'] > 0)
       ? ($p['avg_minutes_sum'] / $p['avg_minutes_count'])
       : null;
@@ -618,9 +628,9 @@ foreach ($progressByClass as $p) {
   $overall['avg_minutes_count'] += (int)($p['avg_minutes_count'] ?? 0);
   if (!($p['delegate_only'] ?? false)) $overall['delegate_only'] = false;
 }
-$overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : null;
-$overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : null;
-$overall['delegations_percent'] = $overall['delegations_total'] > 0 ? round(($overall['delegations_done'] / $overall['delegations_total']) * 100) : null;
+$overall['students_percent'] = $overall['forms_total'] > 0 ? round(($overall['students_done'] / $overall['forms_total']) * 100) : 100;
+$overall['teachers_percent'] = $overall['forms_total'] > 0 ? round(($overall['teachers_done'] / $overall['forms_total']) * 100) : 100;
+$overall['delegations_percent'] = $overall['delegations_total'] > 0 ? round(($overall['delegations_done'] / $overall['delegations_total']) * 100) : 100;
 $overall['avg_minutes'] = $overall['avg_minutes_count'] > 0 ? ($overall['avg_minutes_sum'] / $overall['avg_minutes_count']) : null;
 
 $selectedClassId = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
@@ -629,11 +639,16 @@ if ($selectedClassId !== 0 && !isset($progressByClass[$selectedClassId])) $selec
 $cfg = app_config();
 $deadlineTypes = submission_deadline_types();
 $deadlineSchoolYear = '';
+$deadlinePeriodLabel = 'Standard';
 $deadlineScopeLabel = '';
 if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
   $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
   $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
+  $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
   $deadlineScopeLabel = class_label($classRow);
+  if ($deadlineScopeLabel !== '') {
+    $deadlineScopeLabel .= ' · ' . period_label_display($classRow['period_label'] ?? 'Standard');
+  }
 }
 if ($deadlineSchoolYear === '') {
   $years = array_values(array_unique(array_filter(array_map(
@@ -645,7 +660,17 @@ if ($deadlineSchoolYear === '') {
 if ($deadlineSchoolYear === '') {
   $deadlineSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
 }
-$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear) : [];
+$deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
+if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
+  $periods = array_values(array_unique(array_filter(array_map(
+    static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
+      ? normalize_class_period_label($c['period_label'] ?? 'Standard')
+      : '',
+    $classes
+  ), static fn($v) => $v !== '')));
+  if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
+}
+$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
 
 $scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
 $classTabs = [
@@ -657,6 +682,7 @@ foreach ($progressByClass as $cid => $p) {
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $clabel = (string)($c['label'] ?? '');
   $display = ($grade !== null && $clabel !== '') ? ($grade . $clabel) : ($label !== '' ? $label : ('#' . $cid));
+  $display .= ' · ' . period_label_display($c['period_label'] ?? 'Standard');
   $classTabs[] = ['id' => $cid, 'label' => $display];
 }
 
@@ -674,7 +700,7 @@ render_teacher_header(t('teacher.title'));
   <div class="card">
     <h2><?=h(t('deadline.section.title', 'Fristen'))?></h2>
     <p class="muted">
-      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?>
+      <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display($deadlinePeriodLabel))?>
       <?php if ($deadlineScopeLabel !== ''): ?>
         · <?=h($deadlineScopeLabel)?>
       <?php endif; ?>
@@ -713,15 +739,14 @@ render_teacher_header(t('teacher.title'));
               <td><?=h((string)($meta['label'] ?? $key))?></td>
               <td><?=render_local_datetime($row['due_at'] ?? null, 'd.m.Y H:i', t('deadline.none', '–'))?></td>
               <td>
-                <?php if ($info): ?>
-                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
-                <?php elseif (!$done && !$na): ?>
-                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
-                <?php endif; ?>
                 <?php if ($done): ?>
                   <span class="badge ok"><?=h(t('deadline.status.done', 'Erledigt'))?></span>
                 <?php elseif ($na): ?>
                   <span class="muted"><?=h(t('deadline.status.na', 'Keine Aufgaben'))?></span>
+                <?php elseif ($info): ?>
+                  <span class="badge <?=h($info['status'])?>"><?=h($info['label'])?></span>
+                <?php else: ?>
+                  <span class="muted"><?=h(t('deadline.remaining.none', 'Keine Frist gesetzt'))?></span>
                 <?php endif; ?>
               </td>
             </tr>
@@ -745,6 +770,22 @@ render_teacher_header(t('teacher.title'));
   <?php if (($scope['forms_total'] ?? 0) === 0 && ($scope['delegations_total'] ?? 0) === 0): ?>
     <div class="alert"><?=h(t('teacher.progress.empty', 'Keine Daten verfügbar.'))?></div>
   <?php else: ?>
+    <?php
+      $studentsBar = is_numeric($scope['students_percent'] ?? null) ? max(0, min(100, (int)$scope['students_percent'])) : 0;
+      $teachersBar = is_numeric($scope['teachers_percent'] ?? null) ? max(0, min(100, (int)$scope['teachers_percent'])) : 0;
+      $delegationsBar = is_numeric($scope['delegations_percent'] ?? null) ? max(0, min(100, (int)$scope['delegations_percent'])) : 0;
+    ?>
+    <style>
+      .progress-bar{ height:6px; background: var(--border); border-radius:999px; overflow:hidden; margin-top:6px; }
+      .progress-fill{ height:100%; background: var(--primary, #0b57d0); }
+      .progress-fill.teacher{ background: #6c5ce7; }
+      .progress-fill.delegation{ background: #1e8e3e; }
+      .progress-pie{ width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#1f2937; background: var(--border); margin-top:8px; }
+      .progress-pie span{ background:#fff; border-radius:999px; padding:2px 6px; box-shadow:0 0 0 1px rgba(0,0,0,0.05); }
+      .progress-pie.student{ background: conic-gradient(#1e8e3e 0deg, #1e8e3e calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+      .progress-pie.teacher{ background: conic-gradient(#0b57d0 0deg, #0b57d0 calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+      .progress-pie.delegation{ background: conic-gradient(#f29900 0deg, #f29900 calc(var(--percent) * 3.6deg), var(--border) 0deg); }
+    </style>
     <div class="stats-grid">
       <?php if (!($scope['delegate_only'] ?? false)): ?>
       <div class="stat-box">
@@ -757,6 +798,9 @@ render_teacher_header(t('teacher.title'));
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['students_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?></div>
+        <div class="progress-pie student" role="img" aria-label="<?=h(t('teacher.progress.students_done', 'fertige Schülereingaben'))?> <?=h((string)$studentsBar)?>%" style="--percent: <?=h((string)$studentsBar)?>;">
+          <span><?=h((string)$studentsBar)?>%</span>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value">
@@ -764,6 +808,9 @@ render_teacher_header(t('teacher.title'));
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
+        <div class="progress-pie teacher" role="img" aria-label="<?=h(t('teacher.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?> <?=h((string)$teachersBar)?>%" style="--percent: <?=h((string)$teachersBar)?>;">
+          <span><?=h((string)$teachersBar)?>%</span>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value"><?=h(format_minutes_short($scope['avg_minutes'] ?? null))?></div>
@@ -773,9 +820,12 @@ render_teacher_header(t('teacher.title'));
       <div class="stat-box">
         <div class="stat-value">
           <?=h((string)($scope['delegations_done'] ?? 0))?>
-          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?><?php if (($scope['delegations_total'] ?? 0) > 0): ?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)<?php endif; ?></span>
+          <span class="muted small">/ <?=h((string)($scope['delegations_total'] ?? 0))?> (<?=h((string)($scope['delegations_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('teacher.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?></div>
+        <div class="progress-pie delegation" role="img" aria-label="<?=h(t('teacher.progress.delegations_total', 'Delegationen (fertig/gesamt)'))?> <?=h((string)$delegationsBar)?>%" style="--percent: <?=h((string)$delegationsBar)?>;">
+          <span><?=h((string)$delegationsBar)?>%</span>
+        </div>
       </div>
       <div class="stat-box">
         <div class="stat-value"><?=h((string)($scope['recent_delegations'] ?? 0))?></div>
@@ -830,6 +880,7 @@ render_teacher_header(t('teacher.title'));
         <thead>
           <tr>
             <th><?=h(t('teacher.table.school_year'))?></th>
+            <th><?=h(t('admin.classes.period_label', 'Halbjahr'))?></th>
             <th><?=h(t('teacher.table.class'))?></th>
             <th><?=h(t('teacher.table.actions'))?></th>
           </tr>
@@ -844,6 +895,7 @@ render_teacher_header(t('teacher.title'));
         ?>
           <tr>
             <td><?=h((string)$c['school_year'])?></td>
+            <td><?=h(period_label_display($c['period_label'] ?? 'Standard'))?></td>
             <td><?=h($display)?></td>
             <td>
               <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$c['id']))?>"><?=h(t('teacher.table.students'))?></a>
