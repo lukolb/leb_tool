@@ -509,7 +509,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       const out = { ...(display || {}) };
       if (values && typeof values === 'object') {
         Object.keys(values).forEach((key) => {
-          if (!Object.prototype.hasOwnProperty.call(out, key)) {
+          if (!Object.prototype.hasOwnProperty.call(out, key) || out[key] === '' || out[key] === null) {
             out[key] = values[key];
           }
         });
