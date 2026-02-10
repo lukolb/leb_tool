@@ -1457,7 +1457,7 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
 }
 
 function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
-  $where = $includeReadonly ? '' : ' AND can_teacher_edit=1';
+  $where = $includeReadonly ? ' AND NOT (can_child_edit=1 AND can_teacher_edit=0)' : ' AND can_teacher_edit=1';
   $st = $pdo->prepare(
     "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order, can_teacher_edit
      FROM template_fields
