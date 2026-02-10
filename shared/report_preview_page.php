@@ -26,6 +26,13 @@ function report_preview_meta_read(?string $json): array {
   return is_array($arr) ? $arr : [];
 }
 
+function report_preview_extract_date_format(array $meta): string {
+  $mode = isset($meta['date_format_mode']) ? strtolower(trim((string)$meta['date_format_mode'])) : '';
+  $preset = trim((string)($meta['date_format_preset'] ?? ''));
+  $custom = trim((string)($meta['date_format_custom'] ?? ''));
+  return $mode === 'custom' ? $custom : $preset;
+}
+
 function report_preview_normalize_rect($rect): ?array {
   if (!is_array($rect) || count($rect) !== 4) return null;
   $nums = array_map('floatval', $rect);
@@ -152,6 +159,7 @@ $previewReportId = 0;
 $previewTemplateUrl = '';
 $previewStudentName = '';
 $previewValues = [];
+$previewFieldMeta = [];
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -216,6 +224,13 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $fieldsRows = $stFields->fetchAll(PDO::FETCH_ASSOC) ?: [];
     foreach ($fieldsRows as $fRow) {
       $meta = report_preview_meta_read($fRow['meta_json'] ?? null);
+      $fname = trim((string)($fRow['field_name'] ?? ''));
+      if ($fname !== '') {
+        $entry = ['field_type' => (string)($fRow['field_type'] ?? 'text')];
+        $df = report_preview_extract_date_format($meta);
+        if ($df !== '') $entry['date_format'] = $df;
+        $previewFieldMeta[$fname] = $entry;
+      }
       if ((string)($meta['scope'] ?? '') === 'class') {
         $classFieldNames[(string)($fRow['field_name'] ?? '')] = true;
       }
@@ -255,6 +270,60 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       }
     }
     $previewValues = $valuesByName;
+  } else {
+    $stBase = $pdo->prepare(
+      "SELECT s.*, c.*, c.id AS class_id
+       FROM students s
+       JOIN classes c ON c.id=s.class_id
+       WHERE s.id=?
+       LIMIT 1"
+    );
+    $stBase->execute([$selectedStudentId]);
+    $sc = $stBase->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($sc) {
+      $previewStudentName = trim((string)($sc['first_name'] ?? '') . ' ' . (string)($sc['last_name'] ?? ''));
+      $previewStatusLabel = t('teacher.report_preview.status_missing', 'Noch nicht erstellt');
+      $previewStatus = 'missing';
+      $classIdForTemplate = (int)($sc['class_id'] ?? 0);
+      if ($classIdForTemplate > 0) {
+        $previewTemplateUrl = url('template_file.php?class_id=' . $classIdForTemplate);
+      }
+
+      $templateId = (int)($sc['template_id'] ?? 0);
+      if ($templateId > 0) {
+        $stFields = $pdo->prepare(
+          "SELECT field_name, field_type, meta_json
+           FROM template_fields
+           WHERE template_id=?
+           ORDER BY sort_order ASC, id ASC"
+        );
+        $stFields->execute([$templateId]);
+        $valuesByName = [];
+        foreach (($stFields->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
+          $fname = trim((string)($row['field_name'] ?? ''));
+          if ($fname === '') continue;
+          $meta = report_preview_meta_read($row['meta_json'] ?? null);
+          $fieldType = (string)($row['field_type'] ?? 'text');
+          $df = report_preview_extract_date_format($meta);
+          $entry = ['field_type' => $fieldType];
+          if ($df !== '') $entry['date_format'] = $df;
+          $previewFieldMeta[$fname] = $entry;
+
+          $tpl = trim((string)($meta['system_binding_template'] ?? ''));
+          $binding = trim((string)($meta['system_binding'] ?? ''));
+          $val = null;
+          if ($tpl !== '') {
+            $val = resolve_system_binding_template($tpl, $sc, $sc, $meta, $fieldType);
+          } elseif ($binding !== '') {
+            $val = resolve_system_binding_value($binding, $sc, $sc);
+          }
+          if ($val !== null && trim((string)$val) !== '') {
+            $valuesByName[$fname] = (string)$val;
+          }
+        }
+        $previewValues = $valuesByName;
+      }
+    }
   }
 }
 ?>
@@ -290,7 +359,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     <noscript><button class="btn" type="submit"><?=h(t('ui.save', 'Anzeigen'))?></button></noscript>
   </form>
 
-  <?php if ($previewReportId > 0): ?>
+  <?php if ($previewTemplateUrl !== ''): ?>
     <div class="muted" style="margin-top:10px;">
       <?=h($previewStudentName)?> · <?=h($selectedSchoolYear)?> · <?=h(report_preview_period_label_display($selectedPeriodLabel))?> ·
       <?=h(t('teacher.report_preview.status', 'Status'))?>: <strong><?=h($previewStatusLabel)?></strong>
@@ -302,21 +371,233 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
 </div>
 
 <div id="rpPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;">
-  <?php if ($previewReportId <= 0): ?>
+  <?php if ($previewTemplateUrl === ''): ?>
     <div class="muted"><?=h(t('teacher.report_preview.no_preview', 'Keine Vorschau verfügbar.'))?></div>
   <?php else: ?>
     <div class="pdf-loader" role="status"><span class="spinner"></span> <span class="txt"><?=h(t('ui.loading'))?></span></div>
   <?php endif; ?>
 </div>
 
-<?php if ($previewReportId > 0): ?>
+<?php if ($previewTemplateUrl !== ''): ?>
 <script type="module">
   import * as pdfjsLib from "<?=h(url('assets/pdfjs/pdf.min.mjs'))?>";
   pdfjsLib.GlobalWorkerOptions.workerSrc = "<?=h(url('assets/pdfjs/pdf.worker.min.mjs'))?>";
+  const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
+  const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
 
   const preview = document.getElementById('rpPreview');
   const templateUrl = <?=json_encode($previewTemplateUrl)?>;
   const fieldValues = <?=json_encode($previewValues, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
+  const fieldMeta = <?=json_encode($previewFieldMeta, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
+
+  const monthNames = {
+    de: {
+      full: ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
+      short: ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez']
+    },
+    en: {
+      full: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+      short: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    }
+  };
+
+  function pad2(n){ return String(n).padStart(2, '0'); }
+  function numberToMonthName(m, lang='de', mode='full'){
+    const l = monthNames[lang] ? lang : 'de';
+    const arr = monthNames[l][mode] || monthNames[l].full;
+    const idx = Math.max(1, Math.min(12, Number(m))) - 1;
+    return arr[idx] || '';
+  }
+  function parseFlexibleDate(raw){
+    const s = (raw ?? '').toString().trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return { y:+m[1], m:+m[2], d:+m[3] };
+    m = s.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})$/);
+    if (m) {
+      let y = +m[3];
+      if (y < 100) y += 2000;
+      return { y, m:+m[2], d:+m[1] };
+    }
+    return null;
+  }
+  function matchesFormat(raw, fmt){
+    const p = parseFlexibleDate(raw);
+    if (!p) return false;
+    const f = formatDate(p, fmt);
+    return f === raw;
+  }
+  function formatDate(parts, fmt){
+    if (!parts || !fmt) return '';
+    const y = parts.y, m = parts.m, d = parts.d;
+    const yy = String(y).slice(-2);
+    const lang = <?= json_encode(ui_lang()) ?>;
+    return fmt
+      .replaceAll('YYYY', String(y))
+      .replaceAll('YY', yy)
+      .replaceAll('DD', pad2(d))
+      .replaceAll('D', String(d))
+      .replaceAll('MMMM', numberToMonthName(m, lang, 'full'))
+      .replaceAll('MMM', numberToMonthName(m, lang, 'short'))
+      .replaceAll('MM', pad2(m))
+      .replaceAll('M', String(m));
+  }
+  function normalizeDateIfNeeded(rawValue, expectedFmt){
+    const raw = (rawValue ?? '').toString().trim();
+    const fmt = (expectedFmt ?? '').toString().trim();
+    if (!raw || !fmt) return raw;
+    if (matchesFormat(raw, fmt)) return raw;
+    const parsed = parseFlexibleDate(raw);
+    if (!parsed) return raw;
+    return formatDate(parsed, fmt) || raw;
+  }
+
+  let __fontManifest = null;
+  let __embeddedFonts = new Map();
+  function normalizeFontName(raw){
+    if (!raw) return '';
+    let name = String(raw).trim().replace(/^\//, '').replace(/^[A-Z]{6}\+/, '');
+    name = name.replace(/\s+/g, ' ').toLowerCase().trim();
+    return name.replace(/[^a-z0-9._-]+/g, '_').replace(/^[_\-.]+|[_\-.]+$/g, '');
+  }
+  function expandFontKeys(base){
+    if (!base) return [];
+    const keys = new Set([base, base.replace(/-/g, '_'), base.replace(/_/g, '-')]);
+    return Array.from(keys);
+  }
+  function pdfNameToString(name){
+    if (!name) return '';
+    if (typeof name === 'string') return name.replace(/^\//, '');
+    if (typeof name?.decodeText === 'function') return name.decodeText().replace(/^\//, '');
+    if (typeof name?.asString === 'function') return name.asString().replace(/^\//, '');
+    if (typeof name?.key === 'string') return name.key.replace(/^\//, '');
+    return String(name).replace(/^\//, '');
+  }
+  function pdfStringToText(val){
+    if (!val) return '';
+    if (typeof val.decodeText === 'function') return val.decodeText();
+    if (typeof val.asString === 'function') return val.asString();
+    if (typeof val.value === 'string') return val.value;
+    return String(val);
+  }
+  function parseDaFontKey(daText){
+    if (!daText) return '';
+    const m = /\/([^\s]+)\s+[\d.]+\s+Tf/.exec(daText);
+    return m ? m[1] : '';
+  }
+  function getFieldDefaultAppearance(field, PDFName){
+    try {
+      const da = field?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) return pdfStringToText(da);
+    } catch {}
+    return '';
+  }
+  function resolveBaseFontName(field, fontKey, PDFName, form){
+    if (!fontKey) return '';
+    try {
+      const dr = field?.acroField?.dict?.lookup?.(PDFName.of('DR')) || form?.acroForm?.dict?.lookup?.(PDFName.of('DR'));
+      const fonts = dr?.lookup?.(PDFName.of('Font'));
+      const font = fonts?.lookup?.(PDFName.of(fontKey));
+      const base = font?.lookup?.(PDFName.of('BaseFont')) || font?.dict?.lookup?.(PDFName.of('BaseFont'));
+      if (base) return pdfNameToString(base);
+    } catch {}
+    return fontKey;
+  }
+  async function loadFontManifest(){
+    if (__fontManifest) return __fontManifest;
+    const resp = await fetch(FONT_MANIFEST_URL, { credentials: 'same-origin' });
+    if (!resp.ok) { __fontManifest = new Map(); return __fontManifest; }
+    const data = await resp.json();
+    const map = new Map();
+    (data.fonts || []).forEach((f) => {
+      const key = normalizeFontName(f.name || f.key || '');
+      if (!key) return;
+      expandFontKeys(key).forEach((k) => map.set(k, f));
+    });
+    __fontManifest = map;
+    return map;
+  }
+  async function ensureFontkit(){
+    if (window.fontkit || window.PDFLib?.fontkit) return window.fontkit;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = FONTKIT_URL;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('fontkit load failed'));
+      document.head.appendChild(s);
+    });
+    return window.fontkit;
+  }
+  function standardFontNameMap(PDFLib){
+    if (!PDFLib?.StandardFonts) return {};
+    return {
+      'helvetica': PDFLib.StandardFonts.Helvetica,
+      'helvetica-bold': PDFLib.StandardFonts.HelveticaBold,
+      'helvetica-oblique': PDFLib.StandardFonts.HelveticaOblique,
+      'helvetica-boldoblique': PDFLib.StandardFonts.HelveticaBoldOblique,
+      'times-roman': PDFLib.StandardFonts.TimesRoman,
+      'times-bold': PDFLib.StandardFonts.TimesBold,
+      'times-italic': PDFLib.StandardFonts.TimesItalic,
+      'times-bolditalic': PDFLib.StandardFonts.TimesBoldItalic,
+      'courier': PDFLib.StandardFonts.Courier,
+      'courier-bold': PDFLib.StandardFonts.CourierBold,
+      'courier-oblique': PDFLib.StandardFonts.CourierOblique,
+      'courier-boldoblique': PDFLib.StandardFonts.CourierBoldOblique,
+      'symbol': PDFLib.StandardFonts.Symbol,
+      'zapfdingbats': PDFLib.StandardFonts.ZapfDingbats,
+    };
+  }
+  async function getEmbeddedFont(pdfDoc, fontName, manifest){
+    const baseKey = normalizeFontName(fontName);
+    if (!baseKey) return null;
+    const lookupKeys = expandFontKeys(baseKey);
+    for (const key of lookupKeys) if (__embeddedFonts.has(key)) return __embeddedFonts.get(key);
+    const PDFLib = window.PDFLib;
+    const standardMap = standardFontNameMap(PDFLib);
+    for (const key of lookupKeys) {
+      if (standardMap[key] && typeof pdfDoc.embedFont === 'function') {
+        const font = await pdfDoc.embedFont(standardMap[key]);
+        __embeddedFonts.set(key, font);
+        return font;
+      }
+    }
+    for (const key of lookupKeys) {
+      const custom = manifest.get(key);
+      if (!custom?.url || typeof pdfDoc.embedFont !== 'function') continue;
+      await ensureFontkit();
+      try { if (typeof pdfDoc.registerFontkit === 'function' && window.fontkit) pdfDoc.registerFontkit(window.fontkit); } catch {}
+      const res = await fetch(custom.url, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const bytes = await res.arrayBuffer();
+      const font = await pdfDoc.embedFont(bytes);
+      __embeddedFonts.set(key, font);
+      return font;
+    }
+    return null;
+  }
+  async function updateFieldAppearancesWithFonts(form, pdfDoc, fallbackFont){
+    const PDFLib = window.PDFLib;
+    const { PDFName, PDFTextField, PDFDropdown, PDFOptionList } = PDFLib;
+    const fontManifest = await loadFontManifest();
+    const fields = form.getFields();
+    for (const field of fields) {
+      const isText = PDFTextField && field instanceof PDFTextField;
+      const isDropdown = PDFDropdown && field instanceof PDFDropdown;
+      const isOptionList = PDFOptionList && field instanceof PDFOptionList;
+      if (!isText && !isDropdown && !isOptionList) continue;
+      const da = getFieldDefaultAppearance(field, PDFName);
+      const fontKey = parseDaFontKey(da);
+      const base = resolveBaseFontName(field, fontKey, PDFName, form);
+      let font = null;
+      if (base) font = await getEmbeddedFont(pdfDoc, base, fontManifest);
+      if (!font && fontKey) font = await getEmbeddedFont(pdfDoc, fontKey, fontManifest);
+      if (!font) font = fallbackFont;
+      try {
+        if (font && typeof field.updateAppearances === 'function') field.updateAppearances(font);
+        else if (typeof field.updateAppearances === 'function') field.updateAppearances();
+      } catch {}
+    }
+  }
 
   function loadPdfLib(){
     return new Promise((resolve, reject) => {
@@ -341,7 +622,12 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     fields.forEach((field) => {
       const name = field.getName();
       if (!Object.prototype.hasOwnProperty.call(values, name)) return;
-      const value = String(values[name] ?? '');
+      const meta = fieldMeta?.[name] || null;
+      const expectedFmt = (meta?.date_format || '').toString().trim();
+      let value = String(values[name] ?? '');
+      if ((meta?.field_type || '').toString().toLowerCase() === 'date') {
+        value = normalizeDateIfNeeded(value, expectedFmt);
+      }
       try {
         const type = field?.constructor?.name || '';
         if (type === 'PDFTextField') {
@@ -363,7 +649,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         // ignore unsupported field write errors
       }
     });
-    try { form.updateFieldAppearances(); } catch {}
+    return form;
   }
 
   (async () => {
@@ -371,7 +657,14 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       const PDFLib = await loadPdfLib();
       const tplBytes = await loadTemplateBytes();
       const editable = await PDFLib.PDFDocument.load(tplBytes);
-      fillPdfForm(editable, fieldValues);
+      const form = fillPdfForm(editable, fieldValues);
+      let defaultFont = null;
+      try {
+        if (!defaultFont && PDFLib?.StandardFonts && typeof editable.embedFont === 'function') {
+          defaultFont = await editable.embedFont(PDFLib.StandardFonts.Helvetica);
+        }
+      } catch {}
+      await updateFieldAppearancesWithFonts(form, editable, defaultFont || undefined);
       const renderedBytes = await editable.save();
 
       const pdf = await pdfjsLib.getDocument({ data: renderedBytes }).promise;
