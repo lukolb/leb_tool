@@ -151,7 +151,7 @@ $previewStatusLabel = '';
 $previewReportId = 0;
 $previewTemplateUrl = '';
 $previewStudentName = '';
-$previewFields = [];
+$previewValues = [];
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -183,21 +183,26 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
 
     $stVals = $pdo->prepare(
-      "SELECT fv.template_field_id, fv.value_text, fv.value_json
+      "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name
        FROM field_values fv
+       JOIN template_fields tf ON tf.id=fv.template_field_id
        WHERE fv.report_instance_id=?"
     );
     $stVals->execute([$previewReportId]);
     $valuesByField = [];
+    $valuesByName = [];
     foreach (($stVals->fetchAll(PDO::FETCH_ASSOC) ?: []) as $vRow) {
       $fid = (int)($vRow['template_field_id'] ?? 0);
       if ($fid <= 0) continue;
-      $valuesByField[$fid] = report_preview_resolve_value(
+      $resolved = report_preview_resolve_value(
         $pdo,
         $fid,
         $vRow['value_text'] !== null ? (string)$vRow['value_text'] : '',
         $vRow['value_json'] !== null ? (string)$vRow['value_json'] : null
       );
+      $valuesByField[$fid] = $resolved;
+      $fieldName = trim((string)($vRow['field_name'] ?? ''));
+      if ($fieldName !== '') $valuesByName[$fieldName] = $resolved;
     }
 
     $stFields = $pdo->prepare(
@@ -245,25 +250,11 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
             $cv['value_text'] !== null ? (string)$cv['value_text'] : '',
             $cv['value_json'] !== null ? (string)$cv['value_json'] : null
           );
+          if ($fname !== '') $valuesByName[$fname] = (string)$valuesByField[$fid];
         }
       }
     }
-
-    foreach ($fieldsRows as $fRow) {
-      $fid = (int)($fRow['id'] ?? 0);
-      if ($fid <= 0) continue;
-      $meta = report_preview_meta_read($fRow['meta_json'] ?? null);
-      $rect = report_preview_normalize_rect($meta['rect'] ?? null);
-      $page = is_numeric($meta['page'] ?? null) ? (int)$meta['page'] : 0;
-      if (!$rect || $page <= 0) continue;
-      $previewFields[] = [
-        'id' => $fid,
-        'page' => $page,
-        'rect' => $rect,
-        'label' => (string)($fRow['label'] ?? $fRow['field_name'] ?? ''),
-        'value' => (string)($valuesByField[$fid] ?? ''),
-      ];
-    }
+    $previewValues = $valuesByName;
   }
 }
 ?>
@@ -325,46 +316,65 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
 
   const preview = document.getElementById('rpPreview');
   const templateUrl = <?=json_encode($previewTemplateUrl)?>;
-  const fields = <?=json_encode($previewFields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
+  const fieldValues = <?=json_encode($previewValues, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
 
-  function groupByPage(rows){
-    const map = new Map();
-    rows.forEach((r) => {
-      const p = Number(r.page || 0);
-      if (!p) return;
-      if (!map.has(p)) map.set(p, []);
-      map.get(p).push(r);
+  function loadPdfLib(){
+    return new Promise((resolve, reject) => {
+      if (window.PDFLib) return resolve(window.PDFLib);
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+      s.onload = () => resolve(window.PDFLib);
+      s.onerror = () => reject(new Error('pdf-lib konnte nicht geladen werden.'));
+      document.head.appendChild(s);
     });
-    return map;
   }
 
-  function placeField(overlay, field, viewport){
-    const rect = Array.isArray(field.rect) ? field.rect : null;
-    if (!rect || rect.length !== 4) return;
-    const [x1,y1,x2,y2] = viewport.convertToViewportRectangle(rect);
-    const left = Math.min(x1, x2);
-    const top = Math.min(y1, y2);
-    const width = Math.max(12, Math.abs(x2-x1));
-    const height = Math.max(14, Math.abs(y2-y1));
+  async function loadTemplateBytes(){
+    const resp = await fetch(templateUrl, { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error(`Template-Download fehlgeschlagen (HTTP ${resp.status})`);
+    return new Uint8Array(await resp.arrayBuffer());
+  }
 
-    const box = document.createElement('div');
-    box.style.position = 'absolute';
-    box.style.left = `${left}px`;
-    box.style.top = `${top}px`;
-    box.style.width = `${width}px`;
-    box.style.minHeight = `${height}px`;
-    box.style.fontSize = `${Math.max(9, Math.min(13, Math.floor(height*0.55)))}px`;
-    box.style.lineHeight = '1.1';
-    box.style.whiteSpace = 'pre-wrap';
-    box.style.color = '#1f3b67';
-    box.textContent = String(field.value ?? '');
-    overlay.appendChild(box);
+  function fillPdfForm(pdfDoc, values){
+    const form = pdfDoc.getForm();
+    const fields = form.getFields();
+    fields.forEach((field) => {
+      const name = field.getName();
+      if (!Object.prototype.hasOwnProperty.call(values, name)) return;
+      const value = String(values[name] ?? '');
+      try {
+        const type = field?.constructor?.name || '';
+        if (type === 'PDFTextField') {
+          field.setText(value);
+        } else if (type === 'PDFCheckBox') {
+          if (value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'on') {
+            field.check();
+          } else {
+            field.uncheck();
+          }
+        } else if (type === 'PDFRadioGroup') {
+          if (value !== '') field.select(value);
+        } else if (type === 'PDFDropdown' || type === 'PDFOptionList') {
+          if (value !== '') field.select(value);
+        } else {
+          field.setText?.(value);
+        }
+      } catch {
+        // ignore unsupported field write errors
+      }
+    });
+    try { form.updateFieldAppearances(); } catch {}
   }
 
   (async () => {
     try {
-      const pdf = await pdfjsLib.getDocument({ url: templateUrl, withCredentials: true }).promise;
-      const byPage = groupByPage(fields);
+      const PDFLib = await loadPdfLib();
+      const tplBytes = await loadTemplateBytes();
+      const editable = await PDFLib.PDFDocument.load(tplBytes);
+      fillPdfForm(editable, fieldValues);
+      const renderedBytes = await editable.save();
+
+      const pdf = await pdfjsLib.getDocument({ data: renderedBytes }).promise;
       preview.innerHTML = '';
       const width = preview.clientWidth || 900;
 
@@ -390,17 +400,9 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         canvas.style.height = '100%';
         wrap.appendChild(canvas);
 
-        const overlay = document.createElement('div');
-        overlay.style.position = 'absolute';
-        overlay.style.inset = '0';
-        wrap.appendChild(overlay);
-
         preview.appendChild(wrap);
         const ctx = canvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport, transform: ratio !== 1 ? [ratio,0,0,ratio,0,0] : undefined }).promise;
-
-        const rows = byPage.get(p) || [];
-        rows.forEach((field) => placeField(overlay, field, viewport));
       }
     } catch (e) {
       preview.innerHTML = `<div class="alert danger"><strong>${String(e?.message || 'Preview failed')}</strong></div>`;
