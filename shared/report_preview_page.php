@@ -180,7 +180,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $previewStatus = (string)($ri['status'] ?? '');
     $previewStatusLabel = $statusMap[$previewStatus] ?? ($previewStatus !== '' ? strtoupper($previewStatus) : '—');
     $previewStudentName = trim((string)($ri['first_name'] ?? '') . ' ' . (string)($ri['last_name'] ?? ''));
-    $previewTemplateUrl = url('teacher/report_template_file.php?report_id=' . $previewReportId);
+    $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
 
     $stVals = $pdo->prepare(
       "SELECT fv.template_field_id, fv.value_text, fv.value_json
