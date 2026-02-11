@@ -532,10 +532,23 @@ function has_report_for_student_period(PDO $pdo, int $studentId, string $schoolY
   return (bool)$st->fetchColumn();
 }
 
+function find_exact_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $st = $pdo->prepare(
+    "SELECT id, template_id, student_id
+     FROM report_instances
+     WHERE student_id=? AND school_year=? AND period_label=?
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1"
+  );
+  $st->execute([$studentId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
 function find_existing_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
   $canonicalId = canonical_student_id_for_reports($pdo, $studentId);
   $st = $pdo->prepare(
-    "SELECT ri.id, ri.template_id
+    "SELECT ri.id, ri.template_id, ri.student_id
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
      WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
@@ -577,17 +590,36 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
   );
   $created = 0;
   foreach ($ids as $sid) {
-    $existing = find_existing_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
-    if ($existing) {
-      $existingTemplateId = (int)($existing['template_id'] ?? 0);
-      if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
-        $existingReportId = (int)($existing['id'] ?? 0);
+    $exact = find_exact_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
+    if ($exact) {
+      $exactTemplateId = (int)($exact['template_id'] ?? 0);
+      if ($exactTemplateId > 0 && $exactTemplateId !== $templateId) {
+        $exactReportId = (int)($exact['id'] ?? 0);
         if (!$allowDeleteReports) {
           throw new RuntimeException('Berichts-Konflikt: Vorlagenwechsel würde vorhandene Berichte löschen. Bitte Sicherheitsabfrage bestätigen.');
         }
-        delete_report_with_values($pdo, $existingReportId);
+        delete_report_with_values($pdo, $exactReportId);
       } else {
         continue;
+      }
+    } else {
+      $existing = find_existing_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
+      if ($existing) {
+        $existingTemplateId = (int)($existing['template_id'] ?? 0);
+        $existingReportId = (int)($existing['id'] ?? 0);
+        $existingStudentId = (int)($existing['student_id'] ?? 0);
+        if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+          if (!$allowDeleteReports) {
+            throw new RuntimeException('Berichts-Konflikt: Vorlagenwechsel würde vorhandene Berichte löschen. Bitte Sicherheitsabfrage bestätigen.');
+          }
+          delete_report_with_values($pdo, $existingReportId);
+        } elseif ($existingStudentId > 0 && $existingStudentId !== $sid) {
+          $pdo->prepare("UPDATE report_instances SET student_id=?, updated_at=NOW() WHERE id=?")
+            ->execute([$sid, $existingReportId]);
+          continue;
+        } else {
+          continue;
+        }
       }
     }
     $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
