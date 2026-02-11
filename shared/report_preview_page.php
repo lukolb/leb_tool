@@ -193,6 +193,7 @@ $previewTemplateUrl = '';
 $previewStudentName = '';
 $previewValues = [];
 $previewFieldMeta = [];
+$previewWarnings = [];
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -211,16 +212,30 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $stRi = $pdo->prepare(
       "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
               s.first_name, s.last_name, s.class_id,
-              c.grade_level, c.label, c.name
+              c.grade_level, c.label, c.name,
+              ri.updated_at
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
        JOIN classes c ON c.id=s.class_id
        WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
-       ORDER BY ri.updated_at DESC, ri.id DESC
-       LIMIT 1"
+       ORDER BY ri.updated_at DESC, ri.id DESC"
     );
     $stRi->execute($params);
-    $ri = $stRi->fetch(PDO::FETCH_ASSOC) ?: null;
+    $riRows = $stRi->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if ($riRows) {
+      $ri = $riRows[0];
+      if (count($riRows) > 1) {
+        $previewWarnings[] = str_replace(
+          ['{count}', '{student_id}', '{period}'],
+          [
+            (string)count($riRows),
+            (string)$selectedStudentId,
+            $selectedSchoolYear . ' · ' . report_preview_period_label_display($selectedPeriodLabel),
+          ],
+          t('teacher.report_preview.warning.multiple_reports', 'Mehrere Berichte ({count}) für Schüler {student_id} und Zeitraum {period} gefunden. Der neueste Bericht wird angezeigt.')
+        );
+      }
+    }
   }
   if ($ri) {
     $previewReportId = (int)$ri['id'];
@@ -429,6 +444,16 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     </div>
   <?php else: ?>
     <div class="alert" style="margin-top:10px;"><?=h(t('teacher.report_preview.not_found', 'Für diese Auswahl wurde kein Bericht gefunden.'))?></div>
+  <?php endif; ?>
+
+  <?php if ($previewWarnings): ?>
+    <div class="alert warn" style="margin-top:10px;">
+      <ul style="margin:0 0 0 18px;">
+        <?php foreach ($previewWarnings as $warn): ?>
+          <li><?=h($warn)?></li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
   <?php endif; ?>
 </div>
 
