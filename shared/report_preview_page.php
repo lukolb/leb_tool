@@ -194,6 +194,8 @@ $previewStudentName = '';
 $previewValues = [];
 $previewFieldMeta = [];
 $previewWarnings = [];
+$debugReportSelectSql = '';
+$debugReportSelectParams = [];
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -209,8 +211,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   if ($aliasIds) {
     $in = implode(',', array_fill(0, count($aliasIds), '?'));
     $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
-    $stRi = $pdo->prepare(
-      "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
+    $debugReportSelectSql = "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
               s.first_name, s.last_name, s.class_id,
               c.grade_level, c.label, c.name,
               ri.updated_at
@@ -218,9 +219,10 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
        JOIN students s ON s.id=ri.student_id
        JOIN classes c ON c.id=s.class_id
        WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
-       ORDER BY ri.updated_at DESC, ri.id DESC"
-    );
-    $stRi->execute($params);
+       ORDER BY ri.updated_at DESC, ri.id DESC";
+    $debugReportSelectParams = $params;
+    $stRi = $pdo->prepare($debugReportSelectSql);
+    $stRi->execute($debugReportSelectParams);
     $riRows = $stRi->fetchAll(PDO::FETCH_ASSOC) ?: [];
     if ($riRows) {
       $ri = $riRows[0];
@@ -455,6 +457,15 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       </ul>
     </div>
   <?php endif; ?>
+  <?php if ($debugReportSelectSql !== ''): ?>
+    <div class="card" style="margin-top:10px; background:#fff8e1; border:1px dashed #d8b03f;">
+      <strong>DEBUG SQL</strong>
+      <pre style="white-space:pre-wrap; margin:8px 0 0; font-size:12px;"><?=h($debugReportSelectSql)?></pre>
+      <strong>DEBUG PARAMS</strong>
+      <pre style="white-space:pre-wrap; margin:8px 0 0; font-size:12px;"><?=h(json_encode($debugReportSelectParams, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES))?></pre>
+    </div>
+  <?php endif; ?>
+
 </div>
 
 <div id="rpPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;">
