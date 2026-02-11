@@ -599,6 +599,224 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     }
   }
 
+  function pdfArrayToNumbers(arr, PDFArray, PDFNumber){
+    if (!arr) return null;
+    const isPdfArray = PDFArray && arr instanceof PDFArray;
+    const size = isPdfArray && typeof arr.size === 'function' ? arr.size() : null;
+    const out = [];
+    if (size !== null) {
+      for (let i = 0; i < size; i++) {
+        const obj = arr.get(i);
+        if (PDFNumber && obj instanceof PDFNumber) out.push(obj.asNumber());
+        else if (typeof obj?.asNumber === 'function') out.push(obj.asNumber());
+        else {
+          const n = Number(obj);
+          if (Number.isFinite(n)) out.push(n);
+        }
+      }
+      return out.length ? out : null;
+    }
+    if (Array.isArray(arr)) {
+      for (const obj of arr) {
+        const n = Number(obj);
+        if (Number.isFinite(n)) out.push(n);
+      }
+      return out.length ? out : null;
+    }
+    return null;
+  }
+
+  function parseDaColor(da){
+    const s = (da ?? '').toString();
+    if (!s) return null;
+    const rg = s.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+RG\b/);
+    if (rg) return { model: 'rgb', values: rg.slice(1, 4).map(Number) };
+    const rgFill = s.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg\b/);
+    if (rgFill) return { model: 'rgb', values: rgFill.slice(1, 4).map(Number) };
+    const g = s.match(/([\d.]+)\s+G\b/);
+    if (g) return { model: 'gray', values: [Number(g[1])] };
+    const gFill = s.match(/([\d.]+)\s+g\b/);
+    if (gFill) return { model: 'gray', values: [Number(gFill[1])] };
+    const k = s.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+K\b/);
+    if (k) return { model: 'cmyk', values: k.slice(1, 5).map(Number) };
+    const kFill = s.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+k\b/);
+    if (kFill) return { model: 'cmyk', values: kFill.slice(1, 5).map(Number) };
+    return null;
+  }
+
+  function colorOperators(color){
+    if (!color || !Array.isArray(color.values)) return '';
+    const vals = color.values.map(v => (Number.isFinite(v) ? String(v) : '0'));
+    if (color.model === 'rgb' && vals.length >= 3) return `${vals[0]} ${vals[1]} ${vals[2]} RG`;
+    if (color.model === 'gray' && vals.length >= 1) return `${vals[0]} G`;
+    if (color.model === 'cmyk' && vals.length >= 4) return `${vals[0]} ${vals[1]} ${vals[2]} ${vals[3]} K`;
+    return '';
+  }
+
+  function getWidgetBorderColor(widget, radioField, PDFArray, PDFNumber, PDFName){
+    try {
+      const mk = widget?.dict?.lookup?.(PDFName.of('MK'));
+      if (mk && mk.lookup) {
+        const bc = mk.lookup(PDFName.of('BC'));
+        const nums = pdfArrayToNumbers(bc, PDFArray, PDFNumber);
+        if (nums && nums.length) {
+          if (nums.length === 1) return { model: 'gray', values: nums };
+          if (nums.length === 3) return { model: 'rgb', values: nums };
+          if (nums.length === 4) return { model: 'cmyk', values: nums };
+        }
+      }
+    } catch {}
+    try {
+      const da = widget?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) {
+        const color = parseDaColor(da.decodeText ? da.decodeText() : String(da));
+        if (color) return color;
+      }
+    } catch {}
+    try {
+      const da = radioField?.acroField?.dict?.lookup?.(PDFName.of('DA'));
+      if (da) {
+        const color = parseDaColor(da.decodeText ? da.decodeText() : String(da));
+        if (color) return color;
+      }
+    } catch {}
+    return null;
+  }
+
+  function buildCrossAppearanceStream(pdfDoc, rect, color){
+    const { context } = pdfDoc;
+    const w = Math.max(1, rect.width || 1);
+    const h = Math.max(1, rect.height || 1);
+    const minDim = Math.min(w, h);
+    const inset = minDim * 0.18;
+    const lw = Math.min(2.5, Math.max(0.8, minDim * 0.1));
+    const x1 = inset;
+    const y1 = inset;
+    const x2 = w - inset;
+    const y2 = h - inset;
+    const colorOp = colorOperators(color);
+    const content = ['q', colorOp ? `${colorOp}` : '', `${lw} w`, `${x1} ${y1} m ${x2} ${y2} l`, `${x1} ${y2} m ${x2} ${y1} l`, 'S', 'Q']
+      .filter(Boolean).join('\n');
+    const stream = context.flateStream(content, {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, w, h],
+      Resources: {},
+    });
+    return context.register(stream);
+  }
+
+  function buildOffAppearanceStream(pdfDoc, rect){
+    const { context } = pdfDoc;
+    const w = Math.max(1, rect.width || 1);
+    const h = Math.max(1, rect.height || 1);
+    const stream = context.flateStream('', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 0, w, h],
+      Resources: {},
+    });
+    return context.register(stream);
+  }
+
+  function getWidgetOnName(widget, PDFName, PDFDict){
+    try {
+      const ap = widget?.dict?.lookup?.(PDFName.of('AP'));
+      if (ap && (!PDFDict || ap instanceof PDFDict) && ap.lookup) {
+        const n = ap.lookup(PDFName.of('N'));
+        if (n && (!PDFDict || n instanceof PDFDict) && typeof n.keys === 'function') {
+          const keys = n.keys();
+          for (const k of keys) {
+            const name = pdfNameToString(k);
+            if (name && name.toLowerCase() !== 'off') return name;
+          }
+        }
+      }
+    } catch {}
+    return '';
+  }
+
+  function getRadioGroupValue(radioField, PDFName){
+    try {
+      const selected = radioField?.getSelected?.();
+      if (selected) return pdfNameToString(selected);
+    } catch {}
+    try {
+      const v = radioField?.acroField?.dict?.lookup?.(PDFName.of('V'));
+      if (v) return pdfNameToString(v);
+    } catch {}
+    return '';
+  }
+
+  function getRadioGroupOptions(radioField, PDFName){
+    try {
+      const opts = radioField?.getOptions?.();
+      if (Array.isArray(opts) && opts.length) return opts.map(o => pdfNameToString(o));
+    } catch {}
+    try {
+      const opt = radioField?.acroField?.dict?.lookup?.(PDFName.of('Opt'));
+      const arr = opt?.asArray?.() || opt;
+      if (Array.isArray(arr)) return arr.map(o => pdfNameToString(o)).filter(Boolean);
+    } catch {}
+    return [];
+  }
+
+  function getWidgetAppearanceState(widget, PDFName){
+    try {
+      const as = widget?.dict?.lookup?.(PDFName.of('AS'));
+      const name = pdfNameToString(as);
+      return name && name.toLowerCase() !== 'off' ? name : '';
+    } catch {}
+    return '';
+  }
+
+  function applyRadioCrossAppearances(pdfDoc, form){
+    const PDFLib = window.PDFLib;
+    const { PDFName, PDFDict, PDFArray, PDFNumber } = PDFLib;
+    const fields = form.getFields();
+    for (const field of fields) {
+      if (!(field instanceof PDFLib.PDFRadioGroup)) continue;
+
+      let selectedValue = getRadioGroupValue(field, PDFName);
+      const widgets = field?.acroField?.getWidgets?.() || [];
+      const options = getRadioGroupOptions(field, PDFName);
+      if (!selectedValue) {
+        for (const widget of widgets) {
+          const widgetSelected = getWidgetAppearanceState(widget, PDFName);
+          if (widgetSelected) { selectedValue = widgetSelected; break; }
+        }
+      }
+
+      for (let i = 0; i < widgets.length; i++) {
+        const widget = widgets[i];
+        const rect = widget.getRectangle();
+        let onName = getWidgetOnName(widget, PDFName, PDFDict);
+        if (!onName && options[i]) onName = options[i];
+        if (!onName && selectedValue) onName = selectedValue;
+        if (!onName) continue;
+
+        const normalizedOn = pdfNameToString(onName);
+        const isSelected = selectedValue && pdfNameToString(selectedValue).toLowerCase() === normalizedOn.toLowerCase();
+        const color = getWidgetBorderColor(widget, field, PDFArray, PDFNumber, PDFName);
+        const onRef = buildCrossAppearanceStream(pdfDoc, rect, color);
+        const offRef = buildOffAppearanceStream(pdfDoc, rect);
+
+        const apN = pdfDoc.context.obj({ Off: offRef, [normalizedOn]: onRef });
+        const apDict = pdfDoc.context.obj({ N: apN });
+        widget.dict.set(PDFName.of('AP'), apDict);
+        widget.dict.set(PDFName.of('AS'), PDFName.of(isSelected ? normalizedOn : 'Off'));
+      }
+
+      if (selectedValue) {
+        try {
+          field.acroField?.setValue?.(PDFName.of(pdfNameToString(selectedValue)));
+          field.acroField?.dict?.set?.(PDFName.of('V'), PDFName.of(pdfNameToString(selectedValue)));
+          field.acroField?.dict?.set?.(PDFName.of('DV'), PDFName.of(pdfNameToString(selectedValue)));
+        } catch {}
+      }
+    }
+  }
+
   function loadPdfLib(){
     return new Promise((resolve, reject) => {
       if (window.PDFLib) return resolve(window.PDFLib);
@@ -665,6 +883,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         }
       } catch {}
       await updateFieldAppearancesWithFonts(form, editable, defaultFont || undefined);
+      applyRadioCrossAppearances(editable, form);
       const renderedBytes = await editable.save();
 
       const pdf = await pdfjsLib.getDocument({ data: renderedBytes }).promise;
