@@ -121,6 +121,13 @@ usort($studentChoices, static function(array $a, array $b): int {
   if ($fa !== $fb) return $fa <=> $fb;
   return ((int)($a['canonical_student_id'] ?? 0)) <=> ((int)($b['canonical_student_id'] ?? 0));
 });
+$studentChoiceGroups = [];
+foreach ($studentChoices as $choice) {
+  $classLabel = report_preview_class_display($choice);
+  if (!isset($studentChoiceGroups[$classLabel])) $studentChoiceGroups[$classLabel] = [];
+  $studentChoiceGroups[$classLabel][] = $choice;
+}
+
 
 $selectedStudentId = (int)($_GET['student_id'] ?? 0);
 if ($selectedStudentId <= 0 || !isset($studentsByCanonical[$selectedStudentId])) {
@@ -166,7 +173,22 @@ if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
 
 $selectedPeriodKey = (string)($_GET['period'] ?? '');
 if ($selectedPeriodKey === '' || !isset($periodOptions[$selectedPeriodKey])) {
+  $currentSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+  $currentPeriodLabel = 'H1';
   if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
+    $currentPeriodLabel = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'H1'));
+  } else {
+    foreach ($studentChoices as $choice) {
+      if ((int)($choice['is_active'] ?? 0) !== 1) continue;
+      $currentPeriodLabel = normalize_class_period_label((string)($choice['class_period_label'] ?? 'H1'));
+      break;
+    }
+  }
+  $currentKey = ($currentSchoolYear !== '') ? ($currentSchoolYear . '|' . $currentPeriodLabel) : '';
+  if ($currentKey !== '' && isset($periodOptions[$currentKey])) {
+    $selectedPeriodKey = $currentKey;
+  }
+  if ($selectedPeriodKey === '' && $selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
     $sy = trim((string)($studentsByCanonical[$selectedStudentId]['class_school_year'] ?? ''));
     $pl = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'Standard'));
     $studentDefaultKey = $sy !== '' ? ($sy . '|' . $pl) : '';
@@ -194,8 +216,6 @@ $previewStudentName = '';
 $previewValues = [];
 $previewFieldMeta = [];
 $previewWarnings = [];
-$debugReportSelectSql = '';
-$debugReportSelectParams = [];
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -211,7 +231,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   if ($aliasIds) {
     $in = implode(',', array_fill(0, count($aliasIds), '?'));
     $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
-    $debugReportSelectSql = "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
+    $stRi = $pdo->prepare(
+      "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
               s.first_name, s.last_name, s.class_id,
               c.grade_level, c.label, c.name,
               ri.updated_at
@@ -219,10 +240,9 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
        JOIN students s ON s.id=ri.student_id
        JOIN classes c ON c.id=s.class_id
        WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
-       ORDER BY ri.updated_at DESC, ri.id DESC";
-    $debugReportSelectParams = $params;
-    $stRi = $pdo->prepare($debugReportSelectSql);
-    $stRi->execute($debugReportSelectParams);
+       ORDER BY ri.updated_at DESC, ri.id DESC"
+    );
+    $stRi->execute($params);
     $riRows = $stRi->fetchAll(PDO::FETCH_ASSOC) ?: [];
     if ($riRows) {
       $ri = $riRows[0];
@@ -413,15 +433,18 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     <div>
       <label class="label" for="rpStudent"><?=h(t('teacher.report_preview.student', 'Schüler'))?></label>
       <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()">
-        <?php foreach ($studentChoices as $s):
-          $sid = (int)($s['canonical_student_id'] ?? 0);
-          $nm = trim((string)($s['first_name'] ?? '') . ' ' . (string)($s['last_name'] ?? ''));
-          $cls = report_preview_class_display($s);
-          $active = (int)($s['is_active'] ?? 1) === 1;
-          ?>
-          <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
-            <?=h($nm . ' · ' . $cls . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
-          </option>
+        <?php foreach ($studentChoiceGroups as $classLabel => $classStudents): ?>
+          <optgroup label="<?=h($classLabel)?>">
+            <?php foreach ($classStudents as $s):
+              $sid = (int)($s['canonical_student_id'] ?? 0);
+              $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
+              $active = (int)($s['is_active'] ?? 1) === 1;
+              ?>
+              <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
+                <?=h($nm . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
+              </option>
+            <?php endforeach; ?>
+          </optgroup>
         <?php endforeach; ?>
       </select>
     </div>
@@ -455,14 +478,6 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
           <li><?=h($warn)?></li>
         <?php endforeach; ?>
       </ul>
-    </div>
-  <?php endif; ?>
-  <?php if ($debugReportSelectSql !== ''): ?>
-    <div class="card" style="margin-top:10px; background:#fff8e1; border:1px dashed #d8b03f;">
-      <strong>DEBUG SQL</strong>
-      <pre style="white-space:pre-wrap; margin:8px 0 0; font-size:12px;"><?=h($debugReportSelectSql)?></pre>
-      <strong>DEBUG PARAMS</strong>
-      <pre style="white-space:pre-wrap; margin:8px 0 0; font-size:12px;"><?=h(json_encode($debugReportSelectParams, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES))?></pre>
     </div>
   <?php endif; ?>
 
