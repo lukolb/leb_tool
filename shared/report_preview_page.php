@@ -371,7 +371,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
           if ($df !== '') $entry['date_format'] = $df;
           $previewFieldMeta[$fname] = $entry;
 
-          $tpl = trim((string)($meta['system_binding_template'] ?? ''));
+          $tpl = trim((string)($meta['system_binding_tpl'] ?? ($meta['system_binding_template'] ?? '')));
           $binding = trim((string)($meta['system_binding'] ?? ''));
           $val = null;
           if ($tpl !== '') {
