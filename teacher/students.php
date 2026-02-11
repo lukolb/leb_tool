@@ -547,6 +547,13 @@ function find_existing_report_for_student_period(PDO $pdo, int $studentId, strin
   return $row ?: null;
 }
 
+function report_instance_has_values(PDO $pdo, int $reportId): bool {
+  if ($reportId <= 0) return false;
+  $st = $pdo->prepare("SELECT 1 FROM field_values WHERE report_instance_id=? AND COALESCE(NULLIF(TRIM(value_text), ''), NULLIF(TRIM(value_json), '')) IS NOT NULL LIMIT 1");
+  $st->execute([$reportId]);
+  return (bool)$st->fetchColumn();
+}
+
 function delete_report_with_values(PDO $pdo, int $reportId): void {
   if ($reportId <= 0) return;
   $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
@@ -556,7 +563,7 @@ function delete_report_with_values(PDO $pdo, int $reportId): void {
   $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
 }
 
-function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId): void {
+function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, bool $allowDeleteReports = false): void {
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
@@ -573,7 +580,11 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
     if ($existing) {
       $existingTemplateId = (int)($existing['template_id'] ?? 0);
       if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
-        delete_report_with_values($pdo, (int)($existing['id'] ?? 0));
+        $existingReportId = (int)($existing['id'] ?? 0);
+        if (!$allowDeleteReports) {
+          throw new RuntimeException('Berichts-Konflikt: Vorlagenwechsel würde vorhandene Berichte löschen. Bitte Sicherheitsabfrage bestätigen.');
+        }
+        delete_report_with_values($pdo, $existingReportId);
       } else {
         continue;
       }
@@ -742,7 +753,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = (string)($class['school_year'] ?? '');
       if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
 
-      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId);
+      $allowDeleteReports = ((int)($_POST['confirm_replace_reports'] ?? 0) === 1);
+      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $allowDeleteReports);
 
       $mode = ($action === 'child_lock_class') ? 'lock' : 'unlock';
       $changed = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $mode);
@@ -1367,6 +1379,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_unlock_class">
+        <input type="hidden" name="confirm_replace_reports" value="1">
         <a class="btn primary" type="submit"onclick="if(confirm('<?=h(t('teacher.students.confirm_child_unlock', 'Kinder-Eingabe wirklich freigeben?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_unlock', 'Für Kinder freigeben'))?>
         </a>
@@ -1376,6 +1389,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_lock_class">
+        <input type="hidden" name="confirm_replace_reports" value="1">
         <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
         </a>
