@@ -630,6 +630,15 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_students_login_code ON students (login_code)");
     }
 
+    // --- report_instances: prevent duplicate reports for the same student+semester
+    if (!db_has_index($pdo, 'report_instances', 'uq_report_student_period')) {
+      try {
+        $pdo->exec("CREATE UNIQUE INDEX uq_report_student_period ON report_instances (student_id, school_year, period_label)");
+      } catch (Throwable $e) {
+        // ignore when existing data still contains duplicates; runtime logic prevents creating new ones
+      }
+    }
+
     // --- field_values: ensure SOURCE-AWARE unique key so child + teacher values coexist safely
     if (!db_has_index($pdo, 'field_values', 'uq_field_values_instance_field_source')) {
       // drop legacy unique index if present (would block separate child/teacher rows)

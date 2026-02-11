@@ -512,19 +512,42 @@ function get_active_template(PDO $pdo, int $classId): ?array {
   return $t ?: null;
 }
 
+function canonical_student_id_for_reports(PDO $pdo, int $studentId): int {
+  $st = $pdo->prepare("SELECT COALESCE(master_student_id, id) FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $id = (int)$st->fetchColumn();
+  return $id > 0 ? $id : $studentId;
+}
+
+function has_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): bool {
+  $canonicalId = canonical_student_id_for_reports($pdo, $studentId);
+  $st = $pdo->prepare(
+    "SELECT ri.id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     LIMIT 1"
+  );
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  return (bool)$st->fetchColumn();
+}
+
 function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId): void {
   $periodLabel = normalize_class_period_label($periodLabel);
-  // Create report_instances for all active students (idempotent via INSERT IGNORE)
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
   $ids = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   if (!$ids) return;
 
   $ins = $pdo->prepare(
-    "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
-     VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())"
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
+     VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())
+     ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   );
   foreach ($ids as $sid) {
+    if (has_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel)) {
+      continue;
+    }
     $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
   }
 }

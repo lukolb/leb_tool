@@ -1431,29 +1431,56 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   return (int)$pdo->lastInsertId();
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId): array {
-  $periodLabel = normalize_class_period_label($periodLabel);
+function canonical_student_id(PDO $pdo, int $studentId): int {
+  $st = $pdo->prepare("SELECT COALESCE(master_student_id, id) FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $id = (int)$st->fetchColumn();
+  return $id > 0 ? $id : $studentId;
+}
+
+function find_existing_report_instance_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $canonicalId = canonical_student_id($pdo, $studentId);
   $st = $pdo->prepare(
-    "SELECT id, status
-     FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
-     ORDER BY updated_at DESC, id DESC
+    "SELECT ri.id, ri.status, ri.template_id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     ORDER BY ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
-  $ri = $st->fetch(PDO::FETCH_ASSOC);
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
 
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
+
+  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
   if ($ri) {
     return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
   }
 
   $pdo->prepare(
     "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())"
+     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())
+     ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   )->execute([$templateId, $studentId, $periodLabel, $schoolYear, $userId]);
 
   $rid = (int)$pdo->lastInsertId();
-  return ['id' => $rid, 'status' => 'locked'];
+  if ($rid > 0) {
+    $st = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
+    $st->execute([$rid]);
+    $status = (string)($st->fetchColumn() ?: 'locked');
+    return ['id' => $rid, 'status' => $status];
+  }
+
+  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
+  if ($ri) {
+    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+  }
+
+  throw new RuntimeException('Konnte Bericht nicht erstellen oder finden.');
 }
 
 function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
