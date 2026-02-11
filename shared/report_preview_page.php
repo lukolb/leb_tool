@@ -71,7 +71,7 @@ if ($isAdmin) {
   );
 } else {
   $stStudents = $pdo->prepare(
-    "SELECT s.id, s.first_name, s.last_name, s.is_active, s.class_id,
+    "SELECT DISTINCT s.id, s.first_name, s.last_name, s.is_active, s.class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level, c.label, c.name
      FROM students s
@@ -835,6 +835,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   }
 
   function fillPdfForm(pdfDoc, values){
+    const PDFLib = window.PDFLib;
+    const { PDFName, PDFBool } = PDFLib || {};
     const form = pdfDoc.getForm();
     const fields = form.getFields();
     fields.forEach((field) => {
@@ -847,18 +849,16 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         value = normalizeDateIfNeeded(value, expectedFmt);
       }
       try {
-        const type = field?.constructor?.name || '';
-        if (type === 'PDFTextField') {
+        if (typeof field.setText === 'function') {
           field.setText(value);
-        } else if (type === 'PDFCheckBox') {
-          if (value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'on') {
+        } else if (typeof field.check === 'function') {
+          const vv = value.trim().toLowerCase();
+          if (['1', 'ja', 'yes', 'true', 'x', 'on'].includes(vv)) {
             field.check();
           } else {
-            field.uncheck();
+            if (typeof field.uncheck === 'function') field.uncheck();
           }
-        } else if (type === 'PDFRadioGroup') {
-          if (value !== '') field.select(value);
-        } else if (type === 'PDFDropdown' || type === 'PDFOptionList') {
+        } else if (typeof field.select === 'function') {
           if (value !== '') field.select(value);
         } else {
           field.setText?.(value);
@@ -867,6 +867,16 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         // ignore unsupported field write errors
       }
     });
+
+    try {
+      const acro = form.acroForm;
+      if (acro && acro.dict && PDFName) {
+        const key = PDFName.of('NeedAppearances');
+        try { acro.dict.delete(key); } catch {}
+        if (PDFBool) acro.dict.set(key, PDFBool.False);
+      }
+    } catch {}
+
     return form;
   }
 
