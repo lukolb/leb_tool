@@ -106,6 +106,10 @@ foreach ($students as $s) {
 }
 $studentChoices = array_values($studentsByCanonical);
 usort($studentChoices, static function(array $a, array $b): int {
+  $ca = mb_strtolower(report_preview_class_display($a), 'UTF-8');
+  $cb = mb_strtolower(report_preview_class_display($b), 'UTF-8');
+  if ($ca !== $cb) return $ca <=> $cb;
+
   $la = mb_strtolower(trim((string)($a['last_name'] ?? '')), 'UTF-8');
   $lb = mb_strtolower(trim((string)($b['last_name'] ?? '')), 'UTF-8');
   if ($la !== $lb) return $la <=> $lb;
