@@ -563,18 +563,19 @@ function delete_report_with_values(PDO $pdo, int $reportId): void {
   $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
 }
 
-function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, bool $allowDeleteReports = false): void {
+function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, bool $allowDeleteReports = false): int {
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
   $ids = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
-  if (!$ids) return;
+  if (!$ids) return 0;
 
   $ins = $pdo->prepare(
     "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
      VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())
      ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   );
+  $created = 0;
   foreach ($ids as $sid) {
     $existing = find_existing_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
     if ($existing) {
@@ -590,7 +591,9 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
       }
     }
     $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
+    $created++;
   }
+  return $created;
 }
 
 function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, string $mode): int {
@@ -773,6 +776,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    elseif ($action === 'create_missing_reports') {
+      $tpl = get_active_template($pdo, $classId);
+      if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
+
+      $templateId = (int)$tpl['id'];
+      $schoolYear = (string)($class['school_year'] ?? '');
+      if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+
+      $allowDeleteReports = ((int)($_POST['confirm_replace_reports'] ?? 0) === 1);
+      $created = ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $allowDeleteReports);
+
+      $ok = strtr(
+        t('teacher.students.ok_missing_reports_created', 'Fehlende Berichte wurden erzeugt ({count} neu).'),
+        ['{count}' => (string)$created]
+      );
+    }
     elseif ($action === 'child_group_unlocks') {
       $tpl = get_active_template($pdo, $classId);
       if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
@@ -1392,6 +1411,16 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="confirm_replace_reports" value="1">
         <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
+        </a>
+      </form>
+
+      <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="create_missing_reports">
+        <input type="hidden" name="confirm_replace_reports" value="1">
+        <a class="btn secondary" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_create_missing_reports', 'Fehlende Berichte jetzt erzeugen? Bei Vorlagenkonflikt werden bestehende Berichte nach Sicherheitsabfrage ersetzt.'))?>')) { this.closest('form').submit(); return false; }">
+          <?=h(t('teacher.students.create_missing_reports', 'Fehlende Berichte erzeugen'))?>
         </a>
       </form>
     </div>
