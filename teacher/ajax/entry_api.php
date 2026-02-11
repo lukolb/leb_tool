@@ -1453,12 +1453,38 @@ function find_existing_report_instance_for_student_period(PDO $pdo, int $student
   return $row ?: null;
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId): array {
+function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
+  if ($reportId <= 0) return;
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
+  $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
+}
+
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId, bool $allowTemplateReplace = false): array {
   $periodLabel = normalize_class_period_label($periodLabel);
 
   $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
   if ($ri) {
-    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+    $existingTemplateId = (int)($ri['template_id'] ?? 0);
+    if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+      if (!$allowTemplateReplace) {
+        $errorPayload = [
+          'type' => 'template_conflict',
+          'student_id' => $studentId,
+          'school_year' => $schoolYear,
+          'period_label' => $periodLabel,
+          'existing_report_id' => (int)$ri['id'],
+          'existing_template_id' => $existingTemplateId,
+          'new_template_id' => $templateId,
+          'message' => 'Für diesen Schüler existiert in diesem Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und mit der neuen Vorlage neu erstellt werden?'
+        ];
+        throw new RuntimeException('__TEMPLATE_SWITCH_REQUIRED__' . json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
+      }
+      delete_report_instance_and_values($pdo, (int)$ri['id']);
+      $ri = null;
+    } else {
+      return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+    }
   }
 
   $pdo->prepare(
@@ -1833,7 +1859,7 @@ try {
     foreach ($studentsRaw as $s) {
       $sid = (int)$s['id'];
       $name = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
-      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId);
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId, ((int)($data['confirm_template_replace'] ?? 0) === 1));
       $students[] = [
         'id' => $sid,
         'name' => $name,

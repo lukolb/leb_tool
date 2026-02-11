@@ -535,6 +535,68 @@ function render_history_replace_state_script(): void {
   echo "  </script>\n";
 }
 
+function report_cleanup_delete_instances(PDO $pdo, array $reportIds): void {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($v) => $v > 0)));
+  if (!$reportIds) return;
+  $in = implode(',', array_fill(0, count($reportIds), '?'));
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id IN ($in)")->execute($reportIds);
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id IN ($in)")->execute($reportIds);
+  }
+  $pdo->prepare("DELETE FROM report_instances WHERE id IN ($in)")->execute($reportIds);
+}
+
+function cleanup_report_instances_missing_period(PDO $pdo): void {
+  if (!db_has_table($pdo, 'report_instances') || !db_has_table($pdo, 'students') || !db_has_table($pdo, 'classes')) return;
+
+  $pdo->exec(
+    "UPDATE report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     JOIN classes c ON c.id=s.class_id
+     SET ri.school_year = CASE WHEN COALESCE(TRIM(ri.school_year), '')='' THEN c.school_year ELSE ri.school_year END,
+         ri.period_label = CASE WHEN COALESCE(TRIM(ri.period_label), '')='' THEN c.period_label ELSE ri.period_label END
+     WHERE ri.student_id IS NOT NULL
+       AND (COALESCE(TRIM(ri.school_year), '')='' OR COALESCE(TRIM(ri.period_label), '')='')"
+  );
+
+  $st = $pdo->query(
+    "SELECT id
+     FROM report_instances
+     WHERE student_id IS NOT NULL
+       AND (COALESCE(TRIM(school_year), '')='' OR COALESCE(TRIM(period_label), '')='')"
+  );
+  $reportIds = array_map(fn($r) => (int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
+  report_cleanup_delete_instances($pdo, $reportIds);
+}
+
+function cleanup_duplicate_student_report_instances(PDO $pdo): void {
+  if (!db_has_table($pdo, 'report_instances') || !db_has_table($pdo, 'students')) return;
+
+  $st = $pdo->query(
+    "SELECT COALESCE(s.master_student_id, s.id) AS canonical_student_id,
+            ri.school_year,
+            ri.period_label,
+            GROUP_CONCAT(ri.id ORDER BY ri.updated_at DESC, ri.id DESC SEPARATOR ',') AS report_ids,
+            COUNT(*) AS cnt
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE ri.student_id IS NOT NULL
+       AND COALESCE(TRIM(ri.school_year), '')<>''
+       AND COALESCE(TRIM(ri.period_label), '')<>''
+     GROUP BY canonical_student_id, ri.school_year, ri.period_label
+     HAVING COUNT(*) > 1"
+  );
+
+  $deleteIds = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+    $ids = array_values(array_filter(array_map('intval', explode(',', (string)($row['report_ids'] ?? ''))), fn($v) => $v > 0));
+    if (count($ids) <= 1) continue;
+    $deleteIds = array_merge($deleteIds, array_slice($ids, 1));
+  }
+
+  report_cleanup_delete_instances($pdo, $deleteIds);
+}
+
 // --------------------
 // Schema (additive migrations)
 // --------------------
@@ -629,6 +691,10 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_index($pdo, 'students', 'idx_students_login_code')) {
       $pdo->exec("CREATE INDEX idx_students_login_code ON students (login_code)");
     }
+
+    // --- report_instances: normalize invalid rows and remove duplicates by canonical student + semester
+    cleanup_report_instances_missing_period($pdo);
+    cleanup_duplicate_student_report_instances($pdo);
 
     // --- report_instances: prevent duplicate reports for the same student+semester
     if (!db_has_index($pdo, 'report_instances', 'uq_report_student_period')) {

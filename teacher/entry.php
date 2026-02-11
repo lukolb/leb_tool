@@ -5923,13 +5923,16 @@ render_teacher_header($pageTitle);
     }
   }
 
-  async function loadClass(classId){
+  async function loadClass(classId, options = {}){
+    const forceTemplateReplace = !!options.forceTemplateReplace;
     setLoading(true);
     try {
       clearErr();
       elApp.style.display = 'none';
       setSaveStatus('idle', tEntry('save_idle'));
-      const j = await api('load', { class_id: classId });
+      const payload = { class_id: classId };
+      if (forceTemplateReplace) payload.confirm_template_replace = 1;
+      const j = await api('load', payload);
 
       state.class_id = classId;
       state.template = j.template;
@@ -6025,6 +6028,19 @@ render_teacher_header($pageTitle);
 
       elApp.style.display = 'block';
       render();
+    } catch (e) {
+      const rawMsg = String(e?.message || e || '');
+      const prefix = '__TEMPLATE_SWITCH_REQUIRED__';
+      if (!forceTemplateReplace && rawMsg.startsWith(prefix)) {
+        let info = null;
+        try { info = JSON.parse(rawMsg.slice(prefix.length)); } catch (_err) { info = null; }
+        const confirmMsg = String(info?.message || 'Für diesen Schüler existiert im selben Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und neu erstellt werden?');
+        if (window.confirm(confirmMsg)) {
+          await loadClass(classId, { forceTemplateReplace: true });
+          return;
+        }
+      }
+      throw e;
     } finally {
       setLoading(false);
     }
