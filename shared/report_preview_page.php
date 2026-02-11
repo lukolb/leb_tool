@@ -86,12 +86,15 @@ $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $studentsById = [];
 $studentsByCanonical = [];
+$studentAliasIdsByCanonical = [];
 foreach ($students as $s) {
   $sid = (int)($s['id'] ?? 0);
   if ($sid <= 0) continue;
   $studentsById[$sid] = $s;
   $canonicalId = (int)($s['master_student_id'] ?? 0);
   if ($canonicalId <= 0) $canonicalId = $sid;
+  if (!isset($studentAliasIdsByCanonical[$canonicalId])) $studentAliasIdsByCanonical[$canonicalId] = [];
+  $studentAliasIdsByCanonical[$canonicalId][$sid] = $sid;
   if (!isset($studentsByCanonical[$canonicalId])) {
     $studentsByCanonical[$canonicalId] = $s;
     $studentsByCanonical[$canonicalId]['canonical_student_id'] = $canonicalId;
@@ -200,19 +203,25 @@ $statusMap = [
 ];
 
 if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
-  $stRi = $pdo->prepare(
-    "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
-            s.first_name, s.last_name, s.class_id,
-            c.grade_level, c.label, c.name
-     FROM report_instances ri
-     JOIN students s ON s.id=ri.student_id
-     JOIN classes c ON c.id=s.class_id
-     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
-     ORDER BY ri.updated_at DESC, ri.id DESC
-     LIMIT 1"
-  );
-  $stRi->execute([$selectedStudentId, $selectedSchoolYear, $selectedPeriodLabel]);
-  $ri = $stRi->fetch(PDO::FETCH_ASSOC) ?: null;
+  $aliasIds = array_values(array_map('intval', $studentAliasIdsByCanonical[$selectedStudentId] ?? []));
+  $ri = null;
+  if ($aliasIds) {
+    $in = implode(',', array_fill(0, count($aliasIds), '?'));
+    $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
+    $stRi = $pdo->prepare(
+      "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
+              s.first_name, s.last_name, s.class_id,
+              c.grade_level, c.label, c.name
+       FROM report_instances ri
+       JOIN students s ON s.id=ri.student_id
+       JOIN classes c ON c.id=s.class_id
+       WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
+       ORDER BY ri.updated_at DESC, ri.id DESC
+       LIMIT 1"
+    );
+    $stRi->execute($params);
+    $ri = $stRi->fetch(PDO::FETCH_ASSOC) ?: null;
+  }
   if ($ri) {
     $previewReportId = (int)$ri['id'];
     $previewStatus = (string)($ri['status'] ?? '');
@@ -301,20 +310,26 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     }
     $previewValues = $valuesByName;
   } else {
-    $stBase = $pdo->prepare(
-      "SELECT s.*, c.*, c.id AS class_id
-       FROM students s
-       JOIN classes c ON c.id=s.class_id
-       WHERE COALESCE(s.master_student_id, s.id)=?
-       ORDER BY
-         (CASE WHEN c.school_year=? AND c.period_label=? THEN 0 ELSE 1 END) ASC,
-         s.is_active DESC,
-         s.updated_at DESC,
-         s.id DESC
-       LIMIT 1"
-    );
-    $stBase->execute([$selectedStudentId, $selectedSchoolYear, $selectedPeriodLabel]);
-    $sc = $stBase->fetch(PDO::FETCH_ASSOC) ?: null;
+    $aliasIds = array_values(array_map('intval', $studentAliasIdsByCanonical[$selectedStudentId] ?? []));
+    $sc = null;
+    if ($aliasIds) {
+      $in = implode(',', array_fill(0, count($aliasIds), '?'));
+      $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
+      $stBase = $pdo->prepare(
+        "SELECT s.*, c.*, c.id AS class_id
+         FROM students s
+         JOIN classes c ON c.id=s.class_id
+         WHERE s.id IN ($in)
+         ORDER BY
+           (CASE WHEN c.school_year=? AND c.period_label=? THEN 0 ELSE 1 END) ASC,
+           s.is_active DESC,
+           s.updated_at DESC,
+           s.id DESC
+         LIMIT 1"
+      );
+      $stBase->execute($params);
+      $sc = $stBase->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
     if ($sc) {
       $previewStudentName = trim((string)($sc['first_name'] ?? '') . ' ' . (string)($sc['last_name'] ?? ''));
       $previewStatusLabel = t('teacher.report_preview.status_missing', 'Noch nicht erstellt');
