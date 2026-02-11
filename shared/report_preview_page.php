@@ -224,6 +224,13 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   }
   if ($ri) {
     $previewReportId = (int)$ri['id'];
+    if ($previewReportId > 0) {
+      try {
+        apply_system_bindings($pdo, $previewReportId);
+      } catch (Throwable $e) {
+        // ignore preview-only binding refresh failures
+      }
+    }
     $previewStatus = (string)($ri['status'] ?? '');
     $previewStatusLabel = $statusMap[$previewStatus] ?? ($previewStatus !== '' ? strtoupper($previewStatus) : '—');
     $previewStudentName = trim((string)($ri['first_name'] ?? '') . ' ' . (string)($ri['last_name'] ?? ''));
@@ -286,6 +293,11 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       $stClassRi->execute([(int)$ri['template_id'], $selectedSchoolYear, class_report_period_label((int)$ri['class_id'], $selectedPeriodLabel)]);
       $classRiId = (int)($stClassRi->fetchColumn() ?: 0);
       if ($classRiId > 0) {
+        try {
+          apply_system_bindings($pdo, $classRiId);
+        } catch (Throwable $e) {
+          // ignore preview-only binding refresh failures
+        }
         $stClassVals = $pdo->prepare(
           "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name
            FROM field_values fv
