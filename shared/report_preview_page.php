@@ -62,7 +62,7 @@ $userId = (int)($u['id'] ?? 0);
 
 if ($isAdmin) {
   $stStudents = $pdo->query(
-    "SELECT s.id, s.first_name, s.last_name, s.is_active, s.class_id,
+    "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.is_active, s.class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level, c.label, c.name
      FROM students s
@@ -71,7 +71,7 @@ if ($isAdmin) {
   );
 } else {
   $stStudents = $pdo->prepare(
-    "SELECT DISTINCT s.id, s.first_name, s.last_name, s.is_active, s.class_id,
+    "SELECT DISTINCT s.id, s.master_student_id, s.first_name, s.last_name, s.is_active, s.class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level, c.label, c.name
      FROM students s
@@ -85,13 +85,39 @@ if ($isAdmin) {
 $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $studentsById = [];
+$studentsByCanonical = [];
 foreach ($students as $s) {
-  $studentsById[(int)$s['id']] = $s;
+  $sid = (int)($s['id'] ?? 0);
+  if ($sid <= 0) continue;
+  $studentsById[$sid] = $s;
+  $canonicalId = (int)($s['master_student_id'] ?? 0);
+  if ($canonicalId <= 0) $canonicalId = $sid;
+  if (!isset($studentsByCanonical[$canonicalId])) {
+    $studentsByCanonical[$canonicalId] = $s;
+    $studentsByCanonical[$canonicalId]['canonical_student_id'] = $canonicalId;
+  } else {
+    $existingActive = (int)($studentsByCanonical[$canonicalId]['is_active'] ?? 0) === 1;
+    $candidateActive = (int)($s['is_active'] ?? 0) === 1;
+    if (!$existingActive && $candidateActive) {
+      $studentsByCanonical[$canonicalId] = $s;
+      $studentsByCanonical[$canonicalId]['canonical_student_id'] = $canonicalId;
+    }
+  }
 }
+$studentChoices = array_values($studentsByCanonical);
+usort($studentChoices, static function(array $a, array $b): int {
+  $la = mb_strtolower(trim((string)($a['last_name'] ?? '')), 'UTF-8');
+  $lb = mb_strtolower(trim((string)($b['last_name'] ?? '')), 'UTF-8');
+  if ($la !== $lb) return $la <=> $lb;
+  $fa = mb_strtolower(trim((string)($a['first_name'] ?? '')), 'UTF-8');
+  $fb = mb_strtolower(trim((string)($b['first_name'] ?? '')), 'UTF-8');
+  if ($fa !== $fb) return $fa <=> $fb;
+  return ((int)($a['canonical_student_id'] ?? 0)) <=> ((int)($b['canonical_student_id'] ?? 0));
+});
 
 $selectedStudentId = (int)($_GET['student_id'] ?? 0);
-if ($selectedStudentId <= 0 || !isset($studentsById[$selectedStudentId])) {
-  $selectedStudentId = $students ? (int)($students[0]['id'] ?? 0) : 0;
+if ($selectedStudentId <= 0 || !isset($studentsByCanonical[$selectedStudentId])) {
+  $selectedStudentId = $studentChoices ? (int)($studentChoices[0]['canonical_student_id'] ?? 0) : 0;
 }
 
 $periodOptions = [];
@@ -121,8 +147,8 @@ foreach (($stPeriods->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
   $periodOptions[$key] = ['school_year' => $sy, 'period_label' => $pl];
 }
 
-if ($selectedStudentId > 0 && isset($studentsById[$selectedStudentId])) {
-  $s = $studentsById[$selectedStudentId];
+if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
+  $s = $studentsByCanonical[$selectedStudentId];
   $sy = trim((string)($s['class_school_year'] ?? ''));
   $pl = normalize_class_period_label((string)($s['class_period_label'] ?? 'Standard'));
   if ($sy !== '') {
@@ -133,9 +159,9 @@ if ($selectedStudentId > 0 && isset($studentsById[$selectedStudentId])) {
 
 $selectedPeriodKey = (string)($_GET['period'] ?? '');
 if ($selectedPeriodKey === '' || !isset($periodOptions[$selectedPeriodKey])) {
-  if ($selectedStudentId > 0 && isset($studentsById[$selectedStudentId])) {
-    $sy = trim((string)($studentsById[$selectedStudentId]['class_school_year'] ?? ''));
-    $pl = normalize_class_period_label((string)($studentsById[$selectedStudentId]['class_period_label'] ?? 'Standard'));
+  if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
+    $sy = trim((string)($studentsByCanonical[$selectedStudentId]['class_school_year'] ?? ''));
+    $pl = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'Standard'));
     $studentDefaultKey = $sy !== '' ? ($sy . '|' . $pl) : '';
     if ($studentDefaultKey !== '' && isset($periodOptions[$studentDefaultKey])) {
       $selectedPeriodKey = $studentDefaultKey;
@@ -177,7 +203,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
      JOIN classes c ON c.id=s.class_id
-     WHERE ri.student_id=? AND ri.school_year=? AND ri.period_label=?
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
      ORDER BY ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
@@ -275,10 +301,15 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       "SELECT s.*, c.*, c.id AS class_id
        FROM students s
        JOIN classes c ON c.id=s.class_id
-       WHERE s.id=?
+       WHERE COALESCE(s.master_student_id, s.id)=?
+       ORDER BY
+         (CASE WHEN c.school_year=? AND c.period_label=? THEN 0 ELSE 1 END) ASC,
+         s.is_active DESC,
+         s.updated_at DESC,
+         s.id DESC
        LIMIT 1"
     );
-    $stBase->execute([$selectedStudentId]);
+    $stBase->execute([$selectedStudentId, $selectedSchoolYear, $selectedPeriodLabel]);
     $sc = $stBase->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($sc) {
       $previewStudentName = trim((string)($sc['first_name'] ?? '') . ' ' . (string)($sc['last_name'] ?? ''));
@@ -334,8 +365,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     <div>
       <label class="label" for="rpStudent"><?=h(t('teacher.report_preview.student', 'Schüler'))?></label>
       <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()">
-        <?php foreach ($students as $s):
-          $sid = (int)($s['id'] ?? 0);
+        <?php foreach ($studentChoices as $s):
+          $sid = (int)($s['canonical_student_id'] ?? 0);
           $nm = trim((string)($s['first_name'] ?? '') . ' ' . (string)($s['last_name'] ?? ''));
           $cls = report_preview_class_display($s);
           $active = (int)($s['is_active'] ?? 1) === 1;
