@@ -532,6 +532,30 @@ function has_report_for_student_period(PDO $pdo, int $studentId, string $schoolY
   return (bool)$st->fetchColumn();
 }
 
+function find_existing_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $canonicalId = canonical_student_id_for_reports($pdo, $studentId);
+  $st = $pdo->prepare(
+    "SELECT ri.id, ri.template_id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     ORDER BY ri.updated_at DESC, ri.id DESC
+     LIMIT 1"
+  );
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function delete_report_with_values(PDO $pdo, int $reportId): void {
+  if ($reportId <= 0) return;
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  }
+  $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
+}
+
 function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId): void {
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
@@ -545,8 +569,14 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
      ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   );
   foreach ($ids as $sid) {
-    if (has_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel)) {
-      continue;
+    $existing = find_existing_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
+    if ($existing) {
+      $existingTemplateId = (int)($existing['template_id'] ?? 0);
+      if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+        delete_report_with_values($pdo, (int)($existing['id'] ?? 0));
+      } else {
+        continue;
+      }
     }
     $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
   }

@@ -1456,7 +1456,9 @@ function find_existing_report_instance_for_student_period(PDO $pdo, int $student
 function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
   if ($reportId <= 0) return;
   $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
-  $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  }
   $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
 }
 
