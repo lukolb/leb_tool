@@ -84,6 +84,33 @@ if ($isAdmin) {
 }
 $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+$activeSchoolYear = '';
+if ($isAdmin) {
+  $stActiveYear = $pdo->query(
+    "SELECT school_year
+     FROM classes
+     WHERE is_active=1
+     GROUP BY school_year
+     ORDER BY COUNT(*) DESC, school_year DESC
+     LIMIT 1"
+  );
+} else {
+  $stActiveYear = $pdo->prepare(
+    "SELECT c.school_year
+     FROM classes c
+     JOIN user_class_assignments uca ON uca.class_id=c.id
+     WHERE c.is_active=1 AND uca.user_id=?
+     GROUP BY c.school_year
+     ORDER BY COUNT(*) DESC, c.school_year DESC
+     LIMIT 1"
+  );
+  $stActiveYear->execute([$userId]);
+}
+$activeSchoolYear = trim((string)($stActiveYear->fetchColumn() ?: ''));
+if ($activeSchoolYear === '') {
+  $activeSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+}
+
 $studentsById = [];
 $studentsByCanonical = [];
 $studentAliasIdsByCanonical = [];
@@ -134,6 +161,12 @@ if ($selectedStudentId <= 0 || !isset($studentsByCanonical[$selectedStudentId]))
   $selectedStudentId = $studentChoices ? (int)($studentChoices[0]['canonical_student_id'] ?? 0) : 0;
 }
 
+$studentOrderIds = array_values(array_map(static fn(array $r): int => (int)($r['canonical_student_id'] ?? 0), $studentChoices));
+$selectedStudentPos = array_search($selectedStudentId, $studentOrderIds, true);
+if ($selectedStudentPos === false) $selectedStudentPos = 0;
+$prevStudentId = ($selectedStudentPos > 0) ? (int)$studentOrderIds[$selectedStudentPos - 1] : 0;
+$nextStudentId = ($selectedStudentPos < count($studentOrderIds) - 1) ? (int)$studentOrderIds[$selectedStudentPos + 1] : 0;
+
 $periodOptions = [];
 if ($isAdmin) {
   $stPeriods = $pdo->query(
@@ -173,7 +206,7 @@ if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
 
 $selectedPeriodKey = (string)($_GET['period'] ?? '');
 if ($selectedPeriodKey === '' || !isset($periodOptions[$selectedPeriodKey])) {
-  $currentSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+  $currentSchoolYear = $activeSchoolYear;
   $currentPeriodLabel = 'H1';
   if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
     $currentPeriodLabel = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'H1'));
@@ -460,6 +493,17 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     </div>
     <noscript><button class="btn" type="submit"><?=h(t('ui.save', 'Anzeigen'))?></button></noscript>
   </form>
+
+  <?php if ($selectedPeriodKey !== ''): ?>
+    <div class="actions" style="justify-content:flex-start; gap:8px; margin-top:8px;">
+      <?php if ($prevStudentId > 0): ?>
+        <a class="btn secondary" href="<?=h(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $prevStudentId . '&period=' . urlencode($selectedPeriodKey)))?>">← <?=h(t('teacher.pdf_entry.prev_student', 'Vorheriger Schüler'))?></a>
+      <?php endif; ?>
+      <?php if ($nextStudentId > 0): ?>
+        <a class="btn secondary" href="<?=h(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $nextStudentId . '&period=' . urlencode($selectedPeriodKey)))?>"><?=h(t('teacher.pdf_entry.next_student', 'Nächster Schüler'))?> →</a>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
 
   <?php if ($previewTemplateUrl !== ''): ?>
     <div class="muted" style="margin-top:10px;">
