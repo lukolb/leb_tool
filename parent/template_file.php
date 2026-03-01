@@ -14,11 +14,10 @@ if ($token === '') {
 }
 
 $st = $pdo->prepare(
-  "SELECT ppl.id, ppl.token, s.class_id, c.template_id, t.pdf_storage_path, t.pdf_original_filename\n" .
+  "SELECT ppl.id, ppl.token, ri.id AS report_instance_id, ri.template_id, t.pdf_storage_path, t.pdf_original_filename\n" .
   "FROM parent_portal_links ppl\n" .
-  "JOIN students s ON s.id=ppl.student_id\n" .
-  "JOIN classes c ON c.id=s.class_id\n" .
-  "JOIN templates t ON t.id=c.template_id\n" .
+  "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n" .
+  "JOIN templates t ON t.id=ri.template_id\n" .
   "WHERE ppl.token=? AND ppl.status='approved'\n" .
   "LIMIT 1"
 );
