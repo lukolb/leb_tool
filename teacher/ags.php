@@ -186,18 +186,50 @@ render_teacher_header('AG-Eingaben');
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <input type="hidden" name="ajax" value="1">
+      <style>
+        .ag-choices { display:flex; flex-wrap:wrap; gap:8px; }
+        .ag-chip {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          border: 1px solid var(--border, #d0d7de);
+          background: #fff;
+          color: var(--text, #1f2328);
+          border-radius: 999px;
+          padding: 6px 12px;
+          font-size: 14px;
+          line-height: 1.2;
+          cursor: pointer;
+          user-select: none;
+          transition: all .15s ease;
+        }
+        .ag-chip:hover { border-color: var(--primary, #0b57d0); }
+        .ag-chip.is-selected {
+          background: #eaf2ff;
+          border-color: var(--primary, #0b57d0);
+          color: var(--primary, #0b57d0);
+          font-weight: 600;
+        }
+        .ag-chip input {
+          position: absolute;
+          opacity: 0;
+          pointer-events: none;
+        }
+      </style>
       <table class="table">
         <tr><th>Schüler</th><th>Besuchte AGs (0-x)</th></tr>
         <?php foreach ($students as $s): $sid=(int)$s['id']; ?>
           <tr>
             <td><?=h((string)$s['last_name'].', '.(string)$s['first_name'])?></td>
             <td>
-              <?php foreach ($ags as $ag): $aid=(int)$ag['id']; ?>
-                <label style="display:inline-flex; gap:6px; margin:0 12px 6px 0;">
-                  <input type="checkbox" data-ag-checkbox="1" name="ag[<?=h((string)$sid)?>][]" value="<?=h((string)$aid)?>" <?=!empty($selectedMap[$sid][$aid])?'checked':''?>>
-                  <span><?=h((string)$ag['ag_name'])?></span>
-                </label>
-              <?php endforeach; ?>
+              <div class="ag-choices">
+                <?php foreach ($ags as $ag): $aid=(int)$ag['id']; $isChecked=!empty($selectedMap[$sid][$aid]); ?>
+                  <label class="ag-chip <?=$isChecked?'is-selected':''?>">
+                    <input type="checkbox" data-ag-checkbox="1" name="ag[<?=h((string)$sid)?>][]" value="<?=h((string)$aid)?>" <?=$isChecked?'checked':''?>>
+                    <span><?=h((string)$ag['ag_name'])?></span>
+                  </label>
+                <?php endforeach; ?>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -247,6 +279,8 @@ render_teacher_header('AG-Eingaben');
   form.addEventListener('change', (ev)=>{
     const t = ev.target;
     if (!(t instanceof HTMLInputElement) || t.getAttribute('data-ag-checkbox') !== '1') return;
+    const chip = t.closest('.ag-chip');
+    if (chip) chip.classList.toggle('is-selected', t.checked);
     if (timer) clearTimeout(timer);
     timer = setTimeout(doSave, 250);
   });
