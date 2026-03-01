@@ -512,21 +512,120 @@ function get_active_template(PDO $pdo, int $classId): ?array {
   return $t ?: null;
 }
 
-function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId): void {
+function canonical_student_id_for_reports(PDO $pdo, int $studentId): int {
+  $st = $pdo->prepare("SELECT COALESCE(master_student_id, id) FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $id = (int)$st->fetchColumn();
+  return $id > 0 ? $id : $studentId;
+}
+
+function has_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): bool {
+  $canonicalId = canonical_student_id_for_reports($pdo, $studentId);
+  $st = $pdo->prepare(
+    "SELECT ri.id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     LIMIT 1"
+  );
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  return (bool)$st->fetchColumn();
+}
+
+function find_exact_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $st = $pdo->prepare(
+    "SELECT id, template_id, student_id
+     FROM report_instances
+     WHERE student_id=? AND school_year=? AND period_label=?
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1"
+  );
+  $st->execute([$studentId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function find_existing_report_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $canonicalId = canonical_student_id_for_reports($pdo, $studentId);
+  $st = $pdo->prepare(
+    "SELECT ri.id, ri.template_id, ri.student_id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     ORDER BY ri.updated_at DESC, ri.id DESC
+     LIMIT 1"
+  );
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function report_instance_has_values(PDO $pdo, int $reportId): bool {
+  if ($reportId <= 0) return false;
+  $st = $pdo->prepare("SELECT 1 FROM field_values WHERE report_instance_id=? AND COALESCE(NULLIF(TRIM(value_text), ''), NULLIF(TRIM(value_json), '')) IS NOT NULL LIMIT 1");
+  $st->execute([$reportId]);
+  return (bool)$st->fetchColumn();
+}
+
+function delete_report_with_values(PDO $pdo, int $reportId): void {
+  if ($reportId <= 0) return;
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  }
+  $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
+}
+
+function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, bool $allowDeleteReports = false): int {
   $periodLabel = normalize_class_period_label($periodLabel);
-  // Create report_instances for all active students (idempotent via INSERT IGNORE)
   $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
   $ids = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
-  if (!$ids) return;
+  if (!$ids) return 0;
 
   $ins = $pdo->prepare(
-    "INSERT IGNORE INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
-     VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())"
+    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at)
+     VALUES (?, ?, ?, ?, 'locked', ?, ?, NOW())
+     ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   );
+  $created = 0;
   foreach ($ids as $sid) {
+    $exact = find_exact_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
+    if ($exact) {
+      $exactTemplateId = (int)($exact['template_id'] ?? 0);
+      if ($exactTemplateId > 0 && $exactTemplateId !== $templateId) {
+        $exactReportId = (int)($exact['id'] ?? 0);
+        if (!$allowDeleteReports) {
+          throw new RuntimeException('Berichts-Konflikt: Vorlagenwechsel würde vorhandene Berichte löschen. Bitte Sicherheitsabfrage bestätigen.');
+        }
+        delete_report_with_values($pdo, $exactReportId);
+      } else {
+        continue;
+      }
+    } else {
+      $existing = find_existing_report_for_student_period($pdo, $sid, $schoolYear, $periodLabel);
+      if ($existing) {
+        $existingTemplateId = (int)($existing['template_id'] ?? 0);
+        $existingReportId = (int)($existing['id'] ?? 0);
+        $existingStudentId = (int)($existing['student_id'] ?? 0);
+        if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+          if (!$allowDeleteReports) {
+            throw new RuntimeException('Berichts-Konflikt: Vorlagenwechsel würde vorhandene Berichte löschen. Bitte Sicherheitsabfrage bestätigen.');
+          }
+          delete_report_with_values($pdo, $existingReportId);
+        } elseif ($existingStudentId > 0 && $existingStudentId !== $sid) {
+          $pdo->prepare("UPDATE report_instances SET student_id=?, updated_at=NOW() WHERE id=?")
+            ->execute([$sid, $existingReportId]);
+          continue;
+        } else {
+          continue;
+        }
+      }
+    }
     $ins->execute([$templateId, $sid, $periodLabel, $schoolYear, $userId, $userId]);
+    $created++;
   }
+  return $created;
 }
 
 function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, string $mode): int {
@@ -689,7 +788,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = (string)($class['school_year'] ?? '');
       if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
 
-      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId);
+      $allowDeleteReports = ((int)($_POST['confirm_replace_reports'] ?? 0) === 1);
+      ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $allowDeleteReports);
 
       $mode = ($action === 'child_lock_class') ? 'lock' : 'unlock';
       $changed = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $mode);
@@ -708,6 +808,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    elseif ($action === 'create_missing_reports') {
+      $tpl = get_active_template($pdo, $classId);
+      if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
+
+      $templateId = (int)$tpl['id'];
+      $schoolYear = (string)($class['school_year'] ?? '');
+      if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+
+      $allowDeleteReports = ((int)($_POST['confirm_replace_reports'] ?? 0) === 1);
+      $created = ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, $allowDeleteReports);
+
+      $ok = strtr(
+        t('teacher.students.ok_missing_reports_created', 'Fehlende Berichte wurden erzeugt ({count} neu).'),
+        ['{count}' => (string)$created]
+      );
+    }
     elseif ($action === 'child_group_unlocks') {
       $tpl = get_active_template($pdo, $classId);
       if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
@@ -1314,6 +1430,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_unlock_class">
+        <input type="hidden" name="confirm_replace_reports" value="1">
         <a class="btn primary" type="submit"onclick="if(confirm('<?=h(t('teacher.students.confirm_child_unlock', 'Kinder-Eingabe wirklich freigeben?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_unlock', 'Für Kinder freigeben'))?>
         </a>
@@ -1323,8 +1440,19 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="child_lock_class">
+        <input type="hidden" name="confirm_replace_reports" value="1">
         <a class="btn danger" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_child_lock', 'Kinder-Eingabe wirklich sperren?'))?>')) { this.closest('form').submit(); return false; }">
           <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
+        </a>
+      </form>
+
+      <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="create_missing_reports">
+        <input type="hidden" name="confirm_replace_reports" value="1">
+        <a class="btn secondary" type="submit" onclick="if(confirm('<?=h(t('teacher.students.confirm_create_missing_reports', 'Fehlende Berichte jetzt erzeugen? Bei Vorlagenkonflikt werden bestehende Berichte nach Sicherheitsabfrage ersetzt.'))?>')) { this.closest('form').submit(); return false; }">
+          <?=h(t('teacher.students.create_missing_reports', 'Fehlende Berichte erzeugen'))?>
         </a>
       </form>
     </div>

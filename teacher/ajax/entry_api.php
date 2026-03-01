@@ -1431,36 +1431,92 @@ function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $cl
   return (int)$pdo->lastInsertId();
 }
 
-function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId): array {
-  $periodLabel = normalize_class_period_label($periodLabel);
+function canonical_student_id(PDO $pdo, int $studentId): int {
+  $st = $pdo->prepare("SELECT COALESCE(master_student_id, id) FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $id = (int)$st->fetchColumn();
+  return $id > 0 ? $id : $studentId;
+}
+
+function find_existing_report_instance_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+  $canonicalId = canonical_student_id($pdo, $studentId);
   $st = $pdo->prepare(
-    "SELECT id, status
-     FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
-     ORDER BY updated_at DESC, id DESC
+    "SELECT ri.id, ri.status, ri.template_id
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
+     ORDER BY ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
-  $ri = $st->fetch(PDO::FETCH_ASSOC);
+  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
 
+function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
+  if ($reportId <= 0) return;
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  }
+  $pdo->prepare("DELETE FROM report_instances WHERE id=?")->execute([$reportId]);
+}
+
+function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId, bool $allowTemplateReplace = false): array {
+  $periodLabel = normalize_class_period_label($periodLabel);
+
+  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
   if ($ri) {
-    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+    $existingTemplateId = (int)($ri['template_id'] ?? 0);
+    if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+      if (!$allowTemplateReplace) {
+        $errorPayload = [
+          'type' => 'template_conflict',
+          'student_id' => $studentId,
+          'school_year' => $schoolYear,
+          'period_label' => $periodLabel,
+          'existing_report_id' => (int)$ri['id'],
+          'existing_template_id' => $existingTemplateId,
+          'new_template_id' => $templateId,
+          'message' => 'Für diesen Schüler existiert in diesem Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und mit der neuen Vorlage neu erstellt werden?'
+        ];
+        throw new RuntimeException('__TEMPLATE_SWITCH_REQUIRED__' . json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
+      }
+      delete_report_instance_and_values($pdo, (int)$ri['id']);
+      $ri = null;
+    } else {
+      return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+    }
   }
 
   $pdo->prepare(
     "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())"
+     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())
+     ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
   )->execute([$templateId, $studentId, $periodLabel, $schoolYear, $userId]);
 
   $rid = (int)$pdo->lastInsertId();
-  return ['id' => $rid, 'status' => 'locked'];
+  if ($rid > 0) {
+    $st = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
+    $st->execute([$rid]);
+    $status = (string)($st->fetchColumn() ?: 'locked');
+    return ['id' => $rid, 'status' => $status];
+  }
+
+  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
+  if ($ri) {
+    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+  }
+
+  throw new RuntimeException('Konnte Bericht nicht erstellen oder finden.');
 }
 
-function load_teacher_fields(PDO $pdo, int $templateId): array {
+function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
+  $where = $includeReadonly ? ' AND NOT (can_child_edit=1 AND can_teacher_edit=0)' : ' AND can_teacher_edit=1';
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order, can_teacher_edit
      FROM template_fields
-     WHERE template_id=? AND can_teacher_edit=1
+     WHERE template_id=?$where
      ORDER BY sort_order ASC, id ASC"
   );
   $st->execute([$templateId]);
@@ -1805,7 +1861,7 @@ try {
     foreach ($studentsRaw as $s) {
       $sid = (int)$s['id'];
       $name = trim((string)$s['last_name'] . ', ' . (string)$s['first_name']);
-      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId);
+      $ri = find_or_create_report_instance_for_student($pdo, $templateId, $sid, $schoolYear, $periodLabel, $userId, ((int)($data['confirm_template_replace'] ?? 0) === 1));
       $students[] = [
         'id' => $sid,
         'name' => $name,
@@ -2353,7 +2409,7 @@ try {
       apply_system_bindings($pdo, $classReportInstanceId);
     }
 
-    $teacherFields = load_teacher_fields($pdo, $templateId);
+    $teacherFields = load_teacher_fields($pdo, $templateId, true);
     $childFields = load_child_fields_for_pairing($pdo, $templateId);
     $optCache = [];
     $iconCache = [];
@@ -2494,7 +2550,8 @@ try {
     foreach ($teacherFields as $f) {
       $fid = (int)($f['id'] ?? 0);
       if ($fid <= 0 || isset($fieldsById[$fid])) continue;
-      $appendField($f, true, false);
+      $canEditOverride = ((int)($f['can_teacher_edit'] ?? 0) === 1);
+      $appendField($f, $canEditOverride, false);
     }
 
     foreach ($childFields as $f) {

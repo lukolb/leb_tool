@@ -276,6 +276,17 @@ function finalmarks_subject_fields(PDO $pdo, int $templateId): array {
   return [$map, $duplicates];
 }
 
+function finalmarks_has_grade_fields(PDO $pdo, int $templateId): bool {
+  $st = $pdo->prepare(
+    "SELECT 1
+     FROM template_fields
+     WHERE template_id=? AND field_type IN ('grade','select','radio')
+     LIMIT 1"
+  );
+  $st->execute([$templateId]);
+  return (bool)$st->fetchColumn();
+}
+
 function finalmarks_parse_blocks(array $blocks): array {
   $blocks = array_values(array_filter(array_map('strval', $blocks), fn($b) => trim($b) !== ''));
   $results = [];
@@ -379,8 +390,12 @@ $finalmarksSuccess = null;
 $finalmarksSummary = null;
 $finalmarksToken = '';
 $finalmarksFormSchoolYear = '';
+$finalmarksFormPeriodLabel = '';
 $finalmarksHasImportable = false;
 $currentClass = null;
+$finalmarksTemplateId = 0;
+$finalmarksHasSubjects = false;
+$finalmarksYearPeriodOptions = [];
 foreach ($classes as $c) {
   if ((int)($c['id'] ?? 0) === $classId) {
     $currentClass = $c;
@@ -389,8 +404,50 @@ foreach ($classes as $c) {
 }
 $classPeriodLabel = normalize_class_period_label($currentClass ? ($currentClass['period_label'] ?? 'Standard') : 'Standard');
 $finalmarksFormSchoolYear = trim((string)($currentClass['school_year'] ?? ''));
-if ($finalmarksFormSchoolYear === '') {
-  $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+$finalmarksFormPeriodLabel = $classPeriodLabel;
+if ($classId > 0) {
+  $stClass = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+  $stClass->execute([$classId]);
+  $finalmarksTemplateId = (int)($stClass->fetchColumn() ?: 0);
+  if ($finalmarksTemplateId > 0) {
+    $finalmarksHasSubjects = finalmarks_has_grade_fields($pdo, $finalmarksTemplateId);
+  }
+
+  $addPeriodOption = function(string $schoolYear, string $periodLabel) use (&$finalmarksYearPeriodOptions): void {
+    $schoolYear = trim($schoolYear);
+    if ($schoolYear === '') return;
+    $periodLabel = normalize_class_period_label($periodLabel);
+    $key = $schoolYear . '|' . $periodLabel;
+    if (!isset($finalmarksYearPeriodOptions[$key])) {
+      $finalmarksYearPeriodOptions[$key] = [
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+      ];
+    }
+  };
+
+  $stPeriods = $pdo->prepare(
+    "SELECT DISTINCT ri.school_year, ri.period_label
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     WHERE s.class_id=?
+     ORDER BY ri.school_year DESC, ri.period_label DESC"
+  );
+  $stPeriods->execute([$classId]);
+  foreach ($stPeriods->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $addPeriodOption((string)($row['school_year'] ?? ''), (string)($row['period_label'] ?? 'Standard'));
+  }
+  $addPeriodOption($finalmarksFormSchoolYear, $finalmarksFormPeriodLabel);
+  if ($finalmarksFormSchoolYear === '' && $finalmarksYearPeriodOptions) {
+    $first = reset($finalmarksYearPeriodOptions);
+    $finalmarksFormSchoolYear = (string)($first['school_year'] ?? '');
+    $finalmarksFormPeriodLabel = normalize_class_period_label((string)($first['period_label'] ?? $finalmarksFormPeriodLabel));
+  }
+  if ($finalmarksFormSchoolYear === '') {
+    $finalmarksFormSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+    $finalmarksFormPeriodLabel = $classPeriodLabel;
+    $addPeriodOption($finalmarksFormSchoolYear, $finalmarksFormPeriodLabel);
+  }
 }
 
 if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['finalmarks_action'])) {
@@ -398,7 +455,13 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
     $finalmarksErrors[] = t('teacher.entry.finalmarks.error.delegated_no_import');
   } else {
     $action = (string)$_POST['finalmarks_action'];
-    $finalmarksFormSchoolYear = trim((string)($_POST['school_year'] ?? $finalmarksFormSchoolYear));
+    $selectedPeriodKey = (string)($_POST['finalmarks_period'] ?? '');
+    if ($selectedPeriodKey !== '' && isset($finalmarksYearPeriodOptions[$selectedPeriodKey])) {
+      $finalmarksFormSchoolYear = (string)$finalmarksYearPeriodOptions[$selectedPeriodKey]['school_year'];
+      $finalmarksFormPeriodLabel = (string)$finalmarksYearPeriodOptions[$selectedPeriodKey]['period_label'];
+    } else {
+      $finalmarksErrors[] = t('teacher.entry.finalmarks.error.select_period');
+    }
 
     if ($classId <= 0) {
       $finalmarksErrors[] = t('teacher.entry.finalmarks.error.select_class_first');
@@ -420,6 +483,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         $_SESSION['finalmarks_import'][$token] = [
           'class_id' => $classId,
           'school_year' => $finalmarksFormSchoolYear,
+          'period_label' => $finalmarksFormPeriodLabel,
           'template_id' => $templateId,
           'file_hash' => (string)($_POST['finalmarks_file_hash'] ?? ''),
           'file_name' => (string)($_POST['finalmarks_file_name'] ?? ''),
@@ -479,7 +543,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
         if ($classStudents) {
           $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
           $in = implode(',', array_fill(0, count($studentIds), '?'));
-          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
+          $params = array_merge([$templateId, $finalmarksFormSchoolYear, $finalmarksFormPeriodLabel], $studentIds);
           $stRep = $pdo->prepare(
             "SELECT id, student_id
              FROM report_instances
@@ -675,6 +739,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 
     if (!$finalmarksErrors) {
       $finalmarksFormSchoolYear = trim((string)($sessionData['school_year'] ?? $finalmarksFormSchoolYear));
+      $finalmarksFormPeriodLabel = normalize_class_period_label((string)($sessionData['period_label'] ?? $finalmarksFormPeriodLabel));
       $templateId = (int)($sessionData['template_id'] ?? 0);
       if ($templateId <= 0) {
         $finalmarksErrors[] = t('teacher.entry.finalmarks.error.template_missing_short');
@@ -714,7 +779,7 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
       if ($classStudents) {
         $studentIds = array_map(fn($s) => (int)$s['id'], $classStudents);
         $in = implode(',', array_fill(0, count($studentIds), '?'));
-        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $classPeriodLabel], $studentIds);
+        $params = array_merge([$templateId, $finalmarksFormSchoolYear, $finalmarksFormPeriodLabel], $studentIds);
         $stRep = $pdo->prepare(
           "SELECT id, student_id
            FROM report_instances
@@ -989,7 +1054,7 @@ render_teacher_header($pageTitle);
   </div>
 </div>
 
-<?php if ($isTeacherRole && !$childMode && !$delegatedMode && !$meetingMode): ?>
+<?php if ($isTeacherRole && !$childMode && !$delegatedMode && !$meetingMode && $finalmarksHasSubjects): ?>
   <div class="card">
     <h2 style="margin-top:0;"><?=h(t('teacher.entry.finalmarks.title'))?></h2>
     <?php if ($classId <= 0): ?>
@@ -1031,7 +1096,13 @@ render_teacher_header($pageTitle);
           </div>
           <div>
             <label class="label" for="finalmarksYear"><?=h(t('teacher.entry.finalmarks.school_year_label'))?></label>
-            <input class="input" type="text" id="finalmarksYear" name="school_year" value="<?=h($finalmarksFormSchoolYear)?>" placeholder="<?=h(t('teacher.entry.finalmarks.school_year_placeholder'))?>">
+            <select class="input" id="finalmarksYear" name="finalmarks_period" required>
+              <?php foreach ($finalmarksYearPeriodOptions as $key => $opt): ?>
+                <option value="<?=h($key)?>" <?= ($opt['school_year'] === $finalmarksFormSchoolYear && $opt['period_label'] === $finalmarksFormPeriodLabel) ? 'selected' : '' ?>>
+                  <?=h($opt['school_year'] . ' · ' . period_label_display($opt['period_label'] ?? 'Standard'))?>
+                </option>
+              <?php endforeach; ?>
+            </select>
           </div>
             <div>
                 
@@ -5852,13 +5923,16 @@ render_teacher_header($pageTitle);
     }
   }
 
-  async function loadClass(classId){
+  async function loadClass(classId, options = {}){
+    const forceTemplateReplace = !!options.forceTemplateReplace;
     setLoading(true);
     try {
       clearErr();
       elApp.style.display = 'none';
       setSaveStatus('idle', tEntry('save_idle'));
-      const j = await api('load', { class_id: classId });
+      const payload = { class_id: classId };
+      if (forceTemplateReplace) payload.confirm_template_replace = 1;
+      const j = await api('load', payload);
 
       state.class_id = classId;
       state.template = j.template;
@@ -5954,6 +6028,19 @@ render_teacher_header($pageTitle);
 
       elApp.style.display = 'block';
       render();
+    } catch (e) {
+      const rawMsg = String(e?.message || e || '');
+      const prefix = '__TEMPLATE_SWITCH_REQUIRED__';
+      if (!forceTemplateReplace && rawMsg.startsWith(prefix)) {
+        let info = null;
+        try { info = JSON.parse(rawMsg.slice(prefix.length)); } catch (_err) { info = null; }
+        const confirmMsg = String(info?.message || 'Für diesen Schüler existiert im selben Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und neu erstellt werden?');
+        if (window.confirm(confirmMsg)) {
+          await loadClass(classId, { forceTemplateReplace: true });
+          return;
+        }
+      }
+      throw e;
     } finally {
       setLoading(false);
     }
