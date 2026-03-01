@@ -156,20 +156,19 @@ render_teacher_header('AG-Eingaben');
   <?php if ($ok): ?><div class="alert success"><?=h($ok)?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
 
-  <form method="get" class="row-actions">
+  <form method="get" class="row-actions" id="agClassForm">
     <label>Klasse</label>
-    <select class="input" name="class_id">
+    <select class="input" name="class_id" onchange="this.form.submit()">
       <?php foreach ($classes as $c): ?>
         <option value="<?=h((string)$c['id'])?>" <?=((int)$c['id']===$classId)?'selected':''?>><?=h((string)$c['school_year'].' · '.ag_teacher_class_display($c).' · '.ag_teacher_period_display((string)$c['period_label']))?></option>
       <?php endforeach; ?>
     </select>
-    <button class="btn secondary" type="submit">Anzeigen</button>
   </form>
 
   <?php if (!$selectedClass): ?>
     <div class="alert">Keine Klasse verfügbar.</div>
   <?php else: ?>
-    <form method="post">
+    <form method="post" id="agAssignForm">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
       <table class="table">
@@ -180,7 +179,7 @@ render_teacher_header('AG-Eingaben');
             <td>
               <?php foreach ($ags as $ag): $aid=(int)$ag['id']; ?>
                 <label style="display:inline-flex; gap:6px; margin:0 12px 6px 0;">
-                  <input type="checkbox" name="ag[<?=h((string)$sid)?>][]" value="<?=h((string)$aid)?>" <?=!empty($selectedMap[$sid][$aid])?'checked':''?>>
+                  <input type="checkbox" data-ag-checkbox="1" name="ag[<?=h((string)$sid)?>][]" value="<?=h((string)$aid)?>" <?=!empty($selectedMap[$sid][$aid])?'checked':''?>>
                   <span><?=h((string)$ag['ag_name'])?></span>
                 </label>
               <?php endforeach; ?>
@@ -188,8 +187,26 @@ render_teacher_header('AG-Eingaben');
           </tr>
         <?php endforeach; ?>
       </table>
-      <button class="btn primary" type="submit">Speichern</button>
+      <div class="muted" id="agAutoSaveHint">Änderungen werden automatisch gespeichert.</div>
     </form>
   <?php endif; ?>
 </div>
+<script>
+(function(){
+  const form = document.getElementById('agAssignForm');
+  const hint = document.getElementById('agAutoSaveHint');
+  if (!form) return;
+  let timer = null;
+  const submitAuto = ()=>{
+    if (hint) hint.textContent = 'Speichere…';
+    form.submit();
+  };
+  form.addEventListener('change', (ev)=>{
+    const t = ev.target;
+    if (!(t instanceof HTMLInputElement) || t.getAttribute('data-ag-checkbox') !== '1') return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(submitAuto, 250);
+  });
+})();
+</script>
 <?php render_teacher_footer();

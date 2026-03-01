@@ -60,12 +60,18 @@ if (!$scopeYears) {
   $scopeYears = [date('Y') . '/' . substr((string)((int)date('Y') + 1), -2)];
 }
 
+$activeKey = trim((string)($_GET['active_key'] ?? $_POST['active_key'] ?? ''));
 $selectedYear = trim((string)($_GET['school_year'] ?? $_POST['school_year'] ?? $scopeYears[0]));
-if (!in_array($selectedYear, $scopeYears, true)) $selectedYear = $scopeYears[0];
-
 $periodChoices = array_keys(ag_period_label_options());
 $selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? 'Standard'));
+if ($activeKey !== '') {
+  $parts = explode('|', $activeKey, 2);
+  $selectedYear = trim((string)($parts[0] ?? $selectedYear));
+  $selectedPeriod = normalize_class_period_label((string)($parts[1] ?? $selectedPeriod));
+}
+if (!in_array($selectedYear, $scopeYears, true)) $selectedYear = $scopeYears[0];
 if (!in_array($selectedPeriod, $periodChoices, true)) $selectedPeriod = 'Standard';
+$currentActiveKey = $selectedYear . '|' . $selectedPeriod;
 
 $sourceYears = array_keys($agScopes);
 if (!$sourceYears) $sourceYears = $scopeYears;
@@ -173,24 +179,19 @@ render_admin_header('AG-Verwaltung');
   <?php if ($ok): ?><div class="alert success"><?=h($ok)?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
 
-  <form method="get" class="grid" style="grid-template-columns:1fr 1fr auto; gap:10px; align-items:end;">
+  <form method="get" class="row" style="gap:10px; align-items:flex-end;">
     <div>
-      <label>Schuljahr</label>
-      <select class="input" name="school_year">
+      <label>Schuljahr/Halbjahr</label>
+      <select class="input" name="active_key" onchange="this.form.submit()">
         <?php foreach ($scopeYears as $y): ?>
-          <option value="<?=h($y)?>" <?=$y===$selectedYear?'selected':''?>><?=h($y)?></option>
+          <?php foreach ($periodChoices as $p): $k = $y . '|' . $p; ?>
+            <option value="<?=h($k)?>" <?=$k===$currentActiveKey?'selected':''?>><?=h($y . ' · ' . (ag_period_label_options()[$p] ?? $p))?></option>
+          <?php endforeach; ?>
         <?php endforeach; ?>
       </select>
+      <input type="hidden" name="school_year" value="<?=h($selectedYear)?>">
+      <input type="hidden" name="period_label" value="<?=h($selectedPeriod)?>">
     </div>
-    <div>
-      <label>Halbjahr</label>
-      <select class="input" name="period_label">
-        <?php foreach ($periodChoices as $p): ?>
-          <option value="<?=h($p)?>" <?=$p===$selectedPeriod?'selected':''?>><?=h(ag_period_label_options()[$p] ?? $p)?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div><button class="btn secondary" type="submit">Anzeigen</button></div>
   </form>
 
   <h3>AG hinzufügen</h3>
