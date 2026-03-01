@@ -51,37 +51,153 @@ function ag_scopes(PDO $pdo): array {
   return $out;
 }
 
-$classScopes = class_scopes($pdo);
-$agScopes = ag_scopes($pdo);
-$scopeYears = array_values(array_unique(array_merge(array_keys($classScopes), array_keys($agScopes))));
-rsort($scopeYears);
 
-if (!$scopeYears) {
-  $scopeYears = [date('Y') . '/' . substr((string)((int)date('Y') + 1), -2)];
+function ag_scope_label(string $schoolYear, string $periodLabel): string {
+  return $schoolYear . ' · ' . (ag_period_label_options()[$periodLabel] ?? $periodLabel);
 }
 
-$activeKey = trim((string)($_GET['active_key'] ?? $_POST['active_key'] ?? ''));
-$selectedYear = trim((string)($_GET['school_year'] ?? $_POST['school_year'] ?? $scopeYears[0]));
-$periodChoices = array_keys(ag_period_label_options());
-$selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? 'Standard'));
-if ($activeKey !== '') {
-  $parts = explode('|', $activeKey, 2);
-  $selectedYear = trim((string)($parts[0] ?? $selectedYear));
-  $selectedPeriod = normalize_class_period_label((string)($parts[1] ?? $selectedPeriod));
+function ag_scope_sort_rank(string $periodLabel): int {
+  $p = normalize_class_period_label($periodLabel);
+  if ($p === 'Standard') return 0;
+  if ($p === 'H2') return 1;
+  return 2;
 }
-if (!in_array($selectedYear, $scopeYears, true)) $selectedYear = $scopeYears[0];
-if (!in_array($selectedPeriod, $periodChoices, true)) $selectedPeriod = 'Standard';
-$currentActiveKey = $selectedYear . '|' . $selectedPeriod;
 
-$sourceYears = array_keys($agScopes);
-if (!$sourceYears) $sourceYears = $scopeYears;
-rsort($sourceYears);
-$sourceYear = trim((string)($_POST['source_school_year'] ?? $_GET['source_school_year'] ?? $sourceYears[0] ?? $selectedYear));
-if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
-$sourcePeriodChoices = array_keys(ag_period_label_options());
-$sourcePeriod = normalize_class_period_label((string)($_POST['source_period_label'] ?? $_GET['source_period_label'] ?? 'Standard'));
-if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = 'Standard';
+function ag_scope_options(PDO $pdo): array {
+  $rows = $pdo->query(
+    "SELECT DISTINCT school_year, period_label
+" .
+    "FROM classes
+" .
+    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+  $seen = [];
+  $out = [];
+  foreach ($rows as $r) {
+    $sy = trim((string)($r['school_year'] ?? ''));
+    $pl = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+    if ($sy === '') continue;
+    $key = $sy . '|' . $pl;
+    if (isset($seen[$key])) continue;
+    $seen[$key] = true;
+    $out[] = ['key' => $key, 'school_year' => $sy, 'period_label' => $pl, 'label' => ag_scope_label($sy, $pl)];
+  }
+
+  $rowsAg = $pdo->query(
+    "SELECT DISTINCT school_year, period_label
+" .
+    "FROM ag_catalog
+" .
+    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($rowsAg as $r) {
+    $sy = trim((string)($r['school_year'] ?? ''));
+    $pl = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+    if ($sy === '') continue;
+    $key = $sy . '|' . $pl;
+    if (isset($seen[$key])) continue;
+    $seen[$key] = true;
+    $out[] = ['key' => $key, 'school_year' => $sy, 'period_label' => $pl, 'label' => ag_scope_label($sy, $pl)];
+  }
+
+  usort($out, static function(array $a, array $b): int {
+    $syCmp = strcmp((string)$b['school_year'], (string)$a['school_year']);
+    if ($syCmp !== 0) return $syCmp;
+    $ra = ag_scope_sort_rank((string)$a['period_label']);
+    $rb = ag_scope_sort_rank((string)$b['period_label']);
+    if ($ra !== $rb) return $ra <=> $rb;
+    return strcmp((string)$a['period_label'], (string)$b['period_label']);
+  });
+
+  return $out;
+}
+
+
+$scopeOptions = ag_scope_options($pdo);
+if (!$scopeOptions) {
+  $fallbackYear = date('Y') . '/' . substr((string)((int)date('Y') + 1), -2);
+  $scopeOptions[] = [
+    'key' => $fallbackYear . '|Standard',
+    'school_year' => $fallbackYear,
+    'period_label' => 'Standard',
+    'label' => ag_scope_label($fallbackYear, 'Standard'),
+  ];
+}
+
+$activeClassScope = null;
+try {
+  $activeClassScope = $pdo->query(
+    "SELECT school_year, period_label
+" .
+    "FROM classes
+" .
+    "WHERE is_active=1
+" .
+    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END
+" .
+    "LIMIT 1"
+  )->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $e) {
+  $activeClassScope = null;
+}
+
+$defaultActiveKey = (string)($scopeOptions[0]['key'] ?? '');
+if ($activeClassScope) {
+  $sy = trim((string)($activeClassScope['school_year'] ?? ''));
+  $pl = normalize_class_period_label((string)($activeClassScope['period_label'] ?? 'Standard'));
+  if ($sy !== '') {
+    $candidate = $sy . '|' . $pl;
+    foreach ($scopeOptions as $opt) {
+      if ((string)$opt['key'] === $candidate) { $defaultActiveKey = $candidate; break; }
+    }
+  }
+}
+
+$activeKey = trim((string)($_GET['active_key'] ?? $_POST['active_key'] ?? $defaultActiveKey));
+$selectedScope = $scopeOptions[0];
+foreach ($scopeOptions as $opt) {
+  if ((string)$opt['key'] === $activeKey) { $selectedScope = $opt; break; }
+}
+$selectedYear = (string)$selectedScope['school_year'];
+$selectedPeriod = (string)$selectedScope['period_label'];
+$currentActiveKey = (string)$selectedScope['key'];
+
+$sourceScopeOptions = [];
+try {
+  $rowsSrc = $pdo->query(
+    "SELECT DISTINCT school_year, period_label
+" .
+    "FROM ag_catalog
+" .
+    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($rowsSrc as $r) {
+    $sy = trim((string)($r['school_year'] ?? ''));
+    $pl = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+    if ($sy === '') continue;
+    $k = $sy . '|' . $pl;
+    $sourceScopeOptions[] = ['key'=>$k,'school_year'=>$sy,'period_label'=>$pl,'label'=>ag_scope_label($sy,$pl)];
+  }
+} catch (Throwable $e) {
+  $sourceScopeOptions = [];
+}
+
+$defaultSourceKey = '';
+foreach ($sourceScopeOptions as $opt) {
+  if ((string)$opt['key'] !== $currentActiveKey) { $defaultSourceKey = (string)$opt['key']; break; }
+}
+if ($defaultSourceKey === '' && $sourceScopeOptions) $defaultSourceKey = (string)$sourceScopeOptions[0]['key'];
+$sourceActiveKey = trim((string)($_POST['source_active_key'] ?? $_GET['source_active_key'] ?? $defaultSourceKey));
+$sourceYear = '';
+$sourcePeriod = 'Standard';
+foreach ($sourceScopeOptions as $opt) {
+  if ((string)$opt['key'] === $sourceActiveKey) {
+    $sourceYear = (string)$opt['school_year'];
+    $sourcePeriod = (string)$opt['period_label'];
+    break;
+  }
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -121,13 +237,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = 'AGs übernommen: ' . $count;
     }
     audit('ag_admin_update', (int)current_user()['id'], ['school_year' => $selectedYear, 'period_label' => $selectedPeriod]);
-    $agScopes = ag_scopes($pdo);
-    $sourceYears = array_keys($agScopes);
-    if (!$sourceYears) $sourceYears = $scopeYears;
-    rsort($sourceYears);
-    if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
-    $sourcePeriodChoices = array_keys(ag_period_label_options());
-    if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = 'Standard';
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
@@ -183,10 +292,8 @@ render_admin_header('AG-Verwaltung');
     <div>
       <label>Schuljahr/Halbjahr</label>
       <select class="input" name="active_key" onchange="this.form.submit()">
-        <?php foreach ($scopeYears as $y): ?>
-          <?php foreach ($periodChoices as $p): $k = $y . '|' . $p; ?>
-            <option value="<?=h($k)?>" <?=$k===$currentActiveKey?'selected':''?>><?=h($y . ' · ' . (ag_period_label_options()[$p] ?? $p))?></option>
-          <?php endforeach; ?>
+        <?php foreach ($scopeOptions as $opt): ?>
+          <option value="<?=h((string)$opt['key'])?>" <?=((string)$opt['key']===$currentActiveKey)?'selected':''?>><?=h((string)$opt['label'])?></option>
         <?php endforeach; ?>
       </select>
       <input type="hidden" name="school_year" value="<?=h($selectedYear)?>">
@@ -211,19 +318,11 @@ render_admin_header('AG-Verwaltung');
     <input type="hidden" name="action" value="copy_previous">
     <input type="hidden" name="school_year" value="<?=h($selectedYear)?>">
     <input type="hidden" name="period_label" value="<?=h($selectedPeriod)?>">
-    <div>
-      <label>Quelle Schuljahr</label>
-      <select class="input" name="source_school_year">
-        <?php foreach ($sourceYears as $y): ?>
-          <option value="<?=h($y)?>" <?=$y===$sourceYear?'selected':''?>><?=h($y)?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label>Quelle Halbjahr</label>
-      <select class="input" name="source_period_label">
-        <?php foreach ($sourcePeriodChoices as $p): ?>
-          <option value="<?=h($p)?>" <?=$p===$sourcePeriod?'selected':''?>><?=h(ag_period_label_options()[$p] ?? $p)?></option>
+    <div style="grid-column: span 2;">
+      <label>Quelle Schuljahr/Halbjahr</label>
+      <select class="input" name="source_active_key">
+        <?php foreach ($sourceScopeOptions as $opt): ?>
+          <option value="<?=h((string)$opt['key'])?>" <?=((string)$opt['key']===$sourceActiveKey)?'selected':''?>><?=h((string)$opt['label'])?></option>
         <?php endforeach; ?>
       </select>
     </div>
