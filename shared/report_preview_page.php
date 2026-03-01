@@ -85,28 +85,35 @@ if ($isAdmin) {
 $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $activeSchoolYear = '';
+$activePeriodLabel = 'H1';
 if ($isAdmin) {
-  $stActiveYear = $pdo->query(
-    "SELECT school_year
+  $stActivePeriod = $pdo->query(
+    "SELECT school_year, period_label
      FROM classes
      WHERE is_active=1
-     GROUP BY school_year
-     ORDER BY COUNT(*) DESC, school_year DESC
+     GROUP BY school_year, period_label
+     ORDER BY COUNT(*) DESC, school_year DESC,
+              CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
      LIMIT 1"
   );
 } else {
-  $stActiveYear = $pdo->prepare(
-    "SELECT c.school_year
+  $stActivePeriod = $pdo->prepare(
+    "SELECT c.school_year, c.period_label
      FROM classes c
      JOIN user_class_assignments uca ON uca.class_id=c.id
      WHERE c.is_active=1 AND uca.user_id=?
-     GROUP BY c.school_year
-     ORDER BY COUNT(*) DESC, c.school_year DESC
+     GROUP BY c.school_year, c.period_label
+     ORDER BY COUNT(*) DESC, c.school_year DESC,
+              CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
      LIMIT 1"
   );
-  $stActiveYear->execute([$userId]);
+  $stActivePeriod->execute([$userId]);
 }
-$activeSchoolYear = trim((string)($stActiveYear->fetchColumn() ?: ''));
+$activePeriod = $stActivePeriod->fetch(PDO::FETCH_ASSOC) ?: null;
+if ($activePeriod) {
+  $activeSchoolYear = trim((string)($activePeriod['school_year'] ?? ''));
+  $activePeriodLabel = normalize_class_period_label((string)($activePeriod['period_label'] ?? 'H1'));
+}
 if ($activeSchoolYear === '') {
   $activeSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
 }
@@ -213,16 +220,7 @@ if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
 $selectedPeriodKey = (string)($_GET['period'] ?? '');
 if ($selectedPeriodKey === '' || !isset($periodOptions[$selectedPeriodKey])) {
   $currentSchoolYear = $activeSchoolYear;
-  $currentPeriodLabel = 'H1';
-  if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
-    $currentPeriodLabel = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'H1'));
-  } else {
-    foreach ($studentChoices as $choice) {
-      if ((int)($choice['is_active'] ?? 0) !== 1) continue;
-      $currentPeriodLabel = normalize_class_period_label((string)($choice['class_period_label'] ?? 'H1'));
-      break;
-    }
-  }
+  $currentPeriodLabel = $activePeriodLabel;
   $currentKey = ($currentSchoolYear !== '') ? ($currentSchoolYear . '|' . $currentPeriodLabel) : '';
   if ($currentKey !== '' && isset($periodOptions[$currentKey])) {
     $selectedPeriodKey = $currentKey;
