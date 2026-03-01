@@ -166,6 +166,12 @@ $selectedStudentPos = array_search($selectedStudentId, $studentOrderIds, true);
 if ($selectedStudentPos === false) $selectedStudentPos = 0;
 $prevStudentId = ($selectedStudentPos > 0) ? (int)$studentOrderIds[$selectedStudentPos - 1] : 0;
 $nextStudentId = ($selectedStudentPos < count($studentOrderIds) - 1) ? (int)$studentOrderIds[$selectedStudentPos + 1] : 0;
+$prevStudentName = ($prevStudentId > 0 && isset($studentsByCanonical[$prevStudentId]))
+  ? trim((string)($studentsByCanonical[$prevStudentId]['last_name'] ?? '') . ', ' . (string)($studentsByCanonical[$prevStudentId]['first_name'] ?? ''))
+  : '';
+$nextStudentName = ($nextStudentId > 0 && isset($studentsByCanonical[$nextStudentId]))
+  ? trim((string)($studentsByCanonical[$nextStudentId]['last_name'] ?? '') . ', ' . (string)($studentsByCanonical[$nextStudentId]['first_name'] ?? ''))
+  : '';
 
 $periodOptions = [];
 if ($isAdmin) {
@@ -495,13 +501,25 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   </form>
 
   <?php if ($selectedPeriodKey !== ''): ?>
-    <div class="actions" style="justify-content:flex-start; gap:8px; margin-top:8px;">
-      <?php if ($prevStudentId > 0): ?>
-        <a class="btn secondary" href="<?=h(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $prevStudentId . '&period=' . urlencode($selectedPeriodKey)))?>">← <?=h(t('teacher.pdf_entry.prev_student', 'Vorheriger Schüler'))?></a>
-      <?php endif; ?>
-      <?php if ($nextStudentId > 0): ?>
-        <a class="btn secondary" href="<?=h(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $nextStudentId . '&period=' . urlencode($selectedPeriodKey)))?>"><?=h(t('teacher.pdf_entry.next_student', 'Nächster Schüler'))?> →</a>
-      <?php endif; ?>
+    <div class="actions" style="justify-content:flex-start; gap:8px; margin-top:8px; flex-wrap:wrap;">
+      <?php
+        $prevUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$prevStudentId . '&period=' . urlencode($selectedPeriodKey));
+        $nextUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$nextStudentId . '&period=' . urlencode($selectedPeriodKey));
+      ?>
+      <button
+        class="btn secondary"
+        type="button"
+        <?= $prevStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($prevUrl)) . '"' : 'disabled aria-disabled="true"' ?>>
+        ← <?=h(t('teacher.pdf_entry.prev_student', 'Vorheriger Schüler'))?>
+        <small class="muted" style="display:block; line-height:1.2;"><?=h($prevStudentName !== '' ? $prevStudentName : '—')?></small>
+      </button>
+      <button
+        class="btn secondary"
+        type="button"
+        <?= $nextStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($nextUrl)) . '"' : 'disabled aria-disabled="true"' ?>>
+        <?=h(t('teacher.pdf_entry.next_student', 'Nächster Schüler'))?> →
+        <small class="muted" style="display:block; line-height:1.2;"><?=h($nextStudentName !== '' ? $nextStudentName : '—')?></small>
+      </button>
     </div>
   <?php endif; ?>
 

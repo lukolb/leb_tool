@@ -434,6 +434,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ]);
     }
 
+    elseif ($action === 'set_active_period') {
+      $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+
+      $pdo->beginTransaction();
+      $pdo->prepare(
+        "UPDATE classes
+         SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END,
+             inactive_at = CASE WHEN school_year=? AND period_label=? THEN NULL ELSE COALESCE(inactive_at, NOW()) END"
+      )->execute([$schoolYear, $periodLabel, $schoolYear, $periodLabel]);
+
+      $stCount = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE school_year=? AND period_label=?");
+      $stCount->execute([$schoolYear, $periodLabel]);
+      $targetCount = (int)$stCount->fetchColumn();
+      if ($targetCount <= 0) {
+        throw new RuntimeException(t('admin.classes.switch.no_active', 'Keine aktiven Klassen für dieses Schuljahr.'));
+      }
+      $pdo->commit();
+
+      audit('admin_classes_set_active_period', $userId, [
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'active_classes' => $targetCount,
+      ]);
+
+      $ok = strtr(
+        t('admin.classes.ok.active_period_set', 'Aktives Schuljahr/Halbjahr gesetzt: {year} · {period} ({count} Klassen aktiv).'),
+        [
+          '{year}' => $schoolYear,
+          '{period}' => period_label_options()[$periodLabel] ?? $periodLabel,
+          '{count}' => (string)$targetCount,
+        ]
+      );
+    }
+
     elseif ($action === 'update_class') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException(t('admin.classes.error.class_id_missing'));
@@ -565,6 +601,21 @@ $classes = $pdo->query(
    GROUP BY c.id
    ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
 )->fetchAll(PDO::FETCH_ASSOC);
+
+$periodOverview = $pdo->query(
+  "SELECT school_year, period_label, COUNT(*) AS total_count,
+          SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active_count
+   FROM classes
+   GROUP BY school_year, period_label
+   ORDER BY school_year DESC, period_label DESC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$currentActiveKey = '';
+foreach ($periodOverview as $row) {
+  if ((int)($row['active_count'] ?? 0) > 0) {
+    $currentActiveKey = trim((string)$row['school_year']) . '|' . normalize_period_label((string)($row['period_label'] ?? 'Standard'));
+    break;
+  }
+}
 
 // Group by school_year
 $grouped = [];
@@ -786,6 +837,37 @@ render_admin_header(t('admin.classes.title'));
 
     <div class="actions" style="justify-content:flex-start;">
       <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('admin.classes.switch_confirm', 'Halbjahr jetzt für alle aktiven Klassen des Schuljahres wechseln?'))?>');"><?=h(t('admin.classes.switch_button', 'Halbjahr wechseln'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.active_period.heading', 'Aktives Schuljahr/Halbjahr'))?></h2>
+  <p class="muted"><?=h(t('admin.classes.active_period.desc', 'Hier wählst du das aktuell aktive Schuljahr/Halbjahr. Klassen außerhalb der Auswahl werden inaktiv gesetzt.'))?></p>
+
+  <form method="post" class="row" style="gap:10px; align-items:flex-end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="set_active_period">
+
+    <div>
+      <label><?=h(t('admin.classes.active_period.select', 'Schuljahr/Halbjahr'))?></label>
+      <select name="active_key" class="input" onchange="(function(sel){ const v=String(sel.value||''); const p=v.split('|'); const f=sel.form; if (f){ f.school_year.value=p[0]||''; f.period_label.value=p[1]||'Standard'; } })(this)">
+        <?php foreach ($periodOverview as $row):
+          $sy = trim((string)($row['school_year'] ?? ''));
+          $pl = normalize_period_label((string)($row['period_label'] ?? 'Standard'));
+          $k = $sy . '|' . $pl;
+          $lbl = ($sy !== '' ? $sy : '—') . ' · ' . (period_label_options()[$pl] ?? $pl);
+          $counts = ' (' . (int)($row['active_count'] ?? 0) . '/' . (int)($row['total_count'] ?? 0) . ')';
+        ?>
+          <option value="<?=h($k)?>" <?= $k === $currentActiveKey ? 'selected' : '' ?>><?=h($lbl . $counts)?></option>
+        <?php endforeach; ?>
+      </select>
+      <input type="hidden" name="school_year" value="<?=h(explode('|', $currentActiveKey)[0] ?? '')?>">
+      <input type="hidden" name="period_label" value="<?=h(explode('|', $currentActiveKey)[1] ?? 'Standard')?>">
+    </div>
+
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn primary" type="submit"><?=h(t('admin.classes.active_period.apply', 'Als aktiv setzen'))?></button>
     </div>
   </form>
 </div>
