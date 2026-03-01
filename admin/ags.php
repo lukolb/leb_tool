@@ -9,24 +9,65 @@ $pdo = db();
 $ok = null;
 $err = null;
 
-function load_periods_for_year(PDO $pdo, string $schoolYear): array {
-  $st = $pdo->prepare("SELECT DISTINCT period_label FROM classes WHERE school_year=? ORDER BY period_label ASC");
-  $st->execute([$schoolYear]);
-  $rows = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+if (!db_has_table($pdo, 'ag_catalog')) {
+  render_admin_header('AG-Verwaltung');
+  echo '<div class="card"><h1>AG-Verwaltung</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';
+  render_admin_footer();
+  exit;
+}
+
+function class_scopes(PDO $pdo): array {
+  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM classes ORDER BY school_year DESC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
   $out = [];
   foreach ($rows as $r) {
-    $p = normalize_class_period_label((string)$r);
-    if ($p !== '' && !in_array($p, $out, true)) $out[] = $p;
+    $y = trim((string)($r['school_year'] ?? ''));
+    $p = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+    if ($y === '') continue;
+    if (!isset($out[$y])) $out[$y] = [];
+    if (!in_array($p, $out[$y], true)) $out[$y][] = $p;
   }
-  if (!in_array('Standard', $out, true)) $out[] = 'Standard';
   return $out;
 }
 
-$allYears = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN) ?: [];
-$selectedYear = trim((string)($_GET['school_year'] ?? $_POST['school_year'] ?? ($allYears[0] ?? date('Y') . '/' . substr((string)((int)date('Y') + 1), -2))));
-$periods = load_periods_for_year($pdo, $selectedYear);
-$selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? ($periods[0] ?? 'Standard')));
-if (!in_array($selectedPeriod, $periods, true)) $selectedPeriod = $periods[0] ?? 'Standard';
+function ag_scopes(PDO $pdo): array {
+  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM ag_catalog ORDER BY school_year DESC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($rows as $r) {
+    $y = trim((string)($r['school_year'] ?? ''));
+    $p = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+    if ($y === '') continue;
+    if (!isset($out[$y])) $out[$y] = [];
+    if (!in_array($p, $out[$y], true)) $out[$y][] = $p;
+  }
+  return $out;
+}
+
+$classScopes = class_scopes($pdo);
+$agScopes = ag_scopes($pdo);
+$scopeYears = array_values(array_unique(array_merge(array_keys($classScopes), array_keys($agScopes))));
+rsort($scopeYears);
+
+if (!$scopeYears) {
+  $scopeYears = [date('Y') . '/' . substr((string)((int)date('Y') + 1), -2)];
+}
+
+$selectedYear = trim((string)($_GET['school_year'] ?? $_POST['school_year'] ?? $scopeYears[0]));
+if (!in_array($selectedYear, $scopeYears, true)) $selectedYear = $scopeYears[0];
+
+$periodChoices = $classScopes[$selectedYear] ?? [];
+if (!$periodChoices) $periodChoices = $agScopes[$selectedYear] ?? [];
+if (!$periodChoices) $periodChoices = ['Standard'];
+$selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? $periodChoices[0]));
+if (!in_array($selectedPeriod, $periodChoices, true)) $selectedPeriod = $periodChoices[0];
+
+$sourceYears = array_keys($agScopes);
+if (!$sourceYears) $sourceYears = $scopeYears;
+rsort($sourceYears);
+$sourceYear = trim((string)($_POST['source_school_year'] ?? $_GET['source_school_year'] ?? $sourceYears[0] ?? $selectedYear));
+if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
+$sourcePeriodChoices = $agScopes[$sourceYear] ?? ['Standard'];
+$sourcePeriod = normalize_class_period_label((string)($_POST['source_period_label'] ?? $_GET['source_period_label'] ?? $sourcePeriodChoices[0]));
+if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = $sourcePeriodChoices[0];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -46,11 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $st->execute([$active, $id]);
       $ok = 'AG aktualisiert.';
     } elseif ($action === 'copy_previous') {
-      $srcYear = trim((string)($_POST['source_school_year'] ?? ''));
-      $srcPeriod = normalize_class_period_label((string)($_POST['source_period_label'] ?? ''));
-      if ($srcYear === '' || $srcPeriod === '') throw new RuntimeException('Quell-Halbjahr fehlt.');
+      if ($sourceYear === '' || $sourcePeriod === '') throw new RuntimeException('Quell-Halbjahr fehlt.');
       $src = $pdo->prepare("SELECT ag_name, sort_order, is_active FROM ag_catalog WHERE school_year=? AND period_label=? ORDER BY sort_order ASC, ag_name ASC");
-      $src->execute([$srcYear, $srcPeriod]);
+      $src->execute([$sourceYear, $sourcePeriod]);
       $rows = $src->fetchAll(PDO::FETCH_ASSOC) ?: [];
       $ins = $pdo->prepare("INSERT INTO ag_catalog (school_year, period_label, ag_name, sort_order, is_active) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order), is_active=VALUES(is_active)");
       $count = 0;
@@ -61,6 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = 'AGs übernommen: ' . $count;
     }
     audit('ag_admin_update', (int)current_user()['id'], ['school_year' => $selectedYear, 'period_label' => $selectedPeriod]);
+    $agScopes = ag_scopes($pdo);
+    $sourceYears = array_keys($agScopes);
+    if (!$sourceYears) $sourceYears = $scopeYears;
+    rsort($sourceYears);
+    if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
+    $sourcePeriodChoices = $agScopes[$sourceYear] ?? ['Standard'];
+    if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = $sourcePeriodChoices[0];
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
@@ -78,8 +124,22 @@ render_admin_header('AG-Verwaltung');
   <?php if ($err): ?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
 
   <form method="get" class="grid" style="grid-template-columns:1fr 1fr auto; gap:10px; align-items:end;">
-    <div><label>Schuljahr</label><input class="input" name="school_year" value="<?=h($selectedYear)?>"></div>
-    <div><label>Halbjahr</label><select class="input" name="period_label"><?php foreach ($periods as $p): ?><option value="<?=h($p)?>" <?=$p===$selectedPeriod?'selected':''?>><?=h($p)?></option><?php endforeach; ?></select></div>
+    <div>
+      <label>Schuljahr</label>
+      <select class="input" name="school_year">
+        <?php foreach ($scopeYears as $y): ?>
+          <option value="<?=h($y)?>" <?=$y===$selectedYear?'selected':''?>><?=h($y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label>Halbjahr</label>
+      <select class="input" name="period_label">
+        <?php foreach ($periodChoices as $p): ?>
+          <option value="<?=h($p)?>" <?=$p===$selectedPeriod?'selected':''?>><?=h($p)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
     <div><button class="btn secondary" type="submit">Anzeigen</button></div>
   </form>
 
@@ -100,8 +160,22 @@ render_admin_header('AG-Verwaltung');
     <input type="hidden" name="action" value="copy_previous">
     <input type="hidden" name="school_year" value="<?=h($selectedYear)?>">
     <input type="hidden" name="period_label" value="<?=h($selectedPeriod)?>">
-    <div><label>Quelle Schuljahr</label><input class="input" name="source_school_year" value="<?=h($selectedYear)?>"></div>
-    <div><label>Quelle Halbjahr</label><input class="input" name="source_period_label" placeholder="z.B. 1. Halbjahr" required></div>
+    <div>
+      <label>Quelle Schuljahr</label>
+      <select class="input" name="source_school_year">
+        <?php foreach ($sourceYears as $y): ?>
+          <option value="<?=h($y)?>" <?=$y===$sourceYear?'selected':''?>><?=h($y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label>Quelle Halbjahr</label>
+      <select class="input" name="source_period_label">
+        <?php foreach ($sourcePeriodChoices as $p): ?>
+          <option value="<?=h($p)?>" <?=$p===$sourcePeriod?'selected':''?>><?=h($p)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
     <div><button class="btn secondary" type="submit">Übernehmen</button></div>
   </form>
 

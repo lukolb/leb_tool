@@ -998,13 +998,7 @@ function ensure_schema(PDO $pdo): void {
 " .
         "  UNIQUE KEY uq_student_ag_scope (student_id, ag_id, school_year, period_label),
 " .
-        "  KEY idx_student_ag_lookup (class_id, school_year, period_label),
-" .
-        "  CONSTRAINT fk_student_ag_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-" .
-        "  CONSTRAINT fk_student_ag_class FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
-" .
-        "  CONSTRAINT fk_student_ag_ag FOREIGN KEY (ag_id) REFERENCES ag_catalog(id) ON DELETE CASCADE
+        "  KEY idx_student_ag_lookup (class_id, school_year, period_label)
 " .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );

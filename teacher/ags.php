@@ -9,25 +9,44 @@ $pdo = db();
 $user = current_user();
 $userId = (int)($user['id'] ?? 0);
 $isAdmin = get_role() === 'admin';
+$ok = null;
+$err = null;
+
+if (!db_has_table($pdo, 'ag_catalog') || !db_has_table($pdo, 'student_ag_assignments')) {
+  render_teacher_header('AG-Eingaben');
+  echo '<div class="card"><h1>AG-Eingaben</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';
+  render_teacher_footer();
+  exit;
+}
 
 if ($isAdmin) {
   $classStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level ASC, label ASC");
+  $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } else {
   $classStmt = $pdo->prepare("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name FROM classes c JOIN class_teachers ct ON ct.class_id=c.id WHERE ct.user_id=? AND c.is_active=1 ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
   $classStmt->execute([$userId]);
+  $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
-$classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
 $defaultClassId = (int)($classes[0]['id'] ?? 0);
 $classId = (int)($_GET['class_id'] ?? $_POST['class_id'] ?? $defaultClassId);
-
 $selectedClass = null;
-foreach ($classes as $c) { if ((int)$c['id'] === $classId) { $selectedClass = $c; break; } }
+foreach ($classes as $c) {
+  if ((int)$c['id'] === $classId) {
+    $selectedClass = $c;
+    break;
+  }
+}
 if (!$selectedClass && $defaultClassId > 0) {
   $classId = $defaultClassId;
-  foreach ($classes as $c) { if ((int)$c['id'] === $classId) { $selectedClass = $c; break; } }
+  foreach ($classes as $c) {
+    if ((int)$c['id'] === $classId) {
+      $selectedClass = $c;
+      break;
+    }
+  }
 }
 
-$ok = null; $err = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
   try {
     csrf_verify();
@@ -40,6 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
     $students->execute([$classId]);
     $studentIds = array_map('intval', $students->fetchAll(PDO::FETCH_COLUMN) ?: []);
 
+    $validAgStmt = $pdo->prepare("SELECT id FROM ag_catalog WHERE school_year=? AND period_label=? AND is_active=1");
+    $validAgStmt->execute([$schoolYear, $periodLabel]);
+    $validAgIds = array_map('intval', $validAgStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+
     $pdo->beginTransaction();
     $del = $pdo->prepare("DELETE FROM student_ag_assignments WHERE class_id=? AND school_year=? AND period_label=?");
     $del->execute([$classId, $schoolYear, $periodLabel]);
@@ -51,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
       $agIds = is_array($agIdsRaw) ? $agIdsRaw : [];
       foreach ($agIds as $aidRaw) {
         $aid = (int)$aidRaw;
-        if ($aid <= 0) continue;
+        if ($aid <= 0 || !in_array($aid, $validAgIds, true)) continue;
         $ins->execute([$sid, $classId, $aid, $schoolYear, $periodLabel, $userId]);
         $count++;
       }
