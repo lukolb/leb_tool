@@ -77,6 +77,8 @@ if (!$selectedClass && $defaultClassId > 0) {
   }
 }
 
+$isAjaxRequest = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest' || ((int)($_POST['ajax'] ?? 0) === 1);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
   try {
     csrf_verify();
@@ -112,9 +114,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
     $pdo->commit();
     audit('teacher_ag_assignment_save', $userId, ['class_id' => $classId, 'count' => $count]);
     $ok = 'AG-Zuordnungen gespeichert.';
+
+    if ($isAjaxRequest) {
+      header('Content-Type: application/json; charset=utf-8');
+      echo json_encode(['ok' => true, 'message' => $ok, 'saved' => $count], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
+    if ($isAjaxRequest) {
+      header('Content-Type: application/json; charset=utf-8');
+      http_response_code(400);
+      echo json_encode(['ok' => false, 'error' => $err], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
   }
 }
 
@@ -171,6 +185,7 @@ render_teacher_header('AG-Eingaben');
     <form method="post" id="agAssignForm">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+      <input type="hidden" name="ajax" value="1">
       <table class="table">
         <tr><th>Schüler</th><th>Besuchte AGs (0-x)</th></tr>
         <?php foreach ($students as $s): $sid=(int)$s['id']; ?>
@@ -197,15 +212,43 @@ render_teacher_header('AG-Eingaben');
   const hint = document.getElementById('agAutoSaveHint');
   if (!form) return;
   let timer = null;
-  const submitAuto = ()=>{
+  let inFlight = false;
+  let queued = false;
+
+  const doSave = async ()=>{
+    if (inFlight) { queued = true; return; }
+    inFlight = true;
+    queued = false;
     if (hint) hint.textContent = 'Speichere…';
-    form.submit();
+    try {
+      const fd = new FormData(form);
+      const resp = await fetch(window.location.href, {
+        method: 'POST',
+        body: fd,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin'
+      });
+      const json = await resp.json().catch(()=>({ok:false,error:'Ungültige Serverantwort.'}));
+      if (!resp.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${resp.status}`);
+      }
+      if (hint) hint.textContent = json.message || 'Gespeichert.';
+    } catch (e) {
+      if (hint) hint.textContent = 'Fehler beim Speichern: ' + String(e?.message || e);
+    } finally {
+      inFlight = false;
+      if (queued) setTimeout(doSave, 10);
+    }
   };
+
   form.addEventListener('change', (ev)=>{
     const t = ev.target;
     if (!(t instanceof HTMLInputElement) || t.getAttribute('data-ag-checkbox') !== '1') return;
     if (timer) clearTimeout(timer);
-    timer = setTimeout(submitAuto, 250);
+    timer = setTimeout(doSave, 250);
   });
 })();
 </script>
