@@ -607,7 +607,11 @@ $periodOverview = $pdo->query(
           SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active_count
    FROM classes
    GROUP BY school_year, period_label
-   ORDER BY school_year DESC, period_label DESC"
+   ORDER BY school_year ASC,
+            CASE period_label
+              WHEN 'H2' THEN 2
+              ELSE 1
+            END ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $currentActiveKey = '';
 foreach ($periodOverview as $row) {
