@@ -26,22 +26,36 @@ function ag_teacher_period_display(?string $periodLabel): string {
   return t('admin.classes.period.h1', '1. Halbjahr');
 }
 
+function ag_safe_table_exists(PDO $pdo, string $table): bool {
+  try {
+    return db_has_table($pdo, $table);
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 try { ensure_ag_tables($pdo); } catch (Throwable $e) {}
 
-if (!db_has_table($pdo, 'ag_catalog') || !db_has_table($pdo, 'student_ag_assignments')) {
+if (!ag_safe_table_exists($pdo, 'ag_catalog') || !ag_safe_table_exists($pdo, 'student_ag_assignments')) {
   render_teacher_header('AG-Eingaben');
   echo '<div class="card"><h1>AG-Eingaben</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';
   render_teacher_footer();
   exit;
 }
 
-if ($isAdmin) {
-  $classStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level ASC, label ASC");
-  $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-} else {
-  $classStmt = $pdo->prepare("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name FROM classes c JOIN class_teachers ct ON ct.class_id=c.id WHERE ct.user_id=? AND c.is_active=1 ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
-  $classStmt->execute([$userId]);
-  $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$classes = [];
+try {
+  if ($isAdmin) {
+    $classStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level ASC, label ASC");
+    $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  } else {
+    $classStmt = $pdo->prepare("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name FROM classes c JOIN class_teachers ct ON ct.class_id=c.id WHERE ct.user_id=? AND c.is_active=1 ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
+    $classStmt->execute([$userId]);
+    $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  }
+} catch (Throwable $e) {
+  $classes = [];
+  if ($err === null) $err = 'Klassen konnten nicht geladen werden.';
 }
 
 $defaultClassId = (int)($classes[0]['id'] ?? 0);
@@ -108,23 +122,30 @@ $students = [];
 $ags = [];
 $selectedMap = [];
 if ($selectedClass) {
-  $schoolYear = (string)$selectedClass['school_year'];
-  $periodLabel = normalize_class_period_label((string)$selectedClass['period_label']);
+  try {
+    $schoolYear = (string)$selectedClass['school_year'];
+    $periodLabel = normalize_class_period_label((string)$selectedClass['period_label']);
 
-  $stStudents = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? ORDER BY last_name ASC, first_name ASC");
-  $stStudents->execute([$classId]);
-  $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $stStudents = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? ORDER BY last_name ASC, first_name ASC");
+    $stStudents->execute([$classId]);
+    $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-  $stAg = $pdo->prepare("SELECT id, ag_name FROM ag_catalog WHERE school_year=? AND period_label=? AND is_active=1 ORDER BY sort_order ASC, ag_name ASC");
-  $stAg->execute([$schoolYear, $periodLabel]);
-  $ags = $stAg->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $stAg = $pdo->prepare("SELECT id, ag_name FROM ag_catalog WHERE school_year=? AND period_label=? AND is_active=1 ORDER BY sort_order ASC, ag_name ASC");
+    $stAg->execute([$schoolYear, $periodLabel]);
+    $ags = $stAg->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-  $stSel = $pdo->prepare("SELECT student_id, ag_id FROM student_ag_assignments WHERE class_id=? AND school_year=? AND period_label=?");
-  $stSel->execute([$classId, $schoolYear, $periodLabel]);
-  foreach ($stSel->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
-    $sid = (int)$r['student_id'];
-    $aid = (int)$r['ag_id'];
-    $selectedMap[$sid][$aid] = true;
+    $stSel = $pdo->prepare("SELECT student_id, ag_id FROM student_ag_assignments WHERE class_id=? AND school_year=? AND period_label=?");
+    $stSel->execute([$classId, $schoolYear, $periodLabel]);
+    foreach ($stSel->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+      $sid = (int)$r['student_id'];
+      $aid = (int)$r['ag_id'];
+      $selectedMap[$sid][$aid] = true;
+    }
+  } catch (Throwable $e) {
+    $students = [];
+    $ags = [];
+    $selectedMap = [];
+    if ($err === null) $err = 'AG-Daten konnten nicht geladen werden.';
   }
 }
 
