@@ -1007,6 +1007,21 @@ function ensure_schema(PDO $pdo): void {
 
 
 
+
+    // --- template_fields.field_type: ensure AG type is supported in DB enum
+    if (db_has_table($pdo, 'template_fields') && db_has_column($pdo, 'template_fields', 'field_type')) {
+      try {
+        $ctStmt = $pdo->prepare("SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='template_fields' AND COLUMN_NAME='field_type' LIMIT 1");
+        $ctStmt->execute();
+        $columnType = strtolower((string)($ctStmt->fetchColumn() ?: ''));
+        if ($columnType !== '' && strpos($columnType, "'ag'") === false) {
+          $pdo->exec("ALTER TABLE template_fields MODIFY COLUMN field_type ENUM('text','multiline','date','number','grade','checkbox','radio','select','signature','ag') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio'");
+        }
+      } catch (Throwable $e) {
+        // ignore enum alter failures on restricted DB setups
+      }
+    }
+
     // --- AG catalog + assignments
     ensure_ag_tables($pdo);
   } catch (Throwable $e) {
