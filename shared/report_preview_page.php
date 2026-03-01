@@ -562,6 +562,36 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   const templateUrl = <?=json_encode($previewTemplateUrl)?>;
   const fieldValues = <?=json_encode($previewValues, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
   const fieldMeta = <?=json_encode($previewFieldMeta, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
+  const prevStudentId = <?= json_encode($prevStudentId) ?>;
+  const nextStudentId = <?= json_encode($nextStudentId) ?>;
+  const selectedPeriodKey = <?= json_encode($selectedPeriodKey) ?>;
+  const previewBasePath = <?= json_encode(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php')) ?>;
+
+  function goToStudent(studentId){
+    if (!studentId || !selectedPeriodKey) return;
+    const u = new URL(previewBasePath, window.location.origin);
+    u.searchParams.set('student_id', String(studentId));
+    u.searchParams.set('period', String(selectedPeriodKey));
+    window.location.href = u.toString();
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target;
+    const tag = target && target.tagName ? String(target.tagName).toLowerCase() : '';
+    const isTyping = !!(target && (target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'));
+    if (isTyping) return;
+
+    if (event.key === 'ArrowLeft' && Number(prevStudentId) > 0) {
+      event.preventDefault();
+      goToStudent(Number(prevStudentId));
+      return;
+    }
+    if (event.key === 'ArrowRight' && Number(nextStudentId) > 0) {
+      event.preventDefault();
+      goToStudent(Number(nextStudentId));
+    }
+  });
 
   const monthNames = {
     de: {
