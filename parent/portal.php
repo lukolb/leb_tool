@@ -204,6 +204,29 @@ function parent_load_values_for_report(PDO $pdo, int $reportInstanceId): array {
     }
   }
 
+
+  // Ensure AG fields are present even if no field_values row exists yet.
+  $stAgFields = $pdo->prepare(
+    "SELECT tf.field_name
+" .
+    "FROM template_fields tf
+" .
+    "JOIN report_instances ri ON ri.template_id=tf.template_id
+" .
+    "WHERE ri.id=? AND tf.field_type='ag'"
+  );
+  $stAgFields->execute([$reportInstanceId]);
+  $agText = report_instance_ag_text($pdo, $reportInstanceId);
+  foreach (($stAgFields->fetchAll(PDO::FETCH_COLUMN) ?: []) as $agFieldName) {
+    $agFieldName = trim((string)$agFieldName);
+    if ($agFieldName === '') continue;
+    $map[$agFieldName] = [
+      'value' => $agText,
+      'source' => 'system',
+      'updated_at' => date('Y-m-d H:i:s'),
+    ];
+  }
+
   return array_map(static fn($row) => (string)($row['value'] ?? ''), $map);
 }
 

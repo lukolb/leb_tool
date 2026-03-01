@@ -359,6 +359,16 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       }
     }
 
+
+    // Ensure AG fields are always auto-filled, even if no field_values row exists yet.
+    $agText = report_instance_ag_text($pdo, $previewReportId);
+    foreach ($fieldsRows as $fRow) {
+      if (strtolower((string)($fRow['field_type'] ?? '')) !== 'ag') continue;
+      $fname = trim((string)($fRow['field_name'] ?? ''));
+      if ($fname === '') continue;
+      $valuesByName[$fname] = $agText;
+    }
+
     if ($classFieldNames) {
       $stClassRi = $pdo->prepare(
         "SELECT id
