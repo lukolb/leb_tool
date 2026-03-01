@@ -12,6 +12,20 @@ $isAdmin = get_role() === 'admin';
 $ok = null;
 $err = null;
 
+
+function ag_teacher_class_display(array $c): string {
+  $label = (string)($c['label'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $name = (string)($c['name'] ?? '');
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)($c['id'] ?? 0)));
+}
+
+function ag_teacher_period_display(?string $periodLabel): string {
+  $p = normalize_class_period_label($periodLabel);
+  if ($p === 'H2') return t('admin.classes.period.h2', '2. Halbjahr');
+  return t('admin.classes.period.h1', '1. Halbjahr');
+}
+
 try { ensure_ag_tables($pdo); } catch (Throwable $e) {}
 
 if (!db_has_table($pdo, 'ag_catalog') || !db_has_table($pdo, 'student_ag_assignments')) {
@@ -125,7 +139,7 @@ render_teacher_header('AG-Eingaben');
     <label>Klasse</label>
     <select class="input" name="class_id">
       <?php foreach ($classes as $c): ?>
-        <option value="<?=h((string)$c['id'])?>" <?=((int)$c['id']===$classId)?'selected':''?>><?=h((string)$c['school_year'].' · '.class_display($c).' · '.normalize_class_period_label((string)$c['period_label']))?></option>
+        <option value="<?=h((string)$c['id'])?>" <?=((int)$c['id']===$classId)?'selected':''?>><?=h((string)$c['school_year'].' · '.ag_teacher_class_display($c).' · '.ag_teacher_period_display((string)$c['period_label']))?></option>
       <?php endforeach; ?>
     </select>
     <button class="btn secondary" type="submit">Anzeigen</button>
