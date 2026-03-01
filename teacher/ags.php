@@ -12,6 +12,8 @@ $isAdmin = get_role() === 'admin';
 $ok = null;
 $err = null;
 
+try { ensure_ag_tables($pdo); } catch (Throwable $e) {}
+
 if (!db_has_table($pdo, 'ag_catalog') || !db_has_table($pdo, 'student_ag_assignments')) {
   render_teacher_header('AG-Eingaben');
   echo '<div class="card"><h1>AG-Eingaben</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';

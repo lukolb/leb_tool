@@ -600,6 +600,69 @@ function cleanup_duplicate_student_report_instances(PDO $pdo): void {
 // --------------------
 // Schema (additive migrations)
 // --------------------
+
+function ensure_ag_tables(PDO $pdo): void {
+  if (!db_has_table($pdo, 'ag_catalog')) {
+    $pdo->exec(
+      "CREATE TABLE ag_catalog (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  ag_name VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  is_active TINYINT(1) NOT NULL DEFAULT 1,
+" .
+      "  sort_order INT NOT NULL DEFAULT 0,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_ag_catalog_scope_name (school_year, period_label, ag_name),
+" .
+      "  KEY idx_ag_catalog_scope (school_year, period_label, is_active, sort_order)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+
+  if (!db_has_table($pdo, 'student_ag_assignments')) {
+    $pdo->exec(
+      "CREATE TABLE student_ag_assignments (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  student_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  class_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  ag_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_student_ag_scope (student_id, ag_id, school_year, period_label),
+" .
+      "  KEY idx_student_ag_lookup (class_id, school_year, period_label)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+}
+
 function ensure_schema(PDO $pdo): void {
   static $did = false;
   if ($did) return;
@@ -943,66 +1006,9 @@ function ensure_schema(PDO $pdo): void {
     }
 
 
-    // --- AG catalog + assignments
-    if (!db_has_table($pdo, 'ag_catalog')) {
-      $pdo->exec(
-        "CREATE TABLE ag_catalog (
-" .
-        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-" .
-        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-" .
-        "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
-" .
-        "  ag_name VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,
-" .
-        "  is_active TINYINT(1) NOT NULL DEFAULT 1,
-" .
-        "  sort_order INT NOT NULL DEFAULT 0,
-" .
-        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-" .
-        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-" .
-        "  PRIMARY KEY (id),
-" .
-        "  UNIQUE KEY uq_ag_catalog_scope_name (school_year, period_label, ag_name),
-" .
-        "  KEY idx_ag_catalog_scope (school_year, period_label, is_active, sort_order)
-" .
-        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-      );
-    }
 
-    if (!db_has_table($pdo, 'student_ag_assignments')) {
-      $pdo->exec(
-        "CREATE TABLE student_ag_assignments (
-" .
-        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-" .
-        "  student_id BIGINT UNSIGNED NOT NULL,
-" .
-        "  class_id BIGINT UNSIGNED NOT NULL,
-" .
-        "  ag_id BIGINT UNSIGNED NOT NULL,
-" .
-        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-" .
-        "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
-" .
-        "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
-" .
-        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-" .
-        "  PRIMARY KEY (id),
-" .
-        "  UNIQUE KEY uq_student_ag_scope (student_id, ag_id, school_year, period_label),
-" .
-        "  KEY idx_student_ag_lookup (class_id, school_year, period_label)
-" .
-        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-      );
-    }
+    // --- AG catalog + assignments
+    ensure_ag_tables($pdo);
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }

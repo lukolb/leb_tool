@@ -9,6 +9,15 @@ $pdo = db();
 $ok = null;
 $err = null;
 
+function ag_period_label_options(): array {
+  return [
+    'Standard' => t('admin.classes.period.h1', '1. Halbjahr'),
+    'H2' => t('admin.classes.period.h2', '2. Halbjahr'),
+  ];
+}
+
+try { ensure_ag_tables($pdo); } catch (Throwable $e) {}
+
 if (!db_has_table($pdo, 'ag_catalog')) {
   render_admin_header('AG-Verwaltung');
   echo '<div class="card"><h1>AG-Verwaltung</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';
@@ -54,20 +63,18 @@ if (!$scopeYears) {
 $selectedYear = trim((string)($_GET['school_year'] ?? $_POST['school_year'] ?? $scopeYears[0]));
 if (!in_array($selectedYear, $scopeYears, true)) $selectedYear = $scopeYears[0];
 
-$periodChoices = $classScopes[$selectedYear] ?? [];
-if (!$periodChoices) $periodChoices = $agScopes[$selectedYear] ?? [];
-if (!$periodChoices) $periodChoices = ['Standard'];
-$selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? $periodChoices[0]));
-if (!in_array($selectedPeriod, $periodChoices, true)) $selectedPeriod = $periodChoices[0];
+$periodChoices = array_keys(ag_period_label_options());
+$selectedPeriod = normalize_class_period_label((string)($_GET['period_label'] ?? $_POST['period_label'] ?? 'Standard'));
+if (!in_array($selectedPeriod, $periodChoices, true)) $selectedPeriod = 'Standard';
 
 $sourceYears = array_keys($agScopes);
 if (!$sourceYears) $sourceYears = $scopeYears;
 rsort($sourceYears);
 $sourceYear = trim((string)($_POST['source_school_year'] ?? $_GET['source_school_year'] ?? $sourceYears[0] ?? $selectedYear));
 if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
-$sourcePeriodChoices = $agScopes[$sourceYear] ?? ['Standard'];
-$sourcePeriod = normalize_class_period_label((string)($_POST['source_period_label'] ?? $_GET['source_period_label'] ?? $sourcePeriodChoices[0]));
-if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = $sourcePeriodChoices[0];
+$sourcePeriodChoices = array_keys(ag_period_label_options());
+$sourcePeriod = normalize_class_period_label((string)($_POST['source_period_label'] ?? $_GET['source_period_label'] ?? 'Standard'));
+if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = 'Standard';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -105,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$sourceYears) $sourceYears = $scopeYears;
     rsort($sourceYears);
     if (!in_array($sourceYear, $sourceYears, true)) $sourceYear = $sourceYears[0] ?? $selectedYear;
-    $sourcePeriodChoices = $agScopes[$sourceYear] ?? ['Standard'];
-    if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = $sourcePeriodChoices[0];
+    $sourcePeriodChoices = array_keys(ag_period_label_options());
+    if (!in_array($sourcePeriod, $sourcePeriodChoices, true)) $sourcePeriod = 'Standard';
   } catch (Throwable $e) {
     $err = $e->getMessage();
   }
@@ -136,7 +143,7 @@ render_admin_header('AG-Verwaltung');
       <label>Halbjahr</label>
       <select class="input" name="period_label">
         <?php foreach ($periodChoices as $p): ?>
-          <option value="<?=h($p)?>" <?=$p===$selectedPeriod?'selected':''?>><?=h($p)?></option>
+          <option value="<?=h($p)?>" <?=$p===$selectedPeriod?'selected':''?>><?=h(ag_period_label_options()[$p] ?? $p)?></option>
         <?php endforeach; ?>
       </select>
     </div>
@@ -172,7 +179,7 @@ render_admin_header('AG-Verwaltung');
       <label>Quelle Halbjahr</label>
       <select class="input" name="source_period_label">
         <?php foreach ($sourcePeriodChoices as $p): ?>
-          <option value="<?=h($p)?>" <?=$p===$sourcePeriod?'selected':''?>><?=h($p)?></option>
+          <option value="<?=h($p)?>" <?=$p===$sourcePeriod?'selected':''?>><?=h(ag_period_label_options()[$p] ?? $p)?></option>
         <?php endforeach; ?>
       </select>
     </div>
