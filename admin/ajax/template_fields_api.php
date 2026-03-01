@@ -32,7 +32,7 @@ try {
   $templateId = (int)($data['template_id'] ?? ($_GET['template_id'] ?? 0));
   if ($templateId <= 0) throw new RuntimeException('template_id fehlt/ungültig.');
 
-  $allowedTypes = ['text','multiline','date','number','grade','checkbox','radio','select','signature'];
+  $allowedTypes = ['text','multiline','date','number','grade','checkbox','radio','select','signature','ag'];
 
   // --- list
   if ($action === 'list') {

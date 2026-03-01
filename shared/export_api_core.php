@@ -205,7 +205,7 @@ function resolve_option_value_text_export(PDO $pdo, array $meta, ?string $valueJ
 function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   // Resolve option-list values by stable option_item_id (stored in value_json) so exports survive option value changes.
   $st = $pdo->prepare(
-    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
+    "SELECT tf.field_name, tf.field_type, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
      FROM field_values fv
      JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
@@ -224,6 +224,9 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
     $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : null;
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
     $resolved = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
+    if (strtolower((string)($r['field_type'] ?? '')) === 'ag') {
+      $resolved = report_instance_ag_text($pdo, $reportInstanceId);
+    }
 
     $current = $map[$field] ?? null;
     $currentScore = $current ? ($priority[$current['source']] ?? 0) : -1;

@@ -19,13 +19,14 @@ function nav_items_for_role(string $role): array {
 
       // Vorlagen & Inhalte
       ['label'=>t('nav.reports'), 'href'=>'admin/templates.php', 'files'=>[
-        'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php'
+        'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php','ags.php'
       ], 'children'=>[
       ['label'=>t('nav.templates'),      'href'=>'admin/templates.php',      'files'=>['templates.php','template_fields.php','template_mappings.php']],
       ['label'=>t('nav.fonts'),          'href'=>'admin/fonts.php',          'files'=>['fonts.php']],
         ['label'=>t('nav.option_lists'),   'href'=>'admin/icon_library.php',   'files'=>['icon_library.php']],
         ['label'=>t('nav.student_fields'), 'href'=>'admin/student_fields.php', 'files'=>['student_fields.php']],
         ['label'=>t('nav.text_snippets'),  'href'=>'admin/text_snippets.php',  'files'=>['text_snippets.php']],
+        ['label'=>t('nav.ags', 'AGs'),  'href'=>'admin/ags.php',  'files'=>['ags.php']],
       ]],
 
       // Berichte
@@ -51,7 +52,10 @@ function nav_items_for_role(string $role): array {
   return [
     ['label'=>t('nav.dashboard'), 'href'=>'teacher/index.php', 'files'=>['index.php']],
     ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php', 'class_intro.php', 'students.php']],
-    ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php']],
+    ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php','ags.php'], 'children'=>[
+      ['label'=>t('nav.entries', 'Eingaben'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php']],
+      ['label'=>t('nav.ags', 'AGs'), 'href'=>'teacher/ags.php', 'files'=>['ags.php']],
+    ]],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
 
     // Berichte
