@@ -157,7 +157,7 @@ function parent_find_class_report_instance_id(PDO $pdo, int $templateId, int $cl
  */
 function parent_load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   $st = $pdo->prepare(
-    "SELECT tf.field_name, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
+    "SELECT tf.field_name, tf.field_type, tf.meta_json, fv.value_text, fv.value_json, fv.source, fv.updated_at
      FROM field_values fv
      JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
@@ -178,6 +178,9 @@ function parent_load_values_for_report(PDO $pdo, int $reportInstanceId): array {
     $valueText = $r['value_text'] !== null ? (string)$r['value_text'] : null;
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
     $resolved = parent_resolve_option_value($pdo, $meta, $valueJson, $valueText);
+    if (strtolower((string)($r['field_type'] ?? '')) === 'ag') {
+      $resolved = report_instance_ag_text($pdo, $reportInstanceId);
+    }
 
     $current = $map[$field] ?? null;
     $currentScore = $current ? ($priority[$current['source']] ?? 0) : -1;
@@ -258,6 +261,9 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
       if ($labelEn !== '') $label = $labelEn;
     }
     $resolved = parent_resolve_option_value($pdo, $meta, $row['value_json'] ?? null, $row['value_text'] ?? '');
+    if (strtolower((string)($row['field_type'] ?? '')) === 'ag') {
+      $resolved = report_instance_ag_text($pdo, $reportId);
+    }
 
     $existing = $map[$key] ?? null;
     $curScore = $existing ? ($priority[$existing['source']] ?? 0) : -1;
