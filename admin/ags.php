@@ -26,7 +26,7 @@ if (!db_has_table($pdo, 'ag_catalog')) {
 }
 
 function class_scopes(PDO $pdo): array {
-  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM classes ORDER BY school_year DESC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM classes ORDER BY school_year ASC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
   $out = [];
   foreach ($rows as $r) {
     $y = trim((string)($r['school_year'] ?? ''));
@@ -39,7 +39,7 @@ function class_scopes(PDO $pdo): array {
 }
 
 function ag_scopes(PDO $pdo): array {
-  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM ag_catalog ORDER BY school_year DESC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $rows = $pdo->query("SELECT DISTINCT school_year, period_label FROM ag_catalog ORDER BY school_year ASC, period_label ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
   $out = [];
   foreach ($rows as $r) {
     $y = trim((string)($r['school_year'] ?? ''));
@@ -69,7 +69,7 @@ function ag_scope_options(PDO $pdo): array {
 " .
     "FROM classes
 " .
-    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+    "ORDER BY school_year ASC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
   $seen = [];
@@ -89,7 +89,7 @@ function ag_scope_options(PDO $pdo): array {
 " .
     "FROM ag_catalog
 " .
-    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+    "ORDER BY school_year ASC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
   foreach ($rowsAg as $r) {
     $sy = trim((string)($r['school_year'] ?? ''));
@@ -102,7 +102,7 @@ function ag_scope_options(PDO $pdo): array {
   }
 
   usort($out, static function(array $a, array $b): int {
-    $syCmp = strcmp((string)$b['school_year'], (string)$a['school_year']);
+    $syCmp = strcmp((string)$a['school_year'], (string)$b['school_year']);
     if ($syCmp !== 0) return $syCmp;
     $ra = ag_scope_sort_rank((string)$a['period_label']);
     $rb = ag_scope_sort_rank((string)$b['period_label']);
@@ -134,7 +134,7 @@ try {
 " .
     "WHERE is_active=1
 " .
-    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END
+    "ORDER BY school_year ASC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END
 " .
     "LIMIT 1"
   )->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -170,7 +170,7 @@ try {
 " .
     "FROM ag_catalog
 " .
-    "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+    "ORDER BY school_year ASC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
   foreach ($rowsSrc as $r) {
     $sy = trim((string)($r['school_year'] ?? ''));
@@ -251,7 +251,7 @@ $overviewScopes = $pdo->query(
 " .
   "FROM ag_catalog
 " .
-  "ORDER BY school_year DESC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
+  "ORDER BY school_year ASC, CASE WHEN period_label='Standard' THEN 0 WHEN period_label='H2' THEN 1 ELSE 2 END, period_label ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $scopeKeys = [];
 $scopeLabels = [];
@@ -269,7 +269,7 @@ $rowsAll = $pdo->query(
 " .
   "FROM ag_catalog
 " .
-  "ORDER BY ag_name ASC, school_year DESC"
+  "ORDER BY ag_name ASC, school_year ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 foreach ($rowsAll as $r) {
   $name = trim((string)($r['ag_name'] ?? ''));
