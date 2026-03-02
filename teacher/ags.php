@@ -46,10 +46,19 @@ if (!ag_safe_table_exists($pdo, 'ag_catalog') || !ag_safe_table_exists($pdo, 'st
 $classes = [];
 try {
   if ($isAdmin) {
-    $classStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level ASC, label ASC");
+    $classStmt = $pdo->query("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
+      FROM classes c
+      WHERE c.is_active=1
+        AND EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id=c.template_id AND tf.field_type='ag')
+      ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
     $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
   } else {
-    $classStmt = $pdo->prepare("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name FROM classes c INNER JOIN user_class_assignments uca ON uca.class_id=c.id WHERE uca.user_id=? AND c.is_active=1 ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
+    $classStmt = $pdo->prepare("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
+      FROM classes c
+      INNER JOIN user_class_assignments uca ON uca.class_id=c.id
+      WHERE uca.user_id=? AND c.is_active=1
+        AND EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id=c.template_id AND tf.field_type='ag')
+      ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
     $classStmt->execute([$userId]);
     $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
   }
