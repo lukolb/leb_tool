@@ -595,10 +595,10 @@ $purgeStudents = $pdo->query(
           c.school_year, c.period_label, c.grade_level, c.label, c.name
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
-   ORDER BY c.school_year ASC,
+   ORDER BY s.last_name ASC, s.first_name ASC,
+            c.school_year ASC,
             CASE c.period_label WHEN 'H1' THEN 1 WHEN 'H2' THEN 2 ELSE 3 END ASC,
-            c.grade_level ASC, c.label ASC, c.name ASC,
-            s.last_name ASC, s.first_name ASC"
+            c.grade_level ASC, c.label ASC, c.name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $purgeScopeOptions = [];
