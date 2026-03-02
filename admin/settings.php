@@ -587,7 +587,7 @@ $purgeClasses = $pdo->query(
   "SELECT id, school_year, period_label, grade_level, label, name
    FROM classes
    ORDER BY school_year ASC,
-            CASE period_label WHEN 'H1' THEN 1 WHEN 'H2' THEN 2 ELSE 3 END ASC,
+            CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC,
             grade_level ASC, label ASC, name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $purgeStudents = $pdo->query(
@@ -597,7 +597,7 @@ $purgeStudents = $pdo->query(
    LEFT JOIN classes c ON c.id=s.class_id
    ORDER BY s.last_name ASC, s.first_name ASC,
             c.school_year ASC,
-            CASE c.period_label WHEN 'H1' THEN 1 WHEN 'H2' THEN 2 ELSE 3 END ASC,
+            CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END ASC,
             c.grade_level ASC, c.label ASC, c.name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
