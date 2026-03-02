@@ -587,7 +587,7 @@ $purgeClasses = $pdo->query(
   "SELECT id, school_year, period_label, grade_level, label, name
    FROM classes
    ORDER BY school_year ASC,
-            CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC,
+            period_label ASC,
             grade_level ASC, label ASC, name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $purgeStudents = $pdo->query(
@@ -597,20 +597,21 @@ $purgeStudents = $pdo->query(
    LEFT JOIN classes c ON c.id=s.class_id
    ORDER BY s.last_name ASC, s.first_name ASC,
             c.school_year ASC,
-            CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END ASC,
+            c.period_label ASC,
             c.grade_level ASC, c.label ASC, c.name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-$purgeScopeOptions = [];
-foreach ($purgeClasses as $c) {
-  $y = trim((string)($c['school_year'] ?? ''));
-  $p = normalize_class_period_label((string)($c['period_label'] ?? 'H1'));
-  if ($y === '') continue;
-  $k = $y . '|' . $p;
-  $purgeScopeOptions[$k] = ['school_year' => $y, 'period_label' => $p];
-}
-ksort($purgeScopeOptions);
-$purgeScopeOptions = array_values($purgeScopeOptions);
+$purgeScopeOptions = $pdo->query(
+  "SELECT DISTINCT school_year, period_label
+   FROM classes
+   ORDER BY school_year ASC, period_label ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$purgeScopeOptions = array_values(array_filter(array_map(static function(array $row): array {
+  return [
+    'school_year' => trim((string)($row['school_year'] ?? '')),
+    'period_label' => normalize_class_period_label((string)($row['period_label'] ?? 'H1')),
+  ];
+}, $purgeScopeOptions), static fn(array $row): bool => $row['school_year'] !== ''));
 $selectedPurgeSchoolYear = trim((string)($_POST['purge_school_year'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['school_year'] : '')));
 $selectedPurgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['period_label'] : 'H1')));
 
