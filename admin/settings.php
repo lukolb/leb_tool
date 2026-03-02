@@ -85,19 +85,41 @@ function filter_vits_voice_ids(array $ids, array $prefixes): array {
   return $out;
 }
 
-function admin_settings_delete_student_fully(PDO $pdo, int $studentId): void {
+function admin_settings_student_has_other_usage(PDO $pdo, int $studentId): bool {
+  $st = $pdo->prepare("SELECT 1 FROM report_instances WHERE student_id=? LIMIT 1");
+  $st->execute([$studentId]);
+  if ($st->fetchColumn()) return true;
+  $st = $pdo->prepare("SELECT class_id FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $classId = (int)($st->fetchColumn() ?: 0);
+  return $classId > 0;
+}
+
+function admin_settings_delete_student_fully(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): array {
   if ($studentId <= 0) throw new RuntimeException(t('admin.settings.purge.student_missing', 'Ungültige Schüler-ID.'));
 
-  $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE id=? LIMIT 1");
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT s.id, s.class_id, c.school_year, c.period_label
+     FROM students s
+     LEFT JOIN classes c ON c.id=s.class_id
+     WHERE s.id=? LIMIT 1"
+  );
   $st->execute([$studentId]);
   $student = $st->fetch(PDO::FETCH_ASSOC);
   if (!$student) throw new RuntimeException(t('admin.settings.purge.student_not_found', 'Schüler nicht gefunden.'));
+  $studentClassId = (int)($student['class_id'] ?? 0);
+  $studentYear = trim((string)($student['school_year'] ?? ''));
+  $studentPeriod = normalize_class_period_label((string)($student['period_label'] ?? 'Standard'));
+  if ($studentYear !== $schoolYear || $studentPeriod !== $periodLabel) {
+    throw new RuntimeException(t('admin.settings.purge.scope_mismatch_student', 'Schüler gehört nicht zum gewählten Schulhalbjahr.'));
+  }
 
   $ownsTx = !$pdo->inTransaction();
   if ($ownsTx) $pdo->beginTransaction();
   try {
-    $stRi = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=?");
-    $stRi->execute([$studentId]);
+    $stRi = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=? AND school_year=? AND period_label=?");
+    $stRi->execute([$studentId, $schoolYear, $periodLabel]);
     $reportIds = array_values(array_filter(array_map('intval', $stRi->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
 
     if ($reportIds) {
@@ -116,20 +138,13 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId): void {
       }
     }
 
-    if (db_has_table($pdo, 'parent_portal_links')) {
-      $pdo->prepare("DELETE FROM parent_portal_links WHERE student_id=?")->execute([$studentId]);
-    }
     if (db_has_table($pdo, 'parent_meeting_feedback')) {
-      $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE student_id=?")->execute([$studentId]);
-    }
-    if (db_has_table($pdo, 'student_field_values')) {
-      $pdo->prepare("DELETE FROM student_field_values WHERE student_id=?")->execute([$studentId]);
+      $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE student_id=? AND school_year=? AND class_id=?")
+        ->execute([$studentId, $schoolYear, $studentClassId]);
     }
     if (db_has_table($pdo, 'student_ag_assignments')) {
-      $pdo->prepare("DELETE FROM student_ag_assignments WHERE student_id=?")->execute([$studentId]);
-    }
-    if (db_has_table($pdo, 'audit_log')) {
-      $pdo->prepare("DELETE FROM audit_log WHERE student_id=?")->execute([$studentId]);
+      $pdo->prepare("DELETE FROM student_ag_assignments WHERE student_id=? AND school_year=? AND period_label=?")
+        ->execute([$studentId, $schoolYear, $periodLabel]);
     }
 
     if (db_has_table($pdo, 'field_values') && db_has_column($pdo, 'field_values', 'updated_by_student_id')) {
@@ -139,20 +154,41 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId): void {
       $pdo->prepare("UPDATE field_value_history SET updated_by_student_id=NULL WHERE updated_by_student_id=?")->execute([$studentId]);
     }
 
-    $pdo->prepare("DELETE FROM students WHERE id=?")->execute([$studentId]);
+    $stRemain = $pdo->prepare("SELECT 1 FROM report_instances WHERE student_id=? LIMIT 1");
+    $stRemain->execute([$studentId]);
+    $hasReportsRemaining = (bool)$stRemain->fetchColumn();
+
+    if (!$hasReportsRemaining) {
+      if (db_has_table($pdo, 'student_field_values')) {
+        $pdo->prepare("DELETE FROM student_field_values WHERE student_id=?")->execute([$studentId]);
+      }
+      $pdo->prepare("DELETE FROM students WHERE id=?")->execute([$studentId]);
+      $studentDeleted = true;
+    } else {
+      $studentDeleted = false;
+      if ($studentClassId > 0) {
+        $pdo->prepare("UPDATE students SET class_id=NULL WHERE id=? AND class_id=?")->execute([$studentId, $studentClassId]);
+      }
+    }
     if ($ownsTx) $pdo->commit();
+    return ['reports_deleted' => count($reportIds), 'student_deleted' => $studentDeleted];
   } catch (Throwable $e) {
     if ($ownsTx && $pdo->inTransaction()) $pdo->rollBack();
     throw $e;
   }
 }
 
-function admin_settings_delete_class_fully(PDO $pdo, int $classId): int {
+function admin_settings_delete_class_fully(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
   if ($classId <= 0) throw new RuntimeException(t('admin.settings.purge.class_missing', 'Ungültige Klassen-ID.'));
+  $periodLabel = normalize_class_period_label($periodLabel);
 
-  $st = $pdo->prepare("SELECT id FROM classes WHERE id=? LIMIT 1");
+  $st = $pdo->prepare("SELECT id, school_year, period_label FROM classes WHERE id=? LIMIT 1");
   $st->execute([$classId]);
-  if (!$st->fetch(PDO::FETCH_ASSOC)) throw new RuntimeException(t('admin.settings.purge.class_not_found', 'Klasse nicht gefunden.'));
+  $classRow = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$classRow) throw new RuntimeException(t('admin.settings.purge.class_not_found', 'Klasse nicht gefunden.'));
+  if ((string)$classRow['school_year'] !== $schoolYear || normalize_class_period_label((string)$classRow['period_label']) !== $periodLabel) {
+    throw new RuntimeException(t('admin.settings.purge.scope_mismatch_class', 'Klasse gehört nicht zum gewählten Schulhalbjahr.'));
+  }
 
   $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
   $stStudents->execute([$classId]);
@@ -160,8 +196,12 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId): int {
 
   $pdo->beginTransaction();
   try {
+    $studentsDeleted = 0;
+    $studentsDetached = 0;
     foreach ($studentIds as $studentId) {
-      admin_settings_delete_student_fully($pdo, $studentId);
+      $res = admin_settings_delete_student_fully($pdo, $studentId, $schoolYear, $periodLabel);
+      if (!empty($res['student_deleted'])) $studentsDeleted++;
+      else $studentsDetached++;
     }
 
     if (db_has_table($pdo, 'user_class_assignments')) {
@@ -187,7 +227,11 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId): int {
     throw $e;
   }
 
-  return count($studentIds);
+  return [
+    'students_total' => count($studentIds),
+    'students_deleted' => $studentsDeleted,
+    'students_detached' => $studentsDetached,
+  ];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -197,23 +241,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'purge_student') {
       $studentId = (int)($_POST['purge_student_id'] ?? 0);
+      $purgeYear = trim((string)($_POST['purge_school_year'] ?? ''));
+      $purgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? 'H1'));
       $confirm = trim((string)($_POST['purge_student_confirm'] ?? ''));
       if ($confirm !== 'DELETE') {
         throw new RuntimeException(t('admin.settings.purge.confirm_required', 'Bitte zur Bestätigung exakt DELETE eingeben.'));
       }
-      admin_settings_delete_student_fully($pdo, $studentId);
-      $ok = t('admin.settings.purge.student_ok', 'Schüler inkl. aller Berichte wurde unwiderruflich gelöscht.');
-      audit('admin_purge_student', (int)current_user()['id'], ['student_id' => $studentId]);
+      $purgeRes = admin_settings_delete_student_fully($pdo, $studentId, $purgeYear, $purgePeriod);
+      $ok = !empty($purgeRes['student_deleted'])
+        ? t('admin.settings.purge.student_ok', 'Schüler inkl. aller Berichte wurde unwiderruflich gelöscht.')
+        : t('admin.settings.purge.student_detached_ok', 'Berichte im gewählten Schulhalbjahr wurden gelöscht; Schülergrunddaten bleiben wegen anderer Halbjahre erhalten.');
+      audit('admin_purge_student', (int)current_user()['id'], ['student_id' => $studentId, 'school_year' => $purgeYear, 'period_label' => $purgePeriod, 'student_deleted' => !empty($purgeRes['student_deleted'])]);
       $cfg = app_config(true);
     } elseif ($action === 'purge_class') {
       $classId = (int)($_POST['purge_class_id'] ?? 0);
+      $purgeYear = trim((string)($_POST['purge_school_year'] ?? ''));
+      $purgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? 'H1'));
       $confirm = trim((string)($_POST['purge_class_confirm'] ?? ''));
       if ($confirm !== 'DELETE') {
         throw new RuntimeException(t('admin.settings.purge.confirm_required', 'Bitte zur Bestätigung exakt DELETE eingeben.'));
       }
-      $deletedStudents = admin_settings_delete_class_fully($pdo, $classId);
-      $ok = str_replace('{count}', (string)$deletedStudents, t('admin.settings.purge.class_ok', 'Klasse inkl. aller Daten wurde unwiderruflich gelöscht ({count} Schüler entfernt).'));
-      audit('admin_purge_class', (int)current_user()['id'], ['class_id' => $classId, 'deleted_students' => $deletedStudents]);
+      $deleted = admin_settings_delete_class_fully($pdo, $classId, $purgeYear, $purgePeriod);
+      $ok = str_replace(
+        ['{count}', '{deleted}', '{detached}'],
+        [(string)$deleted['students_total'], (string)$deleted['students_deleted'], (string)$deleted['students_detached']],
+        t('admin.settings.purge.class_ok', 'Klasse inkl. aller Halbjahresdaten wurde gelöscht ({count} Schüler: {deleted} gelöscht, {detached} als Grunddaten erhalten).')
+      );
+      audit('admin_purge_class', (int)current_user()['id'], ['class_id' => $classId, 'school_year' => $purgeYear, 'period_label' => $purgePeriod, 'deleted' => $deleted]);
       $cfg = app_config(true);
     } elseif ($action === 'save_deadlines') {
 
@@ -541,6 +595,19 @@ $purgeStudents = $pdo->query(
    LEFT JOIN classes c ON c.id=s.class_id
    ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC, s.last_name ASC, s.first_name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+$purgeScopeOptions = [];
+foreach ($purgeClasses as $c) {
+  $y = trim((string)($c['school_year'] ?? ''));
+  $p = normalize_class_period_label((string)($c['period_label'] ?? 'H1'));
+  if ($y === '') continue;
+  $k = $y . '|' . $p;
+  $purgeScopeOptions[$k] = ['school_year' => $y, 'period_label' => $p];
+}
+ksort($purgeScopeOptions);
+$purgeScopeOptions = array_values($purgeScopeOptions);
+$selectedPurgeSchoolYear = trim((string)($_POST['purge_school_year'] ?? ($purgeScopeOptions ? (string)end($purgeScopeOptions)['school_year'] : '')));
+$selectedPurgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? ($purgeScopeOptions ? (string)end($purgeScopeOptions)['period_label'] : 'H1')));
 
 render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 ?>
@@ -1386,10 +1453,25 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.purge.title', 'Daten unwiderruflich löschen'))?></h2>
   <p class="muted"><?=h(t('admin.settings.purge.desc', 'Hier können Schüler oder ganze Klassen inklusive aller zugehörigen Berichte und Werte endgültig entfernt werden. Diese Aktion kann nicht rückgängig gemacht werden.'))?></p>
 
+  <label for="purgeScope"><?=h(t('admin.settings.purge.scope_label', 'Schulhalbjahr'))?></label>
+  <select id="purgeScope" style="max-width:380px; margin-bottom:10px;">
+    <?php foreach ($purgeScopeOptions as $scope): ?>
+      <?php
+        $year = (string)$scope['school_year'];
+        $period = normalize_class_period_label((string)$scope['period_label']);
+        $periodText = $period === 'H2' ? t('admin.classes.period.h2', '2. Halbjahr') : t('admin.classes.period.h1', '1. Halbjahr');
+        $isSelected = ($year === $selectedPurgeSchoolYear && $period === $selectedPurgePeriod);
+      ?>
+      <option value="<?=h($year . '|' . $period)?>" <?=$isSelected ? 'selected' : ''?>><?=h($year)?> · <?=h($periodText)?></option>
+    <?php endforeach; ?>
+  </select>
+
   <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
     <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.student_confirm_modal', 'Diesen Schüler wirklich dauerhaft löschen?'))?>);">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="purge_student">
+      <input type="hidden" name="purge_school_year" class="purge-school-year" value="<?=h($selectedPurgeSchoolYear)?>">
+      <input type="hidden" name="purge_period_label" class="purge-period-label" value="<?=h($selectedPurgePeriod)?>">
 
       <label for="purgeStudentId"><?=h(t('admin.settings.purge.student_label', 'Einzelnen Schüler vollständig löschen'))?></label>
       <select id="purgeStudentId" name="purge_student_id" required>
@@ -1404,7 +1486,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
             $period = normalize_class_period_label((string)($s['period_label'] ?? 'Standard'));
             $periodText = $period === 'H2' ? t('admin.classes.period.h2', '2. Halbjahr') : t('admin.classes.period.h1', '1. Halbjahr');
           ?>
-          <option value="<?= (int)$s['id'] ?>">
+          <option value="<?= (int)$s['id'] ?>" data-school-year="<?=h($schoolYear)?>" data-period-label="<?=h($period)?>">
             <?=h((string)$s['last_name'] . ', ' . (string)$s['first_name'])?> · <?=h($classText)?> · <?=h($schoolYear)?> · <?=h($periodText)?>
           </option>
         <?php endforeach; ?>
@@ -1421,6 +1503,8 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.class_confirm_modal', 'Diese ganze Klasse wirklich dauerhaft löschen?'))?>);">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="purge_class">
+      <input type="hidden" name="purge_school_year" class="purge-school-year" value="<?=h($selectedPurgeSchoolYear)?>">
+      <input type="hidden" name="purge_period_label" class="purge-period-label" value="<?=h($selectedPurgePeriod)?>">
 
       <label for="purgeClassId"><?=h(t('admin.settings.purge.class_label', 'Ganze Klasse vollständig löschen'))?></label>
       <select id="purgeClassId" name="purge_class_id" required>
@@ -1434,7 +1518,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
             $period = normalize_class_period_label((string)($c['period_label'] ?? 'Standard'));
             $periodText = $period === 'H2' ? t('admin.classes.period.h2', '2. Halbjahr') : t('admin.classes.period.h1', '1. Halbjahr');
           ?>
-          <option value="<?= (int)$c['id'] ?>"><?=h((string)$c['school_year'])?> · <?=h($periodText)?> · <?=h($classText)?></option>
+          <option value="<?= (int)$c['id'] ?>" data-school-year="<?=h((string)$c['school_year'])?>" data-period-label="<?=h($period)?>"><?=h((string)$c['school_year'])?> · <?=h($periodText)?> · <?=h($classText)?></option>
         <?php endforeach; ?>
       </select>
 
@@ -1446,6 +1530,42 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </div>
     </form>
   </div>
+
+  <script>
+    (function(){
+      const scope = document.getElementById('purgeScope');
+      const studentSel = document.getElementById('purgeStudentId');
+      const classSel = document.getElementById('purgeClassId');
+      const hiddenYear = Array.from(document.querySelectorAll('.purge-school-year'));
+      const hiddenPeriod = Array.from(document.querySelectorAll('.purge-period-label'));
+      const splitScope = () => {
+        const [year, period] = String(scope?.value || '').split('|');
+        return { year: year || '', period: period || 'H1' };
+      };
+      const filterSelect = (sel, year, period) => {
+        if (!sel) return;
+        const first = sel.querySelector('option[value=""]');
+        const selected = sel.value;
+        Array.from(sel.options).forEach((opt) => {
+          if (!opt.value) return;
+          const oy = opt.getAttribute('data-school-year') || '';
+          const op = opt.getAttribute('data-period-label') || 'H1';
+          opt.hidden = !(oy === year && op === period);
+        });
+        const stillVisible = Array.from(sel.options).some(o => o.value === selected && !o.hidden);
+        if (!stillVisible) sel.value = first ? '' : sel.value;
+      };
+      const render = () => {
+        const { year, period } = splitScope();
+        hiddenYear.forEach((el) => { el.value = year; });
+        hiddenPeriod.forEach((el) => { el.value = period; });
+        filterSelect(studentSel, year, period);
+        filterSelect(classSel, year, period);
+      };
+      if (scope) scope.addEventListener('change', render);
+      render();
+    })();
+  </script>
 </div>
 
 <div class="card">
