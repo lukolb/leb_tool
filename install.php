@@ -370,7 +370,7 @@ CREATE TABLE IF NOT EXISTS `template_fields` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `template_id` bigint UNSIGNED NOT NULL,
   `field_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `field_type` enum('text','multiline','date','number','grade','checkbox','radio','select','signature') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio',
+  `field_type` enum('text','multiline','date','number','grade','checkbox','radio','select','signature','ag') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio',
   `label` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `label_en` VARCHAR(255) NULL,
   `help_text` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
