@@ -238,6 +238,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save' && isset($_POST['export_allow_editable_present'])) {
       if (!isset($cfg['export']) || !is_array($cfg['export'])) $cfg['export'] = [];
       $cfg['export']['allow_editable_pdf'] = isset($_POST['export_allow_editable']);
+
+      $radioCrossColorMode = trim((string)($_POST['export_radio_cross_color_mode'] ?? ($cfg['export']['radio_cross_color_mode'] ?? 'pdf_text')));
+      if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) {
+        $radioCrossColorMode = 'pdf_text';
+      }
+      $radioCrossColor = trim((string)($_POST['export_radio_cross_color'] ?? ($cfg['export']['radio_cross_color'] ?? '#0b57d0')));
+      if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColor)) {
+        throw new RuntimeException(t('admin.settings.error.export_radio_cross_color_invalid', 'Kreuz-Farbe ungültig (z.B. #0b57d0).'));
+      }
+      $cfg['export']['radio_cross_color_mode'] = $radioCrossColorMode;
+      $cfg['export']['radio_cross_color'] = strtoupper($radioCrossColor);
     }
 
     // ---- Delegation settings ----
@@ -363,6 +374,10 @@ $parentMeetingFeedbackRequired = (bool)($parentCfg['meeting_feedback_required'] 
 $parentMeetingFeedbackAnonymous = (bool)($parentCfg['meeting_feedback_anonymous'] ?? false);
 $exportCfg = $cfg['export'] ?? [];
 $exportAllowEditable = (bool)($exportCfg['allow_editable_pdf'] ?? false);
+$exportRadioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
+if (!in_array($exportRadioCrossColorMode, ['pdf_text', 'admin'], true)) $exportRadioCrossColorMode = 'pdf_text';
+$exportRadioCrossColor = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $exportRadioCrossColor)) $exportRadioCrossColor = '#0b57d0';
 $signatureCfg = $cfg['signature'] ?? [];
 $signatureMasterKeySet = trim((string)($signatureCfg['master_key'] ?? '')) !== '';
 
@@ -807,6 +822,48 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </label>
     </div>
     <p class="muted"><?=h(t('admin.settings.export.allow_editable_hint', 'Standard: Exportierte PDFs werden automatisch „geflattet“ und sind nicht mehr editierbar.'))?></p>
+
+    <label style="margin-top:10px;"><?=h(t('admin.settings.export.radio_cross_color_mode', 'Farbe für Radio-Kreuze'))?></label>
+    <select name="export_radio_cross_color_mode" id="exportRadioCrossColorMode" style="max-width:460px;">
+      <option value="pdf_text" <?=$exportRadioCrossColorMode === 'pdf_text' ? 'selected' : ''?>><?=h(t('admin.settings.export.radio_cross_color_mode_pdf_text', 'Aus PDF übernehmen (Textfarbe des Radio-Buttons)'))?></option>
+      <option value="admin" <?=$exportRadioCrossColorMode === 'admin' ? 'selected' : ''?>><?=h(t('admin.settings.export.radio_cross_color_mode_admin', 'Feste Farbe aus Einstellungen'))?></option>
+    </select>
+
+    <div id="exportRadioCrossColorWrap" style="margin-top:8px; max-width:460px;">
+      <label for="exportRadioCrossColor"><?=h(t('admin.settings.export.radio_cross_color', 'Kreuz-Farbe (fix)'))?></label>
+      <div style="display:grid; grid-template-columns:90px 1fr; gap:10px; align-items:center;">
+        <input id="exportRadioCrossColorPicker" type="color" value="<?=h((string)$exportRadioCrossColor)?>" aria-label="<?=h(t('admin.settings.export.radio_cross_color_picker', 'Kreuz-Farbe auswählen'))?>" style="height:42px; padding:0; border-radius:12px;">
+        <input id="exportRadioCrossColor" name="export_radio_cross_color" value="<?=h((string)$exportRadioCrossColor)?>" required placeholder="#0b57d0">
+      </div>
+      <p class="muted" style="margin-top:6px;"><?=h(t('admin.settings.export.radio_cross_color_hint', 'Wird nur genutzt, wenn „Feste Farbe aus Einstellungen“ gewählt ist.'))?></p>
+    </div>
+
+    <script>
+      (function(){
+        const mode = document.getElementById('exportRadioCrossColorMode');
+        const wrap = document.getElementById('exportRadioCrossColorWrap');
+        const picker = document.getElementById('exportRadioCrossColorPicker');
+        const hex = document.getElementById('exportRadioCrossColor');
+        const syncFromPicker = () => {
+          if (!picker || !hex) return;
+          hex.value = (picker.value || '').toUpperCase();
+        };
+        const syncFromHex = () => {
+          if (!picker || !hex) return;
+          const val = String(hex.value || '').trim();
+          if (/^#[0-9a-fA-F]{6}$/.test(val)) picker.value = val;
+        };
+        const render = () => {
+          if (!mode || !wrap) return;
+          wrap.style.display = mode.value === 'admin' ? 'block' : 'none';
+        };
+        if (mode) mode.addEventListener('change', render);
+        if (picker) picker.addEventListener('input', syncFromPicker);
+        if (hex) hex.addEventListener('input', syncFromHex);
+        syncFromHex();
+        render();
+      })();
+    </script>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

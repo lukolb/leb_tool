@@ -103,6 +103,10 @@ $txJs = [
 $cfg = app_config();
 $exportCfg = $cfg['export'] ?? [];
 $allowEditablePdf = (bool)($exportCfg['allow_editable_pdf'] ?? false);
+$radioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
+if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) $radioCrossColorMode = 'pdf_text';
+$radioCrossColorHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorHex)) $radioCrossColorHex = '#0b57d0';
 
 function export_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -296,6 +300,8 @@ const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
 const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
 const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
 const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
+const RADIO_CROSS_COLOR_MODE = <?= json_encode($radioCrossColorMode) ?>;
+const RADIO_CROSS_COLOR_HEX = <?= json_encode($radioCrossColorHex) ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
 
 function t(key, fallback){
@@ -1187,19 +1193,21 @@ function colorOperators(color){
   return '';
 }
 
-function getWidgetBorderColor(widget, radioField, PDFArray, PDFNumber, PDFName){
-  try {
-    const mk = widget?.dict?.lookup?.(PDFName.of('MK'));
-    if (mk && mk.lookup) {
-      const bc = mk.lookup(PDFName.of('BC'));
-      const nums = pdfArrayToNumbers(bc, PDFArray, PDFNumber);
-      if (nums && nums.length) {
-        if (nums.length === 1) return { model: 'gray', values: nums };
-        if (nums.length === 3) return { model: 'rgb', values: nums };
-        if (nums.length === 4) return { model: 'cmyk', values: nums };
-      }
-    }
-  } catch (e) {}
+function hexToRgbColor(hex){
+  const m = /^#([\da-fA-F]{6})$/.exec((hex || '').trim());
+  if (!m) return null;
+  const raw = m[1];
+  return {
+    model: 'rgb',
+    values: [
+      parseInt(raw.slice(0, 2), 16) / 255,
+      parseInt(raw.slice(2, 4), 16) / 255,
+      parseInt(raw.slice(4, 6), 16) / 255,
+    ],
+  };
+}
+
+function getWidgetTextColor(widget, radioField, PDFName){
   try {
     const da = widget?.dict?.lookup?.(PDFName.of('DA'));
     if (da) {
@@ -1215,6 +1223,13 @@ function getWidgetBorderColor(widget, radioField, PDFArray, PDFNumber, PDFName){
     }
   } catch (e) {}
   return null;
+}
+
+function resolveRadioCrossColor(widget, radioField, PDFName){
+  if (RADIO_CROSS_COLOR_MODE === 'admin') {
+    return hexToRgbColor(RADIO_CROSS_COLOR_HEX) || { model: 'rgb', values: [0, 0, 0] };
+  }
+  return getWidgetTextColor(widget, radioField, PDFName);
 }
 
 function buildCrossAppearanceStream(pdfDoc, rect, color){
@@ -1315,7 +1330,7 @@ function getWidgetAppearanceState(widget, PDFName){
 
 function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
   const PDFLib = window.PDFLib;
-  const { PDFName, PDFDict, PDFArray, PDFNumber } = PDFLib;
+  const { PDFName, PDFDict } = PDFLib;
   const fields = form.getFields();
   let debugCount = 0;
 
@@ -1353,7 +1368,7 @@ function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
       const normalizedOn = pdfNameToString(onName);
       const isSelected = selectedValue && pdfNameToString(selectedValue).toLowerCase() === normalizedOn.toLowerCase();
 
-      const color = getWidgetBorderColor(widget, field, PDFArray, PDFNumber, PDFName);
+      const color = resolveRadioCrossColor(widget, field, PDFName);
       const onRef = buildCrossAppearanceStream(pdfDoc, rect, color);
       const offRef = buildOffAppearanceStream(pdfDoc, rect);
 

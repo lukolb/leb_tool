@@ -64,6 +64,11 @@ return [
   'export' => [
     // Wenn true, bleiben Export-PDFs editierbar (keine automatische Flattening-Konvertierung).
     'allow_editable_pdf' => false,
+    // Farbmodus für Radio-Kreuze: 'pdf_text' = Textfarbe aus PDF-Widget (DA),
+    // 'admin' = feste Admin-Farbe aus radio_cross_color.
+    'radio_cross_color_mode' => 'pdf_text',
+    // Feste Farbe für Radio-Kreuze im Hex-Format (#RRGGBB), wenn radio_cross_color_mode='admin'.
+    'radio_cross_color' => '#0b57d0',
   ],
   'signature' => [
     // 32-Byte Master-Key (hex/base64 oder raw). Kann auch via SIGNATURE_MASTER_KEY gesetzt werden.
