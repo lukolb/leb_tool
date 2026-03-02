@@ -1472,7 +1472,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   </select>
 
   <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
-    <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.student_confirm_modal', 'Diesen Schüler wirklich dauerhaft löschen?'))?>);">
+    <form id="purgeStudentForm" method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.student_confirm_modal', 'Diesen Schüler wirklich dauerhaft löschen?'))?>);">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="purge_student">
       <input type="hidden" name="purge_school_year" class="purge-school-year" value="<?=h($selectedPurgeSchoolYear)?>">
@@ -1505,7 +1505,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </div>
     </form>
 
-    <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.class_confirm_modal', 'Diese ganze Klasse wirklich dauerhaft löschen?'))?>);">
+    <form id="purgeClassForm" method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.class_confirm_modal', 'Diese ganze Klasse wirklich dauerhaft löschen?'))?>);">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="action" value="purge_class">
       <input type="hidden" name="purge_school_year" class="purge-school-year" value="<?=h($selectedPurgeSchoolYear)?>">
@@ -1569,6 +1569,19 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       };
       if (scope) scope.addEventListener('change', render);
       render();
+
+      const bindSecondConfirm = (formId, message) => {
+        const form = document.getElementById(formId);
+        if (!form) return;
+        form.addEventListener('submit', (ev) => {
+          const ok = confirm(message);
+          if (!ok) {
+            ev.preventDefault();
+          }
+        });
+      };
+      bindSecondConfirm('purgeStudentForm', <?=json_encode(t('admin.settings.purge.second_confirm', 'Letzte Sicherheitsabfrage: Diese Löschung ist unwiderruflich. Wirklich endgültig löschen?'))?>);
+      bindSecondConfirm('purgeClassForm', <?=json_encode(t('admin.settings.purge.second_confirm', 'Letzte Sicherheitsabfrage: Diese Löschung ist unwiderruflich. Wirklich endgültig löschen?'))?>);
     })();
   </script>
 </div>
