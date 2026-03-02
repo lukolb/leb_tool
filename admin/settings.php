@@ -85,12 +85,138 @@ function filter_vits_voice_ids(array $ids, array $prefixes): array {
   return $out;
 }
 
+function admin_settings_delete_student_fully(PDO $pdo, int $studentId): void {
+  if ($studentId <= 0) throw new RuntimeException(t('admin.settings.purge.student_missing', 'Ungültige Schüler-ID.'));
+
+  $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $student = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$student) throw new RuntimeException(t('admin.settings.purge.student_not_found', 'Schüler nicht gefunden.'));
+
+  $ownsTx = !$pdo->inTransaction();
+  if ($ownsTx) $pdo->beginTransaction();
+  try {
+    $stRi = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=?");
+    $stRi->execute([$studentId]);
+    $reportIds = array_values(array_filter(array_map('intval', $stRi->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
+
+    if ($reportIds) {
+      $in = implode(',', array_fill(0, count($reportIds), '?'));
+      if (db_has_table($pdo, 'field_value_history')) {
+        $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id IN ($in)")->execute($reportIds);
+      }
+      if (db_has_table($pdo, 'field_values')) {
+        $pdo->prepare("DELETE FROM field_values WHERE report_instance_id IN ($in)")->execute($reportIds);
+      }
+      if (db_has_table($pdo, 'parent_portal_links')) {
+        $pdo->prepare("DELETE FROM parent_portal_links WHERE report_instance_id IN ($in)")->execute($reportIds);
+      }
+      if (db_has_table($pdo, 'report_instances')) {
+        $pdo->prepare("DELETE FROM report_instances WHERE id IN ($in)")->execute($reportIds);
+      }
+    }
+
+    if (db_has_table($pdo, 'parent_portal_links')) {
+      $pdo->prepare("DELETE FROM parent_portal_links WHERE student_id=?")->execute([$studentId]);
+    }
+    if (db_has_table($pdo, 'parent_meeting_feedback')) {
+      $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE student_id=?")->execute([$studentId]);
+    }
+    if (db_has_table($pdo, 'student_field_values')) {
+      $pdo->prepare("DELETE FROM student_field_values WHERE student_id=?")->execute([$studentId]);
+    }
+    if (db_has_table($pdo, 'student_ag_assignments')) {
+      $pdo->prepare("DELETE FROM student_ag_assignments WHERE student_id=?")->execute([$studentId]);
+    }
+    if (db_has_table($pdo, 'audit_log')) {
+      $pdo->prepare("DELETE FROM audit_log WHERE student_id=?")->execute([$studentId]);
+    }
+
+    if (db_has_table($pdo, 'field_values') && db_has_column($pdo, 'field_values', 'updated_by_student_id')) {
+      $pdo->prepare("UPDATE field_values SET updated_by_student_id=NULL WHERE updated_by_student_id=?")->execute([$studentId]);
+    }
+    if (db_has_table($pdo, 'field_value_history') && db_has_column($pdo, 'field_value_history', 'updated_by_student_id')) {
+      $pdo->prepare("UPDATE field_value_history SET updated_by_student_id=NULL WHERE updated_by_student_id=?")->execute([$studentId]);
+    }
+
+    $pdo->prepare("DELETE FROM students WHERE id=?")->execute([$studentId]);
+    if ($ownsTx) $pdo->commit();
+  } catch (Throwable $e) {
+    if ($ownsTx && $pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
+function admin_settings_delete_class_fully(PDO $pdo, int $classId): int {
+  if ($classId <= 0) throw new RuntimeException(t('admin.settings.purge.class_missing', 'Ungültige Klassen-ID.'));
+
+  $st = $pdo->prepare("SELECT id FROM classes WHERE id=? LIMIT 1");
+  $st->execute([$classId]);
+  if (!$st->fetch(PDO::FETCH_ASSOC)) throw new RuntimeException(t('admin.settings.purge.class_not_found', 'Klasse nicht gefunden.'));
+
+  $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $stStudents->execute([$classId]);
+  $studentIds = array_values(array_filter(array_map('intval', $stStudents->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
+
+  $pdo->beginTransaction();
+  try {
+    foreach ($studentIds as $studentId) {
+      admin_settings_delete_student_fully($pdo, $studentId);
+    }
+
+    if (db_has_table($pdo, 'user_class_assignments')) {
+      $pdo->prepare("DELETE FROM user_class_assignments WHERE class_id=?")->execute([$classId]);
+    }
+    if (db_has_table($pdo, 'class_group_delegations')) {
+      $pdo->prepare("DELETE FROM class_group_delegations WHERE class_id=?")->execute([$classId]);
+    }
+    if (db_has_table($pdo, 'class_child_group_unlocks')) {
+      $pdo->prepare("DELETE FROM class_child_group_unlocks WHERE class_id=?")->execute([$classId]);
+    }
+    if (db_has_table($pdo, 'student_ag_assignments')) {
+      $pdo->prepare("DELETE FROM student_ag_assignments WHERE class_id=?")->execute([$classId]);
+    }
+    if (db_has_table($pdo, 'parent_meeting_feedback')) {
+      $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE class_id=?")->execute([$classId]);
+    }
+
+    $pdo->prepare("DELETE FROM classes WHERE id=?")->execute([$classId]);
+    $pdo->commit();
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+
+  return count($studentIds);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $action = $_POST['action'] ?? 'save';
 
-    if ($action === 'save_deadlines') {
+    if ($action === 'purge_student') {
+      $studentId = (int)($_POST['purge_student_id'] ?? 0);
+      $confirm = trim((string)($_POST['purge_student_confirm'] ?? ''));
+      if ($confirm !== 'DELETE') {
+        throw new RuntimeException(t('admin.settings.purge.confirm_required', 'Bitte zur Bestätigung exakt DELETE eingeben.'));
+      }
+      admin_settings_delete_student_fully($pdo, $studentId);
+      $ok = t('admin.settings.purge.student_ok', 'Schüler inkl. aller Berichte wurde unwiderruflich gelöscht.');
+      audit('admin_purge_student', (int)current_user()['id'], ['student_id' => $studentId]);
+      $cfg = app_config(true);
+    } elseif ($action === 'purge_class') {
+      $classId = (int)($_POST['purge_class_id'] ?? 0);
+      $confirm = trim((string)($_POST['purge_class_confirm'] ?? ''));
+      if ($confirm !== 'DELETE') {
+        throw new RuntimeException(t('admin.settings.purge.confirm_required', 'Bitte zur Bestätigung exakt DELETE eingeben.'));
+      }
+      $deletedStudents = admin_settings_delete_class_fully($pdo, $classId);
+      $ok = str_replace('{count}', (string)$deletedStudents, t('admin.settings.purge.class_ok', 'Klasse inkl. aller Daten wurde unwiderruflich gelöscht ({count} Schüler entfernt).'));
+      audit('admin_purge_class', (int)current_user()['id'], ['class_id' => $classId, 'deleted_students' => $deletedStudents]);
+      $cfg = app_config(true);
+    } elseif ($action === 'save_deadlines') {
+
       $schoolYear = trim((string)($_POST['deadline_school_year'] ?? ''));
       $periodLabel = normalize_class_period_label($_POST['deadline_period_label'] ?? 'Standard');
       if ($schoolYear === '') {
@@ -402,6 +528,19 @@ $introHtml = '';
 if (is_file($introAbs)) {
   $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
 }
+
+$purgeClasses = $pdo->query(
+  "SELECT id, school_year, period_label, grade_level, label, name
+   FROM classes
+   ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$purgeStudents = $pdo->query(
+  "SELECT s.id, s.first_name, s.last_name, s.date_of_birth, s.class_id,
+          c.school_year, c.period_label, c.grade_level, c.label, c.name
+   FROM students s
+   LEFT JOIN classes c ON c.id=s.class_id
+   ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC, s.last_name ASC, s.first_name ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 ?>
@@ -1241,6 +1380,72 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     });
   })();
   </script>
+</div>
+
+<div class="card" style="border:1px solid #fecaca; background:#fff7f7;">
+  <h2><?=h(t('admin.settings.purge.title', 'Daten unwiderruflich löschen'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.purge.desc', 'Hier können Schüler oder ganze Klassen inklusive aller zugehörigen Berichte und Werte endgültig entfernt werden. Diese Aktion kann nicht rückgängig gemacht werden.'))?></p>
+
+  <div class="grid" style="grid-template-columns:1fr 1fr; gap:16px;">
+    <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.student_confirm_modal', 'Diesen Schüler wirklich dauerhaft löschen?'))?>);">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="action" value="purge_student">
+
+      <label for="purgeStudentId"><?=h(t('admin.settings.purge.student_label', 'Einzelnen Schüler vollständig löschen'))?></label>
+      <select id="purgeStudentId" name="purge_student_id" required>
+        <option value=""><?=h(t('admin.settings.purge.select_student', 'Bitte Schüler wählen …'))?></option>
+        <?php foreach ($purgeStudents as $s): ?>
+          <?php
+            $grade = $s['grade_level'] !== null ? (int)$s['grade_level'] : null;
+            $lbl = trim((string)($s['label'] ?? ''));
+            $className = trim((string)($s['name'] ?? ''));
+            $classText = ($grade !== null && $lbl !== '') ? ($grade . $lbl) : ($className !== '' ? $className : t('admin.settings.purge.no_class', 'ohne Klasse'));
+            $schoolYear = trim((string)($s['school_year'] ?? ''));
+            $period = normalize_class_period_label((string)($s['period_label'] ?? 'Standard'));
+            $periodText = $period === 'H2' ? t('admin.classes.period.h2', '2. Halbjahr') : t('admin.classes.period.h1', '1. Halbjahr');
+          ?>
+          <option value="<?= (int)$s['id'] ?>">
+            <?=h((string)$s['last_name'] . ', ' . (string)$s['first_name'])?> · <?=h($classText)?> · <?=h($schoolYear)?> · <?=h($periodText)?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+
+      <label for="purgeStudentConfirm" style="margin-top:8px;"><?=h(t('admin.settings.purge.confirm_label', 'Zur Bestätigung „DELETE“ eingeben'))?></label>
+      <input id="purgeStudentConfirm" name="purge_student_confirm" placeholder="DELETE" required>
+
+      <div class="actions">
+        <button class="btn danger" type="submit"><?=h(t('admin.settings.purge.student_button', 'Schüler endgültig löschen'))?></button>
+      </div>
+    </form>
+
+    <form method="post" autocomplete="off" onsubmit="return confirm(<?=json_encode(t('admin.settings.purge.class_confirm_modal', 'Diese ganze Klasse wirklich dauerhaft löschen?'))?>);">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="action" value="purge_class">
+
+      <label for="purgeClassId"><?=h(t('admin.settings.purge.class_label', 'Ganze Klasse vollständig löschen'))?></label>
+      <select id="purgeClassId" name="purge_class_id" required>
+        <option value=""><?=h(t('admin.settings.purge.select_class', 'Bitte Klasse wählen …'))?></option>
+        <?php foreach ($purgeClasses as $c): ?>
+          <?php
+            $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+            $lbl = trim((string)($c['label'] ?? ''));
+            $className = trim((string)($c['name'] ?? ''));
+            $classText = ($grade !== null && $lbl !== '') ? ($grade . $lbl) : ($className !== '' ? $className : ('#' . (int)$c['id']));
+            $period = normalize_class_period_label((string)($c['period_label'] ?? 'Standard'));
+            $periodText = $period === 'H2' ? t('admin.classes.period.h2', '2. Halbjahr') : t('admin.classes.period.h1', '1. Halbjahr');
+          ?>
+          <option value="<?= (int)$c['id'] ?>"><?=h((string)$c['school_year'])?> · <?=h($periodText)?> · <?=h($classText)?></option>
+        <?php endforeach; ?>
+      </select>
+
+      <label for="purgeClassConfirm" style="margin-top:8px;"><?=h(t('admin.settings.purge.confirm_label', 'Zur Bestätigung „DELETE“ eingeben'))?></label>
+      <input id="purgeClassConfirm" name="purge_class_confirm" placeholder="DELETE" required>
+
+      <div class="actions">
+        <button class="btn danger" type="submit"><?=h(t('admin.settings.purge.class_button', 'Klasse endgültig löschen'))?></button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <div class="card">
