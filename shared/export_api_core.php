@@ -225,7 +225,7 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
     $resolved = resolve_option_value_text_export($pdo, $meta, $valueJson, $valueText);
     if (strtolower((string)($r['field_type'] ?? '')) === 'ag') {
-      $resolved = report_instance_ag_text($pdo, $reportInstanceId);
+      $resolved = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $reportInstanceId), $resolved);
     }
 
     $current = $map[$field] ?? null;
@@ -266,8 +266,9 @@ function load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   foreach (($stAgFields->fetchAll(PDO::FETCH_COLUMN) ?: []) as $agFieldName) {
     $agFieldName = trim((string)$agFieldName);
     if ($agFieldName === '') continue;
+    $existing = $map[$agFieldName]['value'] ?? '';
     $map[$agFieldName] = [
-      'value' => $agText,
+      'value' => ag_merge_generated_with_manual($agText, (string)$existing),
       'source' => 'system',
       'updated_at' => date('Y-m-d H:i:s'),
     ];

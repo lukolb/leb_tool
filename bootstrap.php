@@ -1500,6 +1500,19 @@ function ag_sentence_for_names(string $firstName, array $agNames): string {
   return $firstName . ' hat erfolgreich an ' . $list . ' teilgenommen.';
 }
 
+
+function ag_merge_generated_with_manual(string $generatedText, ?string $manualText): string {
+  $generated = trim($generatedText);
+  $manual = trim((string)($manualText ?? ''));
+
+  if ($generated === '') return $manual;
+  if ($manual === '') return $generated;
+  if ($manual === $generated) return $generated;
+  if (str_starts_with($manual, $generated . "\n")) return $manual;
+
+  return $generated . "\n" . $manual;
+}
+
 function report_instance_ag_text(PDO $pdo, int $reportInstanceId): string {
   if ($reportInstanceId <= 0 || !db_has_table($pdo, 'student_ag_assignments')) return '';
   $st = $pdo->prepare(

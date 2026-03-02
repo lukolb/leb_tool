@@ -329,7 +329,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         $vRow['value_json'] !== null ? (string)$vRow['value_json'] : null
       );
       if (strtolower((string)($vRow['field_type'] ?? '')) === 'ag') {
-        $resolved = report_instance_ag_text($pdo, $previewReportId);
+        $resolved = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $previewReportId), $resolved);
       }
       $valuesByField[$fid] = $resolved;
       $fieldName = trim((string)($vRow['field_name'] ?? ''));
@@ -366,7 +366,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       if (strtolower((string)($fRow['field_type'] ?? '')) !== 'ag') continue;
       $fname = trim((string)($fRow['field_name'] ?? ''));
       if ($fname === '') continue;
-      $valuesByName[$fname] = $agText;
+      $existing = (string)($valuesByName[$fname] ?? '');
+      $valuesByName[$fname] = ag_merge_generated_with_manual($agText, $existing);
     }
 
     if ($classFieldNames) {
@@ -404,7 +405,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
             $cv['value_json'] !== null ? (string)$cv['value_json'] : null
           );
           if (strtolower((string)($cv['field_type'] ?? '')) === 'ag') {
-            $valuesByField[$fid] = report_instance_ag_text($pdo, $previewReportId);
+            $valuesByField[$fid] = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $previewReportId), (string)$valuesByField[$fid]);
           }
           if ($fname !== '') $valuesByName[$fname] = (string)$valuesByField[$fid];
         }

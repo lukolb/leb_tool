@@ -179,7 +179,7 @@ function parent_load_values_for_report(PDO $pdo, int $reportInstanceId): array {
     $valueJson = $r['value_json'] !== null ? (string)$r['value_json'] : null;
     $resolved = parent_resolve_option_value($pdo, $meta, $valueJson, $valueText);
     if (strtolower((string)($r['field_type'] ?? '')) === 'ag') {
-      $resolved = report_instance_ag_text($pdo, $reportInstanceId);
+      $resolved = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $reportInstanceId), $resolved);
     }
 
     $current = $map[$field] ?? null;
@@ -220,8 +220,9 @@ function parent_load_values_for_report(PDO $pdo, int $reportInstanceId): array {
   foreach (($stAgFields->fetchAll(PDO::FETCH_COLUMN) ?: []) as $agFieldName) {
     $agFieldName = trim((string)$agFieldName);
     if ($agFieldName === '') continue;
+    $existing = $map[$agFieldName]['value'] ?? '';
     $map[$agFieldName] = [
-      'value' => $agText,
+      'value' => ag_merge_generated_with_manual($agText, (string)$existing),
       'source' => 'system',
       'updated_at' => date('Y-m-d H:i:s'),
     ];
@@ -285,7 +286,7 @@ function parent_collect_preview_fields(PDO $pdo, int $reportId, string $lang, bo
     }
     $resolved = parent_resolve_option_value($pdo, $meta, $row['value_json'] ?? null, $row['value_text'] ?? '');
     if (strtolower((string)($row['field_type'] ?? '')) === 'ag') {
-      $resolved = report_instance_ag_text($pdo, $reportId);
+      $resolved = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $reportId), $resolved);
     }
 
     $existing = $map[$key] ?? null;
