@@ -586,14 +586,19 @@ if (is_file($introAbs)) {
 $purgeClasses = $pdo->query(
   "SELECT id, school_year, period_label, grade_level, label, name
    FROM classes
-   ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC"
+   ORDER BY school_year ASC,
+            CASE period_label WHEN 'H1' THEN 1 WHEN 'H2' THEN 2 ELSE 3 END ASC,
+            grade_level ASC, label ASC, name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $purgeStudents = $pdo->query(
   "SELECT s.id, s.first_name, s.last_name, s.date_of_birth, s.class_id,
           c.school_year, c.period_label, c.grade_level, c.label, c.name
    FROM students s
    LEFT JOIN classes c ON c.id=s.class_id
-   ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC, s.last_name ASC, s.first_name ASC"
+   ORDER BY c.school_year ASC,
+            CASE c.period_label WHEN 'H1' THEN 1 WHEN 'H2' THEN 2 ELSE 3 END ASC,
+            c.grade_level ASC, c.label ASC, c.name ASC,
+            s.last_name ASC, s.first_name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $purgeScopeOptions = [];
@@ -606,8 +611,8 @@ foreach ($purgeClasses as $c) {
 }
 ksort($purgeScopeOptions);
 $purgeScopeOptions = array_values($purgeScopeOptions);
-$selectedPurgeSchoolYear = trim((string)($_POST['purge_school_year'] ?? ($purgeScopeOptions ? (string)end($purgeScopeOptions)['school_year'] : '')));
-$selectedPurgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? ($purgeScopeOptions ? (string)end($purgeScopeOptions)['period_label'] : 'H1')));
+$selectedPurgeSchoolYear = trim((string)($_POST['purge_school_year'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['school_year'] : '')));
+$selectedPurgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['period_label'] : 'H1')));
 
 render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 ?>
