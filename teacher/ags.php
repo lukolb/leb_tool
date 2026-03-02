@@ -176,12 +176,15 @@ render_teacher_header('AG-Eingaben');
 ?>
 <div class="card">
   <h1>AG-Eingaben</h1>
+</div>
   <?php if ($ok): ?><div class="alert success"><?=h($ok)?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
+  <div class="card">
+  <div class="muted" id="agAutoSaveHint">Änderungen werden automatisch gespeichert.</div>
 
-  <form method="get" class="row-actions" id="agClassForm">
+  <form method="get" class="row-actions" id="agClassForm" style="margin: 20px 0;">
     <label>Klasse</label>
-    <select class="input" name="class_id" onchange="this.form.submit()">
+    <select class="input" name="class_id" onchange="this.form.submit()" style="width: auto;">
       <?php foreach ($classes as $c): ?>
         <option value="<?=h((string)$c['id'])?>" <?=((int)$c['id']===$classId)?'selected':''?>><?=h((string)$c['school_year'].' · '.ag_teacher_class_display($c).' · '.ag_teacher_period_display((string)$c['period_label']))?></option>
       <?php endforeach; ?>
@@ -226,7 +229,7 @@ render_teacher_header('AG-Eingaben');
         }
       </style>
       <table class="table">
-        <tr><th>Schüler</th><th>Besuchte AGs (0-x)</th></tr>
+        <tr><th>Schüler</th><th>Besuchte AGs</th></tr>
         <?php foreach ($students as $s): $sid=(int)$s['id']; ?>
           <tr>
             <td><?=h((string)$s['last_name'].', '.(string)$s['first_name'])?></td>
@@ -243,7 +246,6 @@ render_teacher_header('AG-Eingaben');
           </tr>
         <?php endforeach; ?>
       </table>
-      <div class="muted" id="agAutoSaveHint">Änderungen werden automatisch gespeichert.</div>
     </form>
   <?php endif; ?>
 </div>
