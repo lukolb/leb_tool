@@ -311,7 +311,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
 
     $stVals = $pdo->prepare(
-      "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name
+      "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name, tf.field_type
        FROM field_values fv
        JOIN template_fields tf ON tf.id=fv.template_field_id
        WHERE fv.report_instance_id=?"
@@ -328,6 +328,9 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         $vRow['value_text'] !== null ? (string)$vRow['value_text'] : '',
         $vRow['value_json'] !== null ? (string)$vRow['value_json'] : null
       );
+      if (strtolower((string)($vRow['field_type'] ?? '')) === 'ag') {
+        $resolved = report_instance_ag_text($pdo, $previewReportId);
+      }
       $valuesByField[$fid] = $resolved;
       $fieldName = trim((string)($vRow['field_name'] ?? ''));
       if ($fieldName !== '') $valuesByName[$fieldName] = $resolved;
@@ -356,6 +359,16 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       }
     }
 
+
+    // Ensure AG fields are always auto-filled, even if no field_values row exists yet.
+    $agText = report_instance_ag_text($pdo, $previewReportId);
+    foreach ($fieldsRows as $fRow) {
+      if (strtolower((string)($fRow['field_type'] ?? '')) !== 'ag') continue;
+      $fname = trim((string)($fRow['field_name'] ?? ''));
+      if ($fname === '') continue;
+      $valuesByName[$fname] = $agText;
+    }
+
     if ($classFieldNames) {
       $stClassRi = $pdo->prepare(
         "SELECT id
@@ -373,7 +386,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
           // ignore preview-only binding refresh failures
         }
         $stClassVals = $pdo->prepare(
-          "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name
+          "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name, tf.field_type
            FROM field_values fv
            JOIN template_fields tf ON tf.id=fv.template_field_id
            WHERE fv.report_instance_id=?"
@@ -390,6 +403,9 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
             $cv['value_text'] !== null ? (string)$cv['value_text'] : '',
             $cv['value_json'] !== null ? (string)$cv['value_json'] : null
           );
+          if (strtolower((string)($cv['field_type'] ?? '')) === 'ag') {
+            $valuesByField[$fid] = report_instance_ag_text($pdo, $previewReportId);
+          }
           if ($fname !== '') $valuesByName[$fname] = (string)$valuesByField[$fid];
         }
       }

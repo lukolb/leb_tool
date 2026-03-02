@@ -443,7 +443,7 @@ render_admin_header(t('admin.template_fields.title'));
         <select id="bulkType">
           <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
           <option>text</option><option>multiline</option><option>date</option><option>number</option>
-          <option>grade</option><option>checkbox</option><option>radio</option><option>select</option><option>signature</option>
+          <option>grade</option><option>checkbox</option><option>radio</option><option>select</option><option>signature</option><option>ag</option>
         </select>
       </div>
 
@@ -1983,7 +1983,7 @@ function renderTable(){
 
     const tdT = document.createElement('td');
     const selT = document.createElement('select');
-    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
+    ['text','multiline','date','number','grade','checkbox','radio','select','signature','ag'].forEach(t=>{
       const o=document.createElement('option'); o.value=t; o.textContent=t;
       if (t===f.type) o.selected=true;
       selT.appendChild(o);

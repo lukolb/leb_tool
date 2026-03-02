@@ -600,6 +600,69 @@ function cleanup_duplicate_student_report_instances(PDO $pdo): void {
 // --------------------
 // Schema (additive migrations)
 // --------------------
+
+function ensure_ag_tables(PDO $pdo): void {
+  if (!db_has_table($pdo, 'ag_catalog')) {
+    $pdo->exec(
+      "CREATE TABLE ag_catalog (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  ag_name VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  is_active TINYINT(1) NOT NULL DEFAULT 1,
+" .
+      "  sort_order INT NOT NULL DEFAULT 0,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_ag_catalog_scope_name (school_year, period_label, ag_name),
+" .
+      "  KEY idx_ag_catalog_scope (school_year, period_label, is_active, sort_order)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+
+  if (!db_has_table($pdo, 'student_ag_assignments')) {
+    $pdo->exec(
+      "CREATE TABLE student_ag_assignments (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  student_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  class_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  ag_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_student_ag_scope (student_id, ag_id, school_year, period_label),
+" .
+      "  KEY idx_student_ag_lookup (class_id, school_year, period_label)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+}
+
 function ensure_schema(PDO $pdo): void {
   static $did = false;
   if ($did) return;
@@ -942,6 +1005,25 @@ function ensure_schema(PDO $pdo): void {
       }
     }
 
+
+
+
+    // --- template_fields.field_type: ensure AG type is supported in DB enum
+    if (db_has_table($pdo, 'template_fields') && db_has_column($pdo, 'template_fields', 'field_type')) {
+      try {
+        $ctStmt = $pdo->prepare("SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='template_fields' AND COLUMN_NAME='field_type' LIMIT 1");
+        $ctStmt->execute();
+        $columnType = strtolower((string)($ctStmt->fetchColumn() ?: ''));
+        if ($columnType !== '' && strpos($columnType, "'ag'") === false) {
+          $pdo->exec("ALTER TABLE template_fields MODIFY COLUMN field_type ENUM('text','multiline','date','number','grade','checkbox','radio','select','signature','ag') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'radio'");
+        }
+      } catch (Throwable $e) {
+        // ignore enum alter failures on restricted DB setups
+      }
+    }
+
+    // --- AG catalog + assignments
+    ensure_ag_tables($pdo);
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }
@@ -1399,6 +1481,52 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
 
     $up->execute([$reportInstanceId, (int)$f['id'], (string)$val]);
   }
+}
+
+
+function ag_sentence_for_names(string $firstName, array $agNames): string {
+  $firstName = trim($firstName);
+  $clean = [];
+  foreach ($agNames as $name) {
+    $n = trim((string)$name);
+    if ($n !== '') $clean[] = $n;
+  }
+  if (!$clean) return '';
+  $parts = array_map(static fn(string $n): string => 'der ' . $n, $clean);
+  $count = count($parts);
+  if ($count === 1) $list = $parts[0];
+  elseif ($count === 2) $list = $parts[0] . ' und ' . $parts[1];
+  else $list = implode(', ', array_slice($parts, 0, -1)) . ' und ' . $parts[$count - 1];
+  return $firstName . ' hat erfolgreich an ' . $list . ' teilgenommen.';
+}
+
+function report_instance_ag_text(PDO $pdo, int $reportInstanceId): string {
+  if ($reportInstanceId <= 0 || !db_has_table($pdo, 'student_ag_assignments')) return '';
+  $st = $pdo->prepare(
+    "SELECT s.first_name, a.ag_name
+" .
+    "FROM report_instances ri
+" .
+    "JOIN students s ON s.id=ri.student_id
+" .
+    "LEFT JOIN student_ag_assignments saa ON saa.student_id=s.id AND saa.school_year=ri.school_year AND saa.period_label=ri.period_label
+" .
+    "LEFT JOIN ag_catalog a ON a.id=saa.ag_id
+" .
+    "WHERE ri.id=?
+" .
+    "ORDER BY a.sort_order ASC, a.ag_name ASC"
+  );
+  $st->execute([$reportInstanceId]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  if (!$rows) return '';
+  $firstName = (string)($rows[0]['first_name'] ?? '');
+  $names = [];
+  foreach ($rows as $r) {
+    $name = trim((string)($r['ag_name'] ?? ''));
+    if ($name !== '') $names[] = $name;
+  }
+  return ag_sentence_for_names($firstName, $names);
 }
 
 // --------------------
