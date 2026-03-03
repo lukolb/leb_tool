@@ -612,6 +612,17 @@ $purgeScopeOptions = array_values(array_filter(array_map(static function(array $
     'period_label' => normalize_class_period_label((string)($row['period_label'] ?? 'H1')),
   ];
 }, $purgeScopeOptions), static fn(array $row): bool => $row['school_year'] !== ''));
+usort($purgeScopeOptions, static function(array $a, array $b): int {
+  $ya = (string)($a['school_year'] ?? '');
+  $yb = (string)($b['school_year'] ?? '');
+  if ($ya !== $yb) return $ya <=> $yb;
+
+  $pa = normalize_class_period_label((string)($a['period_label'] ?? 'H1'));
+  $pb = normalize_class_period_label((string)($b['period_label'] ?? 'H1'));
+  $ra = ($pa === 'H2') ? 2 : 1; // H1/Standard zuerst
+  $rb = ($pb === 'H2') ? 2 : 1;
+  return $ra <=> $rb;
+});
 $selectedPurgeSchoolYear = trim((string)($_POST['purge_school_year'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['school_year'] : '')));
 $selectedPurgePeriod = normalize_class_period_label((string)($_POST['purge_period_label'] ?? ($purgeScopeOptions ? (string)$purgeScopeOptions[0]['period_label'] : 'H1')));
 
