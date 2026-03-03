@@ -49,7 +49,6 @@ try {
     $classStmt = $pdo->query("SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
       FROM classes c
       WHERE c.is_active=1
-        AND EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id=c.template_id AND tf.field_type='ag')
       ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
     $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
   } else {
@@ -57,7 +56,6 @@ try {
       FROM classes c
       INNER JOIN user_class_assignments uca ON uca.class_id=c.id
       WHERE uca.user_id=? AND c.is_active=1
-        AND EXISTS (SELECT 1 FROM template_fields tf WHERE tf.template_id=c.template_id AND tf.field_type='ag')
       ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC");
     $classStmt->execute([$userId]);
     $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
