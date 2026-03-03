@@ -9,6 +9,11 @@ $alerts = [];
 $errors = [];
 $cfg = app_config();
 $parentCfg = $cfg['parent'] ?? [];
+$exportCfg = $cfg['export'] ?? [];
+$radioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
+if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) $radioCrossColorMode = 'pdf_text';
+$radioCrossColorHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorHex)) $radioCrossColorHex = '#0b57d0';
 $signaturePurpose = 'parent_export';
 $signatureEnabled = (bool)($parentCfg['signature_enabled'] ?? false);
 $signatureConfigured = $signatureEnabled && signature_configured();
@@ -889,6 +894,8 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
     const payload = <?= json_encode($previewPayload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
     const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
     const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
+    const RADIO_CROSS_COLOR_MODE = <?= json_encode($radioCrossColorMode) ?>;
+    const RADIO_CROSS_COLOR_HEX = <?= json_encode($radioCrossColorHex) ?>;
     const preview = document.getElementById('pdfPreview');
     const downloadBtn = document.getElementById('downloadPdfBtn');
     const downloadBtnText = document.getElementById('downloadPdfBtnText');
@@ -1468,19 +1475,21 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       return '';
     }
 
-    function getWidgetBorderColor(widget, radioField, PDFArray, PDFNumber, PDFName){
-      try {
-        const mk = widget?.dict?.lookup?.(PDFName.of('MK'));
-        if (mk && mk.lookup) {
-          const bc = mk.lookup(PDFName.of('BC'));
-          const nums = pdfArrayToNumbers(bc, PDFArray, PDFNumber);
-          if (nums && nums.length) {
-            if (nums.length === 1) return { model: 'gray', values: nums };
-            if (nums.length === 3) return { model: 'rgb', values: nums };
-            if (nums.length === 4) return { model: 'cmyk', values: nums };
-          }
-        }
-      } catch (e) {}
+    function hexToRgbColor(hex){
+      const m = /^#([\da-fA-F]{6})$/.exec((hex || '').trim());
+      if (!m) return null;
+      const raw = m[1];
+      return {
+        model: 'rgb',
+        values: [
+          parseInt(raw.slice(0, 2), 16) / 255,
+          parseInt(raw.slice(2, 4), 16) / 255,
+          parseInt(raw.slice(4, 6), 16) / 255,
+        ],
+      };
+    }
+
+    function getWidgetTextColor(widget, radioField, PDFName){
       try {
         const da = widget?.dict?.lookup?.(PDFName.of('DA'));
         if (da) {
@@ -1496,6 +1505,13 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
         }
       } catch (e) {}
       return null;
+    }
+
+    function resolveRadioCrossColor(widget, radioField, PDFName){
+      if (RADIO_CROSS_COLOR_MODE === 'admin') {
+        return hexToRgbColor(RADIO_CROSS_COLOR_HEX) || { model: 'rgb', values: [0, 0, 0] };
+      }
+      return getWidgetTextColor(widget, radioField, PDFName);
     }
 
     function buildCrossAppearanceStream(pdfDoc, rect, color){
@@ -1596,7 +1612,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
 
     function applyRadioCrossAppearances(pdfDoc, form, { debug } = {}){
       const PDFLib = window.PDFLib;
-      const { PDFName, PDFDict, PDFArray, PDFNumber } = PDFLib;
+      const { PDFName, PDFDict } = PDFLib;
       const fields = form.getFields();
       let debugCount = 0;
 
@@ -1628,7 +1644,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
           const normalizedOn = pdfNameToString(onName);
           const isSelected = selectedValue && pdfNameToString(selectedValue).toLowerCase() === normalizedOn.toLowerCase();
 
-          const color = getWidgetBorderColor(widget, field, PDFArray, PDFNumber, PDFName);
+          const color = resolveRadioCrossColor(widget, field, PDFName);
           const onRef = buildCrossAppearanceStream(pdfDoc, rect, color);
           const offRef = buildOffAppearanceStream(pdfDoc, rect);
 

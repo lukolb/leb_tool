@@ -565,7 +565,7 @@ function build_progress(PDO $pdo, array $classes, int $userId): array {
     $reqChild = $info['child_required'];
     $reqTeacher = $info['teacher_required'];
     $reqDelegated = $info['delegated_required'];
-    if ($reqChild > 0 && $info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
+    if ($info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
     if ($reqTeacher > 0 && $info['teacher_filled'] >= $reqTeacher) $progress[$cid]['teachers_done']++;
     if ($reqDelegated > 0 && $info['delegated_filled'] >= $reqDelegated) $progress[$cid]['delegations_done']++;
   }

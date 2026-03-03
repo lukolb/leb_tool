@@ -180,6 +180,13 @@ $nextStudentName = ($nextStudentId > 0 && isset($studentsByCanonical[$nextStuden
   ? trim((string)($studentsByCanonical[$nextStudentId]['last_name'] ?? '') . ', ' . (string)($studentsByCanonical[$nextStudentId]['first_name'] ?? ''))
   : '';
 
+$cfg = app_config();
+$exportCfg = is_array($cfg['export'] ?? null) ? $cfg['export'] : [];
+$radioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
+if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) $radioCrossColorMode = 'pdf_text';
+$radioCrossColorHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorHex)) $radioCrossColorHex = '#0b57d0';
+
 $periodOptions = [];
 if ($isAdmin) {
   $stPeriods = $pdo->query(
@@ -574,6 +581,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   pdfjsLib.GlobalWorkerOptions.workerSrc = "<?=h(url('assets/pdfjs/pdf.worker.min.mjs'))?>";
   const FONT_MANIFEST_URL = <?= json_encode(url('shared/font_manifest.php')) ?>;
   const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js';
+  const RADIO_CROSS_COLOR_MODE = <?= json_encode($radioCrossColorMode) ?>;
+  const RADIO_CROSS_COLOR_HEX = <?= json_encode($radioCrossColorHex) ?>;
 
   const preview = document.getElementById('rpPreview');
   const templateUrl = <?=json_encode($previewTemplateUrl)?>;
@@ -873,19 +882,21 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     return '';
   }
 
-  function getWidgetBorderColor(widget, radioField, PDFArray, PDFNumber, PDFName){
-    try {
-      const mk = widget?.dict?.lookup?.(PDFName.of('MK'));
-      if (mk && mk.lookup) {
-        const bc = mk.lookup(PDFName.of('BC'));
-        const nums = pdfArrayToNumbers(bc, PDFArray, PDFNumber);
-        if (nums && nums.length) {
-          if (nums.length === 1) return { model: 'gray', values: nums };
-          if (nums.length === 3) return { model: 'rgb', values: nums };
-          if (nums.length === 4) return { model: 'cmyk', values: nums };
-        }
-      }
-    } catch {}
+  function hexToRgbColor(hex){
+    const m = /^#([\da-fA-F]{6})$/.exec((hex || '').trim());
+    if (!m) return null;
+    const raw = m[1];
+    return {
+      model: 'rgb',
+      values: [
+        parseInt(raw.slice(0, 2), 16) / 255,
+        parseInt(raw.slice(2, 4), 16) / 255,
+        parseInt(raw.slice(4, 6), 16) / 255,
+      ],
+    };
+  }
+
+  function getWidgetTextColor(widget, radioField, PDFName){
     try {
       const da = widget?.dict?.lookup?.(PDFName.of('DA'));
       if (da) {
@@ -901,6 +912,13 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       }
     } catch {}
     return null;
+  }
+
+  function resolveRadioCrossColor(widget, radioField, PDFName){
+    if (RADIO_CROSS_COLOR_MODE === 'admin') {
+      return hexToRgbColor(RADIO_CROSS_COLOR_HEX) || { model: 'rgb', values: [0, 0, 0] };
+    }
+    return getWidgetTextColor(widget, radioField, PDFName);
   }
 
   function buildCrossAppearanceStream(pdfDoc, rect, color){
@@ -992,7 +1010,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
 
   function applyRadioCrossAppearances(pdfDoc, form){
     const PDFLib = window.PDFLib;
-    const { PDFName, PDFDict, PDFArray, PDFNumber } = PDFLib;
+    const { PDFName, PDFDict } = PDFLib;
     const fields = form.getFields();
     for (const field of fields) {
       if (!(field instanceof PDFLib.PDFRadioGroup)) continue;
@@ -1017,7 +1035,7 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
 
         const normalizedOn = pdfNameToString(onName);
         const isSelected = selectedValue && pdfNameToString(selectedValue).toLowerCase() === normalizedOn.toLowerCase();
-        const color = getWidgetBorderColor(widget, field, PDFArray, PDFNumber, PDFName);
+        const color = resolveRadioCrossColor(widget, field, PDFName);
         const onRef = buildCrossAppearanceStream(pdfDoc, rect, color);
         const offRef = buildOffAppearanceStream(pdfDoc, rect);
 
