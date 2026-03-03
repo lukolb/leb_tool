@@ -98,12 +98,16 @@ try {
           updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND template_id=?
     ");
+    $ins = $pdo->prepare("
+      INSERT INTO template_fields
+      (template_id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, can_child_edit, can_teacher_edit, options_json, meta_json, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
 
     $count = 0;
     foreach ($updates as $u) {
       if (!is_array($u)) continue;
       $id = (int)($u['id'] ?? 0);
-      if ($id <= 0) continue;
 
       $name = trim((string)($u['name'] ?? ''));
       if ($name === '') throw new RuntimeException('Feldname fehlt.');
@@ -143,7 +147,11 @@ try {
         $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE);
       }
 
-      $upd->execute([$name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      if ($id > 0) {
+        $upd->execute([$name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      } else {
+        $ins->execute([$templateId, $name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort]);
+      }
       $count++;
     }
 

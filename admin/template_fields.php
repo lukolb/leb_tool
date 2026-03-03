@@ -516,6 +516,7 @@ render_admin_header(t('admin.template_fields.title'));
         </div>
       </div>
         <div class="block" style="min-width:100%; text-align: end;">
+            <a class="btn secondary" type="button" id="btnAddVirtualField"><?=h(t('admin.template_fields.add_virtual_field', 'Neues Mapping-Feld (ohne PDF)'))?></a>
             <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
             <a class="btn primary" type="button" id="btnSave"><?=h(t('admin.template_fields.save_button'))?></a>
         </div>
@@ -656,6 +657,9 @@ const I18N = <?=json_encode([
   'options_button' => t('admin.template_fields.options_button'),
   'group_page' => t('admin.template_fields.group_page'),
   'error_prefix' => t('admin.template_fields.error_prefix'),
+  'new_field_name' => t('admin.template_fields.new_field_name', 'Feldname (technisch):'),
+  'new_field_label' => t('admin.template_fields.new_field_label', 'Label:'),
+  'new_field_added' => t('admin.template_fields.new_field_added', 'Neues Mapping-Feld hinzugefügt.'),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
 const tAdmin = (key) => I18N[key] ?? key;
 const tfmtAdmin = (key, vars = {}) => {
@@ -688,6 +692,7 @@ const btnClearFilter = document.getElementById('btnClearFilter');
 const selCount = document.getElementById('selCount');
 const btnSave = document.getElementById('btnSave');
 const btnSaveTop = document.getElementById('btnSaveTop');
+const btnAddVirtualField = document.getElementById('btnAddVirtualField');
 
 const bulkGroup = document.getElementById('bulkGroup');
 const bulkSubgroup = document.getElementById('bulkSubgroup');
@@ -2374,6 +2379,65 @@ function autoGroupPage(ids){
   updateMeta();
 }
 
+function sanitizeFieldName(raw){
+  const n = String(raw || '').trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '_');
+  return n.replace(/^_+/, '').replace(/_+$/, '');
+}
+
+function makeUniqueFieldName(base){
+  const taken = new Set((fields || []).map(f => String(f.name || '').trim()).filter(Boolean));
+  let name = sanitizeFieldName(base || 'mapping_feld');
+  if (!name) name = 'mapping_feld';
+  if (!taken.has(name)) return name;
+  let i = 2;
+  while (taken.has(`${name}_${i}`)) i++;
+  return `${name}_${i}`;
+}
+
+function nextTempFieldId(){
+  let minId = 0;
+  for (const f of (fields || [])) {
+    const id = Number(f.id || 0);
+    if (id < minId) minId = id;
+  }
+  return minId - 1;
+}
+
+function addVirtualField(){
+  const rawName = window.prompt(tAdmin('new_field_name') || 'Feldname (technisch):', 'mapping_feld');
+  if (rawName === null) return;
+  const name = makeUniqueFieldName(rawName);
+  if (!name) return;
+
+  const rawLabel = window.prompt(tAdmin('new_field_label') || 'Label:', name);
+  const label = (rawLabel === null || String(rawLabel).trim() === '') ? name : String(rawLabel).trim();
+
+  const tempId = nextTempFieldId();
+  const maxSort = (fields || []).reduce((m, f) => Math.max(m, Number(f.sort_order || 0)), 0);
+  fields.push({
+    id: tempId,
+    name,
+    type: 'text',
+    label,
+    label_en: '',
+    help_text: '',
+    multiline: 0,
+    required: 0,
+    can_child_edit: 0,
+    can_teacher_edit: 1,
+    sort_order: maxSort + 1,
+    options: null,
+    meta: { virtual_only: 1 }
+  });
+  dirty.add(tempId);
+  rebuildGroupDatalist();
+  renderGroupsBar();
+  renderTable();
+  updateMeta();
+  updateDirtyUI();
+  saveHint.textContent = tAdmin('new_field_added') || 'Neues Mapping-Feld hinzugefügt.';
+}
+
 /* ---------- Save ---------- */
 async function save(){
   if (!dirty.size) { saveHint.textContent = 'Nichts zu speichern.'; return; }
@@ -2397,10 +2461,8 @@ async function save(){
     }));
 
   const j = await apiPost({ action:'save', updates });
-  dirty.clear();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
-  updateMeta();
-  updateDirtyUI();
+  await load();
 }
 
 /* ---------- Options dialog ---------- */
@@ -2675,6 +2737,9 @@ btnTogglePreview.addEventListener('click', ()=>{
   const hidden = !layout2.classList.contains('hide-preview');
   applyPreviewHidden(hidden);
 });
+if (btnAddVirtualField) {
+  btnAddVirtualField.addEventListener('click', addVirtualField);
+}
 
 /* ---------- Load ---------- */
 async function load(){
