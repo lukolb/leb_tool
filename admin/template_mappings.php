@@ -169,6 +169,17 @@ function get_student_preview_map(PDO $pdo, int $studentId, int $templateId = 0):
     if ($riId > 0) {
       $row['field_values'] = report_instance_field_value_map($pdo, $riId);
     }
+
+    $classFieldValues = class_report_field_value_map(
+      $pdo,
+      $templateId,
+      (int)($row['class_id'] ?? 0),
+      (string)($row['class_school_year'] ?? ''),
+      (string)($row['class_period_label'] ?? 'Standard')
+    );
+    foreach ($classFieldValues as $k => $v) {
+      if (!array_key_exists($k, $row['field_values'])) $row['field_values'][$k] = $v;
+    }
   }
 
   $absence = student_period_absence_values(

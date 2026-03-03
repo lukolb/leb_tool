@@ -1556,6 +1556,23 @@ function report_instance_field_value_map(PDO $pdo, int $reportInstanceId): array
   return $map;
 }
 
+function class_report_field_value_map(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($templateId <= 0 || $classId <= 0 || $schoolYear === '') return [];
+
+  $classPeriod = class_report_period_label($classId, $periodLabel);
+  $ri = $pdo->prepare(
+    "SELECT id
+     FROM report_instances
+     WHERE template_id=? AND student_id IS NULL AND school_year=? AND period_label=?
+     ORDER BY id DESC
+     LIMIT 1"
+  );
+  $ri->execute([$templateId, $schoolYear, $classPeriod]);
+  $riId = (int)($ri->fetchColumn() ?: 0);
+  if ($riId <= 0) return [];
+  return report_instance_field_value_map($pdo, $riId);
+}
+
 /**
  * Upserts all bound (system) template fields into field_values for a report instance.
  * This is safe to call multiple times.
@@ -1603,6 +1620,16 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   $tf->execute([(int)$row['template_id']]);
 
   $fieldValues = report_instance_field_value_map($pdo, $reportInstanceId);
+  $classFieldValues = class_report_field_value_map(
+    $pdo,
+    (int)$row['template_id'],
+    $classId,
+    (string)($row['school_year'] ?? ''),
+    (string)($row['period_label'] ?? 'Standard')
+  );
+  foreach ($classFieldValues as $k => $v) {
+    if (!array_key_exists($k, $fieldValues)) $fieldValues[$k] = $v;
+  }
 
   $up = $pdo->prepare(
     "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
