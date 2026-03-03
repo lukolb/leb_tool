@@ -246,30 +246,72 @@ function preview_value_map(string $systemKey, array $row): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_binding_template(string $tpl, array $previewRow, array $previewFieldValues = []): string {
-  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow, $previewFieldValues): string {
+function resolve_binding_template(string $tpl, array $previewRow, array $previewFieldValues = [], array $fieldMetaByName = []): string {
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow, $previewFieldValues, $fieldMetaByName): string {
     $k = trim($key);
     if (str_starts_with($k, 'field:')) {
       $fname = trim(substr($k, 6));
       if ($fname === '') return '';
-      return (string)($previewFieldValues[$fname] ?? '');
+      return resolve_preview_field_reference_value($fname, $previewFieldValues, $fieldMetaByName);
     }
     return preview_value_map($k, $previewRow);
   });
 
   // Replace {{ key }} placeholders
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($previewRow, $previewFieldValues) {
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($previewRow, $previewFieldValues, $fieldMetaByName) {
     $key = trim((string)$m[1]);
     if (str_starts_with($key, 'field:')) {
       $fname = trim(substr($key, 6));
       if ($fname === '') return '';
-      return (string)($previewFieldValues[$fname] ?? '');
+      return resolve_preview_field_reference_value($fname, $previewFieldValues, $fieldMetaByName);
     }
     return preview_value_map($key, $previewRow);
   }, $tpl);
 
   if ($out === null) return '';
   return $out;
+}
+
+function preview_field_meta_map(array $fields): array {
+  $out = [];
+  foreach ($fields as $f) {
+    $name = trim((string)($f['field_name'] ?? ''));
+    if ($name === '') continue;
+    $out[$name] = [
+      'field_type' => (string)($f['field_type'] ?? ''),
+      'meta' => meta_read_map($f['meta_json'] ?? null),
+    ];
+  }
+  return $out;
+}
+
+function resolve_preview_field_reference_value(string $fieldName, array $previewFieldValues, array $fieldMetaByName = []): string {
+  $value = '';
+  if (array_key_exists($fieldName, $previewFieldValues)) {
+    $value = (string)$previewFieldValues[$fieldName];
+  } else {
+    $needle = mb_strtolower($fieldName, 'UTF-8');
+    foreach ($previewFieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) {
+        $value = (string)$v;
+        $fieldName = (string)$n;
+        break;
+      }
+    }
+  }
+
+  $def = $fieldMetaByName[$fieldName] ?? null;
+  if (!is_array($def)) return $value;
+
+  $fieldType = (string)($def['field_type'] ?? '');
+  $meta = is_array($def['meta'] ?? null) ? $def['meta'] : [];
+  $mode = (string)($meta['date_format_mode'] ?? 'preset');
+  $fmt = $mode === 'custom' ? (string)($meta['date_format_custom'] ?? '') : (string)($meta['date_format_preset'] ?? '');
+  $fmt = trim($fmt);
+  if ($fmt !== '' && ($fieldType === 'date' || isset($meta['date_format_mode']) || isset($meta['date_format_preset']) || isset($meta['date_format_custom']))) {
+    return format_date_pattern($value, $fmt);
+  }
+  return $value;
 }
 
 /**
@@ -357,6 +399,7 @@ $templates = list_templates_map($pdo);
 $template  = $templateId > 0 ? load_template_map($pdo, $templateId) : null;
 $fields    = $template ? list_template_fields_map($pdo, (int)$template['id']) : [];
 $currentTpl = current_binding_templates_map($fields);
+$previewFieldMetaByName = preview_field_meta_map($fields);
 
 $studentsForPreview = [];
 if ($template) {
@@ -470,7 +513,7 @@ render_admin_header($tx['title']);
             $fname = (string)$f['field_name'];
             $lab = trim((string)($f['label'] ?? ''));
             $tpl = (string)($currentTpl[$fid] ?? '');
-            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview, $previewResolvedByField) : '';
+            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview, $previewResolvedByField, $previewFieldMetaByName) : '';
             if ($preview && $tpl !== '') {
               $previewResolvedByField[$fname] = $previewVal;
             }

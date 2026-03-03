@@ -1385,6 +1385,35 @@ function resolve_binding_condition_operand_value(string $key, array $student, ar
   return $v === null ? '' : (string)$v;
 }
 
+function resolve_field_reference_value(string $fieldName, array $fieldValues, array $fieldMetaByName = []): string {
+  $value = '';
+  if (array_key_exists($fieldName, $fieldValues)) {
+    $value = (string)$fieldValues[$fieldName];
+  } else {
+    $needle = mb_strtolower($fieldName, 'UTF-8');
+    foreach ($fieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) {
+        $value = (string)$v;
+        $fieldName = (string)$n;
+        break;
+      }
+    }
+  }
+
+  $metaDef = $fieldMetaByName[$fieldName] ?? null;
+  if (!is_array($metaDef)) return $value;
+
+  $fieldType = (string)($metaDef['field_type'] ?? '');
+  $meta = is_array($metaDef['meta'] ?? null) ? $metaDef['meta'] : [];
+  $mode = (string)($meta['date_format_mode'] ?? 'preset');
+  $fmt = $mode === 'custom' ? (string)($meta['date_format_custom'] ?? '') : (string)($meta['date_format_preset'] ?? '');
+  $fmt = trim($fmt);
+  if ($fmt !== '' && ($fieldType === 'date' || isset($meta['date_format_mode']) || isset($meta['date_format_preset']) || isset($meta['date_format_custom']))) {
+    return format_date_pattern($value, $fmt);
+  }
+  return $value;
+}
+
 /**
  * Conditional block syntax:
  *   {{student.absence_days_total>0?}} ... {{?}}
@@ -1471,7 +1500,7 @@ function format_date_pattern(?string $iso, string $pattern): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null, array $fieldValues = []): string {
+function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null, array $fieldValues = [], array $fieldMetaByName = []): string {
   $tpl = (string)$tpl;
   if ($tpl === '') return '';
 
@@ -1487,8 +1516,13 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
     $dateFmt = trim($dateFmt);
   }
 
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt, $fieldValues) {
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt, $fieldValues, $fieldMetaByName) {
     $key = trim((string)($m[1] ?? ''));
+    if (str_starts_with($key, 'field:')) {
+      $fname = trim(substr($key, 6));
+      if ($fname === '') return '';
+      return resolve_field_reference_value($fname, $fieldValues, $fieldMetaByName);
+    }
     $val = resolve_binding_condition_operand_value($key, $student, $class, $fieldValues);
     if ($key === 'student.date_of_birth' && $dateFmt !== '') {
       return format_date_pattern((string)$val, $dateFmt);
@@ -1618,6 +1652,7 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
      WHERE template_id=?"
   );
   $tf->execute([(int)$row['template_id']]);
+  $tfRows = $tf->fetchAll(PDO::FETCH_ASSOC);
 
   $fieldValues = report_instance_field_value_map($pdo, $reportInstanceId);
   $classFieldValues = class_report_field_value_map(
@@ -1631,13 +1666,28 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     if (!array_key_exists($k, $fieldValues)) $fieldValues[$k] = $v;
   }
 
+  $fieldMetaByName = [];
+  foreach ($tfRows as $fr) {
+    $fname = trim((string)($fr['field_name'] ?? ''));
+    if ($fname === '') continue;
+    $meta = [];
+    if (!empty($fr['meta_json'])) {
+      $meta = json_decode((string)$fr['meta_json'], true);
+      if (!is_array($meta)) $meta = [];
+    }
+    $fieldMetaByName[$fname] = [
+      'field_type' => (string)($fr['field_type'] ?? ''),
+      'meta' => $meta,
+    ];
+  }
+
   $up = $pdo->prepare(
     "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
      VALUES (?, ?, ?, 'system', NULL, NOW())
      ON DUPLICATE KEY UPDATE value_text=VALUES(value_text), source='system', updated_by_user_id=NULL, updated_at=NOW()"
   );
 
-  foreach ($tf->fetchAll(PDO::FETCH_ASSOC) as $f) {
+  foreach ($tfRows as $f) {
     $meta = [];
     if (!empty($f['meta_json'])) {
       $meta = json_decode((string)$f['meta_json'], true);
@@ -1648,7 +1698,7 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
 
     $tpl = isset($meta['system_binding_tpl']) ? trim((string)$meta['system_binding_tpl']) : '';
     if ($tpl !== '') {
-      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType, $fieldValues);
+      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType, $fieldValues, $fieldMetaByName);
       $up->execute([$reportInstanceId, (int)$f['id'], $val]);
       $fname = trim((string)($f['field_name'] ?? ''));
       if ($fname !== '') $fieldValues[$fname] = (string)$val;
