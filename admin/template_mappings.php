@@ -54,7 +54,6 @@ $tx = [
   'system_student_absence_unexcused' => t('admin.template_mappings.system.student_absence_unexcused', 'Schüler: davon unentschuldigt'),
   'system_ag_sentence' => t('admin.template_mappings.system.ag_sentence', 'AG-Satz (automatisch)'),
   'system_student_prefix' => t('admin.template_mappings.system.student_prefix', 'Schüler'),
-  'insert_newline_btn' => t('admin.template_mappings.insert_newline_btn', 'Zeilenwechsel einfügen'),
   'ok_saved' => t('admin.template_mappings.ok_saved', 'Mapping gespeichert.'),
   'error_invalid_action' => t('admin.template_mappings.error_invalid_action', 'Ungültige Aktion.'),
   'error_template_missing' => t('admin.template_mappings.error_template_missing', 'template_id fehlt.'),
@@ -228,6 +227,14 @@ function template_to_single_key(string $tpl): string {
   return '';
 }
 
+function field_supports_multiline(array $field): bool {
+  $fieldType = strtolower((string)($field['field_type'] ?? ''));
+  if ($fieldType === 'multiline') return true;
+
+  $meta = meta_read_map($field['meta_json'] ?? null);
+  return (int)($meta['is_multiline'] ?? 0) === 1;
+}
+
 // POST: save binding templates
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -251,6 +258,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $fid = (int)$f['id'];
       $rawTpl = isset($tpls[(string)$fid]) ? (string)$tpls[(string)$fid] : '';
       $rawTpl = trim($rawTpl);
+
+      if (!field_supports_multiline($f)) {
+        $rawTpl = preg_replace('/\R+/', ' ', $rawTpl) ?? $rawTpl;
+      }
 
       $meta = meta_read_map($f['meta_json'] ?? null);
 
@@ -368,7 +379,6 @@ render_admin_header($tx['title']);
 
       <div class="actions" style="justify-content:flex-start;">
         <button type="button" class="btn secondary" id="phInsertBtn"><?=h($tx['insert_btn'])?></button>
-        <button type="button" class="btn secondary" id="newlineInsertBtn"><?=h($tx['insert_newline_btn'])?></button>
       </div>
 
       <div style="flex:1; min-width:260px;">
@@ -403,6 +413,7 @@ render_admin_header($tx['title']);
             $lab = trim((string)($f['label'] ?? ''));
             $tpl = (string)($currentTpl[$fid] ?? '');
             $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview) : '';
+            $isMultiline = field_supports_multiline($f);
           ?>
             <tr>
               <td>
@@ -416,14 +427,28 @@ render_admin_header($tx['title']);
                 <div class="muted"><code>#<?=h((string)$fid)?></code></div>
               </td>
               <td>
-                <textarea
-                  class="input tplInput"
-                  data-fid="<?=h((string)$fid)?>"
-                  name="tpl[<?=h((string)$fid)?>]"
-                  placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
-                  autocomplete="off"
-                  rows="2"
-                ><?=h($tpl)?></textarea>
+                <?php if ($isMultiline): ?>
+                  <textarea
+                    class="input tplInput"
+                    data-fid="<?=h((string)$fid)?>"
+                    data-multiline="1"
+                    name="tpl[<?=h((string)$fid)?>]"
+                    placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
+                    autocomplete="off"
+                    rows="2"
+                  ><?=h($tpl)?></textarea>
+                <?php else: ?>
+                  <input
+                    type="text"
+                    class="input tplInput"
+                    data-fid="<?=h((string)$fid)?>"
+                    data-multiline="0"
+                    name="tpl[<?=h((string)$fid)?>]"
+                    value="<?=h($tpl)?>"
+                    placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
+                    autocomplete="off"
+                  >
+                <?php endif; ?>
                 <div class="muted" style="margin-top:6px;">
                   <?= $tx['placeholder_hint'] ?>
                 </div>
@@ -517,17 +542,11 @@ render_admin_header($tx['title']);
 
       const phSelect = document.getElementById('phSelect');
       const phInsertBtn = document.getElementById('phInsertBtn');
-      const newlineInsertBtn = document.getElementById('newlineInsertBtn');
       if (phInsertBtn) {
         phInsertBtn.addEventListener('click', function(){
           const ph = phSelect ? phSelect.value : '';
           if (!ph) return;
           insertAtCursor(activeInput, ph);
-        });
-      }
-      if (newlineInsertBtn) {
-        newlineInsertBtn.addEventListener('click', function(){
-          insertAtCursor(activeInput, "\n");
         });
       }
 
@@ -559,7 +578,9 @@ render_admin_header($tx['title']);
           const t = (bulkTpl ? bulkTpl.value : '') || '';
           ids.forEach(function(fid){
             const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (inp) inp.value = t;
+            if (!inp) return;
+            const multiline = inp.getAttribute('data-multiline') === '1';
+            inp.value = multiline ? t : t.replace(/\r?\n+/g, ' ');
           });
         });
       }
