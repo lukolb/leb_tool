@@ -1299,6 +1299,7 @@ function copy_student_custom_values(PDO $pdo, int $sourceStudentId, int $targetS
  * Binding keys are stored in template_fields.meta_json.system_binding.
  */
 function resolve_system_binding_value(string $binding, array $student, array $class): ?string {
+  $binding = normalize_system_binding_key($binding);
   if (strpos($binding, 'student.custom.') === 0) {
     $key = substr($binding, strlen('student.custom.'));
     if ($key === '') return null;
@@ -1338,6 +1339,57 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
     default:
       return null;
   }
+}
+
+function normalize_system_binding_key(string $binding): string {
+  $k = trim($binding);
+  return match ($k) {
+    'name' => 'student.first_name',
+    'fehltage' => 'student.absence_days_total',
+    'unentschuldigte', 'unentschuldigt' => 'student.absence_days_unexcused',
+    default => $k,
+  };
+}
+
+function binding_condition_matches(string $leftRaw, string $op, string $rightRaw): bool {
+  $left = str_replace(',', '.', trim($leftRaw));
+  $right = str_replace(',', '.', trim($rightRaw));
+  if (!is_numeric($left) || !is_numeric($right)) return false;
+  $l = (float)$left;
+  $r = (float)$right;
+  return match ($op) {
+    '>' => $l > $r,
+    '>=' => $l >= $r,
+    '<' => $l < $r,
+    '<=' => $l <= $r,
+    '==' => $l == $r,
+    '!=' => $l != $r,
+    default => false,
+  };
+}
+
+/**
+ * Conditional block syntax:
+ *   {{student.absence_days_total>0?}} ... {{?}}
+ */
+function apply_binding_condition_blocks(string $tpl, callable $resolver): string {
+  $pattern = '/\{\{\s*([a-zA-Z0-9_.-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $maxPasses = 8;
+  $out = $tpl;
+  for ($i = 0; $i < $maxPasses; $i++) {
+    if (!preg_match($pattern, $out)) break;
+    $next = preg_replace_callback($pattern, static function(array $m) use ($resolver): string {
+      $key = normalize_system_binding_key((string)$m[1]);
+      $op = (string)$m[2];
+      $rhs = (string)$m[3];
+      $body = (string)$m[4];
+      $val = (string)$resolver($key);
+      return binding_condition_matches($val, $op, $rhs) ? $body : '';
+    }, $out);
+    if ($next === null || $next === $out) break;
+    $out = $next;
+  }
+  return $out;
 }
 
 /**
@@ -1405,6 +1457,11 @@ function format_date_pattern(?string $iso, string $pattern): string {
 function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null): string {
   $tpl = (string)$tpl;
   if ($tpl === '') return '';
+
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($student, $class): string {
+    $v = resolve_system_binding_value($key, $student, $class);
+    return $v === null ? '' : (string)$v;
+  });
 
   $dateFmt = '';
   if (($fieldType ?? '') === 'date' || isset($fieldMeta['date_format_mode']) || isset($fieldMeta['date_format_preset']) || isset($fieldMeta['date_format_custom'])) {

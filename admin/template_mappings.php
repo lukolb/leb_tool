@@ -23,7 +23,7 @@ $tx = [
   'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
   'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
   'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
-  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. So sind auch Kombinationen möglich, und du kannst denselben Wert in mehrere Felder schreiben, indem du mehrere Felder mit demselben Platzhalter belegst. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Bedingungen sind als Block möglich, z.B. <code>{{student.absence_days_total>0?}}…{{?}}</code>. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
   'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
@@ -186,6 +186,7 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
 }
 
 function preview_value_map(string $systemKey, array $row): string {
+  $systemKey = normalize_system_binding_key($systemKey);
   if (strpos($systemKey, 'student.custom.') === 0) {
     $k = substr($systemKey, strlen('student.custom.'));
     if ($k === '') return '';
@@ -219,6 +220,10 @@ function preview_value_map(string $systemKey, array $row): string {
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
 function resolve_binding_template(string $tpl, array $previewRow): string {
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow): string {
+    return preview_value_map($key, $previewRow);
+  });
+
   // Replace {{ key }} placeholders
   $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($previewRow) {
     $key = (string)$m[1];
