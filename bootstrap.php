@@ -1368,18 +1368,30 @@ function binding_condition_matches(string $leftRaw, string $op, string $rightRaw
   };
 }
 
+function resolve_binding_condition_operand_value(string $key, array $student, array $class, array $fieldValues = []): string {
+  $k = trim($key);
+  if (str_starts_with($k, 'field:')) {
+    $fname = trim(substr($k, 6));
+    if ($fname === '') return '';
+    return (string)($fieldValues[$fname] ?? '');
+  }
+  $normalized = normalize_system_binding_key($k);
+  $v = resolve_system_binding_value($normalized, $student, $class);
+  return $v === null ? '' : (string)$v;
+}
+
 /**
  * Conditional block syntax:
  *   {{student.absence_days_total>0?}} ... {{?}}
  */
 function apply_binding_condition_blocks(string $tpl, callable $resolver): string {
-  $pattern = '/\{\{\s*([a-zA-Z0-9_.-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $pattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
   $maxPasses = 8;
   $out = $tpl;
   for ($i = 0; $i < $maxPasses; $i++) {
     if (!preg_match($pattern, $out)) break;
     $next = preg_replace_callback($pattern, static function(array $m) use ($resolver): string {
-      $key = normalize_system_binding_key((string)$m[1]);
+      $key = (string)$m[1];
       $op = (string)$m[2];
       $rhs = (string)$m[3];
       $body = (string)$m[4];
@@ -1454,13 +1466,12 @@ function format_date_pattern(?string $iso, string $pattern): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null): string {
+function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null, array $fieldValues = []): string {
   $tpl = (string)$tpl;
   if ($tpl === '') return '';
 
-  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($student, $class): string {
-    $v = resolve_system_binding_value($key, $student, $class);
-    return $v === null ? '' : (string)$v;
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($student, $class, $fieldValues): string {
+    return resolve_binding_condition_operand_value($key, $student, $class, $fieldValues);
   });
 
   $dateFmt = '';
@@ -1509,6 +1520,25 @@ function student_period_absence_values(PDO $pdo, int $studentId, int $classId, s
   ];
 }
 
+function report_instance_field_value_map(PDO $pdo, int $reportInstanceId): array {
+  if ($reportInstanceId <= 0) return [];
+  $st = $pdo->prepare(
+    "SELECT tf.field_name, fv.value_text
+     FROM field_values fv
+     INNER JOIN template_fields tf ON tf.id=fv.template_field_id
+     WHERE fv.report_instance_id=?
+     ORDER BY fv.updated_at DESC, fv.id DESC"
+  );
+  $st->execute([$reportInstanceId]);
+  $map = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $fname = trim((string)($r['field_name'] ?? ''));
+    if ($fname === '' || array_key_exists($fname, $map)) continue;
+    $map[$fname] = (string)($r['value_text'] ?? '');
+  }
+  return $map;
+}
+
 /**
  * Upserts all bound (system) template fields into field_values for a report instance.
  * This is safe to call multiple times.
@@ -1549,11 +1579,13 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   ];
 
   $tf = $pdo->prepare(
-    "SELECT id, field_type, meta_json
+    "SELECT id, field_name, field_type, meta_json
      FROM template_fields
      WHERE template_id=?"
   );
   $tf->execute([(int)$row['template_id']]);
+
+  $fieldValues = report_instance_field_value_map($pdo, $reportInstanceId);
 
   $up = $pdo->prepare(
     "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
@@ -1572,8 +1604,10 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
 
     $tpl = isset($meta['system_binding_tpl']) ? trim((string)$meta['system_binding_tpl']) : '';
     if ($tpl !== '') {
-      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType);
+      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType, $fieldValues);
       $up->execute([$reportInstanceId, (int)$f['id'], $val]);
+      $fname = trim((string)($f['field_name'] ?? ''));
+      if ($fname !== '') $fieldValues[$fname] = (string)$val;
       continue;
     }
 
@@ -1592,6 +1626,8 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     }
 
     $up->execute([$reportInstanceId, (int)$f['id'], (string)$val]);
+    $fname = trim((string)($f['field_name'] ?? ''));
+    if ($fname !== '') $fieldValues[$fname] = (string)$val;
   }
 }
 

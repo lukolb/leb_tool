@@ -23,7 +23,7 @@ $tx = [
   'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
   'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
   'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
-  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Bedingungen sind als Block möglich, z.B. <code>{{student.absence_days_total>0?}}…{{?}}</code>. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Bedingungen sind als Block möglich, z.B. <code>{{student.absence_days_total>0?}}…{{?}}</code> oder <code>{{field:versetzt>0?}}…{{?}}</code>. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
   'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
@@ -219,9 +219,15 @@ function preview_value_map(string $systemKey, array $row): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_binding_template(string $tpl, array $previewRow): string {
-  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow): string {
-    return preview_value_map($key, $previewRow);
+function resolve_binding_template(string $tpl, array $previewRow, array $previewFieldValues = []): string {
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow, $previewFieldValues): string {
+    $k = trim($key);
+    if (str_starts_with($k, 'field:')) {
+      $fname = trim(substr($k, 6));
+      if ($fname === '') return '';
+      return (string)($previewFieldValues[$fname] ?? '');
+    }
+    return preview_value_map($k, $previewRow);
   });
 
   // Replace {{ key }} placeholders
@@ -376,6 +382,7 @@ render_admin_header($tx['title']);
   <?php endif; ?>
 
 <?php if ($template): ?>
+  <?php $previewResolvedByField = []; ?>
   <div class="card">
     <h2 style="margin-top:0;"><?=h(strtr($tx['mapping_for'], [
       '{template}' => (string)$template['name'],
@@ -431,7 +438,10 @@ render_admin_header($tx['title']);
             $fname = (string)$f['field_name'];
             $lab = trim((string)($f['label'] ?? ''));
             $tpl = (string)($currentTpl[$fid] ?? '');
-            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview) : '';
+            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview, $previewResolvedByField) : '';
+            if ($preview && $tpl !== '') {
+              $previewResolvedByField[$fname] = $previewVal;
+            }
             $isMultiline = field_supports_multiline($f);
           ?>
             <tr>
