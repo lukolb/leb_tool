@@ -1373,7 +1373,12 @@ function resolve_binding_condition_operand_value(string $key, array $student, ar
   if (str_starts_with($k, 'field:')) {
     $fname = trim(substr($k, 6));
     if ($fname === '') return '';
-    return (string)($fieldValues[$fname] ?? '');
+    if (array_key_exists($fname, $fieldValues)) return (string)$fieldValues[$fname];
+    $needle = mb_strtolower($fname, 'UTF-8');
+    foreach ($fieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) return (string)$v;
+    }
+    return '';
   }
   $normalized = normalize_system_binding_key($k);
   $v = resolve_system_binding_value($normalized, $student, $class);
@@ -1522,18 +1527,31 @@ function student_period_absence_values(PDO $pdo, int $studentId, int $classId, s
 function report_instance_field_value_map(PDO $pdo, int $reportInstanceId): array {
   if ($reportInstanceId <= 0) return [];
   $st = $pdo->prepare(
-    "SELECT tf.field_name, fv.value_text
+    "SELECT tf.field_name, fv.value_text, fv.value_json, fv.source
      FROM field_values fv
      INNER JOIN template_fields tf ON tf.id=fv.template_field_id
      WHERE fv.report_instance_id=?
-     ORDER BY fv.updated_at DESC, fv.id DESC"
+     ORDER BY
+       CASE fv.source
+         WHEN 'teacher' THEN 30
+         WHEN 'child' THEN 20
+         WHEN 'system' THEN 10
+         ELSE 0
+       END DESC,
+       fv.updated_at DESC,
+       fv.id DESC"
   );
   $st->execute([$reportInstanceId]);
   $map = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $fname = trim((string)($r['field_name'] ?? ''));
     if ($fname === '' || array_key_exists($fname, $map)) continue;
-    $map[$fname] = (string)($r['value_text'] ?? '');
+    $v = (string)($r['value_text'] ?? '');
+    if ($v === '' && isset($r['value_json']) && $r['value_json'] !== null && $r['value_json'] !== '') {
+      $dec = json_decode((string)$r['value_json'], true);
+      if (is_scalar($dec)) $v = (string)$dec;
+    }
+    $map[$fname] = $v;
   }
   return $map;
 }
