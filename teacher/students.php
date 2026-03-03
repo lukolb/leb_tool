@@ -244,8 +244,6 @@ $addFormValues = [
   'first_name' => '',
   'last_name' => '',
   'date_of_birth' => '',
-  'absence_days_total' => '0',
-  'absence_days_unexcused' => '0',
   'email_student' => '',
   'email_parent1' => '',
   'email_parent2' => '',
@@ -305,6 +303,26 @@ function read_non_negative_int_input(mixed $value, string $label): int {
     throw new RuntimeException(strtr(t('teacher.students.error_invalid_number', 'Ungültiger Zahlenwert in {field}.'), ['{field}' => $label]));
   }
   return (int)$raw;
+}
+
+function load_class_period_absence_map(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($classId <= 0 || $schoolYear === '' || !db_has_table($pdo, 'student_period_absences')) return [];
+  $st = $pdo->prepare(
+    "SELECT student_id, absence_days_total, absence_days_unexcused
+     FROM student_period_absences
+     WHERE class_id=? AND school_year=? AND period_label=?"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $sid = (int)($r['student_id'] ?? 0);
+    if ($sid <= 0) continue;
+    $out[$sid] = [
+      'absence_days_total' => (int)($r['absence_days_total'] ?? 0),
+      'absence_days_unexcused' => (int)($r['absence_days_unexcused'] ?? 0),
+    ];
+  }
+  return $out;
 }
 
 function parse_blackbaud_date(?string $s): ?string {
@@ -882,13 +900,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = t('teacher.students.ok_child_groups_updated', 'Kategorien wurden aktualisiert.');
     }
 
+    elseif ($action === 'save_absences') {
+      if (!db_has_table($pdo, 'student_period_absences')) {
+        throw new RuntimeException(t('teacher.students.error_absence_table_missing', 'Fehltage-Tabelle ist nicht verfügbar.'));
+      }
+      $schoolYear = (string)($class['school_year'] ?? '');
+      $period = (string)$periodLabel;
+      if ($schoolYear === '') throw new RuntimeException(t('teacher.students.error_school_year_missing', 'Schuljahr fehlt.'));
+
+      $input = $_POST['absences'] ?? [];
+      if (!is_array($input)) $input = [];
+
+      $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+      $st->execute([$classId]);
+      $validIds = array_fill_keys(array_map(static fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC)), true);
+
+      $up = $pdo->prepare(
+        "INSERT INTO student_period_absences (student_id, class_id, school_year, period_label, absence_days_total, absence_days_unexcused)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           class_id=VALUES(class_id),
+           absence_days_total=VALUES(absence_days_total),
+           absence_days_unexcused=VALUES(absence_days_unexcused),
+           updated_at=CURRENT_TIMESTAMP"
+      );
+
+      $pdo->beginTransaction();
+      foreach ($input as $sidRaw => $vals) {
+        $sid = (int)$sidRaw;
+        if ($sid <= 0 || !isset($validIds[$sid])) continue;
+        $vals = is_array($vals) ? $vals : [];
+        $total = read_non_negative_int_input($vals['total'] ?? '0', t('teacher.students.label_absence_days_total', 'Fehltage gesamt'));
+        $unexcused = read_non_negative_int_input($vals['unexcused'] ?? '0', t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'));
+        if ($unexcused > $total) {
+          throw new RuntimeException(t('teacher.students.error_absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Fehltage gesamt sein.'));
+        }
+        $up->execute([$sid, $classId, $schoolYear, $period, $total, $unexcused]);
+      }
+      $pdo->commit();
+      $ok = t('teacher.students.ok_absences_saved', 'Fehltage wurden gespeichert.');
+    }
+
     elseif ($action === 'add') {
       $addFormValues = [
         'first_name' => trim((string)($_POST['first_name'] ?? '')),
         'last_name' => trim((string)($_POST['last_name'] ?? '')),
         'date_of_birth' => (string)($_POST['date_of_birth'] ?? ''),
-        'absence_days_total' => (string)($_POST['absence_days_total'] ?? '0'),
-        'absence_days_unexcused' => (string)($_POST['absence_days_unexcused'] ?? '0'),
         'email_student' => (string)($_POST['email_student'] ?? ''),
         'email_parent1' => (string)($_POST['email_parent1'] ?? ''),
         'email_parent2' => (string)($_POST['email_parent2'] ?? ''),
@@ -900,12 +957,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $emailStudent = read_email_input($addFormValues['email_student'] ?? null, t('teacher.students.label_email_student', 'E-Mail Kind'));
       $emailParent1 = read_email_input($addFormValues['email_parent1'] ?? null, t('teacher.students.label_email_parent1', 'E-Mail Parent 1'));
       $emailParent2 = read_email_input($addFormValues['email_parent2'] ?? null, t('teacher.students.label_email_parent2', 'E-Mail Parent 2'));
-      $absenceDaysTotal = read_non_negative_int_input($addFormValues['absence_days_total'] ?? '0', t('teacher.students.label_absence_days_total', 'Fehltage gesamt'));
-      $absenceDaysUnexcused = read_non_negative_int_input($addFormValues['absence_days_unexcused'] ?? '0', t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'));
       $customInput = read_custom_field_input($customFields, $addFormValues['custom'] ?? []);
-      if ($absenceDaysUnexcused > $absenceDaysTotal) {
-        throw new RuntimeException(t('teacher.students.error_absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Fehltage gesamt sein.'));
-      }
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
       if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
@@ -914,10 +966,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $ins = $pdo->prepare(
-        "INSERT INTO students (class_id, first_name, last_name, date_of_birth, absence_days_total, absence_days_unexcused, email_student, email_parent1, email_parent2, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
       );
-      $ins->execute([$classId, $first, $last, $dob, $absenceDaysTotal, $absenceDaysUnexcused, $emailStudent, $emailParent1, $emailParent2]);
+      $ins->execute([$classId, $first, $last, $dob, $emailStudent, $emailParent1, $emailParent2]);
       $newId = (int)$pdo->lastInsertId();
       // master_student_id defaults to NULL; set to itself
       $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$newId, $newId]);
@@ -930,8 +982,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'first_name' => '',
           'last_name' => '',
           'date_of_birth' => '',
-          'absence_days_total' => '0',
-          'absence_days_unexcused' => '0',
           'email_student' => '',
           'email_parent1' => '',
           'email_parent2' => '',
@@ -1205,7 +1255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $st = $pdo->prepare(
-        "SELECT id, master_student_id, first_name, last_name, date_of_birth, absence_days_total, absence_days_unexcused, email_student, email_parent1, email_parent2
+        "SELECT id, master_student_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2
          FROM students
          WHERE class_id=? AND is_active=1
          ORDER BY last_name ASC, first_name ASC"
@@ -1218,8 +1268,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->beginTransaction();
       $ins = $pdo->prepare(
-        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, absence_days_total, absence_days_unexcused, email_student, email_parent1, email_parent2, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
       );
 
       $copied = 0;
@@ -1244,8 +1294,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $s['first_name'],
           $s['last_name'],
           $s['date_of_birth'],
-          (int)($s['absence_days_total'] ?? 0),
-          (int)($s['absence_days_unexcused'] ?? 0),
           $s['email_student'] ?? null,
           $s['email_parent1'] ?? null,
           $s['email_parent2'] ?? null,
@@ -1274,12 +1322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $emailStudent = read_email_input($_POST['email_student'] ?? null, t('teacher.students.label_email_student', 'E-Mail Kind'));
       $emailParent1 = read_email_input($_POST['email_parent1'] ?? null, t('teacher.students.label_email_parent1', 'E-Mail Parent 1'));
       $emailParent2 = read_email_input($_POST['email_parent2'] ?? null, t('teacher.students.label_email_parent2', 'E-Mail Parent 2'));
-      $absenceDaysTotal = read_non_negative_int_input($_POST['absence_days_total'] ?? '0', t('teacher.students.label_absence_days_total', 'Fehltage gesamt'));
-      $absenceDaysUnexcused = read_non_negative_int_input($_POST['absence_days_unexcused'] ?? '0', t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'));
       $customInput = read_custom_field_input($customFields, $_POST['custom'] ?? []);
-      if ($absenceDaysUnexcused > $absenceDaysTotal) {
-        throw new RuntimeException(t('teacher.students.error_absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Fehltage gesamt sein.'));
-      }
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
       if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
@@ -1289,10 +1332,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $upd = $pdo->prepare(
         "UPDATE students
-         SET first_name=?, last_name=?, date_of_birth=?, absence_days_total=?, absence_days_unexcused=?, email_student=?, email_parent1=?, email_parent2=?
+         SET first_name=?, last_name=?, date_of_birth=?, email_student=?, email_parent1=?, email_parent2=?
          WHERE id=?"
       );
-      $upd->execute([$first, $last, $dob, $absenceDaysTotal, $absenceDaysUnexcused, $emailStudent, $emailParent1, $emailParent2, $studentId]);
+      $upd->execute([$first, $last, $dob, $emailStudent, $emailParent1, $emailParent2, $studentId]);
       save_student_custom_values($pdo, $studentId, $customInput, false);
 
       audit('teacher_student_update', $userId, ['class_id'=>$classId,'student_id'=>$studentId]);
@@ -1307,13 +1350,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Load students in this class
 $st = $pdo->prepare(
-  "SELECT id, first_name, last_name, date_of_birth, absence_days_total, absence_days_unexcused, is_active, email_student, email_parent1, email_parent2
+  "SELECT id, first_name, last_name, date_of_birth, is_active, email_student, email_parent1, email_parent2
    FROM students
    WHERE class_id=?
    ORDER BY last_name ASC, first_name ASC"
 );
 $st->execute([$classId]);
 $students = $st->fetchAll();
+$absenceMap = load_class_period_absence_map($pdo, $classId, (string)($class['school_year'] ?? ''), (string)$periodLabel);
 $studentCustomValues = [];
 if ($customFields && $students) {
   foreach ($students as $idx => $s) {
@@ -1332,8 +1376,6 @@ foreach ($students as $s) {
     'first_name' => (string)($s['first_name'] ?? ''),
     'last_name' => (string)($s['last_name'] ?? ''),
     'date_of_birth' => (string)($s['date_of_birth'] ?? ''),
-    'absence_days_total' => (int)($s['absence_days_total'] ?? 0),
-    'absence_days_unexcused' => (int)($s['absence_days_unexcused'] ?? 0),
     'email_student' => (string)($s['email_student'] ?? ''),
     'email_parent1' => (string)($s['email_parent1'] ?? ''),
     'email_parent2' => (string)($s['email_parent2'] ?? ''),
@@ -1608,6 +1650,44 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 </div>
 
 <div class="card">
+  <h2 style="margin-top:0;"><?=h(t('teacher.students.absence_overview_title', 'Fehltage (Halbjahr)'))?></h2>
+  <p class="muted" style="margin:0 0 10px 0;">
+    <?=h(strtr(t('teacher.students.absence_overview_hint', 'Klasse {class} · Schuljahr {year} · Halbjahr {period}'), [
+      '{class}' => class_display($class),
+      '{year}' => (string)($class['school_year'] ?? ''),
+      '{period}' => (string)$periodLabel,
+    ]))?>
+  </p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+    <input type="hidden" name="action" value="save_absences">
+    <table class="table">
+      <thead>
+        <tr>
+          <th><?=h(t('teacher.students.col_name', 'Name'))?></th>
+          <th style="width:180px;"><?=h(t('teacher.students.label_absence_days_total', 'Fehltage gesamt'))?></th>
+          <th style="width:220px;"><?=h(t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'))?></th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($students as $s): ?>
+          <?php $sid = (int)($s['id'] ?? 0); if ($sid <= 0) continue; $a = $absenceMap[$sid] ?? ['absence_days_total'=>0,'absence_days_unexcused'=>0]; ?>
+          <tr>
+            <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
+            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][total]" value="<?=h((string)(int)($a['absence_days_total'] ?? 0))?>"></td>
+            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][unexcused]" value="<?=h((string)(int)($a['absence_days_unexcused'] ?? 0))?>"></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <div class="actions" style="justify-content:flex-start; margin-top:10px;">
+      <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save_absences', 'Fehltage speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
     <?php if ($ai_enabled): ?>
   <div class="row-actions" style="float: right;">
       <button class="btn secondary ai-btn" type="button" id="btnAiClassFeedback">
@@ -1627,8 +1707,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <tr>
           <th><?=h(t('teacher.students.col_name', 'Name'))?></th>
           <th><?=h(t('teacher.students.col_dob', 'Geburtsdatum'))?></th>
-          <th><?=h(t('teacher.students.col_absence_days_total', 'Fehltage'))?></th>
-          <th><?=h(t('teacher.students.col_absence_days_unexcused', 'Unentsch.'))?></th>
           <th><?=h(t('teacher.students.col_status', 'Status'))?></th>
           <th><?=h(t('teacher.students.col_child_status', 'Kinder-Status'))?></th>
           <th style="width:260px;"><?=h(t('teacher.students.col_actions', 'Aktion'))?></th>
@@ -1644,8 +1722,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
             <td><?=h((string)((new DateTime($s['date_of_birth']))->format('d.m.Y') ?? ''))?></td>
-            <td><?=h((string)(int)($s['absence_days_total'] ?? 0))?></td>
-            <td><?=h((string)(int)($s['absence_days_unexcused'] ?? 0))?></td>
             <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge warn">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
@@ -1725,14 +1801,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <div>
           <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
           <input name="date_of_birth" id="edit_date_of_birth" type="date">
-        </div>
-        <div>
-          <label><?=h(t('teacher.students.label_absence_days_total', 'Fehltage gesamt'))?></label>
-          <input name="absence_days_total" id="edit_absence_days_total" type="number" min="0" step="1" inputmode="numeric">
-        </div>
-        <div>
-          <label><?=h(t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'))?></label>
-          <input name="absence_days_unexcused" id="edit_absence_days_unexcused" type="number" min="0" step="1" inputmode="numeric">
         </div>
         <div>
           <label><?=h(t('teacher.students.label_email_student', 'E-Mail Kind'))?></label>
@@ -1848,8 +1916,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       document.getElementById('edit_first_name').value = s.first_name || '';
       document.getElementById('edit_last_name').value = s.last_name || '';
       document.getElementById('edit_date_of_birth').value = s.date_of_birth || '';
-      document.getElementById('edit_absence_days_total').value = Number.isFinite(Number(s.absence_days_total)) ? String(s.absence_days_total) : '0';
-      document.getElementById('edit_absence_days_unexcused').value = Number.isFinite(Number(s.absence_days_unexcused)) ? String(s.absence_days_unexcused) : '0';
       document.getElementById('edit_email_student').value = s.email_student || '';
       document.getElementById('edit_email_parent1').value = s.email_parent1 || '';
       document.getElementById('edit_email_parent2').value = s.email_parent2 || '';
@@ -2286,14 +2352,6 @@ aiSupportLoading = true;
     <div>
       <label><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></label>
       <input name="date_of_birth" type="date" placeholder="<?=h(t('teacher.students.placeholder_dob', 'YYYY-MM-DD oder DD.MM.YYYY'))?>" value="<?=h((string)($addFormValues['date_of_birth'] ?? ''))?>">
-    </div>
-    <div>
-      <label><?=h(t('teacher.students.label_absence_days_total', 'Fehltage gesamt'))?></label>
-      <input name="absence_days_total" type="number" min="0" step="1" inputmode="numeric" value="<?=h((string)($addFormValues['absence_days_total'] ?? '0'))?>">
-    </div>
-    <div>
-      <label><?=h(t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'))?></label>
-      <input name="absence_days_unexcused" type="number" min="0" step="1" inputmode="numeric" value="<?=h((string)($addFormValues['absence_days_unexcused'] ?? '0'))?>">
     </div>
     <div>
       <label><?=h(t('teacher.students.label_email_student', 'E-Mail Kind'))?></label>

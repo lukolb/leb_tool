@@ -111,7 +111,12 @@ function list_template_fields_map(PDO $pdo, int $templateId): array {
      ORDER BY sort_order ASC, field_name ASC"
   );
   $st->execute([$templateId]);
-  return $st->fetchAll(PDO::FETCH_ASSOC);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  return array_values(array_filter($rows, static function(array $f): bool {
+    $type = strtolower((string)($f['field_type'] ?? 'text'));
+    if (in_array($type, ['checkbox', 'radio', 'select', 'grade', 'info'], true)) return false;
+    return true;
+  }));
 }
 
 /**
@@ -140,8 +145,7 @@ function current_binding_templates_map(array $fields): array {
 function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.date_of_birth,
-            c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name,
-            s.absence_days_total, s.absence_days_unexcused
+            c.id AS class_id, c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -150,6 +154,16 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if (!$row) return null;
   $row['custom_values'] = student_custom_value_map($pdo, $studentId);
+
+  $absence = student_period_absence_values(
+    $pdo,
+    $studentId,
+    (int)($row['class_id'] ?? 0),
+    (string)($row['class_school_year'] ?? ''),
+    (string)($row['class_period_label'] ?? 'Standard')
+  );
+  $row['absence_days_total'] = (int)($absence['absence_days_total'] ?? 0);
+  $row['absence_days_unexcused'] = (int)($absence['absence_days_unexcused'] ?? 0);
 
   $schoolYear = (string)($row['class_school_year'] ?? '');
   $periodLabel = (string)($row['class_period_label'] ?? 'Standard');
