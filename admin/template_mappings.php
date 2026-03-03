@@ -231,8 +231,13 @@ function resolve_binding_template(string $tpl, array $previewRow, array $preview
   });
 
   // Replace {{ key }} placeholders
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($previewRow) {
-    $key = (string)$m[1];
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($previewRow, $previewFieldValues) {
+    $key = trim((string)$m[1]);
+    if (str_starts_with($key, 'field:')) {
+      $fname = trim(substr($key, 6));
+      if ($fname === '') return '';
+      return (string)($previewFieldValues[$fname] ?? '');
+    }
     return preview_value_map($key, $previewRow);
   }, $tpl);
 

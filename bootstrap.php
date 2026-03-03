@@ -1482,10 +1482,9 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
     $dateFmt = trim($dateFmt);
   }
 
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt) {
-    $key = (string)($m[1] ?? '');
-    $val = resolve_system_binding_value($key, $student, $class);
-    if ($val === null) return '';
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt, $fieldValues) {
+    $key = trim((string)($m[1] ?? ''));
+    $val = resolve_binding_condition_operand_value($key, $student, $class, $fieldValues);
     if ($key === 'student.date_of_birth' && $dateFmt !== '') {
       return format_date_pattern((string)$val, $dateFmt);
     }
