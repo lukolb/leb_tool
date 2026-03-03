@@ -1466,6 +1466,38 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   </script>
 </div>
 
+<div class="card">
+  <h2><?=h(t('admin.settings.logo.title', 'Logo'))?></h2>
+
+  <?php if ($logo): ?>
+    <p class="muted"><?=h(t('admin.settings.logo.current', 'Aktuelles Logo:'))?></p>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <img src="<?=h(url($logo))?>" alt="<?=h(t('admin.settings.logo.alt', 'Logo'))?>" style="height:54px; width:auto; background:#fff; padding:8px; border:1px solid #e5e7eb; border-radius:12px;">
+      <form method="post" onsubmit="return confirm(<?=json_encode(t('admin.settings.logo.confirm_remove', 'Logo wirklich entfernen?'))?>);">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="remove_logo">
+        <button class="btn danger" type="submit"><?=h(t('admin.settings.logo.remove', 'Logo entfernen'))?></button>
+      </form>
+    </div>
+  <?php else: ?>
+    <p class="muted"><?=h(t('admin.settings.logo.none', 'Kein Logo gesetzt.'))?></p>
+  <?php endif; ?>
+
+  <form method="post" enctype="multipart/form-data" style="margin-top:14px;" id="logoForm">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="upload_logo">
+
+    <label><?=h(t('admin.settings.logo.upload_label', 'Neues Logo hochladen (PNG/JPG/WEBP)'))?></label>
+    <input id="brandLogoInput" type="file" name="brand_logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.logo.upload_button', 'Logo hochladen'))?></button>
+    </div>
+
+    <p class="muted"><?=h(t('admin.settings.logo.upload_hint', 'Die Vorschau zeigt dein gewähltes Bild sofort. Hochgeladen wird erst beim Klick auf „Logo hochladen“.'))?></p>
+  </form>
+</div>
+
 <div class="card" style="border:1px solid #fecaca; background:#fff7f7;">
   <h2><?=h(t('admin.settings.purge.title', 'Daten unwiderruflich löschen'))?></h2>
   <p class="muted"><?=h(t('admin.settings.purge.desc', 'Hier können Schüler oder ganze Klassen inklusive aller zugehörigen Berichte und Werte endgültig entfernt werden. Diese Aktion kann nicht rückgängig gemacht werden.'))?></p>
@@ -1598,37 +1630,6 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   </script>
 </div>
 
-<div class="card">
-  <h2><?=h(t('admin.settings.logo.title', 'Logo'))?></h2>
-
-  <?php if ($logo): ?>
-    <p class="muted"><?=h(t('admin.settings.logo.current', 'Aktuelles Logo:'))?></p>
-    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <img src="<?=h(url($logo))?>" alt="<?=h(t('admin.settings.logo.alt', 'Logo'))?>" style="height:54px; width:auto; background:#fff; padding:8px; border:1px solid #e5e7eb; border-radius:12px;">
-      <form method="post" onsubmit="return confirm(<?=json_encode(t('admin.settings.logo.confirm_remove', 'Logo wirklich entfernen?'))?>);">
-        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-        <input type="hidden" name="action" value="remove_logo">
-        <button class="btn danger" type="submit"><?=h(t('admin.settings.logo.remove', 'Logo entfernen'))?></button>
-      </form>
-    </div>
-  <?php else: ?>
-    <p class="muted"><?=h(t('admin.settings.logo.none', 'Kein Logo gesetzt.'))?></p>
-  <?php endif; ?>
-
-  <form method="post" enctype="multipart/form-data" style="margin-top:14px;" id="logoForm">
-    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-    <input type="hidden" name="action" value="upload_logo">
-
-    <label><?=h(t('admin.settings.logo.upload_label', 'Neues Logo hochladen (PNG/JPG/WEBP)'))?></label>
-    <input id="brandLogoInput" type="file" name="brand_logo" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" required>
-
-    <div class="actions">
-      <button class="btn primary" type="submit"><?=h(t('admin.settings.logo.upload_button', 'Logo hochladen'))?></button>
-    </div>
-
-    <p class="muted"><?=h(t('admin.settings.logo.upload_hint', 'Die Vorschau zeigt dein gewähltes Bild sofort. Hochgeladen wird erst beim Klick auf „Logo hochladen“.'))?></p>
-  </form>
-</div>
 
 <script>
 (function(){
