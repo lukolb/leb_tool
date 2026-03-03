@@ -50,7 +50,11 @@ $tx = [
   'system_class_grade' => t('admin.template_mappings.system.class_grade_level', 'Klasse: Klassenstufe'),
   'system_class_label' => t('admin.template_mappings.system.class_label', 'Klasse: Bezeichnung (a/b/...)'),
   'system_class_display' => t('admin.template_mappings.system.class_display', 'Klasse: Anzeige (z.B. 1a)'),
+  'system_student_absence_total' => t('admin.template_mappings.system.student_absence_total', 'Schüler: Fehltage gesamt'),
+  'system_student_absence_unexcused' => t('admin.template_mappings.system.student_absence_unexcused', 'Schüler: davon unentschuldigt'),
+  'system_ag_sentence' => t('admin.template_mappings.system.ag_sentence', 'AG-Satz (automatisch)'),
   'system_student_prefix' => t('admin.template_mappings.system.student_prefix', 'Schüler'),
+  'insert_newline_btn' => t('admin.template_mappings.insert_newline_btn', 'Zeilenwechsel einfügen'),
   'ok_saved' => t('admin.template_mappings.ok_saved', 'Mapping gespeichert.'),
   'error_invalid_action' => t('admin.template_mappings.error_invalid_action', 'Ungültige Aktion.'),
   'error_template_missing' => t('admin.template_mappings.error_template_missing', 'template_id fehlt.'),
@@ -65,6 +69,9 @@ $SYSTEM_KEYS = [
   'class.grade_level'     => $tx['system_class_grade'],
   'class.label'           => $tx['system_class_label'],
   'class.display'         => $tx['system_class_display'],
+  'student.absence_days_total' => $tx['system_student_absence_total'],
+  'student.absence_days_unexcused' => $tx['system_student_absence_unexcused'],
+  'ag.sentence'           => $tx['system_ag_sentence'],
 ];
 foreach ($customStudentFields as $cf) {
   $key = trim((string)($cf['field_key'] ?? ''));
@@ -134,7 +141,8 @@ function current_binding_templates_map(array $fields): array {
 function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.date_of_birth,
-            c.school_year AS class_school_year, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
+            c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name,
+            s.absence_days_total, s.absence_days_unexcused
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -143,6 +151,24 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if (!$row) return null;
   $row['custom_values'] = student_custom_value_map($pdo, $studentId);
+
+  $schoolYear = (string)($row['class_school_year'] ?? '');
+  $periodLabel = (string)($row['class_period_label'] ?? 'Standard');
+  if ($schoolYear !== '') {
+    $ag = $pdo->prepare(
+      "SELECT a.ag_name
+       FROM student_ag_assignments saa
+       INNER JOIN ag_catalog a ON a.id=saa.ag_id
+       WHERE saa.student_id=? AND saa.school_year=? AND saa.period_label=?
+       ORDER BY a.sort_order ASC, a.ag_name ASC"
+    );
+    $ag->execute([$studentId, $schoolYear, $periodLabel]);
+    $names = array_map(static fn(array $r): string => (string)($r['ag_name'] ?? ''), $ag->fetchAll(PDO::FETCH_ASSOC));
+    $row['ag_sentence'] = ag_sentence_for_names((string)($row['first_name'] ?? ''), $names);
+  } else {
+    $row['ag_sentence'] = '';
+  }
+
   return $row;
 }
 
@@ -158,6 +184,9 @@ function preview_value_map(string $systemKey, array $row): string {
     case 'student.first_name': return (string)($row['first_name'] ?? '');
     case 'student.last_name': return (string)($row['last_name'] ?? '');
     case 'student.date_of_birth': return (string)($row['date_of_birth'] ?? '');
+    case 'student.absence_days_total': return (string)(int)($row['absence_days_total'] ?? 0);
+    case 'student.absence_days_unexcused': return (string)(int)($row['absence_days_unexcused'] ?? 0);
+    case 'ag.sentence': return (string)($row['ag_sentence'] ?? '');
     case 'class.school_year': return (string)($row['class_school_year'] ?? '');
     case 'class.grade_level': return (string)($row['class_grade_level'] ?? '');
     case 'class.label': return (string)($row['class_label'] ?? '');
@@ -339,11 +368,12 @@ render_admin_header($tx['title']);
 
       <div class="actions" style="justify-content:flex-start;">
         <button type="button" class="btn secondary" id="phInsertBtn"><?=h($tx['insert_btn'])?></button>
+        <button type="button" class="btn secondary" id="newlineInsertBtn"><?=h($tx['insert_newline_btn'])?></button>
       </div>
 
       <div style="flex:1; min-width:260px;">
         <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['bulk_label'])?></label>
-        <input type="text" id="bulkTpl" class="input" placeholder="<?=h($tx['bulk_placeholder'])?>" />
+        <textarea id="bulkTpl" class="input" rows="2" placeholder="<?=h($tx['bulk_placeholder'])?>"></textarea>
       </div>
 
       <div class="actions" style="justify-content:flex-start;">
@@ -386,15 +416,14 @@ render_admin_header($tx['title']);
                 <div class="muted"><code>#<?=h((string)$fid)?></code></div>
               </td>
               <td>
-                <input
-                  type="text"
+                <textarea
                   class="input tplInput"
                   data-fid="<?=h((string)$fid)?>"
                   name="tpl[<?=h((string)$fid)?>]"
-                  value="<?=h($tpl)?>"
                   placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
                   autocomplete="off"
-                >
+                  rows="2"
+                ><?=h($tpl)?></textarea>
                 <div class="muted" style="margin-top:6px;">
                   <?= $tx['placeholder_hint'] ?>
                 </div>
@@ -488,11 +517,17 @@ render_admin_header($tx['title']);
 
       const phSelect = document.getElementById('phSelect');
       const phInsertBtn = document.getElementById('phInsertBtn');
+      const newlineInsertBtn = document.getElementById('newlineInsertBtn');
       if (phInsertBtn) {
         phInsertBtn.addEventListener('click', function(){
           const ph = phSelect ? phSelect.value : '';
           if (!ph) return;
           insertAtCursor(activeInput, ph);
+        });
+      }
+      if (newlineInsertBtn) {
+        newlineInsertBtn.addEventListener('click', function(){
+          insertAtCursor(activeInput, "\n");
         });
       }
 

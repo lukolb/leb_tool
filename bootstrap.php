@@ -748,6 +748,12 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_column($pdo, 'students', 'login_code')) {
       $pdo->exec("ALTER TABLE students ADD COLUMN login_code VARCHAR(20) NULL AFTER qr_token");
     }
+    if (!db_has_column($pdo, 'students', 'absence_days_total')) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN absence_days_total INT UNSIGNED NOT NULL DEFAULT 0 AFTER date_of_birth");
+    }
+    if (!db_has_column($pdo, 'students', 'absence_days_unexcused')) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN absence_days_unexcused INT UNSIGNED NOT NULL DEFAULT 0 AFTER absence_days_total");
+    }
     if (!db_has_index($pdo, 'students', 'uq_students_qr_token')) {
       $pdo->exec("CREATE UNIQUE INDEX uq_students_qr_token ON students (qr_token)");
     }
@@ -1297,6 +1303,12 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
     case 'student.date_of_birth':
       // Default format: YYYY-MM-DD (PDF date fields can be formatted later)
       return (string)($student['date_of_birth'] ?? '');
+    case 'student.absence_days_total':
+      return (string)(int)($student['absence_days_total'] ?? 0);
+    case 'student.absence_days_unexcused':
+      return (string)(int)($student['absence_days_unexcused'] ?? 0);
+    case 'ag.sentence':
+      return (string)($student['ag_sentence'] ?? '');
     case 'class.school_year':
       return (string)($class['school_year'] ?? '');
     case 'class.grade_level':
@@ -1408,7 +1420,8 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
 function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   $ri = $pdo->prepare(
     "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label,
-            s.first_name, s.last_name, s.date_of_birth, s.class_id
+            s.first_name, s.last_name, s.date_of_birth, s.class_id,
+            s.absence_days_total, s.absence_days_unexcused
      FROM report_instances ri
      LEFT JOIN students s ON s.id=ri.student_id
      WHERE ri.id=? LIMIT 1"
@@ -1433,6 +1446,9 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     'first_name' => $row['first_name'] ?? '',
     'last_name' => $row['last_name'] ?? '',
     'date_of_birth' => $row['date_of_birth'] ?? '',
+    'absence_days_total' => (int)($row['absence_days_total'] ?? 0),
+    'absence_days_unexcused' => (int)($row['absence_days_unexcused'] ?? 0),
+    'ag_sentence' => report_instance_ag_text($pdo, $reportInstanceId),
     'custom_fields' => $studentId > 0 ? student_custom_value_map($pdo, $studentId) : [],
   ];
 
