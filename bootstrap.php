@@ -1485,7 +1485,7 @@ function format_date_pattern(?string $iso, string $pattern): string {
 
   // Replace ONLY tokens in the original pattern (longest first to avoid partial matches)
   $out = preg_replace_callback(
-    '/(MMMM|MMM|YYYY|YY|DD|MM|D|M)/',
+    '/(?<![[:alpha:]])(MMMM|MMM|YYYY|YY|DD|MM|D|M)(?![[:alpha:]])/u',
     static function(array $m) use ($repl): string {
       $tok = $m[1];
       return $repl[$tok] ?? $tok;
