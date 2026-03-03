@@ -142,7 +142,7 @@ function current_binding_templates_map(array $fields): array {
   return $out;
 }
 
-function get_student_preview_map(PDO $pdo, int $studentId): ?array {
+function get_student_preview_map(PDO $pdo, int $studentId, int $templateId = 0): ?array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.date_of_birth,
             c.id AS class_id, c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
@@ -154,6 +154,22 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if (!$row) return null;
   $row['custom_values'] = student_custom_value_map($pdo, $studentId);
+  $row['field_values'] = [];
+
+  if ($templateId > 0) {
+    $ri = $pdo->prepare(
+      "SELECT id
+       FROM report_instances
+       WHERE student_id=? AND template_id=?
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1"
+    );
+    $ri->execute([$studentId, $templateId]);
+    $riId = (int)($ri->fetchColumn() ?: 0);
+    if ($riId > 0) {
+      $row['field_values'] = report_instance_field_value_map($pdo, $riId);
+    }
+  }
 
   $absence = student_period_absence_values(
     $pdo,
@@ -341,7 +357,7 @@ if ($template) {
      LIMIT 250"
   )->fetchAll(PDO::FETCH_ASSOC);
 }
-$preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId) : null;
+$preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId, (int)$templateId) : null;
 
 render_admin_header($tx['title']);
 ?>
@@ -387,7 +403,7 @@ render_admin_header($tx['title']);
   <?php endif; ?>
 
 <?php if ($template): ?>
-  <?php $previewResolvedByField = []; ?>
+  <?php $previewResolvedByField = ($preview && is_array($preview['field_values'] ?? null)) ? (array)$preview['field_values'] : []; ?>
   <div class="card">
     <h2 style="margin-top:0;"><?=h(strtr($tx['mapping_for'], [
       '{template}' => (string)$template['name'],
