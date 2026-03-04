@@ -1122,7 +1122,7 @@ async function assessNewPdfFile(file){
   try {
     const info = await readPdfFieldInfoFromDoc(doc);
     const pdfNames = new Set(info.fields.keys());
-    const existingNames = new Set(fields.map(f => String(f.name)));
+    const existingNames = new Set(fields.filter(f => !isPdfIndependentField(f)).map(f => String(f.name)));
 
     const missing = [...existingNames].filter(n => !pdfNames.has(n));
     const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
@@ -1164,7 +1164,7 @@ async function syncPdfPositionsWithFields(opts={}){
   }
 
   const pdfNamesAfter = new Set(pdfInfo.fields.keys());
-  const existingNames = new Set(fields.map(f => String(f.name)));
+  const existingNames = new Set(fields.filter(f => !isPdfIndependentField(f)).map(f => String(f.name)));
 
   const missing = [...existingNames].filter(n => !pdfNamesAfter.has(n));
   const newcomers = [...pdfNamesAfter].filter(n => !existingNames.has(n));
@@ -1213,6 +1213,12 @@ async function syncPdfPositionsWithFields(opts={}){
   }
 
   return { updated, missing: missing.length, missingNames: missing, added: imported, renamed: renameApplied.length, deleted };
+}
+
+
+function isPdfIndependentField(field){
+  const meta = field && typeof field === 'object' ? (field.meta || {}) : {};
+  return Number(meta.virtual_only || 0) === 1;
 }
 
 function parseGroupParts(raw){
