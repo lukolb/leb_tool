@@ -500,15 +500,6 @@ render_admin_header($tx['title']);
         <button type="button" class="btn secondary" id="phInsertBtn"><?=h($tx['insert_btn'])?></button>
       </div>
 
-      <div style="flex:1; min-width:260px;">
-        <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['bulk_label'])?></label>
-        <textarea id="bulkTpl" class="input" rows="2" placeholder="<?=h($tx['bulk_placeholder'])?>"></textarea>
-      </div>
-
-      <div class="actions" style="justify-content:flex-start;">
-        <button type="button" class="btn secondary" id="bulkApplyBtn"><?=h($tx['bulk_apply'])?></button>
-        <button type="button" class="btn secondary" id="bulkClearBtn"><?=h($tx['bulk_clear'])?></button>
-      </div>
     </div>
 
     <form method="post" style="margin-top:12px;">
