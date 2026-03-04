@@ -38,6 +38,7 @@ $tx = [
   'preview_reset' => t('admin.template_mappings.preview_reset', 'Zurücksetzen'),
   'preview_table_placeholder' => t('admin.template_mappings.preview_table_placeholder', 'Platzhalter'),
   'preview_table_value' => t('admin.template_mappings.preview_table_value', 'Wert'),
+  'preview_field_prefix' => t('admin.template_mappings.preview_field_prefix', 'Feldwert'),
   'template_inactive' => t('admin.template_mappings.template_inactive', '[inaktiv]'),
   'system_student_first' => t('admin.template_mappings.system.student_first_name', 'Schüler: Vorname'),
   'system_student_last' => t('admin.template_mappings.system.student_last_name', 'Schüler: Nachname'),
@@ -330,6 +331,48 @@ function field_supports_multiline(array $field): bool {
   return (int)($meta['is_multiline'] ?? 0) === 1;
 }
 
+
+function preview_used_field_placeholders(array $fields, array $currentTpl): array {
+  $labelsByName = [];
+  foreach ($fields as $f) {
+    $fname = trim((string)($f['field_name'] ?? ''));
+    if ($fname === '') continue;
+    $labelsByName[$fname] = trim((string)($f['label'] ?? ''));
+  }
+
+  $found = [];
+  foreach ($currentTpl as $tpl) {
+    $t = (string)$tpl;
+    if ($t === '') continue;
+
+    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*\}\}/', $t, $m1)) {
+      foreach ((array)($m1[1] ?? []) as $name) {
+        $n = trim((string)$name);
+        if ($n !== '') $found[$n] = true;
+      }
+    }
+
+    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9]+(?:[.,][0-9]+)?\s*\?\s*\}\}/', $t, $m2)) {
+      foreach ((array)($m2[1] ?? []) as $name) {
+        $n = trim((string)$name);
+        if ($n !== '') $found[$n] = true;
+      }
+    }
+  }
+
+  $out = [];
+  foreach (array_keys($found) as $name) {
+    $out[] = [
+      'field_name' => $name,
+      'label' => $labelsByName[$name] ?? '',
+    ];
+  }
+  usort($out, static function(array $a, array $b): int {
+    return strcasecmp((string)$a['field_name'], (string)$b['field_name']);
+  });
+  return $out;
+}
+
 // POST: save binding templates
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -396,6 +439,7 @@ $template  = $templateId > 0 ? load_template_map($pdo, $templateId) : null;
 $fields    = $template ? list_template_fields_map($pdo, (int)$template['id']) : [];
 $currentTpl = current_binding_templates_map($fields);
 $previewFieldMetaByName = preview_field_meta_map($fields);
+$usedFieldPlaceholders = preview_used_field_placeholders($fields, $currentTpl);
 
 $studentsForPreview = [];
 if ($template) {
@@ -621,6 +665,20 @@ render_admin_header($tx['title']);
             <tr>
               <td><?=h($label)?> <span class="muted"><code><?=h($sysKey)?></code></span></td>
               <td><?=h(preview_value_map($sysKey, $preview))?></td>
+            </tr>
+          <?php endforeach; ?>
+          <?php foreach ($usedFieldPlaceholders as $fp):
+            $fieldName = (string)($fp['field_name'] ?? '');
+            if ($fieldName === '') continue;
+            $fieldLabel = trim((string)($fp['label'] ?? ''));
+            $fieldValue = resolve_preview_field_reference_value($fieldName, (array)($preview['field_values'] ?? []), $previewFieldMetaByName);
+          ?>
+            <tr>
+              <td>
+                <?=h($tx['preview_field_prefix'])?><?= $fieldLabel !== '' ? ': '.h($fieldLabel) : '' ?>
+                <span class="muted"><code><?=h('field:'.$fieldName)?></code></span>
+              </td>
+              <td><?=h($fieldValue)?></td>
             </tr>
           <?php endforeach; ?>
         </tbody>
