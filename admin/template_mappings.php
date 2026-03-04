@@ -23,7 +23,7 @@ $tx = [
   'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
   'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
   'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
-  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Bedingungen sind als Block möglich, z.B. <code>{{student.absence_days_total>0?}}…{{?}}</code> oder <code>{{field:versetzt>0?}}…{{?}}</code>. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst freien Text und Platzhalter kombinieren, z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Feldreferenzen sind mit <code>{{field:versetzt}}</code> möglich. Bedingungen als Block: <code>{{student.absence_days_total>0?}}Fehltage: {{student.absence_days_total}}{{?}}</code> oder <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>. In mehrzeiligen Feldern sind Zeilenumbrüche erlaubt (Enter). Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (bei genau einem Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
   'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
@@ -33,7 +33,7 @@ $tx = [
   'table_field' => t('admin.template_mappings.table_field', 'PDF-Formfeld'),
   'table_template' => t('admin.template_mappings.table_template', 'Binding-Template'),
   'table_preview' => t('admin.template_mappings.table_preview', 'Vorschau'),
-  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Platzhalter: <code>{{student.first_name}}</code>, <code>{{student.last_name}}</code>, <code>{{class.display}}</code> …'),
+  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Beispiele: <code>{{student.first_name}}</code>, <code>{{class.display}}</code>, <code>{{field:versetzt}}</code>, <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>'),
   'save' => t('admin.template_mappings.save', 'Speichern'),
   'preview_title' => t('admin.template_mappings.preview_title', 'Vorschau'),
   'preview_hint' => t('admin.template_mappings.preview_hint', 'Wähle einen Schüler aus, um die Platzhalter-Ersetzungen zu prüfen.'),
@@ -533,7 +533,7 @@ render_admin_header($tx['title']);
               <td>
                 <?php if ($isMultiline): ?>
                   <textarea
-                    class="input tplInput"
+                    class="input tplInput mapping-tpl-input"
                     data-fid="<?=h((string)$fid)?>"
                     data-multiline="1"
                     name="tpl[<?=h((string)$fid)?>]"
@@ -544,7 +544,7 @@ render_admin_header($tx['title']);
                 <?php else: ?>
                   <input
                     type="text"
-                    class="input tplInput"
+                    class="input tplInput mapping-tpl-input"
                     data-fid="<?=h((string)$fid)?>"
                     data-multiline="0"
                     name="tpl[<?=h((string)$fid)?>]"
@@ -561,7 +561,7 @@ render_admin_header($tx['title']);
                 <?php if (!$preview): ?>
                   <span class="muted">—</span>
                 <?php else: ?>
-                  <?= $tpl !== '' ? h($previewVal) : '<span class="muted">—</span>' ?>
+                  <?= $tpl !== '' ? '<div class="mapping-preview-value">'.nl2br(h($previewVal), false).'</div>' : '<span class="muted">—</span>' ?>
                 <?php endif; ?>
               </td>
             </tr>
@@ -623,6 +623,12 @@ render_admin_header($tx['title']);
     <?php endif; ?>
   </div>
 
+  <style>
+    .mapping-tpl-input { width:100%; box-sizing:border-box; display:block; }
+    textarea.mapping-tpl-input { overflow:hidden; resize:none; min-height:42px; }
+    .mapping-preview-value { white-space:pre-wrap; }
+  </style>
+
   <script>
     (function(){
       let activeInput = null;
@@ -639,9 +645,19 @@ render_admin_header($tx['title']);
         el.setSelectionRange(pos, pos);
       }
 
+      function autoResizeTextarea(el){
+        if (!el || el.tagName !== 'TEXTAREA') return;
+        el.style.height = 'auto';
+        el.style.height = Math.max(el.scrollHeight, 42) + 'px';
+      }
+
       document.querySelectorAll('.tplInput').forEach(function(inp){
         inp.addEventListener('focus', function(){ activeInput = inp; });
         inp.addEventListener('click', function(){ activeInput = inp; });
+        if (inp.tagName === 'TEXTAREA') {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', function(){ autoResizeTextarea(inp); });
+        }
       });
 
       const phSelect = document.getElementById('phSelect');
@@ -685,6 +701,7 @@ render_admin_header($tx['title']);
             if (!inp) return;
             const multiline = inp.getAttribute('data-multiline') === '1';
             inp.value = multiline ? t : t.replace(/\r?\n+/g, ' ');
+            if (multiline && inp.tagName === 'TEXTAREA') autoResizeTextarea(inp);
           });
         });
       }
@@ -695,7 +712,9 @@ render_admin_header($tx['title']);
           if (!ids.length) return;
           ids.forEach(function(fid){
             const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (inp) inp.value = '';
+            if (!inp) return;
+            inp.value = '';
+            if (inp.tagName === 'TEXTAREA') autoResizeTextarea(inp);
           });
         });
       }
