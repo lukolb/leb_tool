@@ -1417,23 +1417,47 @@ function resolve_field_reference_value(string $fieldName, array $fieldValues, ar
 /**
  * Conditional block syntax:
  *   {{student.absence_days_total>0?}} ... {{?}}
+ *   {{ag.sentence?}} ... {{?}}  (true when value is not empty)
  */
 function apply_binding_condition_blocks(string $tpl, callable $resolver): string {
-  $pattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $comparePattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $existsPattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
   $maxPasses = 8;
   $out = $tpl;
   for ($i = 0; $i < $maxPasses; $i++) {
-    if (!preg_match($pattern, $out)) break;
-    $next = preg_replace_callback($pattern, static function(array $m) use ($resolver): string {
-      $key = (string)$m[1];
-      $op = (string)$m[2];
-      $rhs = (string)$m[3];
-      $body = (string)$m[4];
-      $val = (string)$resolver($key);
-      return binding_condition_matches($val, $op, $rhs) ? $body : '';
-    }, $out);
-    if ($next === null || $next === $out) break;
-    $out = $next;
+    $changed = false;
+
+    if (preg_match($comparePattern, $out)) {
+      $next = preg_replace_callback($comparePattern, static function(array $m) use ($resolver): string {
+        $key = (string)$m[1];
+        $op = (string)$m[2];
+        $rhs = (string)$m[3];
+        $body = (string)$m[4];
+        $val = (string)$resolver($key);
+        return binding_condition_matches($val, $op, $rhs) ? $body : '';
+      }, $out);
+      if ($next === null) break;
+      if ($next !== $out) {
+        $out = $next;
+        $changed = true;
+      }
+    }
+
+    if (preg_match($existsPattern, $out)) {
+      $next = preg_replace_callback($existsPattern, static function(array $m) use ($resolver): string {
+        $key = (string)$m[1];
+        $body = (string)$m[2];
+        $val = trim((string)$resolver($key));
+        return $val !== '' ? $body : '';
+      }, $out);
+      if ($next === null) break;
+      if ($next !== $out) {
+        $out = $next;
+        $changed = true;
+      }
+    }
+
+    if (!$changed) break;
   }
   return $out;
 }
