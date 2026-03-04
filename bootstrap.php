@@ -1687,6 +1687,14 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
      ON DUPLICATE KEY UPDATE value_text=VALUES(value_text), source='system', updated_by_user_id=NULL, updated_at=NOW()"
   );
 
+  $tfIds = array_values(array_filter(array_map(static fn(array $f): int => (int)($f['id'] ?? 0), $tfRows), static fn(int $id): bool => $id > 0));
+  if ($tfIds) {
+    $ph = implode(',', array_fill(0, count($tfIds), '?'));
+    $params = array_merge([$reportInstanceId], $tfIds);
+    $del = $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=? AND source='system' AND template_field_id IN ($ph)");
+    $del->execute($params);
+  }
+
   foreach ($tfRows as $f) {
     $meta = [];
     if (!empty($f['meta_json'])) {
