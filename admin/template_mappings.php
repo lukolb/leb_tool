@@ -26,10 +26,6 @@ $tx = [
   'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst freien Text und Platzhalter kombinieren, z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Feldreferenzen sind mit <code>{{field:versetzt}}</code> möglich. Bedingungen als Block: <code>{{student.absence_days_total>0?}}Fehltage: {{student.absence_days_total}}{{?}}</code> oder <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>. In mehrzeiligen Feldern sind Zeilenumbrüche erlaubt (Enter). Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (bei genau einem Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
-  'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
-  'bulk_placeholder' => t('admin.template_mappings.bulk_placeholder', '{{student.first_name}} {{student.last_name}}'),
-  'bulk_apply' => t('admin.template_mappings.bulk_apply', 'Auf markierte Felder anwenden'),
-  'bulk_clear' => t('admin.template_mappings.bulk_clear', 'Markierte leeren'),
   'table_field' => t('admin.template_mappings.table_field', 'PDF-Formfeld'),
   'table_template' => t('admin.template_mappings.table_template', 'Binding-Template'),
   'table_preview' => t('admin.template_mappings.table_preview', 'Vorschau'),
@@ -403,13 +399,35 @@ $previewFieldMetaByName = preview_field_meta_map($fields);
 
 $studentsForPreview = [];
 if ($template) {
-  $studentsForPreview = $pdo->query(
+  $activeSchoolYear = '';
+  $activePeriodLabel = 'H1';
+  $stActivePeriod = $pdo->query(
+    "SELECT school_year, period_label
+     FROM classes
+     WHERE is_active=1
+     GROUP BY school_year, period_label
+     ORDER BY COUNT(*) DESC, school_year DESC,
+              CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
+     LIMIT 1"
+  );
+  $activePeriod = $stActivePeriod->fetch(PDO::FETCH_ASSOC) ?: null;
+  if ($activePeriod) {
+    $activeSchoolYear = trim((string)($activePeriod['school_year'] ?? ''));
+    $activePeriodLabel = normalize_class_period_label((string)($activePeriod['period_label'] ?? 'H1'));
+  }
+  if ($activeSchoolYear === '') {
+    $activeSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+  }
+
+  $stStudentsForPreview = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, c.school_year, c.name AS class_name
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     ORDER BY s.last_name ASC, s.first_name ASC
-     LIMIT 250"
-  )->fetchAll(PDO::FETCH_ASSOC);
+     INNER JOIN classes c ON c.id=s.class_id
+     WHERE c.template_id=? AND c.school_year=? AND c.period_label=?
+     ORDER BY s.last_name ASC, s.first_name ASC"
+  );
+  $stStudentsForPreview->execute([(int)$template['id'], $activeSchoolYear, $activePeriodLabel]);
+  $studentsForPreview = $stStudentsForPreview->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 $preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId, (int)$templateId) : null;
 
@@ -501,10 +519,9 @@ render_admin_header($tx['title']);
       <table class="table">
         <thead>
           <tr>
-            <th style="width:40px;"><input type="checkbox" id="checkAll"></th>
-            <th style="width:360px;"><?=h($tx['table_field'])?></th>
+            <th style="width:280px;"><?=h($tx['table_field'])?></th>
             <th><?=h($tx['table_template'])?></th>
-            <th style="width:220px;"><?=h($tx['table_preview'])?></th>
+            <th style="width:320px;"><?=h($tx['table_preview'])?></th>
           </tr>
         </thead>
         <tbody>
@@ -520,9 +537,6 @@ render_admin_header($tx['title']);
             $isMultiline = field_supports_multiline($f);
           ?>
             <tr>
-              <td>
-                <input type="checkbox" class="rowCheck" data-fid="<?=h((string)$fid)?>">
-              </td>
               <td>
                 <div style="font-weight:700;"><?=h($fname)?></div>
                 <?php if ($lab !== ''): ?>
@@ -667,55 +681,6 @@ render_admin_header($tx['title']);
           const ph = phSelect ? phSelect.value : '';
           if (!ph) return;
           insertAtCursor(activeInput, ph);
-        });
-      }
-
-      const checkAll = document.getElementById('checkAll');
-      if (checkAll) {
-        checkAll.addEventListener('change', function(){
-          document.querySelectorAll('.rowCheck').forEach(function(cb){
-            cb.checked = checkAll.checked;
-          });
-        });
-      }
-
-      function selectedFieldIds() {
-        const ids = [];
-        document.querySelectorAll('.rowCheck').forEach(function(cb){
-          if (cb.checked) ids.push(cb.getAttribute('data-fid'));
-        });
-        return ids;
-      }
-
-      const bulkTpl = document.getElementById('bulkTpl');
-      const bulkApplyBtn = document.getElementById('bulkApplyBtn');
-      const bulkClearBtn = document.getElementById('bulkClearBtn');
-
-      if (bulkApplyBtn) {
-        bulkApplyBtn.addEventListener('click', function(){
-          const ids = selectedFieldIds();
-          if (!ids.length) return;
-          const t = (bulkTpl ? bulkTpl.value : '') || '';
-          ids.forEach(function(fid){
-            const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (!inp) return;
-            const multiline = inp.getAttribute('data-multiline') === '1';
-            inp.value = multiline ? t : t.replace(/\r?\n+/g, ' ');
-            if (multiline && inp.tagName === 'TEXTAREA') autoResizeTextarea(inp);
-          });
-        });
-      }
-
-      if (bulkClearBtn) {
-        bulkClearBtn.addEventListener('click', function(){
-          const ids = selectedFieldIds();
-          if (!ids.length) return;
-          ids.forEach(function(fid){
-            const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (!inp) return;
-            inp.value = '';
-            if (inp.tagName === 'TEXTAREA') autoResizeTextarea(inp);
-          });
         });
       }
     })();
