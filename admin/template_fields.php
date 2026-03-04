@@ -241,6 +241,7 @@ render_admin_header(t('admin.template_fields.title'));
 
 <div class="card">
     <div class="row-actions" style="float: right;">
+        <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$templateId))?>"><?=h(t('admin.template_fields.goto_mapping', 'Zum Mapping'))?></a>
         <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← <?=h(t('admin.template_fields.back_templates'))?></a>
     </div>
 
