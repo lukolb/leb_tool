@@ -1789,6 +1789,27 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 <script>
 (function(){
   const flashHost = document.getElementById('settingsFlashMessages');
+  const centralForms = Array.from(document.querySelectorAll('form[data-central-save="1"]'));
+  const formSnapshots = new WeakMap();
+
+  function formSnapshot(form){
+    const pairs = [];
+    const fd = new FormData(form);
+    for (const [k, v] of fd.entries()) {
+      if (k === 'csrf_token') continue;
+      pairs.push([String(k), String(v)]);
+    }
+    pairs.sort((a,b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0)) : (a[0] < b[0] ? -1 : 1)));
+    return JSON.stringify(pairs);
+  }
+
+  function hasUnsavedCentralChanges(){
+    return centralForms.some((form) => formSnapshots.get(form) !== formSnapshot(form));
+  }
+
+  function rememberCentralState(){
+    centralForms.forEach((form) => formSnapshots.set(form, formSnapshot(form)));
+  }
 
   function setFlash(type, text){
     if (!flashHost) return;
@@ -1847,7 +1868,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     form.addEventListener('submit', (ev) => {
       if (ev.defaultPrevented) return;
       ev.preventDefault();
-      ajaxSubmit(form);
+      ajaxSubmit(form).then((ok) => { if (ok && form.hasAttribute('data-central-save')) rememberCentralState(); });
     });
   });
 
@@ -1885,9 +1906,25 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     card.replaceWith(details);
   });
 
+
+  rememberCentralState();
+  centralForms.forEach((form) => {
+    form.addEventListener('input', () => {
+      // state is evaluated on demand in beforeunload
+    });
+    form.addEventListener('change', () => {
+      // state is evaluated on demand in beforeunload
+    });
+  });
+
+  window.addEventListener('beforeunload', (ev) => {
+    if (!hasUnsavedCentralChanges()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+  });
+
   const saveAllBtn = document.getElementById('saveAllSettingsBtn');
   if (saveAllBtn) {
-    const centralForms = Array.from(document.querySelectorAll('form[data-central-save="1"]'));
     // Optional: hide per-section save buttons to enforce central save workflow
     centralForms.forEach((f) => {
       f.querySelectorAll('button[type="submit"],input[type="submit"]').forEach((btn) => {
@@ -1909,6 +1946,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
         if (!ok) { allOk = false; break; }
       }
       saveAllBtn.disabled = false;
+      if (allOk) rememberCentralState();
       setFlash(allOk ? 'success' : 'danger', allOk ? 'Gespeichert.' : 'Speichern fehlgeschlagen.');
     });
   }
