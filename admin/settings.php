@@ -638,6 +638,9 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 ?>
 <div class="card">
     <h1><?=h(t('admin.settings.heading', 'Einstellungen'))?></h1>
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn primary" type="button" id="saveAllSettingsBtn"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
@@ -689,7 +692,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
 <div class="card">
   <h2><?=h(t('admin.settings.branding.title', 'Branding'))?></h2>
-  <form method="post" autocomplete="off" id="brandingForm">
+  <form method="post" autocomplete="off" id="brandingForm" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
 
@@ -751,7 +754,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.deadlines.title', 'Fristen pro Schuljahr'))?></h2>
   <p class="muted"><?=h(t('admin.settings.deadlines.desc', 'Lege Abgabefristen für Schüler, Delegationen und Lehrkräfte fest.'))?></p>
 
-  <form method="post" autocomplete="off" id="deadline-form" data-fetch-url="<?=h(url('admin/settings.php'))?>">
+  <form method="post" autocomplete="off" id="deadline-form" data-central-save="1" data-fetch-url="<?=h(url('admin/settings.php'))?>">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_deadlines">
 
@@ -857,7 +860,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.mail.title', 'E-Mail'))?></h2>
   <p class="muted"><?=h(t('admin.settings.mail.desc', 'Diese Werte werden als Absender in System-Mails verwendet (Account-Anlage, Reset-Link, etc.).'))?></p>
 
-  <form method="post" autocomplete="off" id="mailForm">
+  <form method="post" autocomplete="off" id="mailForm" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
 
@@ -882,7 +885,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.ai.title', 'KI-Vorschläge'))?></h2>
   <p class="muted"><?=h(t('admin.settings.ai.desc', 'Hinterlege hier den API-Key deines KI-Providers (z.B. OpenAI-kompatibel), damit Lehrkräfte Vorschläge für Stärken, Ziele und Schritte abrufen können.'))?></p>
 
-  <form method="post" autocomplete="off" id="aiForm">
+  <form method="post" autocomplete="off" id="aiForm" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="ai_form" value="1">
@@ -933,7 +936,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.parent.title', 'Elternmodus'))?></h2>
   <p class="muted"><?=h(t('admin.settings.parent.desc', 'Steuere hier, ob Eltern den Bericht zusätzlich als schreibgeschützte PDF herunterladen dürfen, ob Anfragen automatisch freigegeben werden und ob eine grafische Lehrkraft-Signatur genutzt wird.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="parent_download_enabled_present" value="1">
@@ -1041,7 +1044,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.export.title', 'PDF-Export'))?></h2>
   <p class="muted"><?=h(t('admin.settings.export.desc', 'Lege fest, ob exportierte PDFs schreibgeschützt sind oder weiterhin bearbeitet werden können.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="export_allow_editable_present" value="1">
@@ -1107,7 +1110,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.delegations.title', 'Delegationen'))?></h2>
   <p class="muted"><?=h(t('admin.settings.delegations.desc', 'Steuere, ob Delegierte zusätzlich alle übrigen Felder schreibgeschützt sehen dürfen.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="delegation_settings_present" value="1">
@@ -1131,7 +1134,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.teacher.title', 'Lehrkräfte'))?></h2>
   <p class="muted"><?=h(t('admin.settings.teacher.desc', 'Steuere, ob Lehrkräfte Fehltage in der Klassenansicht bearbeiten dürfen.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="teacher_settings_present" value="1">
@@ -1155,7 +1158,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <h2><?=h(t('admin.settings.tts.title', 'Vorlesen (Text-to-Speech)'))?></h2>
   <p class="muted"><?=h(t('admin.settings.tts.desc', 'Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler. Die Liste basiert auf den in vits-web verfügbaren Stimmen.'))?></p>
 
-  <form method="post" autocomplete="off">
+  <form method="post" autocomplete="off" data-central-save="1">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save">
 
@@ -1805,7 +1808,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     });
   }
 
-  async function ajaxSubmit(form){
+  async function ajaxSubmit(form, opts = {}){
     const action = (form.getAttribute('action') || window.location.href || '').toString();
     const data = new FormData(form);
     const submitButtons = Array.from(form.querySelectorAll('button[type="submit"],input[type="submit"]'));
@@ -1823,16 +1826,18 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       const err = doc.querySelector('.alert.danger strong');
       const ok = doc.querySelector('.alert.success strong');
       if (!resp.ok) {
-        setFlash('danger', (err ? err.textContent : '') || 'Speichern fehlgeschlagen.');
-        return;
+        if (!opts.silent) setFlash('danger', (err ? err.textContent : '') || 'Speichern fehlgeschlagen.');
+        return false;
       }
       if (err && err.textContent) {
-        setFlash('danger', err.textContent);
-      } else {
-        setFlash('success', (ok ? ok.textContent : '') || 'Gespeichert.');
+        if (!opts.silent) setFlash('danger', err.textContent);
+        return false;
       }
+      if (!opts.silent) setFlash('success', (ok ? ok.textContent : '') || 'Gespeichert.');
+      return true;
     } catch (e) {
-      setFlash('danger', 'Netzwerkfehler beim Speichern.');
+      if (!opts.silent) setFlash('danger', 'Netzwerkfehler beim Speichern.');
+      return false;
     } finally {
       submitButtons.forEach((btn) => btn.disabled = false);
     }
@@ -1879,6 +1884,35 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     details.appendChild(body);
     card.replaceWith(details);
   });
+
+  const saveAllBtn = document.getElementById('saveAllSettingsBtn');
+  if (saveAllBtn) {
+    const centralForms = Array.from(document.querySelectorAll('form[data-central-save="1"]'));
+    // Optional: hide per-section save buttons to enforce central save workflow
+    centralForms.forEach((f) => {
+      f.querySelectorAll('button[type="submit"],input[type="submit"]').forEach((btn) => {
+        btn.style.display = 'none';
+      });
+    });
+
+    saveAllBtn.addEventListener('click', async () => {
+      for (const form of centralForms) {
+        if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
+          setFlash('danger', 'Bitte Eingaben prüfen.');
+          return;
+        }
+      }
+      saveAllBtn.disabled = true;
+      let allOk = true;
+      for (const form of centralForms) {
+        const ok = await ajaxSubmit(form, { silent: true });
+        if (!ok) { allOk = false; break; }
+      }
+      saveAllBtn.disabled = false;
+      setFlash(allOk ? 'success' : 'danger', allOk ? 'Gespeichert.' : 'Speichern fehlgeschlagen.');
+    });
+  }
+
 })();
 </script>
 
