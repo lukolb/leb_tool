@@ -53,6 +53,52 @@ function normalize_name(string $s): string {
   return $s;
 }
 
+function normalize_lookup_token(string $s): string {
+  $s = mb_strtolower(trim($s), 'UTF-8');
+  $s = preg_replace('/[\s,;]+/u', '', $s);
+  return (string)$s;
+}
+
+function parse_student_name_token(string $raw): array {
+  $v = trim($raw);
+  if ($v === '') return ['', ''];
+  if (str_contains($v, ',')) {
+    [$last, $first] = array_pad(array_map('trim', explode(',', $v, 2)), 2, '');
+    return [$last, $first];
+  }
+  $parts = preg_split('/\s+/u', $v) ?: [];
+  if (count($parts) < 2) return [$v, ''];
+  $last = array_shift($parts);
+  $first = implode(' ', $parts);
+  return [trim((string)$last), trim((string)$first)];
+}
+
+function parse_optional_non_negative_int(string $raw, string $fieldLabel): ?int {
+  $v = trim($raw);
+  if ($v === '') return null;
+  if (!preg_match('/^\d+$/', $v)) {
+    throw new RuntimeException(str_replace('{field}', $fieldLabel, t('admin.students.import.absence.reason.invalid_number', 'Ungültige Zahl in {field}.')));
+  }
+  return (int)$v;
+}
+
+function read_tab_rows(string $path): array {
+  $fh = fopen($path, 'rb');
+  if (!$fh) throw new RuntimeException(t('admin.students.error.csv_open_failed'));
+  $rows = [];
+  while (($row = fgetcsv($fh, 0, "	", '"')) !== false) {
+    if (!is_array($row)) continue;
+    $allEmpty = true;
+    foreach ($row as $cell) {
+      if (trim((string)$cell) !== '') { $allEmpty = false; break; }
+    }
+    if ($allEmpty) continue;
+    $rows[] = array_map(static fn($v): string => trim((string)$v), $row);
+  }
+  fclose($fh);
+  return $rows;
+}
+
 function sanitize_import_email(?string $value): ?string {
   $email = trim((string)$value);
   if ($email === '') return null;
@@ -309,6 +355,171 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         (string)$updated,
         t('admin.students.status.templates_updated')
       );
+    }
+
+
+    elseif ($action === 'import_absence_csv') {
+      if (empty($_FILES['absence_csv_file']) || !isset($_FILES['absence_csv_file']['tmp_name'])) {
+        throw new RuntimeException(t('admin.students.error.csv_required'));
+      }
+      $csvTmp = (string)($_FILES['absence_csv_file']['tmp_name'] ?? '');
+      if ($csvTmp === '') throw new RuntimeException(t('admin.students.error.csv_required'));
+
+      $schoolYearAbs = trim((string)($_POST['absence_school_year'] ?? ''));
+      if ($schoolYearAbs === '') $schoolYearAbs = $defaultSchoolYear;
+      if ($schoolYearAbs === '') throw new RuntimeException(t('admin.students.error.school_year_missing'));
+
+      $periodLabelAbs = normalize_class_period_label((string)($_POST['absence_period_label'] ?? 'H1'));
+
+      $colClass = max(1, (int)($_POST['absence_col_class'] ?? 1));
+      $colStudent = max(1, (int)($_POST['absence_col_student'] ?? 2));
+      $colTotal = max(1, (int)($_POST['absence_col_total'] ?? 13));
+      $colUnexcused = max(1, (int)($_POST['absence_col_unexcused'] ?? 15));
+
+      $rows = read_tab_rows($csvTmp);
+      if (!$rows) {
+        throw new RuntimeException(t('admin.students.import.reason.empty_csv'));
+      }
+
+      $classRows = $pdo->prepare(
+        "SELECT id, school_year, period_label, grade_level, label, name
+         FROM classes
+         WHERE school_year=? AND period_label=?"
+      );
+      $classRows->execute([$schoolYearAbs, $periodLabelAbs]);
+      $classMap = [];
+      foreach ($classRows->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $id = (int)($c['id'] ?? 0);
+        if ($id <= 0) continue;
+        $name = normalize_lookup_token((string)($c['name'] ?? ''));
+        if ($name !== '') $classMap[$name] = $id;
+        $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+        $label = (string)($c['label'] ?? '');
+        $display = normalize_lookup_token(computed_class_name($grade, $label));
+        if ($display !== '') $classMap[$display] = $id;
+      }
+
+      $studentRows = $pdo->prepare(
+        "SELECT s.id, s.first_name, s.last_name, s.class_id
+         FROM students s
+         INNER JOIN classes c ON c.id=s.class_id
+         WHERE c.school_year=? AND c.period_label=?"
+      );
+      $studentRows->execute([$schoolYearAbs, $periodLabelAbs]);
+      $studentMap = [];
+      foreach ($studentRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $sid = (int)($r['id'] ?? 0);
+        $cid = (int)($r['class_id'] ?? 0);
+        if ($sid <= 0 || $cid <= 0) continue;
+        $first = (string)($r['first_name'] ?? '');
+        $last = (string)($r['last_name'] ?? '');
+        $k1 = normalize_lookup_token($last . ',' . $first);
+        $k2 = normalize_lookup_token($last . ' ' . $first);
+        if ($k1 !== '') $studentMap[$cid][$k1] = $sid;
+        if ($k2 !== '') $studentMap[$cid][$k2] = $sid;
+      }
+
+      $upAbs = $pdo->prepare(
+        "INSERT INTO student_period_absences (student_id, class_id, school_year, period_label, absence_days_total, absence_days_unexcused)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE class_id=VALUES(class_id), absence_days_total=VALUES(absence_days_total), absence_days_unexcused=VALUES(absence_days_unexcused), updated_at=NOW()"
+      );
+      $delAbs = $pdo->prepare(
+        "DELETE FROM student_period_absences WHERE student_id=? AND school_year=? AND period_label=?"
+      );
+
+      $processed = 0;
+      $upserted = 0;
+      $deleted = 0;
+      $skipped = 0;
+      $skipDetails = [];
+
+      $pdo->beginTransaction();
+      foreach ($rows as $lineNo => $row) {
+        $processed++;
+        $classRaw = trim((string)($row[$colClass - 1] ?? ''));
+        $studentRaw = trim((string)($row[$colStudent - 1] ?? ''));
+        if ($classRaw === '' && $studentRaw === '') continue;
+
+        $classKey = normalize_lookup_token($classRaw);
+        $classIdAbs = $classMap[$classKey] ?? 0;
+        if ($classIdAbs <= 0) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden: {class}') . ' ' . $classRaw];
+          continue;
+        }
+
+        $studentKey = normalize_lookup_token($studentRaw);
+        $studentIdAbs = (int)($studentMap[$classIdAbs][$studentKey] ?? 0);
+        if ($studentIdAbs <= 0) {
+          [$lastP, $firstP] = parse_student_name_token($studentRaw);
+          $fallback1 = normalize_lookup_token($lastP . ',' . $firstP);
+          $fallback2 = normalize_lookup_token($lastP . ' ' . $firstP);
+          if ($fallback1 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback1] ?? 0);
+          if ($studentIdAbs <= 0 && $fallback2 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback2] ?? 0);
+        }
+        if ($studentIdAbs <= 0) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.student_not_found', 'Schüler nicht gefunden.')];
+          continue;
+        }
+
+        try {
+          $total = parse_optional_non_negative_int((string)($row[$colTotal - 1] ?? ''), t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
+          $unexcused = parse_optional_non_negative_int((string)($row[$colUnexcused - 1] ?? ''), t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));
+        } catch (Throwable $ex) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => $ex->getMessage() . ' (Zeile ' . (string)($lineNo + 1) . ')'];
+          continue;
+        }
+
+        if ($total === null && $unexcused === null) {
+          $delAbs->execute([$studentIdAbs, $schoolYearAbs, $periodLabelAbs]);
+          if ($delAbs->rowCount() > 0) $deleted++;
+          continue;
+        }
+
+        $totalVal = $total ?? 0;
+        $unexcusedVal = $unexcused ?? 0;
+        if ($unexcusedVal > $totalVal) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('teacher.students.error.absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Gesamt-Fehltage sein.')];
+          continue;
+        }
+
+        $upAbs->execute([$studentIdAbs, $classIdAbs, $schoolYearAbs, $periodLabelAbs, $totalVal, $unexcusedVal]);
+        $upserted++;
+      }
+      $pdo->commit();
+
+      audit('admin_students_import_absence_csv', $userId, [
+        'school_year' => $schoolYearAbs,
+        'period_label' => $periodLabelAbs,
+        'processed' => $processed,
+        'upserted' => $upserted,
+        'deleted' => $deleted,
+        'skipped' => $skipped,
+      ]);
+
+      $ok = str_replace(
+        ['{processed}', '{updated}', '{deleted}', '{skipped}'],
+        [(string)$processed, (string)$upserted, (string)$deleted, (string)$skipped],
+        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
+      );
+
+      if ($skipDetails) {
+        $skipPreview = array_slice($skipDetails, 0, 10);
+        $errLines = [];
+        foreach ($skipPreview as $d) {
+          $errLines[] = (string)($d['name'] ?? '') . ': ' . (string)($d['reason'] ?? '');
+        }
+        if ($errLines) {
+          $ok .= ' ' . t('admin.students.import.absence.skip_prefix', 'Hinweise: ') . implode(' | ', $errLines);
+          if (count($skipDetails) > count($skipPreview)) {
+            $ok .= ' ' . str_replace('{count}', (string)(count($skipDetails) - count($skipPreview)), t('admin.students.import.absence.skip_more', '+{count} weitere.'));
+          }
+        }
+      }
     }
 
     elseif ($action === 'import_blackbaud_csv') {
@@ -907,6 +1118,69 @@ render_admin_header(t('admin.students.title'));
 <?php endif; ?>
 
 <div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
+  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=13, unentschuldigt=15. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 190px 170px 1fr auto; gap:12px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="import_absence_csv">
+
+    <div>
+      <label><?=h(t('admin.students.import.school_year'))?></label>
+      <select name="absence_school_year" required>
+        <?php if ($defaultSchoolYear === ''): ?>
+          <option value="" selected disabled><?=h(t('admin.students.import.select_year'))?></option>
+        <?php else: ?>
+          <option value="<?=h($defaultSchoolYear)?>" selected><?=h($defaultSchoolYear)?> <?=h(t('admin.students.import.default_year_suffix'))?></option>
+        <?php endif; ?>
+        <?php foreach ($years as $y): ?>
+          <?php if ((string)$y === $defaultSchoolYear) continue; ?>
+          <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.students.import.absence_period', 'Schulhalbjahr'))?></label>
+      <select name="absence_period_label" required>
+        <option value="H1" selected><?=h(t('admin.classes.period.h1', '1. Halbjahr'))?></option>
+        <option value="H2"><?=h(t('admin.classes.period.h2', '2. Halbjahr'))?></option>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.students.import.csv_label'))?></label>
+      <input type="file" id="absenceCsvFile" name="absence_csv_file" accept=".csv,text/csv,text/tab-separated-values" required>
+    </div>
+
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn" type="submit"><?=h(t('admin.students.import.start'))?></button>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.students.import.absence_col_class', 'Spalte Klasse'))?></label>
+      <input class="input" type="number" min="1" step="1" name="absence_col_class" id="absenceColClass" value="1" required>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.import.absence_col_student', 'Spalte Schüler'))?></label>
+      <input class="input" type="number" min="1" step="1" name="absence_col_student" id="absenceColStudent" value="2" required>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.import.absence_col_total', 'Spalte Fehltage gesamt'))?></label>
+      <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" value="13" required>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.import.absence_col_unexcused', 'Spalte Fehltage unentschuldigt'))?></label>
+      <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" value="15" required>
+    </div>
+  </form>
+
+  <div style="margin-top:10px;" id="absencePreviewWrap">
+    <div class="muted" id="absencePreviewHint"><?=h(t('admin.students.import.absence_preview_hint', 'Beispiel-Extraktion aus den ersten Zeilen der Datei wird hier angezeigt.'))?></div>
+    <div id="absencePreviewTable"></div>
+  </div>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.blackbaud_heading'))?></h2>
   <p class="muted"><?=t('admin.students.import.blackbaud_hint')?></p>
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 220px 1fr auto; gap:12px; align-items:end;">
@@ -1005,5 +1279,46 @@ render_admin_header(t('admin.students.title'));
     </table>
   <?php endif; ?>
 </div>
+
+
+<script>
+(function(){
+  const fileInput = document.getElementById('absenceCsvFile');
+  const wrap = document.getElementById('absencePreviewTable');
+  const hint = document.getElementById('absencePreviewHint');
+  const colClass = document.getElementById('absenceColClass');
+  const colStudent = document.getElementById('absenceColStudent');
+  const colTotal = document.getElementById('absenceColTotal');
+  const colUnexcused = document.getElementById('absenceColUnexcused');
+  if (!fileInput || !wrap) return;
+
+  let parsed = [];
+  function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+  function idx(el, d){ const n = Number(el?.value || d); return Number.isFinite(n) && n > 0 ? Math.floor(n)-1 : d-1; }
+  function render(){
+    if (!parsed.length) { wrap.innerHTML = ''; return; }
+    const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,13), ui = idx(colUnexcused,15);
+    const rows = parsed.slice(0,5).map(r => {
+      const cls = r[ci] ?? '';
+      const stu = r[si] ?? '';
+      const tot = r[ti] ?? '';
+      const une = r[ui] ?? '';
+      return `<tr><td>${esc(cls)}</td><td>${esc(stu)}</td><td>${esc(tot)}</td><td>${esc(une)}</td></tr>`;
+    }).join('');
+    wrap.innerHTML = `<table class="table" style="margin-top:8px;"><thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table>`;
+    if (hint) hint.style.display = 'none';
+  }
+  async function parseFile(){
+    const f = fileInput.files?.[0];
+    parsed = [];
+    if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
+    const txt = await f.text();
+    parsed = txt.split(/\r?\n/).map(l => l.split('\t')).filter(r => r.some(c => String(c).trim() !== ''));
+    render();
+  }
+  fileInput.addEventListener('change', parseFile);
+  [colClass,colStudent,colTotal,colUnexcused].forEach(el => el?.addEventListener('input', render));
+})();
+</script>
 
 <?php render_admin_footer(); ?>
