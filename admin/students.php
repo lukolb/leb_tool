@@ -1453,16 +1453,17 @@ render_admin_header(t('admin.students.title'));
 
   function renderRows(rows, matched, skipped){
     const hdr = selectedHeaders();
-    const headerInfo = hdr
-      ? `<div class="muted" style="margin:6px 0;">${esc('CSV-Spaltenköpfe: Klasse=' + (hdr.class || '—') + ' · Schüler=' + (hdr.student || '—') + ' · Fehltage gesamt=' + (hdr.total || '—') + ' · Unentschuldigt=' + (hdr.unexcused || '—'))}</div>`
+    const csvHeaderRow = hdr
+      ? `<tr><th class="muted">${esc(hdr.class || '—')}</th><th class="muted">${esc(hdr.student || '—')}</th><th class="muted">${esc(hdr.total || '—')}</th><th class="muted">${esc(hdr.unexcused || '—')}</th></tr>`
       : '';
+    const thead = `<thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr>${csvHeaderRow}</thead>`;
     if (!rows.length) {
-      wrap.innerHTML = `${headerInfo}<div class="muted" style="margin-top:8px;">${esc('Keine passenden System-Schüler in den ersten Zeilen gefunden.')}</div>`;
+      wrap.innerHTML = `<table class="table" style="margin-top:8px;">${thead}<tbody></tbody></table><div class="muted" style="margin-top:8px;">${esc('Keine passenden System-Schüler in den ersten Zeilen gefunden.')}</div>`;
       if (hint) hint.style.display = 'none';
       return;
     }
     const trs = rows.map(r => `<tr><td>${esc(r.class)}</td><td>${esc(r.student)}</td><td>${esc(r.total)}</td><td>${esc(r.unexcused)}</td></tr>`).join('');
-    wrap.innerHTML = `${headerInfo}<div class="muted" style="margin:6px 0;">${esc('Gefundene System-Schüler: ' + matched + ' · Übersprungen: ' + skipped)}</div><table class="table" style="margin-top:8px;"><thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr></thead><tbody>${trs}</tbody></table>`;
+    wrap.innerHTML = `<div class="muted" style="margin:6px 0;">${esc('Gefundene System-Schüler: ' + matched + ' · Übersprungen: ' + skipped)}</div><table class="table" style="margin-top:8px;">${thead}<tbody>${trs}</tbody></table>`;
     if (hint) hint.style.display = 'none';
   }
 
