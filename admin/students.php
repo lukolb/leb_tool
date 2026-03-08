@@ -11,6 +11,7 @@ $userId = (int)(current_user()['id'] ?? 0);
 
 $cfg = app_config();
 $defaultSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+$absencePreviewApiUrl = url('admin/ajax/absence_import_preview.php');
 
 $err = '';
 $ok = '';
@@ -1350,6 +1351,11 @@ render_admin_header(t('admin.students.title'));
 
   const previewApiUrl = <?= json_encode($absencePreviewApiUrl) ?>;
   const csrf = <?= json_encode(csrf_token()) ?>;
+  if (!previewApiUrl || typeof previewApiUrl !== 'string') {
+    wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc('Preview-API ist nicht verfügbar.')}</div>`;
+    if (hint) hint.style.display = 'none';
+    return;
+  }
   let parsed = [];
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
