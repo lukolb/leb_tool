@@ -642,6 +642,7 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+<div id="settingsFlashMessages"></div>
 
 <!-- Live Preview Card -->
 <div class="card" id="previewCard">
@@ -1779,6 +1780,105 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
 
     btnAdd.addEventListener('click', () => rowsEl.appendChild(rowTpl()));
   }
+})();
+</script>
+
+<script>
+(function(){
+  const flashHost = document.getElementById('settingsFlashMessages');
+
+  function setFlash(type, text){
+    if (!flashHost) return;
+    if (!text) { flashHost.innerHTML = ''; return; }
+    const cls = type === 'danger' ? 'danger' : 'success';
+    flashHost.innerHTML = `<div class="alert ${cls}"><strong>${String(text)}</strong></div>`;
+    flashHost.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function refreshCsrfFromHtml(doc){
+    const tokenInput = doc.querySelector('input[name="csrf_token"]');
+    if (!tokenInput) return;
+    const token = tokenInput.value || '';
+    if (!token) return;
+    document.querySelectorAll('input[name="csrf_token"]').forEach((el) => {
+      el.value = token;
+    });
+  }
+
+  async function ajaxSubmit(form){
+    const action = (form.getAttribute('action') || window.location.href || '').toString();
+    const data = new FormData(form);
+    const submitButtons = Array.from(form.querySelectorAll('button[type="submit"],input[type="submit"]'));
+    submitButtons.forEach((btn) => btn.disabled = true);
+    try {
+      const resp = await fetch(action, {
+        method: 'POST',
+        body: data,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const html = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      refreshCsrfFromHtml(doc);
+      const err = doc.querySelector('.alert.danger strong');
+      const ok = doc.querySelector('.alert.success strong');
+      if (!resp.ok) {
+        setFlash('danger', (err ? err.textContent : '') || 'Speichern fehlgeschlagen.');
+        return;
+      }
+      if (err && err.textContent) {
+        setFlash('danger', err.textContent);
+      } else {
+        setFlash('success', (ok ? ok.textContent : '') || 'Gespeichert.');
+      }
+    } catch (e) {
+      setFlash('danger', 'Netzwerkfehler beim Speichern.');
+    } finally {
+      submitButtons.forEach((btn) => btn.disabled = false);
+    }
+  }
+
+  document.querySelectorAll('form[method="post"]').forEach((form) => {
+    form.addEventListener('submit', (ev) => {
+      if (ev.defaultPrevented) return;
+      ev.preventDefault();
+      ajaxSubmit(form);
+    });
+  });
+
+  // Make all settings cards with an H2 collapsible (collapsed by default)
+  const cards = Array.from(document.querySelectorAll('.card')).filter((card) => card.querySelector(':scope > h2'));
+  cards.forEach((card) => {
+    if (card.tagName.toLowerCase() === 'details') return;
+    const h2 = card.querySelector(':scope > h2');
+    if (!h2) return;
+
+    const details = document.createElement('details');
+    details.className = card.className;
+    for (const attr of card.attributes) {
+      if (attr.name === 'class') continue;
+      details.setAttribute(attr.name, attr.value);
+    }
+
+    const summary = document.createElement('summary');
+    summary.style.cursor = 'pointer';
+    const strong = document.createElement('strong');
+    strong.textContent = h2.textContent || '';
+    summary.appendChild(strong);
+
+    const body = document.createElement('div');
+    body.style.marginTop = '10px';
+
+    const nodes = Array.from(card.childNodes);
+    nodes.forEach((node) => {
+      if (node === h2) return;
+      body.appendChild(node);
+    });
+
+    details.appendChild(summary);
+    details.appendChild(body);
+    card.replaceWith(details);
+  });
 })();
 </script>
 
