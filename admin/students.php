@@ -373,8 +373,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $colClass = max(1, (int)($_POST['absence_col_class'] ?? 1));
       $colStudent = max(1, (int)($_POST['absence_col_student'] ?? 2));
-      $colTotal = max(1, (int)($_POST['absence_col_total'] ?? 13));
-      $colUnexcused = max(1, (int)($_POST['absence_col_unexcused'] ?? 15));
+      $colTotal = max(1, (int)($_POST['absence_col_total'] ?? 15));
+      $colUnexcused = max(1, (int)($_POST['absence_col_unexcused'] ?? 16));
 
       $rows = read_tab_rows($csvTmp);
       if (!$rows) {
@@ -1166,11 +1166,11 @@ render_admin_header(t('admin.students.title'));
     </div>
     <div>
       <label><?=h(t('admin.students.import.absence_col_total', 'Spalte Fehltage gesamt'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" value="13" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" value="15" required>
     </div>
     <div>
       <label><?=h(t('admin.students.import.absence_col_unexcused', 'Spalte Fehltage unentschuldigt'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" value="15" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" value="16" required>
     </div>
   </form>
 
@@ -1290,34 +1290,73 @@ render_admin_header(t('admin.students.title'));
   const colStudent = document.getElementById('absenceColStudent');
   const colTotal = document.getElementById('absenceColTotal');
   const colUnexcused = document.getElementById('absenceColUnexcused');
+  const schoolYear = document.querySelector('select[name="absence_school_year"]');
+  const period = document.querySelector('select[name="absence_period_label"]');
   if (!fileInput || !wrap) return;
 
+  const previewApiUrl = <?= json_encode($absencePreviewApiUrl) ?>;
+  const csrf = <?= json_encode(csrf_token()) ?>;
   let parsed = [];
+
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
   function idx(el, d){ const n = Number(el?.value || d); return Number.isFinite(n) && n > 0 ? Math.floor(n)-1 : d-1; }
-  function render(){
-    if (!parsed.length) { wrap.innerHTML = ''; return; }
-    const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,13), ui = idx(colUnexcused,15);
-    const rows = parsed.slice(0,5).map(r => {
-      const cls = r[ci] ?? '';
-      const stu = r[si] ?? '';
-      const tot = r[ti] ?? '';
-      const une = r[ui] ?? '';
-      return `<tr><td>${esc(cls)}</td><td>${esc(stu)}</td><td>${esc(tot)}</td><td>${esc(une)}</td></tr>`;
-    }).join('');
-    wrap.innerHTML = `<table class="table" style="margin-top:8px;"><thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">—</td></tr>'}</tbody></table>`;
+
+  function extractRows(){
+    const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,15), ui = idx(colUnexcused,16);
+    return parsed.slice(0,200).map(r => ({
+      class: r[ci] ?? '',
+      student: r[si] ?? '',
+      total: r[ti] ?? '',
+      unexcused: r[ui] ?? '',
+    }));
+  }
+
+  function renderRows(rows, matched, skipped){
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc('Keine passenden System-Schüler in den ersten Zeilen gefunden.')}</div>`;
+      if (hint) hint.style.display = 'none';
+      return;
+    }
+    const trs = rows.map(r => `<tr><td>${esc(r.class)}</td><td>${esc(r.student)}</td><td>${esc(r.total)}</td><td>${esc(r.unexcused)}</td></tr>`).join('');
+    wrap.innerHTML = `<div class="muted" style="margin:6px 0;">${esc('Gefundene System-Schüler: ' + matched + ' · Übersprungen: ' + skipped)}</div><table class="table" style="margin-top:8px;"><thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr></thead><tbody>${trs}</tbody></table>`;
     if (hint) hint.style.display = 'none';
   }
+
+  async function refreshPreview(){
+    if (!parsed.length) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
+    const payload = {
+      csrf_token: csrf,
+      school_year: (schoolYear?.value || '').toString(),
+      period_label: (period?.value || 'H1').toString(),
+      rows: extractRows(),
+    };
+    try {
+      const resp = await fetch(previewApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Preview fehlgeschlagen');
+      renderRows(Array.isArray(data.preview) ? data.preview : [], Number(data.matched||0), Number(data.skipped||0));
+    } catch (e) {
+      wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc(String(e?.message || e))}</div>`;
+      if (hint) hint.style.display = 'none';
+    }
+  }
+
   async function parseFile(){
     const f = fileInput.files?.[0];
     parsed = [];
     if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const txt = await f.text();
-    parsed = txt.split(/\r?\n/).map(l => l.split('\t')).filter(r => r.some(c => String(c).trim() !== ''));
-    render();
+    parsed = txt.split(/?
+/).map(l => l.split('	')).filter(r => r.some(c => String(c).trim() !== ''));
+    await refreshPreview();
   }
+
   fileInput.addEventListener('change', parseFile);
-  [colClass,colStudent,colTotal,colUnexcused].forEach(el => el?.addEventListener('input', render));
+  [colClass,colStudent,colTotal,colUnexcused,schoolYear,period].forEach(el => el?.addEventListener('input', refreshPreview));
 })();
 </script>
 
