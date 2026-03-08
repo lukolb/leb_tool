@@ -20,10 +20,13 @@ function computed_class_name_preview(?int $grade, string $label): string {
 }
 
 try {
-  csrf_verify();
   $raw = file_get_contents('php://input') ?: '';
   $data = json_decode($raw, true);
-  if (!is_array($data)) throw new RuntimeException('Ungültige Anfrage.');
+  if (!is_array($data)) $data = [];
+  if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
+  if (!isset($_POST['csrf_token']) && isset($_SERVER['HTTP_X_CSRF_TOKEN'])) $_POST['csrf_token'] = (string)$_SERVER['HTTP_X_CSRF_TOKEN'];
+  csrf_verify();
+  if (!$data) throw new RuntimeException('Ungültige Anfrage.');
 
   $schoolYear = trim((string)($data['school_year'] ?? ''));
   if ($schoolYear === '') throw new RuntimeException('school_year fehlt.');

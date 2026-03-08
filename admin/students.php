@@ -19,6 +19,10 @@ $importSummary = $_SESSION['admin_import_summary'] ?? null;
 if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
   unset($_SESSION['admin_import_summary']);
 }
+$absenceImportSummary = $_SESSION['admin_absence_import_summary'] ?? null;
+if ($absenceImportSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+  unset($_SESSION['admin_absence_import_summary']);
+}
 
 function period_label_display_admin(?string $raw): string {
   $val = normalize_class_period_label($raw);
@@ -388,6 +392,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       );
       $classRows->execute([$schoolYearAbs, $periodLabelAbs]);
       $classMap = [];
+      $classById = [];
       foreach ($classRows->fetchAll(PDO::FETCH_ASSOC) as $c) {
         $id = (int)($c['id'] ?? 0);
         if ($id <= 0) continue;
@@ -395,8 +400,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($name !== '') $classMap[$name] = $id;
         $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
         $label = (string)($c['label'] ?? '');
-        $display = normalize_lookup_token(computed_class_name($grade, $label));
+        $displayName = computed_class_name($grade, $label);
+        $display = normalize_lookup_token($displayName);
         if ($display !== '') $classMap[$display] = $id;
+        $classById[$id] = [
+          'id' => $id,
+          'name' => (string)($c['name'] ?? ''),
+          'display' => $displayName !== '' ? $displayName : (string)($c['name'] ?? ''),
+        ];
       }
 
       $studentRows = $pdo->prepare(
@@ -433,6 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $deleted = 0;
       $skipped = 0;
       $skipDetails = [];
+      $classIdsInImport = [];
 
       $pdo->beginTransaction();
       foreach ($rows as $lineNo => $row) {
@@ -443,6 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $classKey = normalize_lookup_token($classRaw);
         $classIdAbs = $classMap[$classKey] ?? 0;
+        if ($classIdAbs > 0) $classIdsInImport[$classIdAbs] = true;
         if ($classIdAbs <= 0) {
           $skipped++;
           $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden: {class}') . ' ' . $classRaw];
@@ -492,6 +505,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $pdo->commit();
 
+      $foundClasses = [];
+      foreach (array_keys($classIdsInImport) as $cid) {
+        $c = $classById[(int)$cid] ?? null;
+        if (is_array($c)) $foundClasses[] = (string)($c['display'] ?? $c['name'] ?? ('#'.$cid));
+      }
+      sort($foundClasses, SORT_NATURAL | SORT_FLAG_CASE);
+
+      $missingClasses = [];
+      foreach ($classById as $cid => $c) {
+        if (isset($classIdsInImport[(int)$cid])) continue;
+        $missingClasses[] = (string)($c['display'] ?? $c['name'] ?? ('#'.$cid));
+      }
+      sort($missingClasses, SORT_NATURAL | SORT_FLAG_CASE);
+
+      $absenceImportSummary = [
+        'school_year' => $schoolYearAbs,
+        'period_label' => $periodLabelAbs,
+        'processed' => $processed,
+        'updated' => $upserted,
+        'deleted' => $deleted,
+        'skipped' => $skipped,
+        'found_classes' => $foundClasses,
+        'missing_classes' => $missingClasses,
+      ];
+      $_SESSION['admin_absence_import_summary'] = $absenceImportSummary;
+
       audit('admin_students_import_absence_csv', $userId, [
         'school_year' => $schoolYearAbs,
         'period_label' => $periodLabelAbs,
@@ -506,20 +545,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         [(string)$processed, (string)$upserted, (string)$deleted, (string)$skipped],
         t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
       );
-
-      if ($skipDetails) {
-        $skipPreview = array_slice($skipDetails, 0, 10);
-        $errLines = [];
-        foreach ($skipPreview as $d) {
-          $errLines[] = (string)($d['name'] ?? '') . ': ' . (string)($d['reason'] ?? '');
-        }
-        if ($errLines) {
-          $ok .= ' ' . t('admin.students.import.absence.skip_prefix', 'Hinweise: ') . implode(' | ', $errLines);
-          if (count($skipDetails) > count($skipPreview)) {
-            $ok .= ' ' . str_replace('{count}', (string)(count($skipDetails) - count($skipPreview)), t('admin.students.import.absence.skip_more', '+{count} weitere.'));
-          }
-        }
-      }
     }
 
     elseif ($action === 'import_blackbaud_csv') {
@@ -1180,6 +1205,44 @@ render_admin_header(t('admin.students.title'));
   </div>
 </div>
 
+<?php if ($absenceImportSummary): ?>
+  <div class="card">
+    <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></h2>
+    <p>
+      <?=h(str_replace(
+        ['{processed}','{updated}','{deleted}','{skipped}'],
+        [
+          (string)($absenceImportSummary['processed'] ?? 0),
+          (string)($absenceImportSummary['updated'] ?? 0),
+          (string)($absenceImportSummary['deleted'] ?? 0),
+          (string)($absenceImportSummary['skipped'] ?? 0)
+        ],
+        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
+      ))?>
+    </p>
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px;">
+      <div>
+        <h3 style="margin:0 0 6px 0;"><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></h3>
+        <?php $fc = (array)($absenceImportSummary['found_classes'] ?? []); ?>
+        <?php if (!$fc): ?>
+          <div class="muted">—</div>
+        <?php else: ?>
+          <ul style="margin:0 0 0 18px;"><?php foreach ($fc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul>
+        <?php endif; ?>
+      </div>
+      <div>
+        <h3 style="margin:0 0 6px 0;"><?=h(t('admin.students.import.absence.missing_classes', 'Klassen ohne Importdaten'))?></h3>
+        <?php $mc = (array)($absenceImportSummary['missing_classes'] ?? []); ?>
+        <?php if (!$mc): ?>
+          <div class="muted">—</div>
+        <?php else: ?>
+          <ul style="margin:0 0 0 18px;"><?php foreach ($mc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
+
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.blackbaud_heading'))?></h2>
   <p class="muted"><?=t('admin.students.import.blackbaud_hint')?></p>
@@ -1350,7 +1413,9 @@ render_admin_header(t('admin.students.title'));
     parsed = [];
     if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const txt = await f.text();
-    parsed = txt.split(/?
+    parsed = txt.split(/
+?
+?
 /).map(l => l.split('	')).filter(r => r.some(c => String(c).trim() !== ''));
     await refreshPreview();
   }
