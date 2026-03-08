@@ -1410,7 +1410,11 @@ render_admin_header(t('admin.students.title'));
     parsed = [];
     if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const txt = await f.text();
-    parsed = txt.split(/\r?\n/).map(l => l.split('\t')).filter(r => r.some(c => String(c).trim() !== ''));
+    const normalized = String(txt).split('\r').join('');
+    parsed = normalized
+      .split('\n')
+      .map((l) => l.split('\t'))
+      .filter((r) => r.some((c) => String(c).trim() !== ''));
 /).map(l => l.split('	')).filter(r => r.some(c => String(c).trim() !== ''));
     await refreshPreview();
   }
