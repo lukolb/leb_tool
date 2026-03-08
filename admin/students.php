@@ -897,7 +897,7 @@ $classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label
 $scopeRows = $pdo->query(
   "SELECT DISTINCT school_year, period_label
    FROM classes
-   ORDER BY school_year DESC,
+   ORDER BY school_year ASC,
             CASE WHEN period_label='H2' THEN 2 ELSE 1 END ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $absenceScopeOptions = [];
@@ -984,16 +984,6 @@ render_admin_header(t('admin.students.title'));
 <?php if ($absenceImportSummary): ?>
   <div class="alert success">
     <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
-    <div style="margin-top:6px;"><?=h(str_replace(
-      ['{processed}','{updated}','{deleted}','{skipped}'],
-      [
-        (string)($absenceImportSummary['processed'] ?? 0),
-        (string)($absenceImportSummary['updated'] ?? 0),
-        (string)($absenceImportSummary['deleted'] ?? 0),
-        (string)($absenceImportSummary['skipped'] ?? 0)
-      ],
-      t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
-    ))?></div>
     <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
       <div>
         <div><strong><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></strong></div>
@@ -1137,7 +1127,7 @@ render_admin_header(t('admin.students.title'));
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
   <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
-  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 280px 1fr auto; gap:12px; align-items:end;">
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 260px minmax(260px,1fr) auto 95px 95px 95px 95px; gap:10px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="import_absence_csv">
 
@@ -1171,19 +1161,19 @@ render_admin_header(t('admin.students.title'));
 
     <div>
       <label><?=h(t('admin.students.import.absence_col_class', 'Spalte Klasse'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_class" id="absenceColClass" value="1" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_class" id="absenceColClass" style="max-width:84px;" value="1" required>
     </div>
     <div>
       <label><?=h(t('admin.students.import.absence_col_student', 'Spalte Schüler'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_student" id="absenceColStudent" value="2" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_student" id="absenceColStudent" style="max-width:84px;" value="2" required>
     </div>
     <div>
       <label><?=h(t('admin.students.import.absence_col_total', 'Spalte Fehltage gesamt'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" value="15" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" style="max-width:84px;" value="15" required>
     </div>
     <div>
       <label><?=h(t('admin.students.import.absence_col_unexcused', 'Spalte Fehltage unentschuldigt'))?></label>
-      <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" value="16" required>
+      <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" style="max-width:84px;" value="16" required>
     </div>
   </form>
 
