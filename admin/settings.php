@@ -437,6 +437,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['delegation']['show_other_fields_readonly'] = isset($_POST['delegation_show_other_fields_readonly']);
     }
 
+    // ---- Teacher settings ----
+    if ($action === 'save' && isset($_POST['teacher_settings_present'])) {
+      if (!isset($cfg['teacher']) || !is_array($cfg['teacher'])) $cfg['teacher'] = [];
+      $cfg['teacher']['allow_absence_edit'] = isset($_POST['teacher_allow_absence_edit']);
+    }
+
     // ---- Logo actions ----
     if ($action === 'remove_logo') {
       $brand['logo_path'] = '';
@@ -534,6 +540,7 @@ $fromName  = $mail['from_name'] ?? ($org ?: t('admin.settings.default_org', 'LEB
 
 $studentCfg = $cfg['student'] ?? [];
 $delegationCfg = $cfg['delegation'] ?? [];
+$teacherCfg = $cfg['teacher'] ?? [];
 
 $ai = $cfg['ai'] ?? [];
 $aiKey = $ai['api_key'] ?? '';
@@ -544,6 +551,7 @@ $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
 
 $delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
+$teacherAllowAbsenceEdit = (bool)($teacherCfg['allow_absence_edit'] ?? false);
 
 $parentCfg = $cfg['parent'] ?? [];
 $parentDownloadEnabled = (bool)($parentCfg['download_enabled'] ?? false);
@@ -1111,6 +1119,30 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       </label>
     </div>
     <p class="muted"><?=h(t('admin.settings.delegations.show_other_fields_readonly_hint', 'Wenn aktiviert, sehen Delegierte alle anderen Fachbereiche schreibgeschützt; Bearbeitung bleibt auf delegierte Felder beschränkt.'))?></p>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.teacher.title', 'Lehrkräfte'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.teacher.desc', 'Steuere, ob Lehrkräfte Fehltage in der Klassenansicht bearbeiten dürfen.'))?></p>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="teacher_settings_present" value="1">
+
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="teacher_allow_absence_edit" value="1" <?=$teacherAllowAbsenceEdit ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.teacher.allow_absence_edit', 'Lehrkräften Bearbeitung der Fehltage erlauben'))?></span>
+      </label>
+    </div>
+    <p class="muted"><?=h(t('admin.settings.teacher.allow_absence_edit_hint', 'Wenn deaktiviert, sehen Lehrkräfte Fehltage nur lesend. Bearbeitung ist dann nur im Admin-Import/-Bereich möglich.'))?></p>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

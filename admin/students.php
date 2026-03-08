@@ -32,6 +32,15 @@ function period_label_display_admin(?string $raw): string {
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
+function parse_school_scope_key(string $raw): array {
+  $raw = trim($raw);
+  if ($raw === '' || strpos($raw, '|') === false) return ['', 'H1'];
+  [$year, $period] = array_pad(explode('|', $raw, 2), 2, '');
+  $year = trim((string)$year);
+  $period = normalize_class_period_label((string)$period);
+  return [$year, $period];
+}
+
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
   $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
@@ -370,11 +379,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $csvTmp = (string)($_FILES['absence_csv_file']['tmp_name'] ?? '');
       if ($csvTmp === '') throw new RuntimeException(t('admin.students.error.csv_required'));
 
-      $schoolYearAbs = trim((string)($_POST['absence_school_year'] ?? ''));
+      [$schoolYearAbs, $periodLabelAbs] = parse_school_scope_key((string)($_POST['absence_scope'] ?? ''));
+      if ($schoolYearAbs === '') {
+        $schoolYearAbs = trim((string)($_POST['absence_school_year'] ?? ''));
+      }
       if ($schoolYearAbs === '') $schoolYearAbs = $defaultSchoolYear;
       if ($schoolYearAbs === '') throw new RuntimeException(t('admin.students.error.school_year_missing'));
 
-      $periodLabelAbs = normalize_class_period_label((string)($_POST['absence_period_label'] ?? 'H1'));
+      if (!isset($_POST['absence_scope']) || trim((string)$_POST['absence_scope']) === '') {
+        $periodLabelAbs = normalize_class_period_label((string)($_POST['absence_period_label'] ?? $periodLabelAbs));
+      }
 
       $colClass = max(1, (int)($_POST['absence_col_class'] ?? 1));
       $colStudent = max(1, (int)($_POST['absence_col_student'] ?? 2));
@@ -879,6 +893,61 @@ $deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 $classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+$scopeRows = $pdo->query(
+  "SELECT DISTINCT school_year, period_label
+   FROM classes
+   ORDER BY school_year DESC,
+            CASE WHEN period_label='H2' THEN 2 ELSE 1 END ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$absenceScopeOptions = [];
+foreach ($scopeRows as $row) {
+  $sy = trim((string)($row['school_year'] ?? ''));
+  if ($sy === '') continue;
+  $pl = normalize_class_period_label((string)($row['period_label'] ?? 'H1'));
+  $absenceScopeOptions[] = [
+    'school_year' => $sy,
+    'period_label' => $pl,
+    'key' => $sy . '|' . $pl,
+  ];
+}
+
+$activeAbsenceScope = null;
+$stActiveScope = $pdo->query(
+  "SELECT school_year, period_label
+   FROM classes
+   WHERE is_active=1
+   GROUP BY school_year, period_label
+   ORDER BY COUNT(*) DESC, school_year DESC,
+            CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
+   LIMIT 1"
+);
+if ($stActiveScope) {
+  $activeAbsenceScope = $stActiveScope->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+$activeAbsenceScopeKey = '';
+if ($activeAbsenceScope) {
+  $activeAbsenceScopeKey = trim((string)($activeAbsenceScope['school_year'] ?? '')) . '|' . normalize_class_period_label((string)($activeAbsenceScope['period_label'] ?? 'H1'));
+}
+if ($activeAbsenceScopeKey === '' && $defaultSchoolYear !== '') {
+  $activeAbsenceScopeKey = $defaultSchoolYear . '|H1';
+}
+if ($activeAbsenceScopeKey !== '') {
+  $exists = false;
+  foreach ($absenceScopeOptions as $opt) {
+    if ((string)($opt['key'] ?? '') === $activeAbsenceScopeKey) { $exists = true; break; }
+  }
+  if (!$exists) {
+    [$syFallback, $plFallback] = parse_school_scope_key($activeAbsenceScopeKey);
+    if ($syFallback !== '') {
+      array_unshift($absenceScopeOptions, [
+        'school_year' => $syFallback,
+        'period_label' => $plFallback,
+        'key' => $syFallback . '|' . $plFallback,
+      ]);
+    }
+  }
+}
 $templates = $pdo->query(
   "SELECT id, name, template_version, is_active
    FROM templates
@@ -1068,30 +1137,26 @@ render_admin_header(t('admin.students.title'));
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
   <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
-  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 190px 170px 1fr auto; gap:12px; align-items:end;">
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 280px 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="import_absence_csv">
 
     <div>
-      <label><?=h(t('admin.students.import.school_year'))?></label>
-      <select name="absence_school_year" required>
-        <?php if ($defaultSchoolYear === ''): ?>
+      <label><?=h(t('admin.students.import.absence_scope', 'Schuljahr/Halbjahr'))?></label>
+      <select name="absence_scope" id="absenceScopeSelect" required>
+        <?php if (!$absenceScopeOptions): ?>
           <option value="" selected disabled><?=h(t('admin.students.import.select_year'))?></option>
         <?php else: ?>
-          <option value="<?=h($defaultSchoolYear)?>" selected><?=h($defaultSchoolYear)?> <?=h(t('admin.students.import.default_year_suffix'))?></option>
+          <?php foreach ($absenceScopeOptions as $scope): ?>
+            <?php
+              $scopeYear = (string)($scope['school_year'] ?? '');
+              $scopePeriod = normalize_class_period_label((string)($scope['period_label'] ?? 'H1'));
+              $scopeKey = (string)($scope['key'] ?? ($scopeYear . '|' . $scopePeriod));
+              $scopeLabel = $scopeYear . ' · ' . period_label_display_admin($scopePeriod);
+            ?>
+            <option value="<?=h($scopeKey)?>" <?=$scopeKey === $activeAbsenceScopeKey ? 'selected' : ''?>><?=h($scopeLabel)?></option>
+          <?php endforeach; ?>
         <?php endif; ?>
-        <?php foreach ($years as $y): ?>
-          <?php if ((string)$y === $defaultSchoolYear) continue; ?>
-          <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-
-    <div>
-      <label><?=h(t('admin.students.import.absence_period', 'Schulhalbjahr'))?></label>
-      <select name="absence_period_label" required>
-        <option value="H1" selected><?=h(t('admin.classes.period.h1', '1. Halbjahr'))?></option>
-        <option value="H2"><?=h(t('admin.classes.period.h2', '2. Halbjahr'))?></option>
       </select>
     </div>
 
@@ -1345,8 +1410,7 @@ render_admin_header(t('admin.students.title'));
   const colStudent = document.getElementById('absenceColStudent');
   const colTotal = document.getElementById('absenceColTotal');
   const colUnexcused = document.getElementById('absenceColUnexcused');
-  const schoolYear = document.querySelector('select[name="absence_school_year"]');
-  const period = document.querySelector('select[name="absence_period_label"]');
+  const scopeSelect = document.getElementById('absenceScopeSelect');
   if (!fileInput || !wrap) return;
 
   const previewApiUrl = <?= json_encode($absencePreviewApiUrl) ?>;
@@ -1360,6 +1424,15 @@ render_admin_header(t('admin.students.title'));
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
   function idx(el, d){ const n = Number(el?.value || d); return Number.isFinite(n) && n > 0 ? Math.floor(n)-1 : d-1; }
+
+  function selectedScope(){
+    const raw = String(scopeSelect?.value || '');
+    const parts = raw.split('|');
+    return {
+      schoolYear: (parts[0] || '').trim(),
+      periodLabel: ((parts[1] || 'H1').trim() || 'H1')
+    };
+  }
 
   function extractRows(){
     const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,15), ui = idx(colUnexcused,16);
@@ -1386,8 +1459,8 @@ render_admin_header(t('admin.students.title'));
     if (!parsed.length) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const payload = {
       csrf_token: csrf,
-      school_year: (schoolYear?.value || '').toString(),
-      period_label: (period?.value || 'H1').toString(),
+      school_year: selectedScope().schoolYear,
+      period_label: selectedScope().periodLabel,
       rows: extractRows(),
     };
     try {
@@ -1415,7 +1488,7 @@ render_admin_header(t('admin.students.title'));
       .split('\n')
       .map((l) => l.split('\t'))
       .filter((r) => r.some((c) => String(c).trim() !== ''));
-/).map(l => l.split('	')).filter(r => r.some(c => String(c).trim() !== ''));
+  [colClass,colStudent,colTotal,colUnexcused,scopeSelect].forEach(el => el?.addEventListener('input', refreshPreview));
     await refreshPreview();
   }
 

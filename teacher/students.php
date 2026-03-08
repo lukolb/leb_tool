@@ -7,6 +7,8 @@ require_teacher();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$cfg = app_config();
+$teacherAllowAbsenceEdit = (bool)(($cfg['teacher']['allow_absence_edit'] ?? false));
 
 $toClassesUrl = get_role() == "admin" ? 'admin/classes.php' : 'teacher/classes.php';
 
@@ -901,6 +903,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     elseif ($action === 'save_absences') {
+      if (!$teacherAllowAbsenceEdit) {
+        throw new RuntimeException(t('teacher.students.error_absence_edit_disabled', 'Die Bearbeitung der Fehltage wurde durch die Administration deaktiviert.'));
+      }
       if (!db_has_table($pdo, 'student_period_absences')) {
         throw new RuntimeException(t('teacher.students.error_absence_table_missing', 'Fehltage-Tabelle ist nicht verfügbar.'));
       }
@@ -1658,6 +1663,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       '{period}' => (string)$periodLabel,
     ]))?>
   </p>
+  <?php if (!$teacherAllowAbsenceEdit): ?>
+    <div class="alert" style="margin-bottom:10px;">
+      <?=h(t('teacher.students.absence_readonly_hint', 'Fehltage können derzeit nur eingesehen werden. Die Bearbeitung ist durch die Administration deaktiviert.'))?>
+    </div>
+  <?php endif; ?>
   <form method="post">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
@@ -1675,15 +1685,17 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <?php $sid = (int)($s['id'] ?? 0); if ($sid <= 0) continue; $a = $absenceMap[$sid] ?? ['absence_days_total'=>0,'absence_days_unexcused'=>0]; ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
-            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][total]" value="<?=h((string)(int)($a['absence_days_total'] ?? 0))?>"></td>
-            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][unexcused]" value="<?=h((string)(int)($a['absence_days_unexcused'] ?? 0))?>"></td>
+            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][total]" value="<?=h((string)(int)($a['absence_days_total'] ?? 0))?>" <?=$teacherAllowAbsenceEdit ? '' : 'readonly'?>></td>
+            <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][unexcused]" value="<?=h((string)(int)($a['absence_days_unexcused'] ?? 0))?>" <?=$teacherAllowAbsenceEdit ? '' : 'readonly'?>></td>
           </tr>
         <?php endforeach; ?>
       </tbody>
     </table>
+    <?php if ($teacherAllowAbsenceEdit): ?>
     <div class="actions" style="justify-content:flex-start; margin-top:10px;">
       <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save_absences', 'Fehltage speichern'))?></button>
     </div>
+    <?php endif; ?>
   </form>
 </div>
 

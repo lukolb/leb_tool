@@ -239,6 +239,10 @@ function translations_catalog(): array {
       'admin.settings.delegations.desc' => 'Steuere, ob Delegierte zusätzlich alle übrigen Felder schreibgeschützt sehen dürfen.',
       'admin.settings.delegations.show_other_fields_readonly' => 'Nicht delegierte Felder schreibgeschützt anzeigen',
       'admin.settings.delegations.show_other_fields_readonly_hint' => 'Wenn aktiviert, sehen Delegierte alle anderen Fachbereiche schreibgeschützt; Bearbeitung bleibt auf delegierte Felder beschränkt.',
+      'admin.settings.teacher.title' => 'Lehrkräfte',
+      'admin.settings.teacher.desc' => 'Steuere, ob Lehrkräfte Fehltage in der Klassenansicht bearbeiten dürfen.',
+      'admin.settings.teacher.allow_absence_edit' => 'Lehrkräften Bearbeitung der Fehltage erlauben',
+      'admin.settings.teacher.allow_absence_edit_hint' => 'Wenn deaktiviert, sehen Lehrkräfte Fehltage nur lesend. Bearbeitung ist dann nur im Admin-Import/-Bereich möglich.',
       'admin.settings.tts.title' => 'Vorlesen (Text-to-Speech)',
       'admin.settings.tts.desc' => 'Wähle die Standard-Stimme und Lesegeschwindigkeit für Schüler. Die Liste basiert auf den in vits-web verfügbaren Stimmen.',
       'admin.settings.tts.voice_de_label' => 'Standard-Stimme (Deutsch)',
@@ -423,6 +427,7 @@ function translations_catalog(): array {
       'admin.students.import.absence_heading' => 'Fehltage-Import (CSV, tab-getrennt)',
       'admin.students.import.absence_hint' => 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Standard-Spalten: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Sind beide Fehltage-Spalten leer, werden bestehende Werte gelöscht.',
       'admin.students.import.absence_period' => 'Schulhalbjahr',
+      'admin.students.import.absence_scope' => 'Schuljahr/Halbjahr',
       'admin.students.import.absence_col_class' => 'Spalte Klasse',
       'admin.students.import.absence_col_student' => 'Spalte Schüler',
       'admin.students.import.absence_col_total' => 'Spalte Fehltage gesamt',
@@ -2084,6 +2089,8 @@ function translations_catalog(): array {
       'teacher.students.generate_logins' => 'Login-Codes/QR erstellen',
       'teacher.students.confirm_regenerate' => 'Wirklich ALLE Login-Codes/QR neu generieren? Alte Ausdrucke sind dann ungültig.',
       'teacher.students.regenerate_logins' => 'Neu generieren',
+      'teacher.students.absence_readonly_hint' => 'Fehltage können derzeit nur eingesehen werden. Die Bearbeitung ist durch die Administration deaktiviert.',
+      'teacher.students.error_absence_edit_disabled' => 'Die Bearbeitung der Fehltage wurde durch die Administration deaktiviert.',
 
       // Student area (PHP-rendered)
       'student.html_title' => 'Schülerbereich',
@@ -2433,6 +2440,10 @@ function translations_catalog(): array {
       'admin.settings.delegations.desc' => 'Control whether delegates can also see all remaining fields as read-only.',
       'admin.settings.delegations.show_other_fields_readonly' => 'Show non-delegated fields as read-only',
       'admin.settings.delegations.show_other_fields_readonly_hint' => 'When enabled, delegates can view all other subject areas read-only; editing remains limited to delegated fields.',
+      'admin.settings.teacher.title' => 'Teachers',
+      'admin.settings.teacher.desc' => 'Control whether teachers can edit absence values in the class view.',
+      'admin.settings.teacher.allow_absence_edit' => 'Allow teachers to edit absences',
+      'admin.settings.teacher.allow_absence_edit_hint' => 'If disabled, teachers can only view absences. Editing is then only possible in admin import/admin area.',
       'admin.settings.tts.title' => 'Read aloud (text-to-speech)',
       'admin.settings.tts.desc' => 'Choose the default voice and reading speed for students. The list is based on voices available in vits-web.',
       'admin.settings.tts.voice_de_label' => 'Default voice (German)',
@@ -4278,6 +4289,8 @@ function translations_catalog(): array {
       'teacher.students.generate_logins' => 'Create login codes/QR',
       'teacher.students.confirm_regenerate' => 'Regenerate ALL login codes/QR? Old printouts will become invalid.',
       'teacher.students.regenerate_logins' => 'Regenerate',
+      'teacher.students.absence_readonly_hint' => 'Absences are currently view-only. Editing has been disabled by administration.',
+      'teacher.students.error_absence_edit_disabled' => 'Editing absences has been disabled by administration.',
 
       // Student area (PHP-rendered)
       'student.html_title' => 'Student area',
