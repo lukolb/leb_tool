@@ -907,115 +907,37 @@ render_admin_header(t('admin.students.title'));
   <h1><?=h(t('admin.students.heading'))?></h1>
 </div>
 
-<div class="card">
-  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
-    <div>
-      <label><?=h(t('admin.students.filter.search_label'))?></label>
-      <input name="q" type="text" value="<?=h($q)?>" placeholder="<?=h(t('admin.students.filter.search_placeholder'))?>">
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.school_year'))?></label>
-      <select name="school_year">
-        <option value=""><?=h(t('admin.students.filter.all_years'))?></option>
-        <?php foreach ($years as $y): ?>
-          <option value="<?=h((string)$y)?>" <?=($schoolYear===(string)$y)?'selected':''?>><?=h((string)$y)?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.class'))?></label>
-      <select name="class_id">
-        <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
-        <?php foreach ($classes as $c): ?>
-          <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
-            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.sort'))?></label>
-      <select name="sort">
-        <option value="name" <?=($sort==='name')?'selected':''?>><?=h(t('admin.students.sort.name'))?></option>
-        <option value="class" <?=($sort==='class')?'selected':''?>><?=h(t('admin.students.sort.class'))?></option>
-        <option value="year" <?=($sort==='year')?'selected':''?>><?=h(t('admin.students.sort.year'))?></option>
-        <option value="created" <?=($sort==='created')?'selected':''?>><?=h(t('admin.students.sort.created'))?></option>
-      </select>
-    </div>
-    <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
-      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>"><?=h(t('admin.students.filter.reset'))?></a>
-    </div>
-  </form>
 
-  <div class="muted" style="margin-top:10px;"><?=h(t('admin.students.filter.limit_hint'))?></div>
-</div>
-
-<script>
-  (function() {
-    const form = document.getElementById('student-filter-form');
-    if (!form) return;
-
-    const focusStorageKey = 'student_filter_focus';
-    const saveFocus = () => {
-      const active = document.activeElement;
-      if (!active) return;
-      const name = active.getAttribute('name');
-      if (!name) return;
-      try {
-        sessionStorage.setItem(focusStorageKey, name);
-      } catch (e) {
-        // ignore storage issues
-      }
-    };
-
-    const restoreFocus = () => {
-      let name;
-      try {
-        name = sessionStorage.getItem(focusStorageKey);
-        sessionStorage.removeItem(focusStorageKey);
-      } catch (e) {
-        return;
-      }
-      if (!name) return;
-      const el = form.querySelector(`[name="${name}"]`);
-      if (el && typeof el.focus === 'function') {
-        el.focus({ preventScroll: true });
-        
-        if (typeof el.setSelectionRange === 'function') {
-            const len = el.value?.length ?? 0;
-            el.setSelectionRange(len, len);
-          }
-      }
-    };
-
-    restoreFocus();
-
-    const submitForm = () => {
-      saveFocus();
-      if (typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-      } else {
-        form.submit();
-      }
-    };
-
-    let debounceTimer;
-    const qInput = form.querySelector('input[name="q"]');
-    if (qInput) {
-      qInput.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(submitForm, 300);
-      });
-    }
-
-    form.querySelectorAll('select').forEach((sel) => {
-      sel.addEventListener('change', submitForm);
-    });
-  })();
-</script>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+<?php if ($absenceImportSummary): ?>
+  <div class="alert success">
+    <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
+    <div style="margin-top:6px;"><?=h(str_replace(
+      ['{processed}','{updated}','{deleted}','{skipped}'],
+      [
+        (string)($absenceImportSummary['processed'] ?? 0),
+        (string)($absenceImportSummary['updated'] ?? 0),
+        (string)($absenceImportSummary['deleted'] ?? 0),
+        (string)($absenceImportSummary['skipped'] ?? 0)
+      ],
+      t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
+    ))?></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
+      <div>
+        <div><strong><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></strong></div>
+        <?php $fc = (array)($absenceImportSummary['found_classes'] ?? []); ?>
+        <?php if (!$fc): ?><div class="muted">—</div><?php else: ?><ul style="margin:4px 0 0 18px;"><?php foreach ($fc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul><?php endif; ?>
+      </div>
+      <div>
+        <div><strong><?=h(t('admin.students.import.absence.missing_classes', 'Klassen ohne Importdaten'))?></strong></div>
+        <?php $mc = (array)($absenceImportSummary['missing_classes'] ?? []); ?>
+        <?php if (!$mc): ?><div class="muted">—</div><?php else: ?><ul style="margin:4px 0 0 18px;"><?php foreach ($mc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul><?php endif; ?>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
 
 <?php if ($importSummary): ?>
   <?php
@@ -1144,7 +1066,7 @@ render_admin_header(t('admin.students.title'));
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
-  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=13, unentschuldigt=15. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
+  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 190px 170px 1fr auto; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="import_absence_csv">
@@ -1205,44 +1127,6 @@ render_admin_header(t('admin.students.title'));
   </div>
 </div>
 
-<?php if ($absenceImportSummary): ?>
-  <div class="card">
-    <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></h2>
-    <p>
-      <?=h(str_replace(
-        ['{processed}','{updated}','{deleted}','{skipped}'],
-        [
-          (string)($absenceImportSummary['processed'] ?? 0),
-          (string)($absenceImportSummary['updated'] ?? 0),
-          (string)($absenceImportSummary['deleted'] ?? 0),
-          (string)($absenceImportSummary['skipped'] ?? 0)
-        ],
-        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
-      ))?>
-    </p>
-    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px;">
-      <div>
-        <h3 style="margin:0 0 6px 0;"><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></h3>
-        <?php $fc = (array)($absenceImportSummary['found_classes'] ?? []); ?>
-        <?php if (!$fc): ?>
-          <div class="muted">—</div>
-        <?php else: ?>
-          <ul style="margin:0 0 0 18px;"><?php foreach ($fc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul>
-        <?php endif; ?>
-      </div>
-      <div>
-        <h3 style="margin:0 0 6px 0;"><?=h(t('admin.students.import.absence.missing_classes', 'Klassen ohne Importdaten'))?></h3>
-        <?php $mc = (array)($absenceImportSummary['missing_classes'] ?? []); ?>
-        <?php if (!$mc): ?>
-          <div class="muted">—</div>
-        <?php else: ?>
-          <ul style="margin:0 0 0 18px;"><?php foreach ($mc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul>
-        <?php endif; ?>
-      </div>
-    </div>
-  </div>
-<?php endif; ?>
-
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.blackbaud_heading'))?></h2>
   <p class="muted"><?=t('admin.students.import.blackbaud_hint')?></p>
@@ -1272,6 +1156,113 @@ render_admin_header(t('admin.students.title'));
     </div>
   </form>
 </div>
+
+<div class="card">
+  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
+    <div>
+      <label><?=h(t('admin.students.filter.search_label'))?></label>
+      <input name="q" type="text" value="<?=h($q)?>" placeholder="<?=h(t('admin.students.filter.search_placeholder'))?>">
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.school_year'))?></label>
+      <select name="school_year">
+        <option value=""><?=h(t('admin.students.filter.all_years'))?></option>
+        <?php foreach ($years as $y): ?>
+          <option value="<?=h((string)$y)?>" <?=($schoolYear===(string)$y)?'selected':''?>><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.class'))?></label>
+      <select name="class_id">
+        <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
+        <?php foreach ($classes as $c): ?>
+          <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
+            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.sort'))?></label>
+      <select name="sort">
+        <option value="name" <?=($sort==='name')?'selected':''?>><?=h(t('admin.students.sort.name'))?></option>
+        <option value="class" <?=($sort==='class')?'selected':''?>><?=h(t('admin.students.sort.class'))?></option>
+        <option value="year" <?=($sort==='year')?'selected':''?>><?=h(t('admin.students.sort.year'))?></option>
+        <option value="created" <?=($sort==='created')?'selected':''?>><?=h(t('admin.students.sort.created'))?></option>
+      </select>
+    </div>
+    <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
+      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>"><?=h(t('admin.students.filter.reset'))?></a>
+    </div>
+  </form>
+
+  <div class="muted" style="margin-top:10px;"><?=h(t('admin.students.filter.limit_hint'))?></div>
+</div>
+
+<script>
+  (function() {
+    const form = document.getElementById('student-filter-form');
+    if (!form) return;
+
+    const focusStorageKey = 'student_filter_focus';
+    const saveFocus = () => {
+      const active = document.activeElement;
+      if (!active) return;
+      const name = active.getAttribute('name');
+      if (!name) return;
+      try {
+        sessionStorage.setItem(focusStorageKey, name);
+      } catch (e) {
+        // ignore storage issues
+      }
+    };
+
+    const restoreFocus = () => {
+      let name;
+      try {
+        name = sessionStorage.getItem(focusStorageKey);
+        sessionStorage.removeItem(focusStorageKey);
+      } catch (e) {
+        return;
+      }
+      if (!name) return;
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el && typeof el.focus === 'function') {
+        el.focus({ preventScroll: true });
+        
+        if (typeof el.setSelectionRange === 'function') {
+            const len = el.value?.length ?? 0;
+            el.setSelectionRange(len, len);
+          }
+      }
+    };
+
+    restoreFocus();
+
+    const submitForm = () => {
+      saveFocus();
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    };
+
+    let debounceTimer;
+    const qInput = form.querySelector('input[name="q"]');
+    if (qInput) {
+      qInput.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(submitForm, 300);
+      });
+    }
+
+    form.querySelectorAll('select').forEach((sel) => {
+      sel.addEventListener('change', submitForm);
+    });
+  })();
+</script>
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.list_heading'))?></h2>
@@ -1413,9 +1404,7 @@ render_admin_header(t('admin.students.title'));
     parsed = [];
     if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const txt = await f.text();
-    parsed = txt.split(/
-?
-?
+    parsed = txt.split(/\r?\n/).map(l => l.split('\t')).filter(r => r.some(c => String(c).trim() !== ''));
 /).map(l => l.split('	')).filter(r => r.some(c => String(c).trim() !== ''));
     await refreshPreview();
   }
