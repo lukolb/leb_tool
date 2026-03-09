@@ -199,7 +199,7 @@ if ($ags) {
 
 render_admin_header('AG-Verwaltung');
 ?>
-<div class="card">
+<div class="card" id="agAdminRoot">
   <h1>AG-Verwaltung</h1>
   <?php if ($ok): ?><div class="alert success"><?=h($ok)?></div><?php endif; ?>
   <?php if ($err): ?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
@@ -311,4 +311,42 @@ render_admin_header('AG-Verwaltung');
     </div>
   <?php endif; ?>
 </div>
+
+<script>
+(function(){
+  async function submitViaAjax(form){
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const oldLabel = submitBtn ? submitBtn.textContent : '';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Speichere…'; }
+    try {
+      const resp = await fetch(form.action || window.location.href, {
+        method: (form.method || 'POST').toUpperCase(),
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      const html = await resp.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const nextRoot = doc.querySelector('#agAdminRoot');
+      const currentRoot = document.querySelector('#agAdminRoot');
+      if (nextRoot && currentRoot) {
+        currentRoot.replaceWith(nextRoot);
+      }
+    } catch (e) {
+      alert('Speichern fehlgeschlagen: ' + String(e && e.message ? e.message : e));
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = oldLabel; }
+    }
+  }
+
+  document.addEventListener('submit', function(ev){
+    const form = ev.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if ((form.method || '').toLowerCase() !== 'post') return;
+    if (!form.closest('#agAdminRoot')) return;
+    ev.preventDefault();
+    submitViaAjax(form);
+  });
+})();
+</script>
 <?php render_admin_footer();
