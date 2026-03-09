@@ -608,7 +608,7 @@ function ensure_ag_tables(PDO $pdo): void {
 " .
       "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 " .
-      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
 " .
       "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
 " .
@@ -624,12 +624,108 @@ function ensure_ag_tables(PDO $pdo): void {
 " .
       "  PRIMARY KEY (id),
 " .
-      "  UNIQUE KEY uq_ag_catalog_scope_name (school_year, period_label, ag_name),
+      "  UNIQUE KEY uq_ag_catalog_name (ag_name),
 " .
-      "  KEY idx_ag_catalog_scope (school_year, period_label, is_active, sort_order)
+      "  KEY idx_ag_catalog_name (ag_name)
 " .
       ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
+  }
+
+  if (!db_has_table($pdo, 'ag_catalog_semester')) {
+    $pdo->exec(
+      "CREATE TABLE ag_catalog_semester (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  ag_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  is_active TINYINT(1) NOT NULL DEFAULT 1,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_ag_catalog_semester_scope (ag_id, school_year, period_label),
+" .
+      "  KEY idx_ag_catalog_semester_lookup (school_year, period_label, is_active),
+" .
+      "  KEY idx_ag_catalog_semester_ag (ag_id)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+
+  if (!db_has_index($pdo, 'ag_catalog', 'uq_ag_catalog_name')) {
+    try {
+      if (db_has_index($pdo, 'ag_catalog', 'uq_ag_catalog_scope_name')) {
+        $pdo->exec("DROP INDEX uq_ag_catalog_scope_name ON ag_catalog");
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    try {
+      $pdo->exec("CREATE UNIQUE INDEX uq_ag_catalog_name ON ag_catalog (ag_name)");
+    } catch (Throwable $e) {
+      // ignore on hosts without ALTER privileges
+    }
+  }
+
+  if (db_has_table($pdo, 'ag_catalog_semester') && db_has_table($pdo, 'ag_catalog')) {
+    try {
+      $rows = $pdo->query("SELECT id, school_year, period_label, ag_name, is_active FROM ag_catalog ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      $canonicalByName = [];
+      foreach ($rows as $r) {
+        $id = (int)($r['id'] ?? 0);
+        $name = trim((string)($r['ag_name'] ?? ''));
+        if ($id <= 0 || $name === '') continue;
+        if (!isset($canonicalByName[$name])) $canonicalByName[$name] = $id;
+      }
+
+      if ($canonicalByName) {
+        $insSem = $pdo->prepare(
+          "INSERT INTO ag_catalog_semester (ag_id, school_year, period_label, is_active) VALUES (?,?,?,?)
+" .
+          "ON DUPLICATE KEY UPDATE is_active=VALUES(is_active), updated_at=NOW()"
+        );
+        foreach ($rows as $r) {
+          $name = trim((string)($r['ag_name'] ?? ''));
+          $sy = trim((string)($r['school_year'] ?? ''));
+          if ($name === '' || $sy === '') continue;
+          $canonicalId = (int)$canonicalByName[$name];
+          $pl = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+          $insSem->execute([$canonicalId, $sy, $pl, ((int)($r['is_active'] ?? 0) === 1 ? 1 : 0)]);
+        }
+
+        if (db_has_table($pdo, 'student_ag_assignments')) {
+          $mapStmt = $pdo->query("SELECT id, ag_name FROM ag_catalog");
+          $nameById = [];
+          foreach ($mapStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+            $nameById[(int)$r['id']] = trim((string)($r['ag_name'] ?? ''));
+          }
+          $upd = $pdo->prepare("UPDATE student_ag_assignments SET ag_id=? WHERE ag_id=?");
+          foreach ($nameById as $oldId => $name) {
+            if ($name === '' || !isset($canonicalByName[$name])) continue;
+            $newId = (int)$canonicalByName[$name];
+            if ($newId !== (int)$oldId) $upd->execute([$newId, (int)$oldId]);
+          }
+        }
+
+        $canonicalIds = array_values(array_unique(array_map('intval', array_values($canonicalByName))));
+        if ($canonicalIds) {
+          $in = implode(',', array_map('intval', $canonicalIds));
+          $pdo->exec("DELETE FROM ag_catalog WHERE id NOT IN ($in)");
+        }
+      }
+    } catch (Throwable $e) {
+      // ignore best-effort migration
+    }
   }
 
   if (!db_has_table($pdo, 'student_ag_assignments')) {
@@ -662,6 +758,7 @@ function ensure_ag_tables(PDO $pdo): void {
     );
   }
 }
+
 
 function ensure_schema(PDO $pdo): void {
   static $did = false;

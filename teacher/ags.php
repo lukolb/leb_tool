@@ -36,7 +36,7 @@ function ag_safe_table_exists(PDO $pdo, string $table): bool {
 
 try { ensure_ag_tables($pdo); } catch (Throwable $e) {}
 
-if (!ag_safe_table_exists($pdo, 'ag_catalog') || !ag_safe_table_exists($pdo, 'student_ag_assignments')) {
+if (!ag_safe_table_exists($pdo, 'ag_catalog') || !ag_safe_table_exists($pdo, 'ag_catalog_semester') || !ag_safe_table_exists($pdo, 'student_ag_assignments')) {
   render_teacher_header('AG-Eingaben');
   echo '<div class="card"><h1>AG-Eingaben</h1><div class="alert danger">AG-Tabellen fehlen in der Datenbank.</div></div>';
   render_teacher_footer();
@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
     $students->execute([$classId]);
     $studentIds = array_map('intval', $students->fetchAll(PDO::FETCH_COLUMN) ?: []);
 
-    $validAgStmt = $pdo->prepare("SELECT id FROM ag_catalog WHERE school_year=? AND period_label=? AND is_active=1");
+    $validAgStmt = $pdo->prepare("SELECT a.id FROM ag_catalog a INNER JOIN ag_catalog_semester s ON s.ag_id=a.id WHERE s.school_year=? AND s.period_label=? AND s.is_active=1");
     $validAgStmt->execute([$schoolYear, $periodLabel]);
     $validAgIds = array_map('intval', $validAgStmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
 
@@ -151,7 +151,7 @@ if ($selectedClass) {
     $stStudents->execute([$classId]);
     $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $stAg = $pdo->prepare("SELECT id, ag_name FROM ag_catalog WHERE school_year=? AND period_label=? AND is_active=1 ORDER BY sort_order ASC, ag_name ASC");
+    $stAg = $pdo->prepare("SELECT a.id, a.ag_name FROM ag_catalog a INNER JOIN ag_catalog_semester s ON s.ag_id=a.id WHERE s.school_year=? AND s.period_label=? AND s.is_active=1 ORDER BY a.ag_name ASC");
     $stAg->execute([$schoolYear, $periodLabel]);
     $ags = $stAg->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
