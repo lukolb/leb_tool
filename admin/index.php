@@ -424,7 +424,7 @@ function build_progress(PDO $pdo, array $classes): array {
     $cid = $info['class_id'];
     $reqChild = $info['child_required'];
     $reqTeacher = $info['teacher_required'];
-    if ($reqChild > 0 && $info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
+    if ($info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
     if ($reqTeacher > 0 && $info['teacher_filled'] >= $reqTeacher) $progress[$cid]['teachers_done']++;
   }
 
@@ -474,6 +474,62 @@ function build_progress(PDO $pdo, array $classes): array {
   }
 
   return $progress;
+}
+
+
+function absence_upload_status(PDO $pdo, string $schoolYear, string $periodLabel): array {
+  $schoolYear = trim($schoolYear);
+  $periodLabel = normalize_class_period_label($periodLabel);
+  if ($schoolYear === '' || !db_has_table($pdo, 'student_period_absences')) {
+    return ['has_upload' => false, 'rows' => 0, 'last_upload_at' => null, 'last_upload_by' => ''];
+  }
+
+  $st = $pdo->prepare(
+    "SELECT COUNT(*) AS row_count, MAX(updated_at) AS last_updated
+" .
+    "FROM student_period_absences
+" .
+    "WHERE school_year=? AND period_label=?"
+  );
+  $st->execute([$schoolYear, $periodLabel]);
+  $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  $rows = (int)($row['row_count'] ?? 0);
+
+  $lastUploadAt = null;
+  $lastUploadBy = '';
+  if (db_has_table($pdo, 'audit_log')) {
+    $a = $pdo->prepare(
+      "SELECT a.created_at, a.user_id, a.details_json, u.display_name
+" .
+      "FROM audit_log a
+" .
+      "LEFT JOIN users u ON u.id=a.user_id
+" .
+      "WHERE a.event_type='admin_students_import_absence_csv'
+" .
+      "ORDER BY a.id DESC
+" .
+      "LIMIT 100"
+    );
+    $a->execute();
+    foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $d = json_decode((string)($r['details_json'] ?? ''), true);
+      if (!is_array($d)) continue;
+      $sy = trim((string)($d['school_year'] ?? ''));
+      $pl = normalize_class_period_label((string)($d['period_label'] ?? 'H1'));
+      if ($sy !== $schoolYear || $pl !== $periodLabel) continue;
+      $lastUploadAt = (string)($r['created_at'] ?? '');
+      $lastUploadBy = trim((string)($r['display_name'] ?? ''));
+      break;
+    }
+  }
+
+  return [
+    'has_upload' => $rows > 0,
+    'rows' => $rows,
+    'last_upload_at' => $lastUploadAt,
+    'last_upload_by' => $lastUploadBy,
+  ];
 }
 
 $classesStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
@@ -569,6 +625,7 @@ render_admin_header('Admin – Dashboard');
     if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
   }
   $deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
+$absenceUploadStatus = absence_upload_status($pdo, $deadlineSchoolYear, $deadlinePeriodLabel);
 ?>
 
 <?php if ($deadlineSchoolYear !== ''): ?>
@@ -610,6 +667,31 @@ render_admin_header('Admin – Dashboard');
     </div>
   </div>
 <?php endif; ?>
+
+<div class="card">
+  <h2><?=h(t('admin.dashboard.absence_upload_title', 'Fehlzeiten-Uploadstatus'))?></h2>
+  <p class="muted">
+    <?=h(strtr(t('admin.dashboard.absence_upload_scope', 'Schuljahr {year} · Halbjahr {period}'), [
+      '{year}' => $deadlineSchoolYear !== '' ? $deadlineSchoolYear : '—',
+      '{period}' => period_label_display_admin($deadlinePeriodLabel),
+    ]))?>
+  </p>
+  <?php if (!empty($absenceUploadStatus['has_upload'])): ?>
+    <div class="alert success" style="margin:0;">
+      <strong><?=h(strtr(t('admin.dashboard.absence_upload_yes', 'Für dieses Halbjahr sind Fehlzeiten hochgeladen ({count} Einträge).'), ['{count}' => (string)($absenceUploadStatus['rows'] ?? 0)]))?></strong>
+      <?php if (!empty($absenceUploadStatus['last_upload_at'])): ?>
+        <div class="muted" style="margin-top:6px;">
+          <?=h(strtr(t('admin.dashboard.absence_upload_last', 'Letzter Upload: {time}{user}'), [
+            '{time}' => (string)$absenceUploadStatus['last_upload_at'],
+            '{user}' => !empty($absenceUploadStatus['last_upload_by']) ? (' · ' . (string)$absenceUploadStatus['last_upload_by']) : '',
+          ]))?>
+        </div>
+      <?php endif; ?>
+    </div>
+  <?php else: ?>
+    <div class="alert" style="margin:0;"><?=h(t('admin.dashboard.absence_upload_no', 'Für dieses Halbjahr wurden noch keine Fehlzeiten hochgeladen.'))?></div>
+  <?php endif; ?>
+</div>
 
 <div class="card">
   <h2><?=h(t('admin.progress.headline', 'Gesamt-Bearbeitungsstand'))?></h2>
