@@ -314,6 +314,11 @@ render_admin_header('AG-Verwaltung');
 
 <script>
 (function(){
+  async function fetchRootFromResponseText(html){
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.querySelector('#agAdminRoot');
+  }
+
   async function submitViaAjax(form){
     const submitBtn = form.querySelector('button[type="submit"]');
     const oldLabel = submitBtn ? submitBtn.textContent : '';
@@ -323,15 +328,29 @@ render_admin_header('AG-Verwaltung');
         method: (form.method || 'POST').toUpperCase(),
         body: new FormData(form),
         credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'text/html'
+        }
       });
-      const html = await resp.text();
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const nextRoot = doc.querySelector('#agAdminRoot');
-      const currentRoot = document.querySelector('#agAdminRoot');
-      if (nextRoot && currentRoot) {
-        currentRoot.replaceWith(nextRoot);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
       }
+      let nextRoot = await fetchRootFromResponseText(await resp.text());
+      if (!nextRoot) {
+        const refreshResp = await fetch(window.location.href, {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: { 'Accept': 'text/html' }
+        });
+        if (!refreshResp.ok) throw new Error(`HTTP ${refreshResp.status}`);
+        nextRoot = await fetchRootFromResponseText(await refreshResp.text());
+      }
+      const currentRoot = document.querySelector('#agAdminRoot');
+      if (!nextRoot || !currentRoot) {
+        throw new Error('Aktualisierte AG-Ansicht konnte nicht geladen werden.');
+      }
+      currentRoot.replaceWith(nextRoot);
     } catch (e) {
       alert('Speichern fehlgeschlagen: ' + String(e && e.message ? e.message : e));
     } finally {
