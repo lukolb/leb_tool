@@ -565,10 +565,52 @@ $selectedClassId = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
 if ($selectedClassId !== 0 && !isset($progressByClass[$selectedClassId])) $selectedClassId = 0;
 
 $u = current_user();
+
+$deadlineTypes = submission_deadline_types();
+$deadlineSchoolYear = '';
+$deadlinePeriodLabel = 'Standard';
+$deadlineScopeLabel = '';
+if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
+  $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
+  $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
+  $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
+  $deadlineScopeLabel = class_display_admin($classRow);
+  if ($deadlineScopeLabel !== '') {
+    $deadlineScopeLabel .= ' · ' . period_label_display_admin($classRow['period_label'] ?? 'Standard');
+  }
+}
+if ($deadlineSchoolYear === '') {
+  $years = array_values(array_unique(array_filter(array_map(
+    static fn($c) => trim((string)($c['school_year'] ?? '')),
+    $classes
+  ), static fn($v) => $v !== '')));
+  if (count($years) === 1) $deadlineSchoolYear = $years[0];
+}
+if ($deadlineSchoolYear === '') {
+  $deadlineSchoolYear = (string)((app_config()['app']['default_school_year'] ?? ''));
+}
+$deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
+if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
+  $periods = array_values(array_unique(array_filter(array_map(
+    static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
+      ? normalize_class_period_label($c['period_label'] ?? 'Standard')
+      : '',
+    $classes
+  ), static fn($v) => $v !== '')));
+  if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
+}
+$deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
+$absenceUploadStatus = absence_upload_status($pdo, $deadlineSchoolYear, $deadlinePeriodLabel);
+
 render_admin_header('Admin – Dashboard');
 ?>
 <div class="card">
     <h1>Dashboard</h1>
+    <?php if ($deadlineSchoolYear !== ''): ?>
+      <p class="muted" style="margin:6px 0 0;">
+        <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display_admin($deadlinePeriodLabel))?>
+      </p>
+    <?php endif; ?>
   <div class="row-actions">
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
   </div>
@@ -590,43 +632,7 @@ render_admin_header('Admin – Dashboard');
   }
 ?>
 
-<?php
-  $deadlineTypes = submission_deadline_types();
-  $deadlineSchoolYear = '';
-  $deadlinePeriodLabel = 'Standard';
-  $deadlineScopeLabel = '';
-  if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])) {
-    $classRow = $progressByClass[$selectedClassId]['class'] ?? [];
-    $deadlineSchoolYear = (string)($classRow['school_year'] ?? '');
-    $deadlinePeriodLabel = normalize_class_period_label($classRow['period_label'] ?? 'Standard');
-    $deadlineScopeLabel = class_display_admin($classRow);
-    if ($deadlineScopeLabel !== '') {
-      $deadlineScopeLabel .= ' · ' . period_label_display_admin($classRow['period_label'] ?? 'Standard');
-    }
-  }
-  if ($deadlineSchoolYear === '') {
-    $years = array_values(array_unique(array_filter(array_map(
-      static fn($c) => trim((string)($c['school_year'] ?? '')),
-      $classes
-    ), static fn($v) => $v !== '')));
-    if (count($years) === 1) $deadlineSchoolYear = $years[0];
-  }
-  if ($deadlineSchoolYear === '') {
-    $deadlineSchoolYear = (string)((app_config()['app']['default_school_year'] ?? ''));
-  }
-  $deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
-  if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
-    $periods = array_values(array_unique(array_filter(array_map(
-      static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
-        ? normalize_class_period_label($c['period_label'] ?? 'Standard')
-        : '',
-      $classes
-    ), static fn($v) => $v !== '')));
-    if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
-  }
-  $deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
-$absenceUploadStatus = absence_upload_status($pdo, $deadlineSchoolYear, $deadlinePeriodLabel);
-?>
+
 
 <?php if ($deadlineSchoolYear !== ''): ?>
   <div class="card">
