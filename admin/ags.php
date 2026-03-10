@@ -322,9 +322,10 @@ render_admin_header('AG-Verwaltung');
   async function submitViaAjax(form){
     const submitBtn = form.querySelector('button[type="submit"]');
     const oldLabel = submitBtn ? submitBtn.textContent : '';
+    const requestUrl = form.getAttribute('action') || (window.location.pathname + window.location.search);
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Speichere…'; }
     try {
-      const resp = await fetch(form.action || window.location.href, {
+      const resp = await fetch(requestUrl, {
         method: (form.method || 'POST').toUpperCase(),
         body: new FormData(form),
         credentials: 'same-origin',
@@ -338,7 +339,7 @@ render_admin_header('AG-Verwaltung');
       }
       let nextRoot = await fetchRootFromResponseText(await resp.text());
       if (!nextRoot) {
-        const refreshResp = await fetch(window.location.href, {
+        const refreshResp = await fetch(window.location.pathname + window.location.search, {
           method: 'GET',
           credentials: 'same-origin',
           headers: { 'Accept': 'text/html' }
@@ -352,7 +353,10 @@ render_admin_header('AG-Verwaltung');
       }
       currentRoot.replaceWith(nextRoot);
     } catch (e) {
-      alert('Speichern fehlgeschlagen: ' + String(e && e.message ? e.message : e));
+      console.error('AG AJAX save failed, falling back to regular submit.', e);
+      form.dataset.ajaxBypass = '1';
+      form.submit();
+      return;
     } finally {
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = oldLabel; }
     }
@@ -363,6 +367,11 @@ render_admin_header('AG-Verwaltung');
     if (!(form instanceof HTMLFormElement)) return;
     if ((form.method || '').toLowerCase() !== 'post') return;
     if (!form.closest('#agAdminRoot')) return;
+    if (form.dataset.ajaxBypass === '1') {
+      delete form.dataset.ajaxBypass;
+      return;
+    }
+    if (typeof window.fetch !== 'function') return;
     ev.preventDefault();
     submitViaAjax(form);
   });
