@@ -607,7 +607,7 @@ render_admin_header('Admin – Dashboard');
 <div class="card">
     <h1>Dashboard</h1>
     <?php if ($deadlineSchoolYear !== ''): ?>
-      <p class="muted" style="margin:6px 0 0;">
+      <p class="muted" style="margin:6px 0 0; font-size:1.05rem; font-weight:600;">
         <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display_admin($deadlinePeriodLabel))?>
       </p>
     <?php endif; ?>

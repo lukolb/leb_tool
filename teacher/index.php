@@ -692,7 +692,7 @@ render_teacher_header(t('teacher.title'));
 <div class="card">
     <h1><?=h(t('teacher.dashboard'))?></h1>
     <?php if ($deadlineSchoolYear !== ''): ?>
-      <p class="muted" style="margin:6px 0 0;">
+      <p class="muted" style="margin:6px 0 0; font-size:1.05rem; font-weight:600;">
         <?=h(str_replace('{year}', $deadlineSchoolYear, t('deadline.section.school_year', 'Schuljahr {year}')))?> · <?=h(period_label_display($deadlinePeriodLabel))?>
       </p>
     <?php endif; ?>
