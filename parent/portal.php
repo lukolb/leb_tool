@@ -1198,15 +1198,18 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       const yy = String(y).slice(-2);
       const lang = <?= json_encode($lang) ?>;
 
-      return fmt
-        .replaceAll('YYYY', String(y))
-        .replaceAll('YY', yy)
-        .replaceAll('DD', pad2(d))
-        .replaceAll('D', String(d))
-        .replaceAll('MMMM', numberToMonthName(m, lang, 'full'))
-        .replaceAll('MMM', numberToMonthName(m, lang, 'short'))
-        .replaceAll('MM', pad2(m))
-        .replaceAll('M', String(m));
+      const tokenMap = {
+        'MMMM': numberToMonthName(m, lang, 'full'),
+        'MMM': numberToMonthName(m, lang, 'short'),
+        'YYYY': String(y),
+        'YY': yy,
+        'DD': pad2(d),
+        'D': String(d),
+        'MM': pad2(m),
+        'M': String(m),
+      };
+
+      return fmt.replace(/(?<!\p{L})(MMMM|MMM|YYYY|YY|DD|MM|D|M)(?!\p{L})/gu, (tok) => tokenMap[tok] ?? tok);
     }
 
     function normalizeDateIfNeeded(rawValue, expectedFmt){

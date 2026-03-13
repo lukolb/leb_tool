@@ -32,7 +32,7 @@ try {
   $templateId = (int)($data['template_id'] ?? ($_GET['template_id'] ?? 0));
   if ($templateId <= 0) throw new RuntimeException('template_id fehlt/ungültig.');
 
-  $allowedTypes = ['text','multiline','date','number','grade','checkbox','radio','select','signature','ag'];
+  $allowedTypes = ['text','multiline','date','number','grade','checkbox','radio','select','signature'];
 
   // --- list
   if ($action === 'list') {
@@ -55,7 +55,7 @@ try {
       $fields[] = [
         'id' => (int)$r['id'],
         'name' => (string)$r['field_name'],
-        'type' => (string)$r['field_type'],
+        'type' => ((string)$r['field_type'] === 'ag') ? 'text' : (string)$r['field_type'],
         'label' => (string)($r['label'] ?? ''),
         'label_en' => (string)($r['label_en'] ?? ''),
         'help_text' => (string)($r['help_text'] ?? ''),
@@ -98,12 +98,16 @@ try {
           updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND template_id=?
     ");
+    $ins = $pdo->prepare("
+      INSERT INTO template_fields
+      (template_id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, can_child_edit, can_teacher_edit, options_json, meta_json, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
 
     $count = 0;
     foreach ($updates as $u) {
       if (!is_array($u)) continue;
       $id = (int)($u['id'] ?? 0);
-      if ($id <= 0) continue;
 
       $name = trim((string)($u['name'] ?? ''));
       if ($name === '') throw new RuntimeException('Feldname fehlt.');
@@ -111,6 +115,7 @@ try {
       if ($nameCheck->fetch()) throw new RuntimeException('Feldname bereits vergeben: '.$name);
 
       $type = (string)($u['type'] ?? 'radio');
+      if ($type === 'ag') $type = 'text';
       if (!in_array($type, $allowedTypes, true)) throw new RuntimeException('Ungültiger Feldtyp: '.$type);
 
       $label = trim((string)($u['label'] ?? ''));
@@ -143,7 +148,11 @@ try {
         $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE);
       }
 
-      $upd->execute([$name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      if ($id > 0) {
+        $upd->execute([$name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort, $id, $templateId]);
+      } else {
+        $ins->execute([$templateId, $name, $type, $label, $labelEn, $help, $ml, $req, $child, $teacher, $optionsJson, $metaJson, $sort]);
+      }
       $count++;
     }
 
@@ -211,6 +220,7 @@ try {
         $u[$k] = $v;
       }
 
+      if ((string)$u['type'] === 'ag') $u['type'] = 'text';
       if (!in_array((string)$u['type'], $allowedTypes, true)) $u['type'] = 'radio';
 
       $updates[] = $u;

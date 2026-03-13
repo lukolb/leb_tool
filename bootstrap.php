@@ -608,7 +608,7 @@ function ensure_ag_tables(PDO $pdo): void {
 " .
       "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 " .
-      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
 " .
       "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
 " .
@@ -624,12 +624,108 @@ function ensure_ag_tables(PDO $pdo): void {
 " .
       "  PRIMARY KEY (id),
 " .
-      "  UNIQUE KEY uq_ag_catalog_scope_name (school_year, period_label, ag_name),
+      "  UNIQUE KEY uq_ag_catalog_name (ag_name),
 " .
-      "  KEY idx_ag_catalog_scope (school_year, period_label, is_active, sort_order)
+      "  KEY idx_ag_catalog_name (ag_name)
 " .
       ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
+  }
+
+  if (!db_has_table($pdo, 'ag_catalog_semester')) {
+    $pdo->exec(
+      "CREATE TABLE ag_catalog_semester (
+" .
+      "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+      "  ag_id BIGINT UNSIGNED NOT NULL,
+" .
+      "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+      "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+" .
+      "  is_active TINYINT(1) NOT NULL DEFAULT 1,
+" .
+      "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+      "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+      "  PRIMARY KEY (id),
+" .
+      "  UNIQUE KEY uq_ag_catalog_semester_scope (ag_id, school_year, period_label),
+" .
+      "  KEY idx_ag_catalog_semester_lookup (school_year, period_label, is_active),
+" .
+      "  KEY idx_ag_catalog_semester_ag (ag_id)
+" .
+      ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    );
+  }
+
+  if (!db_has_index($pdo, 'ag_catalog', 'uq_ag_catalog_name')) {
+    try {
+      if (db_has_index($pdo, 'ag_catalog', 'uq_ag_catalog_scope_name')) {
+        $pdo->exec("DROP INDEX uq_ag_catalog_scope_name ON ag_catalog");
+      }
+    } catch (Throwable $e) {
+      // ignore
+    }
+    try {
+      $pdo->exec("CREATE UNIQUE INDEX uq_ag_catalog_name ON ag_catalog (ag_name)");
+    } catch (Throwable $e) {
+      // ignore on hosts without ALTER privileges
+    }
+  }
+
+  if (db_has_table($pdo, 'ag_catalog_semester') && db_has_table($pdo, 'ag_catalog')) {
+    try {
+      $rows = $pdo->query("SELECT id, school_year, period_label, ag_name, is_active FROM ag_catalog ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      $canonicalByName = [];
+      foreach ($rows as $r) {
+        $id = (int)($r['id'] ?? 0);
+        $name = trim((string)($r['ag_name'] ?? ''));
+        if ($id <= 0 || $name === '') continue;
+        if (!isset($canonicalByName[$name])) $canonicalByName[$name] = $id;
+      }
+
+      if ($canonicalByName) {
+        $insSem = $pdo->prepare(
+          "INSERT INTO ag_catalog_semester (ag_id, school_year, period_label, is_active) VALUES (?,?,?,?)
+" .
+          "ON DUPLICATE KEY UPDATE is_active=VALUES(is_active), updated_at=NOW()"
+        );
+        foreach ($rows as $r) {
+          $name = trim((string)($r['ag_name'] ?? ''));
+          $sy = trim((string)($r['school_year'] ?? ''));
+          if ($name === '' || $sy === '') continue;
+          $canonicalId = (int)$canonicalByName[$name];
+          $pl = normalize_class_period_label((string)($r['period_label'] ?? 'Standard'));
+          $insSem->execute([$canonicalId, $sy, $pl, ((int)($r['is_active'] ?? 0) === 1 ? 1 : 0)]);
+        }
+
+        if (db_has_table($pdo, 'student_ag_assignments')) {
+          $mapStmt = $pdo->query("SELECT id, ag_name FROM ag_catalog");
+          $nameById = [];
+          foreach ($mapStmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+            $nameById[(int)$r['id']] = trim((string)($r['ag_name'] ?? ''));
+          }
+          $upd = $pdo->prepare("UPDATE student_ag_assignments SET ag_id=? WHERE ag_id=?");
+          foreach ($nameById as $oldId => $name) {
+            if ($name === '' || !isset($canonicalByName[$name])) continue;
+            $newId = (int)$canonicalByName[$name];
+            if ($newId !== (int)$oldId) $upd->execute([$newId, (int)$oldId]);
+          }
+        }
+
+        $canonicalIds = array_values(array_unique(array_map('intval', array_values($canonicalByName))));
+        if ($canonicalIds) {
+          $in = implode(',', array_map('intval', $canonicalIds));
+          $pdo->exec("DELETE FROM ag_catalog WHERE id NOT IN ($in)");
+        }
+      }
+    } catch (Throwable $e) {
+      // ignore best-effort migration
+    }
   }
 
   if (!db_has_table($pdo, 'student_ag_assignments')) {
@@ -662,6 +758,7 @@ function ensure_ag_tables(PDO $pdo): void {
     );
   }
 }
+
 
 function ensure_schema(PDO $pdo): void {
   static $did = false;
@@ -828,6 +925,26 @@ function ensure_schema(PDO $pdo): void {
         "  UNIQUE KEY uq_student_field_values (student_id, field_id),\n" .
         "  KEY idx_student_field_values_student (student_id),\n" .
         "  KEY idx_student_field_values_field (field_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+    if (!db_has_table($pdo, 'student_period_absences')) {
+      $pdo->exec(
+        "CREATE TABLE student_period_absences (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  student_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  class_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
+        "  absence_days_total INT UNSIGNED NOT NULL DEFAULT 0,\n" .
+        "  absence_days_unexcused INT UNSIGNED NOT NULL DEFAULT 0,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_student_period_absence (student_id, school_year, period_label),\n" .
+        "  KEY idx_student_period_absence_class (class_id, school_year, period_label),\n" .
+        "  KEY idx_student_period_absence_student (student_id)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
     }
@@ -1279,6 +1396,7 @@ function copy_student_custom_values(PDO $pdo, int $sourceStudentId, int $targetS
  * Binding keys are stored in template_fields.meta_json.system_binding.
  */
 function resolve_system_binding_value(string $binding, array $student, array $class): ?string {
+  $binding = normalize_system_binding_key($binding);
   if (strpos($binding, 'student.custom.') === 0) {
     $key = substr($binding, strlen('student.custom.'));
     if ($key === '') return null;
@@ -1297,6 +1415,12 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
     case 'student.date_of_birth':
       // Default format: YYYY-MM-DD (PDF date fields can be formatted later)
       return (string)($student['date_of_birth'] ?? '');
+    case 'student.absence_days_total':
+      return (string)(int)($student['absence_days_total'] ?? 0);
+    case 'student.absence_days_unexcused':
+      return (string)(int)($student['absence_days_unexcused'] ?? 0);
+    case 'ag.sentence':
+      return (string)($student['ag_sentence'] ?? '');
     case 'class.school_year':
       return (string)($class['school_year'] ?? '');
     case 'class.grade_level':
@@ -1312,6 +1436,127 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
     default:
       return null;
   }
+}
+
+function normalize_system_binding_key(string $binding): string {
+  $k = trim($binding);
+  return match ($k) {
+    'name' => 'student.first_name',
+    'fehltage' => 'student.absence_days_total',
+    'unentschuldigte', 'unentschuldigt' => 'student.absence_days_unexcused',
+    default => $k,
+  };
+}
+
+function binding_condition_matches(string $leftRaw, string $op, string $rightRaw): bool {
+  $left = str_replace(',', '.', trim($leftRaw));
+  $right = str_replace(',', '.', trim($rightRaw));
+  if (!is_numeric($left) || !is_numeric($right)) return false;
+  $l = (float)$left;
+  $r = (float)$right;
+  return match ($op) {
+    '>' => $l > $r,
+    '>=' => $l >= $r,
+    '<' => $l < $r,
+    '<=' => $l <= $r,
+    '==' => $l == $r,
+    '!=' => $l != $r,
+    default => false,
+  };
+}
+
+function resolve_binding_condition_operand_value(string $key, array $student, array $class, array $fieldValues = []): string {
+  $k = trim($key);
+  if (str_starts_with($k, 'field:')) {
+    $fname = trim(substr($k, 6));
+    if ($fname === '') return '';
+    if (array_key_exists($fname, $fieldValues)) return (string)$fieldValues[$fname];
+    $needle = mb_strtolower($fname, 'UTF-8');
+    foreach ($fieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) return (string)$v;
+    }
+    return '';
+  }
+  $normalized = normalize_system_binding_key($k);
+  $v = resolve_system_binding_value($normalized, $student, $class);
+  return $v === null ? '' : (string)$v;
+}
+
+function resolve_field_reference_value(string $fieldName, array $fieldValues, array $fieldMetaByName = []): string {
+  $value = '';
+  if (array_key_exists($fieldName, $fieldValues)) {
+    $value = (string)$fieldValues[$fieldName];
+  } else {
+    $needle = mb_strtolower($fieldName, 'UTF-8');
+    foreach ($fieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) {
+        $value = (string)$v;
+        $fieldName = (string)$n;
+        break;
+      }
+    }
+  }
+
+  $metaDef = $fieldMetaByName[$fieldName] ?? null;
+  if (!is_array($metaDef)) return $value;
+
+  $fieldType = (string)($metaDef['field_type'] ?? '');
+  $meta = is_array($metaDef['meta'] ?? null) ? $metaDef['meta'] : [];
+  $mode = (string)($meta['date_format_mode'] ?? 'preset');
+  $fmt = $mode === 'custom' ? (string)($meta['date_format_custom'] ?? '') : (string)($meta['date_format_preset'] ?? '');
+  $fmt = trim($fmt);
+  if ($fmt !== '' && ($fieldType === 'date' || isset($meta['date_format_mode']) || isset($meta['date_format_preset']) || isset($meta['date_format_custom']))) {
+    return format_date_pattern($value, $fmt);
+  }
+  return $value;
+}
+
+/**
+ * Conditional block syntax:
+ *   {{student.absence_days_total>0?}} ... {{?}}
+ *   {{ag.sentence?}} ... {{?}}  (true when value is not empty)
+ */
+function apply_binding_condition_blocks(string $tpl, callable $resolver): string {
+  $comparePattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $existsPattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
+  $maxPasses = 8;
+  $out = $tpl;
+  for ($i = 0; $i < $maxPasses; $i++) {
+    $changed = false;
+
+    if (preg_match($comparePattern, $out)) {
+      $next = preg_replace_callback($comparePattern, static function(array $m) use ($resolver): string {
+        $key = (string)$m[1];
+        $op = (string)$m[2];
+        $rhs = (string)$m[3];
+        $body = (string)$m[4];
+        $val = (string)$resolver($key);
+        return binding_condition_matches($val, $op, $rhs) ? $body : '';
+      }, $out);
+      if ($next === null) break;
+      if ($next !== $out) {
+        $out = $next;
+        $changed = true;
+      }
+    }
+
+    if (preg_match($existsPattern, $out)) {
+      $next = preg_replace_callback($existsPattern, static function(array $m) use ($resolver): string {
+        $key = (string)$m[1];
+        $body = (string)$m[2];
+        $val = trim((string)$resolver($key));
+        return $val !== '' ? $body : '';
+      }, $out);
+      if ($next === null) break;
+      if ($next !== $out) {
+        $out = $next;
+        $changed = true;
+      }
+    }
+
+    if (!$changed) break;
+  }
+  return $out;
 }
 
 /**
@@ -1361,7 +1606,7 @@ function format_date_pattern(?string $iso, string $pattern): string {
 
   // Replace ONLY tokens in the original pattern (longest first to avoid partial matches)
   $out = preg_replace_callback(
-    '/(MMMM|MMM|YYYY|YY|DD|MM|D|M)/',
+    '/(?<![[:alpha:]])(MMMM|MMM|YYYY|YY|DD|MM|D|M)(?![[:alpha:]])/u',
     static function(array $m) use ($repl): string {
       $tok = $m[1];
       return $repl[$tok] ?? $tok;
@@ -1376,9 +1621,13 @@ function format_date_pattern(?string $iso, string $pattern): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null): string {
+function resolve_system_binding_template(string $tpl, array $student, array $class, array $fieldMeta = [], ?string $fieldType = null, array $fieldValues = [], array $fieldMetaByName = []): string {
   $tpl = (string)$tpl;
   if ($tpl === '') return '';
+
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($student, $class, $fieldValues): string {
+    return resolve_binding_condition_operand_value($key, $student, $class, $fieldValues);
+  });
 
   $dateFmt = '';
   if (($fieldType ?? '') === 'date' || isset($fieldMeta['date_format_mode']) || isset($fieldMeta['date_format_preset']) || isset($fieldMeta['date_format_custom'])) {
@@ -1388,10 +1637,14 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
     $dateFmt = trim($dateFmt);
   }
 
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt) {
-    $key = (string)($m[1] ?? '');
-    $val = resolve_system_binding_value($key, $student, $class);
-    if ($val === null) return '';
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($student, $class, $dateFmt, $fieldValues, $fieldMetaByName) {
+    $key = trim((string)($m[1] ?? ''));
+    if (str_starts_with($key, 'field:')) {
+      $fname = trim(substr($key, 6));
+      if ($fname === '') return '';
+      return resolve_field_reference_value($fname, $fieldValues, $fieldMetaByName);
+    }
+    $val = resolve_binding_condition_operand_value($key, $student, $class, $fieldValues);
     if ($key === 'student.date_of_birth' && $dateFmt !== '') {
       return format_date_pattern((string)$val, $dateFmt);
     }
@@ -1399,6 +1652,80 @@ function resolve_system_binding_template(string $tpl, array $student, array $cla
   }, $tpl);
 
   return $out === null ? '' : (string)$out;
+}
+
+function student_period_absence_values(PDO $pdo, int $studentId, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($studentId <= 0 || $schoolYear === '') {
+    return ['absence_days_total' => 0, 'absence_days_unexcused' => 0];
+  }
+  if (!db_has_table($pdo, 'student_period_absences')) {
+    return ['absence_days_total' => 0, 'absence_days_unexcused' => 0];
+  }
+
+  $st = $pdo->prepare(
+    "SELECT absence_days_total, absence_days_unexcused
+     FROM student_period_absences
+     WHERE student_id=? AND school_year=? AND period_label=?
+     LIMIT 1"
+  );
+  $st->execute([$studentId, $schoolYear, $periodLabel !== '' ? $periodLabel : 'Standard']);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) {
+    return ['absence_days_total' => 0, 'absence_days_unexcused' => 0];
+  }
+  return [
+    'absence_days_total' => (int)($row['absence_days_total'] ?? 0),
+    'absence_days_unexcused' => (int)($row['absence_days_unexcused'] ?? 0),
+  ];
+}
+
+function report_instance_field_value_map(PDO $pdo, int $reportInstanceId): array {
+  if ($reportInstanceId <= 0) return [];
+  $st = $pdo->prepare(
+    "SELECT tf.field_name, fv.value_text, fv.value_json, fv.source
+     FROM field_values fv
+     INNER JOIN template_fields tf ON tf.id=fv.template_field_id
+     WHERE fv.report_instance_id=?
+     ORDER BY
+       CASE fv.source
+         WHEN 'teacher' THEN 30
+         WHEN 'child' THEN 20
+         WHEN 'system' THEN 10
+         ELSE 0
+       END DESC,
+       fv.updated_at DESC,
+       fv.id DESC"
+  );
+  $st->execute([$reportInstanceId]);
+  $map = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $fname = trim((string)($r['field_name'] ?? ''));
+    if ($fname === '' || array_key_exists($fname, $map)) continue;
+    $v = (string)($r['value_text'] ?? '');
+    if ($v === '' && isset($r['value_json']) && $r['value_json'] !== null && $r['value_json'] !== '') {
+      $dec = json_decode((string)$r['value_json'], true);
+      if (is_scalar($dec)) $v = (string)$dec;
+    }
+    $map[$fname] = $v;
+  }
+  return $map;
+}
+
+function class_report_field_value_map(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($templateId <= 0 || $classId <= 0 || $schoolYear === '') return [];
+
+  $classPeriod = class_report_period_label($classId, $periodLabel);
+  $ri = $pdo->prepare(
+    "SELECT id
+     FROM report_instances
+     WHERE template_id=? AND student_id IS NULL AND school_year=? AND period_label=?
+     ORDER BY id DESC
+     LIMIT 1"
+  );
+  $ri->execute([$templateId, $schoolYear, $classPeriod]);
+  $riId = (int)($ri->fetchColumn() ?: 0);
+  if ($riId <= 0) return [];
+  return report_instance_field_value_map($pdo, $riId);
 }
 
 /**
@@ -1429,19 +1756,51 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   }
 
   $studentId = (int)($row['student_id'] ?? 0);
+  $absence = student_period_absence_values($pdo, $studentId, $classId, (string)($row['school_year'] ?? ''), (string)($row['period_label'] ?? 'Standard'));
   $student = [
     'first_name' => $row['first_name'] ?? '',
     'last_name' => $row['last_name'] ?? '',
     'date_of_birth' => $row['date_of_birth'] ?? '',
+    'absence_days_total' => (int)($absence['absence_days_total'] ?? 0),
+    'absence_days_unexcused' => (int)($absence['absence_days_unexcused'] ?? 0),
+    'ag_sentence' => report_instance_ag_text($pdo, $reportInstanceId),
     'custom_fields' => $studentId > 0 ? student_custom_value_map($pdo, $studentId) : [],
   ];
 
   $tf = $pdo->prepare(
-    "SELECT id, field_type, meta_json
+    "SELECT id, field_name, field_type, meta_json
      FROM template_fields
      WHERE template_id=?"
   );
   $tf->execute([(int)$row['template_id']]);
+  $tfRows = $tf->fetchAll(PDO::FETCH_ASSOC);
+
+  $fieldValues = report_instance_field_value_map($pdo, $reportInstanceId);
+  $classFieldValues = class_report_field_value_map(
+    $pdo,
+    (int)$row['template_id'],
+    $classId,
+    (string)($row['school_year'] ?? ''),
+    (string)($row['period_label'] ?? 'Standard')
+  );
+  foreach ($classFieldValues as $k => $v) {
+    if (!array_key_exists($k, $fieldValues)) $fieldValues[$k] = $v;
+  }
+
+  $fieldMetaByName = [];
+  foreach ($tfRows as $fr) {
+    $fname = trim((string)($fr['field_name'] ?? ''));
+    if ($fname === '') continue;
+    $meta = [];
+    if (!empty($fr['meta_json'])) {
+      $meta = json_decode((string)$fr['meta_json'], true);
+      if (!is_array($meta)) $meta = [];
+    }
+    $fieldMetaByName[$fname] = [
+      'field_type' => (string)($fr['field_type'] ?? ''),
+      'meta' => $meta,
+    ];
+  }
 
   $up = $pdo->prepare(
     "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
@@ -1449,7 +1808,15 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
      ON DUPLICATE KEY UPDATE value_text=VALUES(value_text), source='system', updated_by_user_id=NULL, updated_at=NOW()"
   );
 
-  foreach ($tf->fetchAll(PDO::FETCH_ASSOC) as $f) {
+  $tfIds = array_values(array_filter(array_map(static fn(array $f): int => (int)($f['id'] ?? 0), $tfRows), static fn(int $id): bool => $id > 0));
+  if ($tfIds) {
+    $ph = implode(',', array_fill(0, count($tfIds), '?'));
+    $params = array_merge([$reportInstanceId], $tfIds);
+    $del = $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=? AND source='system' AND template_field_id IN ($ph)");
+    $del->execute($params);
+  }
+
+  foreach ($tfRows as $f) {
     $meta = [];
     if (!empty($f['meta_json'])) {
       $meta = json_decode((string)$f['meta_json'], true);
@@ -1460,8 +1827,10 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
 
     $tpl = isset($meta['system_binding_tpl']) ? trim((string)$meta['system_binding_tpl']) : '';
     if ($tpl !== '') {
-      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType);
+      $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType, $fieldValues, $fieldMetaByName);
       $up->execute([$reportInstanceId, (int)$f['id'], $val]);
+      $fname = trim((string)($f['field_name'] ?? ''));
+      if ($fname !== '') $fieldValues[$fname] = (string)$val;
       continue;
     }
 
@@ -1480,6 +1849,8 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     }
 
     $up->execute([$reportInstanceId, (int)$f['id'], (string)$val]);
+    $fname = trim((string)($f['field_name'] ?? ''));
+    if ($fname !== '') $fieldValues[$fname] = (string)$val;
   }
 }
 
