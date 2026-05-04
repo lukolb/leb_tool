@@ -7,6 +7,19 @@ require_teacher();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$mailNotifyEnabled = false;
+$mailNotifyLastHash = '';
+if (db_has_column($pdo, 'users', 'notify_dashboard_mail')) {
+  try {
+    $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM users WHERE id=? LIMIT 1");
+    $st->execute([$userId]);
+    $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+    $mailNotifyEnabled = (int)($prefs['notify_dashboard_mail'] ?? 0) === 1;
+    $mailNotifyLastHash = (string)($prefs['notify_dashboard_mail_last_hash'] ?? '');
+  } catch (Throwable $e) {
+    // ignore
+  }
+}
 
 function meta_read(?string $json): array {
   if (!$json) return [];
@@ -671,6 +684,27 @@ if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
   if (count($periods) === 1) $deadlinePeriodLabel = $periods[0];
 }
 $deadlineRows = $deadlineSchoolYear !== '' ? fetch_submission_deadlines($pdo, $deadlineSchoolYear, $deadlinePeriodLabel) : [];
+$dashboardNotices = teacher_dashboard_notices($pdo, $userId);
+
+$mailNoticeOk = null;
+$mailNoticeErr = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'save_dashboard_notice_mail_setting') {
+  csrf_check();
+  $mailNotifyEnabled = isset($_POST['notify_dashboard_mail']) && (string)$_POST['notify_dashboard_mail'] === '1';
+  try {
+    if (db_has_column($pdo, 'users', 'notify_dashboard_mail')) {
+      $pdo->prepare("UPDATE users SET notify_dashboard_mail=?, updated_at=NOW() WHERE id=?")->execute([$mailNotifyEnabled ? 1 : 0, $userId]);
+    }
+    $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
+  } catch (Throwable $e) {
+    $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
+  }
+}
+
+if ($mailNotifyEnabled && $dashboardNotices) {
+  $mailResult = send_teacher_dashboard_notice_mail($pdo, $u);
+  if (($mailResult['sent'] ?? false) === true) $mailNoticeOk = $mailNoticeOk ?: 'Neue Hinweise wurden automatisch per E-Mail versendet.';
+}
 
 $scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
 $classTabs = [
@@ -700,6 +734,27 @@ render_teacher_header(t('teacher.title'));
     <span class="pill"><?=h((string)$u['display_name'])?> · <?=h((string)$u['role'])?></span>
   </div>
 </div>
+
+<?php if ($mailNoticeOk): ?>
+  <div class="card"><div class="badge ok"><?=h($mailNoticeOk)?></div></div>
+<?php elseif ($mailNoticeErr): ?>
+  <div class="card"><div class="badge red"><?=h($mailNoticeErr)?></div></div>
+<?php endif; ?>
+
+<?php if ($dashboardNotices): ?>
+  <div class="card">
+    <h2>Benachrichtigungen</h2>
+    <p class="muted">Hinweise zu Delegationen und nahenden/überfälligen Fristen.</p>
+    <ul style="margin:0; padding-left:18px;">
+      <?php foreach ($dashboardNotices as $n): ?>
+        <li style="margin:6px 0;">
+          <strong><?=h((string)$n['label'])?>:</strong>
+          <?=h((string)($n['remaining'] ?? ''))?>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+<?php endif; ?>
 
 <?php if ($deadlineSchoolYear !== ''): ?>
   <div class="card">
@@ -913,5 +968,20 @@ render_teacher_header(t('teacher.title'));
   </div>
 <?php endif; ?>
 
+<?php
+?>
+<div class="card">
+  <h2>Einstellungen</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save_dashboard_notice_mail_setting">
+    <label style="display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" name="notify_dashboard_mail" value="1" <?=$mailNotifyEnabled ? 'checked' : ''?>>
+      <span>Automatische E-Mail bei neuen Dashboard-Hinweisen</span>
+    </label>
+    <p class="muted" style="margin:8px 0 0;">Bei neuen Hinweisen (Delegationen/Fristen) wird automatisch eine Mail an deine Konto-Adresse gesendet.</p>
+    <button class="btn secondary" type="submit" style="margin-top:10px;">Speichern</button>
+  </form>
+</div>
 <?php
 render_teacher_footer();
