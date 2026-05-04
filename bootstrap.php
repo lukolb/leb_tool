@@ -1154,6 +1154,18 @@ function ensure_schema(PDO $pdo): void {
         $pdo->exec("ALTER TABLE users ADD COLUMN notify_dashboard_mail_pending_message VARCHAR(255) NULL AFTER notify_dashboard_mail_last_hash");
       }
     }
+    if (!db_has_table($pdo, 'user_notification_prefs')) {
+      $pdo->exec(
+        "CREATE TABLE user_notification_prefs (\n" .
+        "  user_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  notify_dashboard_mail TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "  notify_dashboard_mail_last_hash VARCHAR(64) NULL,\n" .
+        "  notify_dashboard_mail_pending_message VARCHAR(255) NULL,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (user_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
   }
@@ -1997,9 +2009,12 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
   $userId = (int)($user['id'] ?? 0);
   $email = trim((string)($user['email'] ?? ''));
   if ($userId <= 0 || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return ['sent' => false, 'reason' => 'invalid_user'];
-  if (!db_has_column($pdo, 'users', 'notify_dashboard_mail') || !db_has_column($pdo, 'users', 'notify_dashboard_mail_last_hash')) return ['sent' => false, 'reason' => 'feature_unavailable'];
-
-  $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message FROM users WHERE id=? LIMIT 1");
+  $st = $pdo->prepare(
+    "SELECT p.notify_dashboard_mail, p.notify_dashboard_mail_last_hash, p.notify_dashboard_mail_pending_message
+     FROM users u
+     LEFT JOIN user_notification_prefs p ON p.user_id=u.id
+     WHERE u.id=? LIMIT 1"
+  );
   $st->execute([$userId]);
   $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
   if ((int)($prefs['notify_dashboard_mail'] ?? 0) !== 1) return ['sent' => false, 'reason' => 'disabled'];
@@ -2022,7 +2037,11 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
   $body = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif"><h2>Dashboard-Hinweise</h2><ul>' . $items . '</ul></div>';
   if (!send_email($email, 'LEB Tool: Dashboard-Hinweise', $body)) return ['sent' => false, 'reason' => 'mail_failed'];
 
-  $pdo->prepare("UPDATE users SET notify_dashboard_mail_last_hash=?, notify_dashboard_mail_pending_message=NULL WHERE id=?")->execute([$hash, $userId]);
+  $pdo->prepare(
+    "INSERT INTO user_notification_prefs (user_id, notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message)
+     VALUES (?, 1, ?, NULL)
+     ON DUPLICATE KEY UPDATE notify_dashboard_mail=VALUES(notify_dashboard_mail), notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash), notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)"
+  )->execute([$userId, $hash]);
   return ['sent' => true, 'reason' => 'sent'];
 }
 

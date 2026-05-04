@@ -9,16 +9,14 @@ $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 $mailNotifyEnabled = false;
 $mailNotifyLastHash = '';
-if (db_has_column($pdo, 'users', 'notify_dashboard_mail')) {
-  try {
-    $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM users WHERE id=? LIMIT 1");
-    $st->execute([$userId]);
-    $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
-    $mailNotifyEnabled = (int)($prefs['notify_dashboard_mail'] ?? 0) === 1;
-    $mailNotifyLastHash = (string)($prefs['notify_dashboard_mail_last_hash'] ?? '');
-  } catch (Throwable $e) {
-    // ignore
-  }
+try {
+  $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM user_notification_prefs WHERE user_id=? LIMIT 1");
+  $st->execute([$userId]);
+  $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  $mailNotifyEnabled = (int)($prefs['notify_dashboard_mail'] ?? 0) === 1;
+  $mailNotifyLastHash = (string)($prefs['notify_dashboard_mail_last_hash'] ?? '');
+} catch (Throwable $e) {
+  // ignore
 }
 
 function meta_read(?string $json): array {
@@ -692,14 +690,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
   csrf_check();
   $mailNotifyEnabled = isset($_POST['notify_dashboard_mail']) && (string)$_POST['notify_dashboard_mail'] === '1';
   try {
-    if (db_has_column($pdo, 'users', 'notify_dashboard_mail')) {
-      if ($mailNotifyEnabled && db_has_column($pdo, 'users', 'notify_dashboard_mail_pending_message')) {
-        $pdo->prepare("UPDATE users SET notify_dashboard_mail=1, notify_dashboard_mail_last_hash='', notify_dashboard_mail_pending_message=? WHERE id=?")
-          ->execute(['Meldungen wurden aktiviert.', $userId]);
-      } else {
-        $pdo->prepare("UPDATE users SET notify_dashboard_mail=? WHERE id=?")->execute([$mailNotifyEnabled ? 1 : 0, $userId]);
-      }
-    }
+    $pending = $mailNotifyEnabled ? 'Meldungen wurden aktiviert.' : null;
+    $lastHash = $mailNotifyEnabled ? '' : $mailNotifyLastHash;
+    $pdo->prepare(
+      "INSERT INTO user_notification_prefs (user_id, notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE notify_dashboard_mail=VALUES(notify_dashboard_mail), notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash), notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)"
+    )->execute([$userId, $mailNotifyEnabled ? 1 : 0, $lastHash, $pending]);
     $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
   } catch (Throwable $e) {
     $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
