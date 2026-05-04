@@ -1150,6 +1150,9 @@ function ensure_schema(PDO $pdo): void {
       if (!db_has_column($pdo, 'users', 'notify_dashboard_mail_last_hash')) {
         $pdo->exec("ALTER TABLE users ADD COLUMN notify_dashboard_mail_last_hash VARCHAR(64) NULL AFTER notify_dashboard_mail");
       }
+      if (!db_has_column($pdo, 'users', 'notify_dashboard_mail_pending_message')) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN notify_dashboard_mail_pending_message VARCHAR(255) NULL AFTER notify_dashboard_mail_last_hash");
+      }
     }
   } catch (Throwable $e) {
     // Never hard-fail the app on shared hosting where ALTER privileges may be missing.
@@ -1996,26 +1999,30 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
   if ($userId <= 0 || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return ['sent' => false, 'reason' => 'invalid_user'];
   if (!db_has_column($pdo, 'users', 'notify_dashboard_mail') || !db_has_column($pdo, 'users', 'notify_dashboard_mail_last_hash')) return ['sent' => false, 'reason' => 'feature_unavailable'];
 
-  $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM users WHERE id=? LIMIT 1");
+  $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message FROM users WHERE id=? LIMIT 1");
   $st->execute([$userId]);
   $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
   if ((int)($prefs['notify_dashboard_mail'] ?? 0) !== 1) return ['sent' => false, 'reason' => 'disabled'];
+  $pendingMessage = trim((string)($prefs['notify_dashboard_mail_pending_message'] ?? ''));
 
   $notices = teacher_dashboard_notices($pdo, $userId);
-  if (!$notices) return ['sent' => false, 'reason' => 'no_notices'];
+  if (!$notices && $pendingMessage === '') return ['sent' => false, 'reason' => 'no_notices'];
 
   $payload = [];
   foreach ($notices as $n) $payload[] = ['type'=>(string)$n['type'],'label'=>(string)$n['label'],'remaining'=>(string)$n['remaining']];
   $hash = sha1(json_encode($payload, JSON_UNESCAPED_UNICODE) ?: '');
   $lastHash = (string)($prefs['notify_dashboard_mail_last_hash'] ?? '');
-  if ($hash === $lastHash) return ['sent' => false, 'reason' => 'unchanged'];
+  if ($hash === $lastHash && $pendingMessage === '') return ['sent' => false, 'reason' => 'unchanged'];
 
   $items = '';
+  if ($pendingMessage !== '') {
+    $items .= '<li><strong>Info:</strong> ' . h($pendingMessage) . '</li>';
+  }
   foreach ($notices as $n) $items .= '<li><strong>' . h((string)$n['label']) . ':</strong> ' . h((string)$n['remaining']) . '</li>';
   $body = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif"><h2>Dashboard-Hinweise</h2><ul>' . $items . '</ul></div>';
   if (!send_email($email, 'LEB Tool: Dashboard-Hinweise', $body)) return ['sent' => false, 'reason' => 'mail_failed'];
 
-  $pdo->prepare("UPDATE users SET notify_dashboard_mail_last_hash=?, updated_at=NOW() WHERE id=?")->execute([$hash, $userId]);
+  $pdo->prepare("UPDATE users SET notify_dashboard_mail_last_hash=?, notify_dashboard_mail_pending_message=NULL WHERE id=?")->execute([$hash, $userId]);
   return ['sent' => true, 'reason' => 'sent'];
 }
 

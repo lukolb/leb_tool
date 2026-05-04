@@ -693,17 +693,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
   $mailNotifyEnabled = isset($_POST['notify_dashboard_mail']) && (string)$_POST['notify_dashboard_mail'] === '1';
   try {
     if (db_has_column($pdo, 'users', 'notify_dashboard_mail')) {
-      $pdo->prepare("UPDATE users SET notify_dashboard_mail=?, updated_at=NOW() WHERE id=?")->execute([$mailNotifyEnabled ? 1 : 0, $userId]);
+      if ($mailNotifyEnabled && db_has_column($pdo, 'users', 'notify_dashboard_mail_pending_message')) {
+        $pdo->prepare("UPDATE users SET notify_dashboard_mail=1, notify_dashboard_mail_last_hash='', notify_dashboard_mail_pending_message=? WHERE id=?")
+          ->execute(['Meldungen wurden aktiviert.', $userId]);
+      } else {
+        $pdo->prepare("UPDATE users SET notify_dashboard_mail=? WHERE id=?")->execute([$mailNotifyEnabled ? 1 : 0, $userId]);
+      }
     }
     $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
   } catch (Throwable $e) {
     $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
   }
-}
-
-if ($mailNotifyEnabled && $dashboardNotices) {
-  $mailResult = send_teacher_dashboard_notice_mail($pdo, $u);
-  if (($mailResult['sent'] ?? false) === true) $mailNoticeOk = $mailNoticeOk ?: 'Neue Hinweise wurden automatisch per E-Mail versendet.';
 }
 
 $scope = $selectedClassId === 0 ? $overall : ($progressByClass[$selectedClassId] ?? []);
