@@ -969,16 +969,41 @@ render_teacher_header(t('teacher.title'));
 ?>
 <div class="card">
   <h2>Einstellungen</h2>
-  <form method="post">
+  <form method="post" id="dashboard-mail-settings-form">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_dashboard_notice_mail_setting">
     <label style="display:flex; gap:8px; align-items:center;">
-      <input type="checkbox" name="notify_dashboard_mail" value="1" <?=$mailNotifyEnabled ? 'checked' : ''?>>
+      <input type="checkbox" id="notify_dashboard_mail" name="notify_dashboard_mail" value="1" <?=$mailNotifyEnabled ? 'checked' : ''?>>
       <span>Automatische E-Mail bei neuen Dashboard-Hinweisen</span>
     </label>
     <p class="muted" style="margin:8px 0 0;">Bei neuen Hinweisen (Delegationen/Fristen) wird automatisch eine Mail an deine Konto-Adresse gesendet.</p>
-    <button class="btn secondary" type="submit" style="margin-top:10px;">Speichern</button>
+    <p class="muted small" id="dashboard-mail-settings-status" style="margin-top:8px;"></p>
   </form>
 </div>
 <?php
 render_teacher_footer();
+?>
+<script>
+(() => {
+  const form = document.getElementById('dashboard-mail-settings-form');
+  const cb = document.getElementById('notify_dashboard_mail');
+  const status = document.getElementById('dashboard-mail-settings-status');
+  if (!form || !cb) return;
+
+  async function saveSetting() {
+    const fd = new FormData(form);
+    if (!cb.checked) fd.delete('notify_dashboard_mail');
+    if (status) status.textContent = 'Speichere…';
+    try {
+      const res = await fetch(window.location.href, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) throw new Error('save_failed');
+      if (status) status.textContent = cb.checked ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
+    } catch (e) {
+      if (status) status.textContent = 'Einstellung konnte nicht gespeichert werden.';
+    }
+  }
+
+  cb.addEventListener('change', saveSetting);
+})();
+</script>
+<?php
