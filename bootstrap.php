@@ -2010,8 +2010,13 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
   $email = trim((string)($user['email'] ?? ''));
   if ($userId <= 0 || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return ['sent' => false, 'reason' => 'invalid_user'];
   if (db_has_table($pdo, 'user_notification_prefs')) {
+    $prefsHasLastHash = db_has_column($pdo, 'user_notification_prefs', 'notify_dashboard_mail_last_hash');
+    $prefsHasPending = db_has_column($pdo, 'user_notification_prefs', 'notify_dashboard_mail_pending_message');
+    $selectCols = ['p.notify_dashboard_mail'];
+    if ($prefsHasLastHash) $selectCols[] = 'p.notify_dashboard_mail_last_hash';
+    if ($prefsHasPending) $selectCols[] = 'p.notify_dashboard_mail_pending_message';
     $st = $pdo->prepare(
-      "SELECT p.notify_dashboard_mail, p.notify_dashboard_mail_last_hash, p.notify_dashboard_mail_pending_message
+      "SELECT " . implode(', ', $selectCols) . "
        FROM users u
        LEFT JOIN user_notification_prefs p ON p.user_id=u.id
        WHERE u.id=? LIMIT 1"
@@ -2042,11 +2047,17 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
   if (!send_email($email, 'LEB Tool: Dashboard-Hinweise', $body)) return ['sent' => false, 'reason' => 'mail_failed'];
 
   if (db_has_table($pdo, 'user_notification_prefs')) {
-    $pdo->prepare(
-      "INSERT INTO user_notification_prefs (user_id, notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message)
-       VALUES (?, 1, ?, NULL)
-       ON DUPLICATE KEY UPDATE notify_dashboard_mail=VALUES(notify_dashboard_mail), notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash), notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)"
-    )->execute([$userId, $hash]);
+    $prefsHasLastHash = db_has_column($pdo, 'user_notification_prefs', 'notify_dashboard_mail_last_hash');
+    $prefsHasPending = db_has_column($pdo, 'user_notification_prefs', 'notify_dashboard_mail_pending_message');
+    $cols = ['user_id', 'notify_dashboard_mail'];
+    $vals = [$userId, 1];
+    if ($prefsHasLastHash) { $cols[] = 'notify_dashboard_mail_last_hash'; $vals[] = $hash; }
+    if ($prefsHasPending) { $cols[] = 'notify_dashboard_mail_pending_message'; $vals[] = null; }
+    $updates = ['notify_dashboard_mail=VALUES(notify_dashboard_mail)'];
+    if ($prefsHasLastHash) $updates[] = 'notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash)';
+    if ($prefsHasPending) $updates[] = 'notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)';
+    $ph = implode(',', array_fill(0, count($cols), '?'));
+    $pdo->prepare("INSERT INTO user_notification_prefs (" . implode(',', $cols) . ") VALUES ({$ph}) ON DUPLICATE KEY UPDATE " . implode(', ', $updates))->execute($vals);
   } else {
     $pdo->prepare("UPDATE users SET notify_dashboard_mail=1, notify_dashboard_mail_last_hash=?, notify_dashboard_mail_pending_message=NULL WHERE id=?")
       ->execute([$hash, $userId]);
