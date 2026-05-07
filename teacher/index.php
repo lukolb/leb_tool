@@ -10,9 +10,15 @@ $userId = (int)($u['id'] ?? 0);
 $mailNotifyEnabled = false;
 $mailNotifyLastHash = '';
 try {
-  $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM user_notification_prefs WHERE user_id=? LIMIT 1");
-  $st->execute([$userId]);
-  $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  if (db_has_table($pdo, 'user_notification_prefs')) {
+    $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM user_notification_prefs WHERE user_id=? LIMIT 1");
+    $st->execute([$userId]);
+    $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  } else {
+    $st = $pdo->prepare("SELECT notify_dashboard_mail, notify_dashboard_mail_last_hash FROM users WHERE id=? LIMIT 1");
+    $st->execute([$userId]);
+    $prefs = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  }
   $mailNotifyEnabled = (int)($prefs['notify_dashboard_mail'] ?? 0) === 1;
   $mailNotifyLastHash = (string)($prefs['notify_dashboard_mail_last_hash'] ?? '');
 } catch (Throwable $e) {
@@ -692,11 +698,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
   try {
     $pending = $mailNotifyEnabled ? 'Meldungen wurden aktiviert.' : null;
     $lastHash = $mailNotifyEnabled ? '' : $mailNotifyLastHash;
-    $pdo->prepare(
-      "INSERT INTO user_notification_prefs (user_id, notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE notify_dashboard_mail=VALUES(notify_dashboard_mail), notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash), notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)"
-    )->execute([$userId, $mailNotifyEnabled ? 1 : 0, $lastHash, $pending]);
+    if (db_has_table($pdo, 'user_notification_prefs')) {
+      $pdo->prepare(
+        "INSERT INTO user_notification_prefs (user_id, notify_dashboard_mail, notify_dashboard_mail_last_hash, notify_dashboard_mail_pending_message)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE notify_dashboard_mail=VALUES(notify_dashboard_mail), notify_dashboard_mail_last_hash=VALUES(notify_dashboard_mail_last_hash), notify_dashboard_mail_pending_message=VALUES(notify_dashboard_mail_pending_message)"
+      )->execute([$userId, $mailNotifyEnabled ? 1 : 0, $lastHash, $pending]);
+    } else {
+      $pdo->prepare("UPDATE users SET notify_dashboard_mail=?, notify_dashboard_mail_last_hash=?, notify_dashboard_mail_pending_message=? WHERE id=?")
+        ->execute([$mailNotifyEnabled ? 1 : 0, $lastHash, $pending, $userId]);
+    }
     $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
   } catch (Throwable $e) {
     $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
