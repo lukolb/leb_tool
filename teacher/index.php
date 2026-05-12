@@ -697,7 +697,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
   $debugError = null;
   try {
     csrf_verify();
-    $pending = $mailNotifyEnabled ? 'Meldungen wurden aktiviert.' : null;
+    $pending = $mailNotifyEnabled ? t('teacher.notice_mail.pending_enabled', 'Meldungen wurden aktiviert.') : null;
     $lastHash = $mailNotifyEnabled ? '' : $mailNotifyLastHash;
     try {
       $pdo->prepare(
@@ -709,9 +709,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
       $pdo->prepare("UPDATE users SET notify_dashboard_mail=?, notify_dashboard_mail_last_hash=?, notify_dashboard_mail_pending_message=? WHERE id=?")
         ->execute([$mailNotifyEnabled ? 1 : 0, $lastHash, $pending, $userId]);
     }
-    $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
+    $mailNoticeOk = $mailNotifyEnabled
+      ? t('teacher.notice_mail.enabled', 'Automatische Hinweis-Mails aktiviert.')
+      : t('teacher.notice_mail.disabled', 'Automatische Hinweis-Mails deaktiviert.');
   } catch (Throwable $e) {
-    $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
+    $mailNoticeErr = t('teacher.notice_mail.save_error', 'Einstellung konnte nicht gespeichert werden.');
     $debugError = get_class($e) . ': ' . $e->getMessage();
     error_log('[dashboard-mail-setting] user_id=' . $userId . ' error=' . $debugError);
   }
@@ -772,15 +774,15 @@ render_teacher_header(t('teacher.title'));
 
 <?php if ($dashboardNotices): ?>
   <div class="card" style="background:#fff8db; border:1px solid #f2d675;">
-    <h2>Benachrichtigungen</h2>
-    <p class="muted">Hinweise zu Delegationen und nahenden/überfälligen Fristen.</p>
+    <h2><?=h(t('teacher.notice_card.title', 'Benachrichtigungen'))?></h2>
+    <p class="muted"><?=h(t('teacher.notice_card.desc', 'Hinweise zu Delegationen und nahenden/überfälligen Fristen.'))?></p>
     <ul style="margin:0; padding-left:18px;">
       <?php foreach ($dashboardNotices as $n): ?>
         <li style="margin:6px 0;">
           <strong><?=h((string)$n['label'])?>:</strong>
           <?=h((string)($n['remaining'] ?? ''))?>
           <?php if ((string)($n['type'] ?? '') === 'delegation'): ?>
-            · <a href="<?=h(url('teacher/delegations.php'))?>">Jetzt öffnen</a>
+            · <a href="<?=h(url('teacher/delegations.php'))?>"><?=h(t('teacher.notice_card.open_now', 'Jetzt öffnen'))?></a>
           <?php endif; ?>
         </li>
       <?php endforeach; ?>
@@ -1009,9 +1011,9 @@ render_teacher_header(t('teacher.title'));
     <input type="hidden" name="action" value="save_dashboard_notice_mail_setting">
     <label style="display:flex; gap:8px; align-items:center;">
       <input type="checkbox" id="notify_dashboard_mail" name="notify_dashboard_mail" value="1" <?=$mailNotifyEnabled ? 'checked' : ''?>>
-      <span>Automatische E-Mail bei neuen Dashboard-Hinweisen</span>
+      <span><?=h(t('teacher.notice_mail.toggle_label', 'Automatische E-Mail bei neuen Dashboard-Hinweisen'))?></span>
     </label>
-    <p class="muted" style="margin:8px 0 0;">Bei neuen Hinweisen (Delegationen/Fristen) wird automatisch eine Mail an deine Konto-Adresse gesendet.</p>
+    <p class="muted" style="margin:8px 0 0;"><?=h(t('teacher.notice_mail.toggle_hint', 'Bei neuen Hinweisen (Delegationen/Fristen) wird automatisch eine Mail an deine Konto-Adresse gesendet.'))?></p>
     <p class="muted small" id="dashboard-mail-settings-status" style="margin-top:8px;"></p>
   </form>
 </div>
@@ -1028,7 +1030,7 @@ render_teacher_footer();
   async function saveSetting() {
     const fd = new FormData(form);
     if (!cb.checked) fd.delete('notify_dashboard_mail');
-    if (status) status.textContent = 'Speichere…';
+    if (status) status.textContent = <?=json_encode(t('teacher.notice_mail.saving', 'Speichere…'))?>;
     try {
       const res = await fetch(window.location.href, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
       const payload = await res.json().catch(() => ({}));
@@ -1036,9 +1038,11 @@ render_teacher_footer();
         const dbg = payload && payload.debug ? ` (${payload.debug})` : '';
         throw new Error((payload && payload.message ? payload.message : 'save_failed') + dbg);
       }
-      if (status) status.textContent = payload && payload.message ? payload.message : (cb.checked ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.');
+      if (status) status.textContent = payload && payload.message ? payload.message : (cb.checked
+        ? <?=json_encode(t('teacher.notice_mail.enabled', 'Automatische Hinweis-Mails aktiviert.'))?>
+        : <?=json_encode(t('teacher.notice_mail.disabled', 'Automatische Hinweis-Mails deaktiviert.'))?>);
     } catch (e) {
-      if (status) status.textContent = String((e && e.message) ? e.message : 'Einstellung konnte nicht gespeichert werden.');
+      if (status) status.textContent = String((e && e.message) ? e.message : <?=json_encode(t('teacher.notice_mail.save_error', 'Einstellung konnte nicht gespeichert werden.'))?>);
     }
   }
 
