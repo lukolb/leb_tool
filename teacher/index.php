@@ -771,7 +771,7 @@ render_teacher_header(t('teacher.title'));
 <?php endif; ?>
 
 <?php if ($dashboardNotices): ?>
-  <div class="card">
+  <div class="card" style="background:#fff8db; border:1px solid #f2d675;">
     <h2>Benachrichtigungen</h2>
     <p class="muted">Hinweise zu Delegationen und nahenden/überfälligen Fristen.</p>
     <ul style="margin:0; padding-left:18px;">
@@ -779,6 +779,9 @@ render_teacher_header(t('teacher.title'));
         <li style="margin:6px 0;">
           <strong><?=h((string)$n['label'])?>:</strong>
           <?=h((string)($n['remaining'] ?? ''))?>
+          <?php if ((string)($n['type'] ?? '') === 'delegation'): ?>
+            · <a href="<?=h(url('teacher/delegations.php'))?>">Jetzt öffnen</a>
+          <?php endif; ?>
         </li>
       <?php endforeach; ?>
     </ul>
