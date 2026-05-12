@@ -2040,11 +2040,11 @@ function send_teacher_dashboard_notice_mail(PDO $pdo, array $user): array {
 
   $items = '';
   if ($pendingMessage !== '') {
-    $items .= '<li><strong>Info:</strong> ' . h($pendingMessage) . '</li>';
+    $items .= '<li><strong>' . h(t('teacher.notice_mail.email.info_label', 'Info')) . ':</strong> ' . h($pendingMessage) . '</li>';
   }
   foreach ($notices as $n) $items .= '<li><strong>' . h((string)$n['label']) . ':</strong> ' . h((string)$n['remaining']) . '</li>';
-  $body = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif"><h2>Dashboard-Hinweise</h2><ul>' . $items . '</ul></div>';
-  if (!send_email($email, 'LEB Tool: Dashboard-Hinweise', $body)) return ['sent' => false, 'reason' => 'mail_failed'];
+  $body = '<div style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif"><h2>' . h(t('teacher.notice_mail.email.title', 'Dashboard-Hinweise')) . '</h2><ul>' . $items . '</ul></div>';
+  if (!send_email($email, t('teacher.notice_mail.email.subject', 'LEB Tool: Dashboard-Hinweise'), $body)) return ['sent' => false, 'reason' => 'mail_failed'];
 
   if (db_has_table($pdo, 'user_notification_prefs')) {
     $prefsHasLastHash = db_has_column($pdo, 'user_notification_prefs', 'notify_dashboard_mail_last_hash');

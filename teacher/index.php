@@ -1005,7 +1005,7 @@ render_teacher_header(t('teacher.title'));
 <?php
 ?>
 <div class="card">
-  <h2>Einstellungen</h2>
+  <h2><?=h(t('teacher.notice_mail.settings_title', 'Einstellungen'))?></h2>
   <form method="post" id="dashboard-mail-settings-form">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_dashboard_notice_mail_setting">
@@ -1036,7 +1036,7 @@ render_teacher_footer();
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || payload.ok === false) {
         const dbg = payload && payload.debug ? ` (${payload.debug})` : '';
-        throw new Error((payload && payload.message ? payload.message : 'save_failed') + dbg);
+        throw new Error((payload && payload.message ? payload.message : <?=json_encode(t('teacher.notice_mail.save_failed_fallback', 'Speichern fehlgeschlagen.'))?>) + dbg);
       }
       if (status) status.textContent = payload && payload.message ? payload.message : (cb.checked
         ? <?=json_encode(t('teacher.notice_mail.enabled', 'Automatische Hinweis-Mails aktiviert.'))?>
