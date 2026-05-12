@@ -696,7 +696,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
   $mailNotifyEnabled = isset($_POST['notify_dashboard_mail']) && (string)$_POST['notify_dashboard_mail'] === '1';
   $debugError = null;
   try {
-    csrf_check();
+    csrf_verify();
     $pending = $mailNotifyEnabled ? 'Meldungen wurden aktiviert.' : null;
     $lastHash = $mailNotifyEnabled ? '' : $mailNotifyLastHash;
     try {
