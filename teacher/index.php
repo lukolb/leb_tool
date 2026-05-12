@@ -693,9 +693,10 @@ $dashboardNotices = teacher_dashboard_notices($pdo, $userId);
 $mailNoticeOk = null;
 $mailNoticeErr = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'save_dashboard_notice_mail_setting') {
-  csrf_check();
   $mailNotifyEnabled = isset($_POST['notify_dashboard_mail']) && (string)$_POST['notify_dashboard_mail'] === '1';
+  $debugError = null;
   try {
+    csrf_check();
     $pending = $mailNotifyEnabled ? 'Meldungen wurden aktiviert.' : null;
     $lastHash = $mailNotifyEnabled ? '' : $mailNotifyLastHash;
     try {
@@ -711,6 +712,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     $mailNoticeOk = $mailNotifyEnabled ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
   } catch (Throwable $e) {
     $mailNoticeErr = 'Einstellung konnte nicht gespeichert werden.';
+    $debugError = get_class($e) . ': ' . $e->getMessage();
+    error_log('[dashboard-mail-setting] user_id=' . $userId . ' error=' . $debugError);
+  }
+
+  if (is_ajax_request()) {
+    header('Content-Type: application/json; charset=utf-8');
+    if ($mailNoticeErr !== null) {
+      http_response_code(500);
+      echo json_encode([
+        'ok' => false,
+        'message' => $mailNoticeErr,
+        'debug' => $debugError,
+      ], JSON_UNESCAPED_UNICODE);
+    } else {
+      echo json_encode([
+        'ok' => true,
+        'message' => $mailNoticeOk,
+      ], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
   }
 }
 
@@ -1006,11 +1027,15 @@ render_teacher_footer();
     if (!cb.checked) fd.delete('notify_dashboard_mail');
     if (status) status.textContent = 'Speichere…';
     try {
-      const res = await fetch(window.location.href, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!res.ok) throw new Error('save_failed');
-      if (status) status.textContent = cb.checked ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.';
+      const res = await fetch(window.location.href, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        const dbg = payload && payload.debug ? ` (${payload.debug})` : '';
+        throw new Error((payload && payload.message ? payload.message : 'save_failed') + dbg);
+      }
+      if (status) status.textContent = payload && payload.message ? payload.message : (cb.checked ? 'Automatische Hinweis-Mails aktiviert.' : 'Automatische Hinweis-Mails deaktiviert.');
     } catch (e) {
-      if (status) status.textContent = 'Einstellung konnte nicht gespeichert werden.';
+      if (status) status.textContent = String((e && e.message) ? e.message : 'Einstellung konnte nicht gespeichert werden.');
     }
   }
 
