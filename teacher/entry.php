@@ -3126,6 +3126,17 @@ render_teacher_header($pageTitle);
   }
 
   function teacherEditVal(reportId, fieldId){
+    const part = delegatedEditPart(fieldId);
+    if (part) {
+      const rid = isClassFieldId(fieldId) ? classReportId() : Number(reportId || 0);
+      const parts = state.values_teacher_parts[String(rid)]?.[String(fieldId)];
+      if (parts && typeof parts === 'object') {
+        return part === 'delegate'
+          ? String(parts.delegate_text ?? '')
+          : String(parts.class_text ?? '');
+      }
+      return '';
+    }
     if (isClassFieldId(fieldId)) {
       const rid = classReportId();
       const r = state.values_teacher_own[String(rid)] || {};
