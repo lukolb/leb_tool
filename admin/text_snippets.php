@@ -26,8 +26,9 @@ render_admin_header(t('admin.text_snippets.title'));
     <div style="flex:1; min-width:200px;">
       <label class="label"><?=h(t('admin.text_snippets.category_label'))?></label>
       <select class="input" id="tsCategory" style="width:100%;">
-        <option value=""><?=h(t('admin.text_snippets.category_placeholder'))?></option>
+        <option value="">- ohne Kategorie -</option>
       </select>
+      <div class="muted2" id="tsCategoryPreview" style="margin-top:4px;"></div>
     </div>
     <div style="flex:2; min-width:260px;">
       <label class="label"><?=h(t('admin.text_snippets.content_label'))?></label>
@@ -103,6 +104,7 @@ render_admin_header(t('admin.text_snippets.title'));
   const tsList = document.getElementById('tsList');
   const tsStatus = document.getElementById('tsStatus');
   const tsCategory = document.getElementById('tsCategory');
+  const tsCategoryPreview = document.getElementById('tsCategoryPreview');
   const tsNewGroup = document.getElementById('tsNewGroup');
   const tsAddGroup = document.getElementById('tsAddGroup');
 
@@ -147,7 +149,7 @@ render_admin_header(t('admin.text_snippets.title'));
   function refreshCategorySelect(current = null){
     if (!tsCategory) return;
     const keep = current === null ? String(tsCategory.value || '') : String(current || '');
-    tsCategory.innerHTML = `<option value="">${escHtml(tSnippets('category_placeholder') || '') || 'optional'}</option>`;
+    tsCategory.innerHTML = `<option value="">- ohne Kategorie -</option>`;
     allCategories().forEach(cat => {
       const opt = document.createElement('option');
       opt.value = cat;
@@ -156,6 +158,13 @@ render_admin_header(t('admin.text_snippets.title'));
     });
     tsCategory.value = keep;
     if (tsCategory.value !== keep) tsCategory.value = '';
+    refreshCategoryPreview();
+  }
+
+  function refreshCategoryPreview(){
+    if (!tsCategoryPreview || !tsCategory) return;
+    const v = String(tsCategory.value || '').trim();
+    tsCategoryPreview.innerHTML = v ? `Vorschau: ${formatPipeItalic(v)}` : '<i>- ohne Kategorie -</i>';
   }
 
   function escHtml(s){
@@ -177,7 +186,7 @@ render_admin_header(t('admin.text_snippets.title'));
     sel.style.width = '100%';
     const none = document.createElement('option');
     none.value = '';
-    none.textContent = tSnippets('category_placeholder') || 'optional';
+    none.textContent = '- ohne Kategorie -';
     sel.appendChild(none);
     allCategories().forEach(cat => {
       const opt = document.createElement('option');
@@ -187,6 +196,14 @@ render_admin_header(t('admin.text_snippets.title'));
     });
     sel.value = String(current || '');
     if (sel.value !== String(current || '')) sel.value = '';
+    sel.addEventListener('change', () => {
+      const host = sel.closest('.edit-cat-slot');
+      const pv = host ? host.querySelector('.cat-preview') : null;
+      if (pv) {
+        const val = String(sel.value || '').trim();
+        pv.innerHTML = val ? formatPipeItalic(val) : '<i>- ohne Kategorie -</i>';
+      }
+    });
     return sel;
   }
 
@@ -241,6 +258,7 @@ render_admin_header(t('admin.text_snippets.title'));
           </div>
           <div style="flex:1; min-width:180px;" class="edit-cat-slot">
             <label class="label">${tSnippets('edit_category_label')}</label>
+            <div class="muted2 cat-preview" style="margin-top:4px;"></div>
           </div>
           <div style="flex:2; min-width:240px;">
             <label class="label">${tSnippets('edit_content_label')}</label>
@@ -257,6 +275,11 @@ render_admin_header(t('admin.text_snippets.title'));
       const catSlot = panel.querySelector('.edit-cat-slot');
       const categoryInput = createCategorySelect(snippet.category || '');
       catSlot.appendChild(categoryInput);
+      const catPreview = catSlot.querySelector('.cat-preview');
+      if (catPreview) {
+        const val = String(categoryInput.value || '').trim();
+        catPreview.innerHTML = val ? formatPipeItalic(val) : '<i>- ohne Kategorie -</i>';
+      }
       const [saveEditBtn, cancelBtn] = panel.querySelectorAll('button');
 
       saveEditBtn.addEventListener('click', async () => {
@@ -432,6 +455,8 @@ render_admin_header(t('admin.text_snippets.title'));
     render(state.snippets);
     showStatus(tSnippets('status_group_created'));
   });
+
+  tsCategory?.addEventListener('change', refreshCategoryPreview);
 
   load();
 })();
