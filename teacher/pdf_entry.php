@@ -421,6 +421,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   let activeSaves = 0;
   let renderTimer = null;
   let lastSnippetTarget = null;
+  let lastSnippetField = null;
   const snippetMenu = document.createElement('div');
   snippetMenu.className = 'snippet-menu';
   snippetMenu.style.display = 'none';
@@ -911,6 +912,7 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       el.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
         lastSnippetTarget = el;
+        lastSnippetField = field;
         openSnippetMenu(ev.pageX ?? (ev.clientX + window.scrollX), ev.pageY ?? (ev.clientY + window.scrollY));
       });
     }
@@ -939,7 +941,20 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
   function openSnippetMenu(x, y){
-    const list = Array.isArray(state?.text_snippets) ? state.text_snippets : [];
+    const all = Array.isArray(state?.text_snippets) ? state.text_snippets : [];
+    const allowedIds = Array.isArray(lastSnippetField?.snippet_category_ids)
+      ? lastSnippetField.snippet_category_ids.map(x => String(x || '').trim()).filter(Boolean)
+      : null;
+    const allowedCats = Array.isArray(lastSnippetField?.snippet_categories)
+      ? lastSnippetField.snippet_categories.map(x => String(x || '').trim()).filter(Boolean)
+      : null;
+    const list = all.filter(s => {
+      const cat = s?.category && String(s.category).trim() !== '' ? String(s.category).trim() : 'Allgemein';
+      const catId = String(s?.category_id || '').trim();
+      if (allowedIds !== null) return catId !== '' && allowedIds.includes(catId);
+      if (allowedCats !== null) return allowedCats.includes(cat);
+      return true;
+    });
     snippetMenu.innerHTML = '';
     if (!list.length) {
       snippetMenu.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';

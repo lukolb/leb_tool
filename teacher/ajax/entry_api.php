@@ -2628,6 +2628,8 @@ try {
         'child_only' => $forceChildOnly ? 1 : 0,
         'system_bound' => $isSystemBound ? 1 : 0,
         'child_field_id' => $childFieldId,
+        'snippet_categories' => snippet_categories_from_meta($meta),
+        'snippet_category_ids' => snippet_category_ids_from_meta($meta),
       ];
       $fieldsById[$fid] = true;
     };
