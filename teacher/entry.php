@@ -3131,6 +3131,10 @@ render_teacher_header($pageTitle);
       const rid = isClassFieldId(fieldId) ? classReportId() : Number(reportId || 0);
       const parts = state.values_teacher_parts[String(rid)]?.[String(fieldId)];
       if (parts && typeof parts === 'object') {
+        if (part === 'delegate' && parts.delegate_texts && typeof parts.delegate_texts === 'object') {
+          const own = parts.delegate_texts[String(CURRENT_USER_ID)];
+          return String(own ?? '');
+        }
         return part === 'delegate'
           ? String(parts.delegate_text ?? '')
           : String(parts.class_text ?? '');

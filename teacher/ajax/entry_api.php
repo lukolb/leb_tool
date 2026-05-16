@@ -1075,27 +1075,46 @@ function is_free_text_field(string $fieldType, int $isMultiline): bool {
 
 function free_text_parts_from_json(?string $valueJsonRaw): array {
   if (!$valueJsonRaw) {
-    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0, 'delegate_texts' => []];
   }
   $j = json_decode($valueJsonRaw, true);
   if (!is_array($j) || !isset($j['free_text']) || !is_array($j['free_text'])) {
-    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0, 'delegate_texts' => []];
   }
   $ft = $j['free_text'];
+  $delegateTexts = [];
+  if (isset($ft['delegate_texts']) && is_array($ft['delegate_texts'])) {
+    foreach ($ft['delegate_texts'] as $uid => $txt) {
+      $id = (int)$uid;
+      if ($id <= 0) continue;
+      $delegateTexts[(string)$id] = (string)$txt;
+    }
+  }
+  $delegateText = (string)($ft['delegate_text'] ?? '');
+  if ($delegateText === '' && $delegateTexts) {
+    $parts = [];
+    foreach ($delegateTexts as $txt) {
+      $t = trim((string)$txt);
+      if ($t !== '') $parts[] = $t;
+    }
+    $delegateText = implode("\n\n", $parts);
+  }
   return [
     'has_free_text' => true,
     'class_text' => (string)($ft['class_text'] ?? ''),
-    'delegate_text' => (string)($ft['delegate_text'] ?? ''),
+    'delegate_text' => $delegateText,
     'delegate_user_id' => (int)($ft['delegate_user_id'] ?? 0),
+    'delegate_texts' => $delegateTexts,
   ];
 }
 
-function build_free_text_json(string $classText, string $delegateText, int $delegateUserId): string {
+function build_free_text_json(string $classText, string $delegateText, int $delegateUserId, array $delegateTexts = []): string {
   return json_encode([
     'free_text' => [
       'class_text' => $classText,
       'delegate_text' => $delegateText,
       'delegate_user_id' => $delegateUserId,
+      'delegate_texts' => $delegateTexts,
     ],
   ], JSON_UNESCAPED_UNICODE);
 }
@@ -1149,20 +1168,31 @@ function save_free_text_value(
 
     $existingClass = '';
     $existingDelegate = '';
+    $existingDelegateTexts = [];
     if ($row) {
       $free = free_text_parts_from_json($row['value_json'] !== null ? (string)$row['value_json'] : null);
       if ($free['has_free_text']) {
         $existingClass = (string)($free['class_text'] ?? '');
         $existingDelegate = (string)($free['delegate_text'] ?? '');
+        $existingDelegateTexts = is_array($free['delegate_texts'] ?? null) ? $free['delegate_texts'] : [];
       } else {
         $existingClass = (string)($row['value_text'] ?? '');
       }
     }
 
-    if ($isDelegate) $existingDelegate = $delegateText;
-    else $existingClass = $classText;
+    if ($isDelegate) {
+      $existingDelegateTexts[(string)$userId] = $delegateText;
+    } else {
+      $existingClass = $classText;
+    }
+    $delegateParts = [];
+    foreach ($existingDelegateTexts as $txt) {
+      $t = trim((string)$txt);
+      if ($t !== '') $delegateParts[] = $t;
+    }
+    $existingDelegate = implode("\n\n", $delegateParts);
 
-    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId);
+    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId, $existingDelegateTexts);
     $valueText = combine_free_text($existingClass, $existingDelegate);
     if (trim($valueText) === '') $valueText = null;
 
