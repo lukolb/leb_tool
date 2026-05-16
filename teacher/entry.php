@@ -4679,7 +4679,17 @@ render_teacher_header($pageTitle);
       const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) return;
       w.document.open();
-      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Textbaustein-Übersicht</title><style>body{font-family:Arial,sans-serif;padding:20px;}h3{margin:14px 0 6px;}ul{margin:0 0 14px 20px;}li{margin:0 0 10px;white-space:pre-wrap;}</style></head><body><h1>Textbaustein-Übersicht</h1>${html || '<p>Keine Bausteine vorhanden.</p>'}</body></html>`);
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Textbaustein-Übersicht</title><style>
+        body{font-family:Inter,Arial,sans-serif;padding:18px;color:#1f2937;font-size:12px;line-height:1.4;background:#f8fafc;}
+        .sheet{max-width:900px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;}
+        h1{margin:0 0 4px;font-size:18px;line-height:1.2;}
+        .sub{margin:0 0 12px;color:#6b7280;font-size:11px;}
+        h3{margin:14px 0 6px;font-size:13px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;}
+        ul{margin:0;padding:0;list-style:none;}
+        li{margin:0 0 8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fcfcfd;white-space:pre-wrap;}
+        li strong{display:block;font-size:12px;margin-bottom:3px;color:#111827;}
+        @media print{body{background:#fff;padding:0}.sheet{border:none;border-radius:0;padding:0;max-width:none}li{break-inside:avoid;page-break-inside:avoid}}
+      </style></head><body><div class="sheet"><h1>Textbaustein-Übersicht</h1><p class="sub">Verfügbare Bausteine für das aktuell gewählte Feld</p>${html || '<p>Keine Bausteine vorhanden.</p>'}</div></body></html>`);
       w.document.close();
       w.addEventListener('load', () => {
         w.focus();
