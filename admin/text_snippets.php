@@ -339,6 +339,7 @@ render_admin_header(t('admin.text_snippets.title'));
             <div style="font-weight:800;">${formatPipeItalic(categoryLabel(cat))}</div>
             <div class="pill-mini">${tfmtSnippets('pill_count', { count: String((grouped.get(cat) || []).length) })}</div>
             <button class="btn secondary js-rename-cat" type="button" data-cat="${escHtml(cat)}" style="padding:4px 8px;">Umbenennen</button>
+            <button class="btn danger js-delete-cat" type="button" data-cat="${escHtml(cat)}" style="padding:4px 8px;">Kategorie löschen</button>
           </div>
           <div class="muted" style="font-size:12px;">${tSnippets('drag_hint')}</div>
         </div>
@@ -347,6 +348,7 @@ render_admin_header(t('admin.text_snippets.title'));
 
       const zone = box.querySelector('.drop-zone');
       const renameBtn = box.querySelector('.js-rename-cat');
+      const deleteBtn = box.querySelector('.js-delete-cat');
       renameBtn?.addEventListener('click', async (e) => {
         e.stopPropagation();
         const oldCat = String(cat || '');
@@ -359,6 +361,26 @@ render_admin_header(t('admin.text_snippets.title'));
           for (const s of rows) await api('move', { id: s.id, category: targetCat });
           state.customGroups.delete(oldCat);
           if (targetCat) state.customGroups.add(targetCat);
+          showStatus(tSnippets('status_group_changed'));
+          await load();
+        } catch (err) {
+          alert(err.message || tSnippets('group_change_failed'));
+        }
+      });
+      deleteBtn?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const oldCat = String(cat || '');
+        const rows = grouped.get(cat) || [];
+        if (!rows.length) {
+          state.customGroups.delete(oldCat);
+          render(state.snippets);
+          return;
+        }
+        const ok = window.confirm(`Kategorie "${oldCat || tSnippets('no_category')}" wirklich löschen? Alle enthaltenen Bausteine werden auf "- ohne Kategorie -" gesetzt.`);
+        if (!ok) return;
+        try {
+          for (const s of rows) await api('move', { id: s.id, category: '' });
+          state.customGroups.delete(oldCat);
           showStatus(tSnippets('status_group_changed'));
           await load();
         } catch (err) {
