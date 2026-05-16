@@ -262,7 +262,7 @@ render_admin_header(t('admin.text_snippets.title'));
           </div>
           <div style="flex:1 1 100%; min-width:240px; width:100%; max-width:100%;">
             <label class="label">${tSnippets('edit_content_label')}</label>
-            <textarea class="input" rows="4">${snippet.content}</textarea>
+            <textarea class="input" rows="4" style="width:100%;">${snippet.content}</textarea>
           </div>
           <div style="display:flex; gap:4px; align-items:center; margin-left:auto;">
             <button class="btn secondary" type="button" style="padding:4px 8px;">${tSnippets('edit_save_button')}</button>
