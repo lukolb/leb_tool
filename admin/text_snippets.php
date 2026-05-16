@@ -131,6 +131,19 @@ render_admin_header(t('admin.text_snippets.title'));
     return cat && cat.trim() !== '' ? cat : tSnippets('no_category');
   }
 
+  function escHtml(s){
+    return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  function formatPipeItalic(text){
+    const raw = String(text ?? '');
+    const idx = raw.indexOf('|');
+    if (idx < 0) return escHtml(raw);
+    const left = escHtml(raw.slice(0, idx + 1));
+    const right = escHtml(raw.slice(idx + 1));
+    return `${left}<i>${right}</i>`;
+  }
+
   function createSnippetRow(snippet){
     const row = document.createElement('div');
     row.className = 'del-row';
@@ -138,9 +151,9 @@ render_admin_header(t('admin.text_snippets.title'));
     row.draggable = true;
     row.innerHTML = `
       <div class="l">
-        <div class="t">${snippet.title ? snippet.title : tSnippets('untitled')}</div>
+        <div class="t">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
         <div class="s">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
-        <div class="s" style="white-space:pre-wrap;">${snippet.content}</div>
+        <div class="s" style="white-space:pre-wrap;">${formatPipeItalic(snippet.content)}</div>
       </div>
       <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
         <button class="btn secondary" type="button">${tSnippets('edit_button')}</button>
@@ -243,7 +256,7 @@ render_admin_header(t('admin.text_snippets.title'));
       box.innerHTML = `
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
           <div style="display:flex; gap:8px; align-items:center;">
-            <div style="font-weight:800;">${categoryLabel(cat)}</div>
+            <div style="font-weight:800;">${formatPipeItalic(categoryLabel(cat))}</div>
             <div class="pill-mini">${tfmtSnippets('pill_count', { count: String((grouped.get(cat) || []).length) })}</div>
           </div>
           <div class="muted" style="font-size:12px;">${tSnippets('drag_hint')}</div>

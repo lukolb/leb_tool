@@ -2416,6 +2416,12 @@ render_teacher_header($pageTitle);
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function fmtPipeItalic(s){
+    const raw = String(s ?? '');
+    const idx = raw.indexOf('|');
+    if (idx < 0) return esc(raw);
+    return `${esc(raw.slice(0, idx + 1))}<i>${esc(raw.slice(idx + 1))}</i>`;
+  }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
 
   function groupFilterValue(groupKey, subgroup){
@@ -4389,10 +4395,10 @@ render_teacher_header($pageTitle);
         card.className = 'snippet-card';
         card.innerHTML = `
           <div class="h">
-            <div style="font-weight:800;">${esc(s.title || tEntry('snippet_untitled'))}</div>
+            <div style="font-weight:800;">${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</div>
             <span class="pill-mini">${esc(cat)}</span>
           </div>
-          <div class="txt">${esc(s.content || '')}</div>
+          <div class="txt">${fmtPipeItalic(s.content || '')}</div>
           <div class="c">${esc(s.created_by_name || '')}${s.is_generated ? ` · ${esc(tEntry('snippet_generated'))}` : ''}</div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn secondary" type="button">${esc(tEntry('snippet_insert_current'))}</button>
@@ -4643,12 +4649,12 @@ render_teacher_header($pageTitle);
       });
       Object.entries(grouped).forEach(([cat, items]) => {
         const h = document.createElement('h4');
-        h.textContent = cat;
+        h.innerHTML = fmtPipeItalic(cat);
         snippetMenu.appendChild(h);
         items.forEach(s => {
           const div = document.createElement('div');
           div.className = 'item';
-          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${esc(s.title || tEntry('snippet_untitled'))}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
+          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</div><div class="muted" style="font-size:12px;">${fmtPipeItalic((s.content || '').slice(0, 120))}</div>`;
           div.addEventListener('click', () => {
             insertSnippetText(target, s.content || '');
             hideSnippetMenu();
@@ -4673,8 +4679,8 @@ render_teacher_header($pageTitle);
         grouped[cat].push(s);
       });
       const html = Object.entries(grouped).map(([cat, items]) => {
-        const rows = items.map(s => `<li><strong>${esc(s.title || tEntry('snippet_untitled'))}</strong><br>${esc(String(s.content || ''))}</li>`).join('');
-        return `<h3>${esc(cat)}</h3><ul>${rows}</ul>`;
+        const rows = items.map(s => `<li><strong>${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</strong><br>${fmtPipeItalic(String(s.content || ''))}</li>`).join('');
+        return `<h3>${fmtPipeItalic(cat)}</h3><ul>${rows}</ul>`;
       }).join('');
       const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) return;
