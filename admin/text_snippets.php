@@ -260,13 +260,13 @@ render_admin_header(t('admin.text_snippets.title'));
             <label class="label">${tSnippets('edit_category_label')}</label>
             <div class="muted2 cat-preview" style="margin-top:4px;"></div>
           </div>
-          <div style="flex:2; min-width:240px;">
+          <div style="flex:1 1 100%; min-width:240px;">
             <label class="label">${tSnippets('edit_content_label')}</label>
-            <textarea class="input" rows="3">${snippet.content}</textarea>
+            <textarea class="input" rows="4">${snippet.content}</textarea>
           </div>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <button class="btn" type="button">${tSnippets('edit_save_button')}</button>
-            <button class="btn secondary" type="button">${tSnippets('edit_cancel_button')}</button>
+          <div style="display:flex; gap:4px; align-items:center; margin-left:auto;">
+            <button class="btn secondary" type="button" title="${tSnippets('edit_save_button')}" style="padding:4px 8px; font-size:12px;">💾</button>
+            <button class="btn secondary" type="button" title="${tSnippets('edit_cancel_button')}" style="padding:4px 8px; font-size:12px;">✕</button>
           </div>
         </div>
       `;
