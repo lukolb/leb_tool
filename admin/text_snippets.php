@@ -144,7 +144,6 @@ render_admin_header(t('admin.text_snippets.title'));
     row.innerHTML = `
       <div class="l">
         <div class="t">${snippet.title ? snippet.title : tSnippets('untitled')}</div>
-        <div class="s"><code>ID: ${categoryIdLabel(snippet.category_id)}</code></div>
         <div class="s">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
         <div class="s" style="white-space:pre-wrap;">${snippet.content}</div>
       </div>
