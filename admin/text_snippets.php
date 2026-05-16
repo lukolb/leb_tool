@@ -219,10 +219,8 @@ render_admin_header(t('admin.text_snippets.title'));
     row.innerHTML = `
       <div class="l" style="position:relative; padding-right:130px;">
         <div style="position:absolute; top:0; right:0; font-size:11px; font-weight:700; background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; border-radius:999px; padding:2px 8px; max-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
-        <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Überschrift</div>
-        <div class="t" style="margin-bottom:4px; line-height:1.25;">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
-        <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Text</div>
-        <div class="s" style="white-space:pre-wrap; line-height:1.3;">${formatPipeItalic(snippet.content)}</div>
+        <div class="t" style="margin-bottom:3px; line-height:1.2; font-size:14px; font-weight:800; color:#0f172a;">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
+        <div class="s" style="white-space:pre-wrap; line-height:1.3; color:#334155;">${formatPipeItalic(snippet.content)}</div>
       </div>
       <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
         <button class="btn secondary" type="button">${tSnippets('edit_button')}</button>
