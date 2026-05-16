@@ -4679,7 +4679,7 @@ render_teacher_header($pageTitle);
         grouped[cat].push(s);
       });
       const html = Object.entries(grouped).map(([cat, items]) => {
-        const rows = items.map(s => `<li><strong>${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</strong><br>${fmtPipeItalic(String(s.content || ''))}</li>`).join('');
+        const rows = items.map(s => `<li><strong>${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</strong>${fmtPipeItalic(String(s.content || ''))}</li>`).join('');
         return `<h3>${fmtPipeItalic(cat)}</h3><ul>${rows}</ul>`;
       }).join('');
       const w = window.open('', '_blank', 'width=900,height=700');
