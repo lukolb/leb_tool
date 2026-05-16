@@ -4687,7 +4687,7 @@ render_teacher_header($pageTitle);
         h3{margin:14px 0 6px;font-size:13px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;}
         ul{margin:0;padding:0;list-style:none;}
         li{margin:0 0 8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fcfcfd;white-space:pre-wrap;}
-        li strong{display:block;font-size:12px;margin-bottom:3px;color:#111827;}
+        li strong{display:block;font-size:12px;margin-bottom:1px;color:#111827;}
         @media print{body{background:#fff;padding:0}.sheet{border:none;border-radius:0;padding:0;max-width:none}li{break-inside:avoid;page-break-inside:avoid}}
       </style></head><body><div class="sheet"><h1>Textbaustein-Übersicht</h1><p class="sub">Verfügbare Bausteine für das aktuell gewählte Feld</p>${html || '<p>Keine Bausteine vorhanden.</p>'}</div></body></html>`);
       w.document.close();
