@@ -4676,12 +4676,15 @@ render_teacher_header($pageTitle);
         const rows = items.map(s => `<li><strong>${esc(s.title || tEntry('snippet_untitled'))}</strong><br>${esc(String(s.content || ''))}</li>`).join('');
         return `<h3>${esc(cat)}</h3><ul>${rows}</ul>`;
       }).join('');
-      const w = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
+      const w = window.open('', '_blank', 'width=900,height=700');
       if (!w) return;
+      w.document.open();
       w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Textbaustein-Übersicht</title><style>body{font-family:Arial,sans-serif;padding:20px;}h3{margin:14px 0 6px;}ul{margin:0 0 14px 20px;}li{margin:0 0 10px;white-space:pre-wrap;}</style></head><body><h1>Textbaustein-Übersicht</h1>${html || '<p>Keine Bausteine vorhanden.</p>'}</body></html>`);
       w.document.close();
-      w.focus();
-      w.print();
+      w.addEventListener('load', () => {
+        w.focus();
+        w.print();
+      }, { once: true });
     });
     printWrap.appendChild(printBtn);
     snippetMenu.appendChild(printWrap);
