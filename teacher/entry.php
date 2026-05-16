@@ -1832,6 +1832,14 @@ render_teacher_header($pageTitle);
   .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
   .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
   .combined-inline-text{ font-size:14px; line-height:1.5; }
+  .combined-inline-text .delegate-part,
+  .combined-tip-bubble .delegate-part{
+    background: rgba(255, 193, 7, 0.25);
+    border-left: 3px solid #f59e0b;
+    padding: 1px 4px;
+    border-radius: 4px;
+    display: inline-block;
+  }
 
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
@@ -3085,6 +3093,18 @@ render_teacher_header($pageTitle);
     return parts.join('\n\n');
   }
 
+  function combineTextPartsHtml(classText, delegateText, highlightDelegate){
+    const ct = String(classText ?? '').replace(/\s+$/, '');
+    const dt = String(delegateText ?? '').replace(/\s+$/, '');
+    const parts = [];
+    if (ct.trim() !== '') parts.push(esc(ct).replace(/\n/g, '<br>'));
+    if (dt.trim() !== '') {
+      const raw = esc(dt).replace(/\n/g, '<br>');
+      parts.push(highlightDelegate ? `<span class="delegate-part">${raw}</span>` : raw);
+    }
+    return parts.join('<br><br>');
+  }
+
   function teacherVal(reportId, fieldId){
     if (isClassFieldId(fieldId)) {
       const rid = classReportId();
@@ -3173,10 +3193,16 @@ render_teacher_header($pageTitle);
         ? state.fieldMap[String(field.id)]._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
         : []);
     if (!delegatedUserIds.length) return '';
-    const combined = teacherVal(reportId, field.id);
-    const html = combined
-      ? esc(String(combined)).replace(/\n/g, '<br>')
-      : '<span class="muted">—</span>';
+    const rid = isClassFieldId(field.id) ? classReportId() : reportId;
+    const parts = state.values_teacher_parts[String(rid)]?.[String(field.id)] || null;
+    const hasParts = !!parts;
+    const highlightDelegate = !DELEGATED_MODE && !!(state.is_class_teacher);
+    const html = hasParts
+      ? combineTextPartsHtml(parts.class_text ?? '', parts.delegate_text ?? '', highlightDelegate)
+      : (() => {
+          const combined = teacherVal(reportId, field.id);
+          return combined ? esc(String(combined)).replace(/\n/g, '<br>') : '<span class="muted">—</span>';
+        })();
     if (DELEGATED_MODE) {
       return `
         <div class="combined-inline">
