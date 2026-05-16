@@ -4561,7 +4561,22 @@ render_teacher_header($pageTitle);
 
   function openSnippetMenu(x, y, target){
     lastSnippetTarget = target || lastSnippetTarget;
-    const list = state.text_snippets || [];
+    const allSnippets = state.text_snippets || [];
+    const fieldId = Number(lastSnippetTarget?.getAttribute?.('data-field-id') || '0');
+    const fieldDef = fieldId > 0 ? state.fieldMap?.[String(fieldId)] : null;
+    const allowedCategoryIds = Array.isArray(fieldDef?.snippet_category_ids)
+      ? fieldDef.snippet_category_ids.map(c => String(c || '').trim()).filter(Boolean)
+      : null;
+    const allowedCategories = Array.isArray(fieldDef?.snippet_categories)
+      ? fieldDef.snippet_categories.map(c => String(c || '').trim()).filter(Boolean)
+      : null;
+    const list = allSnippets.filter(s => {
+      const cat = s?.category && String(s.category).trim() !== '' ? String(s.category).trim() : tEntry('snippet_default_category');
+      const catId = String(s?.category_id || '').trim();
+      if (allowedCategoryIds !== null) return catId !== '' && allowedCategoryIds.includes(catId);
+      if (allowedCategories !== null) return allowedCategories.includes(cat);
+      return true;
+    });
     snippetMenu.innerHTML = '';
 
     const trimmedSel = (lastSnippetSelection || '').trim();

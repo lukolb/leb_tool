@@ -57,6 +57,51 @@ function option_list_id_from_meta(array $meta): int {
   return (int)$tid;
 }
 
+function snippet_categories_from_meta(array $meta): ?array {
+  $raw = $meta['snippet_categories'] ?? null;
+  if ($raw === null) return null;
+
+  $cats = [];
+  if (is_string($raw)) {
+    foreach (preg_split('/[,\n;]/', $raw) ?: [] as $part) {
+      $cat = trim((string)$part);
+      if ($cat !== '') $cats[] = $cat;
+    }
+  } elseif (is_array($raw)) {
+    foreach ($raw as $part) {
+      $cat = trim((string)$part);
+      if ($cat !== '') $cats[] = $cat;
+    }
+  } else {
+    return null;
+  }
+
+  $cats = array_values(array_unique($cats));
+  return $cats ?: [];
+}
+
+function snippet_category_ids_from_meta(array $meta): ?array {
+  $raw = $meta['snippet_category_ids'] ?? ($meta['snippet_categories_ids'] ?? null);
+  if ($raw === null) return null;
+
+  $ids = [];
+  if (is_string($raw)) {
+    foreach (preg_split('/[,\n;]/', $raw) ?: [] as $part) {
+      $id = trim((string)$part);
+      if ($id !== '') $ids[] = $id;
+    }
+  } elseif (is_array($raw)) {
+    foreach ($raw as $part) {
+      $id = trim((string)$part);
+      if ($id !== '') $ids[] = $id;
+    }
+  } else {
+    return null;
+  }
+  $ids = array_values(array_unique($ids));
+  return $ids ?: [];
+}
+
 function resolve_icon_urls(PDO $pdo, array $iconIds, array &$cache = []): array {
   $iconIds = array_values(array_unique(array_filter(array_map('intval', $iconIds), fn($x)=>$x>0)));
   $iconIds = array_values(array_filter($iconIds, fn($id) => !isset($cache[$id])));
@@ -2021,6 +2066,8 @@ try {
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
         'can_edit' => $canEditClassField ? 1 : 0,
+        'snippet_categories' => snippet_categories_from_meta($m0),
+        'snippet_category_ids' => snippet_category_ids_from_meta($m0),
       ];
     }
 
@@ -2100,6 +2147,8 @@ try {
         'subgroup' => $gParts['subgroup'],
         'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
         'can_edit' => $canEditField ? 1 : 0,
+        'snippet_categories' => snippet_categories_from_meta($meta),
+        'snippet_category_ids' => snippet_category_ids_from_meta($meta),
         'child' => $child ? [
           'id' => (int)$child['id'],
           'field_name' => (string)($child['field_name'] ?? ''),
@@ -2108,6 +2157,8 @@ try {
           'help_text' => (string)($child['help_text'] ?? ''),
           'is_multiline' => (int)($child['is_multiline'] ?? 0),
           'options' => $child['options'],
+          'snippet_categories' => snippet_categories_from_meta(meta_read($child['meta_json'] ?? null)),
+          'snippet_category_ids' => snippet_category_ids_from_meta(meta_read($child['meta_json'] ?? null)),
         ] : null,
       ];
     }
