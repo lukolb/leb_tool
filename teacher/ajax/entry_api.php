@@ -1804,15 +1804,19 @@ function load_teacher_values_for_user(
       if ($free['has_free_text']) {
         $classText = (string)$free['class_text'];
         $delegateText = (string)$free['delegate_text'];
+        $delegateTexts = is_array($free['delegate_texts'] ?? null) ? $free['delegate_texts'] : [];
         $textCombined = combine_free_text($classText, $delegateText);
         $isDelegate = in_array($uid, $assignedUsers, true);
-        $textOwn = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
+        $textOwn = ($isDelegate && !$isClassTeacher)
+          ? (string)($delegateTexts[(string)$uid] ?? '')
+          : $classText;
         $combined[$rid][(string)$fid] = $textCombined;
         $own[$rid][(string)$fid] = $textOwn;
         if (!isset($parts[$rid])) $parts[$rid] = [];
         $parts[$rid][(string)$fid] = [
           'class_text' => $classText,
           'delegate_text' => $delegateText,
+          'delegate_texts' => $delegateTexts,
           'delegate_user_id' => count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0,
           'delegate_user_ids' => $assignedUsers,
         ];
