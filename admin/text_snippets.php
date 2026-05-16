@@ -17,6 +17,7 @@ render_admin_header(t('admin.text_snippets.title'));
 
 <div class="card">
     <h2><?=h(t('admin.text_snippets.new_heading'))?></h2>
+  <div class="muted" style="margin-bottom:8px;">Mehrere Bausteine auf einmal: pro Zeile <code>Titel;Text</code> (optional nur <code>Text</code>).</div>
   <div class="row" style="align-items:flex-end; gap:10px; flex-wrap:wrap;">
     <div style="flex:1; min-width:220px;">
       <label class="label"><?=h(t('admin.text_snippets.title_label'))?></label>
@@ -30,7 +31,7 @@ render_admin_header(t('admin.text_snippets.title'));
     </div>
     <div style="flex:2; min-width:260px;">
       <label class="label"><?=h(t('admin.text_snippets.content_label'))?></label>
-      <textarea class="input" id="tsContent" rows="3" placeholder="<?=h(t('admin.text_snippets.content_placeholder'))?>" style="width:100%;"></textarea>
+      <textarea class="input" id="tsContent" rows="5" placeholder="<?=h(t('admin.text_snippets.content_placeholder'))?>&#10;Beispiel Mehrfachanlage:&#10;Titel 1;Text 1&#10;Titel 2;Text 2" style="width:100%;"></textarea>
     </div>
     <div style="display:flex; gap:8px; align-items:center; margin-top: 10px;">
       <a class="btn" type="button" id="tsSave"><?=h(t('admin.text_snippets.save_button'))?></a>
@@ -170,9 +171,32 @@ render_admin_header(t('admin.text_snippets.title'));
     return `${left}<i>${right}</i>`;
   }
 
+  function createCategorySelect(current = ''){
+    const sel = document.createElement('select');
+    sel.className = 'input';
+    sel.style.width = '100%';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = tSnippets('category_placeholder') || 'optional';
+    sel.appendChild(none);
+    allCategories().forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      sel.appendChild(opt);
+    });
+    sel.value = String(current || '');
+    if (sel.value !== String(current || '')) sel.value = '';
+    return sel;
+  }
+
   function createSnippetRow(snippet){
     const row = document.createElement('div');
     row.className = 'del-row';
+    row.style.border = '1px solid var(--border)';
+    row.style.borderRadius = '10px';
+    row.style.padding = '10px';
+    row.style.background = '#fff';
     row.style.cursor = 'grab';
     row.draggable = true;
     row.innerHTML = `
@@ -215,9 +239,8 @@ render_admin_header(t('admin.text_snippets.title'));
             <label class="label">${tSnippets('edit_title_label')}</label>
             <input class="input" type="text" value="${snippet.title.replace(/"/g, '&quot;')}">
           </div>
-          <div style="flex:1; min-width:180px;">
+          <div style="flex:1; min-width:180px;" class="edit-cat-slot">
             <label class="label">${tSnippets('edit_category_label')}</label>
-            <input class="input" type="text" value="${snippet.category ? snippet.category.replace(/"/g, '&quot;') : ''}">
           </div>
           <div style="flex:2; min-width:240px;">
             <label class="label">${tSnippets('edit_content_label')}</label>
@@ -229,7 +252,11 @@ render_admin_header(t('admin.text_snippets.title'));
           </div>
         </div>
       `;
-      const [titleInput, categoryInput, contentInput] = panel.querySelectorAll('input, textarea');
+      const titleInput = panel.querySelector('input');
+      const contentInput = panel.querySelector('textarea');
+      const catSlot = panel.querySelector('.edit-cat-slot');
+      const categoryInput = createCategorySelect(snippet.category || '');
+      catSlot.appendChild(categoryInput);
       const [saveEditBtn, cancelBtn] = panel.querySelectorAll('button');
 
       saveEditBtn.addEventListener('click', async () => {
@@ -278,7 +305,9 @@ render_admin_header(t('admin.text_snippets.title'));
       const box = document.createElement('div');
       box.className = 'card';
       box.dataset.category = cat;
-      box.style.border = '1px dashed var(--border)';
+      box.style.border = '1px solid var(--border)';
+      box.style.borderRadius = '12px';
+      box.style.background = '#f8fafc';
       box.innerHTML = `
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
           <div style="display:flex; gap:8px; align-items:center;">
@@ -357,12 +386,28 @@ render_admin_header(t('admin.text_snippets.title'));
     const title = document.getElementById('tsTitle').value.trim();
     const cat = document.getElementById('tsCategory').value.trim();
     const content = document.getElementById('tsContent').value.trim();
-    if (!title || !content) { alert(tSnippets('required_fields')); return; }
+    if (!content) { alert(tSnippets('required_fields')); return; }
     try {
-      await api('save', { title, category: cat, content });
+      const lines = content.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+      let created = 0;
+      if (lines.length > 1) {
+        for (const line of lines) {
+          const sep = line.indexOf(';');
+          const t = sep >= 0 ? line.slice(0, sep).trim() : '';
+          const c = sep >= 0 ? line.slice(sep + 1).trim() : line;
+          const finalTitle = t || title || (c.slice(0, 60) || tSnippets('untitled'));
+          if (!c) continue;
+          await api('save', { title: finalTitle, category: cat, content: c });
+          created++;
+        }
+      } else {
+        const finalTitle = title || (content.slice(0, 60) || tSnippets('untitled'));
+        await api('save', { title: finalTitle, category: cat, content });
+        created = 1;
+      }
       document.getElementById('tsTitle').value = '';
       document.getElementById('tsContent').value = '';
-      showStatus(tSnippets('status_saved'));
+      showStatus(`${tSnippets('status_saved')} (${created})`);
       load();
     } catch (e) {
       alert(e.message || tSnippets('save_failed'));
