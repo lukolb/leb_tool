@@ -131,11 +131,6 @@ render_admin_header(t('admin.text_snippets.title'));
     return cat && cat.trim() !== '' ? cat : tSnippets('no_category');
   }
 
-  function categoryIdLabel(categoryId){
-    const id = String(categoryId || '').trim();
-    return id !== '' ? id : 'allgemein';
-  }
-
   function createSnippetRow(snippet){
     const row = document.createElement('div');
     row.className = 'del-row';
@@ -249,7 +244,6 @@ render_admin_header(t('admin.text_snippets.title'));
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
           <div style="display:flex; gap:8px; align-items:center;">
             <div style="font-weight:800;">${categoryLabel(cat)}</div>
-            <div class="muted" style="font-size:12px;"><code>ID: ${categoryIdLabel((grouped.get(cat) || [])[0]?.category_id)}</code></div>
             <div class="pill-mini">${tfmtSnippets('pill_count', { count: String((grouped.get(cat) || []).length) })}</div>
           </div>
           <div class="muted" style="font-size:12px;">${tSnippets('drag_hint')}</div>
