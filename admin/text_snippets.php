@@ -218,9 +218,12 @@ render_admin_header(t('admin.text_snippets.title'));
     row.draggable = true;
     row.innerHTML = `
       <div class="l">
-        <div class="t">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
-        <div class="s">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
-        <div class="s" style="white-space:pre-wrap;">${formatPipeItalic(snippet.content)}</div>
+        <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Überschrift</div>
+        <div class="t" style="margin-bottom:6px;">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
+        <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Autor</div>
+        <div class="s" style="margin-bottom:6px; font-weight:600;">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
+        <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Text</div>
+        <div class="s" style="white-space:pre-wrap; line-height:1.4;">${formatPipeItalic(snippet.content)}</div>
       </div>
       <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
         <button class="btn secondary" type="button">${tSnippets('edit_button')}</button>
