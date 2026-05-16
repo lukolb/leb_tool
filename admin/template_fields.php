@@ -2639,7 +2639,7 @@ function openSnippetCategoryModal(fieldId){
       cb.value = cat.id;
       cb.checked = selectedSet.has(cat.id);
       const txt = document.createElement('span');
-      txt.textContent = `${cat.label} (${cat.id})`;
+      txt.textContent = `${cat.label}`;
       row.append(cb, txt);
       snippetCategoryList.appendChild(row);
     });
