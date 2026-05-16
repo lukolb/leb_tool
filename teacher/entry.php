@@ -1255,8 +1255,9 @@ render_teacher_header($pageTitle);
     </div>
     <div style="flex:1; min-width:200px;">
       <label class="label"><?=h(t('teacher.entry.snippets.category_label'))?></label>
-      <input class="input" id="snippetCategory" list="snippetCategoryList" type="text" placeholder="<?=h(t('teacher.entry.snippets.category_placeholder'))?>" style="width:100%;">
-      <datalist id="snippetCategoryList"></datalist>
+      <select class="input" id="snippetCategory" style="width:100%;">
+        <option value=""><?=h(t('teacher.entry.snippets.category_placeholder'))?></option>
+      </select>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <button class="btn" type="button" id="btnSnippetSave" disabled><?=h(t('teacher.entry.snippets.save'))?></button>
@@ -2270,7 +2271,6 @@ render_teacher_header($pageTitle);
   const btnSnippetSave = document.getElementById('btnSnippetSave');
   const btnSnippetToggle = document.getElementById('btnSnippetToggle');
   const btnSnippetClose = document.getElementById('btnSnippetClose');
-  const snippetCategoryList = document.getElementById('snippetCategoryList');
 
   const dlgAi = document.getElementById('dlgAi');
   const aiBackdrop = document.querySelector('#dlgAi .modal-backdrop');
@@ -4332,15 +4332,23 @@ render_teacher_header($pageTitle);
   }
 
   function refreshSnippetCategoryList(){
-    if (!snippetCategoryList) return;
+    if (!snippetCategory) return;
     const cats = new Set();
     (state.text_snippets || []).forEach(s => { if (s.category) cats.add(String(s.category)); });
-    snippetCategoryList.innerHTML = '';
+    const currentVal = String(snippetCategory.value || '');
+    snippetCategory.innerHTML = '';
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = tEntry('snippet_menu_category_placeholder');
+    snippetCategory.appendChild(emptyOpt);
     cats.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c;
-      snippetCategoryList.appendChild(opt);
+      opt.textContent = c;
+      snippetCategory.appendChild(opt);
     });
+    snippetCategory.value = currentVal;
+    if (snippetCategory.value !== currentVal) snippetCategory.value = '';
   }
 
   function insertSnippetText(target, text){
@@ -4590,12 +4598,22 @@ render_teacher_header($pageTitle);
         <div class="muted" style="font-size:12px;">${esc(preview)}</div>
         <div class="row" style="align-items:center;">
           <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_title_placeholder'))}" style="flex:1; min-width:180px;">
-          <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_category_placeholder'))}" style="flex:1; min-width:160px;">
+          <select class="input" style="flex:1; min-width:160px;"><option value="">${esc(tEntry('snippet_menu_category_placeholder'))}</option></select>
           <button class="btn" type="button">${esc(tEntry('snippet_menu_save'))}</button>
         </div>
       `;
       const titleInput = saveBox.querySelector('input');
-      const catInput = saveBox.querySelectorAll('input')[1] || null;
+      const catInput = saveBox.querySelector('select');
+      if (catInput) {
+        const cats = new Set();
+        (state.text_snippets || []).forEach(s => { if (s.category) cats.add(String(s.category)); });
+        cats.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          catInput.appendChild(opt);
+        });
+      }
       const saveBtn = saveBox.querySelector('button');
       saveBtn?.addEventListener('click', async () => {
         const title = titleInput ? String(titleInput.value || '').trim() : '';
