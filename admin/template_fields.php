@@ -354,6 +354,24 @@ render_admin_header(t('admin.template_fields.title'));
 </form>
 </dialog>
 
+<!-- SNIPPET CATEGORY MODAL -->
+<dialog id="snippetCategoryModal">
+  <div class="dlg-head">
+    <h3 class="dlg-title">Textbaustein-Kategorien</h3>
+    <div class="muted2" id="snippetCategorySubtitle"></div>
+  </div>
+  <div class="dlg-body">
+    <div class="muted2" style="margin-bottom:8px;">Verfügbare Kategorien für dieses Multiline-Feld auswählen.</div>
+    <div id="snippetCategoryList" style="display:flex; flex-direction:column; gap:6px; max-height:48vh; overflow:auto;"></div>
+  </div>
+  <form method="dialog">
+    <div class="dlg-foot">
+      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
+      <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- PDF REPLACE -->
 <div class="card panel">
   <div style="display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;">
@@ -587,6 +605,7 @@ const csrf = "<?=h(csrf_token())?>";
 const templateId = <?= (int)$templateId ?>;
 
 const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
+const textSnippetsApiUrl = "<?=h(url('admin/ajax/text_snippets_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
 const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
 const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
@@ -741,10 +760,14 @@ const dateSubtitle = document.getElementById('dateSubtitle');
 const dateMode = document.getElementById('dateMode');
 const datePreset = document.getElementById('datePreset');
 const dateCustom = document.getElementById('dateCustom');
+const snippetCategoryModal = document.getElementById('snippetCategoryModal');
+const snippetCategorySubtitle = document.getElementById('snippetCategorySubtitle');
+const snippetCategoryList = document.getElementById('snippetCategoryList');
 
 let template = null;
 let fields = [];
 let optionTemplates = [];
+let snippetCategoriesCache = null;
 
 let filterText = '';
 let excludeText = '';
@@ -2088,6 +2111,15 @@ function renderTable(){
       wrap.appendChild(btn);
     }
 
+    if (f.type === 'multiline' || f.multiline) {
+      const btnSnipCats = document.createElement('button');
+      btnSnipCats.type = 'button';
+      btnSnipCats.className = 'btn secondary';
+      btnSnipCats.textContent = 'Textbaustein-Kategorien';
+      btnSnipCats.addEventListener('click', (e)=>{ e.stopPropagation(); openSnippetCategoryModal(f.id); });
+      wrap.appendChild(btnSnipCats);
+    }
+
     if (['radio','select','grade'].includes(f.type)) {
       const tplSel = document.createElement('select');
       tplSel.style.maxWidth = '320px';
@@ -2198,6 +2230,32 @@ async function apiPost(payload){
   const j = await resp.json().catch(()=>({}));
   if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('api_error'));
   return j;
+}
+
+async function textSnippetsPost(payload){
+  const resp = await fetch(textSnippetsApiUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ csrf_token: csrf, ...payload })
+  });
+  const j = await resp.json().catch(()=>({}));
+  if (!resp.ok || !j.ok) throw new Error(j.error || 'Textbaustein-API Fehler');
+  return j;
+}
+
+async function fetchSnippetCategories(){
+  if (Array.isArray(snippetCategoriesCache)) return snippetCategoriesCache;
+  const j = await textSnippetsPost({ action: 'list' });
+  const map = new Map();
+  (j.snippets || []).forEach(s => {
+    const id = String(s?.category_id || '').trim();
+    const label = String(s?.category || '').trim() || 'Allgemein';
+    if (!id || map.has(id)) return;
+    map.set(id, label);
+  });
+  snippetCategoriesCache = [...map.entries()].map(([id, label]) => ({ id, label }))
+    .sort((a,b) => String(a.label).localeCompare(String(b.label), 'de'));
+  return snippetCategoriesCache;
 }
 
 async function optionListsPost(payload){
@@ -2548,6 +2606,60 @@ dateModal.addEventListener('close', ()=>{
     fields[idx].meta.date_format_preset = datePreset.value || 'MM/DD/YYYY';
     delete fields[idx].meta.date_format_custom;
   }
+  markDirty(fieldId);
+  renderTable();
+  scanForSplitCandidate();
+});
+
+function openSnippetCategoryModal(fieldId){
+  modalFieldId = fieldId;
+  const idx = fields.findIndex(x=>x.id===fieldId);
+  if (idx < 0 || !snippetCategoryModal) return;
+  const f = fields[idx];
+  snippetCategorySubtitle.textContent = f.name || '';
+  snippetCategoryList.innerHTML = '<div class="muted2">Lade Kategorien …</div>';
+  const selected = Array.isArray(f?.meta?.snippet_category_ids)
+    ? f.meta.snippet_category_ids.map(x => String(x).trim()).filter(Boolean)
+    : [];
+  const selectedSet = new Set(selected);
+
+  fetchSnippetCategories().then((cats) => {
+    snippetCategoryList.innerHTML = '';
+    if (!cats.length) {
+      snippetCategoryList.innerHTML = '<div class="muted2">Keine Kategorien vorhanden.</div>';
+      return;
+    }
+    cats.forEach(cat => {
+      const row = document.createElement('label');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = cat.id;
+      cb.checked = selectedSet.has(cat.id);
+      const txt = document.createElement('span');
+      txt.textContent = `${cat.label} (${cat.id})`;
+      row.append(cb, txt);
+      snippetCategoryList.appendChild(row);
+    });
+  }).catch((e) => {
+    snippetCategoryList.innerHTML = `<div class="muted2">${escapeHtml(e?.message || String(e))}</div>`;
+  });
+  snippetCategoryModal.showModal();
+}
+
+snippetCategoryModal?.addEventListener('close', ()=>{
+  if (snippetCategoryModal.returnValue !== 'ok') { modalFieldId = null; return; }
+  const fieldId = modalFieldId;
+  modalFieldId = null;
+  const idx = fields.findIndex(x=>x.id===fieldId);
+  if (idx < 0) return;
+  const picked = Array.from(snippetCategoryList.querySelectorAll('input[type="checkbox"]:checked'))
+    .map(el => String(el.value || '').trim()).filter(Boolean);
+  fields[idx].meta = fields[idx].meta || {};
+  if (picked.length) fields[idx].meta.snippet_category_ids = picked;
+  else delete fields[idx].meta.snippet_category_ids;
   markDirty(fieldId);
   renderTable();
   scanForSplitCandidate();
