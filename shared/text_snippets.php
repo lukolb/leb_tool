@@ -5,14 +5,15 @@ declare(strict_types=1);
 
 function text_snippet_category_id(string $category): string {
   $category = trim($category);
-  if ($category === '') return 'allgemein';
+  if ($category === '') return 'k-allgem';
 
-  $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $category);
-  if ($ascii === false || $ascii === null) $ascii = $category;
-  $ascii = strtolower((string)$ascii);
-  $ascii = preg_replace('/[^a-z0-9]+/', '-', $ascii) ?? '';
-  $ascii = trim($ascii, '-');
-  return $ascii !== '' ? $ascii : 'allgemein';
+  $norm = function_exists('mb_strtolower')
+    ? mb_strtolower($category, 'UTF-8')
+    : strtolower($category);
+  $crc = crc32($norm);
+  $hash = base_convert(sprintf('%u', $crc), 10, 36);
+  $hash = strtolower(str_pad($hash, 6, '0', STR_PAD_LEFT));
+  return 'k-' . substr($hash, 0, 6);
 }
 
 function text_snippet_base_templates(): array {
