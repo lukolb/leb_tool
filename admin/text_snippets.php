@@ -212,20 +212,20 @@ render_admin_header(t('admin.text_snippets.title'));
     row.className = 'del-row';
     row.style.border = '1px solid var(--border)';
     row.style.borderRadius = '10px';
-    row.style.padding = '10px';
+    row.style.padding = '8px';
     row.style.background = '#fff';
     row.style.cursor = 'grab';
     row.draggable = true;
     row.innerHTML = `
       <div class="l">
         <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Überschrift</div>
-        <div class="t" style="margin-bottom:6px;">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
+        <div class="t" style="margin-bottom:4px; line-height:1.25;">${snippet.title ? formatPipeItalic(snippet.title) : escHtml(tSnippets('untitled'))}</div>
         <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Autor</div>
-        <div class="s" style="margin-bottom:6px; font-weight:600;">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
+        <div class="s" style="margin-bottom:4px; font-weight:600; line-height:1.2;">${snippet.created_by_name || tSnippets('created_by_fallback')}${snippet.is_generated ? ' · ' + tSnippets('generated_badge') : ''}</div>
         <div class="s" style="font-size:11px; letter-spacing:.02em; text-transform:uppercase; color:#64748b;">Text</div>
-        <div class="s" style="white-space:pre-wrap; line-height:1.4;">${formatPipeItalic(snippet.content)}</div>
+        <div class="s" style="white-space:pre-wrap; line-height:1.3;">${formatPipeItalic(snippet.content)}</div>
       </div>
-      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+      <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
         <button class="btn secondary" type="button">${tSnippets('edit_button')}</button>
         <button class="btn danger" type="button">${tSnippets('delete_button')}</button>
       </div>
@@ -252,7 +252,7 @@ render_admin_header(t('admin.text_snippets.title'));
       const panel = document.createElement('div');
       panel.className = 'card';
       panel.classList.add('edit-panel');
-      panel.style.marginTop = '8px';
+      panel.style.marginTop = '6px';
       panel.innerHTML = `
         <div class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap;">
           <div style="flex:1; min-width:180px;">
@@ -332,7 +332,7 @@ render_admin_header(t('admin.text_snippets.title'));
       box.className = 'card';
       box.dataset.category = cat;
       box.style.border = '1px solid var(--border)';
-      box.style.borderRadius = '12px';
+      box.style.borderRadius = '10px';
       box.style.background = '#f8fafc';
       box.innerHTML = `
         <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
@@ -343,7 +343,7 @@ render_admin_header(t('admin.text_snippets.title'));
           </div>
           <div class="muted" style="font-size:12px;">${tSnippets('drag_hint')}</div>
         </div>
-        <div class="drop-zone" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;"></div>
+        <div class="drop-zone" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;"></div>
       `;
 
       const zone = box.querySelector('.drop-zone');
