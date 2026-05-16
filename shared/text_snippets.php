@@ -12,8 +12,8 @@ function text_snippet_category_id(string $category): string {
     : strtolower($category);
   $crc = crc32($norm);
   $hash = base_convert(sprintf('%u', $crc), 10, 36);
-  $hash = strtolower(str_pad($hash, 6, '0', STR_PAD_LEFT));
-  return 'k-' . substr($hash, 0, 6);
+  $hash = strtolower(str_pad($hash, 7, '0', STR_PAD_LEFT));
+  return 'k-' . $hash;
 }
 
 function text_snippet_base_templates(): array {
