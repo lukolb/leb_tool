@@ -24,7 +24,9 @@ render_admin_header(t('admin.text_snippets.title'));
     </div>
     <div style="flex:1; min-width:200px;">
       <label class="label"><?=h(t('admin.text_snippets.category_label'))?></label>
-      <input class="input" id="tsCategory" type="text" placeholder="<?=h(t('admin.text_snippets.category_placeholder'))?>" style="width:100%;">
+      <select class="input" id="tsCategory" style="width:100%;">
+        <option value=""><?=h(t('admin.text_snippets.category_placeholder'))?></option>
+      </select>
     </div>
     <div style="flex:2; min-width:260px;">
       <label class="label"><?=h(t('admin.text_snippets.content_label'))?></label>
@@ -87,6 +89,7 @@ render_admin_header(t('admin.text_snippets.title'));
     'status_generated' => t('admin.text_snippets.status_generated'),
     'generate_failed' => t('admin.text_snippets.generate_failed'),
     'status_group_created' => t('admin.text_snippets.status_group_created')
+    ,'category_placeholder' => t('admin.text_snippets.category_placeholder')
   ], JSON_UNESCAPED_UNICODE) ?>;
   const tSnippets = (key) => I18N[key] ?? key;
   const tfmtSnippets = (key, vars = {}) => {
@@ -98,6 +101,7 @@ render_admin_header(t('admin.text_snippets.title'));
   };
   const tsList = document.getElementById('tsList');
   const tsStatus = document.getElementById('tsStatus');
+  const tsCategory = document.getElementById('tsCategory');
   const tsNewGroup = document.getElementById('tsNewGroup');
   const tsAddGroup = document.getElementById('tsAddGroup');
 
@@ -129,6 +133,28 @@ render_admin_header(t('admin.text_snippets.title'));
 
   function categoryLabel(cat){
     return cat && cat.trim() !== '' ? cat : tSnippets('no_category');
+  }
+  function allCategories(){
+    const cats = new Set();
+    (state.snippets || []).forEach(s => {
+      const c = String(s?.category || '').trim();
+      if (c !== '') cats.add(c);
+    });
+    state.customGroups.forEach(c => { if (String(c || '').trim() !== '') cats.add(String(c).trim()); });
+    return [...cats].sort((a,b) => a.localeCompare(b, 'de'));
+  }
+  function refreshCategorySelect(current = null){
+    if (!tsCategory) return;
+    const keep = current === null ? String(tsCategory.value || '') : String(current || '');
+    tsCategory.innerHTML = `<option value="">${escHtml(tSnippets('category_placeholder') || '') || 'optional'}</option>`;
+    allCategories().forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      tsCategory.appendChild(opt);
+    });
+    tsCategory.value = keep;
+    if (tsCategory.value !== keep) tsCategory.value = '';
   }
 
   function escHtml(s){
@@ -258,6 +284,7 @@ render_admin_header(t('admin.text_snippets.title'));
           <div style="display:flex; gap:8px; align-items:center;">
             <div style="font-weight:800;">${formatPipeItalic(categoryLabel(cat))}</div>
             <div class="pill-mini">${tfmtSnippets('pill_count', { count: String((grouped.get(cat) || []).length) })}</div>
+            <button class="btn secondary js-rename-cat" type="button" data-cat="${escHtml(cat)}" style="padding:4px 8px;">Umbenennen</button>
           </div>
           <div class="muted" style="font-size:12px;">${tSnippets('drag_hint')}</div>
         </div>
@@ -265,6 +292,25 @@ render_admin_header(t('admin.text_snippets.title'));
       `;
 
       const zone = box.querySelector('.drop-zone');
+      const renameBtn = box.querySelector('.js-rename-cat');
+      renameBtn?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const oldCat = String(cat || '');
+        const newCat = window.prompt('Neuer Kategoriename:', oldCat);
+        if (newCat === null) return;
+        const targetCat = String(newCat || '').trim();
+        if (targetCat === oldCat) return;
+        const rows = grouped.get(cat) || [];
+        try {
+          for (const s of rows) await api('move', { id: s.id, category: targetCat });
+          state.customGroups.delete(oldCat);
+          if (targetCat) state.customGroups.add(targetCat);
+          showStatus(tSnippets('status_group_changed'));
+          await load();
+        } catch (err) {
+          alert(err.message || tSnippets('group_change_failed'));
+        }
+      });
 
       box.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -299,6 +345,7 @@ render_admin_header(t('admin.text_snippets.title'));
 
       tsList.appendChild(box);
     });
+    refreshCategorySelect();
   }
 
   async function load(){
