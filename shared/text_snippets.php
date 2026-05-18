@@ -3,6 +3,19 @@
 // Utilities for managing reusable text snippets.
 declare(strict_types=1);
 
+function text_snippet_category_id(string $category): string {
+  $category = trim($category);
+  if ($category === '') return 'k-allgem';
+
+  $norm = function_exists('mb_strtolower')
+    ? mb_strtolower($category, 'UTF-8')
+    : strtolower($category);
+  $crc = crc32($norm);
+  $hash = base_convert(sprintf('%u', $crc), 10, 36);
+  $hash = strtolower(str_pad($hash, 7, '0', STR_PAD_LEFT));
+  return 'k-' . $hash;
+}
+
 function text_snippet_base_templates(): array {
   return [
     ['category' => 'Schülerziele', 'title' => 'Lesekompetenz stärken', 'content' => 'vertieft seine Lesefertigkeit durch regelmäßiges Vorlesen, Gesprächsrunden und gezielte Lesestrategien.'],
@@ -42,6 +55,7 @@ function text_snippets_list(PDO $pdo): array {
       'id' => (int)$r['id'],
       'title' => (string)($r['title'] ?? ''),
       'category' => (string)($r['category'] ?? ''),
+      'category_id' => text_snippet_category_id((string)($r['category'] ?? '')),
       'content' => (string)($r['content'] ?? ''),
       'created_by' => $r['created_by'] !== null ? (int)$r['created_by'] : null,
       'created_by_name' => (string)($r['display_name'] ?? ''),
@@ -67,6 +81,7 @@ function text_snippet_find(PDO $pdo, int $id): ?array {
     'id' => (int)$row['id'],
     'title' => (string)($row['title'] ?? ''),
     'category' => (string)($row['category'] ?? ''),
+    'category_id' => text_snippet_category_id((string)($row['category'] ?? '')),
     'content' => (string)($row['content'] ?? ''),
     'created_by' => $row['created_by'] !== null ? (int)$row['created_by'] : null,
     'created_by_name' => (string)($row['display_name'] ?? ''),
@@ -117,6 +132,7 @@ function text_snippet_save(PDO $pdo, int $userId, string $title, string $categor
     'id' => $id,
     'title' => $title,
     'category' => $category,
+    'category_id' => text_snippet_category_id($category),
     'content' => $content,
     'created_by' => $userId,
     'created_by_name' => '',
@@ -152,6 +168,7 @@ function text_snippet_update(PDO $pdo, int $id, int $userId, string $title, stri
     'id' => $id,
     'title' => $title,
     'category' => $category,
+    'category_id' => text_snippet_category_id($category),
     'content' => $content,
     'created_by' => $userId,
     'created_by_name' => '',
@@ -173,6 +190,7 @@ function text_snippet_move(PDO $pdo, int $id, string $category): array {
     'id' => $id,
     'title' => '',
     'category' => $category,
+    'category_id' => text_snippet_category_id($category),
     'content' => '',
     'created_by' => null,
     'created_by_name' => '',

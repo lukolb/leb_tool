@@ -57,6 +57,51 @@ function option_list_id_from_meta(array $meta): int {
   return (int)$tid;
 }
 
+function snippet_categories_from_meta(array $meta): ?array {
+  $raw = $meta['snippet_categories'] ?? null;
+  if ($raw === null) return null;
+
+  $cats = [];
+  if (is_string($raw)) {
+    foreach (preg_split('/[,\n;]/', $raw) ?: [] as $part) {
+      $cat = trim((string)$part);
+      if ($cat !== '') $cats[] = $cat;
+    }
+  } elseif (is_array($raw)) {
+    foreach ($raw as $part) {
+      $cat = trim((string)$part);
+      if ($cat !== '') $cats[] = $cat;
+    }
+  } else {
+    return null;
+  }
+
+  $cats = array_values(array_unique($cats));
+  return $cats ?: [];
+}
+
+function snippet_category_ids_from_meta(array $meta): ?array {
+  $raw = $meta['snippet_category_ids'] ?? ($meta['snippet_categories_ids'] ?? null);
+  if ($raw === null) return null;
+
+  $ids = [];
+  if (is_string($raw)) {
+    foreach (preg_split('/[,\n;]/', $raw) ?: [] as $part) {
+      $id = trim((string)$part);
+      if ($id !== '') $ids[] = $id;
+    }
+  } elseif (is_array($raw)) {
+    foreach ($raw as $part) {
+      $id = trim((string)$part);
+      if ($id !== '') $ids[] = $id;
+    }
+  } else {
+    return null;
+  }
+  $ids = array_values(array_unique($ids));
+  return $ids ?: [];
+}
+
 function resolve_icon_urls(PDO $pdo, array $iconIds, array &$cache = []): array {
   $iconIds = array_values(array_unique(array_filter(array_map('intval', $iconIds), fn($x)=>$x>0)));
   $iconIds = array_values(array_filter($iconIds, fn($id) => !isset($cache[$id])));
@@ -1030,27 +1075,46 @@ function is_free_text_field(string $fieldType, int $isMultiline): bool {
 
 function free_text_parts_from_json(?string $valueJsonRaw): array {
   if (!$valueJsonRaw) {
-    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0, 'delegate_texts' => []];
   }
   $j = json_decode($valueJsonRaw, true);
   if (!is_array($j) || !isset($j['free_text']) || !is_array($j['free_text'])) {
-    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0];
+    return ['has_free_text' => false, 'class_text' => '', 'delegate_text' => '', 'delegate_user_id' => 0, 'delegate_texts' => []];
   }
   $ft = $j['free_text'];
+  $delegateTexts = [];
+  if (isset($ft['delegate_texts']) && is_array($ft['delegate_texts'])) {
+    foreach ($ft['delegate_texts'] as $uid => $txt) {
+      $id = (int)$uid;
+      if ($id <= 0) continue;
+      $delegateTexts[(string)$id] = (string)$txt;
+    }
+  }
+  $delegateText = (string)($ft['delegate_text'] ?? '');
+  if ($delegateText === '' && $delegateTexts) {
+    $parts = [];
+    foreach ($delegateTexts as $txt) {
+      $t = trim((string)$txt);
+      if ($t !== '') $parts[] = $t;
+    }
+    $delegateText = implode("\n\n", $parts);
+  }
   return [
     'has_free_text' => true,
     'class_text' => (string)($ft['class_text'] ?? ''),
-    'delegate_text' => (string)($ft['delegate_text'] ?? ''),
+    'delegate_text' => $delegateText,
     'delegate_user_id' => (int)($ft['delegate_user_id'] ?? 0),
+    'delegate_texts' => $delegateTexts,
   ];
 }
 
-function build_free_text_json(string $classText, string $delegateText, int $delegateUserId): string {
+function build_free_text_json(string $classText, string $delegateText, int $delegateUserId, array $delegateTexts = []): string {
   return json_encode([
     'free_text' => [
       'class_text' => $classText,
       'delegate_text' => $delegateText,
       'delegate_user_id' => $delegateUserId,
+      'delegate_texts' => $delegateTexts,
     ],
   ], JSON_UNESCAPED_UNICODE);
 }
@@ -1104,20 +1168,31 @@ function save_free_text_value(
 
     $existingClass = '';
     $existingDelegate = '';
+    $existingDelegateTexts = [];
     if ($row) {
       $free = free_text_parts_from_json($row['value_json'] !== null ? (string)$row['value_json'] : null);
       if ($free['has_free_text']) {
         $existingClass = (string)($free['class_text'] ?? '');
         $existingDelegate = (string)($free['delegate_text'] ?? '');
+        $existingDelegateTexts = is_array($free['delegate_texts'] ?? null) ? $free['delegate_texts'] : [];
       } else {
         $existingClass = (string)($row['value_text'] ?? '');
       }
     }
 
-    if ($isDelegate) $existingDelegate = $delegateText;
-    else $existingClass = $classText;
+    if ($isDelegate) {
+      $existingDelegateTexts[(string)$userId] = $delegateText;
+    } else {
+      $existingClass = $classText;
+    }
+    $delegateParts = [];
+    foreach ($existingDelegateTexts as $txt) {
+      $t = trim((string)$txt);
+      if ($t !== '') $delegateParts[] = $t;
+    }
+    $existingDelegate = implode("\n\n", $delegateParts);
 
-    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId);
+    $valueJson = build_free_text_json($existingClass, $existingDelegate, $delegateUserId, $existingDelegateTexts);
     $valueText = combine_free_text($existingClass, $existingDelegate);
     if (trim($valueText) === '') $valueText = null;
 
@@ -1729,15 +1804,19 @@ function load_teacher_values_for_user(
       if ($free['has_free_text']) {
         $classText = (string)$free['class_text'];
         $delegateText = (string)$free['delegate_text'];
+        $delegateTexts = is_array($free['delegate_texts'] ?? null) ? $free['delegate_texts'] : [];
         $textCombined = combine_free_text($classText, $delegateText);
         $isDelegate = in_array($uid, $assignedUsers, true);
-        $textOwn = ($isDelegate && !$isClassTeacher) ? $delegateText : $classText;
+        $textOwn = ($isDelegate && !$isClassTeacher)
+          ? (string)($delegateTexts[(string)$uid] ?? '')
+          : $classText;
         $combined[$rid][(string)$fid] = $textCombined;
         $own[$rid][(string)$fid] = $textOwn;
         if (!isset($parts[$rid])) $parts[$rid] = [];
         $parts[$rid][(string)$fid] = [
           'class_text' => $classText,
           'delegate_text' => $delegateText,
+          'delegate_texts' => $delegateTexts,
           'delegate_user_id' => count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0,
           'delegate_user_ids' => $assignedUsers,
         ];
@@ -2021,6 +2100,8 @@ try {
         'is_multiline' => (int)($f0['is_multiline'] ?? 0),
         'options' => $optsTeacher,
         'can_edit' => $canEditClassField ? 1 : 0,
+        'snippet_categories' => snippet_categories_from_meta($m0),
+        'snippet_category_ids' => snippet_category_ids_from_meta($m0),
       ];
     }
 
@@ -2100,6 +2181,8 @@ try {
         'subgroup' => $gParts['subgroup'],
         'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
         'can_edit' => $canEditField ? 1 : 0,
+        'snippet_categories' => snippet_categories_from_meta($meta),
+        'snippet_category_ids' => snippet_category_ids_from_meta($meta),
         'child' => $child ? [
           'id' => (int)$child['id'],
           'field_name' => (string)($child['field_name'] ?? ''),
@@ -2108,6 +2191,8 @@ try {
           'help_text' => (string)($child['help_text'] ?? ''),
           'is_multiline' => (int)($child['is_multiline'] ?? 0),
           'options' => $child['options'],
+          'snippet_categories' => snippet_categories_from_meta(meta_read($child['meta_json'] ?? null)),
+          'snippet_category_ids' => snippet_category_ids_from_meta(meta_read($child['meta_json'] ?? null)),
         ] : null,
       ];
     }
@@ -2543,6 +2628,8 @@ try {
         'child_only' => $forceChildOnly ? 1 : 0,
         'system_bound' => $isSystemBound ? 1 : 0,
         'child_field_id' => $childFieldId,
+        'snippet_categories' => snippet_categories_from_meta($meta),
+        'snippet_category_ids' => snippet_category_ids_from_meta($meta),
       ];
       $fieldsById[$fid] = true;
     };
@@ -2610,8 +2697,18 @@ try {
     }
     if ($classReportInstanceId > 0 && $classFieldIds) {
       $classFieldMap = array_intersect_key($fieldMapInput, array_flip($classFieldIds));
-      $vals = load_input_values($pdo, [$classReportInstanceId], $classFieldMap, 'teacher');
-      $classVals = $vals[(string)$classReportInstanceId] ?? [];
+      $classTeacherValues = load_teacher_values_for_user(
+        $pdo,
+        [$classReportInstanceId],
+        $classFieldMap,
+        $delegations,
+        $u,
+        $classId,
+        $schoolYear,
+        $periodLabel,
+        $lang
+      );
+      $classVals = $classTeacherValues['own'][(string)$classReportInstanceId] ?? [];
       $systemVals = load_input_values($pdo, [$classReportInstanceId], $classFieldMap, 'system');
       $classSystemVals = $systemVals[(string)$classReportInstanceId] ?? [];
       if ($classSystemVals) {
