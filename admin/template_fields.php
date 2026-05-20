@@ -728,15 +728,6 @@ const bulkTpl = document.getElementById('bulkTpl');
 const bulkDateMode = document.getElementById('bulkDateMode');
 const bulkDatePreset = document.getElementById('bulkDatePreset');
 const bulkDateCustom = document.getElementById('bulkDateCustom');
-
-dateCustom.addEventListener('input', ()=>{
-  if (dateMode.value !== 'custom') dateMode.value = 'custom';
-});
-
-bulkDateCustom.addEventListener('input', ()=>{
-  if (bulkDateMode.value !== 'custom') bulkDateMode.value = 'custom';
-});
-
 const btnApplySelected = document.getElementById('btnApplySelected');
 const btnApplyVisible = document.getElementById('btnApplyVisible');
 const btnAutoGroupPrefix = document.getElementById('btnAutoGroupPrefix');
@@ -774,6 +765,18 @@ const dateCustom = document.getElementById('dateCustom');
 const snippetCategoryModal = document.getElementById('snippetCategoryModal');
 const snippetCategorySubtitle = document.getElementById('snippetCategorySubtitle');
 const snippetCategoryList = document.getElementById('snippetCategoryList');
+
+if (dateCustom && dateMode) {
+  dateCustom.addEventListener('input', ()=>{
+    if (dateMode.value !== 'custom') dateMode.value = 'custom';
+  });
+}
+
+if (bulkDateCustom && bulkDateMode) {
+  bulkDateCustom.addEventListener('input', ()=>{
+    if (bulkDateMode.value !== 'custom') bulkDateMode.value = 'custom';
+  });
+}
 
 let template = null;
 let fields = [];
