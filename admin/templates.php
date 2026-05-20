@@ -41,6 +41,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
 
+
+    if ($action === 'rename') {
+      $templateId = (int)($_POST['template_id'] ?? 0);
+      $name = trim((string)($_POST['name'] ?? ''));
+      if ($templateId <= 0) throw new RuntimeException(t('admin.templates.error.invalid_template'));
+      if ($name === '') throw new RuntimeException(t('admin.templates.error.name_missing'));
+
+      $st = $pdo->prepare("SELECT id FROM templates WHERE id=? LIMIT 1");
+      $st->execute([$templateId]);
+      if (!$st->fetch(PDO::FETCH_ASSOC)) throw new RuntimeException(t('admin.templates.error.not_found'));
+
+      $pdo->prepare("UPDATE templates SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          ->execute([$name, $templateId]);
+
+      audit('template_rename', (int)current_user()['id'], ['template_id' => $templateId]);
+      $ok = str_replace('{id}', (string)$templateId, t('admin.templates.status.renamed'));
+    }
+
     if ($action === 'delete') {
       $templateId = (int)($_POST['template_id'] ?? 0);
       if ($templateId <= 0) throw new RuntimeException(t('admin.templates.error.invalid_template'));
@@ -310,6 +328,13 @@ tr.tpl-inactive { opacity: 0.65; }
                      data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
                   <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
                   <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
+                  <form method="post" onsubmit="const n = prompt(<?=h(json_encode(t('admin.templates.prompt.rename')) )?>, <?=h(json_encode((string)$t['name']))?>); if (n === null) return false; this.querySelector('input[name=\"name\"]').value = n; return true;">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"> 
+                    <input type="hidden" name="action" value="rename"> 
+                    <input type="hidden" name="template_id" value="<?=h((string)$t['id'])?>"> 
+                    <input type="hidden" name="name" value=""> 
+                    <button class="btn secondary" type="submit"><?=h(t('admin.templates.action.rename'))?></button>
+                  </form>
                   <form method="post" onsubmit="return confirm(<?=h(json_encode(str_replace('{id}', (string)$t['id'], t('admin.templates.confirm.delete'))))?>);">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
                     <input type="hidden" name="action" value="delete">
