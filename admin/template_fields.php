@@ -335,6 +335,7 @@ render_admin_header(t('admin.template_fields.title'));
         <select id="datePreset">
           <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
           <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+          <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
           <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
         </select>
       </div>
@@ -515,6 +516,7 @@ render_admin_header(t('admin.template_fields.title'));
           <select id="bulkDatePreset">
             <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
             <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+            <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
             <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
           </select>
         </div>
@@ -726,6 +728,14 @@ const bulkTpl = document.getElementById('bulkTpl');
 const bulkDateMode = document.getElementById('bulkDateMode');
 const bulkDatePreset = document.getElementById('bulkDatePreset');
 const bulkDateCustom = document.getElementById('bulkDateCustom');
+
+dateCustom.addEventListener('input', ()=>{
+  if (dateMode.value !== 'custom') dateMode.value = 'custom';
+});
+
+bulkDateCustom.addEventListener('input', ()=>{
+  if (bulkDateMode.value !== 'custom') bulkDateMode.value = 'custom';
+});
 
 const btnApplySelected = document.getElementById('btnApplySelected');
 const btnApplyVisible = document.getElementById('btnApplyVisible');
