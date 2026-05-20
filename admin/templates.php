@@ -40,6 +40,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : str_replace('{id}', (string)$templateId, t('admin.templates.status.deactivated'));
     }
 
+
+    if ($action === 'delete') {
+      $templateId = (int)($_POST['template_id'] ?? 0);
+      if ($templateId <= 0) throw new RuntimeException(t('admin.templates.error.invalid_template'));
+
+      $st = $pdo->prepare("SELECT id, pdf_storage_path FROM templates WHERE id=? LIMIT 1");
+      $st->execute([$templateId]);
+      $tpl = $st->fetch(PDO::FETCH_ASSOC);
+      if (!$tpl) throw new RuntimeException(t('admin.templates.error.not_found'));
+
+      $stClass = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE template_id=?");
+      $stClass->execute([$templateId]);
+      $classCount = (int)$stClass->fetchColumn();
+
+      $stReports = $pdo->prepare("SELECT COUNT(*) FROM report_instances WHERE template_id=?");
+      $stReports->execute([$templateId]);
+      $reportCount = (int)$stReports->fetchColumn();
+
+      if ($classCount > 0 || $reportCount > 0) {
+        $msg = t('admin.templates.error.delete_in_use');
+        $msg = str_replace('{classes}', (string)$classCount, $msg);
+        $msg = str_replace('{reports}', (string)$reportCount, $msg);
+        throw new RuntimeException($msg);
+      }
+
+      $pdo->prepare("DELETE FROM templates WHERE id=?")->execute([$templateId]);
+
+      $pdfRel = (string)($tpl['pdf_storage_path'] ?? '');
+      if ($pdfRel !== '') {
+        $cfg = app_config();
+        $uploadsRel = (string)($cfg['app']['uploads_dir'] ?? 'uploads');
+        $rootAbs = realpath(__DIR__ . '/..');
+        if ($rootAbs) {
+          $pdfAbs = $rootAbs . '/' . ltrim($pdfRel, '/');
+          if (is_file($pdfAbs)) @unlink($pdfAbs);
+          $tplDirAbs = dirname($pdfAbs);
+          if (is_dir($tplDirAbs)) @rmdir($tplDirAbs);
+        }
+      }
+
+      audit('template_delete', (int)current_user()['id'], ['template_id' => $templateId]);
+      $ok = str_replace('{id}', (string)$templateId, t('admin.templates.status.deleted'));
+    }
+
     if ($action === 'upload') {
       $name = trim((string)($_POST['name'] ?? ''));
       $version = (int)($_POST['version'] ?? 1);
@@ -266,6 +310,12 @@ tr.tpl-inactive { opacity: 0.65; }
                      data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
                   <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
                   <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
+                  <form method="post" onsubmit="return confirm(<?=h(json_encode(str_replace('{id}', (string)$t['id'], t('admin.templates.confirm.delete'))))?>);">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="template_id" value="<?=h((string)$t['id'])?>">
+                    <button class="btn danger" type="submit"><?=h(t('admin.templates.action.delete'))?></button>
+                  </form>
                 </template>
               </div>
             </td>
