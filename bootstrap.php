@@ -1412,6 +1412,10 @@ function resolve_system_binding_value(string $binding, array $student, array $cl
       return (string)($student['first_name'] ?? '');
     case 'student.last_name':
       return (string)($student['last_name'] ?? '');
+    case 'student.full_name':
+      $first = trim((string)($student['first_name'] ?? ''));
+      $last = trim((string)($student['last_name'] ?? ''));
+      return trim($first . ' ' . $last);
     case 'student.date_of_birth':
       // Default format: YYYY-MM-DD (PDF date fields can be formatted later)
       return (string)($student['date_of_birth'] ?? '');

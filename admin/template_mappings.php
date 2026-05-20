@@ -60,6 +60,7 @@ $tx = [
 $SYSTEM_KEYS = [
   'student.first_name'    => $tx['system_student_first'],
   'student.last_name'     => $tx['system_student_last'],
+  'student.full_name'     => $tx['system_student_first'] . ' + ' . $tx['system_student_last'],
   'student.date_of_birth' => $tx['system_student_dob'],
   'class.school_year'     => $tx['system_class_year'],
   'class.grade_level'     => $tx['system_class_grade'],
@@ -221,6 +222,8 @@ function preview_value_map(string $systemKey, array $row): string {
   switch ($systemKey) {
     case 'student.first_name': return (string)($row['first_name'] ?? '');
     case 'student.last_name': return (string)($row['last_name'] ?? '');
+    case 'student.full_name':
+      return trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
     case 'student.date_of_birth': return (string)($row['date_of_birth'] ?? '');
     case 'student.absence_days_total': return (string)(int)($row['absence_days_total'] ?? 0);
     case 'student.absence_days_unexcused': return (string)(int)($row['absence_days_unexcused'] ?? 0);
