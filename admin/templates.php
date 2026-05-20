@@ -328,12 +328,13 @@ tr.tpl-inactive { opacity: 0.65; }
                      data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
                   <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
                   <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
-                  <form method="post" onsubmit="const n = prompt(<?=h(json_encode(t('admin.templates.prompt.rename')) )?>, <?=h(json_encode((string)$t['name']))?>); if (n === null) return false; this.querySelector('input[name=\"name\"]').value = n; return true;">
+                  <form method="post">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"> 
                     <input type="hidden" name="action" value="rename"> 
                     <input type="hidden" name="template_id" value="<?=h((string)$t['id'])?>"> 
                     <input type="hidden" name="name" value=""> 
-                    <button class="btn secondary" type="submit"><?=h(t('admin.templates.action.rename'))?></button>
+                    <button class="btn secondary" type="submit"
+                            onclick="const n = prompt(<?=h(json_encode(t('admin.templates.prompt.rename')))?>, <?=h(json_encode((string)$t['name']))?>); if (n === null) return false; const v = String(n).trim(); if (!v) { alert(<?=h(json_encode(t('admin.templates.error.name_missing')))?>); return false; } this.form.querySelector('input[name=name]').value = v; return true;"><?=h(t('admin.templates.action.rename'))?></button>
                   </form>
                   <form method="post" onsubmit="return confirm(<?=h(json_encode(str_replace('{id}', (string)$t['id'], t('admin.templates.confirm.delete'))))?>);">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
