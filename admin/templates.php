@@ -48,14 +48,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($templateId <= 0) throw new RuntimeException(t('admin.templates.error.invalid_template'));
       if ($name === '') throw new RuntimeException(t('admin.templates.error.name_missing'));
 
-      $st = $pdo->prepare("SELECT id FROM templates WHERE id=? LIMIT 1");
+      $st = $pdo->prepare("SELECT id, template_version FROM templates WHERE id=? LIMIT 1");
       $st->execute([$templateId]);
-      if (!$st->fetch(PDO::FETCH_ASSOC)) throw new RuntimeException(t('admin.templates.error.not_found'));
+      $row = $st->fetch(PDO::FETCH_ASSOC);
+      if (!$row) throw new RuntimeException(t('admin.templates.error.not_found'));
 
-      $pdo->prepare("UPDATE templates SET name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          ->execute([$name, $templateId]);
+      $nextVersion = (int)($row['template_version'] ?? 1);
+      $stVersion = $pdo->prepare("SELECT MAX(template_version) FROM templates WHERE name=? AND id<>?");
+      $stVersion->execute([$name, $templateId]);
+      $maxSameName = (int)($stVersion->fetchColumn() ?? 0);
+      if ($maxSameName > 0) {
+        $nextVersion = $maxSameName + 1;
+      }
 
-      audit('template_rename', (int)current_user()['id'], ['template_id' => $templateId]);
+      $pdo->prepare("UPDATE templates SET name=?, template_version=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          ->execute([$name, $nextVersion, $templateId]);
+
+      audit('template_rename', (int)current_user()['id'], ['template_id' => $templateId, 'template_version' => $nextVersion]);
       $ok = str_replace('{id}', (string)$templateId, t('admin.templates.status.renamed'));
     }
 
