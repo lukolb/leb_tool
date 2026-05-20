@@ -621,6 +621,7 @@ const I18N = <?=json_encode([
   'template_select' => t('admin.template_fields.template_select'),
   'base_field_student_first' => t('admin.template_fields.base_field_student_first'),
   'base_field_student_last' => t('admin.template_fields.base_field_student_last'),
+  'base_field_student_full' => t('admin.template_fields.base_field_student_full'),
   'base_field_student_birth' => t('admin.template_fields.base_field_student_birth'),
   'base_field_class_display' => t('admin.template_fields.base_field_class_display'),
   'base_field_class_grade' => t('admin.template_fields.base_field_class_grade'),
@@ -1995,6 +1996,7 @@ function renderTable(){
       <option value="">${tAdmin('option_empty')}</option>
       <option value="student.first_name">${tAdmin('base_field_student_first')}</option>
       <option value="student.last_name">${tAdmin('base_field_student_last')}</option>
+      <option value="student.full_name">${tAdmin('base_field_student_full')}</option>
       <option value="student.date_of_birth">${tAdmin('base_field_student_birth')}</option>
       <option value="class.display">${tAdmin('base_field_class_display')}</option>
       <option value="class.grade_level">${tAdmin('base_field_class_grade')}</option>
