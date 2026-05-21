@@ -1123,6 +1123,30 @@ function ensure_schema(PDO $pdo): void {
     }
 
 
+    // --- teacher_notification_preferences: opt-in mail notifications
+    if (!db_has_table($pdo, 'teacher_notification_preferences')) {
+      $pdo->exec(
+        "CREATE TABLE teacher_notification_preferences (
+" .
+        "  user_id BIGINT UNSIGNED NOT NULL,
+" .
+        "  wants_email TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  confirmation_pending TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  last_email_sent_at DATETIME DEFAULT NULL,
+" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+        "  PRIMARY KEY (user_id)
+" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
+
 
 
     // --- template_fields.field_type: ensure AG type is supported in DB enum
@@ -1936,6 +1960,80 @@ function send_email(string $to, string $subject, string $htmlBody): bool {
 // --------------------
 // Password reset tokens
 // --------------------
+
+
+function teacher_notification_summary(PDO $pdo, int $userId): array {
+  $out = [
+    'delegations_open' => 0,
+    'deadlines_soon' => 0,
+    'tasks_open' => 0,
+    'tasks_total' => 0,
+  ];
+  if ($userId <= 0) return $out;
+
+  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=?");
+  $st->execute([$userId]);
+  $out['delegations_open'] = (int)($st->fetchColumn() ?: 0);
+
+  $assigned = $pdo->prepare("SELECT c.id, c.school_year, c.period_label FROM classes c JOIN user_class_assignments uca ON uca.class_id=c.id WHERE uca.user_id=? AND c.is_active=1");
+  $assigned->execute([$userId]);
+  $classes = $assigned->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  if (!$classes) {
+    $out['tasks_open'] = $out['delegations_open'];
+    $out['tasks_total'] = $out['delegations_open'];
+    return $out;
+  }
+
+  $now = new DateTimeImmutable('now');
+  $in48 = $now->modify('+48 hours');
+  $seen = [];
+  foreach ($classes as $c) {
+    $year = (string)($c['school_year'] ?? '');
+    $period = normalize_class_period_label((string)($c['period_label'] ?? 'Standard'));
+    $key = $year . '|' . $period;
+    if (isset($seen[$key]) || $year === '') continue;
+    $seen[$key] = true;
+    foreach (fetch_submission_deadlines($pdo, $year, $period) as $row) {
+      $due = (string)($row['due_at'] ?? '');
+      if ($due === '') continue;
+      try { $dt = new DateTimeImmutable($due); } catch (Throwable $e) { continue; }
+      if ($dt >= $now && $dt <= $in48) $out['deadlines_soon']++;
+    }
+  }
+
+  $reports = $pdo->prepare("
+    SELECT COUNT(*) AS total, SUM(CASE WHEN ri.is_finalized=1 THEN 1 ELSE 0 END) AS done
+    FROM report_instances ri
+    JOIN students s ON s.id=ri.student_id
+    JOIN classes c ON c.id=s.class_id
+    JOIN user_class_assignments uca ON uca.class_id=c.id
+    WHERE uca.user_id=? AND c.is_active=1
+  ");
+  $reports->execute([$userId]);
+  $r = $reports->fetch(PDO::FETCH_ASSOC) ?: [];
+  $total = (int)($r['total'] ?? 0);
+  $done = (int)($r['done'] ?? 0);
+  $openReports = max(0, $total - $done);
+
+  $out['tasks_open'] = $openReports + $out['delegations_open'];
+  $out['tasks_total'] = $total + $out['delegations_open'];
+  return $out;
+}
+
+function build_teacher_notification_email(string $name, array $summary): string {
+  $safeName = h($name);
+  $open = (int)($summary['tasks_open'] ?? 0);
+  $total = (int)($summary['tasks_total'] ?? 0);
+  $delegations = (int)($summary['delegations_open'] ?? 0);
+  $deadlines = (int)($summary['deadlines_soon'] ?? 0);
+  return '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.4">'
+    ."<h2>Dashboard-Benachrichtigung</h2>"
+    ."<p>Hallo {$safeName},</p>"
+    ."<p>Kurzer Überblick:</p>"
+    ."<ul><li>Offene Delegationen: <strong>{$delegations}</strong></li><li>Fristen in den nächsten 48h: <strong>{$deadlines}</strong></li><li>Offene Aufgaben gesamt: <strong>{$open} von {$total}</strong></li></ul>"
+    ."<p>Bitte prüfe dein Dashboard für Details.</p></div>";
+}
+
 function create_password_reset_token(int $userId, int $hoursValid = 1, bool $invalidateOld = true): string {
   $pdo = db();
   if ($invalidateOld) {

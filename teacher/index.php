@@ -7,6 +7,7 @@ require_teacher();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$notifyPrefEnabled = false;
 
 function meta_read(?string $json): array {
   if (!$json) return [];
@@ -61,6 +62,15 @@ function period_label_display(?string $raw): string {
     ? t('admin.classes.period.h2', '2. Halbjahr')
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
+
+// Mail notification preference
+if (db_has_table($pdo, 'teacher_notification_preferences')) {
+  $pst = $pdo->prepare("SELECT wants_email FROM teacher_notification_preferences WHERE user_id=? LIMIT 1");
+  $pst->execute([$userId]);
+  $notifyPrefEnabled = ((int)($pst->fetchColumn() ?: 0) === 1);
+}
+
+$dashboardSummary = teacher_notification_summary($pdo, $userId);
 
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
@@ -840,6 +850,19 @@ render_teacher_header(t('teacher.title'));
   <?php endif; ?>
 </div>
 
+
+<?php if (($dashboardSummary['delegations_open'] ?? 0) > 0 || ($dashboardSummary['deadlines_soon'] ?? 0) > 0): ?>
+  <div class="card">
+    <h2>Benachrichtigungen</h2>
+    <p class="muted">Es gibt neue Hinweise auf deinem Dashboard.</p>
+    <ul>
+      <li>Offene Delegationen: <strong><?=h((string)($dashboardSummary['delegations_open'] ?? 0))?></strong></li>
+      <li>Fristen in den nächsten 48h: <strong><?=h((string)($dashboardSummary['deadlines_soon'] ?? 0))?></strong></li>
+      <li>Offene Aufgaben gesamt: <strong><?=h((string)($dashboardSummary['tasks_open'] ?? 0))?> von <?=h((string)($dashboardSummary['tasks_total'] ?? 0))?></strong></li>
+    </ul>
+  </div>
+<?php endif; ?>
+
 <div class="card">
   <h2><?=h(t('teacher.management'))?></h2>
   <p class="muted"><?=h(t('teacher.management_hint'))?></p>
@@ -912,6 +935,41 @@ render_teacher_header(t('teacher.title'));
     <?php endif; ?>
   </div>
 <?php endif; ?>
+
+
+<div class="card" id="mail-pref-card">
+  <h2>E-Mail-Benachrichtigungen</h2>
+  <p class="muted">Wenn aktiviert, versendet der Cronjob Benachrichtigungen zu Delegationen und nahenden Fristen.</p>
+  <label style="display:flex;gap:10px;align-items:center;">
+    <input type="checkbox" id="mail_pref_toggle" <?= $notifyPrefEnabled ? 'checked' : '' ?>>
+    E-Mails erhalten
+  </label>
+  <p class="small muted" id="mail_pref_status"></p>
+</div>
+<script>
+(function(){
+  const el = document.getElementById('mail_pref_toggle');
+  const status = document.getElementById('mail_pref_status');
+  if (!el) return;
+  el.addEventListener('change', async () => {
+    status.textContent = 'Speichere …';
+    try {
+      const res = await fetch('ajax/notification_settings_api.php', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: el.checked})
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error('save_failed');
+      status.textContent = el.checked
+        ? 'Aktiviert. Eine Bestätigungs-E-Mail wird über den Cronjob versendet.'
+        : 'Deaktiviert. Es werden keine E-Mails mehr versendet.';
+    } catch (e) {
+      status.textContent = 'Speichern fehlgeschlagen.';
+    }
+  });
+})();
+</script>
 
 <?php
 render_teacher_footer();
