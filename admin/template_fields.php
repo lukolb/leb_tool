@@ -335,6 +335,7 @@ render_admin_header(t('admin.template_fields.title'));
         <select id="datePreset">
           <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
           <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+          <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
           <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
         </select>
       </div>
@@ -515,6 +516,7 @@ render_admin_header(t('admin.template_fields.title'));
           <select id="bulkDatePreset">
             <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
             <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+            <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
             <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
           </select>
         </div>
@@ -621,6 +623,7 @@ const I18N = <?=json_encode([
   'template_select' => t('admin.template_fields.template_select'),
   'base_field_student_first' => t('admin.template_fields.base_field_student_first'),
   'base_field_student_last' => t('admin.template_fields.base_field_student_last'),
+  'base_field_student_full' => t('admin.template_fields.base_field_student_full'),
   'base_field_student_birth' => t('admin.template_fields.base_field_student_birth'),
   'base_field_class_display' => t('admin.template_fields.base_field_class_display'),
   'base_field_class_grade' => t('admin.template_fields.base_field_class_grade'),
@@ -725,7 +728,6 @@ const bulkTpl = document.getElementById('bulkTpl');
 const bulkDateMode = document.getElementById('bulkDateMode');
 const bulkDatePreset = document.getElementById('bulkDatePreset');
 const bulkDateCustom = document.getElementById('bulkDateCustom');
-
 const btnApplySelected = document.getElementById('btnApplySelected');
 const btnApplyVisible = document.getElementById('btnApplyVisible');
 const btnAutoGroupPrefix = document.getElementById('btnAutoGroupPrefix');
@@ -763,6 +765,18 @@ const dateCustom = document.getElementById('dateCustom');
 const snippetCategoryModal = document.getElementById('snippetCategoryModal');
 const snippetCategorySubtitle = document.getElementById('snippetCategorySubtitle');
 const snippetCategoryList = document.getElementById('snippetCategoryList');
+
+if (dateCustom && dateMode) {
+  dateCustom.addEventListener('input', ()=>{
+    if (dateMode.value !== 'custom') dateMode.value = 'custom';
+  });
+}
+
+if (bulkDateCustom && bulkDateMode) {
+  bulkDateCustom.addEventListener('input', ()=>{
+    if (bulkDateMode.value !== 'custom') bulkDateMode.value = 'custom';
+  });
+}
 
 let template = null;
 let fields = [];
@@ -1995,6 +2009,7 @@ function renderTable(){
       <option value="">${tAdmin('option_empty')}</option>
       <option value="student.first_name">${tAdmin('base_field_student_first')}</option>
       <option value="student.last_name">${tAdmin('base_field_student_last')}</option>
+      <option value="student.full_name">${tAdmin('base_field_student_full')}</option>
       <option value="student.date_of_birth">${tAdmin('base_field_student_birth')}</option>
       <option value="class.display">${tAdmin('base_field_class_display')}</option>
       <option value="class.grade_level">${tAdmin('base_field_class_grade')}</option>
