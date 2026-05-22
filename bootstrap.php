@@ -6,7 +6,7 @@ require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
-define('APP_CONFIG_PATH', $configPath);
+if (!defined('APP_CONFIG_PATH')) define('APP_CONFIG_PATH', $configPath);
 if (!file_exists(APP_CONFIG_PATH)) {
   // install not completed
   header('Location: install.php');
@@ -19,17 +19,20 @@ $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVE
 $cookiePath = (string)($config['app']['base_path'] ?? '/');
 $cookiePath = '/' . ltrim($cookiePath, '/');
 $cookiePath = rtrim($cookiePath, '/') ?: '/';
-session_set_cookie_params([
-  'lifetime' => 0,
-  'path' => $cookiePath,
-  'domain' => '',
-  'secure' => $https,
-  'httponly' => true,
-  'samesite' => 'Lax',
-]);
-
-session_name($config['app']['session_name'] ?? 'legtool_sess');
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+  if (!headers_sent()) {
+    session_set_cookie_params([
+      'lifetime' => 0,
+      'path' => $cookiePath,
+      'domain' => '',
+      'secure' => $https,
+      'httponly' => true,
+      'samesite' => 'Lax',
+    ]);
+    session_name($config['app']['session_name'] ?? 'legtool_sess');
+  }
+  @session_start();
+}
 
 // Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
 ob_start(function (string $buffer): string {
@@ -140,9 +143,10 @@ if ($basePath === '/') $basePath = '';
 define('APP_BASE_URL', $basePath);
 
 function app_config(bool $forceReload = false): array {
+  global $config;
   static $cfg = null;
-  if ($cfg !== null && !$forceReload) return $cfg;
-  $cfg = require APP_CONFIG_PATH;
+  if ($cfg === null) $cfg = is_array($config ?? null) ? $config : (require APP_CONFIG_PATH);
+  if ($forceReload) $cfg = require APP_CONFIG_PATH;
   return $cfg;
 }
 
@@ -1123,6 +1127,39 @@ function ensure_schema(PDO $pdo): void {
     }
 
 
+    // --- teacher_notification_preferences: opt-in mail notifications
+    if (!db_has_table($pdo, 'teacher_notification_preferences')) {
+      $pdo->exec(
+        "CREATE TABLE teacher_notification_preferences (
+" .
+        "  user_id BIGINT UNSIGNED NOT NULL,
+" .
+        "  wants_email TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  notification_lang VARCHAR(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'de',
+" .
+        "  confirmation_pending TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  last_summary_hash VARCHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
+        "  last_email_sent_at DATETIME DEFAULT NULL,
+" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+        "  PRIMARY KEY (user_id)
+" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    } elseif (!db_has_column($pdo, 'teacher_notification_preferences', 'notification_lang')) {
+      $pdo->exec("ALTER TABLE teacher_notification_preferences ADD COLUMN notification_lang VARCHAR(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'de' AFTER wants_email");
+    }
+    if (db_has_table($pdo, 'teacher_notification_preferences') && !db_has_column($pdo, 'teacher_notification_preferences', 'last_summary_hash')) {
+      $pdo->exec("ALTER TABLE teacher_notification_preferences ADD COLUMN last_summary_hash VARCHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER confirmation_pending");
+    }
+
+
 
 
     // --- template_fields.field_type: ensure AG type is supported in DB enum
@@ -1936,6 +1973,165 @@ function send_email(string $to, string $subject, string $htmlBody): bool {
 // --------------------
 // Password reset tokens
 // --------------------
+
+
+function teacher_notification_summary(PDO $pdo, int $userId): array {
+  $out = [
+    'delegations_open' => 0,
+    'tasks_open' => 0,
+    'tasks_total' => 0,
+    'classes' => [],
+    'deadlines' => [],
+  ];
+  if ($userId <= 0) return $out;
+
+  $classesSt = $pdo->prepare(
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
+"
+    . "FROM classes c
+"
+    . "JOIN user_class_assignments uca ON uca.class_id=c.id
+"
+    . "WHERE uca.user_id=? AND c.is_active=1
+"
+    . "ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+  );
+  $classesSt->execute([$userId]);
+  $classes = $classesSt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  if (!$classes) return $out;
+
+  $classIds = array_map(static fn(array $c): int => (int)$c['id'], $classes);
+  $in = implode(',', array_fill(0, count($classIds), '?'));
+
+  $delegationMap = [];
+  $dSt = $pdo->prepare(
+    "SELECT class_id, COUNT(*) AS c FROM class_group_delegations WHERE user_id=? AND status='open' AND class_id IN ($in) GROUP BY class_id"
+  );
+  $dSt->execute(array_merge([$userId], $classIds));
+  foreach ($dSt->fetchAll(PDO::FETCH_ASSOC) as $r) $delegationMap[(int)$r['class_id']] = (int)$r['c'];
+
+  $taskTotalMap = [];
+  $taskOpenMap = [];
+  if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
+    $tSt = $pdo->prepare(
+      "SELECT s.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 0 ELSE 1 END) AS open
+"
+      . "FROM report_instances ri
+"
+      . "JOIN students s ON s.id=ri.student_id
+"
+      . "WHERE s.class_id IN ($in)
+"
+      . "GROUP BY s.class_id"
+    );
+    $tSt->execute($classIds);
+    foreach ($tSt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $cid = (int)$r['class_id'];
+      $taskTotalMap[$cid] = (int)$r['total'];
+      $taskOpenMap[$cid] = (int)$r['open'];
+    }
+  }
+
+  $deadlineSeen = [];
+  foreach ($classes as $c) {
+    $cid = (int)$c['id'];
+    $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+    $label = trim((string)($c['label'] ?? ''));
+    $name = trim((string)($c['name'] ?? ''));
+    $classLabel = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . $cid));
+    $year = (string)($c['school_year'] ?? '');
+    $period = normalize_class_period_label((string)($c['period_label'] ?? 'Standard'));
+
+    $delegOpen = (int)($delegationMap[$cid] ?? 0);
+    $tasksOpen = max(0, (int)($taskOpenMap[$cid] ?? 0));
+    $tasksTotal = max(0, (int)($taskTotalMap[$cid] ?? 0));
+
+    $out['delegations_open'] += $delegOpen;
+    $out['tasks_open'] += $tasksOpen;
+    $out['tasks_total'] += $tasksTotal;
+
+    $out['classes'][] = [
+      'class_id' => $cid,
+      'class_label' => $classLabel,
+      'school_year' => $year,
+      'period_label' => $period,
+      'delegations_open' => $delegOpen,
+      'tasks_open' => $tasksOpen,
+      'tasks_total' => $tasksTotal,
+    ];
+
+    $deadlineKey = $year . '|' . $period;
+    if ($year === '' || isset($deadlineSeen[$deadlineKey])) continue;
+    $deadlineSeen[$deadlineKey] = true;
+    $rows = fetch_submission_deadlines($pdo, $year, $period);
+    foreach (submission_deadline_types() as $dKey => $meta) {
+      $row = $rows[$dKey] ?? null;
+      if (!$row || empty($row['due_at'])) continue;
+      $out['deadlines'][] = [
+        'school_year' => $year,
+        'period_label' => $period,
+        'type_key' => $dKey,
+        'type_label' => (string)($meta['label'] ?? $dKey),
+        'due_at' => (string)$row['due_at'],
+      ];
+    }
+  }
+
+  usort($out['deadlines'], static function(array $a, array $b): int {
+    return strcmp((string)$a['due_at'], (string)$b['due_at']);
+  });
+
+  return $out;
+}
+
+function build_teacher_notification_email(string $name, array $summary, string $lang = 'de'): string {
+  $safeName = h($name);
+  $lang = strtolower(trim($lang)) === 'en' ? 'en' : 'de';
+  $isEn = ($lang === 'en');
+  $open = (int)($summary['tasks_open'] ?? 0);
+  $total = (int)($summary['tasks_total'] ?? 0);
+  $delegations = (int)($summary['delegations_open'] ?? 0);
+  $classes = is_array($summary['classes'] ?? null) ? $summary['classes'] : [];
+  $deadlines = is_array($summary['deadlines'] ?? null) ? $summary['deadlines'] : [];
+
+  $classRows = '';
+  foreach ($classes as $c) {
+    $classRows .= '<tr>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($c['class_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">' . (int)($c['delegations_open'] ?? 0) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">' . (int)($c['tasks_open'] ?? 0) . ' / ' . (int)($c['tasks_total'] ?? 0) . '</td>'
+      . '</tr>';
+  }
+  if ($classRows === '') $classRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">' . ($lang === 'en' ? 'No classes assigned.' : 'Keine Klassen zugeordnet.') . '</td></tr>';
+
+  $deadlineRows = '';
+  foreach ($deadlines as $d) {
+    $deadlineRows .= '<tr>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['type_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['school_year'] ?? '')) . ' · ' . h((string)($d['period_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((($tmp = db_datetime_to_user_datetime((string)($d['due_at'] ?? ''))) ? $tmp->format($lang === 'en' ? 'Y-m-d' : 'd.m.Y') : '–')) . '</td>'
+      . '</tr>';
+  }
+  if ($deadlineRows === '') $deadlineRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">' . ($lang === 'en' ? 'No deadlines set.' : 'Keine Fristen gesetzt.') . '</td></tr>';
+
+  return '<div style="font-family:Inter,Segoe UI,Arial,sans-serif;background:#f3f4f6;padding:20px;">'
+    . '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">'
+    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">' . ($isEn ? 'LEB Tool notification' : 'LEB-Tool Benachrichtigung') . '</h2></div>'
+    . '<div style="padding:18px 20px;color:#111827;line-height:1.5;">'
+    . '<p style="margin:0 0 10px;">' . ($isEn ? 'Hello ' : 'Hallo ') . $safeName . ',</p>'
+    . '<p style="margin:0 0 16px;">' . ($isEn ? 'here is your current overview:' : 'hier ist dein aktueller Überblick:') . '</p>'
+    . '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
+    . '<span style="background:#e8f0fe;color:#0b57d0;border-radius:999px;padding:6px 10px;font-size:13px;">' . ($isEn ? 'Open delegations' : 'Offene Delegationen') . ': <strong>' . $delegations . '</strong></span>'
+    . '<span style="background:#eefbf2;color:#1e8e3e;border-radius:999px;padding:6px 10px;font-size:13px;">' . ($isEn ? 'Open teacher entries' : 'Offene Lehrkrafteingaben') . ': <strong>' . $open . ' / ' . $total . '</strong></span>'
+    . '</div>'
+    . '<h3 style="margin:16px 0 8px;font-size:16px;">' . ($isEn ? 'By class' : 'Nach Klasse') . '</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Class' : 'Klasse') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open delegations' : 'Delegationen offen') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open teacher entries' : 'Lehrkrafteingaben offen') . '</th></tr></thead><tbody>' . $classRows . '</tbody></table>'
+    . '<h3 style="margin:18px 0 8px;font-size:16px;">' . ($isEn ? 'All deadlines' : 'Alle Fristen') . '</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="border-bottom:2px solid #e5e7eb;"><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Area' : 'Bereich') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'School year · term' : 'Schuljahr · Halbjahr') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Due date' : 'Fällig am') . '</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
+    . '<p style="margin:16px 0 0;color:#6b7280;font-size:12px;">' . ($isEn ? 'This message was generated automatically by LEB Tool.' : 'Diese Nachricht wurde automatisch vom LEB-Tool erzeugt.') . '</p>'
+    . '</div></div></div>';
+}
+
 function create_password_reset_token(int $userId, int $hoursValid = 1, bool $invalidateOld = true): string {
   $pdo = db();
   if ($invalidateOld) {

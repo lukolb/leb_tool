@@ -7,6 +7,8 @@ require_teacher();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$notifyPrefEnabled = false;
+$notifyPrefLang = 'de';
 
 function meta_read(?string $json): array {
   if (!$json) return [];
@@ -62,10 +64,21 @@ function period_label_display(?string $raw): string {
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
+// Mail notification preference
+if (db_has_table($pdo, 'teacher_notification_preferences')) {
+  $pst = $pdo->prepare("SELECT wants_email, notification_lang FROM teacher_notification_preferences WHERE user_id=? LIMIT 1");
+  $pst->execute([$userId]);
+  $pr = $pst->fetch(PDO::FETCH_ASSOC) ?: [];
+  $notifyPrefEnabled = ((int)($pr['wants_email'] ?? 0) === 1);
+  $notifyPrefLang = in_array((string)($pr['notification_lang'] ?? 'de'), ['de','en'], true) ? (string)$pr['notification_lang'] : 'de';
+}
+
+$dashboardSummary = teacher_notification_summary($pdo, $userId);
+
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
-  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=?");
+  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=? AND status='open'");
   $st->execute([$userId]);
   $delegationCount = (int)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {
@@ -840,6 +853,34 @@ render_teacher_header(t('teacher.title'));
   <?php endif; ?>
 </div>
 
+
+<?php if (($dashboardSummary['delegations_open'] ?? 0) > 0 || ($dashboardSummary['tasks_open'] ?? 0) > 0 || !empty($dashboardSummary['deadlines'])): ?>
+  <div class="card" style="background:#fff8db;border-color:#f2cc60;">
+    <h2>Benachrichtigungen</h2>
+    <p class="muted">Es gibt neue Hinweise auf deinem Dashboard.</p>
+    <ul>
+      <li>Offene Delegationen: <strong><?=h((string)($dashboardSummary['delegations_open'] ?? 0))?></strong></li>
+      <li>Offene Lehrkrafteingaben gesamt: <strong><?=h((string)($dashboardSummary['tasks_open'] ?? 0))?> von <?=h((string)($dashboardSummary['tasks_total'] ?? 0))?></strong></li>
+    </ul>
+    <?php if (!empty($dashboardSummary['classes'])): ?>
+      <div class="table-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Klasse</th><th>Delegationen offen</th><th>Lehrkrafteingaben offen</th></tr></thead>
+          <tbody>
+            <?php foreach ((array)$dashboardSummary['classes'] as $row): ?>
+              <tr>
+                <td><?=h((string)($row['class_label'] ?? ''))?></td>
+                <td><?=h((string)($row['delegations_open'] ?? 0))?></td>
+                <td><?=h((string)($row['tasks_open'] ?? 0))?> / <?=h((string)($row['tasks_total'] ?? 0))?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
+
 <div class="card">
   <h2><?=h(t('teacher.management'))?></h2>
   <p class="muted"><?=h(t('teacher.management_hint'))?></p>
@@ -912,6 +953,53 @@ render_teacher_header(t('teacher.title'));
     <?php endif; ?>
   </div>
 <?php endif; ?>
+
+
+<div class="card" id="mail-pref-card">
+  <h2>E-Mail-Benachrichtigungen</h2>
+  <p class="muted">Wenn aktiviert, versendet der Cronjob Benachrichtigungen zu Delegationen und nahenden Fristen.</p>
+  <label style="display:flex;gap:10px;align-items:center;">
+    <input type="checkbox" id="mail_pref_toggle" <?= $notifyPrefEnabled ? 'checked' : '' ?>>
+    E-Mails erhalten
+  </label>
+  <div style="margin-top:8px;">
+    <label for="mail_pref_lang">Sprache der E-Mail</label>
+    <select id="mail_pref_lang">
+      <option value="de" <?= $notifyPrefLang === 'de' ? 'selected' : '' ?>>Deutsch</option>
+      <option value="en" <?= $notifyPrefLang === 'en' ? 'selected' : '' ?>>English</option>
+    </select>
+  </div>
+  <p class="small muted" id="mail_pref_status"></p>
+</div>
+<script>
+(function(){
+  const el = document.getElementById('mail_pref_toggle');
+  const langEl = document.getElementById('mail_pref_lang');
+  const status = document.getElementById('mail_pref_status');
+  const csrf = <?=json_encode(csrf_token())?>;
+  if (!el) return;
+  el.addEventListener('change', async () => {
+    status.textContent = 'Speichere …';
+    try {
+      const res = await fetch('ajax/notification_settings_api.php', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrf},
+        body: JSON.stringify({enabled: el.checked, lang: (langEl ? langEl.value : 'de'), csrf_token: csrf})
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error('save_failed');
+      status.textContent = el.checked
+        ? 'Aktiviert. Eine Bestätigungs-E-Mail wird über den Cronjob versendet.'
+        : 'Deaktiviert. Es werden keine E-Mails mehr versendet.';
+    } catch (e) {
+      status.textContent = 'Speichern fehlgeschlagen.';
+    }
+  });
+  if (langEl) {
+    langEl.addEventListener('change', () => el.dispatchEvent(new Event('change')));
+  }
+})();
+</script>
 
 <?php
 render_teacher_footer();
