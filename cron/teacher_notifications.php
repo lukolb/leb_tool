@@ -23,7 +23,8 @@ foreach ($rows as $r) {
   $email = trim((string)($r['email'] ?? ''));
   if (!filter_var($email, FILTER_VALIDATE_EMAIL)) continue;
   $summary = teacher_notification_summary($pdo, $userId);
-  if ((int)($summary['tasks_open'] ?? 0) <= 0 && (int)($r['confirmation_pending'] ?? 0) !== 1) continue;
+  $hasDeadlines = !empty($summary['deadlines'] ?? []);
+  if ((int)($summary['tasks_open'] ?? 0) <= 0 && (int)($summary['delegations_open'] ?? 0) <= 0 && !$hasDeadlines && (int)($r['confirmation_pending'] ?? 0) !== 1) continue;
   $subject = ((int)($r['confirmation_pending'] ?? 0) === 1)
     ? 'Bestätigung: E-Mail-Benachrichtigungen aktiviert'
     : 'LEB-Tool: Neue Hinweise und offene Aufgaben';

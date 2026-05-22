@@ -1965,67 +1965,109 @@ function send_email(string $to, string $subject, string $htmlBody): bool {
 function teacher_notification_summary(PDO $pdo, int $userId): array {
   $out = [
     'delegations_open' => 0,
-    'deadlines_soon' => 0,
     'tasks_open' => 0,
     'tasks_total' => 0,
+    'classes' => [],
+    'deadlines' => [],
   ];
   if ($userId <= 0) return $out;
 
-  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=? AND status='open'");
-  $st->execute([$userId]);
-  $out['delegations_open'] = (int)($st->fetchColumn() ?: 0);
+  $classesSt = $pdo->prepare(
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name
+"
+    . "FROM classes c
+"
+    . "JOIN user_class_assignments uca ON uca.class_id=c.id
+"
+    . "WHERE uca.user_id=? AND c.is_active=1
+"
+    . "ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+  );
+  $classesSt->execute([$userId]);
+  $classes = $classesSt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  if (!$classes) return $out;
 
-  $assigned = $pdo->prepare("SELECT c.id, c.school_year, c.period_label FROM classes c JOIN user_class_assignments uca ON uca.class_id=c.id WHERE uca.user_id=? AND c.is_active=1");
-  $assigned->execute([$userId]);
-  $classes = $assigned->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  if (!$classes) {
-    $out['tasks_open'] = $out['delegations_open'];
-    $out['tasks_total'] = $out['delegations_open'];
-    return $out;
+  $classIds = array_map(static fn(array $c): int => (int)$c['id'], $classes);
+  $in = implode(',', array_fill(0, count($classIds), '?'));
+
+  $delegationMap = [];
+  $dSt = $pdo->prepare(
+    "SELECT class_id, COUNT(*) AS c FROM class_group_delegations WHERE user_id=? AND status='open' AND class_id IN ($in) GROUP BY class_id"
+  );
+  $dSt->execute(array_merge([$userId], $classIds));
+  foreach ($dSt->fetchAll(PDO::FETCH_ASSOC) as $r) $delegationMap[(int)$r['class_id']] = (int)$r['c'];
+
+  $taskTotalMap = [];
+  $taskOpenMap = [];
+  if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
+    $tSt = $pdo->prepare(
+      "SELECT s.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 0 ELSE 1 END) AS open
+"
+      . "FROM report_instances ri
+"
+      . "JOIN students s ON s.id=ri.student_id
+"
+      . "WHERE s.class_id IN ($in)
+"
+      . "GROUP BY s.class_id"
+    );
+    $tSt->execute($classIds);
+    foreach ($tSt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+      $cid = (int)$r['class_id'];
+      $taskTotalMap[$cid] = (int)$r['total'];
+      $taskOpenMap[$cid] = (int)$r['open'];
+    }
   }
 
-  $now = new DateTimeImmutable('now');
-  $in48 = $now->modify('+48 hours');
-  $seen = [];
+  $deadlineSeen = [];
   foreach ($classes as $c) {
+    $cid = (int)$c['id'];
+    $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+    $label = trim((string)($c['label'] ?? ''));
+    $name = trim((string)($c['name'] ?? ''));
+    $classLabel = ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . $cid));
     $year = (string)($c['school_year'] ?? '');
     $period = normalize_class_period_label((string)($c['period_label'] ?? 'Standard'));
-    $key = $year . '|' . $period;
-    if (isset($seen[$key]) || $year === '') continue;
-    $seen[$key] = true;
-    foreach (fetch_submission_deadlines($pdo, $year, $period) as $row) {
-      $due = (string)($row['due_at'] ?? '');
-      if ($due === '') continue;
-      try { $dt = new DateTimeImmutable($due); } catch (Throwable $e) { continue; }
-      if ($dt >= $now && $dt <= $in48) $out['deadlines_soon']++;
+
+    $delegOpen = (int)($delegationMap[$cid] ?? 0);
+    $tasksOpen = max(0, (int)($taskOpenMap[$cid] ?? 0));
+    $tasksTotal = max(0, (int)($taskTotalMap[$cid] ?? 0));
+
+    $out['delegations_open'] += $delegOpen;
+    $out['tasks_open'] += $tasksOpen;
+    $out['tasks_total'] += $tasksTotal;
+
+    $out['classes'][] = [
+      'class_id' => $cid,
+      'class_label' => $classLabel,
+      'school_year' => $year,
+      'period_label' => $period,
+      'delegations_open' => $delegOpen,
+      'tasks_open' => $tasksOpen,
+      'tasks_total' => $tasksTotal,
+    ];
+
+    $deadlineKey = $year . '|' . $period;
+    if ($year === '' || isset($deadlineSeen[$deadlineKey])) continue;
+    $deadlineSeen[$deadlineKey] = true;
+    $rows = fetch_submission_deadlines($pdo, $year, $period);
+    foreach (submission_deadline_types() as $dKey => $meta) {
+      $row = $rows[$dKey] ?? null;
+      if (!$row || empty($row['due_at'])) continue;
+      $out['deadlines'][] = [
+        'school_year' => $year,
+        'period_label' => $period,
+        'type_key' => $dKey,
+        'type_label' => (string)($meta['label'] ?? $dKey),
+        'due_at' => (string)$row['due_at'],
+      ];
     }
   }
 
-  $total = 0;
-  $done = 0;
-  try {
-    if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
-      $reports = $pdo->prepare("
-        SELECT COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 1 ELSE 0 END) AS done
-        FROM report_instances ri
-        JOIN students s ON s.id=ri.student_id
-        JOIN classes c ON c.id=s.class_id
-        JOIN user_class_assignments uca ON uca.class_id=c.id
-        WHERE uca.user_id=? AND c.is_active=1
-      ");
-      $reports->execute([$userId]);
-      $r = $reports->fetch(PDO::FETCH_ASSOC) ?: [];
-      $total = (int)($r['total'] ?? 0);
-      $done = (int)($r['done'] ?? 0);
-    }
-  } catch (Throwable $e) {
-    $total = 0;
-    $done = 0;
-  }
-  $openReports = max(0, $total - $done);
+  usort($out['deadlines'], static function(array $a, array $b): int {
+    return strcmp((string)$a['due_at'], (string)$b['due_at']);
+  });
 
-  $out['tasks_open'] = $openReports + $out['delegations_open'];
-  $out['tasks_total'] = $total + $out['delegations_open'];
   return $out;
 }
 
@@ -2034,13 +2076,45 @@ function build_teacher_notification_email(string $name, array $summary): string 
   $open = (int)($summary['tasks_open'] ?? 0);
   $total = (int)($summary['tasks_total'] ?? 0);
   $delegations = (int)($summary['delegations_open'] ?? 0);
-  $deadlines = (int)($summary['deadlines_soon'] ?? 0);
-  return '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.4">'
-    ."<h2>Dashboard-Benachrichtigung</h2>"
-    ."<p>Hallo {$safeName},</p>"
-    ."<p>Kurzer Überblick:</p>"
-    ."<ul><li>Offene Delegationen: <strong>{$delegations}</strong></li><li>Fristen in den nächsten 48h: <strong>{$deadlines}</strong></li><li>Offene Aufgaben gesamt: <strong>{$open} von {$total}</strong></li></ul>"
-    ."<p>Bitte prüfe dein Dashboard für Details.</p></div>";
+  $classes = is_array($summary['classes'] ?? null) ? $summary['classes'] : [];
+  $deadlines = is_array($summary['deadlines'] ?? null) ? $summary['deadlines'] : [];
+
+  $classRows = '';
+  foreach ($classes as $c) {
+    $classRows .= '<tr>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($c['class_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">' . (int)($c['delegations_open'] ?? 0) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">' . (int)($c['tasks_open'] ?? 0) . ' / ' . (int)($c['tasks_total'] ?? 0) . '</td>'
+      . '</tr>';
+  }
+  if ($classRows === '') $classRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">Keine Klassen zugeordnet.</td></tr>';
+
+  $deadlineRows = '';
+  foreach ($deadlines as $d) {
+    $deadlineRows .= '<tr>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['type_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['school_year'] ?? '')) . ' · ' . h((string)($d['period_label'] ?? '')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h(render_local_datetime((string)($d['due_at'] ?? ''), 'd.m.Y H:i', '–')) . '</td>'
+      . '</tr>';
+  }
+  if ($deadlineRows === '') $deadlineRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">Keine Fristen gesetzt.</td></tr>';
+
+  return '<div style="font-family:Inter,Segoe UI,Arial,sans-serif;background:#f3f4f6;padding:20px;">'
+    . '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">'
+    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">LEB-Tool Benachrichtigung</h2></div>'
+    . '<div style="padding:18px 20px;color:#111827;line-height:1.5;">'
+    . '<p style="margin:0 0 10px;">Hallo ' . $safeName . ',</p>'
+    . '<p style="margin:0 0 16px;">hier ist dein aktueller Überblick:</p>'
+    . '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
+    . '<span style="background:#e8f0fe;color:#0b57d0;border-radius:999px;padding:6px 10px;font-size:13px;">Offene Delegationen: <strong>' . $delegations . '</strong></span>'
+    . '<span style="background:#eefbf2;color:#1e8e3e;border-radius:999px;padding:6px 10px;font-size:13px;">Offene Lehrkrafteingaben: <strong>' . $open . ' / ' . $total . '</strong></span>'
+    . '</div>'
+    . '<h3 style="margin:16px 0 8px;font-size:16px;">Nach Klasse</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Klasse</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">Delegationen offen</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">Lehrkrafteingaben offen</th></tr></thead><tbody>' . $classRows . '</tbody></table>'
+    . '<h3 style="margin:18px 0 8px;font-size:16px;">Alle Fristen</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Bereich</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Schuljahr · Halbjahr</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Fällig am</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
+    . '<p style="margin:16px 0 0;color:#6b7280;font-size:12px;">Diese Nachricht wurde automatisch vom LEB-Tool erzeugt.</p>'
+    . '</div></div></div>';
 }
 
 function create_password_reset_token(int $userId, int $hoursValid = 1, bool $invalidateOld = true): string {

@@ -851,15 +851,31 @@ render_teacher_header(t('teacher.title'));
 </div>
 
 
-<?php if (($dashboardSummary['delegations_open'] ?? 0) > 0 || ($dashboardSummary['deadlines_soon'] ?? 0) > 0): ?>
+<?php if (($dashboardSummary['delegations_open'] ?? 0) > 0 || ($dashboardSummary['tasks_open'] ?? 0) > 0 || !empty($dashboardSummary['deadlines'])): ?>
   <div class="card">
     <h2>Benachrichtigungen</h2>
     <p class="muted">Es gibt neue Hinweise auf deinem Dashboard.</p>
     <ul>
       <li>Offene Delegationen: <strong><?=h((string)($dashboardSummary['delegations_open'] ?? 0))?></strong></li>
-      <li>Fristen in den nächsten 48h: <strong><?=h((string)($dashboardSummary['deadlines_soon'] ?? 0))?></strong></li>
-      <li>Offene Aufgaben gesamt: <strong><?=h((string)($dashboardSummary['tasks_open'] ?? 0))?> von <?=h((string)($dashboardSummary['tasks_total'] ?? 0))?></strong></li>
+      <li>Offene Lehrkrafteingaben gesamt: <strong><?=h((string)($dashboardSummary['tasks_open'] ?? 0))?> von <?=h((string)($dashboardSummary['tasks_total'] ?? 0))?></strong></li>
+      <li>Fristen gesamt: <strong><?=h((string)count((array)($dashboardSummary['deadlines'] ?? [])))?></strong></li>
     </ul>
+    <?php if (!empty($dashboardSummary['classes'])): ?>
+      <div class="table-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr><th>Klasse</th><th>Delegationen offen</th><th>Lehrkrafteingaben offen</th></tr></thead>
+          <tbody>
+            <?php foreach ((array)$dashboardSummary['classes'] as $row): ?>
+              <tr>
+                <td><?=h((string)($row['class_label'] ?? ''))?></td>
+                <td><?=h((string)($row['delegations_open'] ?? 0))?></td>
+                <td><?=h((string)($row['tasks_open'] ?? 0))?> / <?=h((string)($row['tasks_total'] ?? 0))?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
   </div>
 <?php endif; ?>
 
