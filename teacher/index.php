@@ -950,14 +950,15 @@ render_teacher_header(t('teacher.title'));
 (function(){
   const el = document.getElementById('mail_pref_toggle');
   const status = document.getElementById('mail_pref_status');
+  const csrf = <?=json_encode(csrf_token())?>;
   if (!el) return;
   el.addEventListener('change', async () => {
     status.textContent = 'Speichere …';
     try {
       const res = await fetch('ajax/notification_settings_api.php', {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({enabled: el.checked})
+        headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrf},
+        body: JSON.stringify({enabled: el.checked, csrf_token: csrf})
       });
       const data = await res.json();
       if (!data.ok) throw new Error('save_failed');

@@ -1971,7 +1971,7 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
   ];
   if ($userId <= 0) return $out;
 
-  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=?");
+  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=? AND status='open'");
   $st->execute([$userId]);
   $out['delegations_open'] = (int)($st->fetchColumn() ?: 0);
 
