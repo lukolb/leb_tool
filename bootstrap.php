@@ -2001,18 +2001,27 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
     }
   }
 
-  $reports = $pdo->prepare("
-    SELECT COUNT(*) AS total, SUM(CASE WHEN ri.is_finalized=1 THEN 1 ELSE 0 END) AS done
-    FROM report_instances ri
-    JOIN students s ON s.id=ri.student_id
-    JOIN classes c ON c.id=s.class_id
-    JOIN user_class_assignments uca ON uca.class_id=c.id
-    WHERE uca.user_id=? AND c.is_active=1
-  ");
-  $reports->execute([$userId]);
-  $r = $reports->fetch(PDO::FETCH_ASSOC) ?: [];
-  $total = (int)($r['total'] ?? 0);
-  $done = (int)($r['done'] ?? 0);
+  $total = 0;
+  $done = 0;
+  try {
+    if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
+      $reports = $pdo->prepare("
+        SELECT COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 1 ELSE 0 END) AS done
+        FROM report_instances ri
+        JOIN students s ON s.id=ri.student_id
+        JOIN classes c ON c.id=s.class_id
+        JOIN user_class_assignments uca ON uca.class_id=c.id
+        WHERE uca.user_id=? AND c.is_active=1
+      ");
+      $reports->execute([$userId]);
+      $r = $reports->fetch(PDO::FETCH_ASSOC) ?: [];
+      $total = (int)($r['total'] ?? 0);
+      $done = (int)($r['done'] ?? 0);
+    }
+  } catch (Throwable $e) {
+    $total = 0;
+    $done = 0;
+  }
   $openReports = max(0, $total - $done);
 
   $out['tasks_open'] = $openReports + $out['delegations_open'];
