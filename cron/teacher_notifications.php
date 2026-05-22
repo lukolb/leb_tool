@@ -2,8 +2,17 @@
 declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 $pdo = db();
+
+function cron_log_line(string $msg): void {
+  if (PHP_SAPI === 'cli' && defined('STDOUT')) {
+    fwrite(STDOUT, $msg . "\n");
+    return;
+  }
+  echo $msg . "\n";
+}
+
 if (!db_has_table($pdo, 'teacher_notification_preferences')) {
-  fwrite(STDOUT, "preferences table missing\n");
+  cron_log_line('preferences table missing');
   exit(0);
 }
 $st = $pdo->query("SELECT p.user_id, p.confirmation_pending, u.email, u.display_name FROM teacher_notification_preferences p JOIN users u ON u.id=p.user_id WHERE p.wants_email=1 AND u.is_active=1 AND u.deleted_at IS NULL");
@@ -25,4 +34,4 @@ foreach ($rows as $r) {
     $sent++;
   }
 }
-fwrite(STDOUT, "sent={$sent}\n");
+cron_log_line("sent={$sent}");
