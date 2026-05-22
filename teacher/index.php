@@ -75,7 +75,7 @@ $dashboardSummary = teacher_notification_summary($pdo, $userId);
 // Delegations inbox count (groups delegated to this teacher)
 $delegationCount = 0;
 try {
-  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=?");
+  $st = $pdo->prepare("SELECT COUNT(*) FROM class_group_delegations WHERE user_id=? AND status='open'");
   $st->execute([$userId]);
   $delegationCount = (int)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {
@@ -852,13 +852,12 @@ render_teacher_header(t('teacher.title'));
 
 
 <?php if (($dashboardSummary['delegations_open'] ?? 0) > 0 || ($dashboardSummary['tasks_open'] ?? 0) > 0 || !empty($dashboardSummary['deadlines'])): ?>
-  <div class="card">
+  <div class="card" style="background:#fff8db;border-color:#f2cc60;">
     <h2>Benachrichtigungen</h2>
     <p class="muted">Es gibt neue Hinweise auf deinem Dashboard.</p>
     <ul>
       <li>Offene Delegationen: <strong><?=h((string)($dashboardSummary['delegations_open'] ?? 0))?></strong></li>
       <li>Offene Lehrkrafteingaben gesamt: <strong><?=h((string)($dashboardSummary['tasks_open'] ?? 0))?> von <?=h((string)($dashboardSummary['tasks_total'] ?? 0))?></strong></li>
-      <li>Fristen gesamt: <strong><?=h((string)count((array)($dashboardSummary['deadlines'] ?? [])))?></strong></li>
     </ul>
     <?php if (!empty($dashboardSummary['classes'])): ?>
       <div class="table-wrap" style="margin-top:10px;">
