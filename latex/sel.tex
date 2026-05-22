@@ -1,0 +1,105 @@
+% ------------------------------------------------
+% Assets
+% ------------------------------------------------
+
+\newcommand{\Strengths}{%
+  \includegraphics[height=15mm]{assets/strength.png}
+}
+
+\newcommand{\Goals}{%
+  \includegraphics[height=15mm]{assets/goal.png}
+}
+
+% ------------------------------------------------
+% Social Emotional Learning Section
+% ------------------------------------------------
+
+\newcommand{\SELSection}{%
+\small
+\setlength{\LTleft}{-4mm}
+\setlength{\LTright}{0mm}
+
+\begin{longtable}{|m{184.8mm}|}
+
+\multicolumn{1}{m{184.8mm}}{%
+\vspace{2mm}
+\hspace*{4mm}%
+{\fontsize{10pt}{12pt}\selectfont
+\textbf{SOZIAL-EMOTIONALES LERNEN | \textit{SOCIAL EMOTIONAL LEARNING}}
+}
+\vspace{0.3mm}
+}
+\\
+\hline
+
+\multicolumn{1}{|m{184.8mm}|}{%
+\begin{tikzpicture}[remember picture,overlay]
+
+% vertikale Linie
+\draw[line width=0.3pt]
+(9.2cm,-0.5cm) -- (9.2cm,-6.6cm);
+
+% Überschriften Stärken
+\node[anchor=east] at (2.4cm,-1.45cm) {%
+  {\fontsize{9pt}{11pt}\selectfont\textbf{Stärken}}
+};
+\node[anchor=east] at (8.2cm,-1.45cm) {%
+  {\fontsize{9pt}{10pt}\selectfont\textbf{\textit{Strengths}}}
+};
+
+% Bild Stärken
+\node[anchor=north west] at (3.3cm,0cm) {\Strengths};
+
+% Überschriften Ziele
+\node[anchor=east] at (11.6cm,-1.45cm) {%
+  {\fontsize{9pt}{11pt}\selectfont\textbf{Ziele}}
+};
+\node[anchor=east] at (17.2cm,-1.45cm) {%
+  {\fontsize{9pt}{10pt}\selectfont\textbf{\textit{Goals}}}
+};
+
+% Bild Ziele
+\node[anchor=north west] at (12.5cm,0cm) {\Goals};
+
+% Eingabefeld Stärke
+\node[anchor=north west] at (0.3cm,-2cm) {%
+\TextField[
+  name=strengths,
+  multiline=true,
+  width=82mm,
+  height=48mm,
+  borderwidth=0,
+  bordercolor={},
+  backgroundcolor={},
+  charsize=8pt,
+  format={var f = this.getField('strengths'); f.textFont = 'OpenSans';}
+]{}
+};
+
+% Eingabefeld Ziele
+\node[anchor=north west] at (9.7cm,-2cm) {%
+\TextField[
+  name=goals,
+  multiline=true,
+  width=82mm,
+  height=48mm,
+  borderwidth=0,
+  bordercolor={},
+  backgroundcolor={},
+  charsize=8pt,
+  format={var f = this.getField('goals'); f.textFont = 'OpenSans';}
+]{}
+};
+
+\end{tikzpicture}
+
+\rule{0pt}{72mm}%
+}
+\\
+\hline
+
+\end{longtable}
+
+\vspace{6mm}
+\normalsize
+}

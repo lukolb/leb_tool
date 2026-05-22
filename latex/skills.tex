@@ -1,0 +1,233 @@
+\usepackage{makecell}
+\usepackage{needspace}
+
+% ------------------------------------------------
+% Rating Header
+% ------------------------------------------------
+
+\newcommand{\RatingHeader}{%
+
+\multicolumn{1}{@{}m{111mm}@{}}{} &
+\multicolumn{1}{m{11mm}}{} &
+\multicolumn{1}{m{11mm}}{\centering\BeginningIcon} &
+\multicolumn{1}{m{11mm}}{\centering\ProgressingIcon} &
+\multicolumn{1}{m{11mm}}{\centering\StrengtheningIcon} &
+\multicolumn{1}{m{11mm}}{\centering\MasteringIcon}
+\\[-2mm]
+
+\multicolumn{1}{@{}m{111mm}@{}}{} &
+\multicolumn{1}{m{11mm}}{} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont Beginnen
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont Entwickeln
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont Festigen
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont Meistern
+}
+\\[-2mm]
+
+\multicolumn{1}{@{}m{111mm}@{}}{} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont n/a
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont \textit{Beginning}
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont \textit{Progressing}
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}
+} &
+\multicolumn{1}{m{11mm}}{%
+\centering
+\fontsize{5pt}{5pt}\selectfont \textit{Mastering}
+}
+\\
+
+}
+
+% ------------------------------------------------
+% Rating Buttons
+% ------------------------------------------------
+
+\newcommand{\RB}[2]{%
+\raisebox{-0.5\height}{%
+\radioButton[
+  \symbolchoice{cross}
+  \BC{}
+  \BG{}
+  \textColor{gisblue}
+  \W{0}
+]{#1}{0.5cm}{0.5cm}{#2}%
+}%
+}
+
+\newcommand{\RatingButtons}[1]{%
+\begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{na}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{be}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{pr}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{st}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{ma}\end{minipage}
+}
+
+% ------------------------------------------------
+% Skill Row
+% ------------------------------------------------
+
+\newcommand{\SkillRow}[3]{%
+\rule[-2.4mm]{0pt}{6.3mm}%
+\begin{minipage}[c]{110mm}
+  \vspace{0.7mm}
+  \setlength{\parindent}{0pt}%
+  \raggedright
+  {\fontsize{8pt}{9.5pt}\selectfont
+    #2 \textbar{} \textit{#3}%
+  }
+  \vspace{0.7mm}
+\end{minipage}
+&
+\RatingButtons{#1}
+\\ \hline
+}
+
+\newcommand{\SubSkill}[2]{%
+
+\noalign{\needspace{14mm}}
+
+\multicolumn{6}{|>{\raggedright\arraybackslash}m{18.475cm}|}{%
+\cellcolor{lightgray}
+\begin{minipage}[c][7.2mm][c]{11.8cm}
+  \hspace*{4mm}%
+  \begin{minipage}[c]{10.8cm}
+    \setlength{\parindent}{0pt}%
+    \raggedright
+    {\fontsize{9pt}{12pt}\selectfont
+      \textbf{#1 | \textit{#2}}
+    }
+  \end{minipage}%
+\end{minipage}
+}
+\\ \hline
+}
+
+% ------------------------------------------------
+% Skill Section
+% ------------------------------------------------
+
+% Abstände für den RatingHeader.
+% Der automatische Kopf nach einem longtable-Seitenumbruch nutzt weiterhin
+% \RatingHeaderAutoAfterSpace. Ein expliziter \SkillSectionPageBreak startet
+% dagegen eine neue Tabelle und kann deshalb eine andere erste Kopfposition nutzen.
+\newcommand{\SkillsTableTopSpace}{-8mm}
+\newcommand{\SkillsTableExplicitTopSpace}{-5mm}
+
+% Abstand nach dem allerersten RatingHeader der Skill-Tabelle
+\newcommand{\RatingHeaderFirstAfterSpace}{-13mm}
+
+% Abstand nach RatingHeader bei automatischen longtable-Seitenumbrüchen
+\newcommand{\RatingHeaderAutoAfterSpace}{0mm}
+
+% Abstand nach RatingHeader nach explizitem \SkillSectionPageBreak
+\newcommand{\RatingHeaderExplicitAfterSpace}{-13mm}
+
+
+\newcommand{\BeginSkillsTableWithSpaces}[2]{%
+\small
+\setlength{\LTleft}{-4mm}
+\setlength{\LTright}{0mm}
+\vspace{#1}
+\begin{longtable}{|
+>{\hspace{4mm}\arraybackslash}m{115mm}|
+>{\centering\arraybackslash\vspace{0pt}}m{11mm}|
+>{\centering\arraybackslash\vspace{0pt}}m{11mm}|
+>{\centering\arraybackslash\vspace{0pt}}m{11mm}|
+>{\centering\arraybackslash\vspace{0pt}}m{11mm}|
+>{\centering\arraybackslash\vspace{0pt}}m{11mm}|
+}
+% Erster Kopf der Tabelle
+\RatingHeader
+\noalign{\vspace{#2}}
+\endfirsthead
+
+% Dieser Kopf wird nur bei automatischen Seitenumbrüchen innerhalb derselben
+% longtable verwendet.
+\RatingHeader
+\hline
+\noalign{\vspace{\RatingHeaderAutoAfterSpace}}
+\endhead
+}
+
+\newcommand{\BeginSkillsTable}{%
+\BeginSkillsTableWithSpaces{\SkillsTableTopSpace}{\RatingHeaderFirstAfterSpace}%
+}
+
+\newcommand{\BeginSkillsTableAfterExplicitPageBreak}{%
+\BeginSkillsTableWithSpaces{\SkillsTableExplicitTopSpace}{\RatingHeaderExplicitAfterSpace}%
+}
+
+\newcommand{\EndSkillsTable}{%
+\end{longtable}
+\normalsize
+}
+
+\newcommand{\BeginSkillSection}[2]{%
+
+\noalign{\needspace{32mm}}
+
+\noalign{\vspace{8mm}}
+
+\multicolumn{6}{@{}l@{}}{%
+\hspace*{6mm}%
+{\fontsize{10pt}{12pt}\selectfont
+\textbf{\MakeUppercase{#1} | \textit{\MakeUppercase{#2}}}}
+}
+\\[0.3mm]
+\hline
+}
+
+\newcommand{\EndSkillSection}{}
+
+% ------------------------------------------------
+% Skill Sections aus data.tex rendern
+% ------------------------------------------------
+
+% Normale Section ohne erzwungenen Seitenumbruch davor:
+% \SkillSection{Deutsch}{German}{\GermanSkills}
+\newcommand{\SkillSection}[3]{%
+\BeginSkillSection{#1}{#2}%
+#3%
+\EndSkillSection%
+}
+
+% Section mit erzwungenem Seitenumbruch davor:
+% \SkillSectionPageBreak{Sachunterricht}{Science and Social Studies}{\ScienceSkills}
+\newcommand{\SkillSectionPageBreak}[3]{%
+\EndSkillsTable%
+\newpage%
+\BeginSkillsTableAfterExplicitPageBreak%
+\SkillSection{#1}{#2}{#3}%
+}
+
+\newcommand{\RenderSkillSections}{%
+\BeginSkillsTable
+\AllSkillSections
+\EndSkillsTable
+}
