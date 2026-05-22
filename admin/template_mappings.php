@@ -23,17 +23,13 @@ $tx = [
   'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
   'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
   'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
-  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst frei Text schreiben und Platzhalter einfügen – z.B. <code>{{student.first_name}} {{student.last_name}}</code>. So sind auch Kombinationen möglich, und du kannst denselben Wert in mehrere Felder schreiben, indem du mehrere Felder mit demselben Platzhalter belegst. Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (und bei einem einzelnen Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst freien Text und Platzhalter kombinieren, z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Feldreferenzen sind mit <code>{{field:versetzt}}</code> möglich. Bedingungen als Block: <code>{{student.absence_days_total>0?}}Fehltage: {{student.absence_days_total}}{{?}}</code> oder <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>. In mehrzeiligen Feldern sind Zeilenumbrüche erlaubt (Enter). Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (bei genau einem Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
-  'bulk_label' => t('admin.template_mappings.bulk_label', 'Bulk-Template (für markierte Felder)'),
-  'bulk_placeholder' => t('admin.template_mappings.bulk_placeholder', '{{student.first_name}} {{student.last_name}}'),
-  'bulk_apply' => t('admin.template_mappings.bulk_apply', 'Auf markierte Felder anwenden'),
-  'bulk_clear' => t('admin.template_mappings.bulk_clear', 'Markierte leeren'),
   'table_field' => t('admin.template_mappings.table_field', 'PDF-Formfeld'),
   'table_template' => t('admin.template_mappings.table_template', 'Binding-Template'),
   'table_preview' => t('admin.template_mappings.table_preview', 'Vorschau'),
-  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Platzhalter: <code>{{student.first_name}}</code>, <code>{{student.last_name}}</code>, <code>{{class.display}}</code> …'),
+  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Beispiele: <code>{{student.first_name}}</code>, <code>{{class.display}}</code>, <code>{{field:versetzt}}</code>, <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>'),
   'save' => t('admin.template_mappings.save', 'Speichern'),
   'preview_title' => t('admin.template_mappings.preview_title', 'Vorschau'),
   'preview_hint' => t('admin.template_mappings.preview_hint', 'Wähle einen Schüler aus, um die Platzhalter-Ersetzungen zu prüfen.'),
@@ -42,6 +38,7 @@ $tx = [
   'preview_reset' => t('admin.template_mappings.preview_reset', 'Zurücksetzen'),
   'preview_table_placeholder' => t('admin.template_mappings.preview_table_placeholder', 'Platzhalter'),
   'preview_table_value' => t('admin.template_mappings.preview_table_value', 'Wert'),
+  'preview_field_prefix' => t('admin.template_mappings.preview_field_prefix', 'Feldwert'),
   'template_inactive' => t('admin.template_mappings.template_inactive', '[inaktiv]'),
   'system_student_first' => t('admin.template_mappings.system.student_first_name', 'Schüler: Vorname'),
   'system_student_last' => t('admin.template_mappings.system.student_last_name', 'Schüler: Nachname'),
@@ -50,6 +47,9 @@ $tx = [
   'system_class_grade' => t('admin.template_mappings.system.class_grade_level', 'Klasse: Klassenstufe'),
   'system_class_label' => t('admin.template_mappings.system.class_label', 'Klasse: Bezeichnung (a/b/...)'),
   'system_class_display' => t('admin.template_mappings.system.class_display', 'Klasse: Anzeige (z.B. 1a)'),
+  'system_student_absence_total' => t('admin.template_mappings.system.student_absence_total', 'Schüler: Fehltage gesamt'),
+  'system_student_absence_unexcused' => t('admin.template_mappings.system.student_absence_unexcused', 'Schüler: davon unentschuldigt'),
+  'system_ag_sentence' => t('admin.template_mappings.system.ag_sentence', 'AG-Satz (automatisch)'),
   'system_student_prefix' => t('admin.template_mappings.system.student_prefix', 'Schüler'),
   'ok_saved' => t('admin.template_mappings.ok_saved', 'Mapping gespeichert.'),
   'error_invalid_action' => t('admin.template_mappings.error_invalid_action', 'Ungültige Aktion.'),
@@ -60,11 +60,15 @@ $tx = [
 $SYSTEM_KEYS = [
   'student.first_name'    => $tx['system_student_first'],
   'student.last_name'     => $tx['system_student_last'],
+  'student.full_name'     => $tx['system_student_first'] . ' + ' . $tx['system_student_last'],
   'student.date_of_birth' => $tx['system_student_dob'],
   'class.school_year'     => $tx['system_class_year'],
   'class.grade_level'     => $tx['system_class_grade'],
   'class.label'           => $tx['system_class_label'],
   'class.display'         => $tx['system_class_display'],
+  'student.absence_days_total' => $tx['system_student_absence_total'],
+  'student.absence_days_unexcused' => $tx['system_student_absence_unexcused'],
+  'ag.sentence'           => $tx['system_ag_sentence'],
 ];
 foreach ($customStudentFields as $cf) {
   $key = trim((string)($cf['field_key'] ?? ''));
@@ -105,7 +109,12 @@ function list_template_fields_map(PDO $pdo, int $templateId): array {
      ORDER BY sort_order ASC, field_name ASC"
   );
   $st->execute([$templateId]);
-  return $st->fetchAll(PDO::FETCH_ASSOC);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  return array_values(array_filter($rows, static function(array $f): bool {
+    $type = strtolower((string)($f['field_type'] ?? 'text'));
+    if (in_array($type, ['checkbox', 'radio', 'select', 'grade', 'info'], true)) return false;
+    return true;
+  }));
 }
 
 /**
@@ -131,10 +140,10 @@ function current_binding_templates_map(array $fields): array {
   return $out;
 }
 
-function get_student_preview_map(PDO $pdo, int $studentId): ?array {
+function get_student_preview_map(PDO $pdo, int $studentId, int $templateId = 0): ?array {
   $st = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, s.date_of_birth,
-            c.school_year AS class_school_year, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
+            c.id AS class_id, c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
      FROM students s
      LEFT JOIN classes c ON c.id=s.class_id
      WHERE s.id=? LIMIT 1"
@@ -143,10 +152,66 @@ function get_student_preview_map(PDO $pdo, int $studentId): ?array {
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if (!$row) return null;
   $row['custom_values'] = student_custom_value_map($pdo, $studentId);
+  $row['field_values'] = [];
+
+  if ($templateId > 0) {
+    $ri = $pdo->prepare(
+      "SELECT id
+       FROM report_instances
+       WHERE student_id=? AND template_id=?
+       ORDER BY updated_at DESC, id DESC
+       LIMIT 1"
+    );
+    $ri->execute([$studentId, $templateId]);
+    $riId = (int)($ri->fetchColumn() ?: 0);
+    if ($riId > 0) {
+      $row['field_values'] = report_instance_field_value_map($pdo, $riId);
+    }
+
+    $classFieldValues = class_report_field_value_map(
+      $pdo,
+      $templateId,
+      (int)($row['class_id'] ?? 0),
+      (string)($row['class_school_year'] ?? ''),
+      (string)($row['class_period_label'] ?? 'Standard')
+    );
+    foreach ($classFieldValues as $k => $v) {
+      if (!array_key_exists($k, $row['field_values'])) $row['field_values'][$k] = $v;
+    }
+  }
+
+  $absence = student_period_absence_values(
+    $pdo,
+    $studentId,
+    (int)($row['class_id'] ?? 0),
+    (string)($row['class_school_year'] ?? ''),
+    (string)($row['class_period_label'] ?? 'Standard')
+  );
+  $row['absence_days_total'] = (int)($absence['absence_days_total'] ?? 0);
+  $row['absence_days_unexcused'] = (int)($absence['absence_days_unexcused'] ?? 0);
+
+  $schoolYear = (string)($row['class_school_year'] ?? '');
+  $periodLabel = (string)($row['class_period_label'] ?? 'Standard');
+  if ($schoolYear !== '') {
+    $ag = $pdo->prepare(
+      "SELECT a.ag_name
+       FROM student_ag_assignments saa
+       INNER JOIN ag_catalog a ON a.id=saa.ag_id
+       WHERE saa.student_id=? AND saa.school_year=? AND saa.period_label=?
+       ORDER BY a.sort_order ASC, a.ag_name ASC"
+    );
+    $ag->execute([$studentId, $schoolYear, $periodLabel]);
+    $names = array_map(static fn(array $r): string => (string)($r['ag_name'] ?? ''), $ag->fetchAll(PDO::FETCH_ASSOC));
+    $row['ag_sentence'] = ag_sentence_for_names((string)($row['first_name'] ?? ''), $names);
+  } else {
+    $row['ag_sentence'] = '';
+  }
+
   return $row;
 }
 
 function preview_value_map(string $systemKey, array $row): string {
+  $systemKey = normalize_system_binding_key($systemKey);
   if (strpos($systemKey, 'student.custom.') === 0) {
     $k = substr($systemKey, strlen('student.custom.'));
     if ($k === '') return '';
@@ -157,7 +222,12 @@ function preview_value_map(string $systemKey, array $row): string {
   switch ($systemKey) {
     case 'student.first_name': return (string)($row['first_name'] ?? '');
     case 'student.last_name': return (string)($row['last_name'] ?? '');
+    case 'student.full_name':
+      return trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
     case 'student.date_of_birth': return (string)($row['date_of_birth'] ?? '');
+    case 'student.absence_days_total': return (string)(int)($row['absence_days_total'] ?? 0);
+    case 'student.absence_days_unexcused': return (string)(int)($row['absence_days_unexcused'] ?? 0);
+    case 'ag.sentence': return (string)($row['ag_sentence'] ?? '');
     case 'class.school_year': return (string)($row['class_school_year'] ?? '');
     case 'class.grade_level': return (string)($row['class_grade_level'] ?? '');
     case 'class.label': return (string)($row['class_label'] ?? '');
@@ -176,15 +246,72 @@ function preview_value_map(string $systemKey, array $row): string {
  * Resolve a binding template like:
  *   "{{student.first_name}} {{student.last_name}} ({{class.display}})"
  */
-function resolve_binding_template(string $tpl, array $previewRow): string {
+function resolve_binding_template(string $tpl, array $previewRow, array $previewFieldValues = [], array $fieldMetaByName = []): string {
+  $tpl = apply_binding_condition_blocks($tpl, static function(string $key) use ($previewRow, $previewFieldValues, $fieldMetaByName): string {
+    $k = trim($key);
+    if (str_starts_with($k, 'field:')) {
+      $fname = trim(substr($k, 6));
+      if ($fname === '') return '';
+      return resolve_preview_field_reference_value($fname, $previewFieldValues, $fieldMetaByName);
+    }
+    return preview_value_map($k, $previewRow);
+  });
+
   // Replace {{ key }} placeholders
-  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/', function($m) use ($previewRow) {
-    $key = (string)$m[1];
+  $out = preg_replace_callback('/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\}\}/', function($m) use ($previewRow, $previewFieldValues, $fieldMetaByName) {
+    $key = trim((string)$m[1]);
+    if (str_starts_with($key, 'field:')) {
+      $fname = trim(substr($key, 6));
+      if ($fname === '') return '';
+      return resolve_preview_field_reference_value($fname, $previewFieldValues, $fieldMetaByName);
+    }
     return preview_value_map($key, $previewRow);
   }, $tpl);
 
   if ($out === null) return '';
   return $out;
+}
+
+function preview_field_meta_map(array $fields): array {
+  $out = [];
+  foreach ($fields as $f) {
+    $name = trim((string)($f['field_name'] ?? ''));
+    if ($name === '') continue;
+    $out[$name] = [
+      'field_type' => (string)($f['field_type'] ?? ''),
+      'meta' => meta_read_map($f['meta_json'] ?? null),
+    ];
+  }
+  return $out;
+}
+
+function resolve_preview_field_reference_value(string $fieldName, array $previewFieldValues, array $fieldMetaByName = []): string {
+  $value = '';
+  if (array_key_exists($fieldName, $previewFieldValues)) {
+    $value = (string)$previewFieldValues[$fieldName];
+  } else {
+    $needle = mb_strtolower($fieldName, 'UTF-8');
+    foreach ($previewFieldValues as $n => $v) {
+      if (mb_strtolower((string)$n, 'UTF-8') === $needle) {
+        $value = (string)$v;
+        $fieldName = (string)$n;
+        break;
+      }
+    }
+  }
+
+  $def = $fieldMetaByName[$fieldName] ?? null;
+  if (!is_array($def)) return $value;
+
+  $fieldType = (string)($def['field_type'] ?? '');
+  $meta = is_array($def['meta'] ?? null) ? $def['meta'] : [];
+  $mode = (string)($meta['date_format_mode'] ?? 'preset');
+  $fmt = $mode === 'custom' ? (string)($meta['date_format_custom'] ?? '') : (string)($meta['date_format_preset'] ?? '');
+  $fmt = trim($fmt);
+  if ($fmt !== '' && ($fieldType === 'date' || isset($meta['date_format_mode']) || isset($meta['date_format_preset']) || isset($meta['date_format_custom']))) {
+    return format_date_pattern($value, $fmt);
+  }
+  return $value;
 }
 
 /**
@@ -197,6 +324,56 @@ function template_to_single_key(string $tpl): string {
     return (string)$m[1];
   }
   return '';
+}
+
+function field_supports_multiline(array $field): bool {
+  $fieldType = strtolower((string)($field['field_type'] ?? ''));
+  if ($fieldType === 'multiline') return true;
+
+  $meta = meta_read_map($field['meta_json'] ?? null);
+  return (int)($meta['is_multiline'] ?? 0) === 1;
+}
+
+
+function preview_used_field_placeholders(array $fields, array $currentTpl): array {
+  $labelsByName = [];
+  foreach ($fields as $f) {
+    $fname = trim((string)($f['field_name'] ?? ''));
+    if ($fname === '') continue;
+    $labelsByName[$fname] = trim((string)($f['label'] ?? ''));
+  }
+
+  $found = [];
+  foreach ($currentTpl as $tpl) {
+    $t = (string)$tpl;
+    if ($t === '') continue;
+
+    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*\}\}/', $t, $m1)) {
+      foreach ((array)($m1[1] ?? []) as $name) {
+        $n = trim((string)$name);
+        if ($n !== '') $found[$n] = true;
+      }
+    }
+
+    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9]+(?:[.,][0-9]+)?\s*\?\s*\}\}/', $t, $m2)) {
+      foreach ((array)($m2[1] ?? []) as $name) {
+        $n = trim((string)$name);
+        if ($n !== '') $found[$n] = true;
+      }
+    }
+  }
+
+  $out = [];
+  foreach (array_keys($found) as $name) {
+    $out[] = [
+      'field_name' => $name,
+      'label' => $labelsByName[$name] ?? '',
+    ];
+  }
+  usort($out, static function(array $a, array $b): int {
+    return strcasecmp((string)$a['field_name'], (string)$b['field_name']);
+  });
+  return $out;
 }
 
 // POST: save binding templates
@@ -222,6 +399,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $fid = (int)$f['id'];
       $rawTpl = isset($tpls[(string)$fid]) ? (string)$tpls[(string)$fid] : '';
       $rawTpl = trim($rawTpl);
+
+      if (!field_supports_multiline($f)) {
+        $rawTpl = preg_replace('/\R+/', ' ', $rawTpl) ?? $rawTpl;
+      }
 
       $meta = meta_read_map($f['meta_json'] ?? null);
 
@@ -260,18 +441,42 @@ $templates = list_templates_map($pdo);
 $template  = $templateId > 0 ? load_template_map($pdo, $templateId) : null;
 $fields    = $template ? list_template_fields_map($pdo, (int)$template['id']) : [];
 $currentTpl = current_binding_templates_map($fields);
+$previewFieldMetaByName = preview_field_meta_map($fields);
+$usedFieldPlaceholders = preview_used_field_placeholders($fields, $currentTpl);
 
 $studentsForPreview = [];
 if ($template) {
-  $studentsForPreview = $pdo->query(
+  $activeSchoolYear = '';
+  $activePeriodLabel = 'H1';
+  $stActivePeriod = $pdo->query(
+    "SELECT school_year, period_label
+     FROM classes
+     WHERE is_active=1
+     GROUP BY school_year, period_label
+     ORDER BY COUNT(*) DESC, school_year DESC,
+              CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
+     LIMIT 1"
+  );
+  $activePeriod = $stActivePeriod->fetch(PDO::FETCH_ASSOC) ?: null;
+  if ($activePeriod) {
+    $activeSchoolYear = trim((string)($activePeriod['school_year'] ?? ''));
+    $activePeriodLabel = normalize_class_period_label((string)($activePeriod['period_label'] ?? 'H1'));
+  }
+  if ($activeSchoolYear === '') {
+    $activeSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+  }
+
+  $stStudentsForPreview = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, c.school_year, c.name AS class_name
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     ORDER BY s.last_name ASC, s.first_name ASC
-     LIMIT 250"
-  )->fetchAll(PDO::FETCH_ASSOC);
+     INNER JOIN classes c ON c.id=s.class_id
+     WHERE c.template_id=? AND c.school_year=? AND c.period_label=?
+     ORDER BY s.last_name ASC, s.first_name ASC"
+  );
+  $stStudentsForPreview->execute([(int)$template['id'], $activeSchoolYear, $activePeriodLabel]);
+  $studentsForPreview = $stStudentsForPreview->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
-$preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId) : null;
+$preview = $previewStudentId > 0 ? get_student_preview_map($pdo, $previewStudentId, (int)$templateId) : null;
 
 render_admin_header($tx['title']);
 ?>
@@ -317,6 +522,7 @@ render_admin_header($tx['title']);
   <?php endif; ?>
 
 <?php if ($template): ?>
+  <?php $previewResolvedByField = ($preview && is_array($preview['field_values'] ?? null)) ? (array)$preview['field_values'] : []; ?>
   <div class="card">
     <h2 style="margin-top:0;"><?=h(strtr($tx['mapping_for'], [
       '{template}' => (string)$template['name'],
@@ -341,15 +547,6 @@ render_admin_header($tx['title']);
         <button type="button" class="btn secondary" id="phInsertBtn"><?=h($tx['insert_btn'])?></button>
       </div>
 
-      <div style="flex:1; min-width:260px;">
-        <label class="muted" style="display:block;margin-bottom:6px;"><?=h($tx['bulk_label'])?></label>
-        <input type="text" id="bulkTpl" class="input" placeholder="<?=h($tx['bulk_placeholder'])?>" />
-      </div>
-
-      <div class="actions" style="justify-content:flex-start;">
-        <button type="button" class="btn secondary" id="bulkApplyBtn"><?=h($tx['bulk_apply'])?></button>
-        <button type="button" class="btn secondary" id="bulkClearBtn"><?=h($tx['bulk_clear'])?></button>
-      </div>
     </div>
 
     <form method="post" style="margin-top:12px;">
@@ -360,10 +557,9 @@ render_admin_header($tx['title']);
       <table class="table">
         <thead>
           <tr>
-            <th style="width:40px;"><input type="checkbox" id="checkAll"></th>
-            <th style="width:360px;"><?=h($tx['table_field'])?></th>
+            <th style="width:280px;"><?=h($tx['table_field'])?></th>
             <th><?=h($tx['table_template'])?></th>
-            <th style="width:220px;"><?=h($tx['table_preview'])?></th>
+            <th style="width:320px;"><?=h($tx['table_preview'])?></th>
           </tr>
         </thead>
         <tbody>
@@ -372,12 +568,13 @@ render_admin_header($tx['title']);
             $fname = (string)$f['field_name'];
             $lab = trim((string)($f['label'] ?? ''));
             $tpl = (string)($currentTpl[$fid] ?? '');
-            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview) : '';
+            $previewVal = ($preview && $tpl !== '') ? resolve_binding_template($tpl, $preview, $previewResolvedByField, $previewFieldMetaByName) : '';
+            if ($preview && $tpl !== '') {
+              $previewResolvedByField[$fname] = $previewVal;
+            }
+            $isMultiline = field_supports_multiline($f);
           ?>
             <tr>
-              <td>
-                <input type="checkbox" class="rowCheck" data-fid="<?=h((string)$fid)?>">
-              </td>
               <td>
                 <div style="font-weight:700;"><?=h($fname)?></div>
                 <?php if ($lab !== ''): ?>
@@ -386,15 +583,28 @@ render_admin_header($tx['title']);
                 <div class="muted"><code>#<?=h((string)$fid)?></code></div>
               </td>
               <td>
-                <input
-                  type="text"
-                  class="input tplInput"
-                  data-fid="<?=h((string)$fid)?>"
-                  name="tpl[<?=h((string)$fid)?>]"
-                  value="<?=h($tpl)?>"
-                  placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
-                  autocomplete="off"
-                >
+                <?php if ($isMultiline): ?>
+                  <textarea
+                    class="input tplInput mapping-tpl-input"
+                    data-fid="<?=h((string)$fid)?>"
+                    data-multiline="1"
+                    name="tpl[<?=h((string)$fid)?>]"
+                    placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
+                    autocomplete="off"
+                    rows="2"
+                  ><?=h($tpl)?></textarea>
+                <?php else: ?>
+                  <input
+                    type="text"
+                    class="input tplInput mapping-tpl-input"
+                    data-fid="<?=h((string)$fid)?>"
+                    data-multiline="0"
+                    name="tpl[<?=h((string)$fid)?>]"
+                    value="<?=h($tpl)?>"
+                    placeholder="<?=h(t('admin.template_mappings.template_placeholder', 'z.B. {{student.first_name}} {{student.last_name}}'))?>"
+                    autocomplete="off"
+                  >
+                <?php endif; ?>
                 <div class="muted" style="margin-top:6px;">
                   <?= $tx['placeholder_hint'] ?>
                 </div>
@@ -403,7 +613,7 @@ render_admin_header($tx['title']);
                 <?php if (!$preview): ?>
                   <span class="muted">—</span>
                 <?php else: ?>
-                  <?= $tpl !== '' ? h($previewVal) : '<span class="muted">—</span>' ?>
+                  <?= $tpl !== '' ? '<div class="mapping-preview-value">'.nl2br(h($previewVal), false).'</div>' : '<span class="muted">—</span>' ?>
                 <?php endif; ?>
               </td>
             </tr>
@@ -460,10 +670,30 @@ render_admin_header($tx['title']);
               <td><?=h(preview_value_map($sysKey, $preview))?></td>
             </tr>
           <?php endforeach; ?>
+          <?php foreach ($usedFieldPlaceholders as $fp):
+            $fieldName = (string)($fp['field_name'] ?? '');
+            if ($fieldName === '') continue;
+            $fieldLabel = trim((string)($fp['label'] ?? ''));
+            $fieldValue = resolve_preview_field_reference_value($fieldName, (array)($preview['field_values'] ?? []), $previewFieldMetaByName);
+          ?>
+            <tr>
+              <td>
+                <?=h($tx['preview_field_prefix'])?><?= $fieldLabel !== '' ? ': '.h($fieldLabel) : '' ?>
+                <span class="muted"><code><?=h('field:'.$fieldName)?></code></span>
+              </td>
+              <td><?=h($fieldValue)?></td>
+            </tr>
+          <?php endforeach; ?>
         </tbody>
       </table>
     <?php endif; ?>
   </div>
+
+  <style>
+    .mapping-tpl-input { width:100%; box-sizing:border-box; display:block; }
+    textarea.mapping-tpl-input { overflow:hidden; resize:none; min-height:42px; }
+    .mapping-preview-value { white-space:pre-wrap; }
+  </style>
 
   <script>
     (function(){
@@ -481,9 +711,19 @@ render_admin_header($tx['title']);
         el.setSelectionRange(pos, pos);
       }
 
+      function autoResizeTextarea(el){
+        if (!el || el.tagName !== 'TEXTAREA') return;
+        el.style.height = 'auto';
+        el.style.height = Math.max(el.scrollHeight, 42) + 'px';
+      }
+
       document.querySelectorAll('.tplInput').forEach(function(inp){
         inp.addEventListener('focus', function(){ activeInput = inp; });
         inp.addEventListener('click', function(){ activeInput = inp; });
+        if (inp.tagName === 'TEXTAREA') {
+          autoResizeTextarea(inp);
+          inp.addEventListener('input', function(){ autoResizeTextarea(inp); });
+        }
       });
 
       const phSelect = document.getElementById('phSelect');
@@ -493,50 +733,6 @@ render_admin_header($tx['title']);
           const ph = phSelect ? phSelect.value : '';
           if (!ph) return;
           insertAtCursor(activeInput, ph);
-        });
-      }
-
-      const checkAll = document.getElementById('checkAll');
-      if (checkAll) {
-        checkAll.addEventListener('change', function(){
-          document.querySelectorAll('.rowCheck').forEach(function(cb){
-            cb.checked = checkAll.checked;
-          });
-        });
-      }
-
-      function selectedFieldIds() {
-        const ids = [];
-        document.querySelectorAll('.rowCheck').forEach(function(cb){
-          if (cb.checked) ids.push(cb.getAttribute('data-fid'));
-        });
-        return ids;
-      }
-
-      const bulkTpl = document.getElementById('bulkTpl');
-      const bulkApplyBtn = document.getElementById('bulkApplyBtn');
-      const bulkClearBtn = document.getElementById('bulkClearBtn');
-
-      if (bulkApplyBtn) {
-        bulkApplyBtn.addEventListener('click', function(){
-          const ids = selectedFieldIds();
-          if (!ids.length) return;
-          const t = (bulkTpl ? bulkTpl.value : '') || '';
-          ids.forEach(function(fid){
-            const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (inp) inp.value = t;
-          });
-        });
-      }
-
-      if (bulkClearBtn) {
-        bulkClearBtn.addEventListener('click', function(){
-          const ids = selectedFieldIds();
-          if (!ids.length) return;
-          ids.forEach(function(fid){
-            const inp = document.querySelector('.tplInput[data-fid="'+fid+'"]');
-            if (inp) inp.value = '';
-          });
         });
       }
     })();

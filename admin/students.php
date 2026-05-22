@@ -11,6 +11,7 @@ $userId = (int)(current_user()['id'] ?? 0);
 
 $cfg = app_config();
 $defaultSchoolYear = (string)($cfg['app']['default_school_year'] ?? '');
+$absencePreviewApiUrl = url('admin/ajax/absence_import_preview.php');
 
 $err = '';
 $ok = '';
@@ -19,12 +20,25 @@ $importSummary = $_SESSION['admin_import_summary'] ?? null;
 if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
   unset($_SESSION['admin_import_summary']);
 }
+$absenceImportSummary = $_SESSION['admin_absence_import_summary'] ?? null;
+if ($absenceImportSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+  unset($_SESSION['admin_absence_import_summary']);
+}
 
 function period_label_display_admin(?string $raw): string {
   $val = normalize_class_period_label($raw);
   return $val === 'H2'
     ? t('admin.classes.period.h2', '2. Halbjahr')
     : t('admin.classes.period.h1', '1. Halbjahr');
+}
+
+function parse_school_scope_key(string $raw): array {
+  $raw = trim($raw);
+  if ($raw === '' || strpos($raw, '|') === false) return ['', 'H1'];
+  [$year, $period] = array_pad(explode('|', $raw, 2), 2, '');
+  $year = trim((string)$year);
+  $period = normalize_class_period_label((string)$period);
+  return [$year, $period];
 }
 
 function class_display(array $c): string {
@@ -51,6 +65,52 @@ function normalize_name(string $s): string {
   $s = trim($s);
   $s = preg_replace('/\s+/', ' ', $s);
   return $s;
+}
+
+function normalize_lookup_token(string $s): string {
+  $s = mb_strtolower(trim($s), 'UTF-8');
+  $s = preg_replace('/[\s,;]+/u', '', $s);
+  return (string)$s;
+}
+
+function parse_student_name_token(string $raw): array {
+  $v = trim($raw);
+  if ($v === '') return ['', ''];
+  if (str_contains($v, ',')) {
+    [$last, $first] = array_pad(array_map('trim', explode(',', $v, 2)), 2, '');
+    return [$last, $first];
+  }
+  $parts = preg_split('/\s+/u', $v) ?: [];
+  if (count($parts) < 2) return [$v, ''];
+  $last = array_shift($parts);
+  $first = implode(' ', $parts);
+  return [trim((string)$last), trim((string)$first)];
+}
+
+function parse_optional_non_negative_int(string $raw, string $fieldLabel): ?int {
+  $v = trim($raw);
+  if ($v === '') return null;
+  if (!preg_match('/^\d+$/', $v)) {
+    throw new RuntimeException(str_replace('{field}', $fieldLabel, t('admin.students.import.absence.reason.invalid_number', 'Ungültige Zahl in {field}.')));
+  }
+  return (int)$v;
+}
+
+function read_tab_rows(string $path): array {
+  $fh = fopen($path, 'rb');
+  if (!$fh) throw new RuntimeException(t('admin.students.error.csv_open_failed'));
+  $rows = [];
+  while (($row = fgetcsv($fh, 0, "	", '"')) !== false) {
+    if (!is_array($row)) continue;
+    $allEmpty = true;
+    foreach ($row as $cell) {
+      if (trim((string)$cell) !== '') { $allEmpty = false; break; }
+    }
+    if ($allEmpty) continue;
+    $rows[] = array_map(static fn($v): string => trim((string)$v), $row);
+  }
+  fclose($fh);
+  return $rows;
 }
 
 function sanitize_import_email(?string $value): ?string {
@@ -308,6 +368,197 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         '{updated}',
         (string)$updated,
         t('admin.students.status.templates_updated')
+      );
+    }
+
+
+    elseif ($action === 'import_absence_csv') {
+      if (empty($_FILES['absence_csv_file']) || !isset($_FILES['absence_csv_file']['tmp_name'])) {
+        throw new RuntimeException(t('admin.students.error.csv_required'));
+      }
+      $csvTmp = (string)($_FILES['absence_csv_file']['tmp_name'] ?? '');
+      if ($csvTmp === '') throw new RuntimeException(t('admin.students.error.csv_required'));
+
+      [$schoolYearAbs, $periodLabelAbs] = parse_school_scope_key((string)($_POST['absence_scope'] ?? ''));
+      if ($schoolYearAbs === '') {
+        $schoolYearAbs = trim((string)($_POST['absence_school_year'] ?? ''));
+      }
+      if ($schoolYearAbs === '') $schoolYearAbs = $defaultSchoolYear;
+      if ($schoolYearAbs === '') throw new RuntimeException(t('admin.students.error.school_year_missing'));
+
+      if (!isset($_POST['absence_scope']) || trim((string)$_POST['absence_scope']) === '') {
+        $periodLabelAbs = normalize_class_period_label((string)($_POST['absence_period_label'] ?? $periodLabelAbs));
+      }
+
+      $colClass = max(1, (int)($_POST['absence_col_class'] ?? 1));
+      $colStudent = max(1, (int)($_POST['absence_col_student'] ?? 2));
+      $colTotal = max(1, (int)($_POST['absence_col_total'] ?? 15));
+      $colUnexcused = max(1, (int)($_POST['absence_col_unexcused'] ?? 16));
+
+      $rows = read_tab_rows($csvTmp);
+      if (!$rows) {
+        throw new RuntimeException(t('admin.students.import.reason.empty_csv'));
+      }
+
+      $classRows = $pdo->prepare(
+        "SELECT id, school_year, period_label, grade_level, label, name
+         FROM classes
+         WHERE school_year=? AND period_label=?"
+      );
+      $classRows->execute([$schoolYearAbs, $periodLabelAbs]);
+      $classMap = [];
+      $classById = [];
+      foreach ($classRows->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        $id = (int)($c['id'] ?? 0);
+        if ($id <= 0) continue;
+        $name = normalize_lookup_token((string)($c['name'] ?? ''));
+        if ($name !== '') $classMap[$name] = $id;
+        $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+        $label = (string)($c['label'] ?? '');
+        $displayName = computed_class_name($grade, $label);
+        $display = normalize_lookup_token($displayName);
+        if ($display !== '') $classMap[$display] = $id;
+        $classById[$id] = [
+          'id' => $id,
+          'name' => (string)($c['name'] ?? ''),
+          'display' => $displayName !== '' ? $displayName : (string)($c['name'] ?? ''),
+        ];
+      }
+
+      $studentRows = $pdo->prepare(
+        "SELECT s.id, s.first_name, s.last_name, s.class_id
+         FROM students s
+         INNER JOIN classes c ON c.id=s.class_id
+         WHERE c.school_year=? AND c.period_label=?"
+      );
+      $studentRows->execute([$schoolYearAbs, $periodLabelAbs]);
+      $studentMap = [];
+      foreach ($studentRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $sid = (int)($r['id'] ?? 0);
+        $cid = (int)($r['class_id'] ?? 0);
+        if ($sid <= 0 || $cid <= 0) continue;
+        $first = (string)($r['first_name'] ?? '');
+        $last = (string)($r['last_name'] ?? '');
+        $k1 = normalize_lookup_token($last . ',' . $first);
+        $k2 = normalize_lookup_token($last . ' ' . $first);
+        if ($k1 !== '') $studentMap[$cid][$k1] = $sid;
+        if ($k2 !== '') $studentMap[$cid][$k2] = $sid;
+      }
+
+      $upAbs = $pdo->prepare(
+        "INSERT INTO student_period_absences (student_id, class_id, school_year, period_label, absence_days_total, absence_days_unexcused)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE class_id=VALUES(class_id), absence_days_total=VALUES(absence_days_total), absence_days_unexcused=VALUES(absence_days_unexcused), updated_at=NOW()"
+      );
+      $delAbs = $pdo->prepare(
+        "DELETE FROM student_period_absences WHERE student_id=? AND school_year=? AND period_label=?"
+      );
+
+      $processed = 0;
+      $upserted = 0;
+      $deleted = 0;
+      $skipped = 0;
+      $skipDetails = [];
+      $classIdsInImport = [];
+
+      $pdo->beginTransaction();
+      foreach ($rows as $lineNo => $row) {
+        $processed++;
+        $classRaw = trim((string)($row[$colClass - 1] ?? ''));
+        $studentRaw = trim((string)($row[$colStudent - 1] ?? ''));
+        if ($classRaw === '' && $studentRaw === '') continue;
+
+        $classKey = normalize_lookup_token($classRaw);
+        $classIdAbs = $classMap[$classKey] ?? 0;
+        if ($classIdAbs > 0) $classIdsInImport[$classIdAbs] = true;
+        if ($classIdAbs <= 0) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden: {class}') . ' ' . $classRaw];
+          continue;
+        }
+
+        $studentKey = normalize_lookup_token($studentRaw);
+        $studentIdAbs = (int)($studentMap[$classIdAbs][$studentKey] ?? 0);
+        if ($studentIdAbs <= 0) {
+          [$lastP, $firstP] = parse_student_name_token($studentRaw);
+          $fallback1 = normalize_lookup_token($lastP . ',' . $firstP);
+          $fallback2 = normalize_lookup_token($lastP . ' ' . $firstP);
+          if ($fallback1 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback1] ?? 0);
+          if ($studentIdAbs <= 0 && $fallback2 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback2] ?? 0);
+        }
+        if ($studentIdAbs <= 0) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.student_not_found', 'Schüler nicht gefunden.')];
+          continue;
+        }
+
+        try {
+          $total = parse_optional_non_negative_int((string)($row[$colTotal - 1] ?? ''), t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
+          $unexcused = parse_optional_non_negative_int((string)($row[$colUnexcused - 1] ?? ''), t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));
+        } catch (Throwable $ex) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => $ex->getMessage() . ' (Zeile ' . (string)($lineNo + 1) . ')'];
+          continue;
+        }
+
+        if ($total === null && $unexcused === null) {
+          $delAbs->execute([$studentIdAbs, $schoolYearAbs, $periodLabelAbs]);
+          if ($delAbs->rowCount() > 0) $deleted++;
+          continue;
+        }
+
+        $totalVal = $total ?? 0;
+        $unexcusedVal = $unexcused ?? 0;
+        if ($unexcusedVal > $totalVal) {
+          $skipped++;
+          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('teacher.students.error.absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Gesamt-Fehltage sein.')];
+          continue;
+        }
+
+        $upAbs->execute([$studentIdAbs, $classIdAbs, $schoolYearAbs, $periodLabelAbs, $totalVal, $unexcusedVal]);
+        $upserted++;
+      }
+      $pdo->commit();
+
+      $foundClasses = [];
+      foreach (array_keys($classIdsInImport) as $cid) {
+        $c = $classById[(int)$cid] ?? null;
+        if (is_array($c)) $foundClasses[] = (string)($c['display'] ?? $c['name'] ?? ('#'.$cid));
+      }
+      sort($foundClasses, SORT_NATURAL | SORT_FLAG_CASE);
+
+      $missingClasses = [];
+      foreach ($classById as $cid => $c) {
+        if (isset($classIdsInImport[(int)$cid])) continue;
+        $missingClasses[] = (string)($c['display'] ?? $c['name'] ?? ('#'.$cid));
+      }
+      sort($missingClasses, SORT_NATURAL | SORT_FLAG_CASE);
+
+      $absenceImportSummary = [
+        'school_year' => $schoolYearAbs,
+        'period_label' => $periodLabelAbs,
+        'processed' => $processed,
+        'updated' => $upserted,
+        'deleted' => $deleted,
+        'skipped' => $skipped,
+        'found_classes' => $foundClasses,
+        'missing_classes' => $missingClasses,
+      ];
+      $_SESSION['admin_absence_import_summary'] = $absenceImportSummary;
+
+      audit('admin_students_import_absence_csv', $userId, [
+        'school_year' => $schoolYearAbs,
+        'period_label' => $periodLabelAbs,
+        'processed' => $processed,
+        'upserted' => $upserted,
+        'deleted' => $deleted,
+        'skipped' => $skipped,
+      ]);
+
+      $ok = str_replace(
+        ['{processed}', '{updated}', '{deleted}', '{skipped}'],
+        [(string)$processed, (string)$upserted, (string)$deleted, (string)$skipped],
+        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
       );
     }
 
@@ -642,6 +893,61 @@ $deleteImpactMap = $masterIds ? load_delete_impact($pdo, $masterIds) : [];
 // Filter dropdown data
 $years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
 $classes = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, is_active FROM classes ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC")->fetchAll(PDO::FETCH_ASSOC);
+
+$scopeRows = $pdo->query(
+  "SELECT DISTINCT school_year, period_label
+   FROM classes
+   ORDER BY school_year ASC,
+            CASE WHEN period_label='H2' THEN 2 ELSE 1 END ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$absenceScopeOptions = [];
+foreach ($scopeRows as $row) {
+  $sy = trim((string)($row['school_year'] ?? ''));
+  if ($sy === '') continue;
+  $pl = normalize_class_period_label((string)($row['period_label'] ?? 'H1'));
+  $absenceScopeOptions[] = [
+    'school_year' => $sy,
+    'period_label' => $pl,
+    'key' => $sy . '|' . $pl,
+  ];
+}
+
+$activeAbsenceScope = null;
+$stActiveScope = $pdo->query(
+  "SELECT school_year, period_label
+   FROM classes
+   WHERE is_active=1
+   GROUP BY school_year, period_label
+   ORDER BY COUNT(*) DESC, school_year DESC,
+            CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
+   LIMIT 1"
+);
+if ($stActiveScope) {
+  $activeAbsenceScope = $stActiveScope->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+$activeAbsenceScopeKey = '';
+if ($activeAbsenceScope) {
+  $activeAbsenceScopeKey = trim((string)($activeAbsenceScope['school_year'] ?? '')) . '|' . normalize_class_period_label((string)($activeAbsenceScope['period_label'] ?? 'H1'));
+}
+if ($activeAbsenceScopeKey === '' && $defaultSchoolYear !== '') {
+  $activeAbsenceScopeKey = $defaultSchoolYear . '|H1';
+}
+if ($activeAbsenceScopeKey !== '') {
+  $exists = false;
+  foreach ($absenceScopeOptions as $opt) {
+    if ((string)($opt['key'] ?? '') === $activeAbsenceScopeKey) { $exists = true; break; }
+  }
+  if (!$exists) {
+    [$syFallback, $plFallback] = parse_school_scope_key($activeAbsenceScopeKey);
+    if ($syFallback !== '') {
+      array_unshift($absenceScopeOptions, [
+        'school_year' => $syFallback,
+        'period_label' => $plFallback,
+        'key' => $syFallback . '|' . $plFallback,
+      ]);
+    }
+  }
+}
 $templates = $pdo->query(
   "SELECT id, name, template_version, is_active
    FROM templates
@@ -671,115 +977,27 @@ render_admin_header(t('admin.students.title'));
   <h1><?=h(t('admin.students.heading'))?></h1>
 </div>
 
-<div class="card">
-  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
-    <div>
-      <label><?=h(t('admin.students.filter.search_label'))?></label>
-      <input name="q" type="text" value="<?=h($q)?>" placeholder="<?=h(t('admin.students.filter.search_placeholder'))?>">
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.school_year'))?></label>
-      <select name="school_year">
-        <option value=""><?=h(t('admin.students.filter.all_years'))?></option>
-        <?php foreach ($years as $y): ?>
-          <option value="<?=h((string)$y)?>" <?=($schoolYear===(string)$y)?'selected':''?>><?=h((string)$y)?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.class'))?></label>
-      <select name="class_id">
-        <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
-        <?php foreach ($classes as $c): ?>
-          <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
-            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label><?=h(t('admin.students.filter.sort'))?></label>
-      <select name="sort">
-        <option value="name" <?=($sort==='name')?'selected':''?>><?=h(t('admin.students.sort.name'))?></option>
-        <option value="class" <?=($sort==='class')?'selected':''?>><?=h(t('admin.students.sort.class'))?></option>
-        <option value="year" <?=($sort==='year')?'selected':''?>><?=h(t('admin.students.sort.year'))?></option>
-        <option value="created" <?=($sort==='created')?'selected':''?>><?=h(t('admin.students.sort.created'))?></option>
-      </select>
-    </div>
-    <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
-      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>"><?=h(t('admin.students.filter.reset'))?></a>
-    </div>
-  </form>
 
-  <div class="muted" style="margin-top:10px;"><?=h(t('admin.students.filter.limit_hint'))?></div>
-</div>
-
-<script>
-  (function() {
-    const form = document.getElementById('student-filter-form');
-    if (!form) return;
-
-    const focusStorageKey = 'student_filter_focus';
-    const saveFocus = () => {
-      const active = document.activeElement;
-      if (!active) return;
-      const name = active.getAttribute('name');
-      if (!name) return;
-      try {
-        sessionStorage.setItem(focusStorageKey, name);
-      } catch (e) {
-        // ignore storage issues
-      }
-    };
-
-    const restoreFocus = () => {
-      let name;
-      try {
-        name = sessionStorage.getItem(focusStorageKey);
-        sessionStorage.removeItem(focusStorageKey);
-      } catch (e) {
-        return;
-      }
-      if (!name) return;
-      const el = form.querySelector(`[name="${name}"]`);
-      if (el && typeof el.focus === 'function') {
-        el.focus({ preventScroll: true });
-        
-        if (typeof el.setSelectionRange === 'function') {
-            const len = el.value?.length ?? 0;
-            el.setSelectionRange(len, len);
-          }
-      }
-    };
-
-    restoreFocus();
-
-    const submitForm = () => {
-      saveFocus();
-      if (typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-      } else {
-        form.submit();
-      }
-    };
-
-    let debounceTimer;
-    const qInput = form.querySelector('input[name="q"]');
-    if (qInput) {
-      qInput.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(submitForm, 300);
-      });
-    }
-
-    form.querySelectorAll('select').forEach((sel) => {
-      sel.addEventListener('change', submitForm);
-    });
-  })();
-</script>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+<?php if ($absenceImportSummary): ?>
+  <div class="alert success">
+    <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
+      <div>
+        <div><strong><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></strong></div>
+        <?php $fc = (array)($absenceImportSummary['found_classes'] ?? []); ?>
+        <?php if (!$fc): ?><div class="muted">—</div><?php else: ?><ul style="margin:4px 0 0 18px;"><?php foreach ($fc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul><?php endif; ?>
+      </div>
+      <div>
+        <div><strong><?=h(t('admin.students.import.absence.missing_classes', 'Klassen ohne Importdaten'))?></strong></div>
+        <?php $mc = (array)($absenceImportSummary['missing_classes'] ?? []); ?>
+        <?php if (!$mc): ?><div class="muted">—</div><?php else: ?><ul style="margin:4px 0 0 18px;"><?php foreach ($mc as $cn): ?><li><?=h((string)$cn)?></li><?php endforeach; ?></ul><?php endif; ?>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
 
 <?php if ($importSummary): ?>
   <?php
@@ -907,6 +1125,69 @@ render_admin_header(t('admin.students.title'));
 <?php endif; ?>
 
 <div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
+  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
+  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 260px minmax(260px,1fr) auto; gap:10px; align-items:end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="import_absence_csv">
+
+    <div>
+      <label><?=h(t('admin.students.import.absence_scope', 'Schuljahr/Halbjahr'))?></label>
+      <select name="absence_scope" id="absenceScopeSelect" required>
+        <?php if (!$absenceScopeOptions): ?>
+          <option value="" selected disabled><?=h(t('admin.students.import.select_year'))?></option>
+        <?php else: ?>
+          <?php foreach ($absenceScopeOptions as $scope): ?>
+            <?php
+              $scopeYear = (string)($scope['school_year'] ?? '');
+              $scopePeriod = normalize_class_period_label((string)($scope['period_label'] ?? 'H1'));
+              $scopeKey = (string)($scope['key'] ?? ($scopeYear . '|' . $scopePeriod));
+              $scopeLabel = $scopeYear . ' · ' . period_label_display_admin($scopePeriod);
+            ?>
+            <option value="<?=h($scopeKey)?>" <?=$scopeKey === $activeAbsenceScopeKey ? 'selected' : ''?>><?=h($scopeLabel)?></option>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.students.import.csv_label'))?></label>
+      <input type="file" id="absenceCsvFile" name="absence_csv_file" accept=".csv,text/csv,text/tab-separated-values" required>
+    </div>
+
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn" type="submit"><?=h(t('admin.students.import.start'))?></button>
+    </div>
+
+    <div style="grid-column:1 / -1;">
+      <div class="grid" style="grid-template-columns:repeat(4, minmax(90px, 120px)); gap:10px; align-items:end;">
+        <div>
+          <label><?=h(t('admin.students.import.absence_col_class', 'Spalte Klasse'))?></label>
+          <input class="input" type="number" min="1" step="1" name="absence_col_class" id="absenceColClass" style="max-width:84px;" value="1" required>
+        </div>
+        <div>
+          <label><?=h(t('admin.students.import.absence_col_student', 'Spalte Schüler'))?></label>
+          <input class="input" type="number" min="1" step="1" name="absence_col_student" id="absenceColStudent" style="max-width:84px;" value="2" required>
+        </div>
+        <div>
+          <label><?=h(t('admin.students.import.absence_col_total', 'Spalte Fehltage gesamt'))?></label>
+          <input class="input" type="number" min="1" step="1" name="absence_col_total" id="absenceColTotal" style="max-width:84px;" value="15" required>
+        </div>
+        <div>
+          <label><?=h(t('admin.students.import.absence_col_unexcused', 'Spalte Fehltage unentschuldigt'))?></label>
+          <input class="input" type="number" min="1" step="1" name="absence_col_unexcused" id="absenceColUnexcused" style="max-width:84px;" value="16" required>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <div style="margin-top:10px;" id="absencePreviewWrap">
+    <div class="muted" id="absencePreviewHint"><?=h(t('admin.students.import.absence_preview_hint', 'Beispiel-Extraktion aus den ersten Zeilen der Datei wird hier angezeigt.'))?></div>
+    <div id="absencePreviewTable"></div>
+  </div>
+</div>
+
+<div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.blackbaud_heading'))?></h2>
   <p class="muted"><?=t('admin.students.import.blackbaud_hint')?></p>
   <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 220px 1fr auto; gap:12px; align-items:end;">
@@ -935,6 +1216,113 @@ render_admin_header(t('admin.students.title'));
     </div>
   </form>
 </div>
+
+<div class="card">
+  <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
+    <div>
+      <label><?=h(t('admin.students.filter.search_label'))?></label>
+      <input name="q" type="text" value="<?=h($q)?>" placeholder="<?=h(t('admin.students.filter.search_placeholder'))?>">
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.school_year'))?></label>
+      <select name="school_year">
+        <option value=""><?=h(t('admin.students.filter.all_years'))?></option>
+        <?php foreach ($years as $y): ?>
+          <option value="<?=h((string)$y)?>" <?=($schoolYear===(string)$y)?'selected':''?>><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.class'))?></label>
+      <select name="class_id">
+        <option value="0"><?=h(t('admin.students.filter.all_classes'))?></option>
+        <?php foreach ($classes as $c): ?>
+          <option value="<?=h((string)$c['id'])?>" <?=($classId===(int)$c['id'])?'selected':''?>>
+            <?=h((string)$c['school_year'])?> · <?=h(period_label_display_admin($c['period_label'] ?? 'Standard'))?> · <?=h(((int)$c['grade_level']).(string)$c['label'])?><?=((int)$c['is_active']===0)?h(t('admin.students.filter.inactive_suffix')):''?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div>
+      <label><?=h(t('admin.students.filter.sort'))?></label>
+      <select name="sort">
+        <option value="name" <?=($sort==='name')?'selected':''?>><?=h(t('admin.students.sort.name'))?></option>
+        <option value="class" <?=($sort==='class')?'selected':''?>><?=h(t('admin.students.sort.class'))?></option>
+        <option value="year" <?=($sort==='year')?'selected':''?>><?=h(t('admin.students.sort.year'))?></option>
+        <option value="created" <?=($sort==='created')?'selected':''?>><?=h(t('admin.students.sort.created'))?></option>
+      </select>
+    </div>
+    <div class="actions" style="justify-content:flex-start; align-items:center; gap:8px;">
+      <a class="btn secondary" href="<?=h(url('admin/students.php'))?>"><?=h(t('admin.students.filter.reset'))?></a>
+    </div>
+  </form>
+
+  <div class="muted" style="margin-top:10px;"><?=h(t('admin.students.filter.limit_hint'))?></div>
+</div>
+
+<script>
+  (function() {
+    const form = document.getElementById('student-filter-form');
+    if (!form) return;
+
+    const focusStorageKey = 'student_filter_focus';
+    const saveFocus = () => {
+      const active = document.activeElement;
+      if (!active) return;
+      const name = active.getAttribute('name');
+      if (!name) return;
+      try {
+        sessionStorage.setItem(focusStorageKey, name);
+      } catch (e) {
+        // ignore storage issues
+      }
+    };
+
+    const restoreFocus = () => {
+      let name;
+      try {
+        name = sessionStorage.getItem(focusStorageKey);
+        sessionStorage.removeItem(focusStorageKey);
+      } catch (e) {
+        return;
+      }
+      if (!name) return;
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el && typeof el.focus === 'function') {
+        el.focus({ preventScroll: true });
+        
+        if (typeof el.setSelectionRange === 'function') {
+            const len = el.value?.length ?? 0;
+            el.setSelectionRange(len, len);
+          }
+      }
+    };
+
+    restoreFocus();
+
+    const submitForm = () => {
+      saveFocus();
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    };
+
+    let debounceTimer;
+    const qInput = form.querySelector('input[name="q"]');
+    if (qInput) {
+      qInput.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(submitForm, 300);
+      });
+    }
+
+    form.querySelectorAll('select').forEach((sel) => {
+      sel.addEventListener('change', submitForm);
+    });
+  })();
+</script>
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.list_heading'))?></h2>
@@ -1005,5 +1393,120 @@ render_admin_header(t('admin.students.title'));
     </table>
   <?php endif; ?>
 </div>
+
+
+<script>
+(function(){
+  const fileInput = document.getElementById('absenceCsvFile');
+  const wrap = document.getElementById('absencePreviewTable');
+  const hint = document.getElementById('absencePreviewHint');
+  const colClass = document.getElementById('absenceColClass');
+  const colStudent = document.getElementById('absenceColStudent');
+  const colTotal = document.getElementById('absenceColTotal');
+  const colUnexcused = document.getElementById('absenceColUnexcused');
+  const scopeSelect = document.getElementById('absenceScopeSelect');
+  if (!fileInput || !wrap) return;
+
+  const previewApiUrl = <?= json_encode($absencePreviewApiUrl) ?>;
+  const csrf = <?= json_encode(csrf_token()) ?>;
+  if (!previewApiUrl || typeof previewApiUrl !== 'string') {
+    wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc('Preview-API ist nicht verfügbar.')}</div>`;
+    if (hint) hint.style.display = 'none';
+    return;
+  }
+  let parsed = [];
+
+  function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+  function idx(el, d){ const n = Number(el?.value || d); return Number.isFinite(n) && n > 0 ? Math.floor(n)-1 : d-1; }
+
+  function selectedScope(){
+    const raw = String(scopeSelect?.value || '');
+    const parts = raw.split('|');
+    return {
+      schoolYear: (parts[0] || '').trim(),
+      periodLabel: ((parts[1] || 'H1').trim() || 'H1')
+    };
+  }
+
+  function extractRows(){
+    const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,15), ui = idx(colUnexcused,16);
+    return parsed.slice(0,200).map(r => ({
+      class: r[ci] ?? '',
+      student: r[si] ?? '',
+      total: r[ti] ?? '',
+      unexcused: r[ui] ?? '',
+    }));
+  }
+
+
+  function selectedHeaders(){
+    if (!parsed.length) return null;
+    const header = Array.isArray(parsed[0]) ? parsed[0] : [];
+    const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,15), ui = idx(colUnexcused,16);
+    return {
+      class: String(header[ci] ?? '').trim(),
+      student: String(header[si] ?? '').trim(),
+      total: String(header[ti] ?? '').trim(),
+      unexcused: String(header[ui] ?? '').trim(),
+    };
+  }
+
+  function renderRows(rows, matched, skipped){
+    const hdr = selectedHeaders();
+    const csvHeaderRow = hdr
+      ? `<tr><th class="muted">${esc(hdr.class || '—')}</th><th class="muted">${esc(hdr.student || '—')}</th><th class="muted">${esc(hdr.total || '—')}</th><th class="muted">${esc(hdr.unexcused || '—')}</th></tr>`
+      : '';
+    const thead = `<thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr>${csvHeaderRow}</thead>`;
+    if (!rows.length) {
+      wrap.innerHTML = `<table class="table" style="margin-top:8px;">${thead}<tbody></tbody></table><div class="muted" style="margin-top:8px;">${esc('Keine passenden System-Schüler in den ersten Zeilen gefunden.')}</div>`;
+      if (hint) hint.style.display = 'none';
+      return;
+    }
+    const trs = rows.map(r => `<tr><td>${esc(r.class)}</td><td>${esc(r.student)}</td><td>${esc(r.total)}</td><td>${esc(r.unexcused)}</td></tr>`).join('');
+    wrap.innerHTML = `<div class="muted" style="margin:6px 0;">${esc('Gefundene System-Schüler: ' + matched + ' · Übersprungen: ' + skipped)}</div><table class="table" style="margin-top:8px;">${thead}<tbody>${trs}</tbody></table>`;
+    if (hint) hint.style.display = 'none';
+  }
+
+  async function refreshPreview(){
+    if (!parsed.length) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
+    const payload = {
+      csrf_token: csrf,
+      school_year: selectedScope().schoolYear,
+      period_label: selectedScope().periodLabel,
+      rows: extractRows(),
+    };
+    try {
+      const resp = await fetch(previewApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Preview fehlgeschlagen');
+      renderRows(Array.isArray(data.preview) ? data.preview : [], Number(data.matched||0), Number(data.skipped||0));
+    } catch (e) {
+      wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc(String(e?.message || e))}</div>`;
+      if (hint) hint.style.display = 'none';
+    }
+  }
+
+  async function parseFile(){
+    const f = fileInput.files?.[0];
+    parsed = [];
+    if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
+    const txt = await f.text();
+    const normalized = String(txt).split('\r').join('');
+    parsed = normalized
+      .split('\n')
+      .map((l) => l.split('\t'))
+      .filter((r) => r.some((c) => String(c).trim() !== ''));
+  [colClass,colStudent,colTotal,colUnexcused,scopeSelect].forEach(el => el?.addEventListener('input', refreshPreview));
+    await refreshPreview();
+  }
+
+  fileInput.addEventListener('change', parseFile);
+  [colClass,colStudent,colTotal,colUnexcused,schoolYear,period].forEach(el => el?.addEventListener('input', refreshPreview));
+})();
+</script>
 
 <?php render_admin_footer(); ?>

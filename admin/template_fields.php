@@ -241,6 +241,7 @@ render_admin_header(t('admin.template_fields.title'));
 
 <div class="card">
     <div class="row-actions" style="float: right;">
+        <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$templateId))?>"><?=h(t('admin.template_fields.goto_mapping', 'Zum Mapping'))?></a>
         <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>">← <?=h(t('admin.template_fields.back_templates'))?></a>
     </div>
 
@@ -334,6 +335,7 @@ render_admin_header(t('admin.template_fields.title'));
         <select id="datePreset">
           <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
           <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+          <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
           <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
         </select>
       </div>
@@ -351,6 +353,24 @@ render_admin_header(t('admin.template_fields.title'));
     <button class="btn primary" value="ok" type="submit"><?=h(t('admin.template_fields.apply_button'))?></button>
   </div>
 </form>
+</dialog>
+
+<!-- SNIPPET CATEGORY MODAL -->
+<dialog id="snippetCategoryModal">
+  <div class="dlg-head">
+    <h3 class="dlg-title">Textbaustein-Kategorien</h3>
+    <div class="muted2" id="snippetCategorySubtitle"></div>
+  </div>
+  <div class="dlg-body">
+    <div class="muted2" style="margin-bottom:8px;">Verfügbare Kategorien für dieses Multiline-Feld auswählen.</div>
+    <div id="snippetCategoryList" style="display:flex; flex-direction:column; gap:6px; max-height:48vh; overflow:auto;"></div>
+  </div>
+  <form method="dialog">
+    <div class="dlg-foot">
+      <button class="btn secondary" value="cancel" type="submit">Abbrechen</button>
+      <button class="btn primary" value="ok" type="submit">Übernehmen</button>
+    </div>
+  </form>
 </dialog>
 
 <!-- PDF REPLACE -->
@@ -443,7 +463,7 @@ render_admin_header(t('admin.template_fields.title'));
         <select id="bulkType">
           <option value=""><?=h(t('admin.template_fields.option_empty'))?></option>
           <option>text</option><option>multiline</option><option>date</option><option>number</option>
-          <option>grade</option><option>checkbox</option><option>radio</option><option>select</option><option>signature</option><option>ag</option>
+          <option>grade</option><option>checkbox</option><option>radio</option><option>select</option><option>signature</option>
         </select>
       </div>
 
@@ -496,6 +516,7 @@ render_admin_header(t('admin.template_fields.title'));
           <select id="bulkDatePreset">
             <option value="MM/DD/YYYY"><?=h(t('admin.template_fields.date_preset_us'))?></option>
             <option value="DD.MM.YYYY"><?=h(t('admin.template_fields.date_preset_de'))?></option>
+            <option value="DD. MMMM YYYY"><?=h(t('admin.template_fields.date_preset_de_long'))?></option>
             <option value="YYYY-MM-DD"><?=h(t('admin.template_fields.date_preset_iso'))?></option>
           </select>
         </div>
@@ -516,6 +537,7 @@ render_admin_header(t('admin.template_fields.title'));
         </div>
       </div>
         <div class="block" style="min-width:100%; text-align: end;">
+            <a class="btn secondary" type="button" id="btnAddVirtualField"><?=h(t('admin.template_fields.add_virtual_field', 'Neues Mapping-Feld (ohne PDF)'))?></a>
             <div class="muted2" id="saveHint" style="min-width:220px;">&nbsp;</div>
             <a class="btn primary" type="button" id="btnSave"><?=h(t('admin.template_fields.save_button'))?></a>
         </div>
@@ -585,6 +607,7 @@ const csrf = "<?=h(csrf_token())?>";
 const templateId = <?= (int)$templateId ?>;
 
 const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
+const textSnippetsApiUrl = "<?=h(url('admin/ajax/text_snippets_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
 const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
 const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
@@ -600,6 +623,7 @@ const I18N = <?=json_encode([
   'template_select' => t('admin.template_fields.template_select'),
   'base_field_student_first' => t('admin.template_fields.base_field_student_first'),
   'base_field_student_last' => t('admin.template_fields.base_field_student_last'),
+  'base_field_student_full' => t('admin.template_fields.base_field_student_full'),
   'base_field_student_birth' => t('admin.template_fields.base_field_student_birth'),
   'base_field_class_display' => t('admin.template_fields.base_field_class_display'),
   'base_field_class_grade' => t('admin.template_fields.base_field_class_grade'),
@@ -656,6 +680,9 @@ const I18N = <?=json_encode([
   'options_button' => t('admin.template_fields.options_button'),
   'group_page' => t('admin.template_fields.group_page'),
   'error_prefix' => t('admin.template_fields.error_prefix'),
+  'new_field_name' => t('admin.template_fields.new_field_name', 'Feldname (technisch):'),
+  'new_field_label' => t('admin.template_fields.new_field_label', 'Label:'),
+  'new_field_added' => t('admin.template_fields.new_field_added', 'Neues Mapping-Feld hinzugefügt.'),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
 const tAdmin = (key) => I18N[key] ?? key;
 const tfmtAdmin = (key, vars = {}) => {
@@ -688,6 +715,7 @@ const btnClearFilter = document.getElementById('btnClearFilter');
 const selCount = document.getElementById('selCount');
 const btnSave = document.getElementById('btnSave');
 const btnSaveTop = document.getElementById('btnSaveTop');
+const btnAddVirtualField = document.getElementById('btnAddVirtualField');
 
 const bulkGroup = document.getElementById('bulkGroup');
 const bulkSubgroup = document.getElementById('bulkSubgroup');
@@ -700,7 +728,6 @@ const bulkTpl = document.getElementById('bulkTpl');
 const bulkDateMode = document.getElementById('bulkDateMode');
 const bulkDatePreset = document.getElementById('bulkDatePreset');
 const bulkDateCustom = document.getElementById('bulkDateCustom');
-
 const btnApplySelected = document.getElementById('btnApplySelected');
 const btnApplyVisible = document.getElementById('btnApplyVisible');
 const btnAutoGroupPrefix = document.getElementById('btnAutoGroupPrefix');
@@ -735,10 +762,26 @@ const dateSubtitle = document.getElementById('dateSubtitle');
 const dateMode = document.getElementById('dateMode');
 const datePreset = document.getElementById('datePreset');
 const dateCustom = document.getElementById('dateCustom');
+const snippetCategoryModal = document.getElementById('snippetCategoryModal');
+const snippetCategorySubtitle = document.getElementById('snippetCategorySubtitle');
+const snippetCategoryList = document.getElementById('snippetCategoryList');
+
+if (dateCustom && dateMode) {
+  dateCustom.addEventListener('input', ()=>{
+    if (dateMode.value !== 'custom') dateMode.value = 'custom';
+  });
+}
+
+if (bulkDateCustom && bulkDateMode) {
+  bulkDateCustom.addEventListener('input', ()=>{
+    if (bulkDateMode.value !== 'custom') bulkDateMode.value = 'custom';
+  });
+}
 
 let template = null;
 let fields = [];
 let optionTemplates = [];
+let snippetCategoriesCache = null;
 
 let filterText = '';
 let excludeText = '';
@@ -1117,7 +1160,7 @@ async function assessNewPdfFile(file){
   try {
     const info = await readPdfFieldInfoFromDoc(doc);
     const pdfNames = new Set(info.fields.keys());
-    const existingNames = new Set(fields.map(f => String(f.name)));
+    const existingNames = new Set(fields.filter(f => !isPdfIndependentField(f)).map(f => String(f.name)));
 
     const missing = [...existingNames].filter(n => !pdfNames.has(n));
     const newcomers = [...pdfNames].filter(n => !existingNames.has(n));
@@ -1159,7 +1202,7 @@ async function syncPdfPositionsWithFields(opts={}){
   }
 
   const pdfNamesAfter = new Set(pdfInfo.fields.keys());
-  const existingNames = new Set(fields.map(f => String(f.name)));
+  const existingNames = new Set(fields.filter(f => !isPdfIndependentField(f)).map(f => String(f.name)));
 
   const missing = [...existingNames].filter(n => !pdfNamesAfter.has(n));
   const newcomers = [...pdfNamesAfter].filter(n => !existingNames.has(n));
@@ -1208,6 +1251,12 @@ async function syncPdfPositionsWithFields(opts={}){
   }
 
   return { updated, missing: missing.length, missingNames: missing, added: imported, renamed: renameApplied.length, deleted };
+}
+
+
+function isPdfIndependentField(field){
+  const meta = field && typeof field === 'object' ? (field.meta || {}) : {};
+  return Number(meta.virtual_only || 0) === 1;
 }
 
 function parseGroupParts(raw){
@@ -1960,6 +2009,7 @@ function renderTable(){
       <option value="">${tAdmin('option_empty')}</option>
       <option value="student.first_name">${tAdmin('base_field_student_first')}</option>
       <option value="student.last_name">${tAdmin('base_field_student_last')}</option>
+      <option value="student.full_name">${tAdmin('base_field_student_full')}</option>
       <option value="student.date_of_birth">${tAdmin('base_field_student_birth')}</option>
       <option value="class.display">${tAdmin('base_field_class_display')}</option>
       <option value="class.grade_level">${tAdmin('base_field_class_grade')}</option>
@@ -1983,7 +2033,7 @@ function renderTable(){
 
     const tdT = document.createElement('td');
     const selT = document.createElement('select');
-    ['text','multiline','date','number','grade','checkbox','radio','select','signature','ag'].forEach(t=>{
+    ['text','multiline','date','number','grade','checkbox','radio','select','signature'].forEach(t=>{
       const o=document.createElement('option'); o.value=t; o.textContent=t;
       if (t===f.type) o.selected=true;
       selT.appendChild(o);
@@ -2074,6 +2124,15 @@ function renderTable(){
       btn.textContent = tAdmin('date_button');
       btn.addEventListener('click', (e)=>{ e.stopPropagation(); openDateModal(f.id); });
       wrap.appendChild(btn);
+    }
+
+    if (f.type === 'multiline' || f.multiline) {
+      const btnSnipCats = document.createElement('button');
+      btnSnipCats.type = 'button';
+      btnSnipCats.className = 'btn secondary';
+      btnSnipCats.textContent = 'Textbaustein-Kategorien';
+      btnSnipCats.addEventListener('click', (e)=>{ e.stopPropagation(); openSnippetCategoryModal(f.id); });
+      wrap.appendChild(btnSnipCats);
     }
 
     if (['radio','select','grade'].includes(f.type)) {
@@ -2186,6 +2245,32 @@ async function apiPost(payload){
   const j = await resp.json().catch(()=>({}));
   if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('api_error'));
   return j;
+}
+
+async function textSnippetsPost(payload){
+  const resp = await fetch(textSnippetsApiUrl, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ csrf_token: csrf, ...payload })
+  });
+  const j = await resp.json().catch(()=>({}));
+  if (!resp.ok || !j.ok) throw new Error(j.error || 'Textbaustein-API Fehler');
+  return j;
+}
+
+async function fetchSnippetCategories(){
+  if (Array.isArray(snippetCategoriesCache)) return snippetCategoriesCache;
+  const j = await textSnippetsPost({ action: 'list' });
+  const map = new Map();
+  (j.snippets || []).forEach(s => {
+    const id = String(s?.category_id || '').trim();
+    const label = String(s?.category || '').trim() || 'Allgemein';
+    if (!id || map.has(id)) return;
+    map.set(id, label);
+  });
+  snippetCategoriesCache = [...map.entries()].map(([id, label]) => ({ id, label }))
+    .sort((a,b) => String(a.label).localeCompare(String(b.label), 'de'));
+  return snippetCategoriesCache;
 }
 
 async function optionListsPost(payload){
@@ -2374,6 +2459,65 @@ function autoGroupPage(ids){
   updateMeta();
 }
 
+function sanitizeFieldName(raw){
+  const n = String(raw || '').trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '_');
+  return n.replace(/^_+/, '').replace(/_+$/, '');
+}
+
+function makeUniqueFieldName(base){
+  const taken = new Set((fields || []).map(f => String(f.name || '').trim()).filter(Boolean));
+  let name = sanitizeFieldName(base || 'mapping_feld');
+  if (!name) name = 'mapping_feld';
+  if (!taken.has(name)) return name;
+  let i = 2;
+  while (taken.has(`${name}_${i}`)) i++;
+  return `${name}_${i}`;
+}
+
+function nextTempFieldId(){
+  let minId = 0;
+  for (const f of (fields || [])) {
+    const id = Number(f.id || 0);
+    if (id < minId) minId = id;
+  }
+  return minId - 1;
+}
+
+function addVirtualField(){
+  const rawName = window.prompt(tAdmin('new_field_name') || 'Feldname (technisch):', 'mapping_feld');
+  if (rawName === null) return;
+  const name = makeUniqueFieldName(rawName);
+  if (!name) return;
+
+  const rawLabel = window.prompt(tAdmin('new_field_label') || 'Label:', name);
+  const label = (rawLabel === null || String(rawLabel).trim() === '') ? name : String(rawLabel).trim();
+
+  const tempId = nextTempFieldId();
+  const maxSort = (fields || []).reduce((m, f) => Math.max(m, Number(f.sort_order || 0)), 0);
+  fields.push({
+    id: tempId,
+    name,
+    type: 'text',
+    label,
+    label_en: '',
+    help_text: '',
+    multiline: 0,
+    required: 0,
+    can_child_edit: 0,
+    can_teacher_edit: 1,
+    sort_order: maxSort + 1,
+    options: null,
+    meta: { virtual_only: 1 }
+  });
+  dirty.add(tempId);
+  rebuildGroupDatalist();
+  renderGroupsBar();
+  renderTable();
+  updateMeta();
+  updateDirtyUI();
+  saveHint.textContent = tAdmin('new_field_added') || 'Neues Mapping-Feld hinzugefügt.';
+}
+
 /* ---------- Save ---------- */
 async function save(){
   if (!dirty.size) { saveHint.textContent = 'Nichts zu speichern.'; return; }
@@ -2397,10 +2541,8 @@ async function save(){
     }));
 
   const j = await apiPost({ action:'save', updates });
-  dirty.clear();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
-  updateMeta();
-  updateDirtyUI();
+  await load();
 }
 
 /* ---------- Options dialog ---------- */
@@ -2479,6 +2621,60 @@ dateModal.addEventListener('close', ()=>{
     fields[idx].meta.date_format_preset = datePreset.value || 'MM/DD/YYYY';
     delete fields[idx].meta.date_format_custom;
   }
+  markDirty(fieldId);
+  renderTable();
+  scanForSplitCandidate();
+});
+
+function openSnippetCategoryModal(fieldId){
+  modalFieldId = fieldId;
+  const idx = fields.findIndex(x=>x.id===fieldId);
+  if (idx < 0 || !snippetCategoryModal) return;
+  const f = fields[idx];
+  snippetCategorySubtitle.textContent = f.name || '';
+  snippetCategoryList.innerHTML = '<div class="muted2">Lade Kategorien …</div>';
+  const selected = Array.isArray(f?.meta?.snippet_category_ids)
+    ? f.meta.snippet_category_ids.map(x => String(x).trim()).filter(Boolean)
+    : [];
+  const selectedSet = new Set(selected);
+
+  fetchSnippetCategories().then((cats) => {
+    snippetCategoryList.innerHTML = '';
+    if (!cats.length) {
+      snippetCategoryList.innerHTML = '<div class="muted2">Keine Kategorien vorhanden.</div>';
+      return;
+    }
+    cats.forEach(cat => {
+      const row = document.createElement('label');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = cat.id;
+      cb.checked = selectedSet.has(cat.id);
+      const txt = document.createElement('span');
+      txt.textContent = `${cat.label}`;
+      row.append(cb, txt);
+      snippetCategoryList.appendChild(row);
+    });
+  }).catch((e) => {
+    snippetCategoryList.innerHTML = `<div class="muted2">${escapeHtml(e?.message || String(e))}</div>`;
+  });
+  snippetCategoryModal.showModal();
+}
+
+snippetCategoryModal?.addEventListener('close', ()=>{
+  if (snippetCategoryModal.returnValue !== 'ok') { modalFieldId = null; return; }
+  const fieldId = modalFieldId;
+  modalFieldId = null;
+  const idx = fields.findIndex(x=>x.id===fieldId);
+  if (idx < 0) return;
+  const picked = Array.from(snippetCategoryList.querySelectorAll('input[type="checkbox"]:checked'))
+    .map(el => String(el.value || '').trim()).filter(Boolean);
+  fields[idx].meta = fields[idx].meta || {};
+  if (picked.length) fields[idx].meta.snippet_category_ids = picked;
+  else delete fields[idx].meta.snippet_category_ids;
   markDirty(fieldId);
   renderTable();
   scanForSplitCandidate();
@@ -2675,6 +2871,9 @@ btnTogglePreview.addEventListener('click', ()=>{
   const hidden = !layout2.classList.contains('hide-preview');
   applyPreviewHidden(hidden);
 });
+if (btnAddVirtualField) {
+  btnAddVirtualField.addEventListener('click', addVirtualField);
+}
 
 /* ---------- Load ---------- */
 async function load(){

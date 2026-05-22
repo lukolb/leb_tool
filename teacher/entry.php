@@ -1255,8 +1255,9 @@ render_teacher_header($pageTitle);
     </div>
     <div style="flex:1; min-width:200px;">
       <label class="label"><?=h(t('teacher.entry.snippets.category_label'))?></label>
-      <input class="input" id="snippetCategory" list="snippetCategoryList" type="text" placeholder="<?=h(t('teacher.entry.snippets.category_placeholder'))?>" style="width:100%;">
-      <datalist id="snippetCategoryList"></datalist>
+      <select class="input" id="snippetCategory" style="width:100%;">
+        <option value=""><?=h(t('teacher.entry.snippets.category_placeholder'))?></option>
+      </select>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <button class="btn" type="button" id="btnSnippetSave" disabled><?=h(t('teacher.entry.snippets.save'))?></button>
@@ -1831,6 +1832,14 @@ render_teacher_header($pageTitle);
   .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
   .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
   .combined-inline-text{ font-size:14px; line-height:1.5; }
+  .combined-inline-text .delegate-part,
+  .combined-tip-bubble .delegate-part{
+    background: rgba(255, 193, 7, 0.25);
+    border-left: 3px solid #f59e0b;
+    padding: 1px 4px;
+    border-radius: 4px;
+    display: inline-block;
+  }
 
   #itemTable { table-layout: auto; width: max-content; }
   .grade-table-wrap{ margin-top:12px; border:1px solid var(--border); border-radius:12px; }
@@ -1879,8 +1888,8 @@ render_teacher_header($pageTitle);
   .snippet-card .c{ color:var(--muted); font-size:12px; }
   .snippet-card .txt{ white-space:pre-wrap; }
   .snippet-menu{ position:absolute; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:12px; padding:10px; min-width:260px; max-width:360px; max-height:60vh; overflow:auto; }
-  .snippet-menu h4{ margin:4px 0; font-size:14px; border-top: solid lightgray; padding-top: 5px; }
-  .snippet-menu .item{ padding:6px 8px; border-radius:8px; cursor:pointer; }
+  .snippet-menu h4{ margin:3px 0; font-size:12px; border-top: solid lightgray; padding-top: 4px; }
+  .snippet-menu .item{ padding:5px 7px; border-radius:7px; cursor:pointer; }
   .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
   .snippet-save{ border:1px dashed var(--border); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; position: sticky;
     top: 0;
@@ -2270,7 +2279,6 @@ render_teacher_header($pageTitle);
   const btnSnippetSave = document.getElementById('btnSnippetSave');
   const btnSnippetToggle = document.getElementById('btnSnippetToggle');
   const btnSnippetClose = document.getElementById('btnSnippetClose');
-  const snippetCategoryList = document.getElementById('snippetCategoryList');
 
   const dlgAi = document.getElementById('dlgAi');
   const aiBackdrop = document.querySelector('#dlgAi .modal-backdrop');
@@ -2416,6 +2424,12 @@ render_teacher_header($pageTitle);
   function dbg(...args){ if (DEBUG) console.log('[LEB entry]', ...args); }
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function fmtPipeItalic(s){
+    const raw = String(s ?? '');
+    const idx = raw.indexOf('|');
+    if (idx < 0) return esc(raw);
+    return `${esc(raw.slice(0, idx + 1))}<i>${esc(raw.slice(idx + 1))}</i>`;
+  }
   function normalize(s){ return String(s ?? '').toLowerCase().trim(); }
 
   function groupFilterValue(groupKey, subgroup){
@@ -3079,6 +3093,18 @@ render_teacher_header($pageTitle);
     return parts.join('\n\n');
   }
 
+  function combineTextPartsHtml(classText, delegateText, highlightDelegate){
+    const ct = String(classText ?? '').replace(/\s+$/, '');
+    const dt = String(delegateText ?? '').replace(/\s+$/, '');
+    const parts = [];
+    if (ct.trim() !== '') parts.push(esc(ct).replace(/\n/g, '<br>'));
+    if (dt.trim() !== '') {
+      const raw = esc(dt).replace(/\n/g, '<br>');
+      parts.push(highlightDelegate ? `<span class="delegate-part">${raw}</span>` : raw);
+    }
+    return parts.join('<br><br>');
+  }
+
   function teacherVal(reportId, fieldId){
     if (isClassFieldId(fieldId)) {
       const rid = classReportId();
@@ -3100,6 +3126,21 @@ render_teacher_header($pageTitle);
   }
 
   function teacherEditVal(reportId, fieldId){
+    const part = delegatedEditPart(fieldId);
+    if (part) {
+      const rid = isClassFieldId(fieldId) ? classReportId() : Number(reportId || 0);
+      const parts = state.values_teacher_parts[String(rid)]?.[String(fieldId)];
+      if (parts && typeof parts === 'object') {
+        if (part === 'delegate' && parts.delegate_texts && typeof parts.delegate_texts === 'object') {
+          const own = parts.delegate_texts[String(CURRENT_USER_ID)];
+          return String(own ?? '');
+        }
+        return part === 'delegate'
+          ? String(parts.delegate_text ?? '')
+          : String(parts.class_text ?? '');
+      }
+      return '';
+    }
     if (isClassFieldId(fieldId)) {
       const rid = classReportId();
       const r = state.values_teacher_own[String(rid)] || {};
@@ -3167,10 +3208,16 @@ render_teacher_header($pageTitle);
         ? state.fieldMap[String(field.id)]._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
         : []);
     if (!delegatedUserIds.length) return '';
-    const combined = teacherVal(reportId, field.id);
-    const html = combined
-      ? esc(String(combined)).replace(/\n/g, '<br>')
-      : '<span class="muted">—</span>';
+    const rid = isClassFieldId(field.id) ? classReportId() : reportId;
+    const parts = state.values_teacher_parts[String(rid)]?.[String(field.id)] || null;
+    const hasParts = !!parts;
+    const highlightDelegate = !DELEGATED_MODE && !!(state.is_class_teacher);
+    const html = hasParts
+      ? combineTextPartsHtml(parts.class_text ?? '', parts.delegate_text ?? '', highlightDelegate)
+      : (() => {
+          const combined = teacherVal(reportId, field.id);
+          return combined ? esc(String(combined)).replace(/\n/g, '<br>') : '<span class="muted">—</span>';
+        })();
     if (DELEGATED_MODE) {
       return `
         <div class="combined-inline">
@@ -4332,15 +4379,23 @@ render_teacher_header($pageTitle);
   }
 
   function refreshSnippetCategoryList(){
-    if (!snippetCategoryList) return;
+    if (!snippetCategory) return;
     const cats = new Set();
     (state.text_snippets || []).forEach(s => { if (s.category) cats.add(String(s.category)); });
-    snippetCategoryList.innerHTML = '';
+    const currentVal = String(snippetCategory.value || '');
+    snippetCategory.innerHTML = '';
+    const emptyOpt = document.createElement('option');
+    emptyOpt.value = '';
+    emptyOpt.textContent = tEntry('snippet_menu_category_placeholder');
+    snippetCategory.appendChild(emptyOpt);
     cats.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c;
-      snippetCategoryList.appendChild(opt);
+      opt.textContent = c;
+      snippetCategory.appendChild(opt);
     });
+    snippetCategory.value = currentVal;
+    if (snippetCategory.value !== currentVal) snippetCategory.value = '';
   }
 
   function insertSnippetText(target, text){
@@ -4381,10 +4436,10 @@ render_teacher_header($pageTitle);
         card.className = 'snippet-card';
         card.innerHTML = `
           <div class="h">
-            <div style="font-weight:800;">${esc(s.title || tEntry('snippet_untitled'))}</div>
+            <div style="font-weight:800;">${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</div>
             <span class="pill-mini">${esc(cat)}</span>
           </div>
-          <div class="txt">${esc(s.content || '')}</div>
+          <div class="txt">${fmtPipeItalic(s.content || '')}</div>
           <div class="c">${esc(s.created_by_name || '')}${s.is_generated ? ` · ${esc(tEntry('snippet_generated'))}` : ''}</div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="btn secondary" type="button">${esc(tEntry('snippet_insert_current'))}</button>
@@ -4561,7 +4616,22 @@ render_teacher_header($pageTitle);
 
   function openSnippetMenu(x, y, target){
     lastSnippetTarget = target || lastSnippetTarget;
-    const list = state.text_snippets || [];
+    const allSnippets = state.text_snippets || [];
+    const fieldId = Number(lastSnippetTarget?.getAttribute?.('data-field-id') || '0');
+    const fieldDef = fieldId > 0 ? state.fieldMap?.[String(fieldId)] : null;
+    const allowedCategoryIds = Array.isArray(fieldDef?.snippet_category_ids)
+      ? fieldDef.snippet_category_ids.map(c => String(c || '').trim()).filter(Boolean)
+      : null;
+    const allowedCategories = Array.isArray(fieldDef?.snippet_categories)
+      ? fieldDef.snippet_categories.map(c => String(c || '').trim()).filter(Boolean)
+      : null;
+    const list = allSnippets.filter(s => {
+      const cat = s?.category && String(s.category).trim() !== '' ? String(s.category).trim() : tEntry('snippet_default_category');
+      const catId = String(s?.category_id || '').trim();
+      if (allowedCategoryIds !== null) return catId !== '' && allowedCategoryIds.includes(catId);
+      if (allowedCategories !== null) return allowedCategories.includes(cat);
+      return true;
+    });
     snippetMenu.innerHTML = '';
 
     const trimmedSel = (lastSnippetSelection || '').trim();
@@ -4575,12 +4645,22 @@ render_teacher_header($pageTitle);
         <div class="muted" style="font-size:12px;">${esc(preview)}</div>
         <div class="row" style="align-items:center;">
           <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_title_placeholder'))}" style="flex:1; min-width:180px;">
-          <input class="input" type="text" placeholder="${esc(tEntry('snippet_menu_category_placeholder'))}" style="flex:1; min-width:160px;">
+          <select class="input" style="flex:1; min-width:160px;"><option value="">${esc(tEntry('snippet_menu_category_placeholder'))}</option></select>
           <button class="btn" type="button">${esc(tEntry('snippet_menu_save'))}</button>
         </div>
       `;
       const titleInput = saveBox.querySelector('input');
-      const catInput = saveBox.querySelectorAll('input')[1] || null;
+      const catInput = saveBox.querySelector('select');
+      if (catInput) {
+        const cats = new Set();
+        (state.text_snippets || []).forEach(s => { if (s.category) cats.add(String(s.category)); });
+        cats.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          catInput.appendChild(opt);
+        });
+      }
       const saveBtn = saveBox.querySelector('button');
       saveBtn?.addEventListener('click', async () => {
         const title = titleInput ? String(titleInput.value || '').trim() : '';
@@ -4610,12 +4690,12 @@ render_teacher_header($pageTitle);
       });
       Object.entries(grouped).forEach(([cat, items]) => {
         const h = document.createElement('h4');
-        h.textContent = cat;
+        h.innerHTML = fmtPipeItalic(cat);
         snippetMenu.appendChild(h);
         items.forEach(s => {
           const div = document.createElement('div');
           div.className = 'item';
-          div.innerHTML = `<div style="font-size:14px;font-weight:900;">${esc(s.title || tEntry('snippet_untitled'))}</div><div class="muted" style="font-size:12px;">${esc((s.content || '').slice(0, 120))}</div>`;
+          div.innerHTML = `<div style="font-size:12px;font-weight:800; line-height:1.2;">${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</div><div class="muted" style="font-size:11px; line-height:1.25;">${fmtPipeItalic((s.content || '').slice(0, 120))}</div>`;
           div.addEventListener('click', () => {
             insertSnippetText(target, s.content || '');
             hideSnippetMenu();
@@ -4624,6 +4704,47 @@ render_teacher_header($pageTitle);
         });
       });
     }
+    const printWrap = document.createElement('div');
+    printWrap.style.marginTop = '10px';
+    printWrap.style.paddingTop = '8px';
+    printWrap.style.borderTop = '1px solid var(--border)';
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'btn secondary';
+    printBtn.textContent = 'Übersicht drucken';
+    printBtn.addEventListener('click', () => {
+      const grouped = {};
+      list.forEach(s => {
+        const cat = s.category && String(s.category).trim() !== '' ? String(s.category) : tEntry('snippet_default_category');
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(s);
+      });
+      const html = Object.entries(grouped).map(([cat, items]) => {
+        const rows = items.map(s => `<li><strong>${fmtPipeItalic(s.title || tEntry('snippet_untitled'))}</strong>${fmtPipeItalic(String(s.content || ''))}</li>`).join('');
+        return `<h3>${fmtPipeItalic(cat)}</h3><ul>${rows}</ul>`;
+      }).join('');
+      const w = window.open('', '_blank', 'width=900,height=700');
+      if (!w) return;
+      w.document.open();
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Textbaustein-Übersicht</title><style>
+        body{font-family:Inter,Arial,sans-serif;padding:18px;color:#1f2937;font-size:12px;line-height:1.4;background:#f8fafc;}
+        .sheet{max-width:900px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;}
+        h1{margin:0 0 4px;font-size:18px;line-height:1.2;}
+        .sub{margin:0 0 12px;color:#6b7280;font-size:11px;}
+        h3{margin:14px 0 6px;font-size:13px;padding-bottom:4px;border-bottom:1px solid #e5e7eb;}
+        ul{margin:0;padding:0;list-style:none;}
+        li{margin:0 0 8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fcfcfd;white-space:pre-wrap;}
+        li strong{display:block;font-size:12px;margin-bottom:1px;color:#111827;}
+        @media print{body{background:#fff;padding:0}.sheet{border:none;border-radius:0;padding:0;max-width:none}li{break-inside:avoid;page-break-inside:avoid}}
+      </style></head><body><div class="sheet"><h1>Textbaustein-Übersicht</h1><p class="sub">Verfügbare Bausteine für das aktuell gewählte Feld</p>${html || '<p>Keine Bausteine vorhanden.</p>'}</div></body></html>`);
+      w.document.close();
+      w.addEventListener('load', () => {
+        w.focus();
+        w.print();
+      }, { once: true });
+    });
+    printWrap.appendChild(printBtn);
+    snippetMenu.appendChild(printWrap);
     snippetMenu.style.display = 'block';
     // anchor to page coordinates so menu scrolls with content
     const px = Number(x || 0);

@@ -305,6 +305,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     color: #2b4a77;
     text-align: center;
   }
+  .snippet-menu{ position:absolute; z-index:9999; background:#fff; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.16); border-radius:10px; padding:8px; min-width:240px; max-width:360px; max-height:60vh; overflow:auto; }
+  .snippet-menu h4{ margin:4px 0; font-size:12px; border-top:1px solid #e5e7eb; padding-top:4px; }
+  .snippet-menu .item{ padding:5px 7px; border-radius:7px; cursor:pointer; }
+  .snippet-menu .item:hover{ background: rgba(0,0,0,0.04); }
 </style>
 
 <div class="pdf-entry-wrap">
@@ -416,6 +420,12 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
   const pendingSaves = new Map();
   let activeSaves = 0;
   let renderTimer = null;
+  let lastSnippetTarget = null;
+  let lastSnippetField = null;
+  const snippetMenu = document.createElement('div');
+  snippetMenu.className = 'snippet-menu';
+  snippetMenu.style.display = 'none';
+  document.body.appendChild(snippetMenu);
   let showStudentValues = false;
   let allowStudentEdit = false;
   let isDelegatedView = false;
@@ -897,6 +907,15 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     }
 
     wrapper.appendChild(el);
+    const tag = (el && el.tagName) ? el.tagName.toLowerCase() : '';
+    if (canEdit && (tag === 'textarea' || tag === 'input')) {
+      el.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        lastSnippetTarget = el;
+        lastSnippetField = field;
+        openSnippetMenu(ev.pageX ?? (ev.clientX + window.scrollX), ev.pageY ?? (ev.clientY + window.scrollY));
+      });
+    }
     if (type === 'date' && canEdit) {
       initDatePicker(el, field);
     }
@@ -908,6 +927,60 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
       wrapper.appendChild(delegate);
     }
     return wrapper;
+  }
+
+  function hideSnippetMenu(){ snippetMenu.style.display = 'none'; }
+  function insertSnippetText(text){
+    const el = lastSnippetTarget;
+    if (!el) return;
+    const snippet = String(text ?? '');
+    const start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
+    const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    const val = String(el.value || '');
+    el.value = val.slice(0, start) + snippet + val.slice(end);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function openSnippetMenu(x, y){
+    const all = Array.isArray(state?.text_snippets) ? state.text_snippets : [];
+    const allowedIds = Array.isArray(lastSnippetField?.snippet_category_ids)
+      ? lastSnippetField.snippet_category_ids.map(x => String(x || '').trim()).filter(Boolean)
+      : null;
+    const allowedCats = Array.isArray(lastSnippetField?.snippet_categories)
+      ? lastSnippetField.snippet_categories.map(x => String(x || '').trim()).filter(Boolean)
+      : null;
+    const list = all.filter(s => {
+      const cat = s?.category && String(s.category).trim() !== '' ? String(s.category).trim() : 'Allgemein';
+      const catId = String(s?.category_id || '').trim();
+      if (allowedIds !== null) return catId !== '' && allowedIds.includes(catId);
+      if (allowedCats !== null) return allowedCats.includes(cat);
+      return true;
+    });
+    snippetMenu.innerHTML = '';
+    if (!list.length) {
+      snippetMenu.innerHTML = '<div class="muted">Keine Textbausteine vorhanden.</div>';
+    } else {
+      const grouped = {};
+      list.forEach(s => {
+        const cat = s?.category && String(s.category).trim() !== '' ? String(s.category) : 'Allgemein';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(s);
+      });
+      Object.entries(grouped).forEach(([cat, items]) => {
+        const h = document.createElement('h4');
+        h.textContent = cat;
+        snippetMenu.appendChild(h);
+        items.forEach(s => {
+          const div = document.createElement('div');
+          div.className = 'item';
+          div.innerHTML = `<div style="font-size:12px;font-weight:800;">${String(s.title || '(ohne Titel)').replace(/[<>&"']/g, '')}</div><div class="muted" style="font-size:11px;">${String((s.content || '').slice(0, 120)).replace(/[<>&"']/g, '')}</div>`;
+          div.addEventListener('click', () => { insertSnippetText(s.content || ''); hideSnippetMenu(); });
+          snippetMenu.appendChild(div);
+        });
+      });
+    }
+    snippetMenu.style.display = 'block';
+    snippetMenu.style.left = `${Number(x || 0)}px`;
+    snippetMenu.style.top = `${Number(y || 0)}px`;
   }
 
   function isTextField(field){
@@ -1221,6 +1294,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     try {
       const data = await api('load_pdf', { class_id: classId, student_id: studentId });
       state = data;
+      try {
+        const sj = await api('snippets_list', {});
+        state.text_snippets = sj.snippets || [];
+      } catch(_e) {}
       isDelegatedView = Boolean(data?.delegated_view);
       if (state && Array.isArray(state.fields)) {
         state.all_fields = state.fields.slice();
@@ -1262,6 +1339,10 @@ $studentName = trim((string)($student['first_name'] ?? '') . ' ' . (string)($stu
     if (document.visibilityState === 'hidden') {
       flushPendingSaves();
     }
+  });
+  document.addEventListener('click', (ev) => {
+    if (ev.target && snippetMenu.contains(ev.target)) return;
+    hideSnippetMenu();
   });
 
   window.addEventListener('beforeunload', () => {

@@ -7,6 +7,8 @@ require_teacher();
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
+$cfg = app_config();
+$teacherAllowAbsenceEdit = (bool)(($cfg['teacher']['allow_absence_edit'] ?? false));
 
 $toClassesUrl = get_role() == "admin" ? 'admin/classes.php' : 'teacher/classes.php';
 
@@ -294,6 +296,35 @@ function sanitize_import_email(?string $value): ?string {
   $email = trim((string)$value);
   if ($email === '') return null;
   return filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+}
+
+function read_non_negative_int_input(mixed $value, string $label): int {
+  $raw = trim((string)$value);
+  if ($raw === '') return 0;
+  if (!preg_match('/^\d+$/', $raw)) {
+    throw new RuntimeException(strtr(t('teacher.students.error_invalid_number', 'Ungültiger Zahlenwert in {field}.'), ['{field}' => $label]));
+  }
+  return (int)$raw;
+}
+
+function load_class_period_absence_map(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+  if ($classId <= 0 || $schoolYear === '' || !db_has_table($pdo, 'student_period_absences')) return [];
+  $st = $pdo->prepare(
+    "SELECT student_id, absence_days_total, absence_days_unexcused
+     FROM student_period_absences
+     WHERE class_id=? AND school_year=? AND period_label=?"
+  );
+  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $out = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $sid = (int)($r['student_id'] ?? 0);
+    if ($sid <= 0) continue;
+    $out[$sid] = [
+      'absence_days_total' => (int)($r['absence_days_total'] ?? 0),
+      'absence_days_unexcused' => (int)($r['absence_days_unexcused'] ?? 0),
+    ];
+  }
+  return $out;
 }
 
 function parse_blackbaud_date(?string $s): ?string {
@@ -871,6 +902,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = t('teacher.students.ok_child_groups_updated', 'Kategorien wurden aktualisiert.');
     }
 
+    elseif ($action === 'save_absences') {
+      if (!$teacherAllowAbsenceEdit) {
+        throw new RuntimeException(t('teacher.students.error_absence_edit_disabled', 'Die Bearbeitung der Fehltage wurde durch die Administration deaktiviert.'));
+      }
+      if (!db_has_table($pdo, 'student_period_absences')) {
+        throw new RuntimeException(t('teacher.students.error_absence_table_missing', 'Fehltage-Tabelle ist nicht verfügbar.'));
+      }
+      $schoolYear = (string)($class['school_year'] ?? '');
+      $period = (string)$periodLabel;
+      if ($schoolYear === '') throw new RuntimeException(t('teacher.students.error_school_year_missing', 'Schuljahr fehlt.'));
+
+      $input = $_POST['absences'] ?? [];
+      if (!is_array($input)) $input = [];
+
+      $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+      $st->execute([$classId]);
+      $validIds = array_fill_keys(array_map(static fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC)), true);
+
+      $up = $pdo->prepare(
+        "INSERT INTO student_period_absences (student_id, class_id, school_year, period_label, absence_days_total, absence_days_unexcused)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           class_id=VALUES(class_id),
+           absence_days_total=VALUES(absence_days_total),
+           absence_days_unexcused=VALUES(absence_days_unexcused),
+           updated_at=CURRENT_TIMESTAMP"
+      );
+
+      $pdo->beginTransaction();
+      foreach ($input as $sidRaw => $vals) {
+        $sid = (int)$sidRaw;
+        if ($sid <= 0 || !isset($validIds[$sid])) continue;
+        $vals = is_array($vals) ? $vals : [];
+        $total = read_non_negative_int_input($vals['total'] ?? '0', t('teacher.students.label_absence_days_total', 'Fehltage gesamt'));
+        $unexcused = read_non_negative_int_input($vals['unexcused'] ?? '0', t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'));
+        if ($unexcused > $total) {
+          throw new RuntimeException(t('teacher.students.error_absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Fehltage gesamt sein.'));
+        }
+        $up->execute([$sid, $classId, $schoolYear, $period, $total, $unexcused]);
+      }
+      $pdo->commit();
+      $ok = t('teacher.students.ok_absences_saved', 'Fehltage wurden gespeichert.');
+    }
+
     elseif ($action === 'add') {
       $addFormValues = [
         'first_name' => trim((string)($_POST['first_name'] ?? '')),
@@ -1287,6 +1362,7 @@ $st = $pdo->prepare(
 );
 $st->execute([$classId]);
 $students = $st->fetchAll();
+$absenceMap = load_class_period_absence_map($pdo, $classId, (string)($class['school_year'] ?? ''), (string)$periodLabel);
 $studentCustomValues = [];
 if ($customFields && $students) {
   foreach ($students as $idx => $s) {
@@ -1577,6 +1653,53 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     <a class="btn secondary" href="<?=h(url('teacher/export.php?class_id=' . (int)$classId . '&mode=zip&only_submitted=1'))?>"><?=h(t('teacher.students.export_zip_submitted', 'ZIP (nur abgegebene)'))?></a>
   </div>
 </div>
+
+<details class="card">
+  <summary style="cursor:pointer;"><strong><?=h(t('teacher.students.absence_overview_title', 'Fehltage (Halbjahr)'))?></strong></summary>
+  <div style="margin-top:10px;">
+    <p class="muted" style="margin:0 0 10px 0;">
+      <?=h(strtr(t('teacher.students.absence_overview_hint', 'Klasse {class} · Schuljahr {year} · Halbjahr {period}'), [
+        '{class}' => class_display($class),
+        '{year}' => (string)($class['school_year'] ?? ''),
+        '{period}' => (string)$periodLabel,
+      ]))?>
+    </p>
+    <?php if (!$teacherAllowAbsenceEdit): ?>
+      <div class="alert" style="margin-bottom:10px;">
+        <?=h(t('teacher.students.absence_readonly_hint', 'Fehltage können derzeit nur eingesehen werden. Die Bearbeitung ist durch die Administration deaktiviert.'))?>
+      </div>
+    <?php endif; ?>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+      <input type="hidden" name="action" value="save_absences">
+      <table class="table">
+        <thead>
+          <tr>
+            <th><?=h(t('teacher.students.col_name', 'Name'))?></th>
+            <th style="width:180px;"><?=h(t('teacher.students.label_absence_days_total', 'Fehltage gesamt'))?></th>
+            <th style="width:220px;"><?=h(t('teacher.students.label_absence_days_unexcused', 'Fehltage unentschuldigt'))?></th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($students as $s): ?>
+            <?php $sid = (int)($s['id'] ?? 0); if ($sid <= 0) continue; $a = $absenceMap[$sid] ?? ['absence_days_total'=>0,'absence_days_unexcused'=>0]; ?>
+            <tr>
+              <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
+              <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][total]" value="<?=h((string)(int)($a['absence_days_total'] ?? 0))?>" <?=$teacherAllowAbsenceEdit ? '' : 'readonly'?>></td>
+              <td><input class="input" type="number" min="0" step="1" name="absences[<?=h((string)$sid)?>][unexcused]" value="<?=h((string)(int)($a['absence_days_unexcused'] ?? 0))?>" <?=$teacherAllowAbsenceEdit ? '' : 'readonly'?>></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php if ($teacherAllowAbsenceEdit): ?>
+      <div class="actions" style="justify-content:flex-start; margin-top:10px;">
+        <button class="btn primary" type="submit"><?=h(t('teacher.students.btn_save_absences', 'Fehltage speichern'))?></button>
+      </div>
+      <?php endif; ?>
+    </form>
+  </div>
+</details>
 
 <div class="card">
     <?php if ($ai_enabled): ?>
