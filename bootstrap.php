@@ -1140,6 +1140,8 @@ function ensure_schema(PDO $pdo): void {
 " .
         "  confirmation_pending TINYINT(1) NOT NULL DEFAULT 0,
 " .
+        "  last_summary_hash VARCHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
         "  last_email_sent_at DATETIME DEFAULT NULL,
 " .
         "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1152,6 +1154,9 @@ function ensure_schema(PDO $pdo): void {
       );
     } elseif (!db_has_column($pdo, 'teacher_notification_preferences', 'notification_lang')) {
       $pdo->exec("ALTER TABLE teacher_notification_preferences ADD COLUMN notification_lang VARCHAR(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'de' AFTER wants_email");
+    }
+    if (db_has_table($pdo, 'teacher_notification_preferences') && !db_has_column($pdo, 'teacher_notification_preferences', 'last_summary_hash')) {
+      $pdo->exec("ALTER TABLE teacher_notification_preferences ADD COLUMN last_summary_hash VARCHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL AFTER confirmation_pending");
     }
 
 
@@ -2104,7 +2109,7 @@ function build_teacher_notification_email(string $name, array $summary, string $
     $deadlineRows .= '<tr>'
       . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['type_label'] ?? '')) . '</td>'
       . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['school_year'] ?? '')) . ' · ' . h((string)($d['period_label'] ?? '')) . '</td>'
-      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((($tmp = db_datetime_to_user_datetime((string)($d['due_at'] ?? ''))) ? $tmp->format($lang === 'en' ? 'Y-m-d H:i' : 'd.m.Y H:i') : '–')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((($tmp = db_datetime_to_user_datetime((string)($d['due_at'] ?? ''))) ? $tmp->format($lang === 'en' ? 'Y-m-d' : 'd.m.Y') : '–')) . '</td>'
       . '</tr>';
   }
   if ($deadlineRows === '') $deadlineRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">' . ($lang === 'en' ? 'No deadlines set.' : 'Keine Fristen gesetzt.') . '</td></tr>';
@@ -2122,7 +2127,7 @@ function build_teacher_notification_email(string $name, array $summary, string $
     . '<h3 style="margin:16px 0 8px;font-size:16px;">' . ($isEn ? 'By class' : 'Nach Klasse') . '</h3>'
     . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Class' : 'Klasse') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open delegations' : 'Delegationen offen') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open teacher entries' : 'Lehrkrafteingaben offen') . '</th></tr></thead><tbody>' . $classRows . '</tbody></table>'
     . '<h3 style="margin:18px 0 8px;font-size:16px;">' . ($isEn ? 'All deadlines' : 'Alle Fristen') . '</h3>'
-    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Area' : 'Bereich') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'School year · term' : 'Schuljahr · Halbjahr') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Due at' : 'Fällig am') . '</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="border-bottom:2px solid #e5e7eb;"><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Area' : 'Bereich') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'School year · term' : 'Schuljahr · Halbjahr') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Due date' : 'Fällig am') . '</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
     . '<p style="margin:16px 0 0;color:#6b7280;font-size:12px;">' . ($isEn ? 'This message was generated automatically by LEB Tool.' : 'Diese Nachricht wurde automatisch vom LEB-Tool erzeugt.') . '</p>'
     . '</div></div></div>';
 }
