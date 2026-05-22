@@ -2081,6 +2081,7 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
 function build_teacher_notification_email(string $name, array $summary, string $lang = 'de'): string {
   $safeName = h($name);
   $lang = strtolower(trim($lang)) === 'en' ? 'en' : 'de';
+  $isEn = ($lang === 'en');
   $open = (int)($summary['tasks_open'] ?? 0);
   $total = (int)($summary['tasks_total'] ?? 0);
   $delegations = (int)($summary['delegations_open'] ?? 0);
@@ -2109,19 +2110,19 @@ function build_teacher_notification_email(string $name, array $summary, string $
 
   return '<div style="font-family:Inter,Segoe UI,Arial,sans-serif;background:#f3f4f6;padding:20px;">'
     . '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">'
-    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">' . ($lang === 'en' ? 'LEB Tool notification' : 'LEB-Tool Benachrichtigung') . '</h2></div>'
+    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">' . ($isEn ? 'LEB Tool notification' : 'LEB-Tool Benachrichtigung') . '</h2></div>'
     . '<div style="padding:18px 20px;color:#111827;line-height:1.5;">'
-    . '<p style="margin:0 0 10px;">Hallo ' . $safeName . ',</p>'
-    . '<p style="margin:0 0 16px;">hier ist dein aktueller Überblick:</p>'
+    . '<p style="margin:0 0 10px;">' . ($isEn ? 'Hello ' : 'Hallo ') . $safeName . ',</p>'
+    . '<p style="margin:0 0 16px;">' . ($isEn ? 'here is your current overview:' : 'hier ist dein aktueller Überblick:') . '</p>'
     . '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
-    . '<span style="background:#e8f0fe;color:#0b57d0;border-radius:999px;padding:6px 10px;font-size:13px;">Offene Delegationen: <strong>' . $delegations . '</strong></span>'
-    . '<span style="background:#eefbf2;color:#1e8e3e;border-radius:999px;padding:6px 10px;font-size:13px;">Offene Lehrkrafteingaben: <strong>' . $open . ' / ' . $total . '</strong></span>'
+    . '<span style="background:#e8f0fe;color:#0b57d0;border-radius:999px;padding:6px 10px;font-size:13px;">' . ($isEn ? 'Open delegations' : 'Offene Delegationen') . ': <strong>' . $delegations . '</strong></span>'
+    . '<span style="background:#eefbf2;color:#1e8e3e;border-radius:999px;padding:6px 10px;font-size:13px;">' . ($isEn ? 'Open teacher entries' : 'Offene Lehrkrafteingaben') . ': <strong>' . $open . ' / ' . $total . '</strong></span>'
     . '</div>'
-    . '<h3 style="margin:16px 0 8px;font-size:16px;">Nach Klasse</h3>'
-    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Klasse</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">Delegationen offen</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">Lehrkrafteingaben offen</th></tr></thead><tbody>' . $classRows . '</tbody></table>'
-    . '<h3 style="margin:18px 0 8px;font-size:16px;">Alle Fristen</h3>'
-    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Bereich</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Schuljahr · Halbjahr</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">Fällig am</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
-    . '<p style="margin:16px 0 0;color:#6b7280;font-size:12px;">Diese Nachricht wurde automatisch vom LEB-Tool erzeugt.</p>'
+    . '<h3 style="margin:16px 0 8px;font-size:16px;">' . ($isEn ? 'By class' : 'Nach Klasse') . '</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Class' : 'Klasse') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open delegations' : 'Delegationen offen') . '</th><th style="text-align:right;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Open teacher entries' : 'Lehrkrafteingaben offen') . '</th></tr></thead><tbody>' . $classRows . '</tbody></table>'
+    . '<h3 style="margin:18px 0 8px;font-size:16px;">' . ($isEn ? 'All deadlines' : 'Alle Fristen') . '</h3>'
+    . '<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Area' : 'Bereich') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'School year · term' : 'Schuljahr · Halbjahr') . '</th><th style="text-align:left;padding:8px;border-bottom:2px solid #e5e7eb;">' . ($isEn ? 'Due at' : 'Fällig am') . '</th></tr></thead><tbody>' . $deadlineRows . '</tbody></table>'
+    . '<p style="margin:16px 0 0;color:#6b7280;font-size:12px;">' . ($isEn ? 'This message was generated automatically by LEB Tool.' : 'Diese Nachricht wurde automatisch vom LEB-Tool erzeugt.') . '</p>'
     . '</div></div></div>';
 }
 
