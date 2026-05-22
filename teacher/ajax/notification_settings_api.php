@@ -17,8 +17,10 @@ if (!isset($_POST['csrf_token']) && isset($raw['csrf_token'])) $_POST['csrf_toke
 if (!isset($_POST['csrf_token']) && isset($_SERVER['HTTP_X_CSRF_TOKEN'])) $_POST['csrf_token'] = (string)$_SERVER['HTTP_X_CSRF_TOKEN'];
 csrf_verify();
 $enabled = !empty($raw['enabled']) ? 1 : 0;
-$st = $pdo->prepare("INSERT INTO teacher_notification_preferences (user_id,wants_email,confirmation_pending,last_email_sent_at) VALUES (?,?,?,NULL)
-ON DUPLICATE KEY UPDATE wants_email=VALUES(wants_email), confirmation_pending=VALUES(confirmation_pending)");
-$st->execute([$userId, $enabled, $enabled]);
-audit('teacher_notification_pref_update', $userId, ['wants_email'=>$enabled]);
-echo json_encode(['ok'=>true,'enabled'=>(bool)$enabled]);
+$lang = strtolower(trim((string)($raw['lang'] ?? 'de')));
+if (!in_array($lang, ['de','en'], true)) $lang = 'de';
+$st = $pdo->prepare("INSERT INTO teacher_notification_preferences (user_id,wants_email,notification_lang,confirmation_pending,last_email_sent_at) VALUES (?,?,?,?,NULL)
+ON DUPLICATE KEY UPDATE wants_email=VALUES(wants_email), notification_lang=VALUES(notification_lang), confirmation_pending=VALUES(confirmation_pending)");
+$st->execute([$userId, $enabled, $lang, $enabled]);
+audit('teacher_notification_pref_update', $userId, ['wants_email'=>$enabled, 'notification_lang'=>$lang]);
+echo json_encode(['ok'=>true,'enabled'=>(bool)$enabled,'lang'=>$lang]);

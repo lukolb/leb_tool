@@ -6,7 +6,7 @@ require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
-define('APP_CONFIG_PATH', $configPath);
+if (!defined('APP_CONFIG_PATH')) define('APP_CONFIG_PATH', $configPath);
 if (!file_exists(APP_CONFIG_PATH)) {
   // install not completed
   header('Location: install.php');
@@ -19,17 +19,20 @@ $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVE
 $cookiePath = (string)($config['app']['base_path'] ?? '/');
 $cookiePath = '/' . ltrim($cookiePath, '/');
 $cookiePath = rtrim($cookiePath, '/') ?: '/';
-session_set_cookie_params([
-  'lifetime' => 0,
-  'path' => $cookiePath,
-  'domain' => '',
-  'secure' => $https,
-  'httponly' => true,
-  'samesite' => 'Lax',
-]);
-
-session_name($config['app']['session_name'] ?? 'legtool_sess');
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+  if (!headers_sent()) {
+    session_set_cookie_params([
+      'lifetime' => 0,
+      'path' => $cookiePath,
+      'domain' => '',
+      'secure' => $https,
+      'httponly' => true,
+      'samesite' => 'Lax',
+    ]);
+    session_name($config['app']['session_name'] ?? 'legtool_sess');
+  }
+  @session_start();
+}
 
 // Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
 ob_start(function (string $buffer): string {
@@ -1132,6 +1135,8 @@ function ensure_schema(PDO $pdo): void {
 " .
         "  wants_email TINYINT(1) NOT NULL DEFAULT 0,
 " .
+        "  notification_lang VARCHAR(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'de',
+" .
         "  confirmation_pending TINYINT(1) NOT NULL DEFAULT 0,
 " .
         "  last_email_sent_at DATETIME DEFAULT NULL,
@@ -1144,6 +1149,8 @@ function ensure_schema(PDO $pdo): void {
 " .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
+    } elseif (!db_has_column($pdo, 'teacher_notification_preferences', 'notification_lang')) {
+      $pdo->exec("ALTER TABLE teacher_notification_preferences ADD COLUMN notification_lang VARCHAR(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'de' AFTER wants_email");
     }
 
 
@@ -2071,8 +2078,9 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
   return $out;
 }
 
-function build_teacher_notification_email(string $name, array $summary): string {
+function build_teacher_notification_email(string $name, array $summary, string $lang = 'de'): string {
   $safeName = h($name);
+  $lang = strtolower(trim($lang)) === 'en' ? 'en' : 'de';
   $open = (int)($summary['tasks_open'] ?? 0);
   $total = (int)($summary['tasks_total'] ?? 0);
   $delegations = (int)($summary['delegations_open'] ?? 0);
@@ -2087,21 +2095,21 @@ function build_teacher_notification_email(string $name, array $summary): string 
       . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;">' . (int)($c['tasks_open'] ?? 0) . ' / ' . (int)($c['tasks_total'] ?? 0) . '</td>'
       . '</tr>';
   }
-  if ($classRows === '') $classRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">Keine Klassen zugeordnet.</td></tr>';
+  if ($classRows === '') $classRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">' . ($lang === 'en' ? 'No classes assigned.' : 'Keine Klassen zugeordnet.') . '</td></tr>';
 
   $deadlineRows = '';
   foreach ($deadlines as $d) {
     $deadlineRows .= '<tr>'
       . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['type_label'] ?? '')) . '</td>'
       . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((string)($d['school_year'] ?? '')) . ' · ' . h((string)($d['period_label'] ?? '')) . '</td>'
-      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h(render_local_datetime((string)($d['due_at'] ?? ''), 'd.m.Y H:i', '–')) . '</td>'
+      . '<td style="padding:8px;border-bottom:1px solid #e5e7eb;">' . h((($tmp = db_datetime_to_user_datetime((string)($d['due_at'] ?? ''))) ? $tmp->format($lang === 'en' ? 'Y-m-d H:i' : 'd.m.Y H:i') : '–')) . '</td>'
       . '</tr>';
   }
-  if ($deadlineRows === '') $deadlineRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">Keine Fristen gesetzt.</td></tr>';
+  if ($deadlineRows === '') $deadlineRows = '<tr><td colspan="3" style="padding:8px;color:#6b7280;">' . ($lang === 'en' ? 'No deadlines set.' : 'Keine Fristen gesetzt.') . '</td></tr>';
 
   return '<div style="font-family:Inter,Segoe UI,Arial,sans-serif;background:#f3f4f6;padding:20px;">'
     . '<div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">'
-    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">LEB-Tool Benachrichtigung</h2></div>'
+    . '<div style="background:#0b57d0;color:#fff;padding:16px 20px;"><h2 style="margin:0;font-size:20px;">' . ($lang === 'en' ? 'LEB Tool notification' : 'LEB-Tool Benachrichtigung') . '</h2></div>'
     . '<div style="padding:18px 20px;color:#111827;line-height:1.5;">'
     . '<p style="margin:0 0 10px;">Hallo ' . $safeName . ',</p>'
     . '<p style="margin:0 0 16px;">hier ist dein aktueller Überblick:</p>'

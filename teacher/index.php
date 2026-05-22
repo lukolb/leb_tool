@@ -8,6 +8,7 @@ $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 $notifyPrefEnabled = false;
+$notifyPrefLang = 'de';
 
 function meta_read(?string $json): array {
   if (!$json) return [];
@@ -65,9 +66,11 @@ function period_label_display(?string $raw): string {
 
 // Mail notification preference
 if (db_has_table($pdo, 'teacher_notification_preferences')) {
-  $pst = $pdo->prepare("SELECT wants_email FROM teacher_notification_preferences WHERE user_id=? LIMIT 1");
+  $pst = $pdo->prepare("SELECT wants_email, notification_lang FROM teacher_notification_preferences WHERE user_id=? LIMIT 1");
   $pst->execute([$userId]);
-  $notifyPrefEnabled = ((int)($pst->fetchColumn() ?: 0) === 1);
+  $pr = $pst->fetch(PDO::FETCH_ASSOC) ?: [];
+  $notifyPrefEnabled = ((int)($pr['wants_email'] ?? 0) === 1);
+  $notifyPrefLang = in_array((string)($pr['notification_lang'] ?? 'de'), ['de','en'], true) ? (string)$pr['notification_lang'] : 'de';
 }
 
 $dashboardSummary = teacher_notification_summary($pdo, $userId);
@@ -959,11 +962,19 @@ render_teacher_header(t('teacher.title'));
     <input type="checkbox" id="mail_pref_toggle" <?= $notifyPrefEnabled ? 'checked' : '' ?>>
     E-Mails erhalten
   </label>
+  <div style="margin-top:8px;">
+    <label for="mail_pref_lang">Sprache der E-Mail</label>
+    <select id="mail_pref_lang">
+      <option value="de" <?= $notifyPrefLang === 'de' ? 'selected' : '' ?>>Deutsch</option>
+      <option value="en" <?= $notifyPrefLang === 'en' ? 'selected' : '' ?>>English</option>
+    </select>
+  </div>
   <p class="small muted" id="mail_pref_status"></p>
 </div>
 <script>
 (function(){
   const el = document.getElementById('mail_pref_toggle');
+  const langEl = document.getElementById('mail_pref_lang');
   const status = document.getElementById('mail_pref_status');
   const csrf = <?=json_encode(csrf_token())?>;
   if (!el) return;
@@ -973,7 +984,7 @@ render_teacher_header(t('teacher.title'));
       const res = await fetch('ajax/notification_settings_api.php', {
         method: 'POST',
         headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrf},
-        body: JSON.stringify({enabled: el.checked, csrf_token: csrf})
+        body: JSON.stringify({enabled: el.checked, lang: (langEl ? langEl.value : 'de'), csrf_token: csrf})
       });
       const data = await res.json();
       if (!data.ok) throw new Error('save_failed');
@@ -984,6 +995,9 @@ render_teacher_header(t('teacher.title'));
       status.textContent = 'Speichern fehlgeschlagen.';
     }
   });
+  if (langEl) {
+    langEl.addEventListener('change', () => el.dispatchEvent(new Event('change')));
+  }
 })();
 </script>
 
