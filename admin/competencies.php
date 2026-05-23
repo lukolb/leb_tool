@@ -201,9 +201,9 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .node-title{font-weight:600}
 .node-actions button{background:transparent;border:0;cursor:pointer}
 .children{margin-left:18px}
-.drop-target{height:12px;border:2px dashed transparent;border-radius:6px;margin:4px 0}
+.drop-target{height:28px;min-height:28px;border:2px dashed transparent;border-radius:6px;margin:5px 0}
 .drop-target.active{border-color:#0b57d0;background:#eef5ff}
-.dnd-placeholder-subcategory{height:8px;border-width:1px;margin:3px 0 3px 12px}
+.dnd-placeholder-subcategory{height:26px;min-height:26px;border-width:1px;margin:5px 0 5px 12px}
 .dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
 .draggable{cursor:move}
 .comp-main{font-weight:600}
@@ -315,6 +315,7 @@ function initDnd(){
       const itemId=Number(dragEl.dataset.id);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(beforeId === itemId) return;
       let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
       console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
@@ -333,6 +334,7 @@ function initDnd(){
       const targetCategoryId=Number(d.dataset.parent||0);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(sourceCategoryId === targetCategoryId && beforeId === itemId) return;
       const targetCat = stateTree.find(c=>Number(c.id)===targetCategoryId);
       const targetRealSubs = ((targetCat?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
       let orderedIds=targetRealSubs.filter(x=>x!==itemId);
