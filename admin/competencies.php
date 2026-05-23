@@ -237,15 +237,28 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .grade-2{background:#ecfff4;color:#1f7a45}
 .grade-3{background:#fff5e8;color:#9a5a12}
 .grade-4{background:#f3edff;color:#5a33a2}
-#modal{width:min(760px,95vw);border:0;border-radius:14px;padding:0;box-shadow:0 20px 55px rgba(0,0,0,.2)}
+#modal{width:min(820px,94vw);max-height:92vh;border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px rgba(15,23,42,.28)}
 #modal::backdrop{background:rgba(15,23,42,.45)}
-#modal form{display:flex;flex-direction:column;gap:12px;padding:18px}
-#modalTitle{margin:0;padding-bottom:8px;border-bottom:1px solid #e9eef5}
-#modalFields{display:flex;flex-direction:column;gap:10px}
-#modalFields label{display:block;font-size:13px;font-weight:600;color:#334155;margin-bottom:4px}
-#modalFields input,#modalFields textarea{width:100%;box-sizing:border-box}
-#modalFields textarea{min-height:110px}
-#modal menu{display:flex;justify-content:flex-end;gap:8px;padding:8px 0 0;margin:0}
+#modal form{display:flex;flex-direction:column;max-height:92vh;padding:0}
+#modalTitle{margin:0;padding:20px 24px 14px;border-bottom:1px solid #e5eaf2;font-size:24px}
+#modalFields{padding:18px 24px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.form-grid{display:flex;flex-direction:column;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:13px;font-weight:700;color:#334155}
+.muted{color:#64748b;font-weight:500}
+#modalFields input.input,#modalFields textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;font:inherit}
+#modalFields textarea{min-height:90px;resize:vertical}
+#modalFields input:focus,#modalFields textarea:focus{outline:none;border-color:#0b57d0;box-shadow:0 0 0 3px rgba(11,87,208,.14)}
+.choice-row{display:flex;flex-wrap:wrap;gap:8px}
+.choice-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:7px 11px;cursor:pointer;font-size:13px;font-weight:600;color:#334155;user-select:none}
+.choice-chip input{width:auto;margin:0}
+.choice-chip:has(input:checked){border-color:#0b57d0;background:#eef5ff;color:#0b57d0}
+.required-choice:has(input:checked){border-color:#1f355e;background:#e7edf9;color:#1f355e}
+.grade-choice.grade-1:has(input:checked){border-color:#1f4f99;background:#eaf3ff;color:#1f4f99}
+.grade-choice.grade-2:has(input:checked){border-color:#1f7a45;background:#ecfff4;color:#1f7a45}
+.grade-choice.grade-3:has(input:checked){border-color:#9a5a12;background:#fff5e8;color:#9a5a12}
+.grade-choice.grade-4:has(input:checked){border-color:#5a33a2;background:#f3edff;color:#5a33a2}
+#modal menu{display:flex;justify-content:flex-end;gap:10px;padding:14px 24px 20px;margin:0;border-top:1px solid #e5eaf2;background:#f8fafc}
 </style>
 <script>
 const csrf = <?=json_encode(csrf_token())?>;
@@ -258,7 +271,7 @@ const modalSave=document.getElementById('modalSave');
 let stateTree=[]; let busy=false; let modalState=null; const collapsed = new Set();
 function showMsg(text,err=false){msg.style.display='block';msg.textContent=text;msg.className='card '+(err?'alert danger':'alert success');}
 async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>{ if(Array.isArray(v)){ v.forEach(x=>fd.append(k+'[]',String(x))); } else fd.append(k,String(v)); }); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
-function gradeChecks(sel=[]){return `<div><strong>Klassenstufe</strong> ${[1,2,3,4].map(g=>`<label><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}> ${g}</label>`).join(' ')}</div>`}
+function gradeChecks(sel=[]){return `<div class="form-group"><div class="form-label">Klassenstufe</div><div class="choice-row grade-choice-row">${[1,2,3,4].map(g=>`<label class="choice-chip grade-choice grade-${g}"><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}><span>${g}</span></label>`).join('')}</div></div>`}
 function render(){
   treeEl.innerHTML='';
   if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;}
@@ -327,10 +340,10 @@ document.getElementById('expandAll').addEventListener('click',()=>{ collapsed.cl
 treeEl.addEventListener('click', async (e)=>{const b=e.target.closest('button[data-act]'); if(!b) return; const act=b.dataset.act; const id=Number(b.dataset.id);
 if(act==='addSub'){openModal({mode:'create',type:'subcategory',parent:id,title:'Unterkategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'});}
 if(act==='toggle'){const key=b.dataset.node; if(collapsed.has(key)) collapsed.delete(key); else collapsed.add(key); render(); return;}
-if(act==='addComp'){const virt=b.dataset.virtual==='1';openModal({mode:'create',type:'competency',parent:virt?0:id,targetCategory:virt?Number(b.dataset.category):0,title:'Kompetenz hinzufügen',html:'<label>Code (optional)</label><input class="input" name="code"><label>Deutsch</label><textarea name="text_de" required></textarea><label>English</label><textarea name="text_en"></textarea><label><input type="checkbox" name="is_required" value="1"> Pflicht</label>'+gradeChecks([])});}
+if(act==='addComp'){const virt=b.dataset.virtual==='1';openModal({mode:'create',type:'competency',parent:virt?0:id,targetCategory:virt?Number(b.dataset.category):0,title:'Kompetenz hinzufügen',html:'<div class="form-grid"><div class="form-group"><label class="form-label">Code <span class="muted">(optional)</span></label><input class="input" name="code"></div><div class="form-group"><label class="form-label">Deutsch</label><textarea name="text_de" required></textarea></div><div class="form-group"><label class="form-label">English</label><textarea name="text_en"></textarea></div><div class="form-group"><label class="choice-chip required-choice"><input type="checkbox" name="is_required" value="1"><span>🔒 Pflichtkompetenz</span></label></div>'+gradeChecks([])+'</div>'});}
 if(act==='edit'){const n=findNode(b.dataset.type,id); if(!n) return; if(b.dataset.type==='category') openModal({mode:'update',type:'category',id,title:'Kategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
 if(b.dataset.type==='subcategory') openModal({mode:'update',type:'subcategory',id,title:'Unterkategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
-if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<label>Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required><label>Deutsch</label><textarea name="text_de" required>${escapeHtml(n.text_de)}</textarea><label>English</label><textarea name="text_en">${escapeHtml(n.text_en||'')}</textarea><label><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}> Pflicht</label>${gradeChecks((n.grades||[]).map(Number))}`});}
+if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<div class="form-grid"><div class="form-group"><label class="form-label">Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required></div><div class="form-group"><label class="form-label">Deutsch</label><textarea name="text_de" required>${escapeHtml(n.text_de)}</textarea></div><div class="form-group"><label class="form-label">English</label><textarea name="text_en">${escapeHtml(n.text_en||'')}</textarea></div><div class="form-group"><label class="choice-chip required-choice"><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}><span>🔒 Pflichtkompetenz</span></label></div>${gradeChecks((n.grades||[]).map(Number))}</div>`});}
 if(act==='del'){try{const t=b.dataset.type; const prev=await api({action:'delete_preview',type:t,id:String(id)}); let txt=''; if(t==='category') txt=`Diese Kategorie enthält ${prev.counts.subcategories} Unterkategorien und ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='subcategory') txt=`Diese Unterkategorie enthält ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='competency') txt='Diese Kompetenz wirklich löschen?'; if(!confirm(txt)) return; const res=await api({action:'delete',type:t,id:String(id)}); stateTree=res.tree; render(); showMsg('Gelöscht.'); }catch(err){showMsg(err.message,true);} }
 });
 
