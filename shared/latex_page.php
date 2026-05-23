@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 function db_competency_sections(PDO $pdo): array {
-    $rows = $pdo->query("SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, c.category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=c.category_id WHERE c.is_active=1 ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $rows = $pdo->query("SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) WHERE c.is_active=1 ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id")->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $sections = [];
     foreach ($rows as $r) {
         $catId = (int)($r['category_id'] ?? 0);
