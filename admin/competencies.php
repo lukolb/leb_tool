@@ -9,12 +9,21 @@ $gradeOptions = [1,2,3,4];
 
 function next_comp_code(PDO $pdo, int $categoryId, string $catDe): string {
   $prefix = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', substr($catDe, 0, 4)) ?: ('CAT' . $categoryId));
-  $st = $pdo->prepare("SELECT code FROM competencies WHERE category_id=? ORDER BY id DESC LIMIT 1");
+  $st = $pdo->prepare("SELECT code FROM competencies WHERE category_id=? ORDER BY sort_order DESC, id DESC LIMIT 1");
   $st->execute([$categoryId]);
   $last = (string)($st->fetchColumn() ?: '');
   $n = 1;
   if (preg_match('/-(\d+)$/', $last, $m)) $n = ((int)$m[1]) + 1;
   return $prefix . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
+}
+
+function resequence_sort(PDO $pdo, string $table, string $whereSql = '1=1', array $params = []): void {
+  $sql = "SELECT id FROM {$table} WHERE {$whereSql} ORDER BY sort_order ASC, id ASC";
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN) ?: []);
+  $upd = $pdo->prepare("UPDATE {$table} SET sort_order=? WHERE id=?");
+  foreach ($ids as $i => $id) $upd->execute([$i + 1, $id]);
 }
 
 if (isset($_GET['download_csv_template'])) {
@@ -30,8 +39,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $a = (string)($_POST['action'] ?? '');
 
+    if ($a === 'move_item') {
+      $type=(string)$_POST['item_type'];
+      $id=(int)$_POST['id'];
+      $beforeId=(int)($_POST['before_id'] ?? 0);
+      if ($id <= 0) throw new RuntimeException('Ungültige ID.');
+
+      if ($type === 'category') {
+        resequence_sort($pdo, 'competency_categories');
+        $ids = array_map('intval', $pdo->query("SELECT id FROM competency_categories ORDER BY sort_order,id")->fetchAll(PDO::FETCH_COLUMN) ?: []);
+      } elseif ($type === 'subcategory') {
+        $catId = (int)$pdo->query("SELECT category_id FROM competency_subcategories WHERE id=" . $id)->fetchColumn();
+        resequence_sort($pdo, 'competency_subcategories', 'category_id=?', [$catId]);
+        $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? ORDER BY sort_order,id"); $st->execute([$catId]);
+        $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN) ?: []);
+      } else {
+        $st = $pdo->prepare("SELECT COALESCE(category_id,0) AS category_id, COALESCE(subcategory_id,0) AS subcategory_id FROM competencies WHERE id=?");
+        $st->execute([$id]); $row = $st->fetch(PDO::FETCH_ASSOC) ?: ['category_id'=>0,'subcategory_id'=>0];
+        $catId=(int)$row['category_id']; $subId=(int)$row['subcategory_id'];
+        if ($subId > 0) {
+          resequence_sort($pdo, 'competencies', 'subcategory_id=?', [$subId]);
+          $st=$pdo->prepare("SELECT id FROM competencies WHERE subcategory_id=? ORDER BY sort_order,id"); $st->execute([$subId]);
+        } else {
+          resequence_sort($pdo, 'competencies', 'category_id=? AND (subcategory_id IS NULL OR subcategory_id=0)', [$catId]);
+          $st=$pdo->prepare("SELECT id FROM competencies WHERE category_id=? AND (subcategory_id IS NULL OR subcategory_id=0) ORDER BY sort_order,id"); $st->execute([$catId]);
+        }
+        $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN) ?: []);
+      }
+
+      $ids = array_values(array_filter($ids, static fn($v) => $v !== $id));
+      if ($beforeId > 0) {
+        $pos = array_search($beforeId, $ids, true);
+        if ($pos === false) $ids[] = $id; else array_splice($ids, $pos, 0, [$id]);
+      } else $ids[] = $id;
+
+      if ($type === 'category') $upd = $pdo->prepare("UPDATE competency_categories SET sort_order=? WHERE id=?");
+      elseif ($type === 'subcategory') $upd = $pdo->prepare("UPDATE competency_subcategories SET sort_order=? WHERE id=?");
+      else $upd = $pdo->prepare("UPDATE competencies SET sort_order=? WHERE id=?");
+
+      foreach ($ids as $i => $itemId) $upd->execute([$i + 1, $itemId]);
+      header('Content-Type: application/json; charset=utf-8');
+      echo json_encode(['ok'=>true]); exit;
+    }
+
     if ($a === 'add_category') {
-      $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,0)")->execute([trim((string)$_POST['name_de']), trim((string)$_POST['name_en'])]);
+      $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,9999)")->execute([trim((string)$_POST['name_de']), trim((string)$_POST['name_en'])]);
     } elseif ($a === 'update_category') {
       $pdo->prepare("UPDATE competency_categories SET name_de=?, name_en=? WHERE id=?")->execute([trim((string)$_POST['name_de']), trim((string)$_POST['name_en']), (int)$_POST['id']]);
     } elseif ($a === 'delete_category') {
@@ -40,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare("DELETE FROM competency_subcategories WHERE category_id=?")->execute([$id]);
       $pdo->prepare("DELETE FROM competency_categories WHERE id=?")->execute([$id]);
     } elseif ($a === 'add_subcategory') {
-      $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,0)")->execute([(int)$_POST['category_id'], trim((string)$_POST['name_de']), trim((string)$_POST['name_en'])]);
+      $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,9999)")->execute([(int)$_POST['category_id'], trim((string)$_POST['name_de']), trim((string)$_POST['name_en'])]);
     } elseif ($a === 'update_subcategory') {
       $pdo->prepare("UPDATE competency_subcategories SET name_de=?, name_en=? WHERE id=?")->execute([trim((string)$_POST['name_de']), trim((string)$_POST['name_en']), (int)$_POST['id']]);
     } elseif ($a === 'delete_subcategory') {
@@ -48,13 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare("UPDATE competencies SET subcategory_id=NULL WHERE subcategory_id=?")->execute([$id]);
       $pdo->prepare("DELETE FROM competency_subcategories WHERE id=?")->execute([$id]);
     } elseif ($a === 'add_competency') {
-      $subcategoryId=(int)($_POST['subcategory_id']??0);
-      $categoryId=(int)($_POST['category_id']??0);
+      $subcategoryId=(int)($_POST['subcategory_id']??0); $categoryId=(int)($_POST['category_id']??0);
       if ($subcategoryId>0) { $st=$pdo->prepare("SELECT category_id FROM competency_subcategories WHERE id=?"); $st->execute([$subcategoryId]); $categoryId=(int)($st->fetchColumn()?:0); }
       if($categoryId<=0) throw new RuntimeException('Kategorie fehlt.');
       $catName=(string)$pdo->query("SELECT name_de FROM competency_categories WHERE id=".(int)$categoryId)->fetchColumn();
       $code=trim((string)($_POST['code']??'')); if($code==='') $code=next_comp_code($pdo,$categoryId,$catName);
-      $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,0)")->execute([$categoryId,$subcategoryId>0?$subcategoryId:null,$code,trim((string)$_POST['text_de']),trim((string)$_POST['text_en']),isset($_POST['is_required'])?1:0]);
+      $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,9999)")->execute([$categoryId,$subcategoryId>0?$subcategoryId:null,$code,trim((string)$_POST['text_de']),trim((string)$_POST['text_en']),isset($_POST['is_required'])?1:0]);
       $cid=(int)$pdo->lastInsertId(); foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g; if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$cid,$gi]);}
     } elseif ($a === 'update_competency') {
       $id=(int)$_POST['id']; $code=trim((string)$_POST['code']); if($code==='') throw new RuntimeException('Code ist erforderlich.');
@@ -62,12 +113,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]); foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g; if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$id,$gi]);}
     } elseif ($a === 'delete_competency') {
       $id=(int)$_POST['id']; $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]); $pdo->prepare("DELETE FROM competencies WHERE id=?")->execute([$id]);
-    } elseif ($a === 'move_item') {
-      $type=(string)$_POST['item_type']; $id=(int)$_POST['id']; $to=(int)$_POST['to_sort'];
-      if ($type==='category') $pdo->prepare("UPDATE competency_categories SET sort_order=? WHERE id=?")->execute([$to,$id]);
-      if ($type==='subcategory') $pdo->prepare("UPDATE competency_subcategories SET sort_order=? WHERE id=?")->execute([$to,$id]);
-      if ($type==='competency') $pdo->prepare("UPDATE competencies SET sort_order=? WHERE id=?")->execute([$to,$id]);
-      echo 'ok'; exit;
     }
     $ok='Gespeichert.';
   } catch(Throwable $e){$err=$e->getMessage();}
@@ -84,17 +129,27 @@ render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1><?php if($ok):?><div class="alert success"><?=h($ok)?></div><?php endif;?><?php if($err):?><div class="alert danger"><?=h($err)?></div><?php endif;?>
   <a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a>
 </div>
-<div class="card"><h3>Übersicht (Baumstruktur)</h3>
+<div class="card"><h3>Übersicht (Drag & Drop + Inline bearbeiten)</h3>
 <?php foreach($cats as $cat): $catId=(int)$cat['id']; ?>
-  <details style="margin-bottom:10px;"><summary><strong draggable="true" data-item-type="category" data-id="<?=$catId?>" data-sort="<?= (int)$cat['sort_order'] ?>"><?=h($cat['name_de'])?></strong> <small><?=h($cat['name_en'])?></small></summary>
-    <form method="post" class="row" style="margin:8px 0;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_category"><input type="hidden" name="id" value="<?=$catId?>"><input class="input" name="name_de" value="<?=h($cat['name_de'])?>" placeholder="Kategoriename (Deutsch)"><input class="input" name="name_en" value="<?=h($cat['name_en'])?>" placeholder="Category name (English)"><button class="btn">Speichern</button></form>
-    <form method="post" onsubmit="return confirm('Kategorie löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_category"><input type="hidden" name="id" value="<?=$catId?>"><button class="btn">Kategorie löschen</button></form>
-    <details style="margin-left:18px;"><summary><em>Ohne Unterkategorie</em></summary><?php foreach(($compsBySub[0]??[]) as $c): if((int)$c['category_id']!==$catId) continue; $id=(int)$c['id']; ?><div draggable="true" data-item-type="competency" data-id="<?=$id?>" data-sort="<?= (int)$c['sort_order'] ?>" style="border:1px solid #ddd;padding:8px;margin:8px 0;"><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_competency"><input type="hidden" name="id" value="<?=$id?>"><input class="input" name="code" value="<?=h((string)$c['code'])?>" placeholder="Eindeutiger Code"><input class="input" name="text_de" value="<?=h((string)$c['text_de'])?>" placeholder="Kompetenztext (Deutsch)"><input class="input" name="text_en" value="<?=h((string)$c['text_en'])?>" placeholder="Competency text (English)"><label><input type="checkbox" name="is_required" value="1" <?=((int)$c['is_required']===1)?'checked':''?>> verpflichtend</label><div><?php foreach($gradeOptions as $g):?><label><input type="checkbox" name="grades[]" value="<?=$g?>" <?=in_array($g,$gradesByComp[$id]??[],true)?'checked':''?>><?=$g?></label><?php endforeach;?></div><button class="btn">Speichern</button></form><form method="post" onsubmit="return confirm('Kompetenz löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_competency"><input type="hidden" name="id" value="<?=$id?>"><button class="btn">Löschen</button></form></div><?php endforeach; ?></details>
+  <details style="margin-bottom:10px;"><summary class="drag-item" draggable="true" data-item-type="category" data-id="<?=$catId?>"><strong><?=h($cat['name_de'])?></strong> <small><?=h($cat['name_en'])?></small></summary>
+    <form method="post" class="row" style="margin:8px 0; gap:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_category"><input type="hidden" name="id" value="<?=$catId?>"><input class="input" name="name_de" value="<?=h($cat['name_de'])?>"><input class="input" name="name_en" value="<?=h($cat['name_en'])?>"><button class="btn">Speichern</button><button class="btn" type="button" onclick="if(confirm('Kategorie löschen?')) this.form.querySelector('[name=action]').value='delete_category', this.form.submit();">Löschen</button></form>
+
+    <details style="margin-left:18px;"><summary>Ohne Unterkategorie</summary>
+    <?php foreach(($compsBySub[0]??[]) as $c): if((int)$c['category_id']!==$catId) continue; $id=(int)$c['id']; ?>
+      <div class="drag-item" draggable="true" data-item-type="competency" data-id="<?=$id?>" style="border:1px solid #ddd;padding:8px;margin:8px 0;">
+        <form method="post" class="row" style="gap:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_competency"><input type="hidden" name="id" value="<?=$id?>"><input class="input" name="code" value="<?=h((string)$c['code'])?>" placeholder="Code"><input class="input" name="text_de" value="<?=h((string)$c['text_de'])?>" placeholder="Deutsch"><input class="input" name="text_en" value="<?=h((string)$c['text_en'])?>" placeholder="English"><label><input type="checkbox" name="is_required" value="1" <?=((int)$c['is_required']===1)?'checked':''?>> Pflicht</label><?php foreach($gradeOptions as $g):?><label><input type="checkbox" name="grades[]" value="<?=$g?>" <?=in_array($g,$gradesByComp[$id]??[],true)?'checked':''?>><?=$g?></label><?php endforeach;?><button class="btn">Speichern</button><button class="btn" type="button" onclick="if(confirm('Kompetenz löschen?')) this.form.querySelector('[name=action]').value='delete_competency', this.form.submit();">Löschen</button></form>
+      </div>
+    <?php endforeach; ?>
+    </details>
+
     <?php foreach(($subsByCat[$catId]??[]) as $sub): $subId=(int)$sub['id']; ?>
-      <details style="margin-left:18px;"><summary><span draggable="true" data-item-type="subcategory" data-id="<?=$subId?>" data-sort="<?= (int)$sub['sort_order'] ?>"><?=h($sub['name_de'])?> / <?=h($sub['name_en'])?></span></summary>
-        <form method="post" class="row" style="margin:8px 0;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_subcategory"><input type="hidden" name="id" value="<?=$subId?>"><input class="input" name="name_de" value="<?=h($sub['name_de'])?>" placeholder="Unterkategorie (Deutsch)"><input class="input" name="name_en" value="<?=h($sub['name_en'])?>" placeholder="Subcategory (English)"><button class="btn">Speichern</button></form>
-        <form method="post" onsubmit="return confirm('Unterkategorie löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_subcategory"><input type="hidden" name="id" value="<?=$subId?>"><button class="btn">Unterkategorie löschen</button></form>
-        <?php foreach(($compsBySub[$subId]??[]) as $c): $id=(int)$c['id']; ?><div draggable="true" data-item-type="competency" data-id="<?=$id?>" data-sort="<?= (int)$c['sort_order'] ?>" style="border:1px solid #ddd;padding:8px;margin:8px 0;"><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_competency"><input type="hidden" name="id" value="<?=$id?>"><input class="input" name="code" value="<?=h((string)$c['code'])?>" placeholder="Eindeutiger Code"><input class="input" name="text_de" value="<?=h((string)$c['text_de'])?>" placeholder="Kompetenztext (Deutsch)"><input class="input" name="text_en" value="<?=h((string)$c['text_en'])?>" placeholder="Competency text (English)"><label><input type="checkbox" name="is_required" value="1" <?=((int)$c['is_required']===1)?'checked':''?>> verpflichtend</label><div><?php foreach($gradeOptions as $g):?><label><input type="checkbox" name="grades[]" value="<?=$g?>" <?=in_array($g,$gradesByComp[$id]??[],true)?'checked':''?>><?=$g?></label><?php endforeach;?></div><button class="btn">Speichern</button></form><form method="post" onsubmit="return confirm('Kompetenz löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_competency"><input type="hidden" name="id" value="<?=$id?>"><button class="btn">Löschen</button></form></div><?php endforeach; ?>
+      <details style="margin-left:18px;"><summary class="drag-item" draggable="true" data-item-type="subcategory" data-id="<?=$subId?>"><?=h($sub['name_de'])?> / <?=h($sub['name_en'])?></summary>
+        <form method="post" class="row" style="margin:8px 0; gap:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_subcategory"><input type="hidden" name="id" value="<?=$subId?>"><input class="input" name="name_de" value="<?=h($sub['name_de'])?>"><input class="input" name="name_en" value="<?=h($sub['name_en'])?>"><button class="btn">Speichern</button><button class="btn" type="button" onclick="if(confirm('Unterkategorie löschen?')) this.form.querySelector('[name=action]').value='delete_subcategory', this.form.submit();">Löschen</button></form>
+        <?php foreach(($compsBySub[$subId]??[]) as $c): $id=(int)$c['id']; ?>
+          <div class="drag-item" draggable="true" data-item-type="competency" data-id="<?=$id?>" style="border:1px solid #ddd;padding:8px;margin:8px 0;">
+            <form method="post" class="row" style="gap:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="update_competency"><input type="hidden" name="id" value="<?=$id?>"><input class="input" name="code" value="<?=h((string)$c['code'])?>" placeholder="Code"><input class="input" name="text_de" value="<?=h((string)$c['text_de'])?>" placeholder="Deutsch"><input class="input" name="text_en" value="<?=h((string)$c['text_en'])?>" placeholder="English"><label><input type="checkbox" name="is_required" value="1" <?=((int)$c['is_required']===1)?'checked':''?>> Pflicht</label><?php foreach($gradeOptions as $g):?><label><input type="checkbox" name="grades[]" value="<?=$g?>" <?=in_array($g,$gradesByComp[$id]??[],true)?'checked':''?>><?=$g?></label><?php endforeach;?><button class="btn">Speichern</button><button class="btn" type="button" onclick="if(confirm('Kompetenz löschen?')) this.form.querySelector('[name=action]').value='delete_competency', this.form.submit();">Löschen</button></form>
+          </div>
+        <?php endforeach; ?>
       </details>
     <?php endforeach; ?>
   </details>
@@ -103,25 +158,27 @@ render_admin_header('Kompetenzen verwalten'); ?>
 
 <details class="card"><summary><strong>Kategorie hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_category"><label>Kategoriename (Deutsch)</label><input class="input" name="name_de" required><label>Category name (English)</label><input class="input" name="name_en" required><button class="btn">Speichern</button></form></details>
 <details class="card"><summary><strong>Unterkategorie hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_subcategory"><label>Kategorie</label><select class="input" name="category_id"><?php foreach($cats as $c):?><option value="<?=$c['id']?>"><?=h($c['name_de'])?> / <?=h($c['name_en'])?></option><?php endforeach;?></select><label>Unterkategorie (Deutsch)</label><input class="input" name="name_de" required><label>Subcategory (English)</label><input class="input" name="name_en" required><button class="btn">Speichern</button></form></details>
-<details class="card"><summary><strong>Kompetenz hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_competency"><label>Kategorie</label><select class="input" name="category_id"><?php foreach($cats as $c):?><option value="<?=$c['id']?>"><?=h($c['name_de'])?> / <?=h($c['name_en'])?></option><?php endforeach;?></select><label>Unterkategorie (optional)</label><select class="input" name="subcategory_id"><option value="0">Ohne Unterkategorie</option><?php foreach($subs as $s):?><option value="<?=$s['id']?>"><?=h($s['name_de'])?> / <?=h($s['name_en'])?></option><?php endforeach;?></select><label>Eindeutiger Code (optional, wird sonst automatisch erzeugt)</label><input class="input" name="code"><label>Kompetenztext (Deutsch)</label><textarea class="input" name="text_de" required></textarea><label>Competency text (English)</label><textarea class="input" name="text_en" required></textarea><label><input type="checkbox" name="is_required" value="1"> verpflichtend</label><div><?php foreach($gradeOptions as $g):?><label style="margin-right:8px;"><input type="checkbox" name="grades[]" value="<?=$g?>"> <?=$g?></label><?php endforeach;?></div><button class="btn">Speichern</button></form></details>
+<details class="card"><summary><strong>Kompetenz hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_competency"><label>Kategorie</label><select class="input" name="category_id"><?php foreach($cats as $c):?><option value="<?=$c['id']?>"><?=h($c['name_de'])?> / <?=h($c['name_en'])?></option><?php endforeach;?></select><label>Unterkategorie (optional)</label><select class="input" name="subcategory_id"><option value="0">Ohne Unterkategorie</option><?php foreach($subs as $s):?><option value="<?=$s['id']?>"><?=h($s['name_de'])?> / <?=h($s['name_en'])?></option><?php endforeach;?></select><label>Eindeutiger Code (optional, Auto bei leer)</label><input class="input" name="code"><label>Kompetenztext (Deutsch)</label><input class="input" name="text_de" required><label>Competency text (English)</label><input class="input" name="text_en" required><label><input type="checkbox" name="is_required" value="1"> verpflichtend</label><div><?php foreach($gradeOptions as $g):?><label style="margin-right:8px;"><input type="checkbox" name="grades[]" value="<?=$g?>"> <?=$g?></label><?php endforeach;?></div><button class="btn">Speichern</button></form></details>
 
 <script>
 let dragNode = null;
-document.querySelectorAll('[draggable="true"]').forEach((n) => {
-  n.addEventListener('dragstart', () => { dragNode = n; });
-  n.addEventListener('dragover', (e) => e.preventDefault());
+for (const n of document.querySelectorAll('.drag-item[draggable="true"]')) {
+  n.addEventListener('dragstart', () => { dragNode = n; n.style.opacity = '0.5'; });
+  n.addEventListener('dragend', () => { n.style.opacity = '1'; });
+  n.addEventListener('dragover', (e) => { e.preventDefault(); });
   n.addEventListener('drop', async (e) => {
     e.preventDefault();
     if (!dragNode || dragNode === n) return;
+    if ((dragNode.dataset.itemType || '') !== (n.dataset.itemType || '')) return;
     const fd = new FormData();
     fd.append('csrf_token', <?= json_encode(csrf_token()) ?>);
     fd.append('action', 'move_item');
     fd.append('item_type', dragNode.dataset.itemType || 'competency');
     fd.append('id', dragNode.dataset.id || '0');
-    fd.append('to_sort', n.dataset.sort || '0');
-    await fetch('', { method:'POST', body: fd });
-    window.location.reload();
+    fd.append('before_id', n.dataset.id || '0');
+    const res = await fetch('', { method:'POST', body: fd });
+    if (res.ok) window.location.reload();
   });
-});
+}
 </script>
 <?php render_admin_footer();
