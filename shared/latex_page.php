@@ -55,9 +55,13 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
   </select>
 </div>
-<?php foreach ($sectionsDb as $section): ?>
+<?php foreach ($sectionsDb as $sectionId => $section): ?>
   <details class="card" style="padding:12px 16px; margin:16px 0;" open>
     <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+    <label style="display:block; margin:8px 0 12px 0;">
+      <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
+      Seitenumbruch vor dieser Kategorie
+    </label>
 
     <?php if (!empty($section['direct'])): ?>
       <details style="margin-top:12px; margin-left:12px;" open>

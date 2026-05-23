@@ -336,7 +336,7 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $selectedGrade = (int)($_POST['grade_level'] ?? 1);
     if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
-    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills);
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
     $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
 }
 
@@ -547,13 +547,13 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
-function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
+function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = []): string {
     if (!$selectedCodes) {
         return "\\newcommand{\\GradeLevel}{1}\n\\newcommand{\\AllSkillSections}{}\n";
     }
 
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.code, c.text_de, c.text_en, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
+    $sql = "SELECT c.code, c.text_de, c.text_en, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
@@ -566,20 +566,36 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
 
     $sections = [];
     foreach ($rows as $r) {
-        $cat = trim((string)($r['cat_de'] ?? 'Sonstiges'));
-        if ($cat === '') $cat = 'Sonstiges';
+        $catId = (int)($r['category_id'] ?? 0);
+        if ($catId <= 0) {
+            continue;
+        }
+        $catDe = trim((string)($r['cat_de'] ?? 'Sonstiges'));
+        if ($catDe === '') $catDe = 'Sonstiges';
         $sub = trim((string)($r['sub_de'] ?? ''));
-        $sections[$cat]['en'] = (string)($r['cat_en'] ?? '');
-        $sections[$cat]['subs'][$sub]['en'] = (string)($r['sub_en'] ?? '');
-        $sections[$cat]['subs'][$sub]['items'][] = $r;
+        if (!isset($sections[$catId])) {
+            $sections[$catId] = [
+                'de' => $catDe,
+                'en' => (string)($r['cat_en'] ?? ''),
+                'subs' => [],
+            ];
+        }
+        if (!isset($sections[$catId]['subs'][$sub])) {
+            $sections[$catId]['subs'][$sub] = [
+                'en' => (string)($r['sub_en'] ?? ''),
+                'items' => [],
+            ];
+        }
+        $sections[$catId]['subs'][$sub]['items'][] = $r;
     }
 
     $out = "% AUTO-GENERATED FROM DB\n";
     $out .= "\\newcommand{\\GradeLevel}{1}\n";
     $i = 1;
-    foreach ($sections as $catDe => $catData) {
-        $macro = latex_macro_name_for_category($i, (string)$catDe);
-        $out .= "% SECTION: " . latex_escape((string)$catDe) . "\n";
+    foreach ($sections as $catId => $catData) {
+        $catDe = (string)($catData['de'] ?? 'Sonstiges');
+        $macro = latex_macro_name_for_category($i, $catDe);
+        $out .= "% SECTION: " . latex_escape($catDe) . "\n";
         $macroBody = "";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
             if ($subDe !== '') {
@@ -596,13 +612,21 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
             }
         }
         $out .= latex_newcommand($macro, $macroBody);
-        $sections[$catDe]['macro'] = $macro;
+        $sections[$catId]['macro'] = $macro;
         $i++;
     }
 
     $out .= "\\newcommand{\\AllSkillSections}{%\n";
-    foreach ($sections as $catDe => $catData) {
-        $out .= "  \\SkillSection{" . latex_escape($catDe) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
+    $pagebreakMap = [];
+    foreach ($pagebreakCategoryIds as $id) {
+        $parsed = (int)$id;
+        if ($parsed > 0) {
+            $pagebreakMap[$parsed] = true;
+        }
+    }
+    foreach ($sections as $catId => $catData) {
+        $cmd = isset($pagebreakMap[(int)$catId]) ? 'SkillSectionPageBreak' : 'SkillSection';
+        $out .= "  \\" . $cmd . "{" . latex_escape((string)($catData['de'] ?? 'Sonstiges')) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
     }
     $out .= "}\n";
 
