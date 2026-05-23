@@ -75,108 +75,66 @@ summary{cursor:pointer}
 <script>
 const csrf = <?= json_encode(csrf_token()) ?>;
 let drag = null;
-const ph=document.createElement('div'); ph.className='drop-placeholder';
 const draggables = Array.from(document.querySelectorAll('.drag'));
-const groups = Array.from(document.querySelectorAll('details[data-category-id]'));
 const dropZones = [];
 
-function nearestGroup(el){
-  return el.closest('details[data-category-id]');
+function clearDropZones(){ dropZones.forEach(z=>z.classList.remove('active')); }
+function mountDropZone(parent, beforeEl, type, beforeId, targetCategoryId='0', targetSubcategoryId='0'){
+  const dz = document.createElement('div');
+  dz.className = 'drop-zone';
+  dz.dataset.type = type;
+  dz.dataset.beforeId = String(beforeId);
+  dz.dataset.targetCategoryId = String(targetCategoryId);
+  dz.dataset.targetSubcategoryId = String(targetSubcategoryId);
+  parent.insertBefore(dz, beforeEl);
+  dropZones.push(dz);
+  dz.addEventListener('dragover', (e)=>{
+    if(!drag || drag.dataset.type!==dz.dataset.type) return;
+    e.preventDefault(); clearDropZones(); dz.classList.add('active');
+  });
+  dz.addEventListener('drop', async (e)=>{
+    if(!drag || drag.dataset.type!==dz.dataset.type) return;
+    e.preventDefault();
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('action','move_item');
+    fd.append('item_type', drag.dataset.type);
+    fd.append('id', drag.dataset.id);
+    fd.append('before_id', dz.dataset.beforeId || '0');
+    fd.append('target_category_id', dz.dataset.targetCategoryId || '0');
+    fd.append('target_subcategory_id', dz.dataset.targetSubcategoryId || '0');
+    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
+    if(!res.ok) return;
+    // DOM update without reload
+    const targetParent = dz.parentNode;
+    targetParent.insertBefore(drag, dz.nextSibling);
+    clearDropZones();
+  });
+}
+
+// category level zones
+const categoryNodes = Array.from(document.querySelectorAll('.drag[data-type="category"]'));
+for (const node of categoryNodes) mountDropZone(node.parentNode, node, 'category', node.dataset.id);
+if (categoryNodes.length) mountDropZone(categoryNodes[0].parentNode, null, 'category', 0);
+
+// subcategory + competency zones per group
+const groupDetails = Array.from(document.querySelectorAll('details[data-category-id]'));
+for (const g of groupDetails) {
+  const cat = g.dataset.categoryId || '0';
+  const sub = g.dataset.subcategoryId || '0';
+  const subs = Array.from(g.querySelectorAll(':scope > .drag[data-type="subcategory"]'));
+  for (const node of subs) mountDropZone(node.parentNode, node, 'subcategory', node.dataset.id, cat, '0');
+  mountDropZone(g, null, 'subcategory', 0, cat, '0');
+
+  const comps = Array.from(g.querySelectorAll(':scope > .drag[data-type="competency"]'));
+  for (const node of comps) mountDropZone(node.parentNode, node, 'competency', node.dataset.id, cat, sub);
+  mountDropZone(g, null, 'competency', 0, cat, sub);
 }
 
 draggables.forEach(el => {
   el.addEventListener('dragstart', () => { drag = el; el.classList.add('is-dragging'); });
-  el.addEventListener('dragend', () => { el.classList.remove('is-dragging'); ph.remove(); drag = null; });
+  el.addEventListener('dragend', () => { el.classList.remove('is-dragging'); drag = null; clearDropZones(); });
 });
-
-// stable reorder among same type
-draggables.forEach(el => {
-  // dedicated zone before each same-level element (also works when target details collapsed)
-  const dz = document.createElement('div');
-  dz.className = 'drop-zone';
-  dz.dataset.beforeId = el.dataset.id || '0';
-  dz.dataset.type = el.dataset.type || '';
-  el.parentNode.insertBefore(dz, el);
-  dropZones.push(dz);
-
-  dz.addEventListener('dragover', (e) => {
-    if (!drag || drag.dataset.type !== dz.dataset.type) return;
-    e.preventDefault();
-    dz.classList.add('active');
-    if (ph.parentNode !== dz.parentNode || ph.nextSibling !== el) dz.parentNode.insertBefore(ph, el);
-  });
-  dz.addEventListener('dragleave', () => dz.classList.remove('active'));
-  dz.addEventListener('drop', async (e) => {
-    if (!drag || drag.dataset.type !== dz.dataset.type) return;
-    e.preventDefault();
-    dz.classList.remove('active');
-    const container = nearestGroup(el);
-    const fd = new FormData();
-    fd.append('csrf_token', csrf);
-    fd.append('action', 'move_item');
-    fd.append('item_type', drag.dataset.type);
-    fd.append('id', drag.dataset.id);
-    fd.append('before_id', dz.dataset.beforeId || '0');
-    if (container) {
-      fd.append('target_category_id', container.dataset.categoryId || '0');
-      fd.append('target_subcategory_id', container.dataset.subcategoryId || '0');
-    }
-    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
-    if (res.ok) location.reload();
-  });
-
-  el.addEventListener('dragover', (e) => {
-    if (!drag || drag === el) return;
-    if (drag.dataset.type !== el.dataset.type) return;
-    e.preventDefault();
-    if (ph.previousSibling === el) return;
-    el.parentNode.insertBefore(ph, el);
-  });
-  el.addEventListener('drop', async (e) => {
-    if (!drag || drag === el) return;
-    if (drag.dataset.type !== el.dataset.type) return;
-    e.preventDefault();
-    const container = nearestGroup(el);
-    const fd = new FormData();
-    fd.append('csrf_token', csrf);
-    fd.append('action', 'move_item');
-    fd.append('item_type', drag.dataset.type);
-    fd.append('id', drag.dataset.id);
-    fd.append('before_id', el.dataset.id);
-    if (container) {
-      fd.append('target_category_id', container.dataset.categoryId || '0');
-      fd.append('target_subcategory_id', container.dataset.subcategoryId || '0');
-    }
-    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
-    if (res.ok) location.reload();
-  });
-});
-
-// move competencies into other categories/subcategories by dropping on group headers
-groups.forEach(g => {
-  g.addEventListener('dragover', (e) => {
-    if (!drag || drag.dataset.type !== 'competency') return;
-    e.preventDefault();
-    const lastComp = Array.from(g.querySelectorAll('.drag[data-type="competency"]')).pop();
-    if (lastComp) lastComp.parentNode.insertBefore(ph, lastComp.nextSibling);
-    else g.appendChild(ph);
-  });
-  g.addEventListener('drop', async (e) => {
-    if (!drag || drag.dataset.type !== 'competency') return;
-    e.preventDefault();
-    const fd = new FormData();
-    fd.append('csrf_token', csrf);
-    fd.append('action', 'move_item');
-    fd.append('item_type', 'competency');
-    fd.append('id', drag.dataset.id);
-    fd.append('before_id', '0');
-    fd.append('target_category_id', g.dataset.categoryId || '0');
-    fd.append('target_subcategory_id', g.dataset.subcategoryId || '0');
-    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
-    if (res.ok) location.reload();
-  });
-});
-document.addEventListener('dragend',()=>dropZones.forEach(z=>z.classList.remove('active')));
 document.querySelectorAll('.icon-del').forEach(btn=>btn.addEventListener('click', async ()=>{const count=Number(btn.dataset.count||0); const action=btn.dataset.action||''; const id=btn.dataset.id||''; const txt=(action==='delete_competency')?'Diese Kompetenz löschen?':`Wirklich löschen? Dabei werden ${count} Kompetenzen entfernt.`; if(!confirm(txt)) return; const fd=new FormData(); fd.append('csrf_token',csrf); fd.append('action',action); fd.append('id',id); const res=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); if(res.ok){ const row=btn.closest('.drag, details'); if(row) row.remove(); }}));
 const dlg=document.getElementById('editDlg'), fields=document.getElementById('dlgFields'), title=document.getElementById('dlgTitle'), save=document.getElementById('saveBtn');
 let current=null;
