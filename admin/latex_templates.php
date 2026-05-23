@@ -6,6 +6,6 @@ require __DIR__ . '/_layout.php';
 require_admin();
 
 render_admin_header(t('latex.title', 'Kompetenz-PDF erstellen'));
-$latexBuildUrl = url('admin/build.php');
+$latexBuildUrl = url('admin/pdf_preview.php');
 require __DIR__ . '/../shared/latex_page.php';
 render_admin_footer();

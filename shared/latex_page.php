@@ -120,7 +120,7 @@ $sections = parse_sections($content);
 <h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
-<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>?preview_name=vorlage.pdf" target="pdfPreviewFrame">
+<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>" target="pdfPreviewFrame">
 <?php foreach ($sections as $section): ?>
   <?php $macroName = $section['macroName']; $items = $macros[$macroName]['items'] ?? []; ?>
   <div class="card" style="padding:16px; margin:16px 0;">
@@ -141,25 +141,38 @@ $sections = parse_sections($content);
 <?php endforeach; ?>
 
 <button class="btn" type="submit" id="createPdfButton">PDF erstellen</button>
-<div id="pdfLoading" style="display:none; margin-top:12px;">PDF wird erstellt … bitte warten.</div>
 </form>
 
-<iframe id="pdfPreview" name="pdfPreviewFrame" style="display:none; width:100%; height:90vh; margin-top:24px;"></iframe>
+<div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
+  <div class="card" style="padding:18px 22px; font-weight:600;">PDF wird erstellt … bitte warten.</div>
+</div>
+
+<div id="pdfPreviewWrap" style="display:none; margin-top:24px;">
+  <iframe id="pdfPreview" name="pdfPreviewFrame" style="width:100%; height:90vh;"></iframe>
+</div>
 
 <script>
 const form = document.getElementById('pdfForm');
 const pdfPreview = document.getElementById('pdfPreview');
+const pdfPreviewWrap = document.getElementById('pdfPreviewWrap');
 const createPdfButton = document.getElementById('createPdfButton');
-const pdfLoading = document.getElementById('pdfLoading');
+const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
+let isSubmitting = false;
 
 form.addEventListener('submit', () => {
+  isSubmitting = true;
   createPdfButton.disabled = true;
-  pdfLoading.style.display = 'block';
-  pdfPreview.style.display = 'block';
+  pdfLoadingOverlay.style.display = 'flex';
 });
 
 pdfPreview.addEventListener('load', () => {
+  if (!isSubmitting) {
+    return;
+  }
+
+  isSubmitting = false;
   createPdfButton.disabled = false;
-  pdfLoading.style.display = 'none';
+  pdfLoadingOverlay.style.display = 'none';
+  pdfPreviewWrap.style.display = 'block';
 });
 </script>
