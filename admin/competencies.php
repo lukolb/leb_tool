@@ -66,6 +66,30 @@ function delete_preview(PDO $pdo, string $type, int $id): array {
 
 if(isset($_GET['download_csv_template'])){ $csv="category_de;category_en;subcategory_de;subcategory_en;code;text_de;text_en;required;grades\n"; $csv.="Sozialkompetenz;Social skills;Kommunikation;Communication;SOZI-001;Hört anderen aufmerksam zu.;Listens attentively to others.;1;1,2\n"; header('Content-Type:text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="kompetenzen_vorlage.csv"'); echo $csv; exit; }
 
+
+if($_SERVER['REQUEST_METHOD']==='POST' && !isset($_SERVER['HTTP_X_REQUESTED_WITH']) && (string)($_POST['action']??'')==='import_csv'){
+  try{ csrf_verify();
+    if(!isset($_FILES['csv']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) throw new RuntimeException('CSV-Datei fehlt.');
+    $fh=fopen($_FILES['csv']['tmp_name'],'r'); if(!$fh) throw new RuntimeException('CSV konnte nicht gelesen werden.');
+    $line=0; while(($row=fgetcsv($fh,0,';'))!==false){ $line++; if($line===1) continue; if(count($row)<9) continue;
+      [$catDe,$catEn,$subDe,$subEn,$code,$textDe,$textEn,$required,$grades]=$row;
+      $catDe=trim((string)$catDe); $catEn=trim((string)$catEn); $subDe=trim((string)$subDe); $subEn=trim((string)$subEn); $code=trim((string)$code); $textDe=trim((string)$textDe); $textEn=trim((string)$textEn);
+      if($catDe===''||$catEn===''||$textDe==='') continue;
+      $st=$pdo->prepare("SELECT id FROM competency_categories WHERE LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catDe,$catEn]); $catId=(int)($st->fetchColumn()?:0);
+      if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,?)")->execute([$catDe,$catEn,max_sort($pdo,'competency_categories')+1]); $catId=(int)$pdo->lastInsertId(); }
+      $subId=0; if($subDe!==''||$subEn!==''){ $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0); if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$catId,$subDe,$subEn,max_sort($pdo,'competency_subcategories','category_id=?',[$catId])+1]); $subId=(int)$pdo->lastInsertId(); } }
+      if($code==='') $code=next_comp_code($pdo,$catId,$catDe);
+      $st=$pdo->prepare("SELECT id FROM competencies WHERE code=? LIMIT 1"); $st->execute([$code]); $compId=(int)($st->fetchColumn()?:0);
+      $isReq=(trim(strtolower((string)$required))==='1'||trim(strtolower((string)$required))==='ja')?1:0;
+      if($compId>0){ $pdo->prepare("UPDATE competencies SET category_id=?,subcategory_id=?,text_de=?,text_en=?,is_required=? WHERE id=?")->execute([$catId,$subId>0?$subId:null,$textDe,$textEn,$isReq,$compId]); }
+      else { $so=$subId>0?max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1:max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1; $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$so]); $compId=(int)$pdo->lastInsertId(); }
+      $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$compId]);
+      foreach(explode(',',(string)$grades) as $g){ $gi=(int)trim($g); if($gi>=1&&$gi<=4){ $pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]); } }
+    }
+    fclose($fh);
+    header('Location: '.url('admin/competencies.php')); exit;
+  } catch(Throwable $e){ header('Location: '.url('admin/competencies.php')); exit; }
+}
 if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'])){
   try{
     csrf_verify();
@@ -155,6 +179,8 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
 render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1><a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a></div>
 <div id="msg" class="card" style="display:none;"></div>
+<div class="card"><details><summary><strong>CSV importieren</strong></summary><form method="post" enctype="multipart/form-data" style="margin-top:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="import_csv"><input type="file" name="csv" accept=".csv,text/csv" required><button class="btn" type="submit">Import starten</button></form></details></div>
+
 <div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center"><h3>Baumstruktur</h3><button id="addCategory" class="btn" type="button">+ Kategorie</button></div>
   <div id="tree"></div>
@@ -189,19 +215,37 @@ let stateTree=[]; let busy=false; let modalState=null; const collapsed = new Set
 function showMsg(text,err=false){msg.style.display='block';msg.textContent=text;msg.className='card '+(err?'alert danger':'alert success');}
 async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>{ if(Array.isArray(v)){ v.forEach(x=>fd.append(k+'[]',String(x))); } else fd.append(k,String(v)); }); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
 function gradeChecks(sel=[]){return `<div><strong>Klassenstufe</strong> ${[1,2,3,4].map(g=>`<label><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}> ${g}</label>`).join(' ')}</div>`}
-function render(){treeEl.innerHTML=''; if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;} stateTree.forEach(c=>treeEl.appendChild(renderCategory(c))); initDnd();}
-function renderCategory(c){const nodeKey=`category-${c.id}`;const hasChildren=(c.children||[]).length>0;const isCollapsed=collapsed.has(nodeKey);const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='category'; el.dataset.id=c.id; el.innerHTML=`<div class="drop-target" data-type="category" data-parent="0" data-before="${c.id}"></div><div class="node-head"><span class="node-title">${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div><div class="children" style="${isCollapsed?'display:none':''}"></div>`;
-const ch=el.querySelector('.children');
-if(!c.children.length){ch.innerHTML='<div>Keine Unterkategorien.</div>';} else c.children.forEach(s=>ch.appendChild(renderSub(s,c.id)));
-const tail=document.createElement('div'); tail.className='drop-target'; tail.dataset.type='category'; tail.dataset.parent='0'; tail.dataset.before='0'; ch.parentNode.appendChild(tail);
-return el;}
-function renderSub(s,catId){const virtual=!!s.is_virtual;const sid=String(s.id);const nodeKey=`subcategory-${sid}`;const hasChildren=(s.children||[]).length>0;const isCollapsed=collapsed.has(nodeKey);const el=document.createElement('div'); el.className='tree-node'+(virtual?'':' draggable'); if(!virtual){el.draggable=true; el.dataset.type='subcategory'; el.dataset.id=sid; el.dataset.parent=catId;} el.innerHTML=`${virtual?'':'<div class="drop-target" data-type="subcategory" data-parent="'+catId+'" data-before="'+sid+'"></div>'}<div class="node-head"><span>${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div><div class="children" style="${isCollapsed?'display:none':''}"></div>`;
-const ch=el.querySelector('.children'); if(!s.children.length){ch.innerHTML='<div>Keine Kompetenzen.</div>';} else s.children.forEach(k=>ch.appendChild(renderComp(k,s.id)));
-const tail=document.createElement('div'); tail.className='drop-target'; tail.dataset.type='subcategory'; tail.dataset.parent=catId; tail.dataset.before='0';
-const ct=document.createElement('div'); ct.className='drop-target'; ct.dataset.type='competency'; ct.dataset.parent=virtual?'0':sid; ct.dataset.targetCategory=String(catId); ct.dataset.before='0';
-el.appendChild(ct); el.appendChild(tail);
-return el;}
-function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.id=k.id; el.dataset.parent=subId;const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="drop-target" data-type="competency" data-parent="${subId}" data-before="${k.id}" data-target-category="${k.category_id||0}"></div><div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
+function render(){
+  treeEl.innerHTML='';
+  if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;}
+  const catList=document.createElement('div'); catList.dataset.dndList='categories';
+  stateTree.forEach(c=>{ catList.appendChild(renderCategory(c)); });
+  treeEl.appendChild(catList);
+  initDnd();
+}
+function mkDrop(type,before='0',extra={}){ const d=document.createElement('div'); d.className=`drop-target dnd-placeholder-${type}`; d.dataset.type=type; d.dataset.before=String(before); Object.entries(extra).forEach(([k,v])=>d.dataset[k]=String(v)); return d; }
+function renderCategory(c){
+  const nodeKey=`category-${c.id}`; const isCollapsed=collapsed.has(nodeKey); const hasChildren=(c.children||[]).length>0;
+  const wrap=document.createElement('div'); wrap.dataset.itemType='category'; wrap.dataset.itemId=String(c.id); wrap.className='tree-node draggable'; wrap.draggable=true; wrap.dataset.type='category'; wrap.dataset.id=String(c.id);
+  wrap.innerHTML=`<div class="node-head"><span class="node-title"><span class="drag-handle category-drag-handle">↕</span>${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div>`;
+  const subList=document.createElement('div'); subList.className='children'; subList.dataset.dndList='subcategories'; subList.dataset.categoryId=String(c.id); subList.style.display=isCollapsed?'none':'';
+  subList.appendChild(mkDrop('subcategory','0',{parent:c.id}));
+  (c.children||[]).forEach(s=>{ subList.appendChild(renderSub(s,c.id)); subList.appendChild(mkDrop('subcategory','0',{parent:c.id})); });
+  wrap.appendChild(subList);
+  return wrap;
+}
+function renderSub(s,catId){
+  const virtual=!!s.is_virtual; const sid=String(s.id); const nodeKey=`subcategory-${sid}`; const isCollapsed=collapsed.has(nodeKey); const hasChildren=(s.children||[]).length>0;
+  const wrap=document.createElement('div'); wrap.className='tree-node'+(virtual?'':' draggable');
+  if(!virtual){ wrap.draggable=true; wrap.dataset.type='subcategory'; wrap.dataset.id=sid; wrap.dataset.parent=String(catId); wrap.dataset.itemType='subcategory'; wrap.dataset.itemId=sid; }
+  wrap.innerHTML=`<div class="node-head"><span>${virtual?'':`<span class="drag-handle subcategory-drag-handle">↕</span>`}${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div>`;
+  const compList=document.createElement('div'); compList.className='children'; compList.dataset.dndList='competencies'; compList.dataset.categoryId=String(catId); compList.dataset.subcategoryId=virtual?'':sid; if(virtual) compList.dataset.virtualNoSubcategory='1'; compList.style.display=isCollapsed?'none':'';
+  compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId}));
+  (s.children||[]).forEach(k=>{ compList.appendChild(renderComp(k,sid)); compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId})); });
+  wrap.appendChild(compList);
+  return wrap;
+}
+function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="node-head"><span><span class="drag-handle competency-drag-handle">↕</span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
 function escapeHtml(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 
 function findNode(type,id){for(const c of stateTree){if(type==='category'&&c.id==id) return c; for(const s of c.children||[]){if(type==='subcategory'&&s.id==id)return s; for(const k of s.children||[]){if(type==='competency'&&k.id==id)return k;}}} return null;}
@@ -227,21 +271,24 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 
 let dragEl=null;
 function initDnd(){
-  document.querySelectorAll('.draggable').forEach(el=>{el.addEventListener('dragstart',()=>{dragEl=el;}); el.addEventListener('dragend',()=>{dragEl=null; document.querySelectorAll('.drop-target').forEach(d=>d.classList.remove('active'));});});
+  console.debug('[competencies dnd] init categories', document.querySelectorAll('[data-dnd-list="categories"]').length);
+  document.querySelectorAll('[data-dnd-list="subcategories"]').forEach(l=>console.debug('[competencies dnd] init subcategories', l.dataset.categoryId));
+  document.querySelectorAll('[data-dnd-list="competencies"]').forEach(l=>console.debug('[competencies dnd] init competencies', l.dataset.categoryId, l.dataset.subcategoryId||''));
+  document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=()=>{dragEl=el; console.debug('[competencies dnd] start', el.dataset.type, el.dataset.id);}; el.ondragend=()=>{dragEl=null; document.querySelectorAll('.drop-target').forEach(d=>d.classList.remove('active'));};});
   document.querySelectorAll('.drop-target').forEach(d=>{
-    d.addEventListener('dragover',(e)=>{if(!dragEl) return; if(d.dataset.type!==dragEl.dataset.type) return; e.preventDefault(); d.classList.add('active');});
-    d.addEventListener('dragleave',()=>d.classList.remove('active'));
-    d.addEventListener('drop', async (e)=>{e.preventDefault(); d.classList.remove('active'); if(!dragEl) return; const type=dragEl.dataset.type; if(d.dataset.type!==type) return; const parent=Number(d.dataset.parent||0); const before=Number(d.dataset.before||0);
-      try{
-        let siblings=[];
-        if(type==='category') siblings=Array.from(document.querySelectorAll('.draggable[data-type="category"]')).map(x=>Number(x.dataset.id));
-        if(type==='subcategory'){ const list=d.closest('.children'); siblings=Array.from((list||document).querySelectorAll(`.draggable[data-type=\"subcategory\"][data-parent=\"${parent}\"]`)).map(x=>Number(x.dataset.id)); }
-        if(type==='competency'){ const list=d.closest('.children'); siblings=Array.from((list||document).querySelectorAll(`.draggable[data-type=\"competency\"][data-parent=\"${parent}\"]`)).map(x=>Number(x.dataset.id)); }
-        const id=Number(dragEl.dataset.id); siblings=siblings.filter(x=>x!==id); if(before>0){const idx=siblings.indexOf(before); if(idx>=0) siblings.splice(idx,0,id); else siblings.push(id);} else siblings.push(id);
-        const res=await api({action:'reorder',type,id:String(id),new_parent_id:String(parent),target_category_id:String(d.dataset.targetCategory||0),ordered_ids:siblings});
-        stateTree=res.tree; render();
-      }catch(err){showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render();}
-    });
+    d.ondragover=(e)=>{if(!dragEl) return; const item=dragEl.dataset.type; const to=d.closest('[data-dnd-list]')?.dataset.dndList||''; const allow=(item==='category'&&to==='categories')||(item==='subcategory'&&to==='subcategories')||(item==='competency'&&to==='competencies'); if(!allow) return false; e.preventDefault(); d.classList.add('active'); console.debug('[competencies dnd] move', item, 'from', dragEl.closest('[data-dnd-list]')?.dataset.dndList, 'to', to);};
+    d.ondragleave=()=>d.classList.remove('active');
+    d.ondrop=async (e)=>{e.preventDefault(); d.classList.remove('active'); if(!dragEl) return; const itemType=dragEl.dataset.type; const targetList=d.closest('[data-dnd-list]'); const toListType=targetList?.dataset.dndList||''; if((itemType==='category'&&toListType!=='categories')||(itemType==='subcategory'&&toListType!=='subcategories')||(itemType==='competency'&&toListType!=='competencies')) return;
+      const before=Number(d.dataset.before||0); const id=Number(dragEl.dataset.id);
+      let orderedIds=Array.from((targetList?.children||[])).filter(x=>x.dataset&&x.dataset.itemType===itemType).map(x=>Number(x.dataset.itemId));
+      orderedIds=orderedIds.filter(x=>x!==id); if(before>0){const i=orderedIds.indexOf(before); if(i>=0) orderedIds.splice(i,0,id); else orderedIds.push(id);} else orderedIds.push(id);
+      const targetCategoryId = Number(targetList?.dataset.categoryId||d.dataset.targetCategory||0);
+      const subRaw = (targetList?.dataset.subcategoryId ?? '');
+      const targetSubcategoryId = itemType==='competency' ? (subRaw===''?0:Number(subRaw||0)) : Number(d.dataset.parent||0);
+      console.debug('[competencies dnd] end', {itemType,itemId:id,fromListType:dragEl.closest('[data-dnd-list]')?.dataset.dndList,toListType,targetCategoryId,targetSubcategoryId,orderedIds});
+      try{ const res=await api({action:'reorder',type:itemType,id:String(id),new_parent_id:String(targetSubcategoryId||0),target_category_id:String(targetCategoryId||0),ordered_ids:orderedIds}); stateTree=res.tree; render(); }
+      catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
+    };
   });
 }
 
