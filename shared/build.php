@@ -558,7 +558,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
          . "WHERE c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
-         . "ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id";
+         . "ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
 
     $st = $pdo->prepare($sql);
     $st->execute($selectedCodes);
