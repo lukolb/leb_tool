@@ -160,7 +160,7 @@ render_admin_header('Kompetenzen verwalten'); ?>
   <div id="tree"></div>
 </div>
 
-<dialog id="modal"><form method="dialog" id="modalForm"><h3 id="modalTitle"></h3><div id="modalFields"></div><menu><button class="btn" value="cancel">Abbrechen</button><button id="modalSave" class="btn" value="default">Speichern</button></menu></form></dialog>
+<dialog id="modal"><form id="modalForm"><h3 id="modalTitle"></h3><div id="modalFields"></div><menu><button type="button" id="modalCancel" class="btn">Abbrechen</button><button id="modalSave" type="submit" class="btn">Speichern</button></menu></form></dialog>
 
 <style>
 .tree-node{border:1px solid #e7e7e7;border-radius:8px;padding:8px;margin:6px 0;background:#fff}
@@ -218,9 +218,12 @@ if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,
 if(act==='del'){try{const t=b.dataset.type; const prev=await api({action:'delete_preview',type:t,id:String(id)}); let txt=''; if(t==='category') txt=`Diese Kategorie enthält ${prev.counts.subcategories} Unterkategorien und ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='subcategory') txt=`Diese Unterkategorie enthält ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='competency') txt='Diese Kompetenz wirklich löschen?'; if(!confirm(txt)) return; const res=await api({action:'delete',type:t,id:String(id)}); stateTree=res.tree; render(); showMsg('Gelöscht.'); }catch(err){showMsg(err.message,true);} }
 });
 
-modalSave.addEventListener('click', async (e)=>{e.preventDefault(); if(!modalState) return; const fd=new FormData(document.getElementById('modalForm')); const data={action:modalState.mode==='create'?'create':'update',type:modalState.type}; if(modalState.id) data.id=String(modalState.id); if(modalState.parent!==undefined) data.parent_id=String(modalState.parent); if(modalState.targetCategory) data.target_category_id=String(modalState.targetCategory); for(const [k,v] of fd.entries()){ if(k.endsWith('[]')){ const key=k.slice(0,-2); if(!data[key]) data[key]=[]; data[key].push(v);} else data[k]=v; }
+document.getElementById('modalForm').addEventListener('submit', async (e)=>{e.preventDefault(); if(!modalState) return; const fd=new FormData(document.getElementById('modalForm')); const data={action:modalState.mode==='create'?'create':'update',type:modalState.type}; if(modalState.id) data.id=String(modalState.id); if(modalState.parent!==undefined) data.parent_id=String(modalState.parent); if(modalState.targetCategory) data.target_category_id=String(modalState.targetCategory); for(const [k,v] of fd.entries()){ if(k.endsWith('[]')){ const key=k.slice(0,-2); if(!data[key]) data[key]=[]; data[key].push(v);} else data[k]=v; }
   try{ modalSave.disabled=true; const res=await api(data); stateTree=res.tree; render(); modal.close(); showMsg('Gespeichert.'); }catch(err){showMsg(err.message,true);} finally {modalSave.disabled=false;}
 });
+
+document.getElementById('modalCancel').addEventListener('click',()=>{document.getElementById('modalForm').reset(); modal.close();});
+modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementById('modalForm').reset(); modal.close();});
 
 let dragEl=null;
 function initDnd(){
@@ -232,8 +235,8 @@ function initDnd(){
       try{
         let siblings=[];
         if(type==='category') siblings=Array.from(document.querySelectorAll('.draggable[data-type="category"]')).map(x=>Number(x.dataset.id));
-        if(type==='subcategory') siblings=Array.from(document.querySelectorAll(`.draggable[data-type="subcategory"][data-parent="${parent}"]`)).map(x=>Number(x.dataset.id));
-        if(type==='competency') siblings=Array.from(document.querySelectorAll(`.draggable[data-type="competency"][data-parent="${parent}"]`)).map(x=>Number(x.dataset.id));
+        if(type==='subcategory'){ const list=d.closest('.children'); siblings=Array.from((list||document).querySelectorAll(`.draggable[data-type=\"subcategory\"][data-parent=\"${parent}\"]`)).map(x=>Number(x.dataset.id)); }
+        if(type==='competency'){ const list=d.closest('.children'); siblings=Array.from((list||document).querySelectorAll(`.draggable[data-type=\"competency\"][data-parent=\"${parent}\"]`)).map(x=>Number(x.dataset.id)); }
         const id=Number(dragEl.dataset.id); siblings=siblings.filter(x=>x!==id); if(before>0){const idx=siblings.indexOf(before); if(idx>=0) siblings.splice(idx,0,id); else siblings.push(id);} else siblings.push(id);
         const res=await api({action:'reorder',type,id:String(id),new_parent_id:String(parent),target_category_id:String(d.dataset.targetCategory||0),ordered_ids:siblings});
         stateTree=res.tree; render();
