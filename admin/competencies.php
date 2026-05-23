@@ -201,12 +201,12 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .node-title{font-weight:600}
 .node-actions button{background:transparent;border:0;cursor:pointer}
 .children{margin-left:18px}
-.drop-target{min-height:10px;border:2px dashed transparent;border-radius:8px;margin:4px 0;display:flex;align-items:center;padding:0 10px;font-size:12px;color:#7a7a7a}
+.drop-target{min-height:10px;height:10px;border:2px dashed transparent;border-radius:8px;margin:4px 0;display:flex;align-items:center;padding:0 10px;font-size:12px;color:#7a7a7a}
 .drop-target.active{border-color:#0b57d0;background:#eef5ff}
-.dnd-placeholder-subcategory{min-height:10px;border-width:1px;margin:3px 0 3px 12px}
+.dnd-placeholder-subcategory{min-height:10px;height:10px;border-width:1px;margin:3px 0 3px 12px}
 .dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
-body.is-dragging-category .dnd-placeholder-category{min-height:40px}
-body.is-dragging-subcategory .dnd-placeholder-subcategory{min-height:38px}
+body.is-dragging-category .dnd-placeholder-category{height:44px;min-height:44px;border-color:#0b57d0;background:#eef5ff;display:flex;align-items:center}
+body.is-dragging-subcategory .dnd-placeholder-subcategory{height:40px;min-height:40px;border-color:#7a3cff;background:#f5f0ff;display:flex;align-items:center}
 body.is-dragging-category .dnd-placeholder-subcategory{display:none}
 body.is-dragging-subcategory .dnd-placeholder-category{display:none}
 .draggable{cursor:move}
@@ -252,15 +252,20 @@ function renderCategory(c){
   const subList=document.createElement('div'); subList.className='children'; subList.dataset.dndList='subcategories'; subList.dataset.categoryId=String(c.id); subList.style.display=isCollapsed?'none':'';
   const realSubs=(c.children||[]).filter(x=>!x.is_virtual);
   const virtualSubs=(c.children||[]).filter(x=>!!x.is_virtual);
-  const firstReal=realSubs[0] ? String(realSubs[0].id) : '';
-  subList.appendChild(mkDrop('subcategory', firstReal || '0', {dropType:'subcategory', parent:c.id, beforeId:firstReal}));
-  realSubs.forEach((s,idx)=>{ 
-    subList.appendChild(renderSub(s,c.id)); 
-    const nextId = realSubs[idx+1] ? String(realSubs[idx+1].id) : '';
-    subList.appendChild(mkDrop('subcategory', nextId || '0', {dropType:'subcategory', parent:c.id, beforeId:nextId}));
-  });
+  if(realSubs.length>0){
+    const firstReal=String(realSubs[0].id);
+    subList.appendChild(mkDrop('subcategory', firstReal, {dropType:'subcategory', parent:c.id, beforeId:firstReal}));
+    realSubs.forEach((s,idx)=>{ 
+      subList.appendChild(renderSub(s,c.id)); 
+      const nextId = realSubs[idx+1] ? String(realSubs[idx+1].id) : '';
+      subList.appendChild(mkDrop('subcategory', nextId || '0', {dropType:'subcategory', parent:c.id, beforeId:nextId}));
+    });
+    virtualSubs.forEach(s=>subList.appendChild(renderSub(s,c.id)));
+  } else {
+    virtualSubs.forEach(s=>subList.appendChild(renderSub(s,c.id)));
+    subList.appendChild(mkDrop('subcategory', '0', {dropType:'subcategory', parent:c.id, beforeId:''}));
+  }
   console.debug('[competencies dnd subcategory] render subcategory dropzones', c.id, realSubs.map(s=>s.id));
-  virtualSubs.forEach(s=>subList.appendChild(renderSub(s,c.id)));
   wrap.appendChild(subList);
   return wrap;
 }
@@ -321,9 +326,15 @@ function initDnd(){
       const itemId=Number(dragEl.dataset.id);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      const currentIds=stateTree.map(c=>Number(c.id));
+      const oldIndex=currentIds.indexOf(itemId);
+      const beforeIndex=beforeId>0?currentIds.indexOf(beforeId):currentIds.length;
+      if(beforeId===itemId || beforeIndex===oldIndex || beforeIndex===oldIndex+1){
+        console.debug('[competencies dnd] noop same position', { type:'category', itemId, beforeId, oldIndex, beforeIndex });
+        return;
+      }
       let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
-      const currentIds=stateTree.map(c=>Number(c.id));
       if(itemId===beforeId || orderedIds.join(',')===currentIds.join(',')) return;
       console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
       try{ const res=await api({action:'reorder',type:'category',id:String(itemId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
@@ -341,6 +352,15 @@ function initDnd(){
       const targetCategoryId=Number(d.dataset.parent||0);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(sourceCategoryId===targetCategoryId){
+        const sameIds=((stateTree.find(c=>Number(c.id)===sourceCategoryId)?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
+        const oldIndex=sameIds.indexOf(itemId);
+        const beforeIndex=beforeId>0?sameIds.indexOf(beforeId):sameIds.length;
+        if(beforeId===itemId || beforeIndex===oldIndex || beforeIndex===oldIndex+1){
+          console.debug('[competencies dnd] noop same position', { type:'subcategory', itemId, beforeId, oldIndex, beforeIndex });
+          return;
+        }
+      }
       const targetCat = stateTree.find(c=>Number(c.id)===targetCategoryId);
       const targetRealSubs = ((targetCat?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
       let orderedIds=targetRealSubs.filter(x=>x!==itemId);
