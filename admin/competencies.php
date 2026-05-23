@@ -201,9 +201,9 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .node-title{font-weight:600}
 .node-actions button{background:transparent;border:0;cursor:pointer}
 .children{margin-left:18px}
-.drop-target{height:12px;min-height:12px;border:2px dashed transparent;border-radius:8px;margin:4px 0;display:flex;align-items:center;padding:0;font-size:0;color:transparent}
+.drop-target{height:12px;min-height:12px;border:2px dashed transparent;border-radius:8px;margin:4px 0;padding:0;font-size:0;color:transparent}
 .drop-target.active{border-color:#0b57d0;background:#eef5ff}
-.dnd-placeholder-subcategory{min-height:10px;height:10px;border-width:1px;margin:3px 0 3px 12px}
+.dnd-placeholder-subcategory{height:12px;min-height:12px;border-width:1px;margin:3px 0 3px 12px}
 .dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
 body.is-dragging-category .dnd-placeholder-category{height:32px;min-height:32px;border-color:#0b57d0;background:#eef5ff}
 body.is-dragging-subcategory .dnd-placeholder-subcategory{height:30px;min-height:30px;border-color:#7a3cff;background:#f5f0ff}
@@ -307,18 +307,13 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 let dragEl=null;
 function initDnd(){
   console.debug('[competencies dnd] bind draggables',
-    Array.from(document.querySelectorAll('.draggable')).map(el => ({
-      type: el.dataset.type,
-      id: el.dataset.id,
-      itemType: el.dataset.itemType,
-      itemId: el.dataset.itemId
-    }))
+    Array.from(document.querySelectorAll('.draggable')).map(el => ({ type: el.dataset.type, id: el.dataset.id, itemType: el.dataset.itemType, itemId: el.dataset.itemId }))
   );
   document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
     e.stopPropagation();
     const type = el.dataset.type;
     const id = Number(el.dataset.id || 0);
-    if(type!=='category' && type!=='subcategory'){ e.preventDefault(); return; }
+    if(type!=='category' && type!=='subcategory') return;
     dragEl=el;
     document.body.classList.remove('is-dragging-category','is-dragging-subcategory');
     document.body.classList.add(type==='category'?'is-dragging-category':'is-dragging-subcategory');
@@ -360,10 +355,10 @@ function initDnd(){
       const targetRealSubs = ((targetCat?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
       let orderedIds=targetRealSubs.filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
-      const currentIds = sourceCategoryId===targetCategoryId
-        ? ((stateTree.find(c=>Number(c.id)===sourceCategoryId)?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id))
-        : targetRealSubs;
-      if(sourceCategoryId===targetCategoryId && orderedIds.join(',')===currentIds.join(',')) return;
+      if(sourceCategoryId===targetCategoryId){
+        const currentIds=((stateTree.find(c=>Number(c.id)===sourceCategoryId)?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
+        if(orderedIds.join(',')===currentIds.join(',')) return;
+      }
       console.debug('[competencies dnd subcategory] drop', {itemId,sourceCategoryId,targetCategoryId,beforeId:beforeIdRaw,orderedIds});
       try{ const res=await api({action:'reorder',type:'subcategory',id:String(itemId),new_parent_id:String(targetCategoryId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
       catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
