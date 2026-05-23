@@ -207,6 +207,8 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
 body.is-dragging-category .dnd-placeholder-category{height:32px;min-height:32px;border-color:#0b57d0;background:#eef5ff}
 body.is-dragging-subcategory .dnd-placeholder-subcategory{height:30px;min-height:30px;border-color:#7a3cff;background:#f5f0ff}
+body.is-dragging-category .dnd-placeholder-subcategory{display:none !important}
+body.is-dragging-subcategory .dnd-placeholder-category{display:none !important}
 .draggable{cursor:move}
 .comp-main{font-weight:600}
 .comp-sub{font-size:12px;color:#666}
@@ -304,16 +306,24 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 
 let dragEl=null;
 function initDnd(){
+  console.debug('[competencies dnd] bind draggables',
+    Array.from(document.querySelectorAll('.draggable')).map(el => ({
+      type: el.dataset.type,
+      id: el.dataset.id,
+      itemType: el.dataset.itemType,
+      itemId: el.dataset.itemId
+    }))
+  );
   document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
     e.stopPropagation();
-    const nested = e.target.closest('.tree-node.draggable');
-    if(nested && nested!==el) return;
-    if(el.dataset.type!=='category' && el.dataset.type!=='subcategory') return;
-    dragEl=el; 
+    const type = el.dataset.type;
+    const id = Number(el.dataset.id || 0);
+    if(type!=='category' && type!=='subcategory'){ e.preventDefault(); return; }
+    dragEl=el;
     document.body.classList.remove('is-dragging-category','is-dragging-subcategory');
-    document.body.classList.add(el.dataset.type==='category'?'is-dragging-category':'is-dragging-subcategory');
-    if(el.dataset.type==='category') console.debug('[competencies dnd category] start', Number(el.dataset.id));
-    if(el.dataset.type==='subcategory') console.debug('[competencies dnd subcategory] start', Number(el.dataset.id), Number(el.dataset.parent||0));
+    document.body.classList.add(type==='category'?'is-dragging-category':'is-dragging-subcategory');
+    console.debug('[competencies dnd] start', { type, id });
+    if(type==='subcategory') console.debug('[competencies dnd subcategory] start', Number(el.dataset.id), Number(el.dataset.parent||0));
   }; el.ondragend=(e)=>{e.stopPropagation(); dragEl=null; document.body.classList.remove('is-dragging-category','is-dragging-subcategory'); document.querySelectorAll('.dnd-placeholder-category,.dnd-placeholder-subcategory').forEach(d=>d.classList.remove('active'));};});
   document.querySelectorAll('.dnd-placeholder-category').forEach(d=>{
     d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='category'){ console.debug('[competencies dnd category] dragover ignored for', dragEl?.dataset?.type); return; } if(d.dataset.dropType!=='category') return; e.preventDefault(); d.classList.add('active'); };
