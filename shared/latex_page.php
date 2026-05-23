@@ -55,16 +55,32 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
   </select>
 </div>
+<div style="display:flex;gap:8px;margin:8px 0 12px;">
+  <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
+  <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>
+</div>
 <?php foreach ($sectionsDb as $sectionId => $section): ?>
-  <details class="card" style="padding:12px 16px; margin:16px 0;" open>
+  <?php
+    $hasRequired = false;
+    foreach (($section['direct'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break; } }
+    if (!$hasRequired) { foreach (($section['subs'] ?? []) as $sub) { foreach (($sub['items'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break 2; } } } }
+  ?>
+  <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:12px 16px; margin:16px 0;" open>
     <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+    <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
+      <input type="checkbox" class="category-toggle" data-cat-id="<?= h((string)$sectionId) ?>" checked>
+      Kategorie aktiv
+    </label>
+    <div class="category-warning" data-cat-warning="<?= h((string)$sectionId) ?>" style="display:none; margin:0 0 10px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">
+      Achtung: Durch das Deaktivieren dieser Kategorie werden auch verpflichtende Kompetenzen ausgeblendet.
+    </div>
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
       Seitenumbruch vor dieser Kategorie
     </label>
-
+    <div class="category-body" data-cat-body="<?= h((string)$sectionId) ?>">
     <?php if (!empty($section['direct'])): ?>
-      <details style="margin-top:12px; margin-left:12px;" open>
+      <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong>Ohne Unterkategorie</strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
           <label style="display:block; margin:8px 0 8px 18px;">
@@ -78,7 +94,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php endif; ?>
 
     <?php foreach (($section['subs'] ?? []) as $sub): ?>
-      <details style="margin-top:12px; margin-left:12px;" open>
+      <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
         <?php foreach (($sub['items'] ?? []) as $item): ?>
           <label style="display:block; margin:8px 0 8px 18px;">
@@ -90,6 +106,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <?php endforeach; ?>
       </details>
     <?php endforeach; ?>
+    </div>
   </details>
 <?php endforeach; ?>
 
@@ -125,10 +142,35 @@ const pdfDebug = document.getElementById('pdfDebug');
 const pdfDebugText = document.getElementById('pdfDebugText');
 let currentPdfUrl = null;
 
+function applyCategoryState(catId){
+  const root = document.querySelector(`.cat-details[data-cat-id="${catId}"]`);
+  if(!root) return;
+  const toggle = root.querySelector('.category-toggle');
+  const active = !!toggle?.checked;
+  const body = root.querySelector(`[data-cat-body="${catId}"]`);
+  const warn = root.querySelector(`[data-cat-warning="${catId}"]`);
+  const hasReq = root.dataset.hasRequired === '1';
+  root.style.opacity = active ? '1' : '.62';
+  if(body) body.style.display = active ? '' : 'none';
+  if(warn) warn.style.display = (!active && hasReq) ? 'block' : 'none';
+  root.querySelectorAll('input[name="skills[]"], input[name="pagebreaks[]"]').forEach(el=>el.disabled = !active);
+}
+
 document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
   const u = new URL(window.location.href);
   u.searchParams.set('grade_level', e.target.value);
   window.location.href = u.toString();
+});
+
+document.querySelectorAll('.category-toggle').forEach(cb=>{
+  cb.addEventListener('change',()=>applyCategoryState(cb.dataset.catId));
+  applyCategoryState(cb.dataset.catId);
+});
+document.getElementById('collapseAllBtn')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.cat-details, .sub-details').forEach(el=>{ el.open = false; });
+});
+document.getElementById('expandAllBtn')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.cat-details, .sub-details').forEach(el=>{ el.open = true; });
 });
 
 form.addEventListener('submit', async (event) => {
