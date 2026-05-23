@@ -85,25 +85,49 @@ $comps = $pdo->query("SELECT c.*,s.name_de AS sub_de, s.name_en AS sub_en, cat.n
 $gradesByComp=[]; $gr=$pdo->query("SELECT competency_id, grade_level FROM competency_grade_levels ORDER BY grade_level")->fetchAll(PDO::FETCH_ASSOC);
 foreach($gr as $r){$gradesByComp[(int)$r['competency_id']][]=(int)$r['grade_level'];}
 
+$subsByCat = [];
+foreach ($subs as $s) { $subsByCat[(int)$s['category_id']][] = $s; }
+$compsBySub = [];
+foreach ($comps as $c) { $compsBySub[(int)$c['subcategory_id']][] = $c; }
+
 render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1><?php if($ok):?><div class="alert success"><?=h($ok)?></div><?php endif; ?><?php if($err):?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
   <a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a>
 </div>
 
 <div class="card">
-  <h3>Übersicht (bestehend)</h3>
-  <table class="table" id="compTable"><tr><th>Kategorie</th><th>Unterkategorie</th><th>Code</th><th>DE</th><th>EN</th><th>Typ</th><th>Stufen</th><th>Aktion</th></tr>
-  <?php foreach($comps as $c): $id=(int)$c['id']; ?>
-    <tr draggable="true" data-id="<?=$id?>" data-sort="<?= (int)$c['sort_order'] ?>">
-      <td><?=h((string)$c['cat_de'])?><br><small><?=h((string)$c['cat_en'])?></small></td>
-      <td><?=h((string)$c['sub_de'])?><br><small><?=h((string)$c['sub_en'])?></small></td>
-      <td><?=h((string)$c['code'])?></td><td><?=h((string)$c['text_de'])?></td><td><?=h((string)$c['text_en'])?></td>
-      <td><?= ((int)$c['is_required']===1)?'verpflichtend':'optional' ?></td>
-      <td><?=h(implode(',', $gradesByComp[$id] ?? []))?></td>
-      <td><form method="post" onsubmit="return confirm('Löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_competency"><input type="hidden" name="id" value="<?=$id?>"><button class="btn">Löschen</button></form></td>
-    </tr>
-  <?php endforeach; ?>
-  </table>
+  <h3>Übersicht (Baumstruktur)</h3>
+  <div id="compTree">
+    <?php foreach ($cats as $cat): $catId=(int)$cat['id']; ?>
+      <details open style="margin-bottom:10px;">
+        <summary><strong><?=h((string)$cat['name_de'])?></strong> <small><?=h((string)$cat['name_en'])?></small></summary>
+        <?php foreach (($subsByCat[$catId] ?? []) as $sub): $subId=(int)$sub['id']; ?>
+          <details style="margin:8px 0 8px 18px;">
+            <summary><?=h((string)$sub['name_de'])?> <small><?=h((string)$sub['name_en'])?></small></summary>
+            <table class="table" id="compTable_<?=$subId?>" style="margin-left:18px;">
+              <tr><th>Code</th><th>DE</th><th>EN</th><th>Typ</th><th>Stufen</th><th>Aktion</th></tr>
+              <?php foreach (($compsBySub[$subId] ?? []) as $c): $id=(int)$c['id']; ?>
+                <tr draggable="true" data-id="<?=$id?>" data-sort="<?= (int)$c['sort_order'] ?>">
+                  <td><?=h((string)$c['code'])?></td>
+                  <td><?=h((string)$c['text_de'])?></td>
+                  <td><?=h((string)$c['text_en'])?></td>
+                  <td><?= ((int)$c['is_required']===1)?'verpflichtend':'optional' ?></td>
+                  <td><?=h(implode(',', $gradesByComp[$id] ?? []))?></td>
+                  <td><form method="post" onsubmit="return confirm('Löschen?')"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="delete_competency"><input type="hidden" name="id" value="<?=$id?>"><button class="btn">Löschen</button></form></td>
+                </tr>
+              <?php endforeach; ?>
+              <?php if (empty($compsBySub[$subId])): ?>
+                <tr><td colspan="6" class="muted">Keine Kompetenzen zugeordnet.</td></tr>
+              <?php endif; ?>
+            </table>
+          </details>
+        <?php endforeach; ?>
+        <?php if (empty($subsByCat[$catId])): ?>
+          <div class="muted" style="margin-left:18px;">Keine Unterkategorien vorhanden.</div>
+        <?php endif; ?>
+      </details>
+    <?php endforeach; ?>
+  </div>
 </div>
 
 <details class="card"><summary><strong>Kategorie hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_category"><input class="input" name="name_de" placeholder="Deutsch" required><input class="input" name="name_en" placeholder="Englisch" required><input class="input" name="sort_order" type="number" value="0"><button class="btn">Speichern</button></form></details>
@@ -111,9 +135,8 @@ render_admin_header('Kompetenzen verwalten'); ?>
 <details class="card"><summary><strong>Kompetenz hinzufügen</strong></summary><form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_competency"><select class="input" name="subcategory_id"><?php foreach($subs as $s):?><option value="<?=$s['id']?>"><?=h($s['cat_de'])?> → <?=h($s['name_de'])?></option><?php endforeach;?></select><input class="input" name="code" placeholder="Code"><textarea class="input" name="text_de" required></textarea><textarea class="input" name="text_en" required></textarea><label><input type="checkbox" name="is_required" value="1"> verpflichtend</label><input class="input" name="sort_order" type="number" value="0"><div><?php foreach($gradeOptions as $g):?><label style="margin-right:8px;"><input type="checkbox" name="grades[]" value="<?=$g?>"> <?=$g?></label><?php endforeach;?></div><button class="btn">Speichern</button></form></details>
 
 <script>
-const table = document.getElementById('compTable');
 let dragRow = null;
-table.querySelectorAll('tr[draggable="true"]').forEach((row) => {
+document.querySelectorAll('tr[draggable="true"]').forEach((row) => {
   row.addEventListener('dragstart', () => { dragRow = row; });
   row.addEventListener('dragover', (e) => { e.preventDefault(); });
   row.addEventListener('drop', async (e) => {
