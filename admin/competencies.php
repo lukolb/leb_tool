@@ -69,24 +69,32 @@ if(isset($_GET['download_csv_template'])){ $csv="category_de;category_en;subcate
 
 if($_SERVER['REQUEST_METHOD']==='POST' && !isset($_SERVER['HTTP_X_REQUESTED_WITH']) && (string)($_POST['action']??'')==='import_csv'){
   try{ csrf_verify();
+    $stats=[
+      'categories_created'=>0,'categories_reused'=>0,
+      'subcategories_created'=>0,'subcategories_reused'=>0,
+      'competencies_created'=>0,'competencies_updated'=>0,
+      'rows_ignored'=>0,'errors'=>[]
+    ];
     if(!isset($_FILES['csv']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) throw new RuntimeException('CSV-Datei fehlt.');
     $fh=fopen($_FILES['csv']['tmp_name'],'r'); if(!$fh) throw new RuntimeException('CSV konnte nicht gelesen werden.');
-    $line=0; while(($row=fgetcsv($fh,0,';'))!==false){ $line++; if($line===1) continue; if(count($row)<9) continue;
+    $line=0; while(($row=fgetcsv($fh,0,';'))!==false){ $line++; if($line===1) continue; if(count($row)<9){ $stats['rows_ignored']++; $stats['errors'][]=$line; continue; }
       [$catDe,$catEn,$subDe,$subEn,$code,$textDe,$textEn,$required,$grades]=$row;
       $catDe=trim((string)$catDe); $catEn=trim((string)$catEn); $subDe=trim((string)$subDe); $subEn=trim((string)$subEn); $code=trim((string)$code); $textDe=trim((string)$textDe); $textEn=trim((string)$textEn);
-      if($catDe===''||$catEn===''||$textDe==='') continue;
+      if($catDe===''||$catEn===''||$textDe===''){ $stats['rows_ignored']++; $stats['errors'][]=$line; continue; }
       $st=$pdo->prepare("SELECT id FROM competency_categories WHERE LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catDe,$catEn]); $catId=(int)($st->fetchColumn()?:0);
-      if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,?)")->execute([$catDe,$catEn,max_sort($pdo,'competency_categories')+1]); $catId=(int)$pdo->lastInsertId(); }
-      $subId=0; if($subDe!==''||$subEn!==''){ $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0); if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$catId,$subDe,$subEn,max_sort($pdo,'competency_subcategories','category_id=?',[$catId])+1]); $subId=(int)$pdo->lastInsertId(); } }
+      if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,?)")->execute([$catDe,$catEn,max_sort($pdo,'competency_categories')+1]); $catId=(int)$pdo->lastInsertId(); $stats['categories_created']++; }
+      else { $stats['categories_reused']++; }
+      $subId=0; if($subDe!==''||$subEn!==''){ $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0); if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$catId,$subDe,$subEn,max_sort($pdo,'competency_subcategories','category_id=?',[$catId])+1]); $subId=(int)$pdo->lastInsertId(); $stats['subcategories_created']++; } else { $stats['subcategories_reused']++; } }
       if($code==='') $code=next_comp_code($pdo,$catId,$catDe);
       $st=$pdo->prepare("SELECT id FROM competencies WHERE code=? LIMIT 1"); $st->execute([$code]); $compId=(int)($st->fetchColumn()?:0);
       $isReq=(trim(strtolower((string)$required))==='1'||trim(strtolower((string)$required))==='ja')?1:0;
-      if($compId>0){ $pdo->prepare("UPDATE competencies SET category_id=?,subcategory_id=?,text_de=?,text_en=?,is_required=? WHERE id=?")->execute([$catId,$subId>0?$subId:null,$textDe,$textEn,$isReq,$compId]); }
-      else { $so=$subId>0?max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1:max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1; $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$so]); $compId=(int)$pdo->lastInsertId(); }
+      if($compId>0){ $pdo->prepare("UPDATE competencies SET category_id=?,subcategory_id=?,text_de=?,text_en=?,is_required=? WHERE id=?")->execute([$catId,$subId>0?$subId:null,$textDe,$textEn,$isReq,$compId]); $stats['competencies_updated']++; }
+      else { $so=$subId>0?max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1:max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1; $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$so]); $compId=(int)$pdo->lastInsertId(); $stats['competencies_created']++; }
       $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$compId]);
       foreach(explode(',',(string)$grades) as $g){ $gi=(int)trim($g); if($gi>=1&&$gi<=4){ $pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]); } }
     }
     fclose($fh);
+    $_SESSION['competency_import_flash']=$stats;
     header('Location: '.url('admin/competencies.php')); exit;
   } catch(Throwable $e){ header('Location: '.url('admin/competencies.php')); exit; }
 }
@@ -204,10 +212,23 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
 render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1></div>
 <div id="msg" class="card" style="display:none;"></div>
+<?php if(isset($_SESSION['competency_import_flash'])): $importFlash=$_SESSION['competency_import_flash']; unset($_SESSION['competency_import_flash']); ?>
+<div class="card alert success">
+  <strong>Import abgeschlossen:</strong>
+  <?=h((string)$importFlash['categories_created'])?> Kategorien neu,
+  <?=h((string)$importFlash['categories_reused'])?> Kategorien wiederverwendet,
+  <?=h((string)$importFlash['subcategories_created'])?> Unterkategorien neu,
+  <?=h((string)$importFlash['subcategories_reused'])?> Unterkategorien wiederverwendet,
+  <?=h((string)$importFlash['competencies_created'])?> Kompetenzen neu,
+  <?=h((string)$importFlash['competencies_updated'])?> Kompetenzen aktualisiert,
+  <?=h((string)$importFlash['rows_ignored'])?> Zeilen ignoriert.
+</div>
+<?php endif; ?>
 <div class="card"><details><summary><strong>CSV importieren</strong></summary><form method="post" enctype="multipart/form-data" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="import_csv"><input type="file" name="csv" accept=".csv,text/csv" required><button class="btn" type="submit">Import starten</button></form></details></div>
 
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3>Baumstruktur</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="collapseAll" class="btn" type="button">Alle einklappen</button><button id="expandAll" class="btn" type="button">Alle ausklappen</button><button id="addCategory" class="btn" type="button">+ Kategorie</button></div></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3>Baumstruktur</h3><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="choice-row"><span class="form-label">Klassenstufe</span><label class="choice-chip"><input type="checkbox" id="gradeFilterAll" checked> <span>Alle</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="1"> <span>1</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="2"> <span>2</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="3"> <span>3</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="4"> <span>4</span></label></div><button id="collapseAll" class="btn" type="button">Alle einklappen</button><button id="expandAll" class="btn" type="button">Alle ausklappen</button><button id="addCategory" class="btn" type="button">+ Kategorie</button></div></div>
+  <div id="filterInfo" style="display:none;margin:6px 0;color:#9a5a12;font-size:13px">Zum Sortieren bitte den Klassenfilter zurücksetzen.</div>
   <div id="tree"></div>
 </div>
 
@@ -269,24 +290,34 @@ const modalTitle=document.getElementById('modalTitle');
 const modalFields=document.getElementById('modalFields');
 const modalSave=document.getElementById('modalSave');
 let stateTree=[]; let busy=false; let modalState=null; const collapsed = new Set();
+const activeGradeFilter = new Set();
 function showMsg(text,err=false){msg.style.display='block';msg.textContent=text;msg.className='card '+(err?'alert danger':'alert success');}
 async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>{ if(Array.isArray(v)){ v.forEach(x=>fd.append(k+'[]',String(x))); } else fd.append(k,String(v)); }); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
 function gradeChecks(sel=[]){return `<div class="form-group"><div class="form-label">Klassenstufe</div><div class="choice-row grade-choice-row">${[1,2,3,4].map(g=>`<label class="choice-chip grade-choice grade-${g}"><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}><span>${g}</span></label>`).join('')}</div></div>`}
 function render(){
   treeEl.innerHTML='';
-  if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;}
+  const filterActive=activeGradeFilter.size>0;
+  const viewTree = !filterActive ? stateTree : stateTree.map(c=>{
+    const filteredChildren=(c.children||[]).map(s=>{
+      const comps=(s.children||[]).filter(k=>(k.grades||[]).some(g=>activeGradeFilter.has(Number(g))));
+      return {...s, children: comps};
+    }).filter(s=>(s.children||[]).length>0);
+    return {...c, children: filteredChildren};
+  }).filter(c=>(c.children||[]).length>0);
+  if(!viewTree.length){treeEl.innerHTML=filterActive?'<div>Keine Kompetenzen für diese Klassenstufe gefunden.</div>':'<div>Keine Kategorien vorhanden.</div>'; return;}
   const catList=document.createElement('div'); catList.dataset.dndList='categories';
-  if(stateTree.length){
-    catList.appendChild(mkDrop('category', String(stateTree[0].id), {dropType:'category', beforeId:String(stateTree[0].id)}));
+  if(viewTree.length){
+    catList.appendChild(mkDrop('category', String(viewTree[0].id), {dropType:'category', beforeId:String(viewTree[0].id)}));
   }
-  stateTree.forEach((c,idx)=>{
+  viewTree.forEach((c,idx)=>{
     catList.appendChild(renderCategory(c));
-    const nextId = stateTree[idx+1] ? String(stateTree[idx+1].id) : '';
+    const nextId = viewTree[idx+1] ? String(viewTree[idx+1].id) : '';
     catList.appendChild(mkDrop('category', nextId || '0', {dropType:'category', beforeId:nextId}));
   });
-  console.debug('[competencies dnd category] render category dropzones', stateTree.map(c=>c.id));
+  console.debug('[competencies dnd category] render category dropzones', viewTree.map(c=>c.id));
   treeEl.appendChild(catList);
-  initDnd();
+  document.getElementById('filterInfo').style.display=filterActive?'block':'none';
+  if(!filterActive) initDnd();
 }
 function mkDrop(type,before='0',extra={}){ const d=document.createElement('div'); d.className=`drop-target dnd-placeholder-${type}`; d.dataset.type=type; d.dataset.before=String(before); Object.entries(extra).forEach(([k,v])=>d.dataset[k]=String(v)); return d; }
 function renderCategory(c){
@@ -337,6 +368,16 @@ document.getElementById('collapseAll').addEventListener('click',()=>{
   render();
 });
 document.getElementById('expandAll').addEventListener('click',()=>{ collapsed.clear(); render(); });
+document.getElementById('gradeFilterAll').addEventListener('change',(e)=>{
+  if(e.target.checked){ activeGradeFilter.clear(); document.querySelectorAll('.gradeFilter').forEach(cb=>cb.checked=false); render(); }
+});
+document.querySelectorAll('.gradeFilter').forEach(cb=>cb.addEventListener('change',(e)=>{
+  const val=Number(e.target.value);
+  if(e.target.checked) activeGradeFilter.add(val); else activeGradeFilter.delete(val);
+  const all=document.getElementById('gradeFilterAll');
+  all.checked=activeGradeFilter.size===0;
+  render();
+}));
 treeEl.addEventListener('click', async (e)=>{const b=e.target.closest('button[data-act]'); if(!b) return; const act=b.dataset.act; const id=Number(b.dataset.id);
 if(act==='addSub'){openModal({mode:'create',type:'subcategory',parent:id,title:'Unterkategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'});}
 if(act==='toggle'){const key=b.dataset.node; if(collapsed.has(key)) collapsed.delete(key); else collapsed.add(key); render(); return;}
