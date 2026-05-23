@@ -153,6 +153,26 @@ function ensure_balanced_braces_or_fail(string $tex, string $label = 'data.tex')
     }
 }
 
+function latex_newcommand(string $name, string $body): string {
+    return "\\newcommand{\\" . $name . "}{%\n" . $body . "}\n\n";
+}
+
+function with_line_numbers(string $content, int $maxLines = 120): string {
+    $lines = preg_split("/\r\n|\n|\r/", $content) ?: [];
+    $out = [];
+    $n = min(count($lines), $maxLines);
+    for ($i = 0; $i < $n; $i++) {
+        $out[] = str_pad((string)($i + 1), 4, ' ', STR_PAD_LEFT) . ': ' . $lines[$i];
+    }
+    return implode("\n", $out);
+}
+
+function write_debug_data_tex(string $content): string {
+    $path = sys_get_temp_dir() . '/leb_data_debug.tex';
+    @file_put_contents($path, $content);
+    return $path;
+}
+
 function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
@@ -271,11 +291,13 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 
 try {
     ensure_balanced_braces_or_fail($generatedDataTex, 'data.tex');
+    $debugPath = write_debug_data_tex($generatedDataTex);
 } catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
     echo "Fehler bei data.tex-Generierung: " . $e->getMessage() . "\n\n";
-    echo substr($generatedDataTex, 0, 4000);
+    echo "Debug-Datei: " . sys_get_temp_dir() . "/leb_data_debug.tex\n\n";
+    echo with_line_numbers($generatedDataTex, 120);
     exit;
 }
 
@@ -434,6 +456,9 @@ if (!$isPdf) {
     echo "LaTeX konnte nicht kompiliert werden.\n\n";
     echo "HTTP Status: " . $statusCode . "\n";
     echo "Content-Type: " . $contentType . "\n\n";
+    echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n\n";
+    echo "data.tex (erste 120 Zeilen):\n";
+    echo with_line_numbers($generatedDataTex, 120) . "\n\n";
     echo $body;
     exit;
 }
@@ -502,22 +527,22 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
     foreach ($sections as $catDe => $catData) {
         $macro = 'DbCat' . $i . 'Skills';
         $out .= "% SECTION: " . latex_escape((string)$catDe) . "\n";
-        $out .= "\\newcommand{\\" . $macro . "}{%\n";
+        $macroBody = "";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
             if ($subDe !== '') {
-                $out .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n\n";
+                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n\n";
             }
             foreach (($subData['items'] ?? []) as $it) {
                 $code = trim((string)($it['code'] ?? ''));
                 if ($code === '') {
                     continue;
                 }
-                $out .= "  \\SkillRow{" . latex_escape($code) . "}\n";
-                $out .= "    {" . latex_escape((string)$it['text_de']) . "}\n";
-                $out .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n\n";
+                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}\n";
+                $macroBody .= "    {" . latex_escape((string)$it['text_de']) . "}\n";
+                $macroBody .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n\n";
             }
         }
-        $out .= "}\n\n";
+        $out .= latex_newcommand($macro, $macroBody);
         $sections[$catDe]['macro'] = $macro;
         $i++;
     }
