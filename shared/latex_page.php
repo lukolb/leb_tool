@@ -120,7 +120,7 @@ $sections = parse_sections($content);
 <h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
-<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
+<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>" target="pdfPreviewFrame">
 <?php foreach ($sections as $section): ?>
   <?php $macroName = $section['macroName']; $items = $macros[$macroName]['items'] ?? []; ?>
   <div class="card" style="padding:16px; margin:16px 0;">
@@ -144,44 +144,22 @@ $sections = parse_sections($content);
 <div id="pdfLoading" style="display:none; margin-top:12px;">PDF wird erstellt … bitte warten.</div>
 </form>
 
-<iframe id="pdfPreview" style="display:none; width:100%; height:90vh; margin-top:24px;"></iframe>
+<iframe id="pdfPreview" name="pdfPreviewFrame" style="display:none; width:100%; height:90vh; margin-top:24px;"></iframe>
 
 <script>
-let currentPdfUrl = null;
-const pdfFilename = 'vorlage.pdf';
 const form = document.getElementById('pdfForm');
 const pdfPreview = document.getElementById('pdfPreview');
 const createPdfButton = document.getElementById('createPdfButton');
 const pdfLoading = document.getElementById('pdfLoading');
 
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-
+form.addEventListener('submit', () => {
   createPdfButton.disabled = true;
   pdfLoading.style.display = 'block';
+  pdfPreview.style.display = 'block';
+});
 
-  try {
-    const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
-
-    if (!response.ok) {
-      const text = await response.text();
-      alert(text || 'PDF konnte nicht erstellt werden.');
-      return;
-    }
-
-    const blob = await response.blob();
-
-    if (currentPdfUrl) {
-      URL.revokeObjectURL(currentPdfUrl);
-    }
-
-    const pdfFile = new File([blob], pdfFilename, { type: 'application/pdf' });
-    currentPdfUrl = URL.createObjectURL(pdfFile);
-    pdfPreview.src = currentPdfUrl;
-    pdfPreview.style.display = 'block';
-  } finally {
-    createPdfButton.disabled = false;
-    pdfLoading.style.display = 'none';
-  }
+pdfPreview.addEventListener('load', () => {
+  createPdfButton.disabled = false;
+  pdfLoading.style.display = 'none';
 });
 </script>
