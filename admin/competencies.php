@@ -108,6 +108,13 @@ function mountDropZone(parent, beforeEl, type, beforeId, targetCategoryId='0', t
     // DOM update without reload
     const targetParent = dz.parentNode;
     targetParent.insertBefore(drag, dz.nextSibling);
+    if (drag.dataset.type === 'competency') {
+      const targetGroup = targetParent.closest('details[data-category-id]');
+      if (targetGroup) {
+        drag.dataset.categoryId = targetGroup.dataset.categoryId || '0';
+        drag.dataset.subcategoryId = targetGroup.dataset.subcategoryId || '0';
+      }
+    }
     clearDropZones();
   });
 }
@@ -122,11 +129,14 @@ const groupDetails = Array.from(document.querySelectorAll('details[data-category
 for (const g of groupDetails) {
   const cat = g.dataset.categoryId || '0';
   const sub = g.dataset.subcategoryId || '0';
-  const subs = Array.from(g.querySelectorAll(':scope > .drag[data-type="subcategory"]'));
-  for (const node of subs) mountDropZone(node.parentNode, node, 'subcategory', node.dataset.id, cat, '0');
-  mountDropZone(g, null, 'subcategory', 0, cat, '0');
+  const directChildren = Array.from(g.children);
+  const subs = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'subcategory');
+  if (sub === '0') {
+    for (const node of subs) mountDropZone(node.parentNode, node, 'subcategory', node.dataset.id, cat, '0');
+    mountDropZone(g, null, 'subcategory', 0, cat, '0');
+  }
 
-  const comps = Array.from(g.querySelectorAll(':scope > .drag[data-type="competency"]'));
+  const comps = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'competency');
   for (const node of comps) mountDropZone(node.parentNode, node, 'competency', node.dataset.id, cat, sub);
   mountDropZone(g, null, 'competency', 0, cat, sub);
 }
