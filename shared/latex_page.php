@@ -53,6 +53,7 @@ $sectionsDb = db_competency_sections($pdo);
         <?php foreach ($section['direct'] as $item): ?>
           <label style="display:block; margin:8px 0 8px 18px;">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
             <?= h((string)$item['text_de']) ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? '<strong>(verpflichtend)</strong>' : '<em>(optional)</em>' ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -66,6 +67,7 @@ $sectionsDb = db_competency_sections($pdo);
         <?php foreach (($sub['items'] ?? []) as $item): ?>
           <label style="display:block; margin:8px 0 8px 18px;">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
             <?= h((string)$item['text_de']) ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? '<strong>(verpflichtend)</strong>' : '<em>(optional)</em>' ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>

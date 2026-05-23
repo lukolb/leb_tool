@@ -234,6 +234,19 @@ if (!is_array($pagebreaks)) {
 $selectedSkills = array_values(array_unique(array_map('strval', $selectedSkills)));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
 
+if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+    $pdo = db();
+    $reqRows = $pdo->query("SELECT code FROM competencies WHERE is_active=1 AND is_required=1")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    foreach ($reqRows as $code) {
+        $c = trim((string)$code);
+        if ($c !== '') {
+            $selectedSkills[] = $c;
+        }
+    }
+    $selectedSkills = array_values(array_unique(array_filter($selectedSkills, static fn($v) => trim((string)$v) !== '')));
+}
+
+
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
