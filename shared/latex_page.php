@@ -94,12 +94,19 @@ $sectionsDb = db_competency_sections($pdo);
   <iframe id="pdfPreview" style="width:100%; height:90vh;"></iframe>
 </div>
 
+<div id="pdfDebug" class="card" style="display:none; margin-top:16px; border-left:4px solid #b42318;">
+  <h3 style="margin-top:0;">Fehlerdetails</h3>
+  <pre id="pdfDebugText" style="white-space:pre-wrap; overflow:auto; max-height:280px;"></pre>
+</div>
+
 <script>
 const form = document.getElementById('pdfForm');
 const pdfPreview = document.getElementById('pdfPreview');
 const pdfPreviewWrap = document.getElementById('pdfPreviewWrap');
 const createPdfButton = document.getElementById('createPdfButton');
 const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
+const pdfDebug = document.getElementById('pdfDebug');
+const pdfDebugText = document.getElementById('pdfDebugText');
 let currentPdfUrl = null;
 
 form.addEventListener('submit', async (event) => {
@@ -108,11 +115,27 @@ form.addEventListener('submit', async (event) => {
   pdfLoadingOverlay.style.display = 'flex';
 
   try {
+    pdfDebug.style.display = 'none';
+    pdfDebugText.textContent = '';
+
     const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
 
     if (!response.ok) {
       const text = await response.text();
-      alert(text || 'PDF konnte nicht erstellt werden.');
+      const msg = text || 'PDF konnte nicht erstellt werden.';
+      pdfDebugText.textContent = msg;
+      pdfDebug.style.display = 'block';
+      console.error('PDF build failed', { status: response.status, contentType, body: msg });
+      return;
+    }
+
+    if (!contentType.includes('application/pdf')) {
+      const text = await response.text();
+      const msg = text || 'Unerwartete Serverantwort (kein PDF).';
+      pdfDebugText.textContent = msg;
+      pdfDebug.style.display = 'block';
+      console.error('PDF build returned non-PDF response', { status: response.status, contentType, body: msg });
       return;
     }
 
@@ -126,6 +149,11 @@ form.addEventListener('submit', async (event) => {
     pdfPreview.src = currentPdfUrl;
     pdfPreviewWrap.style.display = 'block';
     pdfPreviewWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (error) {
+    const msg = (error && error.message) ? error.message : 'Unbekannter Fehler bei der PDF-Erstellung.';
+    pdfDebugText.textContent = msg;
+    pdfDebug.style.display = 'block';
+    console.error('PDF build exception', error);
   } finally {
     createPdfButton.disabled = false;
     pdfLoadingOverlay.style.display = 'none';
