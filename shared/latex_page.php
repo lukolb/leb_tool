@@ -65,9 +65,9 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     foreach (($section['direct'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break; } }
     if (!$hasRequired) { foreach (($section['subs'] ?? []) as $sub) { foreach (($sub['items'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break 2; } } } }
   ?>
-  <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:12px 16px; margin:16px 0;" open>
+  <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:10px 14px; margin:12px 0;" open>
     <input type="hidden" name="cat_ids[]" value="<?= h((string)$sectionId) ?>">
-    <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+    <summary><h2 class="cat-title"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
     <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
       <input type="checkbox" class="category-toggle" name="cat_active[]" value="<?= h((string)$sectionId) ?>" data-cat-id="<?= h((string)$sectionId) ?>" checked>
       Kategorie aktiv
@@ -84,9 +84,9 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
       <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong>Ohne Unterkategorie</strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
-          <label style="display:block; margin:8px 0 8px 18px;">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -98,9 +98,9 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
       <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
         <?php foreach (($sub['items'] ?? []) as $item): ?>
-          <label style="display:block; margin:8px 0 8px 18px;">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -116,6 +116,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 
 <style>
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .cat-title{display:inline;margin:0;font-size:1.1rem;font-weight:700;line-height:1.3}
+  .required-skill-row{opacity:.95}
+  .required-skill-row input[type="checkbox"]{cursor:not-allowed}
+  .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
 </style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
