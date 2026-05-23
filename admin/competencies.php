@@ -69,6 +69,8 @@ summary{cursor:pointer}
 .drag{cursor:move;padding:4px 2px}
 .card details{border:1px solid #e7e7e7;border-radius:8px;padding:6px 8px;margin:6px 0;background:#fff}
 .card .input{min-width:220px}
+.drop-zone{height:10px;border:1px dashed transparent;border-radius:4px;margin:3px 0}
+.drop-zone.active{border-color:#0b57d0;background:#eef5ff}
 </style>
 <script>
 const csrf = <?= json_encode(csrf_token()) ?>;
@@ -76,6 +78,7 @@ let drag = null;
 const ph=document.createElement('div'); ph.className='drop-placeholder';
 const draggables = Array.from(document.querySelectorAll('.drag'));
 const groups = Array.from(document.querySelectorAll('details[data-category-id]'));
+const dropZones = [];
 
 function nearestGroup(el){
   return el.closest('details[data-category-id]');
@@ -88,6 +91,40 @@ draggables.forEach(el => {
 
 // stable reorder among same type
 draggables.forEach(el => {
+  // dedicated zone before each same-level element (also works when target details collapsed)
+  const dz = document.createElement('div');
+  dz.className = 'drop-zone';
+  dz.dataset.beforeId = el.dataset.id || '0';
+  dz.dataset.type = el.dataset.type || '';
+  el.parentNode.insertBefore(dz, el);
+  dropZones.push(dz);
+
+  dz.addEventListener('dragover', (e) => {
+    if (!drag || drag.dataset.type !== dz.dataset.type) return;
+    e.preventDefault();
+    dz.classList.add('active');
+    if (ph.parentNode !== dz.parentNode || ph.nextSibling !== el) dz.parentNode.insertBefore(ph, el);
+  });
+  dz.addEventListener('dragleave', () => dz.classList.remove('active'));
+  dz.addEventListener('drop', async (e) => {
+    if (!drag || drag.dataset.type !== dz.dataset.type) return;
+    e.preventDefault();
+    dz.classList.remove('active');
+    const container = nearestGroup(el);
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('action', 'move_item');
+    fd.append('item_type', drag.dataset.type);
+    fd.append('id', drag.dataset.id);
+    fd.append('before_id', dz.dataset.beforeId || '0');
+    if (container) {
+      fd.append('target_category_id', container.dataset.categoryId || '0');
+      fd.append('target_subcategory_id', container.dataset.subcategoryId || '0');
+    }
+    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
+    if (res.ok) location.reload();
+  });
+
   el.addEventListener('dragover', (e) => {
     if (!drag || drag === el) return;
     if (drag.dataset.type !== el.dataset.type) return;
@@ -111,8 +148,7 @@ draggables.forEach(el => {
       fd.append('target_subcategory_id', container.dataset.subcategoryId || '0');
     }
     const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
-    if (res.ok && ph.parentNode) ph.parentNode.insertBefore(drag, ph);
-    ph.remove();
+    if (res.ok) location.reload();
   });
 });
 
@@ -137,10 +173,10 @@ groups.forEach(g => {
     fd.append('target_category_id', g.dataset.categoryId || '0');
     fd.append('target_subcategory_id', g.dataset.subcategoryId || '0');
     const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
-    if (res.ok && ph.parentNode) ph.parentNode.insertBefore(drag, ph);
-    ph.remove();
+    if (res.ok) location.reload();
   });
 });
+document.addEventListener('dragend',()=>dropZones.forEach(z=>z.classList.remove('active')));
 document.querySelectorAll('.icon-del').forEach(btn=>btn.addEventListener('click', async ()=>{const count=Number(btn.dataset.count||0); const action=btn.dataset.action||''; const id=btn.dataset.id||''; const txt=(action==='delete_competency')?'Diese Kompetenz löschen?':`Wirklich löschen? Dabei werden ${count} Kompetenzen entfernt.`; if(!confirm(txt)) return; const fd=new FormData(); fd.append('csrf_token',csrf); fd.append('action',action); fd.append('id',id); const res=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); if(res.ok){ const row=btn.closest('.drag, details'); if(row) row.remove(); }}));
 const dlg=document.getElementById('editDlg'), fields=document.getElementById('dlgFields'), title=document.getElementById('dlgTitle'), save=document.getElementById('saveBtn');
 let current=null;
