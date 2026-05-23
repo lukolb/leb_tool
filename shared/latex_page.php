@@ -42,6 +42,7 @@ $sectionsDb = db_competency_sections($pdo);
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
 <form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
+<input type="hidden" name="source" value="db">
 <?php foreach ($sectionsDb as $section): ?>
   <details class="card" style="padding:12px 16px; margin:16px 0;" open>
     <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>

@@ -215,6 +215,8 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
     return $out;
 }
 
+
+
 // Diese Datei erzeugst du vorher dynamisch aus der Checkbox-Auswahl:
 $originalDataTex = readTextFileOrFail($latexDir . '/data.tex');
 
@@ -233,6 +235,10 @@ $selectedSkills = array_values(array_unique(array_map('strval', $selectedSkills)
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
 
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks);
+if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+    $pdo = db();
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills);
+}
 
 $resources = [
     [
@@ -408,3 +414,72 @@ header('Content-Length: ' . strlen($body));
 
 echo $body;
 exit;
+function latex_escape(string $t): string {
+    $map = [
+        '\\' => '\\textbackslash{}',
+        '{' => '\\{',
+        '}' => '\\}',
+        '%' => '\\%',
+        '&' => '\\&',
+        '#' => '\\#',
+        '_' => '\\_',
+    ];
+    return strtr($t, $map);
+}
+
+function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
+    if (!$selectedCodes) {
+        return "\\newcommand{\\GradeLevel}{1}\n\\newcommand{\\AllSkillSections}{}\n";
+    }
+
+    $in = implode(',', array_fill(0, count($selectedCodes), '?'));
+    $sql = "SELECT c.code, c.text_de, c.text_en, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
+         . "FROM competencies c "
+         . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
+         . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
+         . "WHERE c.code IN ($in) AND c.is_active=1 "
+         . "ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id";
+
+    $st = $pdo->prepare($sql);
+    $st->execute($selectedCodes);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $sections = [];
+    foreach ($rows as $r) {
+        $cat = trim((string)($r['cat_de'] ?? 'Sonstiges'));
+        if ($cat === '') $cat = 'Sonstiges';
+        $sub = trim((string)($r['sub_de'] ?? ''));
+        $sections[$cat]['en'] = (string)($r['cat_en'] ?? '');
+        $sections[$cat]['subs'][$sub]['en'] = (string)($r['sub_en'] ?? '');
+        $sections[$cat]['subs'][$sub]['items'][] = $r;
+    }
+
+    $out = "\\newcommand{\\GradeLevel}{1}\n\n";
+    $i = 1;
+    foreach ($sections as $catDe => $catData) {
+        $macro = 'DbCat' . $i . 'Skills';
+        $out .= "\\newcommand{\\" . $macro . "}{%\n";
+        foreach (($catData['subs'] ?? []) as $subDe => $subData) {
+            if ($subDe !== '') {
+                $out .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n\n";
+            }
+            foreach (($subData['items'] ?? []) as $it) {
+                $code = (string)($it['code'] ?? 'DB-001');
+                $out .= "  \\SkillRow{" . latex_escape($code) . "}\n";
+                $out .= "    {" . latex_escape((string)$it['text_de']) . "}\n";
+                $out .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n\n";
+            }
+        }
+        $out .= "}\n\n";
+        $sections[$catDe]['macro'] = $macro;
+        $i++;
+    }
+
+    $out .= "\\newcommand{\\AllSkillSections}{%\n";
+    foreach ($sections as $catDe => $catData) {
+        $out .= "  \\SkillSection{" . latex_escape($catDe) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}\n";
+    }
+    $out .= "}\n";
+
+    return $out;
+}
