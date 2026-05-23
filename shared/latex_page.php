@@ -85,8 +85,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <summary><strong>Ohne Unterkategorie</strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><span class="required-badge">Pflicht</span><?php endif; ?>
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -99,8 +99,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
         <?php foreach (($sub['items'] ?? []) as $item): ?>
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><span class="required-badge">Pflicht</span><?php endif; ?>
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -158,7 +158,21 @@ function applyCategoryState(catId){
   root.style.opacity = active ? '1' : '.62';
   if(body) body.style.display = active ? '' : 'none';
   if(warn) warn.style.display = (!active && hasReq) ? 'block' : 'none';
-  root.querySelectorAll('input[name="skills[]"], input[name="pagebreaks[]"]').forEach(el=>el.disabled = !active);
+  root.querySelectorAll('input[name="skills[]"]').forEach(el=>{
+    const isRequiredCheckbox = el.dataset.requiredSkill === '1';
+    const isRequiredHidden = el.dataset.requiredHidden === '1';
+    if (isRequiredCheckbox) {
+      el.checked = true;
+      el.disabled = true;
+      return;
+    }
+    if (isRequiredHidden) {
+      el.disabled = !active;
+      return;
+    }
+    el.disabled = !active;
+  });
+  root.querySelectorAll('input[name="pagebreaks[]"]').forEach(el=>{ el.disabled = !active; });
 }
 
 document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
