@@ -7,7 +7,7 @@ error_reporting(E_ALL);
 
 $endpoint = 'https://latex.ytotech.com/builds/sync';
 
-$latexDir = __DIR__ . '/latex';
+$latexDir = __DIR__ . '/../latex';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
