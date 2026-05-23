@@ -35,6 +35,7 @@ function nav_items_for_role(string $role): array {
         ['label'=>t('nav.report_preview', 'Berichtsvorschau'), 'href'=>'admin/report_preview.php', 'files'=>['report_preview.php']],
         ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_requests'), 'href'=>'admin/parent_requests.php', 'files'=>['parent_requests.php']],
+        ['label'=>'Kompetenzen', 'href'=>'admin/competencies.php', 'files'=>['competencies.php']],
         ['label'=>t('nav.pdf_templates', 'PDF-Vorlagen'), 'href'=>'admin/latex_templates.php', 'files'=>['latex_templates.php']],
       ]],
 
@@ -65,6 +66,7 @@ function nav_items_for_role(string $role): array {
         ['label'=>t('nav.report_preview', 'Berichtsvorschau'), 'href'=>'teacher/report_preview.php', 'files'=>['report_preview.php']],
         ['label'=>t('nav.export'), 'href'=>'teacher/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_links'), 'href'=>'teacher/parents.php', 'files'=>['parents.php']],
+        ['label'=>'Kompetenz-Anträge', 'href'=>'teacher/competency_requests.php', 'files'=>['competency_requests.php']],
         ['label'=>t('nav.pdf_templates', 'PDF-Vorlagen'), 'href'=>'teacher/latex_templates.php', 'files'=>['latex_templates.php']],
     ]],
       

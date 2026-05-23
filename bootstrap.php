@@ -1176,6 +1176,24 @@ function ensure_schema(PDO $pdo): void {
       }
     }
 
+
+    // --- Competency catalog (DB-backed for LaTeX template builder)
+    if (!db_has_table($pdo, 'competency_categories')) {
+      $pdo->exec("CREATE TABLE competency_categories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, name_de VARCHAR(255) NOT NULL, name_en VARCHAR(255) DEFAULT '', sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY idx_comp_cat_sort (sort_order,id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+    if (!db_has_table($pdo, 'competency_subcategories')) {
+      $pdo->exec("CREATE TABLE competency_subcategories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, category_id BIGINT UNSIGNED NOT NULL, name_de VARCHAR(255) NOT NULL, name_en VARCHAR(255) DEFAULT '', sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY idx_comp_sub_cat (category_id,sort_order,id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+    if (!db_has_table($pdo, 'competencies')) {
+      $pdo->exec("CREATE TABLE competencies (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, subcategory_id BIGINT UNSIGNED NOT NULL, code VARCHAR(80) DEFAULT NULL, text_de TEXT NOT NULL, text_en TEXT, is_required TINYINT(1) NOT NULL DEFAULT 0, is_active TINYINT(1) NOT NULL DEFAULT 1, sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY idx_comp_sub_sort (subcategory_id,sort_order,id), KEY idx_comp_active (is_active)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+    if (!db_has_table($pdo, 'competency_grade_levels')) {
+      $pdo->exec("CREATE TABLE competency_grade_levels (competency_id BIGINT UNSIGNED NOT NULL, grade_level INT NOT NULL, PRIMARY KEY (competency_id, grade_level), KEY idx_comp_grade (grade_level, competency_id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+    if (!db_has_table($pdo, 'competency_requests')) {
+      $pdo->exec("CREATE TABLE competency_requests (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, teacher_user_id BIGINT UNSIGNED NOT NULL, category_id BIGINT UNSIGNED DEFAULT NULL, subcategory_id BIGINT UNSIGNED DEFAULT NULL, proposal_text_de TEXT NOT NULL, proposal_text_en TEXT, status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', admin_note TEXT, approved_competency_id BIGINT UNSIGNED DEFAULT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_by_user_id BIGINT UNSIGNED DEFAULT NULL, reviewed_at DATETIME DEFAULT NULL, PRIMARY KEY (id), KEY idx_comp_req_status (status, created_at)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    }
+
     // --- AG catalog + assignments
     ensure_ag_tables($pdo);
   } catch (Throwable $e) {
