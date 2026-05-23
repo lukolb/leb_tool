@@ -120,7 +120,7 @@ $sections = parse_sections($content);
 <h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
-<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>" target="pdfPreviewFrame">
+<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
 <?php foreach ($sections as $section): ?>
   <?php $macroName = $section['macroName']; $items = $macros[$macroName]['items'] ?? []; ?>
   <div class="card" style="padding:16px; margin:16px 0;">
@@ -143,12 +143,18 @@ $sections = parse_sections($content);
 <button class="btn" type="submit" id="createPdfButton">PDF erstellen</button>
 </form>
 
+<style>
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
-  <div class="card" style="padding:18px 22px; font-weight:600;">PDF wird erstellt … bitte warten.</div>
+  <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
+    <span style="width:18px; height:18px; border:3px solid #d0d7de; border-top-color:#0b57d0; border-radius:50%; display:inline-block; animation:spin .8s linear infinite;"></span>
+    <span>PDF wird erstellt … bitte warten.</span>
+  </div>
 </div>
 
 <div id="pdfPreviewWrap" style="display:none; margin-top:24px;">
-  <iframe id="pdfPreview" name="pdfPreviewFrame" style="width:100%; height:90vh;"></iframe>
+  <iframe id="pdfPreview" style="width:100%; height:90vh;"></iframe>
 </div>
 
 <script>
@@ -157,22 +163,34 @@ const pdfPreview = document.getElementById('pdfPreview');
 const pdfPreviewWrap = document.getElementById('pdfPreviewWrap');
 const createPdfButton = document.getElementById('createPdfButton');
 const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
-let isSubmitting = false;
+let currentPdfUrl = null;
 
-form.addEventListener('submit', () => {
-  isSubmitting = true;
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
   createPdfButton.disabled = true;
   pdfLoadingOverlay.style.display = 'flex';
-});
 
-pdfPreview.addEventListener('load', () => {
-  if (!isSubmitting) {
-    return;
+  try {
+    const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+
+    if (!response.ok) {
+      const text = await response.text();
+      alert(text || 'PDF konnte nicht erstellt werden.');
+      return;
+    }
+
+    const blob = await response.blob();
+
+    if (currentPdfUrl) {
+      URL.revokeObjectURL(currentPdfUrl);
+    }
+
+    currentPdfUrl = URL.createObjectURL(blob);
+    pdfPreview.src = currentPdfUrl;
+    pdfPreviewWrap.style.display = 'block';
+  } finally {
+    createPdfButton.disabled = false;
+    pdfLoadingOverlay.style.display = 'none';
   }
-
-  isSubmitting = false;
-  createPdfButton.disabled = false;
-  pdfLoadingOverlay.style.display = 'none';
-  pdfPreviewWrap.style.display = 'block';
 });
 </script>
