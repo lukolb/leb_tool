@@ -7,7 +7,7 @@ error_reporting(E_ALL);
 
 $endpoint = 'https://latex.ytotech.com/builds/sync';
 
-$latexDir = __DIR__ . '/latex';
+$latexDir = __DIR__ . '/../latex';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -137,6 +137,86 @@ function parse_sections(string $content): array {
     return $sections;
 }
 
+function ensure_balanced_braces_or_fail(string $tex, string $label = 'data.tex'): void {
+    $depth = 0;
+    $len = strlen($tex);
+    for ($i = 0; $i < $len; $i++) {
+        $ch = $tex[$i];
+        if ($ch === '{') $depth++;
+        if ($ch === '}') $depth--;
+        if ($depth < 0) {
+            throw new RuntimeException($label . ' hat eine überzählige schließende Klammer an Position ' . ($i + 1));
+        }
+    }
+    if ($depth !== 0) {
+        throw new RuntimeException($label . ' hat unausgeglichene Klammern (Diff: ' . $depth . ').');
+    }
+}
+
+function latex_newcommand(string $name, string $body): string {
+    return "\\newcommand{\\" . $name . "}{%\n" . $body . "}\n";
+}
+
+function latex_macro_name_for_category(int $index, string $title): string {
+    $lettersOnly = preg_replace('/[^A-Za-z]+/', '', $title) ?? '';
+    $lettersOnly = trim($lettersOnly);
+    if ($lettersOnly === '') {
+        $words = [
+            1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five',
+            6 => 'Six', 7 => 'Seven', 8 => 'Eight', 9 => 'Nine', 10 => 'Ten',
+        ];
+        $suffix = $words[$index] ?? ('Idx' . $index);
+        $lettersOnly = 'DbCat' . $suffix;
+    }
+    $lettersOnly = ucfirst($lettersOnly);
+    $name = $lettersOnly . 'Skills';
+    return preg_replace('/[^A-Za-z]/', '', $name) ?: 'DbCatSkills';
+}
+
+function with_line_numbers(string $content, int $maxLines = 120): string {
+    $lines = preg_split("/\r\n|\n|\r/", $content) ?: [];
+    $out = [];
+    $n = min(count($lines), $maxLines);
+    for ($i = 0; $i < $n; $i++) {
+        $out[] = str_pad((string)($i + 1), 4, ' ', STR_PAD_LEFT) . ': ' . $lines[$i];
+    }
+    return implode("\n", $out);
+}
+
+
+function assert_no_blank_lines_in_newcommands(string $tex): void {
+    if (!preg_match_all('/\\\\newcommand\{\\\\[A-Za-z0-9]+\}\{%\\n(.*?)\\n\}/s', $tex, $m, PREG_SET_ORDER)) {
+        return;
+    }
+    foreach ($m as $cmd) {
+        $body = (string)($cmd[1] ?? '');
+        $lines = preg_split("/\r\n|\n|\r/", $body) ?: [];
+        foreach ($lines as $idx => $line) {
+            if (trim($line) === '') {
+                throw new RuntimeException('Leere Zeile innerhalb einer \newcommand-Definition gefunden (Body-Zeile ' . ($idx + 1) . ').');
+            }
+        }
+    }
+}
+
+function assert_valid_macro_names_no_digits(string $tex): void {
+    if (!preg_match_all('/\\\\newcommand\{\\\\([A-Za-z][A-Za-z0-9]*)\}/', $tex, $m, PREG_SET_ORDER)) {
+        return;
+    }
+    foreach ($m as $hit) {
+        $macro = (string)($hit[1] ?? '');
+        if (preg_match('/\d/', $macro)) {
+            throw new RuntimeException('Invalid LaTeX macro name contains digit: ' . $macro);
+        }
+    }
+}
+
+function write_debug_data_tex(string $content): string {
+    $path = sys_get_temp_dir() . '/leb_data_debug.tex';
+    @file_put_contents($path, $content);
+    return $path;
+}
+
 function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
@@ -145,9 +225,9 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
     $sections = parse_sections($content);
 
     if (preg_match('/\\\\newcommand\{\\\\GradeLevel\}\{[^{}]*\}/', $content, $m)) {
-        $out = $m[0] . "\n\n";
+        $out = $m[0] . "\n";
     } else {
-        $out = "\\newcommand{\\GradeLevel}{1}\n\n";
+        $out = "\\newcommand{\\GradeLevel}{1}\n";
     }
 
     foreach ($macros as $macroName => $macro) {
@@ -168,19 +248,19 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
             }
 
             if ($pendingSubSkill !== null) {
-                $body .= "  \\SubSkill{" . $pendingSubSkill['de'] . "}{" . $pendingSubSkill['en'] . "}\n\n";
+                $body .= "  \\SubSkill{" . $pendingSubSkill['de'] . "}{" . $pendingSubSkill['en'] . "}\n";
                 $pendingSubSkill = null;
             }
 
-            $body .= "  \\SkillRow{" . $item['id'] . "}\n";
-            $body .= "    {" . $item['de'] . "}\n";
-            $body .= "    {" . $item['en'] . "}\n\n";
+            $body .= "  \\SkillRow{" . $item['id'] . "}%\n";
+            $body .= "    {" . $item['de'] . "}%\n";
+            $body .= "    {" . $item['en'] . "}%\n";
             $hasAnySkill = true;
         }
 
         $out .= "\\newcommand{\\" . $macroName . "}{%\n";
         $out .= $hasAnySkill ? $body : "";
-        $out .= "}\n\n";
+        $out .= "}\n";
     }
 
     $out .= "\\newcommand{\\AllSkillSections}{%\n";
@@ -215,6 +295,8 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
     return $out;
 }
 
+
+
 // Diese Datei erzeugst du vorher dynamisch aus der Checkbox-Auswahl:
 $originalDataTex = readTextFileOrFail($latexDir . '/data.tex');
 
@@ -229,10 +311,48 @@ if (!is_array($pagebreaks)) {
     $pagebreaks = [];
 }
 
-$selectedSkills = array_values(array_unique(array_map('strval', $selectedSkills)));
+$selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
 
+if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+    $pdo = db();
+    $selectedGrade = (int)($_POST['grade_level'] ?? 1);
+    if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
+    $stReq = $pdo->prepare("SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?");
+    $stReq->execute([$selectedGrade]);
+    $reqRows = $stReq->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    foreach ($reqRows as $code) {
+        $c = trim((string)$code);
+        if ($c !== '') {
+            $selectedSkills[] = $c;
+        }
+    }
+    $selectedSkills = array_values(array_unique(array_filter($selectedSkills, static fn($v) => trim((string)$v) !== '')));
+}
+
+
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks);
+if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+    $pdo = db();
+    $selectedGrade = (int)($_POST['grade_level'] ?? 1);
+    if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
+    $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
+}
+
+try {
+    ensure_balanced_braces_or_fail($generatedDataTex, 'data.tex');
+    assert_no_blank_lines_in_newcommands($generatedDataTex);
+    assert_valid_macro_names_no_digits($generatedDataTex);
+    $debugPath = write_debug_data_tex($generatedDataTex);
+} catch (Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Fehler bei data.tex-Generierung: " . $e->getMessage() . "\n";
+    echo "Debug-Datei: " . sys_get_temp_dir() . "/leb_data_debug.tex\n";
+    echo with_line_numbers($generatedDataTex, 120);
+    exit;
+}
 
 $resources = [
     [
@@ -386,14 +506,17 @@ $isPdf = strncmp($body, '%PDF-', 5) === 0;
 if (!$isPdf) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "LaTeX konnte nicht kompiliert werden.\n\n";
+    echo "LaTeX konnte nicht kompiliert werden.\n";
     echo "HTTP Status: " . $statusCode . "\n";
-    echo "Content-Type: " . $contentType . "\n\n";
+    echo "Content-Type: " . $contentType . "\n";
+    echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
+    echo "data.tex (erste 120 Zeilen):\n";
+    echo with_line_numbers($generatedDataTex, 120) . "\n";
     echo $body;
     exit;
 }
 
-$pdfFilename = 'Vorlage.pdf';
+$pdfFilename = 'vorlage.pdf';
 
 while (ob_get_level() > 0) {
     ob_end_clean();
@@ -408,3 +531,104 @@ header('Content-Length: ' . strlen($body));
 
 echo $body;
 exit;
+function latex_escape(string $t): string {
+    $map = [
+        '\\' => '\\textbackslash{}',
+        '{' => '\\{',
+        '}' => '\\}',
+        '%' => '\\%',
+        '&' => '\\&',
+        '#' => '\\#',
+        '_' => '\\_',
+        '$' => '\\$',
+        '^' => '\\textasciicircum{}',
+        '~' => '\\textasciitilde{}',
+    ];
+    return strtr($t, $map);
+}
+
+function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = []): string {
+    if (!$selectedCodes) {
+        return "\\newcommand{\\GradeLevel}{1}\n\\newcommand{\\AllSkillSections}{}\n";
+    }
+
+    $in = implode(',', array_fill(0, count($selectedCodes), '?'));
+    $sql = "SELECT c.code, c.text_de, c.text_en, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
+         . "FROM competencies c "
+         . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
+         . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
+         . "WHERE c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
+         . "ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
+
+    $st = $pdo->prepare($sql);
+    $st->execute($selectedCodes);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $sections = [];
+    foreach ($rows as $r) {
+        $catId = (int)($r['category_id'] ?? 0);
+        if ($catId <= 0) {
+            continue;
+        }
+        $catDe = trim((string)($r['cat_de'] ?? 'Sonstiges'));
+        if ($catDe === '') $catDe = 'Sonstiges';
+        $sub = trim((string)($r['sub_de'] ?? ''));
+        if (!isset($sections[$catId])) {
+            $sections[$catId] = [
+                'de' => $catDe,
+                'en' => (string)($r['cat_en'] ?? ''),
+                'subs' => [],
+            ];
+        }
+        if (!isset($sections[$catId]['subs'][$sub])) {
+            $sections[$catId]['subs'][$sub] = [
+                'en' => (string)($r['sub_en'] ?? ''),
+                'items' => [],
+            ];
+        }
+        $sections[$catId]['subs'][$sub]['items'][] = $r;
+    }
+
+    $out = "% AUTO-GENERATED FROM DB\n";
+    $out .= "\\newcommand{\\GradeLevel}{1}\n";
+    $i = 1;
+    foreach ($sections as $catId => $catData) {
+        $catDe = (string)($catData['de'] ?? 'Sonstiges');
+        $macro = latex_macro_name_for_category($i, $catDe);
+        $out .= "% SECTION: " . latex_escape($catDe) . "\n";
+        $macroBody = "";
+        foreach (($catData['subs'] ?? []) as $subDe => $subData) {
+            if ($subDe !== '') {
+                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
+            }
+            foreach (($subData['items'] ?? []) as $it) {
+                $code = trim((string)($it['code'] ?? ''));
+                if ($code === '') {
+                    continue;
+                }
+                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                $macroBody .= "    {" . latex_escape((string)$it['text_de']) . "}%\n";
+                $macroBody .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n";
+            }
+        }
+        $out .= latex_newcommand($macro, $macroBody);
+        $sections[$catId]['macro'] = $macro;
+        $i++;
+    }
+
+    $out .= "\\newcommand{\\AllSkillSections}{%\n";
+    $pagebreakMap = [];
+    foreach ($pagebreakCategoryIds as $id) {
+        $parsed = (int)$id;
+        if ($parsed > 0) {
+            $pagebreakMap[$parsed] = true;
+        }
+    }
+    foreach ($sections as $catId => $catData) {
+        $cmd = isset($pagebreakMap[(int)$catId]) ? 'SkillSectionPageBreak' : 'SkillSection';
+        $out .= "  \\" . $cmd . "{" . latex_escape((string)($catData['de'] ?? 'Sonstiges')) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
+    }
+    $out .= "}\n";
+
+    return $out;
+}
