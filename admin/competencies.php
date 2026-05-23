@@ -23,6 +23,57 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if($a==='update_subcategory'){ $pdo->prepare("UPDATE competency_subcategories SET name_de=?, name_en=? WHERE id=?")->execute([trim((string)$_POST['name_de']),trim((string)$_POST['name_en']),(int)$_POST['id']]); json_out(['ok'=>true]); }
     if($a==='update_competency'){ $id=(int)$_POST['id']; $code=trim((string)$_POST['code']); if($code==='') throw new RuntimeException('Code erforderlich'); $pdo->prepare("UPDATE competencies SET code=?, text_de=?, text_en=?, is_required=? WHERE id=?")->execute([$code,trim((string)$_POST['text_de']),trim((string)$_POST['text_en']),isset($_POST['is_required'])?1:0,$id]); $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]); foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g;if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$id,$gi]);} json_out(['ok'=>true]); }
     if($a==='add_category'){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,9999)")->execute([trim((string)$_POST['name_de']),trim((string)$_POST['name_en'])]); }
+    if($a==='import_csv'){
+      if(!isset($_FILES['csv']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) throw new RuntimeException('CSV-Datei fehlt.');
+      $fh = fopen($_FILES['csv']['tmp_name'], 'r'); if(!$fh) throw new RuntimeException('CSV konnte nicht gelesen werden.');
+      $line=0;
+      while(($row=fgetcsv($fh, 0, ';'))!==false){
+        $line++; if($line===1) continue; if(count($row)<9) continue;
+        [$catDe,$catEn,$subDe,$subEn,$code,$textDe,$textEn,$required,$grades] = $row;
+        $catDe=trim((string)$catDe); $catEn=trim((string)$catEn);
+        $subDe=trim((string)$subDe); $subEn=trim((string)$subEn);
+        $code=trim((string)$code); $textDe=trim((string)$textDe); $textEn=trim((string)$textEn);
+        if($catDe===''||$catEn===''||$textDe===''||$textEn==='') continue;
+
+        $st=$pdo->prepare("SELECT id FROM competency_categories WHERE LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1");
+        $st->execute([$catDe,$catEn]); $catId=(int)($st->fetchColumn()?:0);
+        if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,9999)")->execute([$catDe,$catEn]); $catId=(int)$pdo->lastInsertId(); }
+
+        $subId=0;
+        if($subDe!=='' || $subEn!==''){
+          $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1");
+          $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0);
+          if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,9999)")->execute([$catId,$subDe,$subEn]); $subId=(int)$pdo->lastInsertId(); }
+        }
+
+        $compId=0;
+        if($code!==''){
+          $st=$pdo->prepare("SELECT id FROM competencies WHERE code=? LIMIT 1");
+          $st->execute([$code]); $compId=(int)($st->fetchColumn()?:0);
+        }
+        if($compId<=0){
+          $st=$pdo->prepare("SELECT id FROM competencies WHERE category_id=? AND COALESCE(subcategory_id,0)=? AND LOWER(text_de)=LOWER(?) AND LOWER(text_en)=LOWER(?) LIMIT 1");
+          $st->execute([$catId,$subId,$textDe,$textEn]); $compId=(int)($st->fetchColumn()?:0);
+        }
+        $isReq = (trim(strtolower((string)$required))==='1' || trim(strtolower((string)$required))==='ja') ? 1 : 0;
+        if($compId>0){
+          $pdo->prepare("UPDATE competencies SET category_id=?, subcategory_id=?, code=CASE WHEN code IS NULL OR code='' THEN ? ELSE code END, text_de=?, text_en=?, is_required=? WHERE id=?")
+            ->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$compId]);
+        } else {
+          if($code==='') $code=next_comp_code($pdo,$catId,$catDe);
+          $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,9999)")
+            ->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq]);
+          $compId=(int)$pdo->lastInsertId();
+        }
+
+        if($compId>0){
+          $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$compId]);
+          foreach(explode(',', (string)$grades) as $g){ $gi=(int)trim($g); if($gi>=1&&$gi<=4){ $pdo->prepare("INSERT IGNORE INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]); } }
+        }
+      }
+      fclose($fh);
+      $ok='CSV importiert.';
+    }
     if($a==='add_subcategory'){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,9999)")->execute([(int)$_POST['category_id'],trim((string)$_POST['name_de']),trim((string)$_POST['name_en'])]); }
     if($a==='add_competency'){ $sub=(int)($_POST['subcategory_id']??0); $cat=(int)($_POST['category_id']??0); if($sub>0){$st=$pdo->prepare("SELECT category_id FROM competency_subcategories WHERE id=?");$st->execute([$sub]);$cat=(int)($st->fetchColumn()?:0);} $catName=(string)$pdo->query("SELECT name_de FROM competency_categories WHERE id=".$cat)->fetchColumn(); $code=trim((string)($_POST['code']??'')); if($code==='')$code=next_comp_code($pdo,$cat,$catName); $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,9999)")->execute([$cat,$sub>0?$sub:null,$code,trim((string)$_POST['text_de']),trim((string)$_POST['text_en']),isset($_POST['is_required'])?1:0]); }
     if($a==='delete_category'){ $id=(int)$_POST['id']; $pdo->prepare("DELETE FROM competencies WHERE category_id=?")->execute([$id]); $pdo->prepare("DELETE FROM competency_subcategories WHERE category_id=?")->execute([$id]); $pdo->prepare("DELETE FROM competency_categories WHERE id=?")->execute([$id]); }
@@ -43,6 +94,7 @@ foreach($comps as $c){ $cid=(int)($c['category_id']??0); $sid=(int)($c['subcateg
 
 render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1><?php if($ok):?><div class="alert success"><?=h($ok)?></div><?php endif;?><?php if($err):?><div class="alert danger"><?=h($err)?></div><?php endif;?> <a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a></div>
+<details class="card"><summary><strong>CSV importieren</strong></summary><form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="import_csv"><input class="input" type="file" name="csv" accept=".csv,text/csv" required><button class="btn">Import starten</button></form></details>
 <div class="card"><h3>Baumstruktur</h3>
 <?php foreach($cats as $cat): $catId=(int)$cat['id']; ?>
 <details class="drag" draggable="true" data-type="category" data-id="<?=$catId?>"><summary><strong><?=h($cat['name_de'])?></strong> <small><?=h($cat['name_en'])?></small> <button class="icon-edit" type="button" title="Bearbeiten" data-kind="category" data-json='<?=h(json_encode($cat,JSON_UNESCAPED_UNICODE))?>'>✏️</button><button class="icon-del" type="button" title="Löschen" data-action="delete_category" data-id="<?=$catId?>" data-count="<?= (int)($compCountByCategory[$catId] ?? 0) ?>">🗑️</button></summary>
