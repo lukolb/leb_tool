@@ -299,8 +299,8 @@ let dragEl=null;
 function initDnd(){
   document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
     e.stopPropagation();
-    const nested = e.target.closest('.tree-node.draggable');
-    if(nested && nested!==el) return;
+    const dragNode = e.target.closest('.draggable');
+    if(dragNode!==el) return;
     if(el.dataset.type!=='category' && el.dataset.type!=='subcategory') return;
     dragEl=el; 
     if(el.dataset.type==='category') console.debug('[competencies dnd category] start', Number(el.dataset.id));
