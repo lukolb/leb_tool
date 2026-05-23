@@ -157,6 +157,22 @@ function latex_newcommand(string $name, string $body): string {
     return "\\newcommand{\\" . $name . "}{%\n" . $body . "}\n";
 }
 
+function latex_macro_name_for_category(int $index, string $title): string {
+    $lettersOnly = preg_replace('/[^A-Za-z]+/', '', $title) ?? '';
+    $lettersOnly = trim($lettersOnly);
+    if ($lettersOnly === '') {
+        $words = [
+            1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five',
+            6 => 'Six', 7 => 'Seven', 8 => 'Eight', 9 => 'Nine', 10 => 'Ten',
+        ];
+        $suffix = $words[$index] ?? ('Idx' . $index);
+        $lettersOnly = 'DbCat' . $suffix;
+    }
+    $lettersOnly = ucfirst($lettersOnly);
+    $name = $lettersOnly . 'Skills';
+    return preg_replace('/[^A-Za-z]/', '', $name) ?: 'DbCatSkills';
+}
+
 function with_line_numbers(string $content, int $maxLines = 120): string {
     $lines = preg_split("/\r\n|\n|\r/", $content) ?: [];
     $out = [];
@@ -179,6 +195,18 @@ function assert_no_blank_lines_in_newcommands(string $tex): void {
             if (trim($line) === '') {
                 throw new RuntimeException('Leere Zeile innerhalb einer \newcommand-Definition gefunden (Body-Zeile ' . ($idx + 1) . ').');
             }
+        }
+    }
+}
+
+function assert_valid_macro_names_no_digits(string $tex): void {
+    if (!preg_match_all('/\\\\newcommand\{\\\\([A-Za-z][A-Za-z0-9]*)\}/', $tex, $m, PREG_SET_ORDER)) {
+        return;
+    }
+    foreach ($m as $hit) {
+        $macro = (string)($hit[1] ?? '');
+        if (preg_match('/\d/', $macro)) {
+            throw new RuntimeException('Invalid LaTeX macro name contains digit: ' . $macro);
         }
     }
 }
@@ -308,6 +336,7 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 try {
     ensure_balanced_braces_or_fail($generatedDataTex, 'data.tex');
     assert_no_blank_lines_in_newcommands($generatedDataTex);
+    assert_valid_macro_names_no_digits($generatedDataTex);
     $debugPath = write_debug_data_tex($generatedDataTex);
 } catch (Throwable $e) {
     http_response_code(500);
@@ -542,7 +571,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
     $out .= "\\newcommand{\\GradeLevel}{1}\n";
     $i = 1;
     foreach ($sections as $catDe => $catData) {
-        $macro = 'DbCat' . $i . 'Skills';
+        $macro = latex_macro_name_for_category($i, (string)$catDe);
         $out .= "% SECTION: " . latex_escape((string)$catDe) . "\n";
         $macroBody = "";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
