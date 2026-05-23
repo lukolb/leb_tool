@@ -154,7 +154,7 @@ function ensure_balanced_braces_or_fail(string $tex, string $label = 'data.tex')
 }
 
 function latex_newcommand(string $name, string $body): string {
-    return "\\newcommand{\\" . $name . "}{%\n" . $body . "}\n\n";
+    return "\\newcommand{\\" . $name . "}{%\n" . $body . "}\n";
 }
 
 function with_line_numbers(string $content, int $maxLines = 120): string {
@@ -165,6 +165,22 @@ function with_line_numbers(string $content, int $maxLines = 120): string {
         $out[] = str_pad((string)($i + 1), 4, ' ', STR_PAD_LEFT) . ': ' . $lines[$i];
     }
     return implode("\n", $out);
+}
+
+
+function assert_no_blank_lines_in_newcommands(string $tex): void {
+    if (!preg_match_all('/\\\\newcommand\{\\\\[A-Za-z0-9]+\}\{%\\n(.*?)\\n\}/s', $tex, $m, PREG_SET_ORDER)) {
+        return;
+    }
+    foreach ($m as $cmd) {
+        $body = (string)($cmd[1] ?? '');
+        $lines = preg_split("/\r\n|\n|\r/", $body) ?: [];
+        foreach ($lines as $idx => $line) {
+            if (trim($line) === '') {
+                throw new RuntimeException('Leere Zeile innerhalb einer \newcommand-Definition gefunden (Body-Zeile ' . ($idx + 1) . ').');
+            }
+        }
+    }
 }
 
 function write_debug_data_tex(string $content): string {
@@ -181,9 +197,9 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
     $sections = parse_sections($content);
 
     if (preg_match('/\\\\newcommand\{\\\\GradeLevel\}\{[^{}]*\}/', $content, $m)) {
-        $out = $m[0] . "\n\n";
+        $out = $m[0] . "\n";
     } else {
-        $out = "\\newcommand{\\GradeLevel}{1}\n\n";
+        $out = "\\newcommand{\\GradeLevel}{1}\n";
     }
 
     foreach ($macros as $macroName => $macro) {
@@ -204,19 +220,19 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
             }
 
             if ($pendingSubSkill !== null) {
-                $body .= "  \\SubSkill{" . $pendingSubSkill['de'] . "}{" . $pendingSubSkill['en'] . "}\n\n";
+                $body .= "  \\SubSkill{" . $pendingSubSkill['de'] . "}{" . $pendingSubSkill['en'] . "}\n";
                 $pendingSubSkill = null;
             }
 
-            $body .= "  \\SkillRow{" . $item['id'] . "}\n";
-            $body .= "    {" . $item['de'] . "}\n";
-            $body .= "    {" . $item['en'] . "}\n\n";
+            $body .= "  \\SkillRow{" . $item['id'] . "}%\n";
+            $body .= "    {" . $item['de'] . "}%\n";
+            $body .= "    {" . $item['en'] . "}%\n";
             $hasAnySkill = true;
         }
 
         $out .= "\\newcommand{\\" . $macroName . "}{%\n";
         $out .= $hasAnySkill ? $body : "";
-        $out .= "}\n\n";
+        $out .= "}\n";
     }
 
     $out .= "\\newcommand{\\AllSkillSections}{%\n";
@@ -291,12 +307,13 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 
 try {
     ensure_balanced_braces_or_fail($generatedDataTex, 'data.tex');
+    assert_no_blank_lines_in_newcommands($generatedDataTex);
     $debugPath = write_debug_data_tex($generatedDataTex);
 } catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "Fehler bei data.tex-Generierung: " . $e->getMessage() . "\n\n";
-    echo "Debug-Datei: " . sys_get_temp_dir() . "/leb_data_debug.tex\n\n";
+    echo "Fehler bei data.tex-Generierung: " . $e->getMessage() . "\n";
+    echo "Debug-Datei: " . sys_get_temp_dir() . "/leb_data_debug.tex\n";
     echo with_line_numbers($generatedDataTex, 120);
     exit;
 }
@@ -453,12 +470,12 @@ $isPdf = strncmp($body, '%PDF-', 5) === 0;
 if (!$isPdf) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "LaTeX konnte nicht kompiliert werden.\n\n";
+    echo "LaTeX konnte nicht kompiliert werden.\n";
     echo "HTTP Status: " . $statusCode . "\n";
-    echo "Content-Type: " . $contentType . "\n\n";
-    echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n\n";
+    echo "Content-Type: " . $contentType . "\n";
+    echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
     echo "data.tex (erste 120 Zeilen):\n";
-    echo with_line_numbers($generatedDataTex, 120) . "\n\n";
+    echo with_line_numbers($generatedDataTex, 120) . "\n";
     echo $body;
     exit;
 }
@@ -522,7 +539,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
     }
 
     $out = "% AUTO-GENERATED FROM DB\n";
-    $out .= "\\newcommand{\\GradeLevel}{1}\n\n";
+    $out .= "\\newcommand{\\GradeLevel}{1}\n";
     $i = 1;
     foreach ($sections as $catDe => $catData) {
         $macro = 'DbCat' . $i . 'Skills';
@@ -530,16 +547,16 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
         $macroBody = "";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
             if ($subDe !== '') {
-                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n\n";
+                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
             }
             foreach (($subData['items'] ?? []) as $it) {
                 $code = trim((string)($it['code'] ?? ''));
                 if ($code === '') {
                     continue;
                 }
-                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}\n";
-                $macroBody .= "    {" . latex_escape((string)$it['text_de']) . "}\n";
-                $macroBody .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n\n";
+                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                $macroBody .= "    {" . latex_escape((string)$it['text_de']) . "}%\n";
+                $macroBody .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n";
             }
         }
         $out .= latex_newcommand($macro, $macroBody);
@@ -549,7 +566,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
 
     $out .= "\\newcommand{\\AllSkillSections}{%\n";
     foreach ($sections as $catDe => $catData) {
-        $out .= "  \\SkillSection{" . latex_escape($catDe) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}\n";
+        $out .= "  \\SkillSection{" . latex_escape($catDe) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
     }
     $out .= "}\n";
 
