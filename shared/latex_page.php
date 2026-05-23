@@ -55,6 +55,17 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
   </select>
 </div>
+<div class="card" style="padding:12px;margin:12px 0;">
+  <strong>Sonderbereiche</strong>
+  <label style="display:block;margin-top:8px;">
+    <input type="hidden" name="show_sel" value="0">
+    <input type="checkbox" name="show_sel" value="1" checked> SEL-Bereich anzeigen
+  </label>
+  <label style="display:block;margin-top:6px;">
+    <input type="hidden" name="show_ag" value="0">
+    <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
+  </label>
+</div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
   <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
   <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>

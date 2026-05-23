@@ -217,17 +217,19 @@ function write_debug_data_tex(string $content): string {
     return $path;
 }
 
-function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks): string {
+function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks, bool $showSel = true, bool $showAg = true): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
 
     $macros = parse_skill_macros($content);
     $sections = parse_sections($content);
 
+    $out = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n");
+    $out .= "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n");
     if (preg_match('/\\\\newcommand\{\\\\GradeLevel\}\{[^{}]*\}/', $content, $m)) {
-        $out = $m[0] . "\n";
+        $out .= $m[0] . "\n";
     } else {
-        $out = "\\newcommand{\\GradeLevel}{1}\n";
+        $out .= "\\newcommand{\\GradeLevel}{1}\n";
     }
 
     foreach ($macros as $macroName => $macro) {
@@ -341,7 +343,9 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 }
 
 
-$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks);
+$showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
+$showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
+$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $selectedGrade = (int)($_POST['grade_level'] ?? 1);
@@ -358,6 +362,9 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         }
     }
     $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
+    $generatedDataTex = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n")
+        . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
+        . $generatedDataTex;
     $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
 }
 
