@@ -16,20 +16,33 @@ function normalize_order(PDO $pdo, string $table, string $where='1=1', array $pa
 function fetch_tree(PDO $pdo): array {
   $cats=$pdo->query("SELECT id,name_de,name_en,sort_order FROM competency_categories ORDER BY sort_order,id")->fetchAll(PDO::FETCH_ASSOC)?:[];
   $subs=$pdo->query("SELECT id,category_id,name_de,name_en,sort_order FROM competency_subcategories ORDER BY category_id,sort_order,id")->fetchAll(PDO::FETCH_ASSOC)?:[];
-  $comps=$pdo->query("SELECT id,category_id,subcategory_id,code,text_de,text_en,is_required,sort_order FROM competencies WHERE subcategory_id IS NOT NULL ORDER BY subcategory_id,sort_order,id")->fetchAll(PDO::FETCH_ASSOC)?:[];
+  $comps=$pdo->query("SELECT id,category_id,subcategory_id,code,text_de,text_en,is_required,sort_order FROM competencies ORDER BY category_id, COALESCE(subcategory_id,0), sort_order,id")->fetchAll(PDO::FETCH_ASSOC)?:[];
   $grades=[]; foreach(($pdo->query("SELECT competency_id,grade_level FROM competency_grade_levels ORDER BY grade_level")->fetchAll(PDO::FETCH_ASSOC)?:[]) as $r){$grades[(int)$r['competency_id']][]=(int)$r['grade_level'];}
   $subsByCat=[]; foreach($subs as $s){$subsByCat[(int)$s['category_id']][]=$s;}
-  $compsBySub=[]; foreach($comps as $c){$compsBySub[(int)$c['subcategory_id']][]=$c;}
+  $compsBySub=[]; $compsNoSubByCat=[];
+  foreach($comps as $c){
+    $subId=(int)($c['subcategory_id'] ?? 0);
+    if($subId>0){ $compsBySub[$subId][]=$c; }
+    else { $compsNoSubByCat[(int)($c['category_id']??0)][]=$c; }
+  }
   $tree=[];
   foreach($cats as $c){
     $catId=(int)$c['id'];
     $cn=[];
+    if(!empty($compsNoSubByCat[$catId])){
+      $items=[];
+      foreach(($compsNoSubByCat[$catId]??[]) as $it){
+        $cid=(int)$it['id'];
+        $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
+      }
+      $cn[]=['id'=>'virtual-no-subcategory-'.$catId,'is_virtual'=>true,'category_id'=>$catId,'type'=>'subcategory','title'=>'Ohne Unterkategorie','name_de'=>'Ohne Unterkategorie','name_en'=>'Without subcategory','sort_order'=>0,'children'=>$items];
+    }
     foreach(($subsByCat[$catId]??[]) as $s){
       $subId=(int)$s['id'];
       $items=[];
       foreach(($compsBySub[$subId]??[]) as $it){
         $cid=(int)$it['id'];
-        $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'sort_order'=>(int)$it['sort_order']];
+        $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
       }
       $cn[]=['id'=>$subId,'type'=>'subcategory','title'=>(string)$s['name_de'],'name_de'=>(string)$s['name_de'],'name_en'=>(string)$s['name_en'],'sort_order'=>(int)$s['sort_order'],'children'=>$items];
     }
@@ -69,9 +82,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
         $de=trim((string)($_POST['name_de']??'')); $en=trim((string)($_POST['name_en']??'')); if($de===''||$en==='') bad('Name DE/EN erforderlich');
         $so=max_sort($pdo,'competency_subcategories','category_id=?',[$cat])+1; $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$cat,$de,$en,$so]);
       } elseif($type==='competency'){
-        $sub=(int)($_POST['parent_id']??0); if($sub<=0) bad('Unterkategorie erforderlich');
-        $st=$pdo->prepare("SELECT category_id,name_de FROM competency_subcategories WHERE id=?");$st->execute([$sub]);$sr=$st->fetch(PDO::FETCH_ASSOC); if(!$sr) bad('Unterkategorie nicht gefunden');
-        $cat=(int)$sr['category_id'];
+        $subRaw=(string)($_POST['parent_id']??''); $sub=(int)$subRaw; $cat=(int)($_POST['target_category_id']??0); $catName='';
+        if($sub>0){ $st=$pdo->prepare("SELECT category_id,name_de FROM competency_subcategories WHERE id=?");$st->execute([$sub]);$sr=$st->fetch(PDO::FETCH_ASSOC); if(!$sr) bad('Unterkategorie nicht gefunden'); $cat=(int)$sr['category_id']; $catName=(string)$sr['name_de']; }
+        else { if($cat<=0) bad('Kategorie erforderlich'); $st=$pdo->prepare("SELECT name_de FROM competency_categories WHERE id=?");$st->execute([$cat]); $catName=(string)($st->fetchColumn()?:'CAT'); }
         $de=trim((string)($_POST['text_de']??'')); $en=trim((string)($_POST['text_en']??'')); if($de===''||$en==='') bad('Kompetenztext DE/EN erforderlich');
         $code=trim((string)($_POST['code']??'')); if($code==='') $code=next_comp_code($pdo,$cat,(string)$sr['name_de']);
         $so=max_sort($pdo,'competencies','subcategory_id=?',[$sub])+1;
@@ -158,6 +171,11 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .drop-target{height:12px;border:2px dashed transparent;border-radius:6px;margin:4px 0}
 .drop-target.active{border-color:#0b57d0;background:#eef5ff}
 .draggable{cursor:move}
+.comp-main{font-weight:600}
+.comp-sub{font-size:12px;color:#666}
+.chip{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;background:#eef5ff;margin-right:4px}
+#modal{width:min(900px,95vw)}
+#modal textarea{width:100%;min-height:80px}
 </style>
 <script>
 const csrf = <?=json_encode(csrf_token())?>;
@@ -167,23 +185,23 @@ const modal=document.getElementById('modal');
 const modalTitle=document.getElementById('modalTitle');
 const modalFields=document.getElementById('modalFields');
 const modalSave=document.getElementById('modalSave');
-let stateTree=[]; let busy=false; let modalState=null;
+let stateTree=[]; let busy=false; let modalState=null; const collapsed = new Set();
 function showMsg(text,err=false){msg.style.display='block';msg.textContent=text;msg.className='card '+(err?'alert danger':'alert success');}
-async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>fd.append(k, typeof v==='string'?v:JSON.stringify(v))); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
+async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>{ if(Array.isArray(v)){ v.forEach(x=>fd.append(k+'[]',String(x))); } else fd.append(k,String(v)); }); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
 function gradeChecks(sel=[]){return `<div><strong>Klassenstufe</strong> ${[1,2,3,4].map(g=>`<label><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}> ${g}</label>`).join(' ')}</div>`}
 function render(){treeEl.innerHTML=''; if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;} stateTree.forEach(c=>treeEl.appendChild(renderCategory(c))); initDnd();}
-function renderCategory(c){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='category'; el.dataset.id=c.id; el.innerHTML=`<div class="drop-target" data-type="category" data-parent="0" data-before="${c.id}"></div><div class="node-head"><span class="node-title">${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div><div class="children"></div>`;
+function renderCategory(c){const nodeKey=`category-${c.id}`;const hasChildren=(c.children||[]).length>0;const isCollapsed=collapsed.has(nodeKey);const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='category'; el.dataset.id=c.id; el.innerHTML=`<div class="drop-target" data-type="category" data-parent="0" data-before="${c.id}"></div><div class="node-head"><span class="node-title">${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div><div class="children" style="${isCollapsed?'display:none':''}"></div>`;
 const ch=el.querySelector('.children');
 if(!c.children.length){ch.innerHTML='<div>Keine Unterkategorien.</div>';} else c.children.forEach(s=>ch.appendChild(renderSub(s,c.id)));
 const tail=document.createElement('div'); tail.className='drop-target'; tail.dataset.type='category'; tail.dataset.parent='0'; tail.dataset.before='0'; ch.parentNode.appendChild(tail);
 return el;}
-function renderSub(s,catId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='subcategory'; el.dataset.id=s.id; el.dataset.parent=catId; el.innerHTML=`<div class="drop-target" data-type="subcategory" data-parent="${catId}" data-before="${s.id}"></div><div class="node-head"><span>${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en)}</small></span><span class="node-actions"><button data-act="addComp" data-id="${s.id}">＋</button><button data-act="edit" data-type="subcategory" data-id="${s.id}">✏️</button><button data-act="del" data-type="subcategory" data-id="${s.id}">🗑️</button></span></div><div class="children"></div>`;
+function renderSub(s,catId){const virtual=!!s.is_virtual;const sid=String(s.id);const nodeKey=`subcategory-${sid}`;const hasChildren=(s.children||[]).length>0;const isCollapsed=collapsed.has(nodeKey);const el=document.createElement('div'); el.className='tree-node'+(virtual?'':' draggable'); if(!virtual){el.draggable=true; el.dataset.type='subcategory'; el.dataset.id=sid; el.dataset.parent=catId;} el.innerHTML=`${virtual?'':'<div class="drop-target" data-type="subcategory" data-parent="'+catId+'" data-before="'+sid+'"></div>'}<div class="node-head"><span>${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div><div class="children" style="${isCollapsed?'display:none':''}"></div>`;
 const ch=el.querySelector('.children'); if(!s.children.length){ch.innerHTML='<div>Keine Kompetenzen.</div>';} else s.children.forEach(k=>ch.appendChild(renderComp(k,s.id)));
 const tail=document.createElement('div'); tail.className='drop-target'; tail.dataset.type='subcategory'; tail.dataset.parent=catId; tail.dataset.before='0';
-const ct=document.createElement('div'); ct.className='drop-target'; ct.dataset.type='competency'; ct.dataset.parent=s.id; ct.dataset.before='0';
+const ct=document.createElement('div'); ct.className='drop-target'; ct.dataset.type='competency'; ct.dataset.parent=virtual?'0':sid; ct.dataset.targetCategory=String(catId); ct.dataset.before='0';
 el.appendChild(ct); el.appendChild(tail);
 return el;}
-function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.id=k.id; el.dataset.parent=subId; el.innerHTML=`<div class="drop-target" data-type="competency" data-parent="${subId}" data-before="${k.id}"></div><div class="node-head"><span>${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
+function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.id=k.id; el.dataset.parent=subId;const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="drop-target" data-type="competency" data-parent="${subId}" data-before="${k.id}" data-target-category="${k.category_id||0}"></div><div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
 function escapeHtml(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 
 function findNode(type,id){for(const c of stateTree){if(type==='category'&&c.id==id) return c; for(const s of c.children||[]){if(type==='subcategory'&&s.id==id)return s; for(const k of s.children||[]){if(type==='competency'&&k.id==id)return k;}}} return null;}
@@ -192,14 +210,15 @@ function openModal(cfg){modalState=cfg; modalTitle.textContent=cfg.title; modalF
 document.getElementById('addCategory').addEventListener('click',()=>openModal({mode:'create',type:'category',title:'Kategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'}));
 treeEl.addEventListener('click', async (e)=>{const b=e.target.closest('button[data-act]'); if(!b) return; const act=b.dataset.act; const id=Number(b.dataset.id);
 if(act==='addSub'){openModal({mode:'create',type:'subcategory',parent:id,title:'Unterkategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'});}
-if(act==='addComp'){openModal({mode:'create',type:'competency',parent:id,title:'Kompetenz hinzufügen',html:'<label>Code (optional)</label><input class="input" name="code"><label>Deutsch</label><input class="input" name="text_de" required><label>English</label><input class="input" name="text_en" required><label><input type="checkbox" name="is_required" value="1"> Pflicht</label>'+gradeChecks([])});}
+if(act==='toggle'){const key=b.dataset.node; if(collapsed.has(key)) collapsed.delete(key); else collapsed.add(key); render(); return;}
+if(act==='addComp'){const virt=b.dataset.virtual==='1';openModal({mode:'create',type:'competency',parent:virt?0:id,targetCategory:virt?Number(b.dataset.category):0,title:'Kompetenz hinzufügen',html:'<label>Code (optional)</label><input class="input" name="code"><label>Deutsch</label><textarea name="text_de" required></textarea><label>English</label><textarea name="text_en"></textarea><label><input type="checkbox" name="is_required" value="1"> Pflicht</label>'+gradeChecks([])});}
 if(act==='edit'){const n=findNode(b.dataset.type,id); if(!n) return; if(b.dataset.type==='category') openModal({mode:'update',type:'category',id,title:'Kategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
 if(b.dataset.type==='subcategory') openModal({mode:'update',type:'subcategory',id,title:'Unterkategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
-if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<label>Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required><label>Deutsch</label><input class="input" name="text_de" value="${escapeHtml(n.text_de)}" required><label>English</label><input class="input" name="text_en" value="${escapeHtml(n.text_en)}" required><label><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}> Pflicht</label>${gradeChecks((n.grades||[]).map(Number))}`});}
+if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<label>Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required><label>Deutsch</label><textarea name="text_de" required>${escapeHtml(n.text_de)}</textarea><label>English</label><textarea name="text_en">${escapeHtml(n.text_en||'')}</textarea><label><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}> Pflicht</label>${gradeChecks((n.grades||[]).map(Number))}`});}
 if(act==='del'){try{const t=b.dataset.type; const prev=await api({action:'delete_preview',type:t,id:String(id)}); let txt=''; if(t==='category') txt=`Diese Kategorie enthält ${prev.counts.subcategories} Unterkategorien und ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='subcategory') txt=`Diese Unterkategorie enthält ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='competency') txt='Diese Kompetenz wirklich löschen?'; if(!confirm(txt)) return; const res=await api({action:'delete',type:t,id:String(id)}); stateTree=res.tree; render(); showMsg('Gelöscht.'); }catch(err){showMsg(err.message,true);} }
 });
 
-modalSave.addEventListener('click', async (e)=>{e.preventDefault(); if(!modalState) return; const fd=new FormData(document.getElementById('modalForm')); const data={action:modalState.mode==='create'?'create':'update',type:modalState.type}; if(modalState.id) data.id=String(modalState.id); if(modalState.parent) data.parent_id=String(modalState.parent); for(const [k,v] of fd.entries()){ if(k.endsWith('[]')){ if(!data[k]) data[k]=[]; data[k].push(v);} else data[k]=v; }
+modalSave.addEventListener('click', async (e)=>{e.preventDefault(); if(!modalState) return; const fd=new FormData(document.getElementById('modalForm')); const data={action:modalState.mode==='create'?'create':'update',type:modalState.type}; if(modalState.id) data.id=String(modalState.id); if(modalState.parent!==undefined) data.parent_id=String(modalState.parent); if(modalState.targetCategory) data.target_category_id=String(modalState.targetCategory); for(const [k,v] of fd.entries()){ if(k.endsWith('[]')){ const key=k.slice(0,-2); if(!data[key]) data[key]=[]; data[key].push(v);} else data[k]=v; }
   try{ modalSave.disabled=true; const res=await api(data); stateTree=res.tree; render(); modal.close(); showMsg('Gespeichert.'); }catch(err){showMsg(err.message,true);} finally {modalSave.disabled=false;}
 });
 
@@ -216,7 +235,7 @@ function initDnd(){
         if(type==='subcategory') siblings=Array.from(document.querySelectorAll(`.draggable[data-type="subcategory"][data-parent="${parent}"]`)).map(x=>Number(x.dataset.id));
         if(type==='competency') siblings=Array.from(document.querySelectorAll(`.draggable[data-type="competency"][data-parent="${parent}"]`)).map(x=>Number(x.dataset.id));
         const id=Number(dragEl.dataset.id); siblings=siblings.filter(x=>x!==id); if(before>0){const idx=siblings.indexOf(before); if(idx>=0) siblings.splice(idx,0,id); else siblings.push(id);} else siblings.push(id);
-        const res=await api({action:'reorder',type,id:String(id),new_parent_id:String(parent),ordered_ids:siblings});
+        const res=await api({action:'reorder',type,id:String(id),new_parent_id:String(parent),target_category_id:String(d.dataset.targetCategory||0),ordered_ids:siblings});
         stateTree=res.tree; render();
       }catch(err){showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render();}
     });
