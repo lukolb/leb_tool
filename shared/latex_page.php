@@ -148,6 +148,7 @@ $sections = parse_sections($content);
 
 <script>
 let currentPdfUrl = null;
+const pdfFilename = 'vorlage.pdf';
 const form = document.getElementById('pdfForm');
 const pdfPreview = document.getElementById('pdfPreview');
 const createPdfButton = document.getElementById('createPdfButton');
@@ -174,7 +175,8 @@ form.addEventListener('submit', async (event) => {
       URL.revokeObjectURL(currentPdfUrl);
     }
 
-    currentPdfUrl = URL.createObjectURL(blob);
+    const pdfFile = new File([blob], pdfFilename, { type: 'application/pdf' });
+    currentPdfUrl = URL.createObjectURL(pdfFile);
     pdfPreview.src = currentPdfUrl;
     pdfPreview.style.display = 'block';
   } finally {
