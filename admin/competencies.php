@@ -306,18 +306,14 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 
 let dragEl=null;
 function initDnd(){
-  console.debug('[competencies dnd] bind draggables',
-    Array.from(document.querySelectorAll('.draggable')).map(el => ({ type: el.dataset.type, id: el.dataset.id, itemType: el.dataset.itemType, itemId: el.dataset.itemId }))
-  );
   document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
     e.stopPropagation();
     const type = el.dataset.type;
-    const id = Number(el.dataset.id || 0);
     if(type!=='category' && type!=='subcategory') return;
     dragEl=el;
     document.body.classList.remove('is-dragging-category','is-dragging-subcategory');
     document.body.classList.add(type==='category'?'is-dragging-category':'is-dragging-subcategory');
-    console.debug('[competencies dnd] start', { type, id });
+    if(type==='category') console.debug('[competencies dnd category] start', Number(el.dataset.id));
     if(type==='subcategory') console.debug('[competencies dnd subcategory] start', Number(el.dataset.id), Number(el.dataset.parent||0));
   }; el.ondragend=(e)=>{e.stopPropagation(); dragEl=null; document.body.classList.remove('is-dragging-category','is-dragging-subcategory'); document.querySelectorAll('.dnd-placeholder-category,.dnd-placeholder-subcategory').forEach(d=>d.classList.remove('active'));};});
   document.querySelectorAll('.dnd-placeholder-category').forEach(d=>{
@@ -333,7 +329,7 @@ function initDnd(){
       if(beforeId===itemId) return;
       let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
-      if(itemId===beforeId || orderedIds.join(',')===currentIds.join(',')) return;
+      if(orderedIds.join(',')===currentIds.join(',')) return;
       console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
       try{ const res=await api({action:'reorder',type:'category',id:String(itemId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
       catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
