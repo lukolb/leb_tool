@@ -1,8 +1,11 @@
 <?php
 declare(strict_types=1);
 
-function db_competency_sections(PDO $pdo): array {
-    $rows = $pdo->query("SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) WHERE c.is_active=1 ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+function db_competency_sections(PDO $pdo, int $gradeLevel): array {
+    $sql = "SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND cgl.grade_level=? ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id";
+    $st = $pdo->prepare($sql);
+    $st->execute([$gradeLevel]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $sections = [];
     foreach ($rows as $r) {
         $catId = (int)($r['category_id'] ?? 0);
@@ -35,7 +38,9 @@ function db_competency_sections(PDO $pdo): array {
 }
 
 $pdo = db();
-$sectionsDb = db_competency_sections($pdo);
+$selectedGrade = (int)($_GET['grade_level'] ?? $_POST['grade_level'] ?? 1);
+if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
+$sectionsDb = db_competency_sections($pdo, $selectedGrade);
 ?>
 
 <h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
@@ -43,6 +48,13 @@ $sectionsDb = db_competency_sections($pdo);
 
 <form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
 <input type="hidden" name="source" value="db">
+<input type="hidden" name="grade_level" value="<?= h((string)$selectedGrade) ?>">
+<div class="card" style="padding:12px;margin:12px 0;">
+  <label><strong>Klassenstufe</strong></label>
+  <select class="input" id="gradeLevelSelect">
+    <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
+  </select>
+</div>
 <?php foreach ($sectionsDb as $section): ?>
   <details class="card" style="padding:12px 16px; margin:16px 0;" open>
     <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
@@ -54,7 +66,7 @@ $sectionsDb = db_competency_sections($pdo);
           <label style="display:block; margin:8px 0 8px 18px;">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
-            <?= h((string)$item['text_de']) ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? '<strong>(verpflichtend)</strong>' : '<em>(optional)</em>' ?>
+            <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
@@ -68,7 +80,7 @@ $sectionsDb = db_competency_sections($pdo);
           <label style="display:block; margin:8px 0 8px 18px;">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
-            <?= h((string)$item['text_de']) ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? '<strong>(verpflichtend)</strong>' : '<em>(optional)</em>' ?>
+            <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
@@ -108,6 +120,12 @@ const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
 const pdfDebug = document.getElementById('pdfDebug');
 const pdfDebugText = document.getElementById('pdfDebugText');
 let currentPdfUrl = null;
+
+document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
+  const u = new URL(window.location.href);
+  u.searchParams.set('grade_level', e.target.value);
+  window.location.href = u.toString();
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
