@@ -66,9 +66,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     if (!$hasRequired) { foreach (($section['subs'] ?? []) as $sub) { foreach (($sub['items'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break 2; } } } }
   ?>
   <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:12px 16px; margin:16px 0;" open>
+    <input type="hidden" name="cat_ids[]" value="<?= h((string)$sectionId) ?>">
     <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
     <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
-      <input type="checkbox" class="category-toggle" data-cat-id="<?= h((string)$sectionId) ?>" checked>
+      <input type="checkbox" class="category-toggle" name="cat_active[]" value="<?= h((string)$sectionId) ?>" data-cat-id="<?= h((string)$sectionId) ?>" checked>
       Kategorie aktiv
     </label>
     <div class="category-warning" data-cat-warning="<?= h((string)$sectionId) ?>" style="display:none; margin:0 0 10px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">

@@ -313,13 +313,23 @@ if (!is_array($pagebreaks)) {
 
 $selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
+$allCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_ids'] ?? []))));
+$activeCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_active'] ?? []))));
+$disabledCatIds = array_values(array_diff($allCatIds, $activeCatIds));
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $selectedGrade = (int)($_POST['grade_level'] ?? 1);
     if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
-    $stReq = $pdo->prepare("SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?");
-    $stReq->execute([$selectedGrade]);
+    $reqSql = "SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?";
+    $reqParams = [$selectedGrade];
+    if (!empty($disabledCatIds)) {
+        $in = implode(',', array_fill(0, count($disabledCatIds), '?'));
+        $reqSql .= " AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) NOT IN ($in)";
+        $reqParams = array_merge($reqParams, $disabledCatIds);
+    }
+    $stReq = $pdo->prepare($reqSql);
+    $stReq->execute($reqParams);
     $reqRows = $stReq->fetchAll(PDO::FETCH_COLUMN) ?: [];
     foreach ($reqRows as $code) {
         $c = trim((string)$code);
@@ -336,6 +346,17 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $selectedGrade = (int)($_POST['grade_level'] ?? 1);
     if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
+    if (!empty($disabledCatIds) && !empty($selectedSkills)) {
+        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+        $inCats = implode(',', array_fill(0, count($disabledCatIds), '?'));
+        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $stDisabled = $pdo->prepare($sql);
+        $stDisabled->execute(array_merge($selectedSkills, $disabledCatIds));
+        $blocked = array_map('strval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        if (!empty($blocked)) {
+            $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
+        }
+    }
     $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
     $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
 }
