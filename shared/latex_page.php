@@ -140,43 +140,46 @@ $sections = parse_sections($content);
   </div>
 <?php endforeach; ?>
 
-<button class="btn" type="submit">PDF erstellen</button>
+<button class="btn" type="submit" id="createPdfButton">PDF erstellen</button>
+<div id="pdfLoading" style="display:none; margin-top:12px;">PDF wird erstellt … bitte warten.</div>
 </form>
 
-<div id="pdfActions" style="display:none; margin-top:24px;">
-  <button class="btn" type="button" id="downloadPdfButton">PDF herunterladen</button>
-</div>
 <iframe id="pdfPreview" style="display:none; width:100%; height:90vh; margin-top:24px;"></iframe>
 
 <script>
 let currentPdfUrl = null;
-let currentPdfFilename = 'Vorlage.pdf';
 const form = document.getElementById('pdfForm');
 const pdfPreview = document.getElementById('pdfPreview');
-const pdfActions = document.getElementById('pdfActions');
-const downloadPdfButton = document.getElementById('downloadPdfButton');
+const createPdfButton = document.getElementById('createPdfButton');
+const pdfLoading = document.getElementById('pdfLoading');
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
-  if (!response.ok) {
-    const text = await response.text();
-    alert(text || 'PDF konnte nicht erstellt werden.');
-    return;
+
+  createPdfButton.disabled = true;
+  pdfLoading.style.display = 'block';
+
+  try {
+    const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+
+    if (!response.ok) {
+      const text = await response.text();
+      alert(text || 'PDF konnte nicht erstellt werden.');
+      return;
+    }
+
+    const blob = await response.blob();
+
+    if (currentPdfUrl) {
+      URL.revokeObjectURL(currentPdfUrl);
+    }
+
+    currentPdfUrl = URL.createObjectURL(blob);
+    pdfPreview.src = currentPdfUrl;
+    pdfPreview.style.display = 'block';
+  } finally {
+    createPdfButton.disabled = false;
+    pdfLoading.style.display = 'none';
   }
-  const blob = await response.blob();
-  if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
-  currentPdfUrl = URL.createObjectURL(blob);
-  pdfPreview.src = currentPdfUrl;
-  pdfPreview.style.display = 'block';
-  pdfActions.style.display = 'block';
-});
-downloadPdfButton.addEventListener('click', () => {
-  if (!currentPdfUrl) return;
-  const a = document.createElement('a');
-  a.href = currentPdfUrl;
-  a.download = currentPdfFilename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 });
 </script>
