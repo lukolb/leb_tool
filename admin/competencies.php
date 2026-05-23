@@ -74,7 +74,73 @@ summary{cursor:pointer}
 const csrf = <?= json_encode(csrf_token()) ?>;
 let drag = null;
 const ph=document.createElement('div'); ph.className='drop-placeholder';
-document.querySelectorAll('.drag').forEach(el=>{el.addEventListener('dragstart',()=>drag=el); el.addEventListener('dragover',e=>{e.preventDefault(); if(!drag) return; el.parentNode.insertBefore(ph,el);}); el.addEventListener('dragleave',()=>{if(ph.parentNode===el.parentNode) ph.remove();}); el.addEventListener('drop', async e=>{e.preventDefault(); if(!drag||drag===el) return; const same=drag.dataset.type===el.dataset.type; if(!same) return; const container=el.closest('details[data-category-id]'); const fd=new FormData(); fd.append('csrf_token',csrf); fd.append('action','move_item'); fd.append('item_type',drag.dataset.type); fd.append('id',drag.dataset.id); fd.append('before_id',el.dataset.id); if(container){fd.append('target_category_id',container.dataset.categoryId||'0');fd.append('target_subcategory_id',container.dataset.subcategoryId||'0');} const res=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); if(res.ok){ el.parentNode.insertBefore(drag,el); } ph.remove();}); el.addEventListener('dragend',()=>ph.remove());});
+const draggables = Array.from(document.querySelectorAll('.drag'));
+const groups = Array.from(document.querySelectorAll('details[data-category-id]'));
+
+function nearestGroup(el){
+  return el.closest('details[data-category-id]');
+}
+
+draggables.forEach(el => {
+  el.addEventListener('dragstart', () => { drag = el; el.classList.add('is-dragging'); });
+  el.addEventListener('dragend', () => { el.classList.remove('is-dragging'); ph.remove(); drag = null; });
+});
+
+// stable reorder among same type
+draggables.forEach(el => {
+  el.addEventListener('dragover', (e) => {
+    if (!drag || drag === el) return;
+    if (drag.dataset.type !== el.dataset.type) return;
+    e.preventDefault();
+    if (ph.previousSibling === el) return;
+    el.parentNode.insertBefore(ph, el);
+  });
+  el.addEventListener('drop', async (e) => {
+    if (!drag || drag === el) return;
+    if (drag.dataset.type !== el.dataset.type) return;
+    e.preventDefault();
+    const container = nearestGroup(el);
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('action', 'move_item');
+    fd.append('item_type', drag.dataset.type);
+    fd.append('id', drag.dataset.id);
+    fd.append('before_id', el.dataset.id);
+    if (container) {
+      fd.append('target_category_id', container.dataset.categoryId || '0');
+      fd.append('target_subcategory_id', container.dataset.subcategoryId || '0');
+    }
+    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
+    if (res.ok && ph.parentNode) ph.parentNode.insertBefore(drag, ph);
+    ph.remove();
+  });
+});
+
+// move competencies into other categories/subcategories by dropping on group headers
+groups.forEach(g => {
+  g.addEventListener('dragover', (e) => {
+    if (!drag || drag.dataset.type !== 'competency') return;
+    e.preventDefault();
+    const lastComp = Array.from(g.querySelectorAll('.drag[data-type="competency"]')).pop();
+    if (lastComp) lastComp.parentNode.insertBefore(ph, lastComp.nextSibling);
+    else g.appendChild(ph);
+  });
+  g.addEventListener('drop', async (e) => {
+    if (!drag || drag.dataset.type !== 'competency') return;
+    e.preventDefault();
+    const fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('action', 'move_item');
+    fd.append('item_type', 'competency');
+    fd.append('id', drag.dataset.id);
+    fd.append('before_id', '0');
+    fd.append('target_category_id', g.dataset.categoryId || '0');
+    fd.append('target_subcategory_id', g.dataset.subcategoryId || '0');
+    const res = await fetch('', {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd});
+    if (res.ok && ph.parentNode) ph.parentNode.insertBefore(drag, ph);
+    ph.remove();
+  });
+});
 document.querySelectorAll('.icon-del').forEach(btn=>btn.addEventListener('click', async ()=>{const count=Number(btn.dataset.count||0); const action=btn.dataset.action||''; const id=btn.dataset.id||''; const txt=(action==='delete_competency')?'Diese Kompetenz löschen?':`Wirklich löschen? Dabei werden ${count} Kompetenzen entfernt.`; if(!confirm(txt)) return; const fd=new FormData(); fd.append('csrf_token',csrf); fd.append('action',action); fd.append('id',id); const res=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); if(res.ok){ const row=btn.closest('.drag, details'); if(row) row.remove(); }}));
 const dlg=document.getElementById('editDlg'), fields=document.getElementById('dlgFields'), title=document.getElementById('dlgTitle'), save=document.getElementById('saveBtn');
 let current=null;
