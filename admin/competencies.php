@@ -157,7 +157,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
       $ordered=json_decode((string)($_POST['ordered_ids']??'[]'), true); if(!is_array($ordered)) bad('ordered_ids ungültig'); $ordered=array_values(array_map('intval',$ordered));
       if(!in_array($id,$ordered,true)) bad('ID nicht in ordered_ids');
       if($type==='category'){
-        foreach($ordered as $x){$pdo->prepare("UPDATE competency_categories SET sort_order=? WHERE id=?")->execute([array_search($x,$ordered,true)+1,$x]);}
+        $st=$pdo->query("SELECT id FROM competency_categories"); $valid=array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN)?:[]);
+        foreach($ordered as $x){ if(!in_array((int)$x,$valid,true)) bad('Ungültige Kategorie-ID in ordered_ids'); }
+        foreach($ordered as $pos=>$x){$pdo->prepare("UPDATE competency_categories SET sort_order=? WHERE id=?")->execute([$pos+1,$x]);}
       } elseif($type==='subcategory'){
         if($newParent<=0) bad('Kategorie als Parent erforderlich');
         $pdo->prepare("UPDATE competency_subcategories SET category_id=? WHERE id=?")->execute([$newParent,$id]);
@@ -219,15 +221,23 @@ function render(){
   treeEl.innerHTML='';
   if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;}
   const catList=document.createElement('div'); catList.dataset.dndList='categories';
-  stateTree.forEach(c=>{ catList.appendChild(renderCategory(c)); });
+  if(stateTree.length){
+    catList.appendChild(mkDrop('category', String(stateTree[0].id), {dropType:'category', beforeId:String(stateTree[0].id)}));
+  }
+  stateTree.forEach((c,idx)=>{
+    catList.appendChild(renderCategory(c));
+    const nextId = stateTree[idx+1] ? String(stateTree[idx+1].id) : '';
+    catList.appendChild(mkDrop('category', nextId || '0', {dropType:'category', beforeId:nextId}));
+  });
+  console.debug('[competencies dnd category] render category dropzones', stateTree.map(c=>c.id));
   treeEl.appendChild(catList);
   initDnd();
 }
 function mkDrop(type,before='0',extra={}){ const d=document.createElement('div'); d.className=`drop-target dnd-placeholder-${type}`; d.dataset.type=type; d.dataset.before=String(before); Object.entries(extra).forEach(([k,v])=>d.dataset[k]=String(v)); return d; }
 function renderCategory(c){
   const nodeKey=`category-${c.id}`; const isCollapsed=collapsed.has(nodeKey); const hasChildren=(c.children||[]).length>0;
-  const wrap=document.createElement('div'); wrap.dataset.itemType='category'; wrap.dataset.itemId=String(c.id); wrap.className='tree-node draggable'; wrap.draggable=true; wrap.dataset.type='category'; wrap.dataset.id=String(c.id);
-  wrap.innerHTML=`<div class="node-head"><span class="node-title"><span class="drag-handle category-drag-handle">↕</span>${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div>`;
+  const wrap=document.createElement('div'); wrap.dataset.itemType='category'; wrap.dataset.itemId=String(c.id); wrap.className='tree-node category-node draggable'; wrap.draggable=true; wrap.dataset.type='category'; wrap.dataset.id=String(c.id);
+  wrap.innerHTML=`<div class="node-head"><span class="node-title">${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(c.name_de)} <small>${escapeHtml(c.name_en)}</small></span><span class="node-actions"><button data-act="addSub" data-id="${c.id}">＋</button><button data-act="edit" data-type="category" data-id="${c.id}">✏️</button><button data-act="del" data-type="category" data-id="${c.id}">🗑️</button></span></div>`;
   const subList=document.createElement('div'); subList.className='children'; subList.dataset.dndList='subcategories'; subList.dataset.categoryId=String(c.id); subList.style.display=isCollapsed?'none':'';
   subList.appendChild(mkDrop('subcategory','0',{parent:c.id}));
   (c.children||[]).forEach(s=>{ subList.appendChild(renderSub(s,c.id)); subList.appendChild(mkDrop('subcategory','0',{parent:c.id})); });
@@ -238,14 +248,14 @@ function renderSub(s,catId){
   const virtual=!!s.is_virtual; const sid=String(s.id); const nodeKey=`subcategory-${sid}`; const isCollapsed=collapsed.has(nodeKey); const hasChildren=(s.children||[]).length>0;
   const wrap=document.createElement('div'); wrap.className='tree-node'+(virtual?'':' draggable');
   if(!virtual){ wrap.draggable=true; wrap.dataset.type='subcategory'; wrap.dataset.id=sid; wrap.dataset.parent=String(catId); wrap.dataset.itemType='subcategory'; wrap.dataset.itemId=sid; }
-  wrap.innerHTML=`<div class="node-head"><span>${virtual?'':`<span class="drag-handle subcategory-drag-handle">↕</span>`}${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div>`;
+  wrap.innerHTML=`<div class="node-head"><span>${virtual?'':''}${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div>`;
   const compList=document.createElement('div'); compList.className='children'; compList.dataset.dndList='competencies'; compList.dataset.categoryId=String(catId); compList.dataset.subcategoryId=virtual?'':sid; if(virtual) compList.dataset.virtualNoSubcategory='1'; compList.style.display=isCollapsed?'none':'';
   compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId}));
   (s.children||[]).forEach(k=>{ compList.appendChild(renderComp(k,sid)); compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId})); });
   wrap.appendChild(compList);
   return wrap;
 }
-function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="node-head"><span><span class="drag-handle competency-drag-handle">↕</span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
+function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
 function escapeHtml(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 
 function findNode(type,id){for(const c of stateTree){if(type==='category'&&c.id==id) return c; for(const s of c.children||[]){if(type==='subcategory'&&s.id==id)return s; for(const k of s.children||[]){if(type==='competency'&&k.id==id)return k;}}} return null;}
@@ -271,22 +281,20 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 
 let dragEl=null;
 function initDnd(){
-  console.debug('[competencies dnd] init categories', document.querySelectorAll('[data-dnd-list="categories"]').length);
-  document.querySelectorAll('[data-dnd-list="subcategories"]').forEach(l=>console.debug('[competencies dnd] init subcategories', l.dataset.categoryId));
-  document.querySelectorAll('[data-dnd-list="competencies"]').forEach(l=>console.debug('[competencies dnd] init competencies', l.dataset.categoryId, l.dataset.subcategoryId||''));
-  document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=()=>{dragEl=el; console.debug('[competencies dnd] start', el.dataset.type, el.dataset.id);}; el.ondragend=()=>{dragEl=null; document.querySelectorAll('.drop-target').forEach(d=>d.classList.remove('active'));};});
-  document.querySelectorAll('.drop-target').forEach(d=>{
-    d.ondragover=(e)=>{if(!dragEl) return; const item=dragEl.dataset.type; const to=d.closest('[data-dnd-list]')?.dataset.dndList||''; const allow=(item==='category'&&to==='categories')||(item==='subcategory'&&to==='subcategories')||(item==='competency'&&to==='competencies'); if(!allow) return false; e.preventDefault(); d.classList.add('active'); console.debug('[competencies dnd] move', item, 'from', dragEl.closest('[data-dnd-list]')?.dataset.dndList, 'to', to);};
+  document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=()=>{ if(el.dataset.type!=='category') return; dragEl=el; console.debug('[competencies dnd category] start', Number(el.dataset.id));}; el.ondragend=()=>{dragEl=null; document.querySelectorAll('.dnd-placeholder-category').forEach(d=>d.classList.remove('active'));};});
+  document.querySelectorAll('.dnd-placeholder-category').forEach(d=>{
+    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='category') return; if(d.dataset.dropType!=='category') return; e.preventDefault(); d.classList.add('active'); };
     d.ondragleave=()=>d.classList.remove('active');
-    d.ondrop=async (e)=>{e.preventDefault(); d.classList.remove('active'); if(!dragEl) return; const itemType=dragEl.dataset.type; const targetList=d.closest('[data-dnd-list]'); const toListType=targetList?.dataset.dndList||''; if((itemType==='category'&&toListType!=='categories')||(itemType==='subcategory'&&toListType!=='subcategories')||(itemType==='competency'&&toListType!=='competencies')) return;
-      const before=Number(d.dataset.before||0); const id=Number(dragEl.dataset.id);
-      let orderedIds=Array.from((targetList?.children||[])).filter(x=>x.dataset&&x.dataset.itemType===itemType).map(x=>Number(x.dataset.itemId));
-      orderedIds=orderedIds.filter(x=>x!==id); if(before>0){const i=orderedIds.indexOf(before); if(i>=0) orderedIds.splice(i,0,id); else orderedIds.push(id);} else orderedIds.push(id);
-      const targetCategoryId = Number(targetList?.dataset.categoryId||d.dataset.targetCategory||0);
-      const subRaw = (targetList?.dataset.subcategoryId ?? '');
-      const targetSubcategoryId = itemType==='competency' ? (subRaw===''?0:Number(subRaw||0)) : Number(d.dataset.parent||0);
-      console.debug('[competencies dnd] end', {itemType,itemId:id,fromListType:dragEl.closest('[data-dnd-list]')?.dataset.dndList,toListType,targetCategoryId,targetSubcategoryId,orderedIds});
-      try{ const res=await api({action:'reorder',type:itemType,id:String(id),new_parent_id:String(targetSubcategoryId||0),target_category_id:String(targetCategoryId||0),ordered_ids:orderedIds}); stateTree=res.tree; render(); }
+    d.ondrop=async (e)=>{
+      e.preventDefault(); d.classList.remove('active');
+      if(!dragEl || dragEl.dataset.type!=='category') return;
+      const itemId=Number(dragEl.dataset.id);
+      const beforeIdRaw=(d.dataset.beforeId||'').trim();
+      const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
+      if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
+      console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
+      try{ const res=await api({action:'reorder',type:'category',id:String(itemId),ordered_ids:orderedIds}); stateTree=res.tree; render(); }
       catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
     };
   });
