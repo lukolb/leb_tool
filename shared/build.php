@@ -137,6 +137,22 @@ function parse_sections(string $content): array {
     return $sections;
 }
 
+function ensure_balanced_braces_or_fail(string $tex, string $label = 'data.tex'): void {
+    $depth = 0;
+    $len = strlen($tex);
+    for ($i = 0; $i < $len; $i++) {
+        $ch = $tex[$i];
+        if ($ch === '{') $depth++;
+        if ($ch === '}') $depth--;
+        if ($depth < 0) {
+            throw new RuntimeException($label . ' hat eine überzählige schließende Klammer an Position ' . ($i + 1));
+        }
+    }
+    if ($depth !== 0) {
+        throw new RuntimeException($label . ' hat unausgeglichene Klammern (Diff: ' . $depth . ').');
+    }
+}
+
 function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
@@ -231,7 +247,7 @@ if (!is_array($pagebreaks)) {
     $pagebreaks = [];
 }
 
-$selectedSkills = array_values(array_unique(array_map('strval', $selectedSkills)));
+$selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
@@ -251,6 +267,16 @@ $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills);
+}
+
+try {
+    ensure_balanced_braces_or_fail($generatedDataTex, 'data.tex');
+} catch (Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Fehler bei data.tex-Generierung: " . $e->getMessage() . "\n\n";
+    echo substr($generatedDataTex, 0, 4000);
+    exit;
 }
 
 $resources = [
@@ -436,6 +462,9 @@ function latex_escape(string $t): string {
         '&' => '\\&',
         '#' => '\\#',
         '_' => '\\_',
+        '$' => '\\$',
+        '^' => '\\textasciicircum{}',
+        '~' => '\\textasciitilde{}',
     ];
     return strtr($t, $map);
 }
@@ -450,7 +479,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
-         . "WHERE c.code IN ($in) AND c.is_active=1 "
+         . "WHERE c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
          . "ORDER BY cat.sort_order, s.sort_order, c.sort_order, c.id";
 
     $st = $pdo->prepare($sql);
@@ -467,17 +496,22 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes): string {
         $sections[$cat]['subs'][$sub]['items'][] = $r;
     }
 
-    $out = "\\newcommand{\\GradeLevel}{1}\n\n";
+    $out = "% AUTO-GENERATED FROM DB\n";
+    $out .= "\\newcommand{\\GradeLevel}{1}\n\n";
     $i = 1;
     foreach ($sections as $catDe => $catData) {
         $macro = 'DbCat' . $i . 'Skills';
+        $out .= "% SECTION: " . latex_escape((string)$catDe) . "\n";
         $out .= "\\newcommand{\\" . $macro . "}{%\n";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
             if ($subDe !== '') {
                 $out .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n\n";
             }
             foreach (($subData['items'] ?? []) as $it) {
-                $code = (string)($it['code'] ?? 'DB-001');
+                $code = trim((string)($it['code'] ?? ''));
+                if ($code === '') {
+                    continue;
+                }
                 $out .= "  \\SkillRow{" . latex_escape($code) . "}\n";
                 $out .= "    {" . latex_escape((string)$it['text_de']) . "}\n";
                 $out .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n\n";
