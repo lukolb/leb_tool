@@ -120,7 +120,7 @@ $sections = parse_sections($content);
 <h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
-<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>" target="pdfPreviewFrame">
+<form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>?preview_name=vorlage.pdf" target="pdfPreviewFrame">
 <?php foreach ($sections as $section): ?>
   <?php $macroName = $section['macroName']; $items = $macros[$macroName]['items'] ?? []; ?>
   <div class="card" style="padding:16px; margin:16px 0;">
