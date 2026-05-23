@@ -294,7 +294,7 @@ function initDnd(){
       let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
       console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
-      try{ const res=await api({action:'reorder',type:'category',id:String(itemId),ordered_ids:orderedIds}); stateTree=res.tree; render(); }
+      try{ const res=await api({action:'reorder',type:'category',id:String(itemId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
       catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
     };
   });
