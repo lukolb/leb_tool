@@ -75,10 +75,11 @@ summary{cursor:pointer}
 <script>
 const csrf = <?= json_encode(csrf_token()) ?>;
 let drag = null;
-const draggables = Array.from(document.querySelectorAll('.drag'));
-const dropZones = [];
+let draggables = [];
+let dropZones = [];
 
 function clearDropZones(){ dropZones.forEach(z=>z.classList.remove('active')); }
+function removeDropZones(){ dropZones.forEach(z=>z.remove()); dropZones = []; }
 function mountDropZone(parent, beforeEl, type, beforeId, targetCategoryId='0', targetSubcategoryId='0'){
   const dz = document.createElement('div');
   dz.className = 'drop-zone';
@@ -116,35 +117,42 @@ function mountDropZone(parent, beforeEl, type, beforeId, targetCategoryId='0', t
       }
     }
     clearDropZones();
+    initDnD();
   });
 }
 
-// category level zones
-const categoryNodes = Array.from(document.querySelectorAll('.drag[data-type="category"]'));
-for (const node of categoryNodes) mountDropZone(node.parentNode, node, 'category', node.dataset.id);
-if (categoryNodes.length) mountDropZone(categoryNodes[0].parentNode, null, 'category', 0);
+function initDnD(){
+  removeDropZones();
+  draggables = Array.from(document.querySelectorAll('.drag'));
 
-// subcategory + competency zones per group
-const groupDetails = Array.from(document.querySelectorAll('details[data-category-id]'));
-for (const g of groupDetails) {
-  const cat = g.dataset.categoryId || '0';
-  const sub = g.dataset.subcategoryId || '0';
-  const directChildren = Array.from(g.children);
-  const subs = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'subcategory');
-  if (sub === '0') {
-    for (const node of subs) mountDropZone(node.parentNode, node, 'subcategory', node.dataset.id, cat, '0');
-    mountDropZone(g, null, 'subcategory', 0, cat, '0');
+  // category level zones
+  const categoryNodes = Array.from(document.querySelectorAll('.drag[data-type="category"]'));
+  for (const node of categoryNodes) mountDropZone(node.parentNode, node, 'category', node.dataset.id);
+  if (categoryNodes.length) mountDropZone(categoryNodes[0].parentNode, null, 'category', 0);
+
+  // subcategory + competency zones per group
+  const groupDetails = Array.from(document.querySelectorAll('details[data-category-id]'));
+  for (const g of groupDetails) {
+    const cat = g.dataset.categoryId || '0';
+    const sub = g.dataset.subcategoryId || '0';
+    const directChildren = Array.from(g.children);
+    const subs = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'subcategory');
+    if (sub === '0') {
+      for (const node of subs) mountDropZone(node.parentNode, node, 'subcategory', node.dataset.id, cat, '0');
+      mountDropZone(g, null, 'subcategory', 0, cat, '0');
+    }
+
+    const comps = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'competency');
+    for (const node of comps) mountDropZone(node.parentNode, node, 'competency', node.dataset.id, cat, sub);
+    mountDropZone(g, null, 'competency', 0, cat, sub);
   }
 
-  const comps = directChildren.filter(n => n.classList && n.classList.contains('drag') && n.dataset.type === 'competency');
-  for (const node of comps) mountDropZone(node.parentNode, node, 'competency', node.dataset.id, cat, sub);
-  mountDropZone(g, null, 'competency', 0, cat, sub);
+  draggables.forEach(el => {
+    el.ondragstart = () => { drag = el; el.classList.add('is-dragging'); };
+    el.ondragend = () => { el.classList.remove('is-dragging'); drag = null; clearDropZones(); };
+  });
 }
-
-draggables.forEach(el => {
-  el.addEventListener('dragstart', () => { drag = el; el.classList.add('is-dragging'); });
-  el.addEventListener('dragend', () => { el.classList.remove('is-dragging'); drag = null; clearDropZones(); });
-});
+initDnD();
 document.querySelectorAll('.icon-del').forEach(btn=>btn.addEventListener('click', async ()=>{const count=Number(btn.dataset.count||0); const action=btn.dataset.action||''; const id=btn.dataset.id||''; const txt=(action==='delete_competency')?'Diese Kompetenz löschen?':`Wirklich löschen? Dabei werden ${count} Kompetenzen entfernt.`; if(!confirm(txt)) return; const fd=new FormData(); fd.append('csrf_token',csrf); fd.append('action',action); fd.append('id',id); const res=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); if(res.ok){ const row=btn.closest('.drag, details'); if(row) row.remove(); }}));
 const dlg=document.getElementById('editDlg'), fields=document.getElementById('dlgFields'), title=document.getElementById('dlgTitle'), save=document.getElementById('saveBtn');
 let current=null;
