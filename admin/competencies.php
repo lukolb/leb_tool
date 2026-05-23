@@ -29,14 +29,12 @@ function fetch_tree(PDO $pdo): array {
   foreach($cats as $c){
     $catId=(int)$c['id'];
     $cn=[];
-    if(!empty($compsNoSubByCat[$catId])){
-      $items=[];
-      foreach(($compsNoSubByCat[$catId]??[]) as $it){
-        $cid=(int)$it['id'];
-        $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
-      }
-      $cn[]=['id'=>'virtual-no-subcategory-'.$catId,'is_virtual'=>true,'category_id'=>$catId,'type'=>'subcategory','title'=>'Ohne Unterkategorie','name_de'=>'Ohne Unterkategorie','name_en'=>'Without subcategory','sort_order'=>0,'children'=>$items];
+    $items=[];
+    foreach(($compsNoSubByCat[$catId]??[]) as $it){
+      $cid=(int)$it['id'];
+      $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
     }
+    $cn[]=['id'=>'virtual-no-subcategory-'.$catId,'is_virtual'=>true,'category_id'=>$catId,'type'=>'subcategory','title'=>'Ohne Unterkategorie','name_de'=>'Ohne Unterkategorie','name_en'=>'Without subcategory','sort_order'=>0,'children'=>$items];
     foreach(($subsByCat[$catId]??[]) as $s){
       $subId=(int)$s['id'];
       $items=[];
