@@ -188,6 +188,7 @@ form.addEventListener('submit', async (event) => {
     currentPdfUrl = URL.createObjectURL(blob);
     pdfPreview.src = currentPdfUrl;
     pdfPreviewWrap.style.display = 'block';
+    pdfPreviewWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     createPdfButton.disabled = false;
     pdfLoadingOverlay.style.display = 'none';
