@@ -203,6 +203,8 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .children{margin-left:18px}
 .drop-target{height:12px;border:2px dashed transparent;border-radius:6px;margin:4px 0}
 .drop-target.active{border-color:#0b57d0;background:#eef5ff}
+.dnd-placeholder-subcategory{height:8px;border-width:1px;margin:3px 0 3px 12px}
+.dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
 .draggable{cursor:move}
 .comp-main{font-weight:600}
 .comp-sub{font-size:12px;color:#666}
@@ -295,14 +297,17 @@ modal.addEventListener('cancel',(e)=>{e.preventDefault(); document.getElementByI
 
 let dragEl=null;
 function initDnd(){
-  document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=()=>{ 
+  document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
+    e.stopPropagation();
+    const nested = e.target.closest('.tree-node.draggable');
+    if(nested && nested!==el) return;
     if(el.dataset.type!=='category' && el.dataset.type!=='subcategory') return;
     dragEl=el; 
     if(el.dataset.type==='category') console.debug('[competencies dnd category] start', Number(el.dataset.id));
     if(el.dataset.type==='subcategory') console.debug('[competencies dnd subcategory] start', Number(el.dataset.id), Number(el.dataset.parent||0));
-  }; el.ondragend=()=>{dragEl=null; document.querySelectorAll('.dnd-placeholder-category,.dnd-placeholder-subcategory').forEach(d=>d.classList.remove('active'));};});
+  }; el.ondragend=(e)=>{e.stopPropagation(); dragEl=null; document.querySelectorAll('.dnd-placeholder-category,.dnd-placeholder-subcategory').forEach(d=>d.classList.remove('active'));};});
   document.querySelectorAll('.dnd-placeholder-category').forEach(d=>{
-    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='category') return; if(d.dataset.dropType!=='category') return; e.preventDefault(); d.classList.add('active'); };
+    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='category'){ console.debug('[competencies dnd category] dragover ignored for', dragEl?.dataset?.type); return; } if(d.dataset.dropType!=='category') return; e.preventDefault(); d.classList.add('active'); };
     d.ondragleave=()=>d.classList.remove('active');
     d.ondrop=async (e)=>{
       e.preventDefault(); d.classList.remove('active');
@@ -318,7 +323,7 @@ function initDnd(){
     };
   });
   document.querySelectorAll('.dnd-placeholder-subcategory').forEach(d=>{
-    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='subcategory') return; if(d.dataset.dropType!=='subcategory') return; e.preventDefault(); d.classList.add('active'); };
+    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='subcategory') return; if(d.dataset.dropType!=='subcategory') return; e.preventDefault(); d.classList.add('active'); console.debug('[competencies dnd subcategory] dragover allowed', Number(d.dataset.parent||0)); };
     d.ondragleave=()=>d.classList.remove('active');
     d.ondrop=async (e)=>{
       e.preventDefault(); d.classList.remove('active');
