@@ -39,11 +39,16 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
 
 function render_competency_placeholder_html(string $text): string {
     $escaped = h($text);
-    return preg_replace(
+    $withCheckboxes = preg_replace(
         '/\[checkbox\]/i',
         '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>',
         $escaped
     ) ?? $escaped;
+    return preg_replace(
+        '/\[vline\]/i',
+        '<span class="inline-vline-placeholder" title="[vline]" aria-label="Vertikale Trennlinie"></span>',
+        $withCheckboxes
+    ) ?? $withCheckboxes;
 }
 
 require_once __DIR__ . '/latex_layout_templates.php';
@@ -156,6 +161,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
   .info-row-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#f0f4ff;color:#334155;font-size:11px;font-weight:700;vertical-align:middle}
   .inline-checkbox-placeholder{display:inline-block;width:.8em;height:.8em;border:1.4px solid currentColor;border-radius:2px;vertical-align:-.08em;margin:0 .18em;box-sizing:border-box;opacity:.85}
+  .inline-vline-placeholder{display:inline-block;height:1.1em;border-left:1px solid currentColor;margin:0 .45em;vertical-align:-.15em;opacity:.75}
 </style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">

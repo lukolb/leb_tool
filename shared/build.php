@@ -595,13 +595,9 @@ function latex_escape(string $t): string {
 }
 
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
-    $parts = preg_split('/\[checkbox\]/i', $t);
-    if (!is_array($parts)) {
-        return latex_escape($t);
-    }
-    if (count($parts) === 1) {
-        return latex_escape($t);
-    }
+    $tokens = preg_split('/(\[checkbox\]|\[vline\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($tokens)) { return latex_escape($t); }
+    if (count($tokens) === 1) { return latex_escape($t); }
 
     $safePrefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $fieldPrefix) ?? 'skillcb';
     $safePrefix = trim($safePrefix, '-');
@@ -610,11 +606,25 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     }
 
     $out = '';
-    $count = count($parts);
+    $checkboxIndex = 0;
+    $count = count($tokens);
     for ($i = 0; $i < $count; $i++) {
-        $part = (string)$parts[$i];
+        $token = (string)$tokens[$i];
+        if (preg_match('/^\[checkbox\]$/i', $token)) {
+            $checkboxIndex++;
+            $fieldName = $safePrefix . '-' . $checkboxIndex;
+            $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+            continue;
+        }
+        if (preg_match('/^\[vline\]$/i', $token)) {
+            $out .= '\\InlineVLine';
+            continue;
+        }
+
+        $part = $token;
+        $nextToken = ($i + 1 < $count) ? (string)$tokens[$i + 1] : '';
         $extraSpaceCount = 0;
-        if ($i < $count - 1 && preg_match('/( +)$/', $part, $m)) {
+        if (preg_match('/^\[checkbox\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
             $spaces = (string)($m[1] ?? '');
             $spaceCount = strlen($spaces);
             if ($spaceCount > 1) {
@@ -622,14 +632,9 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
                 $part = substr($part, 0, -$spaceCount) . ' ';
             }
         }
-
         $out .= latex_escape($part);
-        if ($i < $count - 1) {
-            if ($extraSpaceCount > 0) {
-                $out .= '\\hspace{' . (1.5 * $extraSpaceCount) . 'mm}';
-            }
-            $fieldName = $safePrefix . '-' . ($i + 1);
-            $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+        if ($extraSpaceCount > 0) {
+            $out .= '\\hspace{' . (1.5 * $extraSpaceCount) . 'mm}';
         }
     }
     return $out;
