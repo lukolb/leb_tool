@@ -12,10 +12,6 @@ ensure_latex_layout_storage_dir();
 $msg = '';
 $err = '';
 
-function is_system_annual_template(array $tpl): bool {
-    return ((string)($tpl['key_name'] ?? '') === 'annual_report')
-        && ((string)($tpl['file_path'] ?? '') === 'latex/layout.tex');
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
@@ -25,9 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($_POST['template_id'] ?? 0);
             $tpl = find_active_latex_layout_template($pdo, $id);
             if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden oder inaktiv.');
+            $pdo->beginTransaction();
             $pdo->exec("UPDATE latex_layout_templates SET is_default=0");
             $st = $pdo->prepare("UPDATE latex_layout_templates SET is_default=1 WHERE id=?");
             $st->execute([$id]);
+            $countDefault = (int)$pdo->query("SELECT COUNT(*) FROM latex_layout_templates WHERE is_default=1")->fetchColumn();
+            if ($countDefault !== 1) { throw new RuntimeException('Standardvorlage konnte nicht eindeutig gesetzt werden.'); }
+            $pdo->commit();
             $msg = 'Standardvorlage gesetzt.';
         } elseif ($action === 'toggle_active') {
             $id = (int)($_POST['template_id'] ?? 0);
@@ -46,7 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tpl = $st->fetch(PDO::FETCH_ASSOC) ?: null;
             if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden.');
             if ((int)($tpl['is_default'] ?? 0) === 1) throw new RuntimeException('Standardvorlage kann nicht gelöscht werden.');
-            if (is_system_annual_template($tpl)) throw new RuntimeException('Systemvorlage Jahreszeugnis kann nicht gelöscht werden.');
 
             $filePathRel = (string)($tpl['file_path'] ?? '');
             $fileAbs = latex_layout_absolute_path($filePathRel);
@@ -91,12 +90,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st2 = $pdo->prepare("UPDATE latex_layout_templates SET file_path=?, is_active=?, updated_at=NOW() WHERE id=?");
             $st2->execute([$stored, $isActive, $id]);
             if ($setDefault) {
+                $pdo->beginTransaction();
                 $pdo->exec("UPDATE latex_layout_templates SET is_default=0");
                 $pdo->prepare("UPDATE latex_layout_templates SET is_default=1 WHERE id=?")->execute([$id]);
+                $countDefault = (int)$pdo->query("SELECT COUNT(*) FROM latex_layout_templates WHERE is_default=1")->fetchColumn();
+                if ($countDefault !== 1) { throw new RuntimeException('Standardvorlage konnte nicht eindeutig gesetzt werden.'); }
+                $pdo->commit();
             }
             $msg = 'Layoutvorlage gespeichert.';
         }
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
         $err = $e->getMessage();
     }
 }
@@ -120,8 +124,7 @@ require __DIR__ . '/../shared/latex_page.php';
       <?php foreach($templates as $tpl):
         $exists = is_file(latex_layout_absolute_path((string)$tpl['file_path']));
         $isDefault = ((int)$tpl['is_default'] === 1);
-        $isSystemAnnual = is_system_annual_template($tpl);
-        $canDelete = !$isDefault && !$isSystemAnnual;
+        $canDelete = !$isDefault;
       ?>
         <tr>
           <td><?= h((string)$tpl['display_name']) ?></td>
