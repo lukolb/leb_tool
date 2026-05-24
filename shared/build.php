@@ -594,6 +594,30 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
+function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
+    $parts = explode('[checkbox]', $t);
+    if (count($parts) === 1) {
+        return latex_escape($t);
+    }
+
+    $safePrefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $fieldPrefix) ?? 'skillcb';
+    $safePrefix = trim($safePrefix, '-');
+    if ($safePrefix === '') {
+        $safePrefix = 'skillcb';
+    }
+
+    $out = '';
+    $count = count($parts);
+    for ($i = 0; $i < $count; $i++) {
+        $out .= latex_escape($parts[$i]);
+        if ($i < $count - 1) {
+            $fieldName = $safePrefix . '-' . ($i + 1);
+            $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+        }
+    }
+    return $out;
+}
+
 function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1): string {
     if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
     if (!$selectedCodes) {
@@ -655,8 +679,9 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                     continue;
                 }
                 $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
-                $macroBody .= "    {" . latex_escape((string)$it['text_de']) . "}%\n";
-                $macroBody .= "    {" . latex_escape((string)($it['text_en'] ?? '')) . "}\n";
+                $fieldPrefix = 'skillcb-' . ((string)($it['code'] ?? '') !== '' ? (string)$it['code'] : ('id' . (string)($it['id'] ?? '')));
+                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix . '-de') . "}%\n";
+                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix . '-en') . "}\n";
             }
         }
         $out .= latex_newcommand($macro, $macroBody);
