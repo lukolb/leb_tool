@@ -29,14 +29,12 @@ function fetch_tree(PDO $pdo): array {
   foreach($cats as $c){
     $catId=(int)$c['id'];
     $cn=[];
-    if(!empty($compsNoSubByCat[$catId])){
-      $items=[];
-      foreach(($compsNoSubByCat[$catId]??[]) as $it){
-        $cid=(int)$it['id'];
-        $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
-      }
-      $cn[]=['id'=>'virtual-no-subcategory-'.$catId,'is_virtual'=>true,'category_id'=>$catId,'type'=>'subcategory','title'=>'Ohne Unterkategorie','name_de'=>'Ohne Unterkategorie','name_en'=>'Without subcategory','sort_order'=>0,'children'=>$items];
+    $items=[];
+    foreach(($compsNoSubByCat[$catId]??[]) as $it){
+      $cid=(int)$it['id'];
+      $items[]=['id'=>$cid,'type'=>'competency','title'=>(string)$it['code'].' — '.(string)$it['text_de'],'code'=>(string)$it['code'],'text_de'=>(string)$it['text_de'],'text_en'=>(string)$it['text_en'],'is_required'=>(int)$it['is_required'],'grades'=>$grades[$cid]??[],'category_id'=>(int)$it['category_id'],'sort_order'=>(int)$it['sort_order']];
     }
+    $cn[]=['id'=>'virtual-no-subcategory-'.$catId,'is_virtual'=>true,'category_id'=>$catId,'type'=>'subcategory','title'=>'Ohne Unterkategorie','name_de'=>'Ohne Unterkategorie','name_en'=>'Without subcategory','sort_order'=>0,'children'=>$items];
     foreach(($subsByCat[$catId]??[]) as $s){
       $subId=(int)$s['id'];
       $items=[];
@@ -54,7 +52,9 @@ function fetch_tree(PDO $pdo): array {
 function delete_preview(PDO $pdo, string $type, int $id): array {
   if($type==='category'){
     $st=$pdo->prepare("SELECT COUNT(*) FROM competency_subcategories WHERE category_id=?");$st->execute([$id]);$subs=(int)$st->fetchColumn();
-    $st=$pdo->prepare("SELECT COUNT(*) FROM competencies c INNER JOIN competency_subcategories s ON s.id=c.subcategory_id WHERE s.category_id=?");$st->execute([$id]);$comps=(int)$st->fetchColumn();
+    $st=$pdo->prepare("SELECT COUNT(*) FROM competencies c INNER JOIN competency_subcategories s ON s.id=c.subcategory_id WHERE s.category_id=?");$st->execute([$id]);$compsViaSub=(int)$st->fetchColumn();
+    $st=$pdo->prepare("SELECT COUNT(*) FROM competencies WHERE category_id=? AND subcategory_id IS NULL");$st->execute([$id]);$compsDirect=(int)$st->fetchColumn();
+    $comps=$compsViaSub+$compsDirect;
     return ['subcategories'=>$subs,'competencies'=>$comps];
   }
   if($type==='subcategory'){
@@ -69,24 +69,32 @@ if(isset($_GET['download_csv_template'])){ $csv="category_de;category_en;subcate
 
 if($_SERVER['REQUEST_METHOD']==='POST' && !isset($_SERVER['HTTP_X_REQUESTED_WITH']) && (string)($_POST['action']??'')==='import_csv'){
   try{ csrf_verify();
+    $stats=[
+      'categories_created'=>0,'categories_reused'=>0,
+      'subcategories_created'=>0,'subcategories_reused'=>0,
+      'competencies_created'=>0,'competencies_updated'=>0,
+      'rows_ignored'=>0,'errors'=>[]
+    ];
     if(!isset($_FILES['csv']) || !is_uploaded_file($_FILES['csv']['tmp_name'])) throw new RuntimeException('CSV-Datei fehlt.');
     $fh=fopen($_FILES['csv']['tmp_name'],'r'); if(!$fh) throw new RuntimeException('CSV konnte nicht gelesen werden.');
-    $line=0; while(($row=fgetcsv($fh,0,';'))!==false){ $line++; if($line===1) continue; if(count($row)<9) continue;
+    $line=0; while(($row=fgetcsv($fh,0,';'))!==false){ $line++; if($line===1) continue; if(count($row)<9){ $stats['rows_ignored']++; $stats['errors'][]=$line; continue; }
       [$catDe,$catEn,$subDe,$subEn,$code,$textDe,$textEn,$required,$grades]=$row;
       $catDe=trim((string)$catDe); $catEn=trim((string)$catEn); $subDe=trim((string)$subDe); $subEn=trim((string)$subEn); $code=trim((string)$code); $textDe=trim((string)$textDe); $textEn=trim((string)$textEn);
-      if($catDe===''||$catEn===''||$textDe==='') continue;
+      if($catDe===''||$catEn===''||$textDe===''){ $stats['rows_ignored']++; $stats['errors'][]=$line; continue; }
       $st=$pdo->prepare("SELECT id FROM competency_categories WHERE LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catDe,$catEn]); $catId=(int)($st->fetchColumn()?:0);
-      if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,?)")->execute([$catDe,$catEn,max_sort($pdo,'competency_categories')+1]); $catId=(int)$pdo->lastInsertId(); }
-      $subId=0; if($subDe!==''||$subEn!==''){ $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0); if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$catId,$subDe,$subEn,max_sort($pdo,'competency_subcategories','category_id=?',[$catId])+1]); $subId=(int)$pdo->lastInsertId(); } }
+      if($catId<=0){ $pdo->prepare("INSERT INTO competency_categories(name_de,name_en,sort_order) VALUES (?,?,?)")->execute([$catDe,$catEn,max_sort($pdo,'competency_categories')+1]); $catId=(int)$pdo->lastInsertId(); $stats['categories_created']++; }
+      else { $stats['categories_reused']++; }
+      $subId=0; if($subDe!==''||$subEn!==''){ $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=? AND LOWER(name_de)=LOWER(?) AND LOWER(name_en)=LOWER(?) LIMIT 1"); $st->execute([$catId,$subDe,$subEn]); $subId=(int)($st->fetchColumn()?:0); if($subId<=0){ $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$catId,$subDe,$subEn,max_sort($pdo,'competency_subcategories','category_id=?',[$catId])+1]); $subId=(int)$pdo->lastInsertId(); $stats['subcategories_created']++; } else { $stats['subcategories_reused']++; } }
       if($code==='') $code=next_comp_code($pdo,$catId,$catDe);
       $st=$pdo->prepare("SELECT id FROM competencies WHERE code=? LIMIT 1"); $st->execute([$code]); $compId=(int)($st->fetchColumn()?:0);
       $isReq=(trim(strtolower((string)$required))==='1'||trim(strtolower((string)$required))==='ja')?1:0;
-      if($compId>0){ $pdo->prepare("UPDATE competencies SET category_id=?,subcategory_id=?,text_de=?,text_en=?,is_required=? WHERE id=?")->execute([$catId,$subId>0?$subId:null,$textDe,$textEn,$isReq,$compId]); }
-      else { $so=$subId>0?max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1:max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1; $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$so]); $compId=(int)$pdo->lastInsertId(); }
+      if($compId>0){ $pdo->prepare("UPDATE competencies SET category_id=?,subcategory_id=?,text_de=?,text_en=?,is_required=? WHERE id=?")->execute([$catId,$subId>0?$subId:null,$textDe,$textEn,$isReq,$compId]); $stats['competencies_updated']++; }
+      else { $so=$subId>0?max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1:max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1; $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$catId,$subId>0?$subId:null,$code,$textDe,$textEn,$isReq,$so]); $compId=(int)$pdo->lastInsertId(); $stats['competencies_created']++; }
       $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$compId]);
       foreach(explode(',',(string)$grades) as $g){ $gi=(int)trim($g); if($gi>=1&&$gi<=4){ $pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]); } }
     }
     fclose($fh);
+    $_SESSION['competency_import_flash']=$stats;
     header('Location: '.url('admin/competencies.php')); exit;
   } catch(Throwable $e){ header('Location: '.url('admin/competencies.php')); exit; }
 }
@@ -110,9 +118,9 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
         if($sub>0){ $st=$pdo->prepare("SELECT category_id,name_de FROM competency_subcategories WHERE id=?");$st->execute([$sub]);$sr=$st->fetch(PDO::FETCH_ASSOC); if(!$sr) bad('Unterkategorie nicht gefunden'); $cat=(int)$sr['category_id']; $catName=(string)$sr['name_de']; }
         else { if($cat<=0) bad('Kategorie erforderlich'); $st=$pdo->prepare("SELECT name_de FROM competency_categories WHERE id=?");$st->execute([$cat]); $catName=(string)($st->fetchColumn()?:'CAT'); }
         $de=trim((string)($_POST['text_de']??'')); $en=trim((string)($_POST['text_en']??'')); if($de===''||$en==='') bad('Kompetenztext DE/EN erforderlich');
-        $code=trim((string)($_POST['code']??'')); if($code==='') $code=next_comp_code($pdo,$cat,(string)$sr['name_de']);
-        $so=max_sort($pdo,'competencies','subcategory_id=?',[$sub])+1;
-        $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$cat,$sub,$code,$de,$en,isset($_POST['is_required'])?1:0,$so]);
+        $code=trim((string)($_POST['code']??'')); if($code==='') $code=next_comp_code($pdo,$cat,$catName);
+        $so=$sub>0 ? max_sort($pdo,'competencies','subcategory_id=?',[$sub])+1 : max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$cat])+1;
+        $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")->execute([$cat,$sub>0?$sub:null,$code,$de,$en,isset($_POST['is_required'])?1:0,$so]);
         $id=(int)$pdo->lastInsertId();
         $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]);
         foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g;if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$id,$gi]);}
@@ -139,6 +147,8 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
       $pdo->beginTransaction();
       if($type==='category'){
         $subIds=[]; $st=$pdo->prepare("SELECT id FROM competency_subcategories WHERE category_id=?");$st->execute([$id]);$subIds=array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN)?:[]);
+        $directCompIds=[]; $st=$pdo->prepare("SELECT id FROM competencies WHERE category_id=? AND subcategory_id IS NULL"); $st->execute([$id]); $directCompIds=array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN)?:[]);
+        if($directCompIds){$in0=implode(',',array_fill(0,count($directCompIds),'?')); $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id IN ($in0)")->execute($directCompIds); $pdo->prepare("DELETE FROM competencies WHERE id IN ($in0)")->execute($directCompIds);}
         if($subIds){ $in=implode(',',array_fill(0,count($subIds),'?')); $st=$pdo->prepare("SELECT id FROM competencies WHERE subcategory_id IN ($in)"); $st->execute($subIds); $compIds=array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN)?:[]); if($compIds){$in2=implode(',',array_fill(0,count($compIds),'?')); $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id IN ($in2)")->execute($compIds); $pdo->prepare("DELETE FROM competencies WHERE id IN ($in2)")->execute($compIds);} $pdo->prepare("DELETE FROM competency_subcategories WHERE id IN ($in)")->execute($subIds);} 
         $pdo->prepare("DELETE FROM competency_categories WHERE id=?")->execute([$id]);
       } elseif($type==='subcategory'){
@@ -153,7 +163,7 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
     }
 
     if($a==='reorder'){
-      $type=(string)($_POST['type']??''); $id=(int)($_POST['id']??0); $newParent=(int)($_POST['new_parent_id']??0);
+      $type=(string)($_POST['type']??''); $id=(int)($_POST['id']??0); $newParent=(int)($_POST['new_parent_id']??0); $targetCategory=(int)($_POST['target_category_id']??0);
       $ordered=json_decode((string)($_POST['ordered_ids']??'[]'), true); if(!is_array($ordered)) bad('ordered_ids ungültig'); $ordered=array_values(array_map('intval',$ordered));
       if(!in_array($id,$ordered,true)) bad('ID nicht in ordered_ids');
       if($type==='category'){
@@ -170,10 +180,26 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
         if($oldParent>0 && $oldParent!==$newParent){ normalize_order($pdo,'competency_subcategories','category_id=?',[$oldParent]); }
         normalize_order($pdo,'competency_subcategories','category_id=?',[$newParent]);
       } elseif($type==='competency'){
-        if($newParent<=0) bad('Unterkategorie als Parent erforderlich');
-        $st=$pdo->prepare("SELECT category_id FROM competency_subcategories WHERE id=?");$st->execute([$newParent]);$cat=(int)($st->fetchColumn()?:0); if($cat<=0) bad('Ziel-Unterkategorie nicht gefunden');
-        $pdo->prepare("UPDATE competencies SET subcategory_id=?, category_id=? WHERE id=?")->execute([$newParent,$cat,$id]);
-        foreach($ordered as $x){$pdo->prepare("UPDATE competencies SET subcategory_id=?, category_id=?, sort_order=? WHERE id=?")->execute([$newParent,$cat,array_search($x,$ordered,true)+1,$x]);}
+        $st=$pdo->prepare("SELECT category_id, subcategory_id FROM competencies WHERE id=?"); $st->execute([$id]); $oldRow=$st->fetch(PDO::FETCH_ASSOC); if(!$oldRow) bad('Kompetenz nicht gefunden');
+        $oldCategoryId=(int)($oldRow['category_id']??0); $oldSubId=(int)($oldRow['subcategory_id']??0);
+        $st=$pdo->query("SELECT id FROM competencies"); $validComp=array_map('intval',$st->fetchAll(PDO::FETCH_COLUMN)?:[]);
+        foreach($ordered as $x){ if(!in_array((int)$x,$validComp,true)) bad('Ungültige Kompetenz-ID in ordered_ids'); }
+        if($newParent>0){
+          $st=$pdo->prepare("SELECT category_id FROM competency_subcategories WHERE id=?");$st->execute([$newParent]);$cat=(int)($st->fetchColumn()?:0); if($cat<=0) bad('Ziel-Unterkategorie nicht gefunden');
+          $pdo->prepare("UPDATE competencies SET subcategory_id=?, category_id=? WHERE id=?")->execute([$newParent,$cat,$id]);
+          foreach($ordered as $pos=>$x){$pdo->prepare("UPDATE competencies SET subcategory_id=?, category_id=?, sort_order=? WHERE id=?")->execute([$newParent,$cat,$pos+1,$x]);}
+          if($oldSubId>0){ normalize_order($pdo,'competencies','subcategory_id=?',[$oldSubId]); }
+          else { normalize_order($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$oldCategoryId]); }
+          normalize_order($pdo,'competencies','subcategory_id=?',[$newParent]);
+        } else {
+          if($targetCategory<=0) bad('Ziel-Kategorie erforderlich');
+          $st=$pdo->prepare("SELECT id FROM competency_categories WHERE id=?"); $st->execute([$targetCategory]); if(!(int)$st->fetchColumn()) bad('Ziel-Kategorie nicht gefunden');
+          $pdo->prepare("UPDATE competencies SET subcategory_id=NULL, category_id=? WHERE id=?")->execute([$targetCategory,$id]);
+          foreach($ordered as $pos=>$x){$pdo->prepare("UPDATE competencies SET subcategory_id=NULL, category_id=?, sort_order=? WHERE id=?")->execute([$targetCategory,$pos+1,$x]);}
+          if($oldSubId>0){ normalize_order($pdo,'competencies','subcategory_id=?',[$oldSubId]); }
+          else { normalize_order($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$oldCategoryId]); }
+          normalize_order($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$targetCategory]);
+        }
       } else bad('Ungültiger Typ');
       normalize_order($pdo,'competency_categories');
       json_out(['ok'=>true,'tree'=>fetch_tree($pdo)]);
@@ -184,12 +210,25 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
 }
 
 render_admin_header('Kompetenzen verwalten'); ?>
-<div class="card"><h1>Kompetenzen verwalten</h1><a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a></div>
+<div class="card"><h1>Kompetenzen verwalten</h1></div>
 <div id="msg" class="card" style="display:none;"></div>
-<div class="card"><details><summary><strong>CSV importieren</strong></summary><form method="post" enctype="multipart/form-data" style="margin-top:8px;"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="import_csv"><input type="file" name="csv" accept=".csv,text/csv" required><button class="btn" type="submit">Import starten</button></form></details></div>
+<?php if(isset($_SESSION['competency_import_flash'])): $importFlash=$_SESSION['competency_import_flash']; unset($_SESSION['competency_import_flash']); ?>
+<div class="card alert success">
+  <strong>Import abgeschlossen:</strong>
+  <?=h((string)$importFlash['categories_created'])?> Kategorien neu,
+  <?=h((string)$importFlash['categories_reused'])?> Kategorien wiederverwendet,
+  <?=h((string)$importFlash['subcategories_created'])?> Unterkategorien neu,
+  <?=h((string)$importFlash['subcategories_reused'])?> Unterkategorien wiederverwendet,
+  <?=h((string)$importFlash['competencies_created'])?> Kompetenzen neu,
+  <?=h((string)$importFlash['competencies_updated'])?> Kompetenzen aktualisiert,
+  <?=h((string)$importFlash['rows_ignored'])?> Zeilen ignoriert.
+</div>
+<?php endif; ?>
+<div class="card"><details><summary><strong>CSV importieren</strong></summary><form method="post" enctype="multipart/form-data" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><a class="btn" href="<?=h(url('admin/competencies.php?download_csv_template=1'))?>">CSV-Vorlage herunterladen</a><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="import_csv"><input type="file" name="csv" accept=".csv,text/csv" required><button class="btn" type="submit">Import starten</button></form></details></div>
 
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center"><h3>Baumstruktur</h3><button id="addCategory" class="btn" type="button">+ Kategorie</button></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3>Baumstruktur</h3><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="choice-row"><span class="form-label">Klassenstufe</span><label class="choice-chip"><input type="checkbox" id="gradeFilterAll" checked> <span>Alle</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="1"> <span>1</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="2"> <span>2</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="3"> <span>3</span></label><label class="choice-chip"><input type="checkbox" class="gradeFilter" value="4"> <span>4</span></label></div><button id="collapseAll" class="btn" type="button">Alle einklappen</button><button id="expandAll" class="btn" type="button">Alle ausklappen</button><button id="addCategory" class="btn" type="button">+ Kategorie</button></div></div>
+  <div id="filterInfo" style="display:none;margin:6px 0;color:#9a5a12;font-size:13px">Zum Sortieren bitte den Klassenfilter zurücksetzen.</div>
   <div id="tree"></div>
 </div>
 
@@ -201,16 +240,46 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .node-title{font-weight:600}
 .node-actions button{background:transparent;border:0;cursor:pointer}
 .children{margin-left:18px}
-.drop-target{height:12px;border:2px dashed transparent;border-radius:6px;margin:4px 0}
-.drop-target.active{border-color:#0b57d0;background:#eef5ff}
-.dnd-placeholder-subcategory{height:8px;border-width:1px;margin:3px 0 3px 12px}
-.dnd-placeholder-subcategory.active{border-color:#7a3cff;background:#f5f0ff}
+.drop-target{height:4px;min-height:4px;border:2px dashed transparent;border-radius:6px;margin:1px 0;padding:0;overflow:hidden;transition:height .12s ease,min-height .12s ease,background .12s ease,border-color .12s ease}
+.drop-target.active{height:28px;min-height:28px;border-color:#0b57d0;background:#eef5ff}
+.dnd-placeholder-subcategory{height:4px;min-height:4px;border-width:1px;margin:1px 0 1px 12px}
+.dnd-placeholder-subcategory.active{height:26px;min-height:26px;border-color:#7a3cff;background:#f5f0ff}
+.dnd-placeholder-competency{height:4px;min-height:4px;border-width:1px;margin:1px 0 1px 18px}
+.dnd-placeholder-competency.active{height:24px;min-height:24px;border-color:#198754;background:#eefaf3}
 .draggable{cursor:move}
 .comp-main{font-weight:600}
 .comp-sub{font-size:12px;color:#666}
 .chip{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;background:#eef5ff;margin-right:4px}
-#modal{width:min(900px,95vw)}
-#modal textarea{width:100%;min-height:80px}
+.req-chip{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:999px;font-size:12px;font-weight:700;margin-right:6px}
+.req-chip.required{background:#e7edf9;color:#1f355e}
+.req-chip.optional{background:#fff4d6;color:#9a6a00}
+.grade-chip{font-weight:600}
+.grade-1{background:#eaf3ff;color:#1f4f99}
+.grade-2{background:#ecfff4;color:#1f7a45}
+.grade-3{background:#fff5e8;color:#9a5a12}
+.grade-4{background:#f3edff;color:#5a33a2}
+#modal{width:min(820px,94vw);max-height:92vh;border:0;border-radius:18px;padding:0;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+#modal::backdrop{background:rgba(15,23,42,.45)}
+#modal form{display:flex;flex-direction:column;max-height:92vh;padding:0}
+#modalTitle{margin:0;padding:20px 24px 14px;border-bottom:1px solid #e5eaf2;font-size:24px}
+#modalFields{padding:18px 24px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.form-grid{display:flex;flex-direction:column;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:13px;font-weight:700;color:#334155}
+.muted{color:#64748b;font-weight:500}
+#modalFields input.input,#modalFields textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;font:inherit}
+#modalFields textarea{min-height:90px;resize:vertical}
+#modalFields input:focus,#modalFields textarea:focus{outline:none;border-color:#0b57d0;box-shadow:0 0 0 3px rgba(11,87,208,.14)}
+.choice-row{display:flex;flex-wrap:wrap;gap:8px}
+.choice-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:7px 11px;cursor:pointer;font-size:13px;font-weight:600;color:#334155;user-select:none}
+.choice-chip input{width:auto;margin:0}
+.choice-chip:has(input:checked){border-color:#0b57d0;background:#eef5ff;color:#0b57d0}
+.required-choice:has(input:checked){border-color:#1f355e;background:#e7edf9;color:#1f355e}
+.grade-choice.grade-1:has(input:checked){border-color:#1f4f99;background:#eaf3ff;color:#1f4f99}
+.grade-choice.grade-2:has(input:checked){border-color:#1f7a45;background:#ecfff4;color:#1f7a45}
+.grade-choice.grade-3:has(input:checked){border-color:#9a5a12;background:#fff5e8;color:#9a5a12}
+.grade-choice.grade-4:has(input:checked){border-color:#5a33a2;background:#f3edff;color:#5a33a2}
+#modal menu{display:flex;justify-content:flex-end;gap:10px;padding:14px 24px 20px;margin:0;border-top:1px solid #e5eaf2;background:#f8fafc}
 </style>
 <script>
 const csrf = <?=json_encode(csrf_token())?>;
@@ -221,24 +290,34 @@ const modalTitle=document.getElementById('modalTitle');
 const modalFields=document.getElementById('modalFields');
 const modalSave=document.getElementById('modalSave');
 let stateTree=[]; let busy=false; let modalState=null; const collapsed = new Set();
+const activeGradeFilter = new Set();
 function showMsg(text,err=false){msg.style.display='block';msg.textContent=text;msg.className='card '+(err?'alert danger':'alert success');}
 async function api(data){if(busy) throw new Error('Bitte warten…'); busy=true; try{const fd=new FormData(); Object.entries(data).forEach(([k,v])=>{ if(Array.isArray(v)){ v.forEach(x=>fd.append(k+'[]',String(x))); } else fd.append(k,String(v)); }); fd.append('csrf_token',csrf); const r=await fetch('',{method:'POST',headers:{'X-Requested-With':'XMLHttpRequest'},body:fd}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||'Fehler'); return j;} finally {busy=false;}}
-function gradeChecks(sel=[]){return `<div><strong>Klassenstufe</strong> ${[1,2,3,4].map(g=>`<label><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}> ${g}</label>`).join(' ')}</div>`}
+function gradeChecks(sel=[]){return `<div class="form-group"><div class="form-label">Klassenstufe</div><div class="choice-row grade-choice-row">${[1,2,3,4].map(g=>`<label class="choice-chip grade-choice grade-${g}"><input type="checkbox" name="grades[]" value="${g}" ${sel.includes(g)?'checked':''}><span>${g}</span></label>`).join('')}</div></div>`}
 function render(){
   treeEl.innerHTML='';
-  if(!stateTree.length){treeEl.innerHTML='<div>Keine Kategorien vorhanden.</div>'; return;}
+  const filterActive=activeGradeFilter.size>0;
+  const viewTree = !filterActive ? stateTree : stateTree.map(c=>{
+    const filteredChildren=(c.children||[]).map(s=>{
+      const comps=(s.children||[]).filter(k=>(k.grades||[]).some(g=>activeGradeFilter.has(Number(g))));
+      return {...s, children: comps};
+    }).filter(s=>(s.children||[]).length>0);
+    return {...c, children: filteredChildren};
+  }).filter(c=>(c.children||[]).length>0);
+  if(!viewTree.length){treeEl.innerHTML=filterActive?'<div>Keine Kompetenzen für diese Klassenstufe gefunden.</div>':'<div>Keine Kategorien vorhanden.</div>'; return;}
   const catList=document.createElement('div'); catList.dataset.dndList='categories';
-  if(stateTree.length){
-    catList.appendChild(mkDrop('category', String(stateTree[0].id), {dropType:'category', beforeId:String(stateTree[0].id)}));
+  if(viewTree.length){
+    catList.appendChild(mkDrop('category', String(viewTree[0].id), {dropType:'category', beforeId:String(viewTree[0].id)}));
   }
-  stateTree.forEach((c,idx)=>{
+  viewTree.forEach((c,idx)=>{
     catList.appendChild(renderCategory(c));
-    const nextId = stateTree[idx+1] ? String(stateTree[idx+1].id) : '';
+    const nextId = viewTree[idx+1] ? String(viewTree[idx+1].id) : '';
     catList.appendChild(mkDrop('category', nextId || '0', {dropType:'category', beforeId:nextId}));
   });
-  console.debug('[competencies dnd category] render category dropzones', stateTree.map(c=>c.id));
+  console.debug('[competencies dnd category] render category dropzones', viewTree.map(c=>c.id));
   treeEl.appendChild(catList);
-  initDnd();
+  document.getElementById('filterInfo').style.display=filterActive?'block':'none';
+  if(!filterActive) initDnd();
 }
 function mkDrop(type,before='0',extra={}){ const d=document.createElement('div'); d.className=`drop-target dnd-placeholder-${type}`; d.dataset.type=type; d.dataset.before=String(before); Object.entries(extra).forEach(([k,v])=>d.dataset[k]=String(v)); return d; }
 function renderCategory(c){
@@ -266,25 +345,46 @@ function renderSub(s,catId){
   if(!virtual){ wrap.draggable=true; wrap.dataset.type='subcategory'; wrap.dataset.id=sid; wrap.dataset.parent=String(catId); wrap.dataset.itemType='subcategory'; wrap.dataset.itemId=sid; }
   wrap.innerHTML=`<div class="node-head"><span>${virtual?'':''}${hasChildren?`<button data-act="toggle" data-node="${nodeKey}" style="border:0;background:none;cursor:pointer">${isCollapsed?'▸':'▾'}</button>`:''}${escapeHtml(s.name_de)} <small>${escapeHtml(s.name_en||'')}</small></span><span class="node-actions"><button data-act="addComp" data-id="${sid}" data-virtual="${virtual?1:0}" data-category="${catId}">＋</button>${virtual?'':'<button data-act="edit" data-type="subcategory" data-id="'+sid+'">✏️</button><button data-act="del" data-type="subcategory" data-id="'+sid+'">🗑️</button>'}</span></div>`;
   const compList=document.createElement('div'); compList.className='children'; compList.dataset.dndList='competencies'; compList.dataset.categoryId=String(catId); compList.dataset.subcategoryId=virtual?'':sid; if(virtual) compList.dataset.virtualNoSubcategory='1'; compList.style.display=isCollapsed?'none':'';
-  compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId}));
-  (s.children||[]).forEach(k=>{ compList.appendChild(renderComp(k,sid)); compList.appendChild(mkDrop('competency','0',{parent:virtual?0:sid,targetCategory:catId})); });
+  const comps=(s.children||[]);
+  const firstComp=comps[0] ? String(comps[0].id) : '';
+  compList.appendChild(mkDrop('competency',firstComp || '0',{dropType:'competency',parent:virtual?0:sid,targetCategory:catId,beforeId:firstComp}));
+  comps.forEach((k,idx)=>{ compList.appendChild(renderComp(k,sid)); const nextId=comps[idx+1] ? String(comps[idx+1].id) : ''; compList.appendChild(mkDrop('competency',nextId || '0',{dropType:'competency',parent:virtual?0:sid,targetCategory:catId,beforeId:nextId})); });
   wrap.appendChild(compList);
   return wrap;
 }
-function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip">${g}</span>`).join('');const req=k.is_required?'<span class="chip">Pflicht</span>':'<span class="chip">Optional</span>'; el.innerHTML=`<div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
+function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip grade-chip grade-${Number(g)||0}">${g}</span>`).join('');const req=k.is_required?'<span class="req-chip required" title="Pflicht">🔒</span>':'<span class="req-chip optional" title="Optional">★</span>'; el.innerHTML=`<div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${escapeHtml(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
 function escapeHtml(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 
 function findNode(type,id){for(const c of stateTree){if(type==='category'&&c.id==id) return c; for(const s of c.children||[]){if(type==='subcategory'&&s.id==id)return s; for(const k of s.children||[]){if(type==='competency'&&k.id==id)return k;}}} return null;}
 function openModal(cfg){modalState=cfg; modalTitle.textContent=cfg.title; modalFields.innerHTML=cfg.html; modal.showModal();}
 
 document.getElementById('addCategory').addEventListener('click',()=>openModal({mode:'create',type:'category',title:'Kategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'}));
+document.getElementById('collapseAll').addEventListener('click',()=>{
+  collapsed.clear();
+  stateTree.forEach(c=>{
+    collapsed.add(`category-${c.id}`);
+    (c.children||[]).forEach(s=>collapsed.add(`subcategory-${s.id}`));
+  });
+  render();
+});
+document.getElementById('expandAll').addEventListener('click',()=>{ collapsed.clear(); render(); });
+document.getElementById('gradeFilterAll').addEventListener('change',(e)=>{
+  if(e.target.checked){ activeGradeFilter.clear(); document.querySelectorAll('.gradeFilter').forEach(cb=>cb.checked=false); render(); }
+});
+document.querySelectorAll('.gradeFilter').forEach(cb=>cb.addEventListener('change',(e)=>{
+  const val=Number(e.target.value);
+  if(e.target.checked) activeGradeFilter.add(val); else activeGradeFilter.delete(val);
+  const all=document.getElementById('gradeFilterAll');
+  all.checked=activeGradeFilter.size===0;
+  render();
+}));
 treeEl.addEventListener('click', async (e)=>{const b=e.target.closest('button[data-act]'); if(!b) return; const act=b.dataset.act; const id=Number(b.dataset.id);
 if(act==='addSub'){openModal({mode:'create',type:'subcategory',parent:id,title:'Unterkategorie hinzufügen',html:'<label>Deutsch</label><input class="input" name="name_de" required><label>English</label><input class="input" name="name_en" required>'});}
 if(act==='toggle'){const key=b.dataset.node; if(collapsed.has(key)) collapsed.delete(key); else collapsed.add(key); render(); return;}
-if(act==='addComp'){const virt=b.dataset.virtual==='1';openModal({mode:'create',type:'competency',parent:virt?0:id,targetCategory:virt?Number(b.dataset.category):0,title:'Kompetenz hinzufügen',html:'<label>Code (optional)</label><input class="input" name="code"><label>Deutsch</label><textarea name="text_de" required></textarea><label>English</label><textarea name="text_en"></textarea><label><input type="checkbox" name="is_required" value="1"> Pflicht</label>'+gradeChecks([])});}
+if(act==='addComp'){const virt=b.dataset.virtual==='1';openModal({mode:'create',type:'competency',parent:virt?0:id,targetCategory:virt?Number(b.dataset.category):0,title:'Kompetenz hinzufügen',html:'<div class="form-grid"><div class="form-group"><label class="form-label">Code <span class="muted">(optional)</span></label><input class="input" name="code"></div><div class="form-group"><label class="form-label">Deutsch</label><textarea name="text_de" required></textarea></div><div class="form-group"><label class="form-label">English</label><textarea name="text_en"></textarea></div><div class="form-group"><label class="choice-chip required-choice"><input type="checkbox" name="is_required" value="1"><span>🔒 Pflichtkompetenz</span></label></div>'+gradeChecks([])+'</div>'});}
 if(act==='edit'){const n=findNode(b.dataset.type,id); if(!n) return; if(b.dataset.type==='category') openModal({mode:'update',type:'category',id,title:'Kategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
 if(b.dataset.type==='subcategory') openModal({mode:'update',type:'subcategory',id,title:'Unterkategorie bearbeiten',html:`<label>Deutsch</label><input class="input" name="name_de" value="${escapeHtml(n.name_de)}" required><label>English</label><input class="input" name="name_en" value="${escapeHtml(n.name_en)}" required>`});
-if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<label>Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required><label>Deutsch</label><textarea name="text_de" required>${escapeHtml(n.text_de)}</textarea><label>English</label><textarea name="text_en">${escapeHtml(n.text_en||'')}</textarea><label><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}> Pflicht</label>${gradeChecks((n.grades||[]).map(Number))}`});}
+if(b.dataset.type==='competency') openModal({mode:'update',type:'competency',id,title:'Kompetenz bearbeiten',html:`<div class="form-grid"><div class="form-group"><label class="form-label">Code</label><input class="input" name="code" value="${escapeHtml(n.code)}" required></div><div class="form-group"><label class="form-label">Deutsch</label><textarea name="text_de" required>${escapeHtml(n.text_de)}</textarea></div><div class="form-group"><label class="form-label">English</label><textarea name="text_en">${escapeHtml(n.text_en||'')}</textarea></div><div class="form-group"><label class="choice-chip required-choice"><input type="checkbox" name="is_required" value="1" ${n.is_required? 'checked':''}><span>🔒 Pflichtkompetenz</span></label></div>${gradeChecks((n.grades||[]).map(Number))}</div>`});}
 if(act==='del'){try{const t=b.dataset.type; const prev=await api({action:'delete_preview',type:t,id:String(id)}); let txt=''; if(t==='category') txt=`Diese Kategorie enthält ${prev.counts.subcategories} Unterkategorien und ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='subcategory') txt=`Diese Unterkategorie enthält ${prev.counts.competencies} Kompetenzen. Wirklich löschen?`; if(t==='competency') txt='Diese Kompetenz wirklich löschen?'; if(!confirm(txt)) return; const res=await api({action:'delete',type:t,id:String(id)}); stateTree=res.tree; render(); showMsg('Gelöscht.'); }catch(err){showMsg(err.message,true);} }
 });
 
@@ -299,12 +399,13 @@ let dragEl=null;
 function initDnd(){
   document.querySelectorAll('.draggable').forEach(el=>{el.ondragstart=(e)=>{ 
     e.stopPropagation();
-    const nested = e.target.closest('.tree-node.draggable');
-    if(nested && nested!==el) return;
-    if(el.dataset.type!=='category' && el.dataset.type!=='subcategory') return;
+    const dragNode = e.target.closest('.draggable');
+    if(dragNode!==el) return;
+    if(el.dataset.type!=='category' && el.dataset.type!=='subcategory' && el.dataset.type!=='competency') return;
     dragEl=el; 
     if(el.dataset.type==='category') console.debug('[competencies dnd category] start', Number(el.dataset.id));
     if(el.dataset.type==='subcategory') console.debug('[competencies dnd subcategory] start', Number(el.dataset.id), Number(el.dataset.parent||0));
+    if(el.dataset.type==='competency') console.debug('[competencies dnd competency] start', Number(el.dataset.id), Number(el.dataset.parent||0));
   }; el.ondragend=(e)=>{e.stopPropagation(); dragEl=null; document.querySelectorAll('.dnd-placeholder-category,.dnd-placeholder-subcategory').forEach(d=>d.classList.remove('active'));};});
   document.querySelectorAll('.dnd-placeholder-category').forEach(d=>{
     d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='category'){ console.debug('[competencies dnd category] dragover ignored for', dragEl?.dataset?.type); return; } if(d.dataset.dropType!=='category') return; e.preventDefault(); d.classList.add('active'); };
@@ -315,6 +416,7 @@ function initDnd(){
       const itemId=Number(dragEl.dataset.id);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(beforeId === itemId) return;
       let orderedIds=stateTree.map(c=>Number(c.id)).filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
       console.debug('[competencies dnd category] drop', {itemId,beforeId:beforeIdRaw,orderedIds});
@@ -333,12 +435,42 @@ function initDnd(){
       const targetCategoryId=Number(d.dataset.parent||0);
       const beforeIdRaw=(d.dataset.beforeId||'').trim();
       const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(sourceCategoryId === targetCategoryId && beforeId === itemId) return;
       const targetCat = stateTree.find(c=>Number(c.id)===targetCategoryId);
       const targetRealSubs = ((targetCat?.children)||[]).filter(s=>!s.is_virtual).map(s=>Number(s.id));
       let orderedIds=targetRealSubs.filter(x=>x!==itemId);
       if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
       console.debug('[competencies dnd subcategory] drop', {itemId,sourceCategoryId,targetCategoryId,beforeId:beforeIdRaw,orderedIds});
       try{ const res=await api({action:'reorder',type:'subcategory',id:String(itemId),new_parent_id:String(targetCategoryId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
+      catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
+    };
+  });
+  document.querySelectorAll('.dnd-placeholder-competency').forEach(d=>{
+    d.ondragover=(e)=>{ if(!dragEl || dragEl.dataset.type!=='competency') return; if(d.dataset.dropType!=='competency') return; e.preventDefault(); d.classList.add('active'); console.debug('[competencies dnd competency] dragover allowed', {targetCategoryId:Number(d.dataset.targetCategory||0),targetParentId:Number(d.dataset.parent||0)}); };
+    d.ondragleave=()=>d.classList.remove('active');
+    d.ondrop=async (e)=>{
+      e.preventDefault(); d.classList.remove('active');
+      if(!dragEl || dragEl.dataset.type!=='competency') return;
+      const itemId=Number(dragEl.dataset.id);
+      const sourceParentId=Number(dragEl.dataset.parent||0);
+      const targetParentId=Number(d.dataset.parent||0);
+      const targetCategoryId=Number(d.dataset.targetCategory||0);
+      const beforeIdRaw=(d.dataset.beforeId||'').trim();
+      const beforeId=beforeIdRaw===''?0:Number(beforeIdRaw);
+      if(sourceParentId===targetParentId && beforeId===itemId) return;
+      const targetCat=stateTree.find(c=>Number(c.id)===targetCategoryId);
+      let targetCompetencies=[];
+      if(targetParentId>0){
+        const targetSub=((targetCat?.children)||[]).find(s=>!s.is_virtual && Number(s.id)===targetParentId);
+        targetCompetencies=(targetSub?.children)||[];
+      } else {
+        const targetVirtual=((targetCat?.children)||[]).find(s=>!!s.is_virtual);
+        targetCompetencies=(targetVirtual?.children)||[];
+      }
+      let orderedIds=targetCompetencies.map(k=>Number(k.id)).filter(x=>x!==itemId);
+      if(beforeId>0){ const i=orderedIds.indexOf(beforeId); if(i>=0) orderedIds.splice(i,0,itemId); else orderedIds.push(itemId);} else { orderedIds.push(itemId); }
+      console.debug('[competencies dnd competency] drop', {itemId,sourceParentId,targetParentId,targetCategoryId,beforeId:beforeIdRaw,orderedIds});
+      try{ const res=await api({action:'reorder',type:'competency',id:String(itemId),new_parent_id:String(targetParentId),target_category_id:String(targetCategoryId),ordered_ids:JSON.stringify(orderedIds)}); stateTree=res.tree; render(); }
       catch(err){ showMsg(err.message,true); const res=await api({action:'list_tree'}); stateTree=res.tree; render(); }
     };
   });

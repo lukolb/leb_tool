@@ -217,18 +217,17 @@ function write_debug_data_tex(string $content): string {
     return $path;
 }
 
-function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks): string {
+function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks, int $gradeLevel = 1, bool $showSel = true, bool $showAg = true): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
 
     $macros = parse_skill_macros($content);
     $sections = parse_sections($content);
 
-    if (preg_match('/\\\\newcommand\{\\\\GradeLevel\}\{[^{}]*\}/', $content, $m)) {
-        $out = $m[0] . "\n";
-    } else {
-        $out = "\\newcommand{\\GradeLevel}{1}\n";
-    }
+    $out = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n");
+    $out .= "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n");
+    if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
+    $out .= "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n";
 
     foreach ($macros as $macroName => $macro) {
         $items = $macro['items'];
@@ -313,13 +312,23 @@ if (!is_array($pagebreaks)) {
 
 $selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
+$allCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_ids'] ?? []))));
+$activeCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_active'] ?? []))));
+$disabledCatIds = array_values(array_diff($allCatIds, $activeCatIds));
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
     $selectedGrade = (int)($_POST['grade_level'] ?? 1);
     if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
-    $stReq = $pdo->prepare("SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?");
-    $stReq->execute([$selectedGrade]);
+    $reqSql = "SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?";
+    $reqParams = [$selectedGrade];
+    if (!empty($disabledCatIds)) {
+        $in = implode(',', array_fill(0, count($disabledCatIds), '?'));
+        $reqSql .= " AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) NOT IN ($in)";
+        $reqParams = array_merge($reqParams, $disabledCatIds);
+    }
+    $stReq = $pdo->prepare($reqSql);
+    $stReq->execute($reqParams);
     $reqRows = $stReq->fetchAll(PDO::FETCH_COLUMN) ?: [];
     foreach ($reqRows as $code) {
         $c = trim((string)$code);
@@ -331,13 +340,28 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 }
 
 
-$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks);
+$selectedGrade = (int)($_POST['grade_level'] ?? 1);
+if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
+$showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
+$showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
+$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    $selectedGrade = (int)($_POST['grade_level'] ?? 1);
-    if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
-    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
-    $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
+    if (!empty($disabledCatIds) && !empty($selectedSkills)) {
+        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+        $inCats = implode(',', array_fill(0, count($disabledCatIds), '?'));
+        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $stDisabled = $pdo->prepare($sql);
+        $stDisabled->execute(array_merge($selectedSkills, $disabledCatIds));
+        $blocked = array_map('strval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        if (!empty($blocked)) {
+            $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
+        }
+    }
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks, $selectedGrade);
+    $generatedDataTex = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n")
+        . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
+        . $generatedDataTex;
 }
 
 try {
@@ -547,9 +571,10 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
-function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = []): string {
+function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1): string {
+    if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
     if (!$selectedCodes) {
-        return "\\newcommand{\\GradeLevel}{1}\n\\newcommand{\\AllSkillSections}{}\n";
+        return "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n\\newcommand{\\AllSkillSections}{}\n";
     }
 
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
@@ -590,7 +615,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     }
 
     $out = "% AUTO-GENERATED FROM DB\n";
-    $out .= "\\newcommand{\\GradeLevel}{1}\n";
+    $out .= "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n";
     $i = 1;
     foreach ($sections as $catId => $catData) {
         $catDe = (string)($catData['de'] ?? 'Sonstiges');

@@ -55,21 +55,49 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
   </select>
 </div>
+<div class="card" style="padding:12px;margin:12px 0;">
+  <strong>Sonderbereiche</strong>
+  <label style="display:block;margin-top:8px;">
+    <input type="hidden" name="show_sel" value="0">
+    <input type="checkbox" name="show_sel" value="1" checked> SEL-Bereich anzeigen
+  </label>
+  <label style="display:block;margin-top:6px;">
+    <input type="hidden" name="show_ag" value="0">
+    <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
+  </label>
+</div>
+<div style="display:flex;gap:8px;margin:8px 0 12px;">
+  <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
+  <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>
+</div>
 <?php foreach ($sectionsDb as $sectionId => $section): ?>
-  <details class="card" style="padding:12px 16px; margin:16px 0;" open>
-    <summary><h2 style="display:inline;"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+  <?php
+    $hasRequired = false;
+    foreach (($section['direct'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break; } }
+    if (!$hasRequired) { foreach (($section['subs'] ?? []) as $sub) { foreach (($sub['items'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $hasRequired = true; break 2; } } } }
+  ?>
+  <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:10px 14px; margin:12px 0;" open>
+    <input type="hidden" name="cat_ids[]" value="<?= h((string)$sectionId) ?>">
+    <summary><h2 class="cat-title"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+    <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
+      <input type="checkbox" class="category-toggle" name="cat_active[]" value="<?= h((string)$sectionId) ?>" data-cat-id="<?= h((string)$sectionId) ?>" checked>
+      Kategorie aktiv
+    </label>
+    <div class="category-warning" data-cat-warning="<?= h((string)$sectionId) ?>" style="display:none; margin:0 0 10px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">
+      Achtung: Durch das Deaktivieren dieser Kategorie werden auch verpflichtende Kompetenzen ausgeblendet.
+    </div>
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
       Seitenumbruch vor dieser Kategorie
     </label>
-
+    <div class="category-body" data-cat-body="<?= h((string)$sectionId) ?>">
     <?php if (!empty($section['direct'])): ?>
-      <details style="margin-top:12px; margin-left:12px;" open>
+      <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong>Ohne Unterkategorie</strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
-          <label style="display:block; margin:8px 0 8px 18px;">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
@@ -78,18 +106,19 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php endif; ?>
 
     <?php foreach (($section['subs'] ?? []) as $sub): ?>
-      <details style="margin-top:12px; margin-left:12px;" open>
+      <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
         <?php foreach (($sub['items'] ?? []) as $item): ?>
-          <label style="display:block; margin:8px 0 8px 18px;">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled' : 'checked' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>"><?php endif; ?>
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
             <?= h((string)$item['text_de']) ?>
             <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
       </details>
     <?php endforeach; ?>
+    </div>
   </details>
 <?php endforeach; ?>
 
@@ -98,6 +127,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 
 <style>
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .cat-title{display:inline;margin:0;font-size:1.1rem;font-weight:700;line-height:1.3}
+  .required-skill-row{opacity:.95}
+  .required-skill-row input[type="checkbox"]{cursor:not-allowed}
+  .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
 </style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
@@ -125,10 +158,49 @@ const pdfDebug = document.getElementById('pdfDebug');
 const pdfDebugText = document.getElementById('pdfDebugText');
 let currentPdfUrl = null;
 
+function applyCategoryState(catId){
+  const root = document.querySelector(`.cat-details[data-cat-id="${catId}"]`);
+  if(!root) return;
+  const toggle = root.querySelector('.category-toggle');
+  const active = !!toggle?.checked;
+  const body = root.querySelector(`[data-cat-body="${catId}"]`);
+  const warn = root.querySelector(`[data-cat-warning="${catId}"]`);
+  const hasReq = root.dataset.hasRequired === '1';
+  root.style.opacity = active ? '1' : '.62';
+  if(body) body.style.display = active ? '' : 'none';
+  if(warn) warn.style.display = (!active && hasReq) ? 'block' : 'none';
+  root.querySelectorAll('input[name="skills[]"]').forEach(el=>{
+    const isRequiredCheckbox = el.dataset.requiredSkill === '1';
+    const isRequiredHidden = el.dataset.requiredHidden === '1';
+    if (isRequiredCheckbox) {
+      el.checked = true;
+      el.disabled = true;
+      return;
+    }
+    if (isRequiredHidden) {
+      el.disabled = !active;
+      return;
+    }
+    el.disabled = !active;
+  });
+  root.querySelectorAll('input[name="pagebreaks[]"]').forEach(el=>{ el.disabled = !active; });
+}
+
 document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
   const u = new URL(window.location.href);
   u.searchParams.set('grade_level', e.target.value);
   window.location.href = u.toString();
+});
+
+document.querySelectorAll('.category-toggle').forEach(cb=>{
+  cb.addEventListener('change',()=>applyCategoryState(cb.dataset.catId));
+  applyCategoryState(cb.dataset.catId);
+});
+document.getElementById('collapseAllBtn')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.cat-details, .sub-details').forEach(el=>{ el.open = false; });
+});
+document.getElementById('expandAllBtn')?.addEventListener('click', ()=>{
+  document.querySelectorAll('.cat-details, .sub-details').forEach(el=>{ el.open = true; });
 });
 
 form.addEventListener('submit', async (event) => {
