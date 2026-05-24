@@ -595,7 +595,7 @@ function latex_escape(string $t): string {
 }
 
 function parse_checkbox_placeholder_options(string $token): array {
-    $opts = ['size' => 2.7, 'border' => false, 'same' => false];
+    $opts = ['size' => 2.7, 'border' => false, 'same' => false, 'type' => 'checkbox', 'group' => '', 'value' => ''];
     if (!preg_match('/^\[checkbox(?::([^\]]*))?\]$/i', $token, $m)) {
         return $opts;
     }
@@ -617,6 +617,20 @@ function parse_checkbox_placeholder_options(string $token): array {
         }
         if ($k === 'border') { $opts['border'] = in_array($v, ['1','true','yes','ja'], true); continue; }
         if ($k === 'same') { $opts['same'] = in_array($v, ['1','true','yes','ja'], true); continue; }
+        if ($k === 'type') {
+            $opts['type'] = ($v === 'radio') ? 'radio' : 'checkbox';
+            continue;
+        }
+        if ($k === 'group') {
+            $opts['group'] = preg_replace('/[^A-Za-z0-9_-]/', '-', (string)$v) ?? '';
+            $opts['group'] = trim((string)$opts['group'], '-');
+            continue;
+        }
+        if ($k === 'value') {
+            $opts['value'] = preg_replace('/[^A-Za-z0-9_-]/', '-', (string)$v) ?? '';
+            $opts['value'] = trim((string)$opts['value'], '-');
+            continue;
+        }
     }
     return $opts;
 }
@@ -658,16 +672,29 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
 
     $out = '';
     $checkboxIndex = 0;
+    $radioValueCounters = [];
     $count = count($tokens);
     for ($i = 0; $i < $count; $i++) {
         $token = (string)$tokens[$i];
         if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $token)) {
             $o = parse_checkbox_placeholder_options($token);
-            $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
             $size = rtrim(rtrim(number_format((float)$o['size'], 2, '.', ''), '0'), '.');
             $border = $o['border'] ? '1' : '0';
-            if ($size === '2.7' && $border === '0') $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
-            else $out .= '\\InlineCrossCheckboxSized{' . latex_escape($fieldName) . '}{' . $size . '}{' . $border . '}';
+            if ((string)$o['type'] === 'radio') {
+                $group = (string)($o['group'] ?? '');
+                if ($group === '') $group = 'default';
+                $fieldName = $safePrefix . '-radio-' . $group;
+                $value = (string)($o['value'] ?? '');
+                if ($value === '') {
+                    $radioValueCounters[$group] = (int)($radioValueCounters[$group] ?? 0) + 1;
+                    $value = 'opt' . $radioValueCounters[$group];
+                }
+                $out .= '\\InlineCrossRadio{' . latex_escape($fieldName) . '}{' . latex_escape($value) . '}{' . $size . '}{' . $border . '}';
+            } else {
+                $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
+                if ($size === '2.7' && $border === '0') $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+                else $out .= '\\InlineCrossCheckboxSized{' . latex_escape($fieldName) . '}{' . $size . '}{' . $border . '}';
+            }
             continue;
         }
         if (preg_match('/^\[vline\]$/i', $token)) {

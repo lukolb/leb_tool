@@ -129,6 +129,39 @@
 }%
 }
 
+\newcommand{\InlineCrossRadio}[4]{%
+\ifnum#4=1
+  \InlineCrossRadioBorder{#1}{#2}{#3}%
+\else
+  \InlineCrossRadioPlain{#1}{#2}{#3}%
+\fi
+\hspace{0.7mm}%
+}
+
+\newcommand{\InlineCrossRadioPlain}[3]{%
+\raisebox{-0.15\height}{%
+\radioButton[
+  \BC{}
+  \BG{}
+  \textColor{gisblue}
+  \W{0}
+  \symbolchoice{cross}
+]{#1}{#3mm}{#3mm}{#2}%
+}%
+}
+
+\newcommand{\InlineCrossRadioBorder}[3]{%
+\raisebox{-0.15\height}{%
+\radioButton[
+  \BC{0 0 0}
+  \BG{}
+  \textColor{gisblue}
+  \W{1}
+  \symbolchoice{cross}
+]{#1}{#3mm}{#3mm}{#2}%
+}%
+}
+
 \newcommand{\InlineVLine}{%
 \hspace{2mm}%
 \raisebox{-2.8mm}[0pt][0pt]{%
