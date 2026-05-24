@@ -595,7 +595,10 @@ function latex_escape(string $t): string {
 }
 
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
-    $parts = explode('[checkbox]', $t);
+    $parts = preg_split('/\[checkbox\]/i', $t);
+    if (!is_array($parts)) {
+        return latex_escape($t);
+    }
     if (count($parts) === 1) {
         return latex_escape($t);
     }
@@ -679,7 +682,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                     continue;
                 }
                 $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
-                $fieldPrefix = 'skillcb-' . ((string)($it['code'] ?? '') !== '' ? (string)$it['code'] : ('id' . (string)($it['id'] ?? '')));
+                $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
                 $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
                 $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
             }
