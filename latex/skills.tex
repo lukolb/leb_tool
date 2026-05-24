@@ -121,12 +121,18 @@
 }
 
 \newcommand{\InfoSkillRow}[1]{%
-\rule[-2.4mm]{0pt}{6.3mm}%
+\noalign{\needspace{8mm}}%
 \multicolumn{6}{|>{\raggedright\arraybackslash}m{18.475cm}|}{%
-  \hspace*{4mm}%
-  {\fontsize{8pt}{9.5pt}\selectfont
-    #1%
-  }%
+  \begin{minipage}[c][6.8mm][c]{17.6cm}
+    \hspace*{4mm}%
+    \begin{minipage}[c]{16.8cm}
+      \setlength{\parindent}{0pt}%
+      \raggedright
+      {\fontsize{8pt}{9.5pt}\selectfont
+        #1%
+      }%
+    \end{minipage}%
+  \end{minipage}%
 }%
 \\ \hline
 }
