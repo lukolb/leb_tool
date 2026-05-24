@@ -732,6 +732,81 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     return $out;
 }
 
+function latex_escape_with_inline_placeholders_italic_text(string $t, string $fieldPrefix = 'skillcb'): string {
+    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\]|\[vline\]|\[space\s*=\s*[^\]]+\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($tokens)) { return '\\textit{' . latex_escape($t) . '}'; }
+    if (count($tokens) === 1) {
+        $escaped = latex_escape($t);
+        return trim($escaped) === '' ? $escaped : ('\\textit{' . $escaped . '}');
+    }
+
+    $safePrefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $fieldPrefix) ?? 'skillcb';
+    $safePrefix = trim($safePrefix, '-');
+    if ($safePrefix === '') {
+        $safePrefix = 'skillcb';
+    }
+
+    $out = '';
+    $checkboxIndex = 0;
+    $radioValueCounters = [];
+    $count = count($tokens);
+    for ($i = 0; $i < $count; $i++) {
+        $token = (string)$tokens[$i];
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $token)) {
+            $o = parse_checkbox_placeholder_options($token);
+            $size = rtrim(rtrim(number_format((float)$o['size'], 2, '.', ''), '0'), '.');
+            $border = $o['border'] ? '1' : '0';
+            if ((string)$o['type'] === 'radio') {
+                $group = (string)($o['group'] ?? '');
+                if ($group === '') $group = 'default';
+                $fieldName = $safePrefix . '-radio-' . $group;
+                $value = (string)($o['value'] ?? '');
+                if ($value === '') {
+                    $radioValueCounters[$group] = (int)($radioValueCounters[$group] ?? 0) + 1;
+                    $value = 'opt' . $radioValueCounters[$group];
+                }
+                $out .= '\\InlineCrossRadio{' . latex_escape($fieldName) . '}{' . latex_escape($value) . '}{' . $size . '}{' . $border . '}';
+            } else {
+                $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
+                if ($size === '2.7' && $border === '0') $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+                else $out .= '\\InlineCrossCheckboxSized{' . latex_escape($fieldName) . '}{' . $size . '}{' . $border . '}';
+            }
+            continue;
+        }
+        if (preg_match('/^\[vline\]$/i', $token)) {
+            $out .= '\\InlineVLine';
+            continue;
+        }
+        $spaceLatex = parse_space_placeholder_to_latex($token);
+        if ($spaceLatex !== null) {
+            $out .= $spaceLatex;
+            continue;
+        }
+
+        $part = $token;
+        $nextToken = ($i + 1 < $count) ? (string)$tokens[$i + 1] : '';
+        $extraSpaceCount = 0;
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
+            $spaces = (string)($m[1] ?? '');
+            $spaceCount = strlen($spaces);
+            if ($spaceCount > 1) {
+                $extraSpaceCount = $spaceCount - 1;
+                $part = substr($part, 0, -$spaceCount) . ' ';
+            }
+        }
+        $escaped = latex_escape($part);
+        if (trim($escaped) !== '') {
+            $out .= '\\textit{' . $escaped . '}';
+        } else {
+            $out .= $escaped;
+        }
+        if ($extraSpaceCount > 0) {
+            $out .= '\\hspace{' . (1.5 * $extraSpaceCount) . 'mm}';
+        }
+    }
+    return $out;
+}
+
 function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1, array $gradeFieldCategoryIds = [], bool $enableStudentTeacherRatings = false): string {
     if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
     if (!$selectedCodes) {
@@ -798,16 +873,16 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                     $rawDe = (string)($it['text_de'] ?? '');
                     $rawEn = (string)($it['text_en'] ?? '');
                     $de = latex_escape_with_inline_placeholders($rawDe, $fieldPrefix);
-                    $en = latex_escape_with_inline_placeholders($rawEn, $fieldPrefix);
+                    $enItalicSafe = latex_escape_with_inline_placeholders_italic_text($rawEn, $fieldPrefix);
                     $hasDe = trim($rawDe) !== '';
                     $hasEn = trim($rawEn) !== '';
 
                     if ($hasDe && $hasEn) {
-                        $infoText = $de . ' \\textbar{} \\textit{' . $en . '}';
+                        $infoText = $de . ' \\textbar{} ' . $enItalicSafe;
                     } elseif ($hasDe) {
                         $infoText = $de;
                     } else {
-                        $infoText = '\\textit{' . $en . '}';
+                        $infoText = $enItalicSafe;
                     }
 
                     $macroBody .= "  \\InfoSkillRow{" . $infoText . "}\n";
