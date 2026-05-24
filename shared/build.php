@@ -8,6 +8,7 @@ error_reporting(E_ALL);
 $endpoint = 'https://latex.ytotech.com/builds/sync';
 
 $latexDir = __DIR__ . '/../latex';
+require_once __DIR__ . '/latex_layout_templates.php';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -378,6 +379,28 @@ try {
     exit;
 }
 
+
+$pdoForLayout = function_exists('db') ? db() : null;
+$selectedLayoutPath = 'latex/layout.tex';
+if ($pdoForLayout instanceof PDO) {
+    ensure_default_latex_layout_template($pdoForLayout);
+    $layoutTemplateId = (int)($_POST['layout_template_id'] ?? 0);
+    $layout = $layoutTemplateId > 0 ? find_active_latex_layout_template($pdoForLayout, $layoutTemplateId) : null;
+    if (!$layout) {
+        $layout = get_default_latex_layout_template($pdoForLayout);
+    }
+    if ($layout && !empty($layout['file_path'])) {
+        $selectedLayoutPath = (string)$layout['file_path'];
+    }
+}
+$layoutAbsolute = latex_layout_absolute_path($selectedLayoutPath);
+if (!is_file($layoutAbsolute)) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Layoutvorlage nicht gefunden.';
+    exit;
+}
+
 $resources = [
     [
         'main' => true,
@@ -386,7 +409,7 @@ $resources = [
 
     [
         'path' => 'layout.tex',
-        'file' => readBase64FileOrFail($latexDir . '/layout.tex'),
+        'file' => readBase64FileOrFail($layoutAbsolute),
     ],
     [
         'path' => 'skills.tex',

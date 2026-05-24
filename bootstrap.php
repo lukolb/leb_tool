@@ -973,7 +973,37 @@ function ensure_schema(PDO $pdo): void {
       );
     }
 
-    // --- parent_portal_links: admin-approved, time-boxed Eltern-Zugänge
+    
+    if (!db_has_table($pdo, 'latex_layout_templates')) {
+      $pdo->exec(
+        "CREATE TABLE latex_layout_templates (
+" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+        "  key_name VARCHAR(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  display_name VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  file_path VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  is_default TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  is_active TINYINT(1) NOT NULL DEFAULT 1,
+" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+        "  PRIMARY KEY (id),
+" .
+        "  UNIQUE KEY uq_latex_layout_templates_key (key_name),
+" .
+        "  KEY idx_latex_layout_templates_default_active (is_default, is_active)
+" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+// --- parent_portal_links: admin-approved, time-boxed Eltern-Zugänge
     if (!db_has_table($pdo, 'parent_portal_links')) {
       $pdo->exec(
         "CREATE TABLE parent_portal_links (\n" .
