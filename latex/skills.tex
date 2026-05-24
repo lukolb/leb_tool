@@ -356,40 +356,41 @@
 % Student/Teacher separated ratings (ST mode)
 % ------------------------------------------------
 \definecolor{studentcol}{RGB}{232,242,222}
-\newcommand{\STColW}{5.8mm}
-\newcommand{\STTextW}{102.8mm}
+\newcommand{\STColW}{5.6mm}
+\newcommand{\STTextW}{111.0mm}
+\newcommand{\STPairW}{\dimexpr2\STColW\relax}
 \newcommand{\RatingHeaderST}{%
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
 \multicolumn{1}{m{\STColW}}{}&
-\multicolumn{2}{m{11.6mm}}{\centering\BeginningIcon}&
-\multicolumn{2}{m{11.6mm}}{\centering\ProgressingIcon}&
-\multicolumn{2}{m{11.6mm}}{\centering\StrengtheningIcon}&
-\multicolumn{2}{m{11.6mm}}{\centering\MasteringIcon}
+\multicolumn{2}{m{\STPairW}}{\centering\BeginningIcon}&
+\multicolumn{2}{m{\STPairW}}{\centering\ProgressingIcon}&
+\multicolumn{2}{m{\STPairW}}{\centering\StrengtheningIcon}&
+\multicolumn{2}{m{\STPairW}}{\centering\MasteringIcon}
 \\[-2mm]
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
 \multicolumn{1}{m{\STColW}}{}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont Beginnen}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont Entwickeln}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont Festigen}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont Meistern}
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont Beginnen}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont Entwickeln}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont Festigen}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont Meistern}
 \\[-2mm]
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
 \multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont n/a}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Beginning}}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Progressing}}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}}&
-\multicolumn{2}{m{11.6mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Mastering}}
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Beginning}}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Progressing}}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}}&
+\multicolumn{2}{m{\STPairW}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Mastering}}
 \\[-2mm]
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont T}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont S}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont T}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont S}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont T}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont S}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont T}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont S}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont T}
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
+\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}
 \\
 }
 \newcommand{\RBST}[2]{%
@@ -398,7 +399,7 @@
 }%
 }
 \newcommand{\RatingButtonsST}[1]{\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{na}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{be}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{be}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{pr}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{pr}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{st}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{st}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{ma}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{ma}\end{minipage}}
-\newcommand{\SkillRowST}[3]{\rule[-2.4mm]{0pt}{6.3mm}\begin{minipage}[c]{101.8mm}\vspace{0.7mm}\setlength{\parindent}{0pt}\raggedright{\fontsize{8pt}{9.5pt}\selectfont #2 \textbar{} \textit{#3}}\vspace{0.7mm}\end{minipage}&\RatingButtonsST{#1}\\ \hline}
+\newcommand{\SkillRowST}[3]{\rule[-2.4mm]{0pt}{6.3mm}\begin{minipage}[c]{106.0mm}\vspace{0.7mm}\setlength{\parindent}{0pt}\raggedright{\fontsize{8pt}{9.5pt}\selectfont #2 \textbar{} \textit{#3}}\vspace{0.7mm}\end{minipage}&\RatingButtonsST{#1}\\ \hline}
 \newcommand{\InfoSkillRowST}[1]{\noalign{\needspace{8mm}}\multicolumn{10}{|>{\raggedright\arraybackslash}m{18.475cm}|}{\begin{minipage}[c][6.8mm][c]{17.6cm}\hspace*{4mm}\begin{minipage}[c]{16.8cm}\setlength{\parindent}{0pt}\raggedright{\fontsize{8pt}{9.5pt}\selectfont #1}\end{minipage}\end{minipage}}\\ \hline}
 \newcommand{\SubSkillST}[2]{\noalign{\needspace{14mm}}\multicolumn{10}{|>{\raggedright\arraybackslash}m{18.475cm}|}{\cellcolor{lightgray}\begin{minipage}[c][7.2mm][c]{11.8cm}\hspace*{4mm}\begin{minipage}[c]{10.8cm}\setlength{\parindent}{0pt}\raggedright{\fontsize{9pt}{12pt}\selectfont \textbf{#1 | \textit{#2}}}\end{minipage}\end{minipage}}\\ \hline}
 \newcommand{\BeginSkillsTableSTWithSpaces}[2]{\small\setlength{\LTleft}{-4mm}\setlength{\LTright}{0mm}\vspace{#1}\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{\STTextW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|}\RatingHeaderST\noalign{\vspace{#2}}\endfirsthead\RatingHeaderST\hline\noalign{\vspace{\RatingHeaderAutoAfterSpace}}\endhead}
