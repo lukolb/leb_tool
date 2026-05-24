@@ -93,15 +93,38 @@
 % ------------------------------------------------
 
 \newcommand{\InlineCrossCheckbox}[1]{%
+\InlineCrossCheckboxSized{#1}{2.7}{0}%
+}
+
+\newcommand{\InlineCrossCheckboxSized}[3]{%
+\ifnum#3=1
+  \InlineCrossCheckboxBorder{#1}{#2}%
+\else
+  \InlineCrossCheckboxPlain{#1}{#2}%
+\fi
+\hspace{0.7mm}%
+}
+
+\newcommand{\InlineCrossCheckboxPlain}[2]{%
 \raisebox{-0.15\height}{%
 \checkBox[
   \BC{}
   \BG{}
   \W{0}
   \symbolchoice{cross}
-]{#1}{2.7mm}{2.7mm}{Yes}%
+]{#1}{#2mm}{#2mm}{Yes}%
 }%
-\hspace{0.7mm}%
+}
+
+\newcommand{\InlineCrossCheckboxBorder}[2]{%
+\raisebox{-0.15\height}{%
+\checkBox[
+  \BC{0 0 0}
+  \BG{}
+  \W{0.4}
+  \symbolchoice{cross}
+]{#1}{#2mm}{#2mm}{Yes}%
+}%
 }
 
 \newcommand{\InlineVLine}{%

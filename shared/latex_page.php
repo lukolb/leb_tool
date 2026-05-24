@@ -40,7 +40,7 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
 function render_competency_placeholder_html(string $text): string {
     $escaped = h($text);
     $withCheckboxes = preg_replace(
-        '/\[checkbox\]/i',
+        '/\[checkbox(?:\:[^\]]*)?\]/i',
         '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>',
         $escaped
     ) ?? $escaped;

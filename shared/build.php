@@ -594,8 +594,35 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
+function parse_checkbox_placeholder_options(string $token): array {
+    $opts = ['size' => 2.7, 'border' => false, 'same' => false];
+    if (!preg_match('/^\[checkbox(?::([^\]]*))?\]$/i', $token, $m)) {
+        return $opts;
+    }
+    $raw = trim((string)($m[1] ?? ''));
+    if ($raw === '') return $opts;
+    $parts = array_filter(array_map('trim', explode(';', $raw)), static fn($v) => $v !== '');
+    foreach ($parts as $part) {
+        $kv = array_map('trim', explode('=', $part, 2));
+        if (count($kv) !== 2) continue;
+        [$k, $v] = $kv;
+        $k = strtolower($k);
+        $v = strtolower(str_replace(',', '.', $v));
+        if ($k === 'size') {
+            if (is_numeric($v)) {
+                $size = (float)$v;
+                if ($size >= 1.5 && $size <= 8.0) $opts['size'] = $size;
+            }
+            continue;
+        }
+        if ($k === 'border') { $opts['border'] = in_array($v, ['1','true','yes','ja'], true); continue; }
+        if ($k === 'same') { $opts['same'] = in_array($v, ['1','true','yes','ja'], true); continue; }
+    }
+    return $opts;
+}
+
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
-    $tokens = preg_split('/(\[checkbox\]|\[vline\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\]|\[vline\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
     if (!is_array($tokens)) { return latex_escape($t); }
     if (count($tokens) === 1) { return latex_escape($t); }
 
@@ -610,10 +637,13 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     $count = count($tokens);
     for ($i = 0; $i < $count; $i++) {
         $token = (string)$tokens[$i];
-        if (preg_match('/^\[checkbox\]$/i', $token)) {
-            $checkboxIndex++;
-            $fieldName = $safePrefix . '-' . $checkboxIndex;
-            $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $token)) {
+            $o = parse_checkbox_placeholder_options($token);
+            $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
+            $size = rtrim(rtrim(number_format((float)$o['size'], 2, '.', ''), '0'), '.');
+            $border = $o['border'] ? '1' : '0';
+            if ($size === '2.7' && $border === '0') $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+            else $out .= '\\InlineCrossCheckboxSized{' . latex_escape($fieldName) . '}{' . $size . '}{' . $border . '}';
             continue;
         }
         if (preg_match('/^\[vline\]$/i', $token)) {
@@ -624,7 +654,7 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
         $part = $token;
         $nextToken = ($i + 1 < $count) ? (string)$tokens[$i + 1] : '';
         $extraSpaceCount = 0;
-        if (preg_match('/^\[checkbox\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
             $spaces = (string)($m[1] ?? '');
             $spaceCount = strlen($spaces);
             if ($spaceCount > 1) {
