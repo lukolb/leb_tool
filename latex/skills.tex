@@ -92,6 +92,18 @@
 % Skill Row
 % ------------------------------------------------
 
+\newcommand{\InlineCrossCheckbox}[1]{%
+\raisebox{-0.15\height}{%
+\checkBox[
+  \BC{}
+  \BG{}
+  \W{0}
+  \symbolchoice{cross}
+]{#1}{2.7mm}{2.7mm}{Yes}%
+}%
+\hspace{0.7mm}%
+}
+
 \newcommand{\SkillRow}[3]{%
 \rule[-2.4mm]{0pt}{6.3mm}%
 \begin{minipage}[c]{110mm}

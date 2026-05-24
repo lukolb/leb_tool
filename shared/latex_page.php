@@ -37,6 +37,15 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
     return $sections;
 }
 
+function render_competency_placeholder_html(string $text): string {
+    $escaped = h($text);
+    return preg_replace(
+        '/\[checkbox\]/i',
+        '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>',
+        $escaped
+    ) ?? $escaped;
+}
+
 require_once __DIR__ . '/latex_layout_templates.php';
 $pdo = db();
 ensure_default_latex_layout_template($pdo);
@@ -112,8 +121,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= h((string)$item['text_de']) ?>
-            <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
+            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
+            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
       </details>
@@ -126,8 +135,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= h((string)$item['text_de']) ?>
-            <br><span style="font-style:italic;color:#666;"><?= h((string)($item['text_en'] ?? '')) ?></span>
+            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
+            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
       </details>
@@ -145,6 +154,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   .required-skill-row{opacity:.95}
   .required-skill-row input[type="checkbox"]{cursor:not-allowed}
   .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
+  .inline-checkbox-placeholder{display:inline-block;width:.8em;height:.8em;border:1.4px solid currentColor;border-radius:2px;vertical-align:-.08em;margin:0 .18em;box-sizing:border-box;opacity:.85}
 </style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
