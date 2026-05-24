@@ -217,7 +217,7 @@ function write_debug_data_tex(string $content): string {
     return $path;
 }
 
-function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks, bool $showSel = true, bool $showAg = true): string {
+function generate_selected_data_tex(string $content, array $selectedSkills, array $pagebreaks, int $gradeLevel = 1, bool $showSel = true, bool $showAg = true): string {
     $selectedMap = array_fill_keys($selectedSkills, true);
     $pagebreakMap = array_fill_keys($pagebreaks, true);
 
@@ -226,11 +226,8 @@ function generate_selected_data_tex(string $content, array $selectedSkills, arra
 
     $out = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n");
     $out .= "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n");
-    if (preg_match('/\\\\newcommand\{\\\\GradeLevel\}\{[^{}]*\}/', $content, $m)) {
-        $out .= $m[0] . "\n";
-    } else {
-        $out .= "\\newcommand{\\GradeLevel}{1}\n";
-    }
+    if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
+    $out .= "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n";
 
     foreach ($macros as $macroName => $macro) {
         $items = $macro['items'];
@@ -343,13 +340,13 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
 }
 
 
+$selectedGrade = (int)($_POST['grade_level'] ?? 1);
+if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
 $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
-$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $showSel, $showAg);
+$generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    $selectedGrade = (int)($_POST['grade_level'] ?? 1);
-    if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
     if (!empty($disabledCatIds) && !empty($selectedSkills)) {
         $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
         $inCats = implode(',', array_fill(0, count($disabledCatIds), '?'));
@@ -361,11 +358,10 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
             $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
         }
     }
-    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks);
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks, $selectedGrade);
     $generatedDataTex = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n")
         . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
         . $generatedDataTex;
-    $generatedDataTex = preg_replace('/\\newcommand\{\\GradeLevel\}\{[^{}]*\}/', '\\newcommand{\\GradeLevel}{' . $selectedGrade . '}', $generatedDataTex) ?: $generatedDataTex;
 }
 
 try {
@@ -575,9 +571,10 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
-function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = []): string {
+function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1): string {
+    if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
     if (!$selectedCodes) {
-        return "\\newcommand{\\GradeLevel}{1}\n\\newcommand{\\AllSkillSections}{}\n";
+        return "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n\\newcommand{\\AllSkillSections}{}\n";
     }
 
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
@@ -618,7 +615,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     }
 
     $out = "% AUTO-GENERATED FROM DB\n";
-    $out .= "\\newcommand{\\GradeLevel}{1}\n";
+    $out .= "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n";
     $i = 1;
     foreach ($sections as $catId => $catData) {
         $catDe = (string)($catData['de'] ?? 'Sonstiges');
