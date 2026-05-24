@@ -594,14 +594,75 @@ function latex_escape(string $t): string {
     return strtr($t, $map);
 }
 
+function parse_checkbox_placeholder_options(string $token): array {
+    $opts = ['size' => 2.7, 'border' => false, 'same' => false, 'type' => 'checkbox', 'group' => '', 'value' => ''];
+    if (!preg_match('/^\[checkbox(?::([^\]]*))?\]$/i', $token, $m)) {
+        return $opts;
+    }
+    $raw = trim((string)($m[1] ?? ''));
+    if ($raw === '') return $opts;
+    $parts = array_filter(array_map('trim', explode(';', $raw)), static fn($v) => $v !== '');
+    foreach ($parts as $part) {
+        $kv = array_map('trim', explode('=', $part, 2));
+        if (count($kv) !== 2) continue;
+        [$k, $v] = $kv;
+        $k = strtolower($k);
+        $v = strtolower(str_replace(',', '.', $v));
+        if ($k === 'size') {
+            if (is_numeric($v)) {
+                $size = (float)$v;
+                if ($size >= 1.5 && $size <= 8.0) $opts['size'] = $size;
+            }
+            continue;
+        }
+        if ($k === 'border') { $opts['border'] = in_array($v, ['1','true','yes','ja'], true); continue; }
+        if ($k === 'same') { $opts['same'] = in_array($v, ['1','true','yes','ja'], true); continue; }
+        if ($k === 'type') {
+            $opts['type'] = ($v === 'radio') ? 'radio' : 'checkbox';
+            continue;
+        }
+        if ($k === 'group') {
+            $opts['group'] = preg_replace('/[^A-Za-z0-9_-]/', '-', (string)$v) ?? '';
+            $opts['group'] = trim((string)$opts['group'], '-');
+            continue;
+        }
+        if ($k === 'value') {
+            $opts['value'] = preg_replace('/[^A-Za-z0-9_-]/', '-', (string)$v) ?? '';
+            $opts['value'] = trim((string)$opts['value'], '-');
+            continue;
+        }
+    }
+    return $opts;
+}
+
+function parse_space_placeholder_to_latex(string $token): ?string {
+    if (!preg_match('/^\[space\s*=\s*([^\]]+)\]$/i', $token, $m)) {
+        return null;
+    }
+    $raw = strtolower(trim((string)($m[1] ?? '')));
+    $raw = str_replace(',', '.', $raw);
+    if (!preg_match('/^([0-9]+(?:\.[0-9]+)?)\s*(mm|cm)?$/', $raw, $mm)) {
+        return null;
+    }
+    $num = (float)($mm[1] ?? 0);
+    $unit = (string)($mm[2] ?? 'mm');
+    if ($unit === '') $unit = 'mm';
+    if ($unit === 'cm') {
+        $num *= 10.0;
+        $unit = 'mm';
+    }
+    if ($num < 0 || $num > 30) {
+        return null;
+    }
+    $val = rtrim(rtrim(number_format($num, 2, '.', ''), '0'), '.');
+    if ($val === '') $val = '0';
+    return '\\hspace{' . $val . $unit . '}';
+}
+
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
-    $parts = preg_split('/\[checkbox\]/i', $t);
-    if (!is_array($parts)) {
-        return latex_escape($t);
-    }
-    if (count($parts) === 1) {
-        return latex_escape($t);
-    }
+    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\]|\[vline\]|\[space\s*=\s*[^\]]+\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($tokens)) { return latex_escape($t); }
+    if (count($tokens) === 1) { return latex_escape($t); }
 
     $safePrefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $fieldPrefix) ?? 'skillcb';
     $safePrefix = trim($safePrefix, '-');
@@ -610,12 +671,57 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     }
 
     $out = '';
-    $count = count($parts);
+    $checkboxIndex = 0;
+    $radioValueCounters = [];
+    $count = count($tokens);
     for ($i = 0; $i < $count; $i++) {
-        $out .= latex_escape($parts[$i]);
-        if ($i < $count - 1) {
-            $fieldName = $safePrefix . '-' . ($i + 1);
-            $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+        $token = (string)$tokens[$i];
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $token)) {
+            $o = parse_checkbox_placeholder_options($token);
+            $size = rtrim(rtrim(number_format((float)$o['size'], 2, '.', ''), '0'), '.');
+            $border = $o['border'] ? '1' : '0';
+            if ((string)$o['type'] === 'radio') {
+                $group = (string)($o['group'] ?? '');
+                if ($group === '') $group = 'default';
+                $fieldName = $safePrefix . '-radio-' . $group;
+                $value = (string)($o['value'] ?? '');
+                if ($value === '') {
+                    $radioValueCounters[$group] = (int)($radioValueCounters[$group] ?? 0) + 1;
+                    $value = 'opt' . $radioValueCounters[$group];
+                }
+                $out .= '\\InlineCrossRadio{' . latex_escape($fieldName) . '}{' . latex_escape($value) . '}{' . $size . '}{' . $border . '}';
+            } else {
+                $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
+                if ($size === '2.7' && $border === '0') $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
+                else $out .= '\\InlineCrossCheckboxSized{' . latex_escape($fieldName) . '}{' . $size . '}{' . $border . '}';
+            }
+            continue;
+        }
+        if (preg_match('/^\[vline\]$/i', $token)) {
+            $out .= '\\InlineVLine';
+            continue;
+        }
+        $spaceLatex = parse_space_placeholder_to_latex($token);
+        if ($spaceLatex !== null) {
+            $out .= $spaceLatex;
+            continue;
+        }
+
+        $part = $token;
+        $nextToken = ($i + 1 < $count) ? (string)$tokens[$i + 1] : '';
+        $extraSpaceCount = 0;
+        // LaTeX collapses normal multiple spaces; for controlled spacing use [space=...].
+        if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
+            $spaces = (string)($m[1] ?? '');
+            $spaceCount = strlen($spaces);
+            if ($spaceCount > 1) {
+                $extraSpaceCount = $spaceCount - 1;
+                $part = substr($part, 0, -$spaceCount) . ' ';
+            }
+        }
+        $out .= latex_escape($part);
+        if ($extraSpaceCount > 0) {
+            $out .= '\\hspace{' . (1.5 * $extraSpaceCount) . 'mm}';
         }
     }
     return $out;
@@ -628,7 +734,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     }
 
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.code, c.text_de, c.text_en, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
@@ -681,10 +787,30 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                 if ($code === '') {
                     continue;
                 }
-                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
                 $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
+                $displayType = (string)($it['display_type'] ?? 'rated');
+                if ($displayType === 'info') {
+                    $rawDe = (string)($it['text_de'] ?? '');
+                    $rawEn = (string)($it['text_en'] ?? '');
+                    $de = latex_escape_with_inline_placeholders($rawDe, $fieldPrefix);
+                    $en = latex_escape_with_inline_placeholders($rawEn, $fieldPrefix);
+                    $hasDe = trim($rawDe) !== '';
+                    $hasEn = trim($rawEn) !== '';
+
+                    if ($hasDe && $hasEn) {
+                        $infoText = $de . ' \\textbar{} \\textit{' . $en . '}';
+                    } elseif ($hasDe) {
+                        $infoText = $de;
+                    } else {
+                        $infoText = '\\textit{' . $en . '}';
+                    }
+
+                    $macroBody .= "  \\InfoSkillRow{" . $infoText . "}\n";
+                } else {
+                    $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                    $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
+                    $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
+                }
             }
         }
         $out .= latex_newcommand($macro, $macroBody);

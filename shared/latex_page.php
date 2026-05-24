@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 function db_competency_sections(PDO $pdo, int $gradeLevel): array {
-    $sql = "SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND cgl.grade_level=? ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
+    $sql = "SELECT c.id, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND cgl.grade_level=? ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
     $st = $pdo->prepare($sql);
     $st->execute([$gradeLevel]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -39,11 +39,25 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
 
 function render_competency_placeholder_html(string $text): string {
     $escaped = h($text);
-    return preg_replace(
-        '/\[checkbox\]/i',
+    $withCheckboxes = preg_replace(
+        '/\[checkbox(?:\:[^\]]*)?\]/i',
         '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>',
         $escaped
     ) ?? $escaped;
+    return preg_replace(
+        '/\[vline\]/i',
+        '<span class="inline-vline-placeholder" title="[vline]" aria-label="Vertikale Trennlinie"></span>',
+        $withCheckboxes
+    ) ?? $withCheckboxes;
+}
+
+function render_competency_placeholder_html_with_space(string $text): string {
+    $base = render_competency_placeholder_html($text);
+    return preg_replace(
+        '/\[space\s*=\s*[^\]]+\]/i',
+        '<span class="inline-space-placeholder" title="[space]" aria-label="Abstand"></span>',
+        $base
+    ) ?? $base;
 }
 
 require_once __DIR__ . '/latex_layout_templates.php';
@@ -121,8 +135,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
-            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
+            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge">Infozeile</span><?php endif; ?>
+            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
       </details>
@@ -135,8 +149,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
-            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
+            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge">Infozeile</span><?php endif; ?>
+            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
       </details>
@@ -154,7 +168,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   .required-skill-row{opacity:.95}
   .required-skill-row input[type="checkbox"]{cursor:not-allowed}
   .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
+  .info-row-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#f0f4ff;color:#334155;font-size:11px;font-weight:700;vertical-align:middle}
   .inline-checkbox-placeholder{display:inline-block;width:.8em;height:.8em;border:1.4px solid currentColor;border-radius:2px;vertical-align:-.08em;margin:0 .18em;box-sizing:border-box;opacity:.85}
+  .inline-vline-placeholder{display:inline-block;height:1.1em;border-left:1px solid currentColor;margin:0 .45em;vertical-align:-.15em;opacity:.75}
+  .inline-space-placeholder{display:inline-block;width:1.5em;border-bottom:1px dotted currentColor;opacity:.35;margin:0 .15em;vertical-align:.15em}
 </style>
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
