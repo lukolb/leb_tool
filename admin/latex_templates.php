@@ -12,7 +12,13 @@ ensure_latex_layout_storage_dir();
 $msg = '';
 $err = '';
 
+function is_system_annual_template(array $tpl): bool {
+    return ((string)($tpl['key_name'] ?? '') === 'annual_report')
+        && ((string)($tpl['file_path'] ?? '') === 'latex/layout.tex');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_verify();
     $action = (string)($_POST['layout_action'] ?? '');
     try {
         if ($action === 'set_default') {
@@ -25,9 +31,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'Standardvorlage gesetzt.';
         } elseif ($action === 'toggle_active') {
             $id = (int)($_POST['template_id'] ?? 0);
+            $stChk = $pdo->prepare("SELECT id, is_default FROM latex_layout_templates WHERE id=? LIMIT 1");
+            $stChk->execute([$id]);
+            $cur = $stChk->fetch(PDO::FETCH_ASSOC) ?: null;
+            if (!$cur) throw new RuntimeException('Vorlage nicht gefunden.');
+            if ((int)($cur['is_default'] ?? 0) === 1) throw new RuntimeException('Standardvorlage kann nicht deaktiviert werden.');
             $st = $pdo->prepare("UPDATE latex_layout_templates SET is_active = IF(is_active=1,0,1) WHERE id=?");
             $st->execute([$id]);
             $msg = 'Aktiv-Status aktualisiert.';
+        } elseif ($action === 'delete') {
+            $id = (int)($_POST['template_id'] ?? 0);
+            $st = $pdo->prepare("SELECT * FROM latex_layout_templates WHERE id=? LIMIT 1");
+            $st->execute([$id]);
+            $tpl = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden.');
+            if ((int)($tpl['is_default'] ?? 0) === 1) throw new RuntimeException('Standardvorlage kann nicht gelöscht werden.');
+            if (is_system_annual_template($tpl)) throw new RuntimeException('Systemvorlage Jahreszeugnis kann nicht gelöscht werden.');
+
+            $filePathRel = (string)($tpl['file_path'] ?? '');
+            $fileAbs = latex_layout_absolute_path($filePathRel);
+            $uploadRoot = realpath(latex_layout_storage_dir()) ?: latex_layout_storage_dir();
+            $fileReal = realpath($fileAbs);
+            $canDeleteFile = false;
+            if ($fileReal !== false) {
+                $prefix = rtrim(str_replace('\\', '/', $uploadRoot), '/') . '/';
+                $fileNorm = str_replace('\\', '/', $fileReal);
+                $canDeleteFile = strncmp($fileNorm, $prefix, strlen($prefix)) === 0;
+            }
+
+            $pdo->prepare("DELETE FROM latex_layout_templates WHERE id=?")->execute([$id]);
+
+            if ($canDeleteFile && is_file($fileAbs)) {
+                @unlink($fileAbs);
+            }
+            $msg = 'Layoutvorlage gelöscht.';
         } elseif ($action === 'upload') {
             $displayName = trim((string)($_POST['display_name'] ?? ''));
             $keyName = trim((string)($_POST['key_name'] ?? ''));
@@ -42,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tmp = (string)$_FILES['layout_file']['tmp_name'];
             $content = (string)file_get_contents($tmp);
             if ($content === '' || stripos($content, '<?php') !== false) throw new RuntimeException('Ungültiger Dateiinhalt.');
+
             $st = $pdo->prepare("INSERT INTO latex_layout_templates (key_name, display_name, file_path, is_default, is_active, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), is_active=VALUES(is_active), updated_at=NOW()");
             $st->execute([$keyName, $displayName, '', 0, $isActive]);
             $id = (int)$pdo->query("SELECT id FROM latex_layout_templates WHERE key_name=" . $pdo->quote($keyName))->fetchColumn();
@@ -56,37 +94,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $msg = 'Layoutvorlage gespeichert.';
         }
-    } catch (Throwable $e) { $err = $e->getMessage(); }
+    } catch (Throwable $e) {
+        $err = $e->getMessage();
+    }
 }
+
 $templates = get_latex_layout_templates($pdo, false);
 
 render_admin_header(t('latex.title', 'Kompetenz-PDF erstellen'));
-?>
-<?php if($msg): ?><div class="card" style="border-left:4px solid #067647;"><?= h($msg) ?></div><?php endif; ?>
-<?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
-<div class="card" style="margin-bottom:16px;">
-  <h3>Layoutvorlagen / Titelseiten</h3>
-  <p>Die Layout-Datei muss dieselben Makros bereitstellen wie die bestehende layout.tex, insbesondere \CoverPage und \AGSection.</p>
-  <table class="table"><tr><th>Name</th><th>Key</th><th>Aktiv</th><th>Standard</th><th>Datei</th><th>Aktionen</th></tr>
-  <?php foreach($templates as $tpl): $exists=is_file(latex_layout_absolute_path((string)$tpl['file_path'])); ?>
-    <tr><td><?= h((string)$tpl['display_name']) ?></td><td><?= h((string)$tpl['key_name']) ?></td><td><?= ((int)$tpl['is_active']===1?'Ja':'Nein') ?></td><td><?= ((int)$tpl['is_default']===1?'Ja':'Nein') ?></td><td><?= $exists?'Ja':'Nein' ?></td>
-    <td>
-      <form method="post" style="display:inline"><input type="hidden" name="layout_action" value="toggle_active"><input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>"><button class="btn" type="submit">Aktiv/Inaktiv</button></form>
-      <form method="post" style="display:inline"><input type="hidden" name="layout_action" value="set_default"><input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>"><button class="btn" type="submit">Als Standard</button></form>
-    </td></tr>
-  <?php endforeach; ?></table>
-  <h4>Neue Layoutvorlage hochladen / ersetzen</h4>
-  <form method="post" enctype="multipart/form-data">
-    <input type="hidden" name="layout_action" value="upload">
-    <label>Anzeigename <input class="input" name="display_name" required></label>
-    <label>Key <input class="input" name="key_name" required pattern="[a-z0-9_-]+"></label>
-    <label>Datei (.tex) <input class="input" type="file" name="layout_file" accept=".tex" required></label>
-    <label><input type="checkbox" name="is_active" checked> Aktiv</label>
-    <label><input type="checkbox" name="is_default"> Als Standard setzen</label>
-    <button class="btn" type="submit">Layoutvorlage hochladen</button>
-  </form>
-</div>
-<?php
 $latexBuildUrl = url('admin/pdf_preview.php');
 require __DIR__ . '/../shared/latex_page.php';
+?>
+
+<?php if($msg): ?><div class="card" style="border-left:4px solid #067647;"><?= h($msg) ?></div><?php endif; ?>
+<?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
+
+<details class="card" style="margin-top:20px;">
+  <summary><strong>Layoutvorlagen / Titelseiten</strong></summary>
+  <div style="margin-top:10px;">
+    <p>Die Layout-Datei muss dieselben Makros bereitstellen wie die bestehende layout.tex, insbesondere \CoverPage und \AGSection.</p>
+    <table class="table">
+      <tr><th>Name</th><th>Key</th><th>Aktiv</th><th>Standard</th><th>Datei</th><th>Aktionen</th></tr>
+      <?php foreach($templates as $tpl):
+        $exists = is_file(latex_layout_absolute_path((string)$tpl['file_path']));
+        $isDefault = ((int)$tpl['is_default'] === 1);
+        $isSystemAnnual = is_system_annual_template($tpl);
+        $canDelete = !$isDefault && !$isSystemAnnual;
+      ?>
+        <tr>
+          <td><?= h((string)$tpl['display_name']) ?></td>
+          <td><?= h((string)$tpl['key_name']) ?></td>
+          <td><?= ((int)$tpl['is_active']===1?'Ja':'Nein') ?></td>
+          <td><?= $isDefault ? 'Ja' : 'Nein' ?></td>
+          <td><?= $exists?'Ja':'Nein' ?></td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+              <input type="hidden" name="layout_action" value="toggle_active">
+              <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
+              <button class="btn" type="submit" <?= $isDefault ? 'disabled title="Standardvorlage kann nicht deaktiviert werden."' : '' ?>>Aktiv/Inaktiv</button>
+            </form>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+              <input type="hidden" name="layout_action" value="set_default">
+              <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
+              <button class="btn" type="submit" <?= ((int)$tpl['is_active']!==1) ? 'disabled title="Nur aktive Vorlagen können Standard sein."' : '' ?>>Als Standard</button>
+            </form>
+            <?php if ($canDelete): ?>
+              <form method="post" style="display:inline" onsubmit="return confirm('Vorlage wirklich löschen?');">
+                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                <input type="hidden" name="layout_action" value="delete">
+                <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
+                <button class="btn" type="submit">Löschen</button>
+              </form>
+            <?php else: ?>
+              <button class="btn" type="button" disabled title="Standardvorlage kann nicht gelöscht werden.">Löschen</button>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    </table>
+
+    <h4>Neue Layoutvorlage hochladen / ersetzen</h4>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="layout_action" value="upload">
+      <label>Anzeigename <input class="input" name="display_name" required></label>
+      <label>Key <input class="input" name="key_name" required pattern="[a-z0-9_-]+"></label>
+      <label>Datei (.tex) <input class="input" type="file" name="layout_file" accept=".tex" required></label>
+      <label><input type="checkbox" name="is_active" checked> Aktiv</label>
+      <label><input type="checkbox" name="is_default"> Als Standard setzen</label>
+      <button class="btn" type="submit">Layoutvorlage hochladen</button>
+    </form>
+  </div>
+</details>
+<?php
 render_admin_footer();
