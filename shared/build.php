@@ -612,8 +612,22 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     $out = '';
     $count = count($parts);
     for ($i = 0; $i < $count; $i++) {
-        $out .= latex_escape($parts[$i]);
+        $part = (string)$parts[$i];
+        $extraSpaceCount = 0;
+        if ($i < $count - 1 && preg_match('/( +)$/', $part, $m)) {
+            $spaces = (string)($m[1] ?? '');
+            $spaceCount = strlen($spaces);
+            if ($spaceCount > 1) {
+                $extraSpaceCount = $spaceCount - 1;
+                $part = substr($part, 0, -$spaceCount) . ' ';
+            }
+        }
+
+        $out .= latex_escape($part);
         if ($i < $count - 1) {
+            if ($extraSpaceCount > 0) {
+                $out .= '\\hspace{' . (1.5 * $extraSpaceCount) . 'mm}';
+            }
             $fieldName = $safePrefix . '-' . ($i + 1);
             $out .= '\\InlineCrossCheckbox{' . latex_escape($fieldName) . '}';
         }
