@@ -402,7 +402,7 @@
 }
 
 \newcommand{\RenderSkillSections}{%
-\BeginSkillsTable
+\ifShowSTRatings\BeginSkillsTableST\else\BeginSkillsTable\fi
 \AllSkillSections
 \EndSkillsTable
 }
@@ -410,8 +410,8 @@
 \newcommand{\SkillSectionWithGradePageBreak}[4]{\EndSkillsTable\newpage\BeginSkillsTableAfterExplicitPageBreak\SkillSectionWithGrade{#1}{#2}{#3}{#4}}
 \newcommand{\BeginSkillsTableST}{%
 \small\setlength{\LTleft}{-4mm}\setlength{\LTright}{0mm}\vspace{-4mm}
-\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{109mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|}
-\RatingHeaderST\noalign{\vspace{-8mm}}\endfirsthead
+\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{109mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|>{\centering\arraybackslash}m{6mm}|}
+\RatingHeaderST\noalign{\vspace{-6mm}}\endfirsthead
 \RatingHeaderST\hline\noalign{\vspace{-1mm}}\endhead
 }
 \newcommand{\BeginSkillSectionST}[2]{%
@@ -422,24 +422,16 @@
 \hline
 }
 \newcommand{\SkillSectionST}[3]{%
-\EndSkillsTable%
-\BeginSkillsTableST%
 \BeginSkillSectionST{#1}{#2}%
 #3%
 \EndSkillSection%
-\EndSkillsTable%
-\BeginSkillsTable%
 }
 \newcommand{\SkillSectionSTWithGrade}[4]{%
-\EndSkillsTable%
-\BeginSkillsTableST%
 \BeginSkillSectionWithGradeST{#1}{#2}{#4}%
 #3%
 \EndSkillSection%
-\EndSkillsTable%
-\BeginSkillsTable%
 }
-\newcommand{\SkillSectionSTPageBreak}[3]{\newpage\SkillSectionST{#1}{#2}{#3}}
-\newcommand{\SkillSectionSTWithGradePageBreak}[4]{\newpage\SkillSectionSTWithGrade{#1}{#2}{#3}{#4}}
+\newcommand{\SkillSectionSTPageBreak}[3]{\EndSkillsTable\newpage\BeginSkillsTableST\SkillSectionST{#1}{#2}{#3}}
+\newcommand{\SkillSectionSTWithGradePageBreak}[4]{\EndSkillsTable\newpage\BeginSkillsTableST\SkillSectionSTWithGrade{#1}{#2}{#3}{#4}}
 \newcommand{\SkillSectionPageBreakST}[3]{\SkillSectionSTPageBreak{#1}{#2}{#3}}
 \newcommand{\SkillSectionPageBreakSTWithGrade}[4]{\SkillSectionSTWithGradePageBreak{#1}{#2}{#3}{#4}}

@@ -367,6 +367,7 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks, $selectedGrade, $gradeFieldCategoryIds, $enableStudentTeacherRatings);
     $generatedDataTex = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n")
         . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
+        . "\\newif\\ifShowSTRatings\n" . ($enableStudentTeacherRatings ? "\\ShowSTRatingstrue\n" : "\\ShowSTRatingsfalse\n")
         . $generatedDataTex;
 }
 
