@@ -1,0 +1,11 @@
+<?php
+declare(strict_types=1);
+require __DIR__ . '/../bootstrap.php'; require __DIR__ . '/_layout.php'; require_teacher();
+$pdo=db(); $ok=null; $err=null;
+if($_SERVER['REQUEST_METHOD']==='POST'){ try{ csrf_verify(); $cat=(int)($_POST['category_id']??0); $sub=(int)($_POST['subcategory_id']??0); $text=trim((string)($_POST['proposal_text_de']??'')); if($text==='') throw new RuntimeException('Text fehlt'); $pdo->prepare("INSERT INTO competency_requests(teacher_user_id,category_id,subcategory_id,proposal_text_de,proposal_text_en,status) VALUES (?,?,?,?,?,'pending')")->execute([(int)current_user()['id'],$cat?:null,$sub?:null,$text,trim((string)($_POST['proposal_text_en']??''))]); $adminMails=$pdo->query("SELECT email FROM users WHERE role='admin' AND is_active=1 AND deleted_at IS NULL")->fetchAll(PDO::FETCH_COLUMN)?:[]; foreach($adminMails as $m){ if(filter_var($m,FILTER_VALIDATE_EMAIL)){ @send_email((string)$m,'Neue Kompetenz-Anfrage','<p>Es liegt ein neuer Kompetenz-Antrag vor.</p><p>'.h($text).'</p>'); }} $ok='Antrag gesendet.'; }catch(Throwable $e){$err=$e->getMessage();}}
+$cats=$pdo->query("SELECT * FROM competency_categories ORDER BY sort_order,id")->fetchAll(PDO::FETCH_ASSOC);
+$subs=$pdo->query("SELECT * FROM competency_subcategories ORDER BY category_id,sort_order,id")->fetchAll(PDO::FETCH_ASSOC);
+render_teacher_header('Kompetenz-Anträge'); ?>
+<div class="card"><h1>Neue Kompetenz beantragen</h1><?php if($ok):?><div class="alert success"><?=h($ok)?></div><?php endif; ?><?php if($err):?><div class="alert danger"><?=h($err)?></div><?php endif; ?>
+<form method="post"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><label>Kategorie</label><select class="input" name="category_id"><option value="">-</option><?php foreach($cats as $c):?><option value="<?=$c['id']?>"><?=h($c['name_de'])?></option><?php endforeach;?></select><label>Unterkategorie</label><select class="input" name="subcategory_id"><option value="">-</option><?php foreach($subs as $s):?><option value="<?=$s['id']?>"><?=h($s['name_de'])?></option><?php endforeach;?></select><label>Vorschlag (DE)</label><textarea class="input" name="proposal_text_de" required></textarea><label>Vorschlag (EN)</label><textarea class="input" name="proposal_text_en"></textarea><button class="btn">Antrag senden</button></form></div>
+<?php render_teacher_footer();
