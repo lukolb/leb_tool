@@ -150,6 +150,10 @@
 }
 
 \newcommand{\InlineCrossRadio}[4]{%
+\InlineCrossRadioSized{#1}{#2}{#3}{#4}%
+}
+
+\newcommand{\InlineCrossRadioSized}[4]{%
 \ifnum#4=1
   \InlineCrossRadioBorder{#1}{#2}{#3}%
 \else
@@ -161,11 +165,11 @@
 \newcommand{\InlineCrossRadioPlain}[3]{%
 \raisebox{-0.15\height}{%
 \radioButton[
+  \symbolchoice{cross}
   \BC{}
   \BG{}
   \textColor{gisblue}
   \W{0}
-  \symbolchoice{cross}
 ]{#1}{#3mm}{#3mm}{#2}%
 }%
 }
@@ -173,11 +177,11 @@
 \newcommand{\InlineCrossRadioBorder}[3]{%
 \raisebox{-0.15\height}{%
 \radioButton[
+  \symbolchoice{cross}
   \BC{0 0 0}
   \BG{}
   \textColor{gisblue}
   \W{1}
-  \symbolchoice{cross}
 ]{#1}{#3mm}{#3mm}{#2}%
 }%
 }
