@@ -698,11 +698,22 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                 $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
                 $displayType = (string)($it['display_type'] ?? 'rated');
                 if ($displayType === 'info') {
-                    $macroBody .= "  \\InfoSkillRow{"
-                        . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix)
-                        . "}{"
-                        . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix)
-                        . "}\n";
+                    $rawDe = (string)($it['text_de'] ?? '');
+                    $rawEn = (string)($it['text_en'] ?? '');
+                    $de = latex_escape_with_inline_placeholders($rawDe, $fieldPrefix);
+                    $en = latex_escape_with_inline_placeholders($rawEn, $fieldPrefix);
+                    $hasDe = trim($rawDe) !== '';
+                    $hasEn = trim($rawEn) !== '';
+
+                    if ($hasDe && $hasEn) {
+                        $infoText = $de . ' \\textbar{} \\textit{' . $en . '}';
+                    } elseif ($hasDe) {
+                        $infoText = $de;
+                    } else {
+                        $infoText = '\\textit{' . $en . '}';
+                    }
+
+                    $macroBody .= "  \\InfoSkillRow{" . $infoText . "}\n";
                 } else {
                     $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
