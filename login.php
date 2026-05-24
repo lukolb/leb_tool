@@ -5,6 +5,25 @@ require __DIR__ . '/bootstrap.php';
 $err = '';
 $email = $_POST['email'] ?? '';
 $pass  = $_POST['password'] ?? '';
+$nextRaw = (string)($_GET['next'] ?? $_POST['next'] ?? '');
+$needAdmin = ((string)($_GET['need_admin'] ?? '') === '1');
+
+function safe_login_next_path(string $nextRaw): string {
+  $nextRaw = trim($nextRaw);
+  if ($nextRaw === '') return '';
+  if (preg_match('~^[a-z][a-z0-9+.-]*://~i', $nextRaw)) return '';
+  if (strpos($nextRaw, '//') === 0) return '';
+  $parts = parse_url($nextRaw);
+  if ($parts === false) return '';
+  if (isset($parts['host']) || isset($parts['scheme'])) return '';
+  $path = (string)($parts['path'] ?? '');
+  if ($path === '' || $path[0] !== '/') return '';
+  if (strpos($path, '/..') !== false || strpos($path, "\0") !== false) return '';
+  $query = (string)($parts['query'] ?? '');
+  return $path . ($query !== '' ? ('?' . $query) : '');
+}
+
+$next = safe_login_next_path($nextRaw);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
@@ -34,6 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           'actual_role' => $actualRole,
         ];
         audit('login', (int)$u['id']);
+        if ($next !== '') {
+          header('Location: ' . APP_BASE_URL . $next);
+          exit;
+        }
         if ($actualRole === 'admin') {
           redirect('role_select.php');
         }
@@ -77,9 +100,13 @@ $logo = $b['logo_path'] ?? '';
       <?php if ($err): ?>
         <div class="alert danger"><strong><?=h($err)?></strong></div>
       <?php endif; ?>
+      <?php if ($needAdmin): ?>
+        <div class="alert danger"><strong>Für diesen Bereich sind Adminrechte erforderlich. Bitte mit einem Admin-Konto anmelden.</strong></div>
+      <?php endif; ?>
 
       <form id="loginForm" method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="next" value="<?=h($next)?>">
         <label><?=h(t('auth.login.email_label'))?></label>
         <input name="email" type="email" value="<?=h((string)$email)?>" required>
 

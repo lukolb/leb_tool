@@ -37,7 +37,12 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
     return $sections;
 }
 
+require_once __DIR__ . '/latex_layout_templates.php';
 $pdo = db();
+ensure_default_latex_layout_template($pdo);
+$layoutTemplates = get_latex_layout_templates($pdo, true);
+$defaultLayout = get_default_latex_layout_template($pdo);
+$defaultLayoutId = (int)($defaultLayout['id'] ?? ($layoutTemplates[0]['id'] ?? 0));
 $selectedGrade = (int)($_GET['grade_level'] ?? $_POST['grade_level'] ?? 1);
 if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $sectionsDb = db_competency_sections($pdo, $selectedGrade);
@@ -65,6 +70,15 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="hidden" name="show_ag" value="0">
     <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
   </label>
+</div>
+
+<div class="card" style="padding:12px;margin:12px 0;">
+  <label><strong>Titelseitenvorlage</strong></label>
+  <select class="input" name="layout_template_id">
+    <?php foreach ($layoutTemplates as $tpl): ?>
+      <option value="<?= h((string)$tpl['id']) ?>" <?= ((int)$tpl['id'] === $defaultLayoutId) ? 'selected' : '' ?>><?= h((string)$tpl['display_name']) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
+    <?php endforeach; ?>
+  </select>
 </div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
   <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
