@@ -680,8 +680,8 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                 }
                 $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
                 $fieldPrefix = 'skillcb-' . ((string)($it['code'] ?? '') !== '' ? (string)$it['code'] : ('id' . (string)($it['id'] ?? '')));
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix . '-de') . "}%\n";
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix . '-en') . "}\n";
+                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
+                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
             }
         }
         $out .= latex_newcommand($macro, $macroBody);
