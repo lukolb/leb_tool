@@ -859,8 +859,9 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
         $out .= "% SECTION: " . latex_escape($catDe) . "\n";
         $macroBody = "";
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
+            $subSkillMacro = $enableStudentTeacherRatings ? 'SubSkillST' : 'SubSkill';
             if ($subDe !== '') {
-                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
+                $macroBody .= "  \\" . $subSkillMacro . "{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
             }
             foreach (($subData['items'] ?? []) as $it) {
                 $code = trim((string)($it['code'] ?? ''));
@@ -869,6 +870,8 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                 }
                 $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
                 $displayType = (string)($it['display_type'] ?? 'rated');
+                $rowMacro = $enableStudentTeacherRatings ? 'SkillRowST' : 'SkillRow';
+                $infoRowMacro = $enableStudentTeacherRatings ? 'InfoSkillRowST' : 'InfoSkillRow';
                 if ($displayType === 'info') {
                     $rawDe = (string)($it['text_de'] ?? '');
                     $rawEn = (string)($it['text_en'] ?? '');
@@ -885,9 +888,9 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                         $infoText = $enItalicSafe;
                     }
 
-                    $macroBody .= "  \\InfoSkillRow{" . $infoText . "}\n";
+                    $macroBody .= "  \\" . $infoRowMacro . "{" . $infoText . "}\n";
                 } else {
-                    $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                    $macroBody .= "  \\" . $rowMacro . "{" . latex_escape($code) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
                 }
