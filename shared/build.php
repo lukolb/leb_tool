@@ -621,8 +621,32 @@ function parse_checkbox_placeholder_options(string $token): array {
     return $opts;
 }
 
+function parse_space_placeholder_to_latex(string $token): ?string {
+    if (!preg_match('/^\[space\s*=\s*([^\]]+)\]$/i', $token, $m)) {
+        return null;
+    }
+    $raw = strtolower(trim((string)($m[1] ?? '')));
+    $raw = str_replace(',', '.', $raw);
+    if (!preg_match('/^([0-9]+(?:\.[0-9]+)?)\s*(mm|cm)?$/', $raw, $mm)) {
+        return null;
+    }
+    $num = (float)($mm[1] ?? 0);
+    $unit = (string)($mm[2] ?? 'mm');
+    if ($unit === '') $unit = 'mm';
+    if ($unit === 'cm') {
+        $num *= 10.0;
+        $unit = 'mm';
+    }
+    if ($num < 0 || $num > 30) {
+        return null;
+    }
+    $val = rtrim(rtrim(number_format($num, 2, '.', ''), '0'), '.');
+    if ($val === '') $val = '0';
+    return '\\hspace{' . $val . $unit . '}';
+}
+
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
-    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\]|\[vline\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\]|\[vline\]|\[space\s*=\s*[^\]]+\])/i', $t, -1, PREG_SPLIT_DELIM_CAPTURE);
     if (!is_array($tokens)) { return latex_escape($t); }
     if (count($tokens) === 1) { return latex_escape($t); }
 
@@ -650,10 +674,16 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
             $out .= '\\InlineVLine';
             continue;
         }
+        $spaceLatex = parse_space_placeholder_to_latex($token);
+        if ($spaceLatex !== null) {
+            $out .= $spaceLatex;
+            continue;
+        }
 
         $part = $token;
         $nextToken = ($i + 1 < $count) ? (string)$tokens[$i + 1] : '';
         $extraSpaceCount = 0;
+        // LaTeX collapses normal multiple spaces; for controlled spacing use [space=...].
         if (preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', $nextToken) && preg_match('/( +)$/', $part, $m)) {
             $spaces = (string)($m[1] ?? '');
             $spaceCount = strlen($spaces);
