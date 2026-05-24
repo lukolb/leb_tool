@@ -209,9 +209,83 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
   } catch(Throwable $e){ if($pdo->inTransaction()) $pdo->rollBack(); bad($e->getMessage()); }
 }
 
+
+
+$reqHighlightId = (int)($_GET['request_id'] ?? 0);
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !isset($_SERVER['HTTP_X_REQUESTED_WITH']) && (string)($_POST['action']??'')==='review_competency_request') {
+  try { csrf_verify();
+    $requestId = (int)($_POST['request_id'] ?? 0);
+    $decision = (string)($_POST['decision'] ?? '');
+    $adminComment = trim((string)($_POST['admin_comment'] ?? ''));
+    if ($requestId<=0 || !in_array($decision,['approve','reject'],true)) throw new RuntimeException('Ungültige Aktion.');
+    $st=$pdo->prepare("SELECT * FROM competency_requests WHERE id=? LIMIT 1"); $st->execute([$requestId]); $req=$st->fetch(PDO::FETCH_ASSOC);
+    if(!$req) throw new RuntimeException('Antrag nicht gefunden.');
+    if((string)$req['status']!=='pending') throw new RuntimeException('Antrag wurde bereits bearbeitet.');
+
+    $pdo->beginTransaction();
+    if($decision==='approve'){
+      $catId=(int)($req['category_id']??0); $subId=(int)($req['subcategory_id']??0);
+      if($catId<=0) throw new RuntimeException('Ungültige Kategorie im Antrag.');
+      if($subId>0){ $stSub=$pdo->prepare("SELECT category_id FROM competency_subcategories WHERE id=? LIMIT 1"); $stSub->execute([$subId]); $sCat=(int)($stSub->fetchColumn()?:0); if($sCat!==$catId) throw new RuntimeException('Unterkategorie passt nicht zur Kategorie.'); }
+      $stDup=$pdo->prepare("SELECT approved_competency_id FROM competency_requests WHERE id=? AND status='approved' LIMIT 1"); $stDup->execute([$requestId]);
+      $already=(int)($stDup->fetchColumn()?:0);
+      if($already<=0){
+        $stCat=$pdo->prepare("SELECT name_de FROM competency_categories WHERE id=? LIMIT 1"); $stCat->execute([$catId]); $catDe=(string)($stCat->fetchColumn()?:('CAT'.$catId));
+        $code = next_comp_code($pdo, $catId, $catDe);
+        $sort = $subId>0 ? max_sort($pdo,'competencies','subcategory_id=?',[$subId])+1 : max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$catId])+1;
+        $meta=json_decode((string)($req['admin_note']??''),true); if(!is_array($meta)) $meta=[];
+        $isRequired=(int)($meta['is_required']??0)===1?1:0;
+        $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,is_required,sort_order) VALUES (?,?,?,?,?,?,?)")
+          ->execute([$catId,$subId>0?$subId:null,$code,(string)$req['proposal_text_de'],(string)($req['proposal_text_en']??''),$isRequired,$sort]);
+        $compId=(int)$pdo->lastInsertId();
+        foreach((array)($meta['grade_levels']??[]) as $g){$gi=(int)$g; if($gi>=1&&$gi<=4){$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]);}}
+      } else { $compId = $already; }
+      $pdo->prepare("UPDATE competency_requests SET status='approved', reviewed_by_user_id=?, reviewed_at=NOW(), approved_competency_id=?, admin_note=? WHERE id=? AND status='pending'")
+          ->execute([(int)current_user()['id'],$compId,$adminComment,$requestId]);
+    } else {
+      $pdo->prepare("UPDATE competency_requests SET status='rejected', reviewed_by_user_id=?, reviewed_at=NOW(), admin_note=? WHERE id=? AND status='pending'")
+          ->execute([(int)current_user()['id'],$adminComment,$requestId]);
+    }
+    $pdo->commit();
+    header('Location: '.url('admin/competencies.php?request_id='.$requestId.'#competency-request-'.$requestId)); exit;
+  } catch(Throwable $e){ if($pdo->inTransaction()) $pdo->rollBack(); $_SESSION['competency_requests_error']=$e->getMessage(); header('Location: '.url('admin/competencies.php#competency-requests')); exit; }
+}
+
+$requestsRows = $pdo->query("SELECT cr.*, u.display_name AS teacher_name, u.email AS teacher_email, cat.name_de AS cat_de, sub.name_de AS sub_de FROM competency_requests cr LEFT JOIN users u ON u.id=cr.teacher_user_id LEFT JOIN competency_categories cat ON cat.id=cr.category_id LEFT JOIN competency_subcategories sub ON sub.id=cr.subcategory_id ORDER BY FIELD(cr.status,'pending','approved','rejected'), cr.created_at DESC, cr.id DESC")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$pendingRequests = array_values(array_filter($requestsRows, static fn($r)=>(string)$r['status']==='pending'));
+$doneRequests = array_values(array_filter($requestsRows, static fn($r)=>(string)$r['status']!=='pending'));
+
 render_admin_header('Kompetenzen verwalten'); ?>
 <div class="card"><h1>Kompetenzen verwalten</h1></div>
 <div id="msg" class="card" style="display:none;"></div>
+
+<?php if(isset($_SESSION['competency_requests_error'])): ?><div class="card alert danger"><?=h((string)$_SESSION['competency_requests_error']); unset($_SESSION['competency_requests_error']);?></div><?php endif; ?>
+<div class="card" id="competency-requests">
+  <h2>Kompetenzanträge</h2>
+  <p class="muted">Offene Anträge zuerst. Direktlink: <code>#competency-requests</code></p>
+  <?php if(!$pendingRequests): ?><p class="muted">Keine offenen Anträge.</p><?php endif; ?>
+  <?php foreach($pendingRequests as $r): $rid=(int)$r['id']; $meta=json_decode((string)($r['admin_note']??''),true); if(!is_array($meta)) $meta=[]; $hl=$reqHighlightId===$rid; ?>
+  <div id="competency-request-<?= $rid ?>" class="card" style="margin:10px 0; border-left:4px solid <?= $hl ? '#f59e0b' : '#0b57d0' ?>; background:<?= $hl ? '#fffbea' : '#fff' ?>;">
+    <div><strong><?=h((string)($r['teacher_name']?:$r['teacher_email']?:'Lehrkraft'))?></strong> · <?=h((string)$r['created_at'])?> · Status: <strong>offen</strong></div>
+    <div>Kategorie: <?=h((string)($r['cat_de']??'—'))?> | Unterkategorie: <?=h((string)($r['sub_de']?:'Ohne Unterkategorie'))?></div>
+    <div><strong>DE:</strong> <?=nl2br(h((string)$r['proposal_text_de']))?></div>
+    <div><strong>EN:</strong> <?=nl2br(h((string)($r['proposal_text_en']?:'—')))?></div>
+    <div>Klassenstufen: <?=h(implode(', ', array_map('strval', (array)($meta['grade_levels']??[]))) ?: '—')?> · Typ: <?= ((int)($meta['is_required']??0)===1?'Pflicht':'Optional') ?></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      <form method="post" onsubmit="return confirm('Antrag genehmigen und als Kompetenz anlegen?');"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="review_competency_request"><input type="hidden" name="request_id" value="<?= $rid ?>"><input type="hidden" name="decision" value="approve"><input class="input" type="text" name="admin_comment" placeholder="Kommentar (optional)"><button class="btn" type="submit">Genehmigen</button></form>
+      <form method="post" onsubmit="return confirm('Antrag ablehnen?');"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="review_competency_request"><input type="hidden" name="request_id" value="<?= $rid ?>"><input type="hidden" name="decision" value="reject"><input class="input" type="text" name="admin_comment" placeholder="Begründung (optional)"><button class="btn" type="submit">Ablehnen</button></form>
+    </div>
+  </div>
+  <?php endforeach; ?>
+  <details style="margin-top:10px;"><summary><strong>Archiv (genehmigt/abgelehnt)</strong></summary>
+    <?php foreach($doneRequests as $r): $rid=(int)$r['id']; $meta=json_decode((string)($r['admin_note']??''),true); ?>
+      <div id="competency-request-<?= $rid ?>" class="card" style="margin:8px 0;"><strong>#<?= $rid ?></strong> · <?=h((string)$r['status'])?> · <?=h((string)($r['teacher_name']?:$r['teacher_email']?:'Lehrkraft'))?> · <?=h((string)$r['created_at'])?><br>Kategorie: <?=h((string)($r['cat_de']??'—'))?> | Unterkategorie: <?=h((string)($r['sub_de']?:'Ohne Unterkategorie'))?><br><?=nl2br(h((string)$r['proposal_text_de']))?><br><small>Kommentar: <?=h(is_array($meta)?((string)($meta['comment']??'')):(string)($r['admin_note']??''))?></small></div>
+    <?php endforeach; ?>
+  </details>
+</div>
+<?php if($reqHighlightId>0): ?><script>(function(){const el=document.getElementById('competency-request-<?= (int)$reqHighlightId ?>'); if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}})();</script><?php endif; ?>
+
 <?php if(isset($_SESSION['competency_import_flash'])): $importFlash=$_SESSION['competency_import_flash']; unset($_SESSION['competency_import_flash']); ?>
 <div class="card alert success">
   <strong>Import abgeschlossen:</strong>
