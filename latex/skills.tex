@@ -291,7 +291,7 @@
 \\ \hline
 }
 \newcommand{\SectionGradeField}[1]{%
-\hspace{1mm}\fontsize{8pt}{9pt}\selectfont(Note \textbar{} Grade \textField[\BC{}\BG{}\textColor{gisblue}\W{0}]{grade-#1}{22mm}{4mm})%
+\hspace{1mm}\fontsize{8pt}{9pt}\selectfont(Note \textbar{} Grade \textField[\BC{}\BG{}\textColor{gisblue}\W{0}]{grade-#1}{12mm}{4mm})%
 }
 \newcommand{\BeginSkillSectionWithGrade}[3]{%
 \noalign{\needspace{32mm}}
@@ -467,3 +467,5 @@
 }
 \newcommand{\SkillSectionSTPageBreak}[3]{\newpage\SkillSectionST{#1}{#2}{#3}}
 \newcommand{\SkillSectionSTWithGradePageBreak}[4]{\newpage\SkillSectionSTWithGrade{#1}{#2}{#3}{#4}}
+\newcommand{\SkillSectionPageBreakST}[3]{\SkillSectionSTPageBreak{#1}{#2}{#3}}
+\newcommand{\SkillSectionPageBreakSTWithGrade}[4]{\SkillSectionSTWithGradePageBreak{#1}{#2}{#3}{#4}}
