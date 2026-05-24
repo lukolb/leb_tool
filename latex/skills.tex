@@ -120,6 +120,17 @@
 \\ \hline
 }
 
+\newcommand{\InfoSkillRow}[2]{%
+\rule[-2.4mm]{0pt}{6.3mm}%
+\multicolumn{6}{|>{\raggedright\arraybackslash}m{18.475cm}|}{%
+  \hspace*{4mm}%
+  {\fontsize{8pt}{9.5pt}\selectfont
+    \if\relax\detokenize{#1}\relax\textit{#2}\else\if\relax\detokenize{#2}\relax#1\else#1 \textbar{} \textit{#2}\fi\fi%
+  }%
+}%
+\\ \hline
+}
+
 \newcommand{\SubSkill}[2]{%
 
 \noalign{\needspace{14mm}}

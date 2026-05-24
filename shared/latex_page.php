@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 function db_competency_sections(PDO $pdo, int $gradeLevel): array {
-    $sql = "SELECT c.id, c.text_de, c.text_en, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND cgl.grade_level=? ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
+    $sql = "SELECT c.id, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, c.is_required, c.code, c.subcategory_id, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id, s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND cgl.grade_level=? ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
     $st = $pdo->prepare($sql);
     $st->execute([$gradeLevel]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -121,7 +121,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
+            <?= render_competency_placeholder_html((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="required-badge" style="background:#f0f4ff;color:#334155;">Infozeile</span><?php endif; ?>
             <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
@@ -135,7 +135,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html((string)$item['text_de']) ?>
+            <?= render_competency_placeholder_html((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="required-badge" style="background:#f0f4ff;color:#334155;">Infozeile</span><?php endif; ?>
             <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>

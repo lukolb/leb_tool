@@ -628,7 +628,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     }
 
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.code, c.text_de, c.text_en, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
@@ -681,10 +681,19 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                 if ($code === '') {
                     continue;
                 }
-                $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
                 $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
-                $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
+                $displayType = (string)($it['display_type'] ?? 'rated');
+                if ($displayType === 'info') {
+                    $macroBody .= "  \\InfoSkillRow{"
+                        . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix)
+                        . "}{"
+                        . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix)
+                        . "}\n";
+                } else {
+                    $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                    $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
+                    $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
+                }
             }
         }
         $out .= latex_newcommand($macro, $macroBody);
