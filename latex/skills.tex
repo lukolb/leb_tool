@@ -88,6 +88,26 @@
 \begin{minipage}[c][6mm][c]{11mm}\centering\RB{#1}{ma}\end{minipage}
 }
 
+\newcommand{\RatingButtonsST}[1]{%
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-T}{na}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-S}{be}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-T}{be}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-S}{pr}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-T}{pr}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-S}{st}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-T}{st}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-S}{ma}\end{minipage}
+&
+\begin{minipage}[c][6mm][c]{6.5mm}\centering\RB{#1-T}{ma}\end{minipage}
+}
+
 % ------------------------------------------------
 % Skill Row
 % ------------------------------------------------
@@ -202,6 +222,22 @@
 }%
 \\ \hline
 }
+\newcommand{\InfoSkillRowST}[1]{%
+\noalign{\needspace{8mm}}%
+\multicolumn{10}{|>{\raggedright\arraybackslash}m{18.475cm}|}{%
+  \begin{minipage}[c][6.8mm][c]{17.6cm}
+    \hspace*{4mm}%
+    \begin{minipage}[c]{16.8cm}
+      \setlength{\parindent}{0pt}%
+      \raggedright
+      {\fontsize{8pt}{9.5pt}\selectfont
+        #1%
+      }%
+    \end{minipage}%
+  \end{minipage}%
+}%
+\\ \hline
+}
 
 \newcommand{\SubSkill}[2]{%
 
@@ -221,6 +257,68 @@
 \end{minipage}
 }
 \\ \hline
+}
+\newcommand{\SubSkillST}[2]{%
+\noalign{\needspace{14mm}}
+\multicolumn{10}{|>{\raggedright\arraybackslash}m{18.475cm}|}{%
+\cellcolor{lightgray}
+\begin{minipage}[c][7.2mm][c]{11.8cm}
+  \hspace*{4mm}%
+  \begin{minipage}[c]{10.8cm}
+    \setlength{\parindent}{0pt}%
+    \raggedright
+    {\fontsize{9pt}{12pt}\selectfont
+      \textbf{#1 | \textit{#2}}
+    }
+  \end{minipage}%
+\end{minipage}
+}
+\\ \hline
+}
+\newcommand{\SkillRowST}[3]{%
+\rule[-2.4mm]{0pt}{6.3mm}%
+\begin{minipage}[c]{104mm}
+  \vspace{0.7mm}
+  \setlength{\parindent}{0pt}%
+  \raggedright
+  {\fontsize{8pt}{9.5pt}\selectfont
+    #2 \textbar{} \textit{#3}%
+  }
+  \vspace{0.7mm}
+\end{minipage}
+&
+\RatingButtonsST{#1}
+\\ \hline
+}
+\newcommand{\SectionGradeField}[1]{%
+\hspace{1mm}\fontsize{8pt}{9pt}\selectfont(Note \textbar{} Grade \textField[\BC{}\BG{}\textColor{gisblue}\W{0}]{grade-#1}{22mm}{4mm})%
+}
+\newcommand{\BeginSkillSectionWithGrade}[3]{%
+\noalign{\needspace{32mm}}
+\noalign{\vspace{8mm}}
+\multicolumn{6}{@{}l@{}}{%
+\hspace*{6mm}%
+{\fontsize{10pt}{12pt}\selectfont
+\textbf{\MakeUppercase{#1} | \textit{\MakeUppercase{#2}}}\SectionGradeField{#3}}
+}
+\\[0.3mm]
+\hline
+}
+\newcommand{\BeginSkillSectionWithGradeST}[3]{%
+\noalign{\needspace{32mm}}
+\noalign{\vspace{8mm}}
+\multicolumn{10}{@{}l@{}}{%
+\hspace*{6mm}%
+{\fontsize{10pt}{12pt}\selectfont
+\textbf{\MakeUppercase{#1} | \textit{\MakeUppercase{#2}}}\SectionGradeField{#3}}
+}
+\\[0.3mm]
+\hline
+}
+\newcommand{\RatingHeaderST}{%
+\multicolumn{1}{@{}m{107mm}@{}}{} & \multicolumn{1}{m{6.5mm}}{} & \multicolumn{2}{m{13mm}}{\centering\BeginningIcon} & \multicolumn{2}{m{13mm}}{\centering\ProgressingIcon} & \multicolumn{2}{m{13mm}}{\centering\StrengtheningIcon} & \multicolumn{2}{m{13mm}}{\centering\MasteringIcon}\\[-2mm]
+\multicolumn{1}{@{}m{107mm}@{}}{} & \multicolumn{1}{m{6.5mm}}{} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont Beginnen} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont Entwickeln} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont Festigen} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont Meistern}\\[-2mm]
+\multicolumn{1}{@{}m{107mm}@{}}{} & \multicolumn{1}{m{6.5mm}}{\centering\fontsize{5pt}{5pt}\selectfont n/a\\[-0.2mm]\fontsize{5pt}{5pt}\selectfont T} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Beginning}\\[-0.2mm]\fontsize{5pt}{5pt}\selectfont S\hspace{3mm}T} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Progressing}\\[-0.2mm]\fontsize{5pt}{5pt}\selectfont S\hspace{3mm}T} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}\\[-0.2mm]\fontsize{5pt}{5pt}\selectfont S\hspace{3mm}T} & \multicolumn{2}{m{13mm}}{\centering\fontsize{5pt}{5pt}\selectfont \textit{Mastering}\\[-0.2mm]\fontsize{5pt}{5pt}\selectfont S\hspace{3mm}T}\\
 }
 
 % ------------------------------------------------
@@ -326,3 +424,46 @@
 \AllSkillSections
 \EndSkillsTable
 }
+\newcommand{\SkillSectionWithGrade}[4]{\BeginSkillSectionWithGrade{#1}{#2}{#4}#3\EndSkillSection}
+\newcommand{\SkillSectionWithGradePageBreak}[4]{\EndSkillsTable\newpage\BeginSkillsTableAfterExplicitPageBreak\SkillSectionWithGrade{#1}{#2}{#3}{#4}}
+\newcommand{\BeginSkillsTableST}{%
+\small\setlength{\LTleft}{-4mm}\setlength{\LTright}{0mm}\vspace{-4mm}
+\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{109mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|>{\centering\arraybackslash}m{6.5mm}|}
+\RatingHeaderST\noalign{\vspace{-8mm}}\endfirsthead
+\RatingHeaderST\hline\noalign{\vspace{-1mm}}\endhead
+}
+\newcommand{\BeginSkillSectionST}[2]{%
+\noalign{\needspace{32mm}}
+\noalign{\vspace{8mm}}
+\multicolumn{10}{@{}l@{}}{%
+\hspace*{6mm}{\fontsize{10pt}{12pt}\selectfont\textbf{\MakeUppercase{#1} | \textit{\MakeUppercase{#2}}}}
+}
+\\[0.3mm]
+\hline
+}
+\newcommand{\SkillSectionST}[3]{%
+\EndSkillsTable%
+\BeginSkillsTableST%
+\let\SkillRow\SkillRowST%
+\let\SubSkill\SubSkillST%
+\let\InfoSkillRow\InfoSkillRowST%
+\BeginSkillSectionST{#1}{#2}%
+#3%
+\EndSkillSection%
+\EndSkillsTable%
+\BeginSkillsTable%
+}
+\newcommand{\SkillSectionSTWithGrade}[4]{%
+\EndSkillsTable%
+\BeginSkillsTableST%
+\let\SkillRow\SkillRowST%
+\let\SubSkill\SubSkillST%
+\let\InfoSkillRow\InfoSkillRowST%
+\BeginSkillSectionWithGradeST{#1}{#2}{#4}%
+#3%
+\EndSkillSection%
+\EndSkillsTable%
+\BeginSkillsTable%
+}
+\newcommand{\SkillSectionSTPageBreak}[3]{\newpage\SkillSectionST{#1}{#2}{#3}}
+\newcommand{\SkillSectionSTWithGradePageBreak}[4]{\newpage\SkillSectionSTWithGrade{#1}{#2}{#3}{#4}}

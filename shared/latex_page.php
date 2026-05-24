@@ -94,6 +94,18 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
   </label>
 </div>
+<div class="card" style="padding:12px;margin:12px 0;">
+  <strong>Kategorieoptionen</strong>
+  <label style="display:block;margin-top:8px;">
+    <input type="checkbox" name="enable_grade_fields_all" value="1">
+    Notenfelder für alle Kategorien aktivieren
+  </label>
+  <label style="display:block;margin-top:6px;">
+    <input type="checkbox" name="enable_student_teacher_ratings_all" value="1">
+    Schüler-/Lehrer-Bewertungsspalten für alle Kategorien aktivieren
+  </label>
+  <small style="display:block;margin-top:8px;color:#475467;">Lehrerfelder erhalten im PDF-Gruppennamen das Suffix <code>-T</code>, Schülerfelder das Suffix <code>-S</code>.</small>
+</div>
 
 <div class="card" style="padding:12px;margin:12px 0;">
   <label><strong>Titelseitenvorlage</strong></label>
@@ -126,6 +138,14 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
       Seitenumbruch vor dieser Kategorie
+    </label>
+    <label style="display:block; margin:8px 0;">
+      <input type="checkbox" name="grade_field_categories[]" value="<?= h((string)$sectionId) ?>">
+      Notenfeld im Kategorie-Header anzeigen
+    </label>
+    <label style="display:block; margin:8px 0 12px 0;">
+      <input type="checkbox" name="st_rating_categories[]" value="<?= h((string)$sectionId) ?>">
+      Schüler-/Lehrer-Bewertungsspalten anzeigen
     </label>
     <div class="category-body" data-cat-body="<?= h((string)$sectionId) ?>">
     <?php if (!empty($section['direct'])): ?>
@@ -225,6 +245,7 @@ function applyCategoryState(catId){
     el.disabled = !active;
   });
   root.querySelectorAll('input[name="pagebreaks[]"]').forEach(el=>{ el.disabled = !active; });
+  root.querySelectorAll('input[name="grade_field_categories[]"], input[name="st_rating_categories[]"]').forEach(el=>{ el.disabled = !active; });
 }
 
 document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
