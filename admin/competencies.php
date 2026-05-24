@@ -322,6 +322,7 @@ render_admin_header('Kompetenzen verwalten'); ?>
 .dnd-placeholder-subcategory.active{height:26px;min-height:26px;border-color:#7a3cff;background:#f5f0ff}
 .dnd-placeholder-competency{height:4px;min-height:4px;border-width:1px;margin:1px 0 1px 18px}
 .dnd-placeholder-competency.active{height:24px;min-height:24px;border-color:#198754;background:#eefaf3}
+.inline-checkbox-placeholder{display:inline-block;width:.8em;height:.8em;border:1.4px solid currentColor;border-radius:2px;vertical-align:-.08em;margin:0 .18em;box-sizing:border-box;opacity:.85}
 .draggable{cursor:move}
 .comp-main{font-weight:600}
 .comp-sub{font-size:12px;color:#666}
@@ -430,7 +431,7 @@ function renderSub(s,catId){
 }
 function renderComp(k,subId){const el=document.createElement('div'); el.className='tree-node draggable'; el.draggable=true; el.dataset.type='competency'; el.dataset.itemType='competency'; el.dataset.itemId=String(k.id); el.dataset.id=String(k.id); el.dataset.parent=String(subId);const grade=(k.grades||[]).map(g=>`<span class="chip grade-chip grade-${Number(g)||0}">${g}</span>`).join('');const req=k.is_required?'<span class="req-chip required" title="Pflicht">🔒</span>':'<span class="req-chip optional" title="Optional">★</span>'; el.innerHTML=`<div class="node-head"><span><div class="comp-main">${escapeHtml(k.code)} — ${previewCompetencyText(k.text_de)}</div>${k.text_en?`<div class="comp-sub">${escapeHtml(k.text_en)}</div>`:''}<div>${req}${grade}</div></span><span class="node-actions"><button data-act="edit" data-type="competency" data-id="${k.id}">✏️</button><button data-act="del" data-type="competency" data-id="${k.id}">🗑️</button></span></div>`; return el;}
 function escapeHtml(s){return (s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
-function previewCompetencyText(s){return escapeHtml((s??'').toString()).replace(/\[checkbox\]/gi,'☐');}
+function previewCompetencyText(s){return escapeHtml((s??'').toString()).replace(/\[checkbox\]/gi,'<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>');}
 
 function findNode(type,id){for(const c of stateTree){if(type==='category'&&c.id==id) return c; for(const s of c.children||[]){if(type==='subcategory'&&s.id==id)return s; for(const k of s.children||[]){if(type==='competency'&&k.id==id)return k;}}} return null;}
 function openModal(cfg){modalState=cfg; modalTitle.textContent=cfg.title; modalFields.innerHTML=cfg.html; modal.showModal();}
