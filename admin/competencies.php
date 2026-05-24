@@ -241,11 +241,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !isset($_SERVER['HTTP_X_REQUESTED_WIT
         $compId=(int)$pdo->lastInsertId();
         foreach((array)($meta['grade_levels']??[]) as $g){$gi=(int)$g; if($gi>=1&&$gi<=4){$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$compId,$gi]);}}
       } else { $compId = $already; }
+      $meta=json_decode((string)($req['admin_note']??''),true); if(!is_array($meta)) $meta=[]; $meta['comment']=$adminComment;
       $pdo->prepare("UPDATE competency_requests SET status='approved', reviewed_by_user_id=?, reviewed_at=NOW(), approved_competency_id=?, admin_note=? WHERE id=? AND status='pending'")
-          ->execute([(int)current_user()['id'],$compId,$adminComment,$requestId]);
+          ->execute([(int)current_user()['id'],$compId,json_encode($meta,JSON_UNESCAPED_UNICODE),$requestId]);
     } else {
+      $meta=json_decode((string)($req['admin_note']??''),true); if(!is_array($meta)) $meta=[]; $meta['comment']=$adminComment;
       $pdo->prepare("UPDATE competency_requests SET status='rejected', reviewed_by_user_id=?, reviewed_at=NOW(), admin_note=? WHERE id=? AND status='pending'")
-          ->execute([(int)current_user()['id'],$adminComment,$requestId]);
+          ->execute([(int)current_user()['id'],json_encode($meta,JSON_UNESCAPED_UNICODE),$requestId]);
     }
     $pdo->commit();
     header('Location: '.url('admin/competencies.php?request_id='.$requestId.'#competency-request-'.$requestId)); exit;
