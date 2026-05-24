@@ -83,7 +83,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st = $pdo->prepare("INSERT INTO latex_layout_templates (key_name, display_name, file_path, is_default, is_active, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), is_active=VALUES(is_active), updated_at=NOW()");
             $st->execute([$keyName, $displayName, '', 0, $isActive]);
             $id = (int)$pdo->query("SELECT id FROM latex_layout_templates WHERE key_name=" . $pdo->quote($keyName))->fetchColumn();
-            $stored = 'uploads/latex_layouts/layout_template_' . $id . '.tex';
+            $uploadsRel = trim((string)(app_config()['app']['uploads_dir'] ?? 'uploads'), '/\\');
+            if ($uploadsRel === '') { $uploadsRel = 'uploads'; }
+            $stored = $uploadsRel . '/latex_layouts/layout_template_' . $id . '.tex';
             $abs = latex_layout_absolute_path($stored);
             if (!move_uploaded_file($tmp, $abs)) throw new RuntimeException('Datei konnte nicht gespeichert werden.');
             $st2 = $pdo->prepare("UPDATE latex_layout_templates SET file_path=?, is_active=?, updated_at=NOW() WHERE id=?");
