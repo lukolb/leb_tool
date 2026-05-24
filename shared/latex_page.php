@@ -93,6 +93,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="hidden" name="show_ag" value="0">
     <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
   </label>
+  <label style="display:block;margin-top:6px;">
+    <input type="hidden" name="enable_student_teacher_ratings" value="0">
+    <input type="checkbox" name="enable_student_teacher_ratings" value="1"> Schüler-/Lehrer-Bewertungsspalten anzeigen
+  </label>
 </div>
 
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -126,6 +130,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
       Seitenumbruch vor dieser Kategorie
+    </label>
+    <label style="display:block; margin:8px 0 12px 0;">
+      <input type="checkbox" name="grade_field_cats[]" value="<?= h((string)$sectionId) ?>">
+      Notenfeld im Kategorie-Header anzeigen
     </label>
     <div class="category-body" data-cat-body="<?= h((string)$sectionId) ?>">
     <?php if (!empty($section['direct'])): ?>

@@ -345,6 +345,8 @@ $selectedGrade = (int)($_POST['grade_level'] ?? 1);
 if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
 $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
+$enableStudentTeacherRatings = ((string)($_POST['enable_student_teacher_ratings'] ?? '0') === '1');
+$gradeFieldCategoryIds = array_values(array_unique(array_map('intval', (array)($_POST['grade_field_cats'] ?? []))));
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
@@ -359,9 +361,10 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
             $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
         }
     }
-    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks, $selectedGrade);
+    $generatedDataTex = generate_db_data_tex($pdo, $selectedSkills, $pagebreaks, $selectedGrade, $gradeFieldCategoryIds, $enableStudentTeacherRatings);
     $generatedDataTex = "\\newif\\ifShowSEL\n" . ($showSel ? "\\ShowSELtrue\n" : "\\ShowSELfalse\n")
         . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
+        . "\\newif\\ifShowSTRatings\n" . ($enableStudentTeacherRatings ? "\\ShowSTRatingstrue\n" : "\\ShowSTRatingsfalse\n")
         . $generatedDataTex;
 }
 
@@ -727,7 +730,7 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     return $out;
 }
 
-function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1): string {
+function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1, array $gradeFieldCategoryIds = [], bool $enableStudentTeacherRatings = false): string {
     if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
     if (!$selectedCodes) {
         return "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n\\newcommand{\\AllSkillSections}{}\n";
@@ -778,9 +781,12 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
         $macro = latex_macro_name_for_category($i, $catDe);
         $out .= "% SECTION: " . latex_escape($catDe) . "\n";
         $macroBody = "";
+        $subSkillMacro = $enableStudentTeacherRatings ? 'SubSkillST' : 'SubSkill';
+        $infoSkillMacro = $enableStudentTeacherRatings ? 'InfoSkillRowST' : 'InfoSkillRow';
+        $skillRowMacro = $enableStudentTeacherRatings ? 'SkillRowST' : 'SkillRow';
         foreach (($catData['subs'] ?? []) as $subDe => $subData) {
             if ($subDe !== '') {
-                $macroBody .= "  \\SubSkill{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
+                $macroBody .= "  \\" . $subSkillMacro . "{" . latex_escape($subDe) . "}{" . latex_escape((string)($subData['en'] ?? '')) . "}\n";
             }
             foreach (($subData['items'] ?? []) as $it) {
                 $code = trim((string)($it['code'] ?? ''));
@@ -805,9 +811,9 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                         $infoText = '\\textit{' . $en . '}';
                     }
 
-                    $macroBody .= "  \\InfoSkillRow{" . $infoText . "}\n";
+                    $macroBody .= "  \\" . $infoSkillMacro . "{" . $infoText . "}\n";
                 } else {
-                    $macroBody .= "  \\SkillRow{" . latex_escape($code) . "}%\n";
+                    $macroBody .= "  \\" . $skillRowMacro . "{" . latex_escape($code) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
                 }
@@ -826,9 +832,33 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
             $pagebreakMap[$parsed] = true;
         }
     }
+    $gradeFieldMap = [];
+    foreach ($gradeFieldCategoryIds as $id) {
+        $parsed = (int)$id;
+        if ($parsed > 0) { $gradeFieldMap[$parsed] = true; }
+    }
     foreach ($sections as $catId => $catData) {
-        $cmd = isset($pagebreakMap[(int)$catId]) ? 'SkillSectionPageBreak' : 'SkillSection';
-        $out .= "  \\" . $cmd . "{" . latex_escape((string)($catData['de'] ?? 'Sonstiges')) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
+        $hasPageBreak = isset($pagebreakMap[(int)$catId]);
+        $hasGradeField = isset($gradeFieldMap[(int)$catId]);
+        if ($enableStudentTeacherRatings) {
+            if ($hasPageBreak) {
+                $cmd = $hasGradeField ? 'SkillSectionSTWithGradePageBreak' : 'SkillSectionSTPageBreak';
+            } else {
+                $cmd = $hasGradeField ? 'SkillSectionSTWithGrade' : 'SkillSectionST';
+            }
+        } else {
+            if ($hasPageBreak) {
+                $cmd = $hasGradeField ? 'SkillSectionWithGradePageBreak' : 'SkillSectionPageBreak';
+            } else {
+                $cmd = $hasGradeField ? 'SkillSectionWithGrade' : 'SkillSection';
+            }
+        }
+        $fieldName = 'grade-' . (int)$catId;
+        if ($hasGradeField) {
+            $out .= "  \\" . $cmd . "{" . latex_escape((string)($catData['de'] ?? 'Sonstiges')) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{" . latex_escape($fieldName) . "}{\\" . $catData['macro'] . "}%\n";
+        } else {
+            $out .= "  \\" . $cmd . "{" . latex_escape((string)($catData['de'] ?? 'Sonstiges')) . "}{" . latex_escape((string)($catData['en'] ?? '')) . "}{\\" . $catData['macro'] . "}%\n";
+        }
     }
     $out .= "}\n";
 
