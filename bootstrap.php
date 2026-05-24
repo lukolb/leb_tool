@@ -1269,7 +1269,13 @@ function current_user(): ?array {
 }
 
 function require_login(): void {
-  if (!current_user()) redirect('login.php');
+  if (!current_user()) {
+    $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
+    $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
+    $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
+    $next = $path . ($query !== '' ? ('?' . $query) : '');
+    redirect('login.php?next=' . rawurlencode($next));
+  }
 }
 
 function get_role(): string {
@@ -1285,11 +1291,19 @@ function get_role(): string {
 }
 
 function require_admin(): void {
-  require_login();
+  if (!current_user()) {
+    $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
+    $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
+    $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
+    $next = $path . ($query !== '' ? ('?' . $query) : '');
+    redirect('login.php?next=' . rawurlencode($next));
+  }
   if (get_role() !== 'admin') {
-    http_response_code(403);
-    echo "403 Forbidden";
-    exit;
+    $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
+    $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
+    $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
+    $next = $path . ($query !== '' ? ('?' . $query) : '');
+    redirect('login.php?next=' . rawurlencode($next) . '&need_admin=1');
   }
 }
 

@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         . '<tr><td><strong>Typ</strong></td><td>' . h($reqTxt) . '</td></tr>'
         . '<tr><td><strong>Eingereicht am</strong></td><td>' . h($createdTxt) . '</td></tr>'
         . '</table>'
-        . '<p style="margin-top:14px"><a href="' . h($adminLink) . '" style="display:inline-block;background:#0b57d0;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;">Antrag in der Administration öffnen</a></p>'
+        . '<p style="margin-top:14px"><a href="' . h($adminLink) . '" style="display:inline-block;background:#0b57d0;color:#ffffff !important;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">Antrag in der Administration öffnen</a></p>'
         . '<p style="font-size:12px;color:#64748b">Direktlink: <a href="' . h($adminLink) . '">' . h($adminLink) . '</a></p>'
         . '</div>';
 
