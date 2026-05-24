@@ -44,6 +44,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $meta = json_encode(['grade_levels'=>$grades,'is_required'=>$isRequired], JSON_UNESCAPED_UNICODE);
     $stIns = $pdo->prepare("INSERT INTO competency_requests(teacher_user_id,category_id,subcategory_id,proposal_text_de,proposal_text_en,status,admin_note,reviewed_by_user_id,reviewed_at,approved_competency_id) VALUES (?,?,?,?,?,'pending',?,?,?,?)");
     $stIns->execute([$teacherId, $cat, $subId, $textDe, $textEn, $meta, null, null, null]);
+    $requestId = (int)$pdo->lastInsertId();
+
+    // Admin-Benachrichtigung nach erfolgreichem Insert (darf Antragstellung nicht blockieren)
+    try {
+      $adminLink = absolute_url('admin/competencies.php?request_id=' . $requestId . '#competency-request-' . $requestId);
+      $teacherName = trim((string)(current_user()['display_name'] ?? current_user()['email'] ?? 'Lehrkraft'));
+      $subLabel = $subId ? (string)($subRow['name_de'] ?? '') : 'Ohne Unterkategorie';
+      $gradesTxt = $grades ? implode(', ', $grades) : '—';
+      $reqTxt = $isRequired ? 'Pflicht' : 'Optional';
+      $createdTxt = (new DateTimeImmutable('now', user_timezone()))->format('d.m.Y H:i');
+
+      $subject = 'Neuer Kompetenzantrag zur Prüfung';
+      $html = '<div style="font-family:Arial,sans-serif;line-height:1.45">'
+        . '<h2 style="margin:0 0 12px">Neuer Kompetenzantrag zur Prüfung</h2>'
+        . '<p>Eine Lehrkraft hat einen neuen Kompetenzantrag eingereicht.</p>'
+        . '<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0">'
+        . '<tr><td><strong>Lehrkraft</strong></td><td>' . h($teacherName) . '</td></tr>'
+        . '<tr><td><strong>Kategorie</strong></td><td>' . h((string)$catRow['name_de']) . '</td></tr>'
+        . '<tr><td><strong>Unterkategorie</strong></td><td>' . h($subLabel) . '</td></tr>'
+        . '<tr><td><strong>Kompetenz (DE)</strong></td><td>' . h($textDe) . '</td></tr>'
+        . '<tr><td><strong>Kompetenz (EN)</strong></td><td>' . h($textEn) . '</td></tr>'
+        . '<tr><td><strong>Klassenstufen</strong></td><td>' . h($gradesTxt) . '</td></tr>'
+        . '<tr><td><strong>Typ</strong></td><td>' . h($reqTxt) . '</td></tr>'
+        . '<tr><td><strong>Eingereicht am</strong></td><td>' . h($createdTxt) . '</td></tr>'
+        . '</table>'
+        . '<p style="margin-top:14px"><a href="' . h($adminLink) . '" style="display:inline-block;background:#0b57d0;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;">Antrag in der Administration öffnen</a></p>'
+        . '<p style="font-size:12px;color:#64748b">Direktlink: <a href="' . h($adminLink) . '">' . h($adminLink) . '</a></p>'
+        . '</div>';
+
+      $admins = $pdo->query("SELECT email FROM users WHERE role='admin' AND is_active=1 AND deleted_at IS NULL AND email IS NOT NULL AND email<>''")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+      if (!$admins) {
+        error_log('[competency request mail] no admin recipients found');
+      } else {
+        foreach ($admins as $m) {
+          $mail = (string)$m;
+          if (!filter_var($mail, FILTER_VALIDATE_EMAIL)) {
+            error_log('[competency request mail] invalid admin email skipped: ' . $mail);
+            continue;
+          }
+          $sent = @send_email($mail, $subject, $html);
+          if (!$sent) {
+            error_log('[competency request mail] failed for recipient: ' . $mail);
+          }
+        }
+      }
+    } catch (Throwable $mailError) {
+      error_log('[competency request mail] exception: ' . $mailError->getMessage());
+    }
 
     $ok = 'Antrag wurde gesendet. Die Administration prüft den Vorschlag, bevor die Kompetenz übernommen wird.';
   } catch (Throwable $e) {
