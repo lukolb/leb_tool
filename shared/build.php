@@ -445,36 +445,36 @@ $resources = [
     ],
 
     [
-        'path' => 'assets/logo.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/logo.png'),
+        'path' => 'assets/logo.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/logo.pdf'),
     ],
     [
-        'path' => 'assets/footer.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/footer.png'),
+        'path' => 'assets/footer.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/footer.pdf'),
     ],
     [
-        'path' => 'assets/beginning.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/beginning.png'),
+        'path' => 'assets/beginning.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/beginning.pdf'),
     ],
     [
-        'path' => 'assets/goal.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/goal.png'),
+        'path' => 'assets/goal.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/goal.pdf'),
     ],
     [
-        'path' => 'assets/mastering.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/mastering.png'),
+        'path' => 'assets/mastering.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/mastering.pdf'),
     ],
     [
-        'path' => 'assets/progressing.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/progressing.png'),
+        'path' => 'assets/progressing.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/progressing.pdf'),
     ],
     [
-        'path' => 'assets/strength.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strength.png'),
+        'path' => 'assets/strength.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/strength.pdf'),
     ],
     [
-        'path' => 'assets/strengthening.png',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.png'),
+        'path' => 'assets/strengthening.pdf',
+        'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.pdf'),
     ],
 
     [

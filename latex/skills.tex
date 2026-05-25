@@ -285,7 +285,7 @@
 
 \newcommand{\BeginSkillSection}[2]{%
 
-\noalign{\needspace{32mm}}
+\noalign{\needspace{15mm}}
 
 \noalign{\vspace{8mm}}
 
@@ -337,8 +337,24 @@
 % Optional category grade field (small)
 % ------------------------------------------------
 \newcommand{\CategoryGradeField}[1]{%
-\raisebox{-0.15\height}{%
-\textField[\BC{}\BG{}\W{0}\textSize{9}]{#1}{6mm}{4.6mm}%
+\raisebox{-0.02\height}{%
+\textField[
+  \BC{}
+  \BG{}
+  \W{0}
+  \textSize{11}
+  \Q{1}
+  \AA{
+    /F <<
+      /S /JavaScript
+      /JS (
+        var f = event.target;
+        f.alignment = "center";
+        try { f.textFont = font.HelvB; } catch(e) {}
+      )
+    >>
+  }
+]{#1}{6mm}{4.6mm}%
 }%
 }
 \newcommand{\BeginSkillSectionWithGrade}[3]{%
@@ -357,10 +373,10 @@
 % ------------------------------------------------
 \definecolor{studentcol}{RGB}{232,242,222}
 \newcommand{\STColW}{5.4mm}
-\newcommand{\STTextW}{114mm}
-\newcommand{\STSkillTextInnerW}{109mm}
-\newcommand{\STPairW}{10.8mm}
-\newcommand{\STFullRowW}{18.66cm}
+\newcommand{\STTextW}{109.6mm}
+\newcommand{\STSkillTextInnerW}{105mm}
+\newcommand{\STPairW}{13.8mm}
+\newcommand{\STFullRowW}{18.48cm}
 \newcommand{\RatingHeaderST}{%
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
 \multicolumn{1}{m{\STColW}}{}&
@@ -377,22 +393,22 @@
 \multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}}{\fontsize{5pt}{5pt}\selectfont Meistern}
 \\[-2mm]
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont n/a}&
-\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}}{\fontsize{5pt}{5pt}\selectfont \textit{Beginning}}&
-\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}}{\fontsize{5pt}{5pt}\selectfont \textit{Progressing}}&
-\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}}{\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}}&
-\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}}{\fontsize{5pt}{5pt}\selectfont \textit{Mastering}}
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont n/a}&
+\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}|}{\fontsize{5pt}{5pt}\selectfont \textit{Beginning}}&
+\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}|}{\fontsize{5pt}{5pt}\selectfont \textit{Progressing}}&
+\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}|}{\fontsize{5pt}{5pt}\selectfont \textit{Strengthening}}&
+\multicolumn{2}{>{\centering\arraybackslash}m{\STPairW}|}{\fontsize{5pt}{5pt}\selectfont \textit{Mastering}}
 \\[0.6mm]
 \multicolumn{1}{@{}m{\STTextW}@{}}{}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
 \multicolumn{1}{>{\columncolor{studentcol}\centering\arraybackslash}m{\STColW}}{\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
 \multicolumn{1}{>{\columncolor{studentcol}\centering\arraybackslash}m{\STColW}}{\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
 \multicolumn{1}{>{\columncolor{studentcol}\centering\arraybackslash}m{\STColW}}{\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}&
 \multicolumn{1}{>{\columncolor{studentcol}\centering\arraybackslash}m{\STColW}}{\fontsize{5pt}{5pt}\selectfont \textbf{S}}&
-\multicolumn{1}{m{\STColW}}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}
+\multicolumn{1}{m{\STColW}|}{\centering\fontsize{5pt}{5pt}\selectfont \textbf{T}}
 \\
 }
 \newcommand{\RBST}[2]{%
@@ -403,8 +419,24 @@
 \newcommand{\RatingButtonsST}[1]{\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{na}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{be}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{be}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{pr}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{pr}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{st}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{st}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-S}{ma}\end{minipage}&\begin{minipage}[c][6mm][c]{\STColW}\centering\RBST{#1-T}{ma}\end{minipage}}
 \newcommand{\SkillRowST}[3]{\rule[-2.4mm]{0pt}{6.3mm}\begin{minipage}[c]{\STSkillTextInnerW}\vspace{0.7mm}\setlength{\parindent}{0pt}\raggedright{\fontsize{8pt}{9.5pt}\selectfont #2 \textbar{} \textit{#3}}\vspace{0.7mm}\end{minipage}&\RatingButtonsST{#1}\\ \hline}
 \newcommand{\InfoSkillRowST}[1]{\noalign{\needspace{8mm}}\multicolumn{10}{|>{\raggedright\arraybackslash}m{\STFullRowW}|}{\begin{minipage}[c][6.8mm][c]{17.6cm}\hspace*{4mm}\begin{minipage}[c]{16.8cm}\setlength{\parindent}{0pt}\raggedright{\fontsize{8pt}{9.5pt}\selectfont #1}\end{minipage}\end{minipage}}\\ \hline}
-\newcommand{\SubSkillST}[2]{\noalign{\needspace{14mm}}\multicolumn{10}{|>{\raggedright\arraybackslash}m{\STFullRowW}|}{\cellcolor{lightgray}\begin{minipage}[c][7.2mm][c]{11.8cm}\hspace*{4mm}\begin{minipage}[c]{10.8cm}\setlength{\parindent}{0pt}\raggedright{\fontsize{9pt}{12pt}\selectfont \textbf{#1 | \textit{#2}}}\end{minipage}\end{minipage}}\\ \hline}
-\newcommand{\BeginSkillsTableSTWithSpaces}[2]{\small\setlength{\LTleft}{-4mm}\setlength{\LTright}{0mm}\vspace{#1}\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{\STTextW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|}\RatingHeaderST\noalign{\vspace{#2}}\endfirsthead\RatingHeaderST\hline\noalign{\vspace{\RatingHeaderAutoAfterSpace}}\endhead}
+\newcommand{\SubSkillST}[2]{%
+\noalign{\needspace{14mm}}%
+\multicolumn{10}{|>{\raggedright\arraybackslash}m{\STFullRowW}|}{%
+\cellcolor{lightgray}%
+\begin{minipage}[c][7.2mm][c]{\STFullRowW}
+  \hspace*{4mm}%
+  \begin{minipage}[c]{17.4cm}
+    \setlength{\parindent}{0pt}%
+    \raggedright
+    {\fontsize{9pt}{12pt}\selectfont
+      \textbf{#1 | \textit{#2}}%
+    }%
+  \end{minipage}%
+\end{minipage}%
+}%
+\\ \hline
+}
+\newcommand{\BeginSkillsTableSTWithSpaces}[2]{\small\setlength{\LTleft}{-4mm}\setlength{\LTright}{0mm}\vspace{#1}\begin{longtable}{|>{\hspace{4mm}\arraybackslash}m{\STTextW}|>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|>{\columncolor{studentcol}\centering\arraybackslash\vspace{0pt}}m{\STColW}>{\centering\arraybackslash\vspace{0pt}}m{\STColW}|}\RatingHeaderST\noalign{\vspace{#2}}\endfirsthead\RatingHeaderST\hline\noalign{\vspace{\RatingHeaderAutoAfterSpace}}\endhead}
 \newcommand{\BeginSkillsTableST}{\BeginSkillsTableSTWithSpaces{\SkillsTableTopSpace}{\RatingHeaderFirstAfterSpace}}
 \newcommand{\BeginSkillsTableSTAfterExplicitPageBreak}{\BeginSkillsTableSTWithSpaces{\SkillsTableExplicitTopSpace}{\RatingHeaderExplicitAfterSpace}}
 \newcommand{\EndSkillsTableST}{\end{longtable}\normalsize}
