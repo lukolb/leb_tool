@@ -45,7 +45,7 @@ try {
   $byName = [];
   foreach ($dbRows as $r) $byName[(string)$r['field_name']] = $r;
 
-  $stats = ['read'=>0,'matched'=>0,'updated'=>0,'labels_updated'=>0,'groups_updated'=>0,'subgroups_updated'=>0,'ignored'=>0,'skipped'=>0];
+  $stats = ['read'=>0,'matched'=>0,'updated'=>0,'labels_updated'=>0,'groups_updated'=>0,'subgroups_updated'=>0,'meta_updated'=>0,'ignored'=>0,'skipped'=>0];
   foreach ($data['fields'] as $f) {
     $stats['read']++;
     if (!is_array($f)) { $stats['skipped']++; continue; }
@@ -65,6 +65,8 @@ try {
     $labelChanged = ($label !== (string)$row['label']) || ($labelEnOut !== (string)$row['label_en']);
     $meta = json_decode((string)($row['meta_json'] ?? ''), true);
     if (!is_array($meta)) $meta = [];
+    $metaBefore = json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
     $meta['rcff'] = [
       'type' => (string)($f['type'] ?? 'unknown'),
       'category_id' => isset($f['category_id']) ? (int)$f['category_id'] : 0,
@@ -79,7 +81,17 @@ try {
       'competency_id' => isset($f['competency_id']) ? (int)$f['competency_id'] : 0,
       'role' => (string)($f['role'] ?? ''),
     ];
+    $groupPath = '';
+    if ($categoryDe !== '' && $subcategoryDe !== '') $groupPath = $categoryDe . ' / ' . $subcategoryDe;
+    elseif ($categoryDe !== '') $groupPath = $categoryDe;
+    if ($groupPath !== '') $meta['group'] = $groupPath;
+    $groupTitleEn = $categoryEn;
+    $subgroupTitleEn = $subcategoryEn;
+    if ($groupTitleEn !== '') $meta['group_title_en'] = $groupTitleEn;
+    if ($subgroupTitleEn !== '') $meta['subgroup_title_en'] = $subgroupTitleEn;
+
     $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $metaChanged = ($metaJson !== $metaBefore);
     $groupChanged = false;
     $subgroupChanged = false;
     $sql = 'UPDATE template_fields SET label=?, label_en=?, meta_json=?';
@@ -89,7 +101,7 @@ try {
       $groupChanged = $groupChanged || ($groupValue !== (string)($row['group_label'] ?? ''));
       $sql .= ', group_label=?';
       $params[] = $groupValue;
-    } elseif ($categoryDe !== '' || $categoryEn !== '') {
+    } elseif ($categoryDe !== '' || $categoryEn !== '' || $groupPath !== '') {
       $groupChanged = true;
     }
     if ($hasGroupLabelEn) {
@@ -120,6 +132,7 @@ try {
     if ($labelChanged) $stats['labels_updated']++;
     if ($groupChanged) $stats['groups_updated']++;
     if ($subgroupChanged) $stats['subgroups_updated']++;
+    if ($metaChanged) $stats['meta_updated']++;
   }
   audit('template_fields_rcff_import', (int)current_user()['id'], ['template_id'=>$templateId,'stats'=>$stats]);
   echo json_encode(['ok'=>true,'stats'=>$stats], JSON_UNESCAPED_UNICODE);
