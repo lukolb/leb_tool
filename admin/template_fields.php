@@ -2845,7 +2845,7 @@ btnReplacePdf.addEventListener('click', async ()=>{
       const rcffData = await rcffResp.json().catch(()=>({}));
       if (!rcffResp.ok || !rcffData.ok) throw new Error(rcffData.error || 'RCFF-Import fehlgeschlagen.');
       const s = rcffData.stats || {};
-      statusText += ` | RCFF importiert: ${s.read||0} gelesen, ${s.updated||0} aktualisiert, ${s.ignored||0} ignoriert, ${s.skipped||0} übersprungen.`;
+      statusText += ` | RCFF importiert: ${s.read||0} gelesen, ${s.matched||0} gematcht, ${s.updated||0} Felder aktualisiert, ${s.labels_updated||0} Labels, ${s.groups_updated||0} Gruppen, ${s.subgroups_updated||0} Untergruppen, ${s.ignored||0} ignoriert, ${s.skipped||0} übersprungen.`;
       await load();
     }
     replacePdfStatus.textContent = statusText;

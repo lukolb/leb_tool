@@ -930,7 +930,7 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
     ];
     if (!$selectedCodes) return $rcff;
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) WHERE c.code IN ($in) AND c.is_active=1";
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) WHERE c.code IN ($in) AND c.is_active=1";
     $st = $pdo->prepare($sql);
     $st->execute($selectedCodes);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -941,8 +941,10 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
         $base = [
             'label_de' => (string)($it['text_de'] ?? ''),
             'label_en' => (string)($it['text_en'] ?? ''),
+            'category_id' => (int)($it['category_id'] ?? 0),
             'category_de' => (string)($it['cat_de'] ?? ''),
             'category_en' => (string)($it['cat_en'] ?? ''),
+            'subcategory_id' => (int)($it['subcategory_id'] ?? 0),
             'subcategory_de' => (string)($it['sub_de'] ?? ''),
             'subcategory_en' => (string)($it['sub_en'] ?? ''),
             'competency_code' => $code,
@@ -970,6 +972,9 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
                 'category_de' => (string)($it['cat_de'] ?? ''),
                 'category_en' => (string)($it['cat_en'] ?? ''),
                 'category_id' => $catId,
+                'subcategory_id' => 0,
+                'subcategory_de' => '',
+                'subcategory_en' => '',
             ];
             unset($gradeMap[$catId]);
         }
