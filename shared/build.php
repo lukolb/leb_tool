@@ -938,6 +938,7 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
     foreach ($rows as $it) {
         $code = trim((string)($it['code'] ?? ''));
         if ($code === '') continue;
+        $catId = (int)($it['category_id'] ?? 0);
         $base = [
             'label_de' => (string)($it['text_de'] ?? ''),
             'label_en' => (string)($it['text_en'] ?? ''),
@@ -950,19 +951,6 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
             'competency_code' => $code,
             'competency_id' => (int)($it['id'] ?? 0),
         ];
-        if ((string)($it['display_type'] ?? 'rated') === 'info') {
-            $prefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
-            foreach (collect_inline_field_metadata((string)($it['text_de'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
-            foreach (collect_inline_field_metadata((string)($it['text_en'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
-            continue;
-        }
-        if ($enableStudentTeacherRatings) {
-            $rcff['fields'][] = $base + ['field_name' => $code . '-T', 'type' => 'rating', 'role' => 'teacher', 'rating_values' => ['na','be','pr','st','ma']];
-            $rcff['fields'][] = $base + ['field_name' => $code . '-S', 'type' => 'rating', 'role' => 'student', 'rating_values' => ['be','pr','st','ma']];
-        } else {
-            $rcff['fields'][] = $base + ['field_name' => $code, 'type' => 'rating', 'role' => 'default', 'rating_values' => ['na','be','pr','st','ma']];
-        }
-        $catId = (int)($it['category_id'] ?? 0);
         if ($catId > 0 && isset($gradeMap[$catId])) {
             $rcff['fields'][] = [
                 'field_name' => 'grade-' . $catId,
@@ -977,6 +965,18 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
                 'subcategory_en' => '',
             ];
             unset($gradeMap[$catId]);
+        }
+        if ((string)($it['display_type'] ?? 'rated') === 'info') {
+            $prefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
+            foreach (collect_inline_field_metadata((string)($it['text_de'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
+            foreach (collect_inline_field_metadata((string)($it['text_en'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
+            continue;
+        }
+        if ($enableStudentTeacherRatings) {
+            $rcff['fields'][] = $base + ['field_name' => $code . '-T', 'type' => 'rating', 'role' => 'teacher', 'rating_values' => ['na','be','pr','st','ma']];
+            $rcff['fields'][] = $base + ['field_name' => $code . '-S', 'type' => 'rating', 'role' => 'student', 'rating_values' => ['be','pr','st','ma']];
+        } else {
+            $rcff['fields'][] = $base + ['field_name' => $code, 'type' => 'rating', 'role' => 'default', 'rating_values' => ['na','be','pr','st','ma']];
         }
     }
     return $rcff;
