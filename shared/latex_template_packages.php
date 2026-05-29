@@ -65,7 +65,7 @@ function latex_template_package_normalize_path(string $path): string {
 
 function latex_template_package_allowed_extension(string $path): bool {
     $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-    return in_array($ext, ['tex','sty','cls','png','jpg','jpeg','pdf','svg','ttf','otf','json','txt'], true);
+    return in_array($ext, ['tex','sty','cls','def','cfg','clo','fd','png','jpg','jpeg','pdf','svg','ttf','otf','json','txt'], true);
 }
 
 function latex_template_package_ignore_message(string $reason): string {

@@ -36,6 +36,71 @@ function readBase64FileOrFail(string $path): string {
     return base64_encode(readTextFileOrFail($path));
 }
 
+function latex_support_file_candidates(string $latexDir): array {
+    return [
+        'eforms.sty',
+        'insdljs.sty',
+        'taborder.sty',
+        'epdftex.def',
+        'pdfdochex.def',
+        'dljslib.sty',
+    ];
+}
+
+function latex_support_file_resource_result(string $latexDir, array $existingPaths = []): array {
+    $existing = [];
+    foreach ($existingPaths as $path) {
+        $normalized = trim(str_replace('\\', '/', (string)$path), '/');
+        if ($normalized !== '') {
+            $existing[strtolower($normalized)] = true;
+        }
+    }
+
+    $resources = [];
+    $copied = [];
+    $checked = [];
+    $sourceDirs = [rtrim($latexDir, '/\\') . '/support', rtrim($latexDir, '/\\')];
+    foreach (latex_support_file_candidates($latexDir) as $relativePath) {
+        $relativePath = trim(str_replace('\\', '/', $relativePath), '/');
+        if ($relativePath === '' || isset($existing[strtolower($relativePath)])) {
+            continue;
+        }
+        foreach ($sourceDirs as $sourceDir) {
+            $candidate = $sourceDir . '/' . $relativePath;
+            $checked[$relativePath][] = is_dir($sourceDir) ? basename($sourceDir) : '(missing)';
+            if (!is_file($candidate)) {
+                continue;
+            }
+            $resources[] = ['path' => $relativePath, 'file' => readBase64FileOrFail($candidate)];
+            $copied[] = $relativePath;
+            $existing[strtolower($relativePath)] = true;
+            break;
+        }
+    }
+
+    return [
+        'resources' => $resources,
+        'copied_support_files' => $copied,
+        'copied_support_files_count' => count($copied),
+        'checked_support_files' => $checked,
+        'support_source_dirs' => ['latex/support', 'latex'],
+    ];
+}
+
+function latex_resource_paths(array $resources): array {
+    $paths = [];
+    foreach ($resources as $resource) {
+        if (!is_array($resource)) {
+            continue;
+        }
+        $path = (string)($resource['path'] ?? '');
+        if ($path !== '') {
+            $paths[] = $path;
+        }
+    }
+    return $paths;
+}
+
 function extract_balanced_block(string $text, int $startPos): array {
     $len = strlen($text);
     $depth = 0;
@@ -471,10 +536,25 @@ try {
     exit;
 }
 
+$latexBuildDebug = [
+    'copied_package_files_count' => 0,
+    'copied_support_files_count' => 0,
+    'copied_support_files' => [],
+    'ignored_zip_files_count' => 0,
+];
+
 if ($selectedLatexPackage) {
     try {
         $resources = latex_template_package_files_as_resources($selectedLatexPackage);
+        $packageManifest = json_decode((string)($selectedLatexPackage['manifest_json'] ?? '{}'), true);
+        $latexBuildDebug['copied_package_files_count'] = count($resources);
+        $latexBuildDebug['ignored_zip_files_count'] = is_array($packageManifest) ? (int)($packageManifest['ignored_count'] ?? 0) : 0;
+        $supportResult = latex_support_file_resource_result($latexDir, latex_resource_paths($resources));
+        $resources = array_merge($resources, $supportResult['resources']);
+        $latexBuildDebug['copied_support_files_count'] = (int)$supportResult['copied_support_files_count'];
+        $latexBuildDebug['copied_support_files'] = $supportResult['copied_support_files'];
         $resources[] = ['path' => 'data.tex', 'content' => $generatedDataTex];
+        error_log('LaTeX template package build diagnostics: ' . json_encode($latexBuildDebug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     } catch (Throwable $e) {
         http_response_code(500);
         header('Content-Type: text/plain; charset=utf-8');
@@ -582,6 +662,10 @@ if ($selectedLatexPackage) {
             'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-BoldItalic.ttf'),
         ],
     ];
+    $supportResult = latex_support_file_resource_result($latexDir, latex_resource_paths($resources));
+    $resources = array_merge($resources, $supportResult['resources']);
+    $latexBuildDebug['copied_support_files_count'] = (int)$supportResult['copied_support_files_count'];
+    $latexBuildDebug['copied_support_files'] = $supportResult['copied_support_files'];
 }
 
 $payload = [
@@ -648,6 +732,11 @@ if (!$isPdf) {
     echo ($selectedLatexPackage ? "LaTeX-Vorlagenpaket konnte nicht kompiliert werden.\nPaket: " . (string)($selectedLatexPackage['name'] ?? '') . "\nHauptdatei: " . (string)($selectedLatexPackage['main_file'] ?? '') . "\n" : "LaTeX konnte nicht kompiliert werden.\n");
     echo "HTTP Status: " . $statusCode . "\n";
     echo "Content-Type: " . $contentType . "\n";
+    if ($selectedLatexPackage) {
+        $debugJson = json_encode($latexBuildDebug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        error_log('LaTeX template package compile failure diagnostics: ' . ($debugJson ?: '{}'));
+        echo "Build-Diagnose: " . ($debugJson ?: '{}') . "\n";
+    }
     echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
     echo "data.tex (erste 120 Zeilen):\n";
     echo with_line_numbers($generatedDataTex, 120) . "\n";

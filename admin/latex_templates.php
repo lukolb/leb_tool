@@ -38,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !str_contains((string)$warning, 'nicht unterstützte Dateien wurden ignoriert')));
             if ($warnings) $msg .= ' Hinweise: ' . implode(' ', $warnings);
+            $msg .= ' Allgemeine LaTeX-Support-Dateien werden beim Build automatisch ergänzt.';
         } elseif ($packageAction === 'toggle_active') {
             $id = (int)($_POST['package_id'] ?? 0);
             $pkg = find_latex_template_package($pdo, $id, false);
