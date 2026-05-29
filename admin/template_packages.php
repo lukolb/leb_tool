@@ -85,6 +85,77 @@ function tp_log_import_error(int $packageId, string $action, ?array $pkg, string
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
+function tp_package_pdf_delete_path(string $pdfPath): array {
+    $pdfPath = ltrim(str_replace('\\', '/', $pdfPath), '/');
+    if ($pdfPath === '' || !preg_match('/\.pdf$/i', $pdfPath) || str_contains($pdfPath, '..')) {
+        throw new RuntimeException('Ungültiger Paket-PDF-Pfad.');
+    }
+    $uploadsRel = generated_template_package_uploads_rel();
+    $expectedPrefix = $uploadsRel . '/generated_template_packages/';
+    if (strncmp($pdfPath, $expectedPrefix, strlen($expectedPrefix)) !== 0) {
+        throw new RuntimeException('Paket-PDF liegt nicht im erlaubten Speicherbereich.');
+    }
+
+    $root = realpath(__DIR__ . '/..');
+    $storageRoot = realpath(generated_template_package_storage_root());
+    if (!$root || !$storageRoot) {
+        throw new RuntimeException('Paket-Speicher konnte nicht sicher geprüft werden.');
+    }
+
+    $abs = $root . '/' . $pdfPath;
+    $parent = dirname($abs);
+    $parentReal = realpath($parent);
+    $storageNorm = rtrim(str_replace('\\', '/', $storageRoot), '/') . '/';
+
+    if (file_exists($abs)) {
+        if (is_link($abs)) {
+            throw new RuntimeException('Paket-PDF darf kein Symlink sein.');
+        }
+        $fileReal = realpath($abs);
+        if (!$fileReal || !is_file($fileReal)) {
+            throw new RuntimeException('Paket-PDF konnte nicht sicher geprüft werden.');
+        }
+        $fileNorm = str_replace('\\', '/', $fileReal);
+        if (strncmp($fileNorm, $storageNorm, strlen($storageNorm)) !== 0) {
+            throw new RuntimeException('Paket-PDF liegt außerhalb des erlaubten Speicherbereichs.');
+        }
+        return ['abs' => $fileReal, 'exists' => true, 'dir' => dirname($fileReal)];
+    }
+
+    if ($parentReal !== false) {
+        $parentNorm = rtrim(str_replace('\\', '/', $parentReal), '/') . '/';
+        if (strncmp($parentNorm, $storageNorm, strlen($storageNorm)) !== 0) {
+            throw new RuntimeException('Paketordner liegt außerhalb des erlaubten Speicherbereichs.');
+        }
+        return ['abs' => $abs, 'exists' => false, 'dir' => $parentReal];
+    }
+
+    return ['abs' => $abs, 'exists' => false, 'dir' => null];
+}
+
+function tp_remove_empty_package_dirs(?string $startDir): void {
+    if (!$startDir) return;
+    $storageRoot = realpath(generated_template_package_storage_root());
+    $dir = realpath($startDir);
+    if (!$storageRoot || !$dir) return;
+
+    $storageNorm = rtrim(str_replace('\\', '/', $storageRoot), '/');
+    for ($i = 0; $i < 3; $i++) { // token, month, year directories at most
+        $dirNorm = rtrim(str_replace('\\', '/', $dir), '/');
+        if ($dirNorm === $storageNorm || strncmp($dirNorm . '/', $storageNorm . '/', strlen($storageNorm) + 1) !== 0) {
+            return;
+        }
+        $items = @scandir($dir);
+        if ($items === false || count(array_diff($items, ['.', '..'])) > 0) {
+            return;
+        }
+        @rmdir($dir);
+        $parent = dirname($dir);
+        if ($parent === $dir) return;
+        $dir = $parent;
+    }
+}
+
 $msg = '';
 $err = '';
 $importedTemplateId = 0;
@@ -109,10 +180,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $helperResultForLog = [];
     try {
         csrf_verify();
-        if (!in_array($action, ['import_package', 'reapply_rcff'], true)) {
+        if (!in_array($action, ['import_package', 'reapply_rcff', 'delete_package'], true)) {
             throw new RuntimeException('Unbekannte Aktion.');
         }
         if ($packageId <= 0) throw new RuntimeException('Paket fehlt.');
+
+        if ($action === 'delete_package') {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
+            $st->execute([$packageId]);
+            $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            $pkgForLog = $pkg;
+            if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
+
+            $deleteInfo = tp_package_pdf_delete_path((string)($pkg['pdf_path'] ?? ''));
+            $fileMissing = !$deleteInfo['exists'];
+            if ($deleteInfo['exists']) {
+                if (!@unlink((string)$deleteInfo['abs'])) {
+                    error_log('generated_template_package delete file failed: ' . json_encode(['package_id' => $packageId, 'reason' => 'unlink_failed'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    throw new RuntimeException('Paket konnte nicht vollständig gelöscht werden, weil die Datei nicht entfernt werden konnte.');
+                }
+            }
+
+            $pdo->prepare('DELETE FROM generated_template_packages WHERE id=?')->execute([$packageId]);
+            $pdo->commit();
+            tp_remove_empty_package_dirs(is_string($deleteInfo['dir'] ?? null) ? $deleteInfo['dir'] : null);
+            audit('generated_template_package_delete', (int)current_user()['id'], [
+                'package_id' => $packageId,
+                'status' => (string)($pkg['status'] ?? ''),
+                'imported_template_id' => (int)($pkg['imported_template_id'] ?? 0),
+                'pdf_missing' => $fileMissing,
+            ]);
+            tp_set_flash('success', $fileMissing ? 'Template-Paket wurde gelöscht. Die gespeicherte PDF-Datei war bereits nicht mehr vorhanden.' : 'Template-Paket wurde gelöscht.');
+            header('Location: ' . url('admin/template_packages.php'));
+            exit;
+        }
 
         if ($action === 'reapply_rcff') {
             $pdo->beginTransaction();
@@ -293,13 +395,26 @@ render_admin_header('Template-Pakete');
     $confirmImportedTemplateId = (int)($confirmPkg['imported_template_id'] ?? 0);
     $canImport = in_array($confirmStatus, ['draft','submitted'], true);
     $isImported = ($confirmStatus === 'imported');
-    $cardColor = $isImported && $confirmImportedTemplateId > 0 ? '#067647' : ($canImport ? '#0b57d0' : '#b54708');
+    $cardColor = ($viewAction === 'delete') ? '#b42318' : ($isImported && $confirmImportedTemplateId > 0 ? '#067647' : ($canImport ? '#0b57d0' : '#b54708'));
   ?>
   <div class="card" style="border-left:4px solid <?= h($cardColor) ?>;">
-    <h2><?= $isImported ? 'Template-Paket' : 'Template-Paket übernehmen' ?></h2>
+    <h2><?= ($viewAction === 'delete') ? 'Template-Paket löschen' : ($isImported ? 'Template-Paket' : 'Template-Paket übernehmen') ?></h2>
     <p><strong><?=h((string)$confirmPkg['title'])?></strong></p>
     <p class="muted">Status: <?=h($confirmStatus)?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
-    <?php if ($isImported && $confirmImportedTemplateId > 0): ?>
+    <?php if ($viewAction === 'delete'): ?>
+      <?php if ($confirmImportedTemplateId > 0): ?>
+        <p><strong>Warnung:</strong> Das daraus erzeugte Template #<?=h((string)$confirmImportedTemplateId)?> bleibt erhalten. Nur das vorbereitete Paket und die gespeicherte Paket-PDF werden gelöscht.</p>
+      <?php else: ?>
+        <p><strong>Warnung:</strong> Dieses vorbereitete Paket wird gelöscht. Es kann danach nicht mehr als Template übernommen werden.</p>
+      <?php endif; ?>
+      <form method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="delete_package">
+        <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
+        <button class="btn danger" type="submit">Paket endgültig löschen</button>
+      </form>
+      <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>
+    <?php elseif ($isImported && $confirmImportedTemplateId > 0): ?>
       <p>Dieses Paket wurde bereits als Template übernommen.</p>
       <p><a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $confirmImportedTemplateId))?>">Felder bearbeiten</a></p>
       <form method="post" style="display:inline;">
@@ -465,6 +580,7 @@ render_admin_header('Template-Pakete');
                   <button class="btn secondary" type="submit">RCFF erneut anwenden</button>
                 </form>
               <?php endif; ?>
+              <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=delete&id=' . (int)$pkg['id']))?>">Paket löschen</a>
             </td>
           </tr>
         <?php endforeach; ?>
