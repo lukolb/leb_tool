@@ -321,6 +321,8 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
     $hasSubgroupLabel = isset($columns['subgroup_label']);
     $hasSubgroupLabelEn = isset($columns['subgroup_label_en']);
     $hasOptionsJson = isset($columns['options_json']);
+    $hasCanChildEdit = isset($columns['can_child_edit']);
+    $hasCanTeacherEdit = isset($columns['can_teacher_edit']);
     $ratingLists = is_array($options['rating_lists'] ?? null) ? $options['rating_lists'] : [];
     $ratingLists = array_intersect_key(array_map('intval', $ratingLists), array_flip(['default', 'teacher', 'student']));
     foreach ($ratingLists as $role => $listId) {
@@ -336,6 +338,8 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
     if ($hasGroupLabelEn) $select .= ', group_label_en';
     if ($hasSubgroupLabel) $select .= ', subgroup_label';
     if ($hasSubgroupLabelEn) $select .= ', subgroup_label_en';
+    if ($hasCanChildEdit) $select .= ', can_child_edit';
+    if ($hasCanTeacherEdit) $select .= ', can_teacher_edit';
 
     $st = $pdo->prepare("SELECT $select FROM template_fields WHERE template_id=?");
     $st->execute([$templateId]);
@@ -359,6 +363,9 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
         'rating_fields_linked' => 0,
         'rating_fields_without_list' => 0,
         'rating_lists_used' => [],
+        'student_editable_fields_set' => 0,
+        'teacher_editable_fields_set' => 0,
+        'role_permissions_updated' => 0,
         'ignored_missing_pdf_field' => 0,
         'errors' => [],
         'unmatched_rcff_field_names' => [],
@@ -450,6 +457,22 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
         $fieldType = (string)($field['type'] ?? '');
         $role = (string)($field['role'] ?? 'default');
         if (!in_array($role, ['default', 'teacher', 'student'], true)) $role = 'default';
+        $permissionChild = null;
+        $permissionTeacher = null;
+        if ($role === 'student') {
+            $permissionChild = 1;
+            $permissionTeacher = 0;
+        } elseif ($role === 'teacher') {
+            $permissionChild = 0;
+            $permissionTeacher = 1;
+        }
+        if ($permissionChild !== null && $permissionTeacher !== null) {
+            $meta['permissions'] = is_array($meta['permissions'] ?? null) ? $meta['permissions'] : [];
+            $meta['permissions']['editable_by_student'] = (bool)$permissionChild;
+            $meta['permissions']['editable_by_teacher'] = (bool)$permissionTeacher;
+            $meta['rcff']['editable_by_student'] = (bool)$permissionChild;
+            $meta['rcff']['editable_by_teacher'] = (bool)$permissionTeacher;
+        }
         $ratingListId = 0;
         $ratingOptionsJson = null;
         if ($fieldType === 'rating') {
@@ -500,6 +523,8 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
         if ($hasGroupLabelEn) { $sql .= ', group_label_en=?'; $params[] = ($categoryEn !== '' ? $categoryEn : ($row['group_label_en'] ?? null)); }
         if ($hasSubgroupLabel) { $sql .= ', subgroup_label=?'; $params[] = ($subcategoryDe !== '' ? $subcategoryDe : ($row['subgroup_label'] ?? null)); }
         if ($hasSubgroupLabelEn) { $sql .= ', subgroup_label_en=?'; $params[] = ($subcategoryEn !== '' ? $subcategoryEn : ($row['subgroup_label_en'] ?? null)); }
+        if ($permissionChild !== null && $hasCanChildEdit) { $sql .= ', can_child_edit=?'; $params[] = $permissionChild; }
+        if ($permissionTeacher !== null && $hasCanTeacherEdit) { $sql .= ', can_teacher_edit=?'; $params[] = $permissionTeacher; }
         $sql .= ', updated_at=CURRENT_TIMESTAMP WHERE id=? AND template_id=?';
         $params[] = (int)$row['id'];
         $params[] = $templateId;
@@ -510,6 +535,11 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
         if ($labelChanged) $stats['labels_updated']++;
         if ($categoryDe !== '' || $categoryEn !== '') $stats['groups_updated']++;
         if ($subcategoryDe !== '' || $subcategoryEn !== '' || isset($field['subcategory_id'])) $stats['subgroups_updated']++;
+        if ($permissionChild !== null && $permissionTeacher !== null) {
+            $stats['role_permissions_updated']++;
+            if ($role === 'student') $stats['student_editable_fields_set']++;
+            if ($role === 'teacher') $stats['teacher_editable_fields_set']++;
+        }
         if ((string)($field['type'] ?? '') === 'rating' && (array_key_exists('rating_values', $field) || array_key_exists('rating_mode', $field) || array_key_exists('role', $field))) $stats['rating_meta_updated']++;
         if ($metaChanged) $stats['meta_updated']++;
     }

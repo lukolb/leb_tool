@@ -133,6 +133,9 @@ function tp_rcff_stats_text(?array $stats): string {
     $ratingWithoutList = (int)($stats['rating_fields_without_list'] ?? 0);
     $createdLists = is_array($stats['created_option_lists'] ?? null) ? $stats['created_option_lists'] : [];
     $usedLists = is_array($stats['used_option_lists'] ?? null) ? $stats['used_option_lists'] : [];
+    $studentEditable = (int)($stats['student_editable_fields_set'] ?? 0);
+    $teacherEditable = (int)($stats['teacher_editable_fields_set'] ?? 0);
+    $rolePermissions = (int)($stats['role_permissions_updated'] ?? 0);
     $ignored = (int)($stats['ignored_missing_pdf_field'] ?? $stats['ignored'] ?? 0);
     if ($total > 0 && $matched === 0) {
         return "RCFF wurde gelesen ({$total} Felder), aber keine Feldnamen passten zu den PDF-Feldern.";
@@ -140,6 +143,9 @@ function tp_rcff_stats_text(?array $stats): string {
     $text = "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
     if ($ratingDetected > 0) {
         $text .= " Ratingfelder: {$ratingDetected} erkannt, {$ratingLinked} mit Auswahllisten verknüpft" . ($ratingWithoutList > 0 ? ", {$ratingWithoutList} ohne Listen-Zuordnung" : '') . ".";
+    }
+    if ($rolePermissions > 0) {
+        $text .= " Rollenrechte: {$rolePermissions} aktualisiert ({$studentEditable} Schülerfelder, {$teacherEditable} Lehrerfelder).";
     }
     if ($usedLists) {
         $parts = [];
