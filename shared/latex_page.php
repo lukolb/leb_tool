@@ -97,6 +97,10 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="hidden" name="enable_student_teacher_ratings" value="0">
     <input type="checkbox" name="enable_student_teacher_ratings" value="1"> Schüler-/Lehrer-Bewertungsspalten anzeigen
   </label>
+  <label style="display:block;margin-top:6px;">
+    <input type="hidden" name="export_rcff" value="0">
+    <input type="checkbox" name="export_rcff" value="1"> Zusätzlich RCFF-Felddatei exportieren
+  </label>
 </div>
 
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -270,6 +274,17 @@ form.addEventListener('submit', async (event) => {
       pdfDebugText.textContent = msg;
       pdfDebug.style.display = 'block';
       console.error('PDF build failed', { status: response.status, contentType, body: msg });
+      return;
+    }
+
+    if (contentType.includes('application/zip')) {
+      const blob = await response.blob();
+      const dl = document.createElement('a');
+      dl.href = URL.createObjectURL(blob);
+      dl.download = 'report_export.zip';
+      document.body.appendChild(dl);
+      dl.click();
+      dl.remove();
       return;
     }
 

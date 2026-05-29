@@ -390,6 +390,11 @@ render_admin_header(t('admin.template_fields.title'));
       <label><?=h(t('admin.template_fields.pdf_select_label'))?></label>
       <input type="file" id="replacePdfFile" accept=".pdf,application/pdf">
     </div>
+    <div>
+      <label>RCFF-Datei importieren (optional)</label>
+      <input type="file" id="replaceRcffFile" accept=".rcff,application/json">
+      <div class="muted2">Überschreibt Feldbeschriftungen anhand der Feldnamen. Das PDF wird weiterhin als Formulargrundlage verwendet.</div>
+    </div>
     <div class="muted2"><?=h(t('admin.template_fields.pdf_select_hint'))?></div>
   </div>
   <div class="muted2" id="replacePdfStatus" style="margin-top:8px;"></div>
@@ -740,6 +745,7 @@ const layout2 = document.getElementById('layout2');
 const previewCard = document.getElementById('previewCard');
 
 const replacePdfInput = document.getElementById('replacePdfFile');
+const replaceRcffInput = document.getElementById('replaceRcffFile');
 const btnReplacePdf = document.getElementById('btnReplacePdf');
 const replacePdfStatus = document.getElementById('replacePdfStatus');
 const btnDeleteMissing = document.getElementById('btnDeleteMissing');
@@ -2828,12 +2834,27 @@ btnReplacePdf.addEventListener('click', async ()=>{
     ];
     if (summary.renamed) parts.push(tfmtAdmin('pdf_summary_renamed', { count: String(summary.renamed) }));
     if (summary.deleted) parts.push(tfmtAdmin('pdf_summary_deleted', { count: String(summary.deleted) }));
-    replacePdfStatus.textContent = parts.join(', ');
+    let statusText = parts.join(', ');
+    const rcffFile = replaceRcffInput?.files?.[0] ?? null;
+    if (rcffFile) {
+      const rcffFd = new FormData();
+      rcffFd.append('csrf_token', csrf);
+      rcffFd.append('template_id', String(templateId));
+      rcffFd.append('rcff', rcffFile);
+      const rcffResp = await fetch("<?=h(url('admin/ajax/import_rcff.php'))?>", { method:'POST', body: rcffFd });
+      const rcffData = await rcffResp.json().catch(()=>({}));
+      if (!rcffResp.ok || !rcffData.ok) throw new Error(rcffData.error || 'RCFF-Import fehlgeschlagen.');
+      const s = rcffData.stats || {};
+      statusText += ` | RCFF importiert: ${s.read||0} gelesen, ${s.matched||0} gematcht, ${s.updated||0} Felder aktualisiert, ${s.labels_updated||0} Labels, ${s.groups_updated||0} Gruppen, ${s.subgroups_updated||0} Untergruppen, ${s.meta_updated||0} Meta aktualisiert, ${s.ignored||0} ignoriert, ${s.skipped||0} übersprungen.`;
+      await load();
+    }
+    replacePdfStatus.textContent = statusText;
   } catch (e) {
     replacePdfStatus.textContent = tAdmin('error_prefix') + ' ' + (e?.message || e);
     } finally {
       btnReplacePdf.disabled = false;
       if (replacePdfInput) replacePdfInput.value = '';
+      if (replaceRcffInput) replaceRcffInput.value = '';
     }
 });
 

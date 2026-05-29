@@ -346,6 +346,7 @@ if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
 $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
 $enableStudentTeacherRatings = ((string)($_POST['enable_student_teacher_ratings'] ?? '0') === '1');
+$exportRcff = ((string)($_POST['export_rcff'] ?? '0') === '1');
 $gradeFieldCategoryIds = array_values(array_unique(array_map('intval', (array)($_POST['grade_field_cats'] ?? []))));
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
@@ -366,6 +367,10 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         . "\\newif\\ifShowAG\n" . ($showAg ? "\\ShowAGtrue\n" : "\\ShowAGfalse\n")
         . "\\newif\\ifShowSTRatings\n" . ($enableStudentTeacherRatings ? "\\ShowSTRatingstrue\n" : "\\ShowSTRatingsfalse\n")
         . $generatedDataTex;
+}
+$rcffData = null;
+if ($exportRcff && (string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+    $rcffData = generate_rcff_data($pdo, $selectedSkills, $selectedGrade, $enableStudentTeacherRatings, $gradeFieldCategoryIds);
 }
 
 try {
@@ -573,12 +578,31 @@ while (ob_get_level() > 0) {
 }
 
 header_remove();
+if ($exportRcff && $rcffData !== null && class_exists('ZipArchive')) {
+    $zipPath = tempnam(sys_get_temp_dir(), 'leb_rcff_');
+    $zip = new ZipArchive();
+    if ($zipPath !== false && $zip->open($zipPath, ZipArchive::OVERWRITE) === true) {
+        $zip->addFromString('report.pdf', $body);
+        $rcffJson = json_encode($rcffData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($rcffJson === false) $rcffJson = '{"format":"rcff","version":1,"fields":[]}';
+        $zip->addFromString('report.rcff', $rcffJson);
+        $zip->close();
+        $zipBytes = (string)file_get_contents($zipPath);
+        @unlink($zipPath);
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="report_export.zip"');
+        header('Content-Transfer-Encoding: binary');
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Length: ' . strlen($zipBytes));
+        echo $zipBytes;
+        exit;
+    }
+}
 header('Content-Type: application/pdf');
 header('Content-Disposition: inline; filename="' . $pdfFilename . '"; filename*=UTF-8\'\'' . rawurlencode($pdfFilename));
 header('Content-Transfer-Encoding: binary');
 header('X-Content-Type-Options: nosniff');
 header('Content-Length: ' . strlen($body));
-
 echo $body;
 exit;
 function latex_escape(string $t): string {
@@ -660,6 +684,34 @@ function parse_space_placeholder_to_latex(string $token): ?string {
     $val = rtrim(rtrim(number_format($num, 2, '.', ''), '0'), '.');
     if ($val === '') $val = '0';
     return '\\hspace{' . $val . $unit . '}';
+}
+
+function collect_inline_field_metadata(string $text, string $fieldPrefix, array $baseMeta): array {
+    $tokens = preg_split('/(\[checkbox(?::[^\]]*)?\])/', $text, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+    $safePrefix = preg_replace('/[^A-Za-z0-9_-]/', '-', $fieldPrefix) ?? 'skillcb';
+    $safePrefix = trim($safePrefix, '-');
+    if ($safePrefix === '') $safePrefix = 'skillcb';
+    $out = [];
+    $checkboxIndex = 0;
+    $radioValueCounters = [];
+    foreach ($tokens as $token) {
+        if (!preg_match('/^\[checkbox(?::[^\]]*)?\]$/i', (string)$token)) continue;
+        $o = parse_checkbox_placeholder_options((string)$token);
+        if ((string)$o['type'] === 'radio') {
+            $group = (string)($o['group'] ?? '');
+            if ($group === '') $group = 'default';
+            $value = (string)($o['value'] ?? '');
+            if ($value === '') {
+                $radioValueCounters[$group] = (int)($radioValueCounters[$group] ?? 0) + 1;
+                $value = 'opt' . $radioValueCounters[$group];
+            }
+            $out[] = $baseMeta + ['field_name' => $safePrefix . '-radio-' . $group, 'type' => 'inline_radio', 'value' => $value];
+        } else {
+            $fieldName = $o['same'] ? ($safePrefix . '-same') : ($safePrefix . '-' . (++$checkboxIndex));
+            $out[] = $baseMeta + ['field_name' => $fieldName, 'type' => 'inline_checkbox'];
+        }
+    }
+    return $out;
 }
 
 function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 'skillcb'): string {
@@ -863,4 +915,69 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     $out .= "}\n";
 
     return $out;
+}
+
+function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1, bool $enableStudentTeacherRatings = false, array $gradeFieldCategoryIds = []): array {
+    $gradeLevel = max(1, min(4, $gradeLevel));
+    $rcff = [
+        'format' => 'rcff',
+        'version' => 1,
+        'source' => 'leb_tool',
+        'created_at' => gmdate('c'),
+        'grade_level' => $gradeLevel,
+        'student_teacher_ratings' => $enableStudentTeacherRatings,
+        'fields' => [],
+    ];
+    if (!$selectedCodes) return $rcff;
+    $in = implode(',', array_fill(0, count($selectedCodes), '?'));
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) WHERE c.code IN ($in) AND c.is_active=1";
+    $st = $pdo->prepare($sql);
+    $st->execute($selectedCodes);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $gradeMap = array_fill_keys(array_map('intval', $gradeFieldCategoryIds), true);
+    foreach ($rows as $it) {
+        $code = trim((string)($it['code'] ?? ''));
+        if ($code === '') continue;
+        $catId = (int)($it['category_id'] ?? 0);
+        $base = [
+            'label_de' => (string)($it['text_de'] ?? ''),
+            'label_en' => (string)($it['text_en'] ?? ''),
+            'category_id' => (int)($it['category_id'] ?? 0),
+            'category_de' => (string)($it['cat_de'] ?? ''),
+            'category_en' => (string)($it['cat_en'] ?? ''),
+            'subcategory_id' => (int)($it['subcategory_id'] ?? 0),
+            'subcategory_de' => (string)($it['sub_de'] ?? ''),
+            'subcategory_en' => (string)($it['sub_en'] ?? ''),
+            'competency_code' => $code,
+            'competency_id' => (int)($it['id'] ?? 0),
+        ];
+        if ($catId > 0 && isset($gradeMap[$catId])) {
+            $rcff['fields'][] = [
+                'field_name' => 'grade-' . $catId,
+                'type' => 'grade',
+                'label_de' => 'Note',
+                'label_en' => 'Grade',
+                'category_de' => (string)($it['cat_de'] ?? ''),
+                'category_en' => (string)($it['cat_en'] ?? ''),
+                'category_id' => $catId,
+                'subcategory_id' => 0,
+                'subcategory_de' => '',
+                'subcategory_en' => '',
+            ];
+            unset($gradeMap[$catId]);
+        }
+        if ((string)($it['display_type'] ?? 'rated') === 'info') {
+            $prefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
+            foreach (collect_inline_field_metadata((string)($it['text_de'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
+            foreach (collect_inline_field_metadata((string)($it['text_en'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
+            continue;
+        }
+        if ($enableStudentTeacherRatings) {
+            $rcff['fields'][] = $base + ['field_name' => $code . '-T', 'type' => 'rating', 'role' => 'teacher', 'rating_values' => ['na','be','pr','st','ma']];
+            $rcff['fields'][] = $base + ['field_name' => $code . '-S', 'type' => 'rating', 'role' => 'student', 'rating_values' => ['be','pr','st','ma']];
+        } else {
+            $rcff['fields'][] = $base + ['field_name' => $code, 'type' => 'rating', 'role' => 'default', 'rating_values' => ['na','be','pr','st','ma']];
+        }
+    }
+    return $rcff;
 }
