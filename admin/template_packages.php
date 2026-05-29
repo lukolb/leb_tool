@@ -59,31 +59,67 @@ function tp_log_rcff_application(int $packageId, int $templateId, array $stats):
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
+function tp_set_flash(string $type, string $message, array $details = []): void {
+    $_SESSION['template_packages_flash'] = ['type' => $type, 'message' => $message, 'details' => $details];
+}
+
+function tp_take_flash(): ?array {
+    $flash = $_SESSION['template_packages_flash'] ?? null;
+    unset($_SESSION['template_packages_flash']);
+    return is_array($flash) ? $flash : null;
+}
+
+function tp_redirect_to_package(string $action, int $packageId): never {
+    header('Location: ' . url('admin/template_packages.php?action=' . rawurlencode($action) . '&id=' . $packageId));
+    exit;
+}
+
+function tp_log_import_error(int $packageId, string $action, ?array $pkg, string $reason, array $helperResult = []): void {
+    error_log('generated_template_package import error: ' . json_encode([
+        'package_id' => $packageId,
+        'action' => $action,
+        'status' => is_array($pkg) ? (string)($pkg['status'] ?? '') : null,
+        'imported_template_id' => is_array($pkg) ? (int)($pkg['imported_template_id'] ?? 0) : null,
+        'reason' => $reason,
+        'helper_result' => $helperResult,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
 $msg = '';
 $err = '';
 $importedTemplateId = 0;
 $importStats = null;
 $cleanupPdf = null;
+$flash = tp_take_flash();
+if ($flash) {
+    if (($flash['type'] ?? '') === 'success') {
+        $msg = (string)($flash['message'] ?? '');
+        $details = is_array($flash['details'] ?? null) ? $flash['details'] : [];
+        $importedTemplateId = (int)($details['template_id'] ?? 0);
+        $importStats = is_array($details['stats'] ?? null) ? $details['stats'] : null;
+    } elseif (($flash['type'] ?? '') === 'error') {
+        $err = (string)($flash['message'] ?? '');
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string)($_POST['action'] ?? '');
+    $packageId = (int)($_POST['package_id'] ?? 0);
+    $pkgForLog = null;
+    $helperResultForLog = [];
     try {
         csrf_verify();
-        $action = (string)($_POST['action'] ?? '');
         if (!in_array($action, ['import_package', 'reapply_rcff'], true)) {
             throw new RuntimeException('Unbekannte Aktion.');
         }
-
-        $packageId = (int)($_POST['package_id'] ?? 0);
-        $templateName = trim((string)($_POST['template_name'] ?? ''));
-        $useRcff = (string)($_POST['apply_rcff'] ?? '1') === '1';
-        $fieldsJson = (string)($_POST['fields_json'] ?? '');
         if ($packageId <= 0) throw new RuntimeException('Paket fehlt.');
-        $handledPost = false;
+
         if ($action === 'reapply_rcff') {
             $pdo->beginTransaction();
             $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
             $st->execute([$packageId]);
             $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            $pkgForLog = $pkg;
             if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
             $templateId = (int)($pkg['imported_template_id'] ?? 0);
             if ((string)($pkg['status'] ?? '') !== 'imported' || $templateId <= 0) {
@@ -94,6 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Gespeicherte RCFF-Daten sind ungültig.');
             }
             $rcffStats = apply_rcff_to_template_fields($pdo, $templateId, $rcff);
+            $helperResultForLog = ['rcff_stats' => $rcffStats];
             tp_log_rcff_application($packageId, $templateId, $rcffStats);
             $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
             $metadata['rcff_reapply'] = [
@@ -108,26 +145,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             audit('generated_template_package_rcff_reapply', (int)current_user()['id'], ['package_id' => $packageId, 'template_id' => $templateId, 'rcff_stats' => $rcffStats]);
             $pdo->commit();
-            $importedTemplateId = $templateId;
-            $importStats = ['fields' => (int)($rcffStats['template_fields_total'] ?? 0), 'rcff' => $rcffStats];
-            $msg = 'RCFF wurde erneut auf das Template angewendet.';
-            $handledPost = true;
+            tp_set_flash('success', 'RCFF wurde erneut auf das Template angewendet.', [
+                'template_id' => $templateId,
+                'stats' => ['fields' => (int)($rcffStats['template_fields_total'] ?? 0), 'rcff' => $rcffStats],
+            ]);
+            tp_redirect_to_package('view', $packageId);
         }
-        if (!$handledPost) {
-        if ($templateName === '') throw new RuntimeException('Template-Name darf nicht leer sein.');
-        if ((function_exists('mb_strlen') ? mb_strlen($templateName) : strlen($templateName)) > 255) throw new RuntimeException('Template-Name ist zu lang.');
-        $fields = json_decode($fieldsJson, true);
-        if (!is_array($fields) || !$fields) throw new RuntimeException('PDF-Formularfelder konnten nicht gelesen werden.');
 
+        // First import path. Load and lock the package before validating the submitted
+        // browser-side field payload so a double-click on an already imported package
+        // is treated as the successful end state, not as a new failed import.
         $pdo->beginTransaction();
         $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
         $st->execute([$packageId]);
         $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        $pkgForLog = $pkg;
         if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
         $status = (string)($pkg['status'] ?? '');
+        $alreadyTemplateId = (int)($pkg['imported_template_id'] ?? 0);
+        if ($status === 'imported' && $alreadyTemplateId > 0) {
+            $pdo->commit();
+            tp_set_flash('success', 'Dieses Paket wurde bereits importiert.', [
+                'template_id' => $alreadyTemplateId,
+                'stats' => null,
+            ]);
+            tp_redirect_to_package('imported', $packageId);
+        }
         if (!in_array($status, ['draft', 'submitted'], true)) {
             throw new RuntimeException('Dieses Paket kann nicht übernommen werden (Status: ' . $status . ').');
         }
+
+        $templateName = trim((string)($_POST['template_name'] ?? ''));
+        $useRcff = (string)($_POST['apply_rcff'] ?? '1') === '1';
+        $fieldsJson = (string)($_POST['fields_json'] ?? '');
+        if ($templateName === '') throw new RuntimeException('Template-Name darf nicht leer sein.');
+        if ((function_exists('mb_strlen') ? mb_strlen($templateName) : strlen($templateName)) > 255) throw new RuntimeException('Template-Name ist zu lang.');
+        $fields = json_decode($fieldsJson, true);
+        if (!is_array($fields) || !$fields) throw new RuntimeException('PDF-Formularfelder konnten nicht gelesen werden.');
 
         $pdfAbs = generated_template_package_pdf_absolute_path((string)$pkg['pdf_path']);
         $expectedSha = trim((string)($pkg['pdf_sha256'] ?? ''));
@@ -153,6 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $fieldCount = import_pdf_fields_to_template($pdo, $templateId, $fields);
         $rcffStats = $useRcff ? apply_rcff_to_template_fields($pdo, $templateId, $rcff) : null;
+        $helperResultForLog = ['field_count' => $fieldCount, 'rcff_stats' => $rcffStats];
         if (is_array($rcffStats)) tp_log_rcff_application($packageId, $templateId, $rcffStats);
 
         $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
@@ -167,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($metadataJson === false) $metadataJson = (string)$pkg['metadata_json'];
 
-        $upd = $pdo->prepare('UPDATE generated_template_packages SET status=\'imported\', imported_template_id=?, imported_at=NOW(), metadata_json=? WHERE id=?');
+        $upd = $pdo->prepare("UPDATE generated_template_packages SET status='imported', imported_template_id=?, imported_at=NOW(), metadata_json=? WHERE id=?");
         $upd->execute([$templateId, $metadataJson, $packageId]);
 
         audit('generated_template_package_import', (int)current_user()['id'], [
@@ -179,21 +234,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $pdo->commit();
         $cleanupPdf = null;
-        $importedTemplateId = $templateId;
-        $importStats = ['fields' => $fieldCount, 'rcff' => $rcffStats];
-        $msg = 'Template wurde angelegt.';
-        }
+        tp_set_flash('success', 'Template wurde erfolgreich angelegt.', [
+            'template_id' => $templateId,
+            'stats' => ['fields' => $fieldCount, 'rcff' => $rcffStats],
+        ]);
+        tp_redirect_to_package('imported', $packageId);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         if (is_string($cleanupPdf) && $cleanupPdf !== '' && is_file($cleanupPdf)) {
             @unlink($cleanupPdf);
             @rmdir(dirname($cleanupPdf));
         }
-        $err = $e->getMessage();
+        tp_log_import_error($packageId, $action, $pkgForLog, $e->getMessage(), $helperResultForLog);
+        tp_set_flash('error', $e->getMessage());
+        if ($packageId > 0) {
+            tp_redirect_to_package('view', $packageId);
+        }
+        header('Location: ' . url('admin/template_packages.php'));
+        exit;
     }
 }
 
-$confirmId = (int)($_GET['import'] ?? 0);
+$viewAction = (string)($_GET['action'] ?? '');
+$confirmId = (int)($_GET['id'] ?? ($_GET['import'] ?? 0));
 $confirmPkg = null;
 $confirmSummary = null;
 if ($confirmId > 0) {
@@ -225,12 +288,29 @@ render_admin_header('Template-Pakete');
 <?php if ($err): ?><div class="card" style="border-left:4px solid #b42318;"><?=h($err)?></div><?php endif; ?>
 
 <?php if ($confirmPkg && $confirmSummary): ?>
-  <?php $canImport = in_array((string)$confirmPkg['status'], ['draft','submitted'], true); ?>
-  <div class="card" style="border-left:4px solid <?= $canImport ? '#0b57d0' : '#b42318' ?>;">
-    <h2>Template-Paket übernehmen</h2>
+  <?php
+    $confirmStatus = (string)($confirmPkg['status'] ?? '');
+    $confirmImportedTemplateId = (int)($confirmPkg['imported_template_id'] ?? 0);
+    $canImport = in_array($confirmStatus, ['draft','submitted'], true);
+    $isImported = ($confirmStatus === 'imported');
+    $cardColor = $isImported && $confirmImportedTemplateId > 0 ? '#067647' : ($canImport ? '#0b57d0' : '#b54708');
+  ?>
+  <div class="card" style="border-left:4px solid <?= h($cardColor) ?>;">
+    <h2><?= $isImported ? 'Template-Paket' : 'Template-Paket übernehmen' ?></h2>
     <p><strong><?=h((string)$confirmPkg['title'])?></strong></p>
-    <p class="muted">Status: <?=h((string)$confirmPkg['status'])?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
-    <?php if ($canImport): ?>
+    <p class="muted">Status: <?=h($confirmStatus)?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
+    <?php if ($isImported && $confirmImportedTemplateId > 0): ?>
+      <p>Dieses Paket wurde bereits als Template übernommen.</p>
+      <p><a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $confirmImportedTemplateId))?>">Felder bearbeiten</a></p>
+      <form method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="reapply_rcff">
+        <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
+        <button class="btn secondary" type="submit">RCFF erneut anwenden</button>
+      </form>
+    <?php elseif ($isImported): ?>
+      <p>Dieses Paket ist als importiert markiert, aber es ist kein Template verknüpft.</p>
+    <?php elseif ($canImport): ?>
       <form method="post" id="importPackageForm">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="import_package">
@@ -340,7 +420,7 @@ render_admin_header('Template-Pakete');
       });
       </script>
     <?php else: ?>
-      <p>Dieses Paket kann nicht übernommen werden.</p>
+      <p>Dieses Paket kann aktuell nicht übernommen werden (Status: <?=h($confirmStatus)?>).</p>
     <?php endif; ?>
   </div>
 <?php elseif ($confirmId > 0): ?>
