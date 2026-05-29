@@ -130,6 +130,7 @@ function tp_rcff_stats_text(?array $stats): string {
     $ratings = (int)($stats['rating_meta_updated'] ?? 0);
     $ratingDetected = (int)($stats['rating_fields_detected'] ?? 0);
     $ratingLinked = (int)($stats['rating_fields_linked'] ?? 0);
+    $ratingWithoutList = (int)($stats['rating_fields_without_list'] ?? 0);
     $createdLists = is_array($stats['created_option_lists'] ?? null) ? $stats['created_option_lists'] : [];
     $usedLists = is_array($stats['used_option_lists'] ?? null) ? $stats['used_option_lists'] : [];
     $ignored = (int)($stats['ignored_missing_pdf_field'] ?? $stats['ignored'] ?? 0);
@@ -138,7 +139,7 @@ function tp_rcff_stats_text(?array $stats): string {
     }
     $text = "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
     if ($ratingDetected > 0) {
-        $text .= " Ratingfelder: {$ratingDetected} erkannt, {$ratingLinked} mit Auswahllisten verknüpft.";
+        $text .= " Ratingfelder: {$ratingDetected} erkannt, {$ratingLinked} mit Auswahllisten verknüpft" . ($ratingWithoutList > 0 ? ", {$ratingWithoutList} ohne Listen-Zuordnung" : '') . ".";
     }
     if ($usedLists) {
         $parts = [];
@@ -687,7 +688,12 @@ render_admin_header('Template-Pakete');
       });
       </script>
     <?php else: ?>
-      <p>Dieses Paket kann aktuell nicht übernommen werden (Status: <?=h($confirmStatus)?>).</p>
+      <?php if ($confirmStatus === 'expired'): ?>
+        <p>Dieses Paket ist abgelaufen und kann nicht mehr übernommen werden.</p>
+      <?php else: ?>
+        <p>Dieses Paket kann wegen seines Status nicht übernommen werden. Bitte prüfen: <?=h($confirmStatus !== '' ? $confirmStatus : 'unbekannt')?>.</p>
+      <?php endif; ?>
+      <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Zurück zur Paketliste</a>
     <?php endif; ?>
   </div>
 <?php elseif ($confirmId > 0): ?>

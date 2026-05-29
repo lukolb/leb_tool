@@ -357,6 +357,7 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
         'rating_meta_updated' => 0,
         'rating_fields_detected' => 0,
         'rating_fields_linked' => 0,
+        'rating_fields_without_list' => 0,
         'rating_lists_used' => [],
         'ignored_missing_pdf_field' => 0,
         'errors' => [],
@@ -413,6 +414,9 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
 
         $meta = json_decode((string)($row['meta_json'] ?? ''), true);
         if (!is_array($meta)) $meta = [];
+        $existingRcffMeta = is_array($meta['rcff'] ?? null) ? $meta['rcff'] : [];
+        $existingRatingListId = (int)($meta['rating_list_id'] ?? $meta['option_list_template_id'] ?? $existingRcffMeta['rating_list_id'] ?? 0);
+        $existingRatingListRole = (string)($meta['rating_list_role'] ?? $existingRcffMeta['rating_list_role'] ?? '');
         $beforeMeta = json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $meta['rcff'] = [
@@ -463,6 +467,16 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, a
                 $meta['rcff']['rating_list_role'] = $role;
                 $stats['rating_fields_linked']++;
                 $stats['rating_lists_used'][$role] = $ratingListId;
+            } elseif ($existingRatingListId > 0) {
+                $meta['option_list_template_id'] = (string)$existingRatingListId;
+                $meta['rating_list_id'] = $existingRatingListId;
+                $meta['rating_list_role'] = $existingRatingListRole !== '' ? $existingRatingListRole : $role;
+                $meta['rcff']['rating_list_id'] = $existingRatingListId;
+                $meta['rcff']['rating_list_role'] = $existingRatingListRole !== '' ? $existingRatingListRole : $role;
+                $stats['rating_fields_linked']++;
+                $stats['rating_lists_used'][$role] = $existingRatingListId;
+            } else {
+                $stats['rating_fields_without_list']++;
             }
         }
 
