@@ -58,8 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = 'LaTeX-Paket als Standard gesetzt.';
         } elseif ($packageAction === 'delete') {
             $id = (int)($_POST['package_id'] ?? 0);
-            delete_latex_template_package($pdo, $id);
-            $msg = 'LaTeX-Paket gelöscht.';
+            $result = delete_latex_template_package($pdo, $id);
+            if (!empty($result['was_default'])) {
+                $msg = !empty($result['new_default_id'])
+                    ? 'Standard-LaTeX-Vorlagenpaket wurde gelöscht. Ein anderes Paket wurde als Standard gesetzt.'
+                    : 'Standard-LaTeX-Vorlagenpaket wurde gelöscht. Es wird wieder die Systemvorlage verwendet.';
+            } else {
+                $msg = 'LaTeX-Paket gelöscht.';
+            }
         } elseif ($action === 'set_default') {
             $id = (int)($_POST['template_id'] ?? 0);
             $tpl = find_active_latex_layout_template($pdo, $id);
@@ -88,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->execute([$id]);
             $tpl = $st->fetch(PDO::FETCH_ASSOC) ?: null;
             if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden.');
-            if ((int)($tpl['is_default'] ?? 0) === 1) throw new RuntimeException('Standardvorlage kann nicht gelöscht werden.');
+            $wasDefault = ((int)($tpl['is_default'] ?? 0) === 1);
 
             $filePathRel = (string)($tpl['file_path'] ?? '');
             $fileAbs = latex_layout_absolute_path($filePathRel);
@@ -101,12 +107,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $canDeleteFile = strncmp($fileNorm, $prefix, strlen($prefix)) === 0;
             }
 
+            $pdo->beginTransaction();
             $pdo->prepare("DELETE FROM latex_layout_templates WHERE id=?")->execute([$id]);
+            $newDefaultId = $wasDefault ? ensure_default_layout_template_after_delete($pdo) : null;
+            $pdo->commit();
 
             if ($canDeleteFile && is_file($fileAbs)) {
                 @unlink($fileAbs);
             }
-            $msg = 'Layoutvorlage gelöscht.';
+            if ($wasDefault) {
+                $msg = $newDefaultId !== null
+                    ? 'Standard-Layoutvorlage wurde gelöscht. Eine andere Vorlage wurde als Standard gesetzt.'
+                    : 'Standard-Layoutvorlage wurde gelöscht. Es wird wieder die Systemvorlage verwendet.';
+            } else {
+                $msg = 'Layoutvorlage gelöscht.';
+            }
         } elseif ($action === 'upload') {
             $displayName = trim((string)($_POST['display_name'] ?? ''));
             $keyName = trim((string)($_POST['key_name'] ?? ''));
@@ -224,11 +239,16 @@ require __DIR__ . '/../shared/latex_page.php';
             <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
             <button class="btn" type="submit" <?=((string)$pkg['status'] !== 'active') ? 'disabled title="Nur aktive Pakete können Standard sein."' : ''?>>Als Standard</button>
           </form>
-          <form method="post" style="display:inline" onsubmit="return confirm('LaTeX-Paket wirklich löschen?');">
+          <?php
+            $deletePackageConfirm = $isDefaultPkg
+              ? 'Dieses LaTeX-Vorlagenpaket ist aktuell als Standard gesetzt. Wenn du es löschst, wird automatisch ein anderes Paket als Standard gesetzt oder die Systemvorlage verwendet.'
+              : 'LaTeX-Paket wirklich löschen?';
+          ?>
+          <form method="post" style="display:inline" onsubmit="return confirm('<?=h($deletePackageConfirm)?>');">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="latex_package_action" value="delete">
             <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
-            <button class="btn" type="submit" <?=$isDefaultPkg ? 'disabled title="Standardpaket kann nicht gelöscht werden."' : ''?>>Löschen</button>
+            <button class="btn" type="submit">Löschen</button>
           </form>
         </td>
       </tr>
@@ -260,7 +280,6 @@ require __DIR__ . '/../shared/latex_page.php';
       <?php foreach($templates as $tpl):
         $exists = is_file(latex_layout_absolute_path((string)$tpl['file_path']));
         $isDefault = ((int)$tpl['is_default'] === 1);
-        $canDelete = !$isDefault;
       ?>
         <tr>
           <td><?= h((string)$tpl['display_name']) ?></td>
@@ -281,16 +300,17 @@ require __DIR__ . '/../shared/latex_page.php';
               <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
               <button class="btn" type="submit" <?= ((int)$tpl['is_active']!==1) ? 'disabled title="Nur aktive Vorlagen können Standard sein."' : '' ?>>Als Standard</button>
             </form>
-            <?php if ($canDelete): ?>
-              <form method="post" style="display:inline" onsubmit="return confirm('Vorlage wirklich löschen?');">
-                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                <input type="hidden" name="layout_action" value="delete">
-                <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
-                <button class="btn" type="submit">Löschen</button>
-              </form>
-            <?php else: ?>
-              <button class="btn" type="button" disabled title="Standardvorlage kann nicht gelöscht werden.">Löschen</button>
-            <?php endif; ?>
+            <?php
+              $deleteLayoutConfirm = $isDefault
+                ? 'Diese Layoutvorlage ist aktuell als Standard gesetzt. Wenn du sie löschst, wird automatisch eine andere Vorlage als Standard gesetzt oder die Systemvorlage verwendet.'
+                : 'Vorlage wirklich löschen?';
+            ?>
+            <form method="post" style="display:inline" onsubmit="return confirm('<?=h($deleteLayoutConfirm)?>');">
+              <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+              <input type="hidden" name="layout_action" value="delete">
+              <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
+              <button class="btn" type="submit">Löschen</button>
+            </form>
           </td>
         </tr>
       <?php endforeach; ?>

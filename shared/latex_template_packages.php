@@ -365,11 +365,29 @@ function latex_template_package_remove_dir(string $dir): void {
     @rmdir($real);
 }
 
-function delete_latex_template_package(PDO $pdo, int $id): void {
+function ensure_default_latex_template_package_after_delete(PDO $pdo): ?int {
+    ensure_latex_template_packages_table($pdo);
+    $pdo->exec("UPDATE latex_template_packages SET is_default=0 WHERE deleted_at IS NOT NULL OR status<>'active'");
+    $st = $pdo->query("SELECT id FROM latex_template_packages WHERE deleted_at IS NULL AND status='active' ORDER BY created_at ASC, id ASC LIMIT 1");
+    $newDefaultId = (int)($st->fetchColumn() ?: 0);
+    $pdo->exec("UPDATE latex_template_packages SET is_default=0 WHERE deleted_at IS NULL");
+    if ($newDefaultId > 0) {
+        $upd = $pdo->prepare('UPDATE latex_template_packages SET is_default=1, updated_at=NOW() WHERE id=?');
+        $upd->execute([$newDefaultId]);
+        return $newDefaultId;
+    }
+    return null;
+}
+
+function delete_latex_template_package(PDO $pdo, int $id): array {
     $pkg = find_latex_template_package($pdo, $id, false);
     if (!$pkg) throw new RuntimeException('LaTeX-Paket nicht gefunden.');
-    if ((int)($pkg['is_default'] ?? 0) === 1) throw new RuntimeException('Standardpaket kann nicht gelöscht werden.');
+    $wasDefault = ((int)($pkg['is_default'] ?? 0) === 1);
     $dir = latex_template_package_abs_dir((string)$pkg['storage_path']);
-    $pdo->prepare('UPDATE latex_template_packages SET deleted_at=NOW(), is_default=0, status=\'inactive\' WHERE id=?')->execute([$id]);
+    $pdo->beginTransaction();
+    $pdo->prepare("UPDATE latex_template_packages SET deleted_at=NOW(), is_default=0, status='inactive', updated_at=NOW() WHERE id=?")->execute([$id]);
+    $newDefaultId = $wasDefault ? ensure_default_latex_template_package_after_delete($pdo) : null;
+    $pdo->commit();
     latex_template_package_remove_dir($dir);
+    return ['was_default' => $wasDefault, 'new_default_id' => $newDefaultId];
 }

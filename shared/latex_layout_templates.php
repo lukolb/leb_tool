@@ -27,6 +27,20 @@ function ensure_default_latex_layout_template(PDO $pdo): void {
     $st->execute([$defaultPath]);
 }
 
+
+function ensure_default_layout_template_after_delete(PDO $pdo): ?int {
+    $pdo->exec("UPDATE latex_layout_templates SET is_default=0 WHERE is_active<>1");
+    $st = $pdo->query("SELECT id FROM latex_layout_templates WHERE is_active=1 ORDER BY id ASC LIMIT 1");
+    $newDefaultId = (int)($st->fetchColumn() ?: 0);
+    $pdo->exec("UPDATE latex_layout_templates SET is_default=0");
+    if ($newDefaultId > 0) {
+        $upd = $pdo->prepare("UPDATE latex_layout_templates SET is_default=1, updated_at=NOW() WHERE id=?");
+        $upd->execute([$newDefaultId]);
+        return $newDefaultId;
+    }
+    return null;
+}
+
 function get_latex_layout_templates(PDO $pdo, bool $onlyActive = false): array {
     $sql = "SELECT * FROM latex_layout_templates" . ($onlyActive ? " WHERE is_active=1" : "") . " ORDER BY is_default DESC, display_name ASC, id ASC";
     return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
