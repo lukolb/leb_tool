@@ -1004,6 +1004,48 @@ function ensure_schema(PDO $pdo): void {
       );
     }
 
+    if (!db_has_table($pdo, 'latex_template_packages')) {
+      $pdo->exec(
+        "CREATE TABLE latex_template_packages (
+" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+        "  name VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  description TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
+        "  status ENUM('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+" .
+        "  is_default TINYINT(1) NOT NULL DEFAULT 0,
+" .
+        "  main_file VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'main.tex',
+" .
+        "  storage_path VARCHAR(1024) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  manifest_json LONGTEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  package_hash CHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
+        "  version_label VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
+        "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+" .
+        "  deleted_at DATETIME DEFAULT NULL,
+" .
+        "  PRIMARY KEY (id),
+" .
+        "  KEY idx_latex_template_packages_status (status, is_default),
+" .
+        "  KEY idx_latex_template_packages_deleted (deleted_at)
+" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+
     if (!db_has_table($pdo, 'generated_template_packages')) {
       $pdo->exec(
         "CREATE TABLE generated_template_packages (

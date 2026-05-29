@@ -126,6 +126,19 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php endforeach; ?>
   </select>
 </div>
+<?php if (!empty($allowLatexTemplatePackageSelection)): ?>
+  <?php $ltpList = is_array($latexTemplatePackages ?? null) ? $latexTemplatePackages : []; ?>
+  <div class="card" style="padding:12px;margin:12px 0;">
+    <label><strong>LaTeX-Vorlagenpaket</strong></label>
+    <select class="input" name="latex_template_package_id">
+      <option value="0">Standard-Systemvorlage</option>
+      <?php foreach ($ltpList as $pkg): ?>
+        <option value="<?= h((string)$pkg['id']) ?>" <?= ((int)($pkg['is_default'] ?? 0) === 1) ? 'selected' : '' ?>><?= h((string)$pkg['name']) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+      <?php endforeach; ?>
+    </select>
+    <?php if (!$ltpList): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden. Die Standard-Systemvorlage wird verwendet.</p><?php endif; ?>
+  </div>
+<?php endif; ?>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
   <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
   <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>

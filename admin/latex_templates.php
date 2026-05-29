@@ -4,20 +4,55 @@ declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_once __DIR__ . '/../shared/latex_layout_templates.php';
+require_once __DIR__ . '/../shared/latex_template_packages.php';
 require_admin();
 
 $pdo = db();
 ensure_default_latex_layout_template($pdo);
 ensure_latex_layout_storage_dir();
+ensure_latex_template_packages_table($pdo);
+ensure_latex_template_package_storage_dir();
 $msg = '';
 $err = '';
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
+    $packageAction = (string)($_POST['latex_package_action'] ?? '');
     $action = (string)($_POST['layout_action'] ?? '');
     try {
-        if ($action === 'set_default') {
+        if ($packageAction === 'upload') {
+            $result = latex_template_package_import_zip($pdo, $_FILES['latex_package_zip'] ?? [], [
+                'name' => $_POST['package_name'] ?? '',
+                'description' => $_POST['package_description'] ?? '',
+                'main_file' => $_POST['package_main_file'] ?? 'main.tex',
+                'is_active' => isset($_POST['package_is_active']),
+                'is_default' => isset($_POST['package_is_default']),
+            ]);
+            $msg = 'LaTeX-Vorlagenpaket importiert.';
+            if (!empty($result['warnings'])) $msg .= ' Hinweise: ' . implode(' ', (array)$result['warnings']);
+        } elseif ($packageAction === 'toggle_active') {
+            $id = (int)($_POST['package_id'] ?? 0);
+            $pkg = find_latex_template_package($pdo, $id, false);
+            if (!$pkg) throw new RuntimeException('LaTeX-Paket nicht gefunden.');
+            if ((int)($pkg['is_default'] ?? 0) === 1) throw new RuntimeException('Standardpaket kann nicht deaktiviert werden.');
+            $newStatus = ((string)($pkg['status'] ?? '') === 'active') ? 'inactive' : 'active';
+            $pdo->prepare('UPDATE latex_template_packages SET status=?, updated_at=NOW() WHERE id=?')->execute([$newStatus, $id]);
+            $msg = 'LaTeX-Paket-Status aktualisiert.';
+        } elseif ($packageAction === 'set_default') {
+            $id = (int)($_POST['package_id'] ?? 0);
+            $pkg = find_latex_template_package($pdo, $id, true);
+            if (!$pkg) throw new RuntimeException('Aktives LaTeX-Paket nicht gefunden.');
+            $pdo->beginTransaction();
+            $pdo->exec('UPDATE latex_template_packages SET is_default=0 WHERE deleted_at IS NULL');
+            $pdo->prepare('UPDATE latex_template_packages SET is_default=1, updated_at=NOW() WHERE id=?')->execute([$id]);
+            $pdo->commit();
+            $msg = 'LaTeX-Paket als Standard gesetzt.';
+        } elseif ($packageAction === 'delete') {
+            $id = (int)($_POST['package_id'] ?? 0);
+            delete_latex_template_package($pdo, $id);
+            $msg = 'LaTeX-Paket gelöscht.';
+        } elseif ($action === 'set_default') {
             $id = (int)($_POST['template_id'] ?? 0);
             $tpl = find_active_latex_layout_template($pdo, $id);
             if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden oder inaktiv.');
@@ -106,10 +141,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $templates = get_latex_layout_templates($pdo, false);
+$latexPackages = get_latex_template_packages($pdo, false);
+$activeLatexPackages = get_latex_template_packages($pdo, true);
 
 render_admin_header(t('latex.title', 'Kompetenz-PDF erstellen'));
 $latexBuildUrl = url('admin/pdf_preview.php');
 $allowTemplatePackage = true;
+$allowLatexTemplatePackageSelection = true;
+$latexTemplatePackages = $activeLatexPackages;
 require __DIR__ . '/../shared/latex_page.php';
 ?>
 
@@ -121,6 +160,66 @@ require __DIR__ . '/../shared/latex_page.php';
 
 <?php if($msg): ?><div class="card" style="border-left:4px solid #067647;"><?= h($msg) ?></div><?php endif; ?>
 <?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
+
+<details class="card" style="margin-top:20px;">
+  <summary><strong>LaTeX-Vorlagenpakete</strong></summary>
+  <div style="margin-top:10px;">
+    <p class="muted">Das ZIP muss eine Hauptdatei (z. B. main.tex) enthalten. data.tex wird beim Generieren automatisch vom System bereitgestellt und überschreibt eine ggf. enthaltene Datei.</p>
+    <table class="table">
+      <tr><th>Name</th><th>Status</th><th>Standard</th><th>Hauptdatei</th><th>Erstellt</th><th>Dateien</th><th>Warnungen</th><th>Aktionen</th></tr>
+      <?php foreach ($latexPackages as $pkg):
+        $manifest = json_decode((string)($pkg['manifest_json'] ?? '{}'), true);
+        $fileCount = is_array($manifest['files'] ?? null) ? count($manifest['files']) : 0;
+        $warnings = is_array($manifest['warnings'] ?? null) ? $manifest['warnings'] : [];
+        $isDefaultPkg = ((int)($pkg['is_default'] ?? 0) === 1);
+      ?>
+      <tr>
+        <td><?=h((string)$pkg['name'])?></td>
+        <td><?=h((string)$pkg['status'])?></td>
+        <td><?=$isDefaultPkg ? 'Ja' : 'Nein'?></td>
+        <td><?=h((string)$pkg['main_file'])?></td>
+        <td><?=h((string)$pkg['created_at'])?></td>
+        <td><?=h((string)$fileCount)?></td>
+        <td><?=h(implode(' ', array_slice($warnings, 0, 3)))?></td>
+        <td>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="latex_package_action" value="toggle_active">
+            <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+            <button class="btn" type="submit" <?=$isDefaultPkg ? 'disabled title="Standardpaket kann nicht deaktiviert werden."' : ''?>>Aktiv/Inaktiv</button>
+          </form>
+          <form method="post" style="display:inline">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="latex_package_action" value="set_default">
+            <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+            <button class="btn" type="submit" <?=((string)$pkg['status'] !== 'active') ? 'disabled title="Nur aktive Pakete können Standard sein."' : ''?>>Als Standard</button>
+          </form>
+          <form method="post" style="display:inline" onsubmit="return confirm('LaTeX-Paket wirklich löschen?');">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="latex_package_action" value="delete">
+            <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+            <button class="btn" type="submit" <?=$isDefaultPkg ? 'disabled title="Standardpaket kann nicht gelöscht werden."' : ''?>>Löschen</button>
+          </form>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      <?php if (!$latexPackages): ?><tr><td colspan="8" class="muted">Noch keine LaTeX-Vorlagenpakete importiert.</td></tr><?php endif; ?>
+    </table>
+
+    <h4>LaTeX-Vorlagenpaket hochladen</h4>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="latex_package_action" value="upload">
+      <label>Name <input class="input" name="package_name" required></label>
+      <label>Beschreibung <input class="input" name="package_description"></label>
+      <label>Hauptdatei <input class="input" name="package_main_file" value="main.tex" required></label>
+      <label>ZIP-Datei <input class="input" type="file" name="latex_package_zip" accept=".zip" required></label>
+      <label><input type="checkbox" name="package_is_active" checked> Aktiv</label>
+      <label><input type="checkbox" name="package_is_default"> Als Standard setzen</label>
+      <button class="btn" type="submit">LaTeX-Paket importieren</button>
+    </form>
+  </div>
+</details>
 
 <details class="card" style="margin-top:20px;">
   <summary><strong>Layoutvorlagen / Titelseiten</strong></summary>

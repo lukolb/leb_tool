@@ -366,6 +366,26 @@ CREATE TABLE IF NOT EXISTS `templates` (
   KEY `idx_templates_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `latex_template_packages` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `status` enum('active','inactive') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+  `is_default` tinyint(1) NOT NULL DEFAULT '0',
+  `main_file` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'main.tex',
+  `storage_path` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `manifest_json` {$JSON} COLLATE utf8mb4_unicode_ci NOT NULL,
+  `package_hash` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `version_label` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_latex_template_packages_status` (`status`,`is_default`),
+  KEY `idx_latex_template_packages_deleted` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `generated_template_packages` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `token` varchar(96) COLLATE utf8mb4_unicode_ci NOT NULL,

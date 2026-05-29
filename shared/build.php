@@ -9,6 +9,7 @@ $endpoint = 'https://latex.ytotech.com/builds/sync';
 
 $latexDir = __DIR__ . '/../latex';
 require_once __DIR__ . '/latex_layout_templates.php';
+require_once __DIR__ . '/latex_template_packages.php';
 require_once __DIR__ . '/generated_template_packages.php';
 
 function readTextFileOrFail(string $path): string {
@@ -418,104 +419,122 @@ if ($pdoForLayout instanceof PDO) {
         $selectedLayoutPath = (string)$layout['file_path'];
     }
 }
-$layoutAbsolute = latex_layout_absolute_path($selectedLayoutPath);
-if (!is_file($layoutAbsolute)) {
-    http_response_code(500);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo 'Layoutvorlage nicht gefunden.';
-    exit;
+$selectedLatexPackage = null;
+$selectedLatexPackageId = (int)($_POST['latex_template_package_id'] ?? 0);
+if ($selectedLatexPackageId > 0 && $pdoForLayout instanceof PDO && get_role() === 'admin') {
+    try {
+        $selectedLatexPackage = find_latex_template_package($pdoForLayout, $selectedLatexPackageId, true);
+        if (!$selectedLatexPackage) throw new RuntimeException('Aktives LaTeX-Vorlagenpaket nicht gefunden.');
+        $resources = latex_template_package_files_as_resources($selectedLatexPackage);
+        $resources[] = ['path' => 'data.tex', 'content' => $generatedDataTex];
+    } catch (Throwable $e) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "LaTeX-Vorlagenpaket konnte nicht geladen werden.\n";
+        echo "Paket-ID: " . $selectedLatexPackageId . "\n";
+        echo $e->getMessage();
+        exit;
+    }
+} else {
+    $layoutAbsolute = latex_layout_absolute_path($selectedLayoutPath);
+    if (!is_file($layoutAbsolute)) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Layoutvorlage nicht gefunden.';
+        exit;
+    }
+
+    $resources = [
+        [
+            'main' => true,
+            'content' => readTextFileOrFail($latexDir . '/main.tex'),
+        ],
+
+        [
+            'path' => 'layout.tex',
+            'file' => readBase64FileOrFail($layoutAbsolute),
+        ],
+        [
+            'path' => 'skills.tex',
+            'file' => readBase64FileOrFail($latexDir . '/skills.tex'),
+        ],
+        [
+            'path' => 'sel.tex',
+            'file' => readBase64FileOrFail($latexDir . '/sel.tex'),
+        ],
+        [
+            'path' => 'data.tex',
+            'content' => $generatedDataTex,
+        ],
+
+        [
+            'path' => 'eforms.sty',
+            'file' => readBase64FileOrFail($latexDir . '/eforms.sty'),
+        ],
+        [
+            'path' => 'epdftex.def',
+            'file' => readBase64FileOrFail($latexDir . '/epdftex.def'),
+        ],
+        [
+            'path' => 'insdljs.sty',
+            'file' => readBase64FileOrFail($latexDir . '/insdljs.sty'),
+        ],
+        [
+            'path' => 'taborder.sty',
+            'file' => readBase64FileOrFail($latexDir . '/taborder.sty'),
+        ],
+
+        [
+            'path' => 'assets/logo.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/logo.pdf'),
+        ],
+        [
+            'path' => 'assets/footer.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/footer.pdf'),
+        ],
+        [
+            'path' => 'assets/beginning.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/beginning.pdf'),
+        ],
+        [
+            'path' => 'assets/goal.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/goal.pdf'),
+        ],
+        [
+            'path' => 'assets/mastering.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/mastering.pdf'),
+        ],
+        [
+            'path' => 'assets/progressing.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/progressing.pdf'),
+        ],
+        [
+            'path' => 'assets/strength.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/strength.pdf'),
+        ],
+        [
+            'path' => 'assets/strengthening.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.pdf'),
+        ],
+
+        [
+            'path' => 'fonts/OpenSans-Regular.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Regular.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-Bold.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Bold.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-Italic.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Italic.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-BoldItalic.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-BoldItalic.ttf'),
+        ],
+    ];
 }
-
-$resources = [
-    [
-        'main' => true,
-        'content' => readTextFileOrFail($latexDir . '/main.tex'),
-    ],
-
-    [
-        'path' => 'layout.tex',
-        'file' => readBase64FileOrFail($layoutAbsolute),
-    ],
-    [
-        'path' => 'skills.tex',
-        'file' => readBase64FileOrFail($latexDir . '/skills.tex'),
-    ],
-    [
-        'path' => 'sel.tex',
-        'file' => readBase64FileOrFail($latexDir . '/sel.tex'),
-    ],
-    [
-        'path' => 'data.tex',
-        'content' => $generatedDataTex,
-    ],
-
-    [
-        'path' => 'eforms.sty',
-        'file' => readBase64FileOrFail($latexDir . '/eforms.sty'),
-    ],
-    [
-        'path' => 'epdftex.def',
-        'file' => readBase64FileOrFail($latexDir . '/epdftex.def'),
-    ],
-    [
-        'path' => 'insdljs.sty',
-        'file' => readBase64FileOrFail($latexDir . '/insdljs.sty'),
-    ],
-    [
-        'path' => 'taborder.sty',
-        'file' => readBase64FileOrFail($latexDir . '/taborder.sty'),
-    ],
-
-    [
-        'path' => 'assets/logo.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/logo.pdf'),
-    ],
-    [
-        'path' => 'assets/footer.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/footer.pdf'),
-    ],
-    [
-        'path' => 'assets/beginning.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/beginning.pdf'),
-    ],
-    [
-        'path' => 'assets/goal.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/goal.pdf'),
-    ],
-    [
-        'path' => 'assets/mastering.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/mastering.pdf'),
-    ],
-    [
-        'path' => 'assets/progressing.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/progressing.pdf'),
-    ],
-    [
-        'path' => 'assets/strength.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strength.pdf'),
-    ],
-    [
-        'path' => 'assets/strengthening.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.pdf'),
-    ],
-
-    [
-        'path' => 'fonts/OpenSans-Regular.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Regular.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-Bold.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Bold.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-Italic.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Italic.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-BoldItalic.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-BoldItalic.ttf'),
-    ],
-];
 
 $payload = [
     'compiler' => 'lualatex',
@@ -578,7 +597,7 @@ $isPdf = strncmp($body, '%PDF-', 5) === 0;
 if (!$isPdf) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "LaTeX konnte nicht kompiliert werden.\n";
+    echo ($selectedLatexPackage ? "LaTeX-Vorlagenpaket konnte nicht kompiliert werden.\nPaket: " . (string)($selectedLatexPackage['name'] ?? '') . "\nHauptdatei: " . (string)($selectedLatexPackage['main_file'] ?? '') . "\n" : "LaTeX konnte nicht kompiliert werden.\n");
     echo "HTTP Status: " . $statusCode . "\n";
     echo "Content-Type: " . $contentType . "\n";
     echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
@@ -615,6 +634,9 @@ if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== n
             'selected_competencies' => generated_template_package_competencies($pdoForLayout, $selectedSkills),
             'rcff_version' => (int)($rcffData['version'] ?? 1),
             'rating_mode' => $enableStudentTeacherRatings ? 'student_teacher' : 'standard',
+            'latex_template_package_id' => $selectedLatexPackage ? (int)($selectedLatexPackage['id'] ?? 0) : null,
+            'latex_template_package_name' => $selectedLatexPackage ? (string)($selectedLatexPackage['name'] ?? '') : null,
+            'latex_template_package_main_file' => $selectedLatexPackage ? (string)($selectedLatexPackage['main_file'] ?? '') : null,
         ];
         $packageOptions = [];
         if ($submitTemplatePackageToAdmin) {
