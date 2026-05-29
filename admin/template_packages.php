@@ -50,6 +50,75 @@ function tp_package_summary(array $pkg): array {
     ];
 }
 
+function tp_rcff_rating_groups(array $rcff): array {
+    $groups = [];
+    foreach (($rcff['fields'] ?? []) as $field) {
+        if (!is_array($field) || (string)($field['type'] ?? '') !== 'rating') continue;
+        $role = (string)($field['role'] ?? 'default');
+        if (!in_array($role, ['default', 'teacher', 'student'], true)) $role = 'default';
+        if (!isset($groups[$role])) {
+            $groups[$role] = ['role' => $role, 'count' => 0, 'values' => [], 'rating_mode' => (string)($field['rating_mode'] ?? '')];
+        }
+        $groups[$role]['count']++;
+        foreach ((array)($field['rating_values'] ?? []) as $value) {
+            $value = trim((string)$value);
+            if ($value !== '' && !in_array($value, $groups[$role]['values'], true)) $groups[$role]['values'][] = $value;
+        }
+        if ($groups[$role]['rating_mode'] === '' && isset($field['rating_mode'])) $groups[$role]['rating_mode'] = (string)$field['rating_mode'];
+    }
+    $order = ['teacher', 'student', 'default'];
+    uksort($groups, static fn(string $a, string $b): int => array_search($a, $order, true) <=> array_search($b, $order, true));
+    return $groups;
+}
+
+function tp_rating_role_label(string $role): string {
+    return match ($role) {
+        'teacher' => 'Lehrerbewertung',
+        'student' => 'Schülerbewertung',
+        default => 'Bewertungsfelder',
+    };
+}
+
+function tp_rating_list_base_name(string $role, string $templateName): string {
+    $prefix = trim($templateName) !== '' ? trim($templateName) . ' – ' : '';
+    return $prefix . match ($role) {
+        'teacher' => 'Lehrerbewertung (aus RCFF)',
+        'student' => 'Schülerbewertung (aus RCFF)',
+        default => 'Bewertung Standard (aus RCFF)',
+    };
+}
+
+function tp_resolve_rating_list_choices(PDO $pdo, array $ratingGroups, array $post, string $templateName): array {
+    $ratingLists = [];
+    $createdLists = [];
+    $usedLists = [];
+    foreach ($ratingGroups as $role => $group) {
+        $choice = trim((string)($post['rating_list_' . $role] ?? ''));
+        if ($choice === '' || $choice === 'none') continue;
+        if ($choice === 'create') {
+            $created = template_import_create_rating_option_list($pdo, tp_rating_list_base_name($role, $templateName), (array)($group['values'] ?? []), (int)current_user()['id']);
+            $ratingLists[$role] = (int)$created['id'];
+            $createdLists[] = $created + ['role' => $role];
+            $usedLists[$role] = ['id' => (int)$created['id'], 'name' => (string)$created['name'], 'created' => true];
+            continue;
+        }
+        if (preg_match('/^existing:(\d+)$/', $choice, $m)) {
+            $listId = (int)$m[1];
+            if (!template_import_option_list_exists($pdo, $listId)) {
+                throw new RuntimeException('Ausgewählte Auswahlliste #' . $listId . ' wurde nicht gefunden.');
+            }
+            $st = $pdo->prepare('SELECT name FROM option_list_templates WHERE id=? LIMIT 1');
+            $st->execute([$listId]);
+            $name = (string)($st->fetchColumn() ?: ('Liste #' . $listId));
+            $ratingLists[$role] = $listId;
+            $usedLists[$role] = ['id' => $listId, 'name' => $name, 'created' => false];
+            continue;
+        }
+        throw new RuntimeException('Ungültige Auswahllisten-Auswahl für ' . tp_rating_role_label($role) . '.');
+    }
+    return ['rating_lists' => $ratingLists, 'created_lists' => $createdLists, 'used_lists' => $usedLists];
+}
+
 function tp_rcff_stats_text(?array $stats): string {
     if (!$stats) return 'RCFF wurde nicht angewendet.';
     $total = (int)($stats['rcff_fields_total'] ?? $stats['read'] ?? 0);
@@ -59,11 +128,31 @@ function tp_rcff_stats_text(?array $stats): string {
     $groups = (int)($stats['groups_updated'] ?? 0);
     $subs = (int)($stats['subgroups_updated'] ?? 0);
     $ratings = (int)($stats['rating_meta_updated'] ?? 0);
+    $ratingDetected = (int)($stats['rating_fields_detected'] ?? 0);
+    $ratingLinked = (int)($stats['rating_fields_linked'] ?? 0);
+    $createdLists = is_array($stats['created_option_lists'] ?? null) ? $stats['created_option_lists'] : [];
+    $usedLists = is_array($stats['used_option_lists'] ?? null) ? $stats['used_option_lists'] : [];
     $ignored = (int)($stats['ignored_missing_pdf_field'] ?? $stats['ignored'] ?? 0);
     if ($total > 0 && $matched === 0) {
         return "RCFF wurde gelesen ({$total} Felder), aber keine Feldnamen passten zu den PDF-Feldern.";
     }
-    return "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
+    $text = "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
+    if ($ratingDetected > 0) {
+        $text .= " Ratingfelder: {$ratingDetected} erkannt, {$ratingLinked} mit Auswahllisten verknüpft.";
+    }
+    if ($usedLists) {
+        $parts = [];
+        foreach ($usedLists as $role => $list) {
+            if (!is_array($list)) continue;
+            $parts[] = tp_rating_role_label((string)$role) . ': ' . (string)($list['name'] ?? ('#' . (string)($list['id'] ?? '')));
+        }
+        if ($parts) $text .= ' Verwendete Listen: ' . implode(', ', $parts) . '.';
+    }
+    if ($createdLists) {
+        $names = array_map(static fn(array $l): string => (string)($l['name'] ?? ('#' . (string)($l['id'] ?? ''))), $createdLists);
+        $text .= ' Neue Auswahllisten: ' . implode(', ', $names) . '.';
+    }
+    return $text;
 }
 
 function tp_log_rcff_application(int $packageId, int $templateId, array $stats): void {
@@ -314,9 +403,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
+        $ratingListResolution = ['rating_lists' => [], 'created_lists' => [], 'used_lists' => []];
         if ($useRcff) {
             if (($rcff['format'] ?? '') !== 'rcff' || (int)($rcff['version'] ?? 0) !== 1 || !is_array($rcff['fields'] ?? null)) {
                 throw new RuntimeException('Gespeicherte RCFF-Daten sind ungültig.');
+            }
+            $ratingGroups = tp_rcff_rating_groups($rcff);
+            if ($ratingGroups) {
+                $ratingListResolution = tp_resolve_rating_list_choices($pdo, $ratingGroups, $_POST, $templateName);
             }
         }
 
@@ -327,8 +421,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $templateId = (int)$created['template_id'];
 
         $fieldCount = import_pdf_fields_to_template($pdo, $templateId, $fields);
-        $rcffStats = $useRcff ? apply_rcff_to_template_fields($pdo, $templateId, $rcff) : null;
-        $helperResultForLog = ['field_count' => $fieldCount, 'rcff_stats' => $rcffStats];
+        $rcffStats = $useRcff ? apply_rcff_to_template_fields($pdo, $templateId, $rcff, ['rating_lists' => $ratingListResolution['rating_lists']]) : null;
+        if (is_array($rcffStats)) {
+            $rcffStats['created_option_lists'] = $ratingListResolution['created_lists'];
+            $rcffStats['used_option_lists'] = $ratingListResolution['used_lists'];
+        }
+        $helperResultForLog = ['field_count' => $fieldCount, 'rcff_stats' => $rcffStats, 'rating_lists' => $ratingListResolution];
         if (is_array($rcffStats)) tp_log_rcff_application($packageId, $templateId, $rcffStats);
 
         $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
@@ -339,6 +437,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'applied_rcff' => $useRcff,
             'field_count' => $fieldCount,
             'rcff_stats' => $rcffStats,
+            'rating_lists' => $ratingListResolution['used_lists'],
+            'created_option_lists' => $ratingListResolution['created_lists'],
         ];
         $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($metadataJson === false) $metadataJson = (string)$pkg['metadata_json'];
@@ -388,6 +488,7 @@ if ($confirmId > 0) {
 }
 
 $packages = $pdo->query("SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$optionLists = template_import_option_list_templates($pdo);
 
 render_admin_header('Template-Pakete');
 ?>
@@ -462,6 +563,26 @@ render_admin_header('Template-Pakete');
           <input type="hidden" name="apply_rcff" value="0">
           <input type="checkbox" name="apply_rcff" value="1" checked> Feldbeschriftungen, Gruppen/Untergruppen und Rating-Metadaten aus RCFF übernehmen
         </label>
+        <?php $ratingGroups = tp_rcff_rating_groups($confirmSummary['rcff']); ?>
+        <?php if ($ratingGroups): ?>
+          <div class="card" style="margin:12px 0;padding:12px;border-left:4px solid #0b57d0;">
+            <h3 style="margin-top:0;">Bewertungsfelder / Auswahllisten</h3>
+            <p class="muted">Ratingfelder aus RCFF können bestehenden Auswahllisten zugeordnet oder als neue Listen in der Icon-Library angelegt werden. Ohne Zuordnung bleiben bestehende Feld-Optionen unverändert.</p>
+            <?php foreach ($ratingGroups as $role => $group): ?>
+              <label style="display:block;margin:10px 0;">
+                <strong><?=h(tp_rating_role_label((string)$role))?></strong>
+                <span class="muted">(<?=h((string)$group['count'])?> Felder · Werte: <?=h(implode(', ', (array)$group['values']))?>)</span><br>
+                <select class="input" name="rating_list_<?=h((string)$role)?>" style="max-width:520px;">
+                  <option value="create" selected>Neue Liste aus RCFF-Werten anlegen</option>
+                  <?php foreach ($optionLists as $list): ?>
+                    <option value="existing:<?=h((string)$list['id'])?>">Bestehende Liste: <?=h((string)$list['name'])?></option>
+                  <?php endforeach; ?>
+                  <option value="none">Keine Liste zuordnen</option>
+                </select>
+              </label>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
         <p id="extractStatus" class="muted">PDF-Formularfelder werden ausgelesen …</p>
         <button class="btn primary" id="importSubmit" type="submit" disabled>Als Template übernehmen</button>
         <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>

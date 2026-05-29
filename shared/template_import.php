@@ -145,7 +145,106 @@ function template_import_table_columns(PDO $pdo, string $table): array {
     return $out;
 }
 
-function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): array {
+function template_import_option_list_templates(PDO $pdo): array {
+    if (!in_array('option_list_templates', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) ?: [], true)) {
+        return [];
+    }
+    return $pdo->query(
+        "SELECT id, name, description, is_active
+         FROM option_list_templates
+         WHERE is_active=1
+         ORDER BY name ASC, id ASC"
+    )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function template_import_option_list_exists(PDO $pdo, int $listId): bool {
+    if ($listId <= 0) return false;
+    $st = $pdo->prepare('SELECT id FROM option_list_templates WHERE id=? AND is_active=1 LIMIT 1');
+    $st->execute([$listId]);
+    return (bool)$st->fetchColumn();
+}
+
+function template_import_option_list_options_json(PDO $pdo, int $listId): ?string {
+    $st = $pdo->prepare(
+        "SELECT value, label, label_en, icon_id
+         FROM option_list_items
+         WHERE list_id=?
+         ORDER BY sort_order ASC, id ASC"
+    );
+    $st->execute([$listId]);
+    $options = [];
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+        $value = trim((string)($row['value'] ?? ''));
+        $label = trim((string)($row['label'] ?? ''));
+        if ($value === '' || $label === '') continue;
+        $options[] = [
+            'value' => $value,
+            'label' => $label,
+            'label_en' => (string)($row['label_en'] ?? ''),
+            'icon_id' => ($row['icon_id'] !== null && $row['icon_id'] !== '') ? (int)$row['icon_id'] : null,
+        ];
+    }
+    $json = json_encode(['options' => $options], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $json === false ? null : $json;
+}
+
+function template_import_rating_value_labels(string $value): array {
+    $map = [
+        'na' => ['label' => 'n/a', 'label_en' => 'n/a'],
+        'be' => ['label' => 'Beginnen', 'label_en' => 'Beginning'],
+        'pr' => ['label' => 'Entwickeln', 'label_en' => 'Progressing'],
+        'st' => ['label' => 'Festigen', 'label_en' => 'Strengthening'],
+        'ma' => ['label' => 'Meistern', 'label_en' => 'Mastering'],
+    ];
+    $key = strtolower(trim($value));
+    return $map[$key] ?? ['label' => $value, 'label_en' => $value];
+}
+
+function template_import_unique_option_list_name(PDO $pdo, string $baseName): string {
+    $baseName = trim($baseName) !== '' ? trim($baseName) : 'Bewertung aus RCFF';
+    if ((function_exists('mb_strlen') ? mb_strlen($baseName) : strlen($baseName)) > 180) {
+        $baseName = function_exists('mb_substr') ? mb_substr($baseName, 0, 180) : substr($baseName, 0, 180);
+    }
+    $candidate = $baseName;
+    $st = $pdo->prepare('SELECT id FROM option_list_templates WHERE name=? LIMIT 1');
+    for ($i = 2; $i < 100; $i++) {
+        $st->execute([$candidate]);
+        if (!$st->fetchColumn()) return $candidate;
+        $suffix = ' (' . $i . ')';
+        $maxBase = 190 - strlen($suffix);
+        $shortBase = (function_exists('mb_strlen') && function_exists('mb_substr') && mb_strlen($baseName) > $maxBase) ? mb_substr($baseName, 0, $maxBase) : substr($baseName, 0, $maxBase);
+        $candidate = rtrim($shortBase) . $suffix;
+    }
+    return $baseName . ' ' . bin2hex(random_bytes(3));
+}
+
+function template_import_create_rating_option_list(PDO $pdo, string $baseName, array $ratingValues, int $createdByUserId): array {
+    $values = array_values(array_unique(array_filter(array_map(static fn($v): string => trim((string)$v), $ratingValues), static fn(string $v): bool => $v !== '')));
+    if (!$values) {
+        throw new RuntimeException('Keine RCFF-rating_values für die neue Auswahlliste vorhanden.');
+    }
+
+    $name = template_import_unique_option_list_name($pdo, $baseName);
+    $desc = 'Automatisch aus RCFF-rating_values beim Template-Paket-Import angelegt.';
+    $st = $pdo->prepare('INSERT INTO option_list_templates (name, description, is_active, created_by_user_id) VALUES (?, ?, 1, ?)');
+    $st->execute([$name, $desc, $createdByUserId > 0 ? $createdByUserId : null]);
+    $listId = (int)$pdo->lastInsertId();
+
+    $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json) VALUES (?, ?, ?, ?, NULL, ?, ?)');
+    foreach ($values as $idx => $value) {
+        $labels = template_import_rating_value_labels($value);
+        $metaJson = json_encode(['source' => 'rcff_rating_values'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $ins->execute([$listId, $value, $labels['label'], $labels['label_en'], $idx, $metaJson === false ? null : $metaJson]);
+    }
+
+    if (function_exists('audit')) {
+        audit('option_list_create_from_rcff', $createdByUserId, ['list_id' => $listId, 'name' => $name, 'values' => $values]);
+    }
+
+    return ['id' => $listId, 'name' => $name, 'values' => $values];
+}
+
+function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff, array $options = []): array {
     if (($rcff['format'] ?? '') !== 'rcff') {
         throw new RuntimeException('Ungültiges RCFF-Format.');
     }
@@ -162,6 +261,15 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
     $hasGroupLabelEn = isset($columns['group_label_en']);
     $hasSubgroupLabel = isset($columns['subgroup_label']);
     $hasSubgroupLabelEn = isset($columns['subgroup_label_en']);
+    $hasOptionsJson = isset($columns['options_json']);
+    $ratingLists = is_array($options['rating_lists'] ?? null) ? $options['rating_lists'] : [];
+    $ratingLists = array_intersect_key(array_map('intval', $ratingLists), array_flip(['default', 'teacher', 'student']));
+    foreach ($ratingLists as $role => $listId) {
+        if ($listId > 0 && !template_import_option_list_exists($pdo, $listId)) {
+            throw new RuntimeException('Auswahlliste #' . $listId . ' für ' . $role . ' wurde nicht gefunden.');
+        }
+    }
+    $optionJsonCache = [];
 
     $select = 'id, field_name, label, meta_json';
     if ($hasLabelEn) $select .= ', label_en';
@@ -188,6 +296,9 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
         'groups_updated' => 0,
         'subgroups_updated' => 0,
         'rating_meta_updated' => 0,
+        'rating_fields_detected' => 0,
+        'rating_fields_linked' => 0,
+        'rating_lists_used' => [],
         'ignored_missing_pdf_field' => 0,
         'errors' => [],
         'unmatched_rcff_field_names' => [],
@@ -273,6 +384,29 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
             $meta['rcff']['values'] = array_values(array_unique($rcffValuesByName[$fieldName]));
         }
 
+        $fieldType = (string)($field['type'] ?? '');
+        $role = (string)($field['role'] ?? 'default');
+        if (!in_array($role, ['default', 'teacher', 'student'], true)) $role = 'default';
+        $ratingListId = 0;
+        $ratingOptionsJson = null;
+        if ($fieldType === 'rating') {
+            $stats['rating_fields_detected']++;
+            $ratingListId = (int)($ratingLists[$role] ?? 0);
+            if ($ratingListId > 0) {
+                if (!array_key_exists($ratingListId, $optionJsonCache)) {
+                    $optionJsonCache[$ratingListId] = template_import_option_list_options_json($pdo, $ratingListId);
+                }
+                $ratingOptionsJson = $optionJsonCache[$ratingListId];
+                $meta['option_list_template_id'] = (string)$ratingListId;
+                $meta['rating_list_id'] = $ratingListId;
+                $meta['rating_list_role'] = $role;
+                $meta['rcff']['rating_list_id'] = $ratingListId;
+                $meta['rcff']['rating_list_role'] = $role;
+                $stats['rating_fields_linked']++;
+                $stats['rating_lists_used'][$role] = $ratingListId;
+            }
+        }
+
         $groupPath = '';
         if ($categoryDe !== '' && $subcategoryDe !== '') $groupPath = $categoryDe . '/' . $subcategoryDe;
         elseif ($categoryDe !== '') $groupPath = $categoryDe;
@@ -287,6 +421,7 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
 
         $sql = 'UPDATE template_fields SET label=?, meta_json=?';
         $params = [$newLabel, $metaJson];
+        if ($hasOptionsJson && $ratingListId > 0 && $ratingOptionsJson !== null) { $sql .= ', options_json=?'; $params[] = $ratingOptionsJson; }
         if ($hasLabelEn) { $sql .= ', label_en=?'; $params[] = ($newLabelEn !== '' ? $newLabelEn : null); }
         if ($hasGroupLabel) { $sql .= ', group_label=?'; $params[] = ($categoryDe !== '' ? $categoryDe : ($row['group_label'] ?? null)); }
         if ($hasGroupLabelEn) { $sql .= ', group_label_en=?'; $params[] = ($categoryEn !== '' ? $categoryEn : ($row['group_label_en'] ?? null)); }
