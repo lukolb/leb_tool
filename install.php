@@ -383,6 +383,7 @@ CREATE TABLE IF NOT EXISTS `generated_template_packages` (
   `expires_at` datetime NOT NULL,
   `submitted_to_admin_at` datetime DEFAULT NULL,
   `imported_template_id` bigint UNSIGNED DEFAULT NULL,
+  `imported_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_generated_template_packages_token` (`token`),
   KEY `idx_generated_template_packages_creator` (`created_by_user_id`,`status`,`created_at`),

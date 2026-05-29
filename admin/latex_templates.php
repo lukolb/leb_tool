@@ -113,6 +113,12 @@ $allowTemplatePackage = true;
 require __DIR__ . '/../shared/latex_page.php';
 ?>
 
+<div class="card" style="margin-top:16px;">
+  <strong>Vorbereitete Template-Pakete</strong>
+  <p class="muted">Intern vorbereitete Pakete können als echte Templates übernommen werden.</p>
+  <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Template-Pakete anzeigen</a>
+</div>
+
 <?php if($msg): ?><div class="card" style="border-left:4px solid #067647;"><?= h($msg) ?></div><?php endif; ?>
 <?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
 

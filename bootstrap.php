@@ -1040,6 +1040,8 @@ function ensure_schema(PDO $pdo): void {
 " .
         "  imported_template_id BIGINT UNSIGNED DEFAULT NULL,
 " .
+        "  imported_at DATETIME DEFAULT NULL,
+" .
         "  PRIMARY KEY (id),
 " .
         "  UNIQUE KEY uq_generated_template_packages_token (token),
@@ -1052,6 +1054,9 @@ function ensure_schema(PDO $pdo): void {
 " .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
+    }
+    if (db_has_table($pdo, 'generated_template_packages') && !db_has_column($pdo, 'generated_template_packages', 'imported_at')) {
+      $pdo->exec("ALTER TABLE generated_template_packages ADD COLUMN imported_at DATETIME DEFAULT NULL AFTER imported_template_id");
     }
 // --- parent_portal_links: admin-approved, time-boxed Eltern-Zugänge
     if (!db_has_table($pdo, 'parent_portal_links')) {

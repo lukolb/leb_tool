@@ -25,6 +25,9 @@ function ensure_generated_template_package_storage_dir(): void {
 
 function ensure_generated_template_packages_table(PDO $pdo): void {
     if (function_exists('db_has_table') && db_has_table($pdo, 'generated_template_packages')) {
+        if (function_exists('db_has_column') && !db_has_column($pdo, 'generated_template_packages', 'imported_at')) {
+            $pdo->exec("ALTER TABLE generated_template_packages ADD COLUMN imported_at DATETIME DEFAULT NULL AFTER imported_template_id");
+        }
         return;
     }
     $pdo->exec(
@@ -45,6 +48,7 @@ function ensure_generated_template_packages_table(PDO $pdo): void {
         "  expires_at DATETIME NOT NULL,\n" .
         "  submitted_to_admin_at DATETIME DEFAULT NULL,\n" .
         "  imported_template_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  imported_at DATETIME DEFAULT NULL,\n" .
         "  PRIMARY KEY (id),\n" .
         "  UNIQUE KEY uq_generated_template_packages_token (token),\n" .
         "  KEY idx_generated_template_packages_creator (created_by_user_id, status, created_at),\n" .
@@ -52,6 +56,32 @@ function ensure_generated_template_packages_table(PDO $pdo): void {
         "  KEY idx_generated_template_packages_imported (imported_template_id)\n" .
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
     );
+}
+
+
+function generated_template_package_pdf_absolute_path(string $pdfPath): string {
+    $pdfPath = ltrim(str_replace('\\', '/', $pdfPath), '/');
+    if ($pdfPath === '' || !preg_match('/\.pdf$/i', $pdfPath)) {
+        throw new RuntimeException('Ungültiger Paket-PDF-Pfad.');
+    }
+    $uploadsRel = generated_template_package_uploads_rel();
+    $expectedPrefix = $uploadsRel . '/generated_template_packages/';
+    if (strncmp($pdfPath, $expectedPrefix, strlen($expectedPrefix)) !== 0 || str_contains($pdfPath, '..')) {
+        throw new RuntimeException('Paket-PDF liegt nicht im erlaubten Speicherbereich.');
+    }
+    $root = realpath(__DIR__ . '/..');
+    if (!$root) throw new RuntimeException('Projektwurzel konnte nicht ermittelt werden.');
+    $abs = realpath($root . '/' . $pdfPath);
+    $storageRoot = realpath(generated_template_package_storage_root());
+    if (!$abs || !$storageRoot || !is_file($abs)) {
+        throw new RuntimeException('Paket-PDF wurde nicht gefunden.');
+    }
+    $absNorm = str_replace('\\', '/', $abs);
+    $rootNorm = rtrim(str_replace('\\', '/', $storageRoot), '/') . '/';
+    if (strncmp($absNorm, $rootNorm, strlen($rootNorm)) !== 0) {
+        throw new RuntimeException('Paket-PDF liegt außerhalb des erlaubten Speicherbereichs.');
+    }
+    return $abs;
 }
 
 function generated_template_package_json_encode(array $data): string {
