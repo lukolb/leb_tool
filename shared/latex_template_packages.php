@@ -68,6 +68,26 @@ function latex_template_package_allowed_extension(string $path): bool {
     return in_array($ext, ['tex','sty','cls','png','jpg','jpeg','pdf','svg','ttf','otf','json','txt'], true);
 }
 
+function latex_template_package_ignore_message(string $reason): string {
+    return match ($reason) {
+        'macos_metadata' => 'macOS-Metadatei',
+        'hidden_system_file' => 'versteckte Systemdatei',
+        'unsupported_file_type' => 'nicht erlaubter Dateityp',
+        'executable_or_disallowed' => 'aus Sicherheitsgründen ignoriert',
+        'ignored_directory' => 'ignorierter Ordner',
+        'unknown_extension' => 'unbekannte Dateiendung',
+        default => 'ignoriert',
+    };
+}
+
+function latex_template_package_ignored_file_entry(string $path, string $reason): array {
+    return [
+        'path' => $path,
+        'reason' => $reason,
+        'message' => latex_template_package_ignore_message($reason),
+    ];
+}
+
 function latex_template_package_ignore_reason(string $path, bool $isDirectory = false): ?string {
     $parts = array_values(array_filter(explode('/', $path), static fn($part) => $part !== ''));
     $base = basename($path);
@@ -134,6 +154,34 @@ function latex_template_package_json(array $data): string {
     return $json;
 }
 
+function latex_template_package_strip_latex_comments(string $content): string {
+    $lines = preg_split('/\R/u', $content) ?: [$content];
+    $cleaned = [];
+    foreach ($lines as $line) {
+        $length = strlen($line);
+        for ($i = 0; $i < $length; $i++) {
+            if ($line[$i] !== '%') {
+                continue;
+            }
+            $slashes = 0;
+            for ($j = $i - 1; $j >= 0 && $line[$j] === '\\'; $j--) {
+                $slashes++;
+            }
+            if ($slashes % 2 === 0) {
+                $line = substr($line, 0, $i);
+                break;
+            }
+        }
+        $cleaned[] = $line;
+    }
+    return implode("\n", $cleaned);
+}
+
+function latex_template_package_main_includes_data(string $content): bool {
+    $withoutComments = latex_template_package_strip_latex_comments($content);
+    return (bool)preg_match('/\\\\(?:input|include)\s*\{\s*data(?:\.tex)?\s*\}/i', $withoutComments);
+}
+
 function latex_template_package_import_zip(PDO $pdo, array $file, array $options): array {
     if (!class_exists('ZipArchive')) throw new RuntimeException('ZIP-Unterstützung (ZipArchive) ist nicht verfügbar.');
     if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) throw new RuntimeException('ZIP-Upload fehlgeschlagen.');
@@ -191,12 +239,12 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
 
             $ignoreReason = latex_template_package_ignore_reason($path, $isDirectory);
             if ($ignoreReason !== null) {
-                $ignoredFiles[] = ['path' => $path, 'reason' => $ignoreReason];
+                $ignoredFiles[] = latex_template_package_ignored_file_entry($path, $ignoreReason);
                 continue;
             }
             if ($isDirectory) continue;
             if (!latex_template_package_allowed_extension($path)) {
-                $ignoredFiles[] = ['path' => $path, 'reason' => 'unsupported_file_type'];
+                $ignoredFiles[] = latex_template_package_ignored_file_entry($path, 'unsupported_file_type');
                 continue;
             }
             if ((int)($stat['size'] ?? 0) > 10 * 1024 * 1024) throw new RuntimeException('Einzeldatei ist zu groß: ' . $path);
@@ -204,7 +252,7 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
             if ($content === false) throw new RuntimeException('Datei konnte nicht aus ZIP gelesen werden: ' . $path);
             if (strtolower($path) === 'data.tex') {
                 $containsDataTex = true;
-                $warnings[] = 'data.tex im Paket wird beim Generieren vom System ersetzt.';
+                $warnings[] = 'Eine vorhandene data.tex im ZIP wird beim Generieren durch die Systemdatei ersetzt.';
             }
             $dest = $absDir . '/' . $path;
             $destNorm = str_replace('\\', '/', $dest);
@@ -230,8 +278,8 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
         latex_template_package_remove_dir($absDir);
         throw new RuntimeException('Hauptdatei wurde im ZIP nicht gefunden: ' . $mainFile);
     }
-    $hasDataInput = (bool)preg_match('/\\(?:input|include)\s*\{\s*data(?:\.tex)?\s*\}/i', $mainContent);
-    if (!$hasDataInput) $warnings[] = 'Hauptdatei enthält keinen erkennbaren \\input{data.tex}- oder \\include{data.tex}-Verweis.';
+    $hasDataInput = latex_template_package_main_includes_data($mainContent);
+    if (!$hasDataInput) $warnings[] = 'Hinweis: In der Hauptdatei wurde kein \\input{data.tex} oder \\include{data.tex} gefunden. Die systemgenerierten Daten erscheinen nur, wenn data.tex eingebunden wird.';
     if ($ignoredFiles) $warnings[] = count($ignoredFiles) . ' nicht unterstützte Dateien wurden ignoriert.';
 
     $manifest = [

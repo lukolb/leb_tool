@@ -407,24 +407,72 @@ $pdoForLayout = function_exists('db') ? db() : null;
 $selectedLayoutPath = 'latex/layout.tex';
 $layoutTemplateId = 0;
 $layout = null;
-if ($pdoForLayout instanceof PDO) {
-    ensure_default_latex_layout_template($pdoForLayout);
-    $layoutTemplateId = (int)($_POST['layout_template_id'] ?? 0);
-    $layout = $layoutTemplateId > 0 ? find_active_latex_layout_template($pdoForLayout, $layoutTemplateId) : null;
-    if (!$layout) {
-        $layout = get_default_latex_layout_template($pdoForLayout);
-    }
-    $layoutTemplateId = (int)($layout['id'] ?? 0);
-    if ($layout && !empty($layout['file_path'])) {
-        $selectedLayoutPath = (string)$layout['file_path'];
-    }
-}
 $selectedLatexPackage = null;
-$selectedLatexPackageId = (int)($_POST['latex_template_package_id'] ?? 0);
-if ($selectedLatexPackageId > 0 && $pdoForLayout instanceof PDO && get_role() === 'admin') {
+$selectedLatexPackageId = 0;
+$templateSource = 'system';
+$templateSourceRaw = trim((string)($_POST['template_source'] ?? ''));
+
+try {
+    if ($templateSourceRaw !== '') {
+        if ($templateSourceRaw === 'system') {
+            $templateSource = 'system';
+        } elseif (preg_match('/^layout:(\d+)$/', $templateSourceRaw, $m)) {
+            $layoutTemplateId = (int)$m[1];
+            if ($layoutTemplateId <= 0) throw new RuntimeException('Ungültige Titelseitenvorlage.');
+            $templateSource = 'layout:' . $layoutTemplateId;
+        } elseif (preg_match('/^package:(\d+)$/', $templateSourceRaw, $m)) {
+            $selectedLatexPackageId = (int)$m[1];
+            if ($selectedLatexPackageId <= 0) throw new RuntimeException('Ungültiges LaTeX-Vorlagenpaket.');
+            $templateSource = 'package:' . $selectedLatexPackageId;
+        } else {
+            throw new RuntimeException('Ungültige Vorlagenquelle.');
+        }
+    } else {
+        $legacyPackageId = (int)($_POST['latex_template_package_id'] ?? 0);
+        $legacyLayoutId = (int)($_POST['layout_template_id'] ?? 0);
+        if ($legacyPackageId > 0) {
+            $selectedLatexPackageId = $legacyPackageId;
+            $templateSource = 'package:' . $selectedLatexPackageId;
+        } elseif ($legacyLayoutId > 0) {
+            $layoutTemplateId = $legacyLayoutId;
+            $templateSource = 'layout:' . $layoutTemplateId;
+        }
+    }
+
+    if ($pdoForLayout instanceof PDO) {
+        ensure_default_latex_layout_template($pdoForLayout);
+        if (str_starts_with($templateSource, 'package:')) {
+            if (get_role() !== 'admin') throw new RuntimeException('LaTeX-Vorlagenpakete dürfen nur von Admins verwendet werden.');
+            $selectedLatexPackage = find_latex_template_package($pdoForLayout, $selectedLatexPackageId, true);
+            if (!$selectedLatexPackage) throw new RuntimeException('Aktives LaTeX-Vorlagenpaket nicht gefunden.');
+            $layoutTemplateId = 0;
+            $layout = null;
+        } elseif (str_starts_with($templateSource, 'layout:')) {
+            $layout = find_active_latex_layout_template($pdoForLayout, $layoutTemplateId);
+            if (!$layout) throw new RuntimeException('Titelseitenvorlage nicht gefunden oder inaktiv.');
+            if (!empty($layout['file_path'])) {
+                $selectedLayoutPath = (string)$layout['file_path'];
+            }
+            $selectedLatexPackageId = 0;
+        } else {
+            $layout = get_default_latex_layout_template($pdoForLayout);
+            $layoutTemplateId = 0;
+            if ($layout && !empty($layout['file_path'])) {
+                $selectedLayoutPath = (string)$layout['file_path'];
+            }
+            $selectedLatexPackageId = 0;
+        }
+    }
+} catch (Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo 'Vorlagenquelle konnte nicht geladen werden.' . "\n";
+    echo $e->getMessage();
+    exit;
+}
+
+if ($selectedLatexPackage) {
     try {
-        $selectedLatexPackage = find_latex_template_package($pdoForLayout, $selectedLatexPackageId, true);
-        if (!$selectedLatexPackage) throw new RuntimeException('Aktives LaTeX-Vorlagenpaket nicht gefunden.');
         $resources = latex_template_package_files_as_resources($selectedLatexPackage);
         $resources[] = ['path' => 'data.tex', 'content' => $generatedDataTex];
     } catch (Throwable $e) {
@@ -622,8 +670,9 @@ if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== n
             'created_by_role' => get_role(),
             'created_at' => $nowIso,
             'grade_level' => $selectedGrade,
-            'layout_template_id' => $layoutTemplateId > 0 ? $layoutTemplateId : null,
-            'layout_template_name' => (string)($layout['display_name'] ?? ''),
+            'template_source' => $templateSource,
+            'layout_template_id' => str_starts_with($templateSource, 'layout:') && $layoutTemplateId > 0 ? $layoutTemplateId : null,
+            'layout_template_name' => str_starts_with($templateSource, 'layout:') ? (string)($layout['display_name'] ?? '') : '',
             'show_sel' => $showSel,
             'show_ag' => $showAg,
             'student_teacher_ratings' => $enableStudentTeacherRatings,

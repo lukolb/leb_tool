@@ -14,6 +14,7 @@ ensure_latex_template_packages_table($pdo);
 ensure_latex_template_package_storage_dir();
 $msg = '';
 $err = '';
+$ignoredUploadFiles = [];
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -29,7 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'is_active' => isset($_POST['package_is_active']),
                 'is_default' => isset($_POST['package_is_default']),
             ]);
-            $ignoredCount = (int)($result['manifest']['ignored_count'] ?? 0);
+            $ignoredUploadFiles = is_array($result['manifest']['ignored_files'] ?? null) ? $result['manifest']['ignored_files'] : [];
+            $ignoredCount = (int)($result['manifest']['ignored_count'] ?? count($ignoredUploadFiles));
             $msg = 'LaTeX-Vorlagenpaket importiert.';
             if ($ignoredCount > 0) {
                 $msg .= ' ' . $ignoredCount . ' nicht unterstützte Dateien wurden ignoriert.';
@@ -163,7 +165,29 @@ require __DIR__ . '/../shared/latex_page.php';
   <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Template-Pakete anzeigen</a>
 </div>
 
-<?php if($msg): ?><div class="card" style="border-left:4px solid #067647;"><?= h($msg) ?></div><?php endif; ?>
+<?php if($msg): ?>
+  <div class="card" style="border-left:4px solid #067647;">
+    <?= h($msg) ?>
+    <?php if($ignoredUploadFiles): ?>
+      <?php $ignoredPreview = array_slice($ignoredUploadFiles, 0, 30); ?>
+      <details style="margin-top:8px;" open>
+        <summary>Ignorierte Dateien anzeigen</summary>
+        <ul style="margin:8px 0 0 18px;">
+          <?php foreach($ignoredPreview as $ignored): ?>
+            <?php
+              $ignoredPath = (string)($ignored['path'] ?? '');
+              $ignoredReason = (string)($ignored['message'] ?? latex_template_package_ignore_message((string)($ignored['reason'] ?? '')));
+            ?>
+            <li><code><?= h($ignoredPath) ?></code> — <?= h($ignoredReason) ?></li>
+          <?php endforeach; ?>
+        </ul>
+        <?php if(count($ignoredUploadFiles) > count($ignoredPreview)): ?>
+          <p class="muted">… und <?= h((string)(count($ignoredUploadFiles) - count($ignoredPreview))) ?> weitere.</p>
+        <?php endif; ?>
+      </details>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
 <?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
 
 <details class="card" style="margin-top:20px;">

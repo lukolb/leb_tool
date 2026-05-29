@@ -118,27 +118,36 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   <?php endif; ?>
 </div>
 
+<?php
+  $ltpList = !empty($allowLatexTemplatePackageSelection) && is_array($latexTemplatePackages ?? null) ? $latexTemplatePackages : [];
+  $defaultPackageId = 0;
+  foreach ($ltpList as $pkg) {
+      if ((int)($pkg['is_default'] ?? 0) === 1) { $defaultPackageId = (int)($pkg['id'] ?? 0); break; }
+  }
+  $selectedTemplateSource = $defaultPackageId > 0 ? ('package:' . $defaultPackageId) : ($defaultLayoutId > 0 ? ('layout:' . $defaultLayoutId) : 'system');
+?>
 <div class="card" style="padding:12px;margin:12px 0;">
-  <label><strong>Titelseitenvorlage</strong></label>
-  <select class="input" name="layout_template_id">
-    <?php foreach ($layoutTemplates as $tpl): ?>
-      <option value="<?= h((string)$tpl['id']) ?>" <?= ((int)$tpl['id'] === $defaultLayoutId) ? 'selected' : '' ?>><?= h((string)$tpl['display_name']) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
-    <?php endforeach; ?>
-  </select>
-</div>
-<?php if (!empty($allowLatexTemplatePackageSelection)): ?>
-  <?php $ltpList = is_array($latexTemplatePackages ?? null) ? $latexTemplatePackages : []; ?>
-  <div class="card" style="padding:12px;margin:12px 0;">
-    <label><strong>LaTeX-Vorlagenpaket</strong></label>
-    <select class="input" name="latex_template_package_id">
-      <option value="0">Standard-Systemvorlage</option>
-      <?php foreach ($ltpList as $pkg): ?>
-        <option value="<?= h((string)$pkg['id']) ?>" <?= ((int)($pkg['is_default'] ?? 0) === 1) ? 'selected' : '' ?>><?= h((string)$pkg['name']) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+  <label for="template_source"><strong>Vorlagenquelle</strong></label>
+  <select class="input" name="template_source" id="template_source">
+    <optgroup label="System / Titelseiten">
+      <option value="system" <?= $selectedTemplateSource === 'system' ? 'selected' : '' ?>>Systemvorlage / Standardlayout</option>
+      <?php foreach ($layoutTemplates as $tpl): ?>
+        <?php $sourceValue = 'layout:' . (int)$tpl['id']; ?>
+        <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>>Titelseite: <?= h((string)$tpl['display_name']) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
       <?php endforeach; ?>
-    </select>
-    <?php if (!$ltpList): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden. Die Standard-Systemvorlage wird verwendet.</p><?php endif; ?>
-  </div>
-<?php endif; ?>
+    </optgroup>
+    <?php if ($ltpList): ?>
+      <optgroup label="Komplette LaTeX-Vorlagenpakete">
+        <?php foreach ($ltpList as $pkg): ?>
+          <?php $sourceValue = 'package:' . (int)$pkg['id']; ?>
+          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>>LaTeX-Paket: <?= h((string)$pkg['name']) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+        <?php endforeach; ?>
+      </optgroup>
+    <?php endif; ?>
+  </select>
+  <p class="muted" style="margin:6px 0 0;">Wähle entweder eine Titelseitenvorlage oder ein komplettes LaTeX-Vorlagenpaket. Bei einem LaTeX-Vorlagenpaket wird dessen layout.tex verwendet; die data.tex wird weiterhin vom System erzeugt.</p>
+  <?php if (!$ltpList && !empty($allowLatexTemplatePackageSelection)): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden.</p><?php endif; ?>
+</div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
   <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
   <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>
