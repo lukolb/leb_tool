@@ -51,10 +51,13 @@ function ensure_latex_template_packages_table(PDO $pdo): void {
 }
 
 function latex_template_package_normalize_path(string $path): string {
-    $path = trim(str_replace('\\', '/', $path));
-    $path = preg_replace('#/+#', '/', $path) ?? $path;
+    $raw = trim($path);
+    if ($raw === '' || str_contains($raw, "\0") || str_starts_with($raw, '/') || str_contains($raw, '\\') || preg_match('/^[A-Za-z]:/', $raw)) {
+        throw new RuntimeException('Ungültiger Pfad im LaTeX-Paket: ' . $raw);
+    }
+    $path = preg_replace('#/+#', '/', $raw) ?? $raw;
     $path = ltrim($path, '/');
-    if ($path === '' || str_contains($path, "\0") || str_starts_with($path, '/') || preg_match('#(^|/)\.\.?(/|$)#', $path)) {
+    if ($path === '' || preg_match('#(^|/)\.\.?(/|$)#', $path)) {
         throw new RuntimeException('Ungültiger Pfad im LaTeX-Paket: ' . $path);
     }
     return $path;
@@ -63,6 +66,46 @@ function latex_template_package_normalize_path(string $path): string {
 function latex_template_package_allowed_extension(string $path): bool {
     $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
     return in_array($ext, ['tex','sty','cls','png','jpg','jpeg','pdf','svg','ttf','otf','json','txt'], true);
+}
+
+function latex_template_package_ignore_reason(string $path, bool $isDirectory = false): ?string {
+    $parts = array_values(array_filter(explode('/', $path), static fn($part) => $part !== ''));
+    $base = basename($path);
+    $baseLower = strtolower($base);
+
+    foreach ($parts as $part) {
+        $partLower = strtolower($part);
+        if ($partLower === '__macosx' || str_starts_with($part, '._')) {
+            return 'macos_metadata';
+        }
+        if (in_array($partLower, ['.git', '.vscode', '.idea'], true)) {
+            return 'ignored_directory';
+        }
+    }
+
+    if ($isDirectory) {
+        return str_starts_with($base, '.') ? 'ignored_directory' : null;
+    }
+
+    if (str_starts_with($base, '._')) {
+        return 'macos_metadata';
+    }
+    if (in_array($baseLower, ['.ds_store', 'thumbs.db', 'desktop.ini', '.gitignore', '.htaccess'], true) || str_starts_with($base, '.')) {
+        return 'hidden_system_file';
+    }
+
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if (in_array($ext, ['php', 'phtml', 'phar', 'cgi', 'sh', 'exe', 'bat', 'cmd', 'com', 'dll', 'so', 'js'], true)) {
+        return 'executable_or_disallowed';
+    }
+    if ($ext === '') {
+        return 'unknown_extension';
+    }
+    if (!latex_template_package_allowed_extension($path)) {
+        return 'unsupported_file_type';
+    }
+
+    return null;
 }
 
 function latex_template_package_abs_dir(string $storagePath): string {
@@ -125,6 +168,7 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
     }
 
     $files = [];
+    $ignoredFiles = [];
     $warnings = [];
     $containsDataTex = false;
     $mainContent = null;
@@ -132,13 +176,29 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $stat = $zip->statIndex($i);
             $rawName = (string)($stat['name'] ?? '');
-            if ($rawName === '' || str_ends_with($rawName, '/')) continue;
+            if ($rawName === '') continue;
+            $isDirectory = str_ends_with($rawName, '/');
             $path = latex_template_package_normalize_path($rawName);
-            if (basename($path) === '.htaccess') {
-                $warnings[] = '.htaccess wurde ignoriert.';
+
+            $opsys = null;
+            $attributes = null;
+            if (method_exists($zip, 'getExternalAttributesIndex') && $zip->getExternalAttributesIndex($i, $opsys, $attributes)) {
+                $unixMode = ((int)$attributes >> 16) & 0170000;
+                if ($unixMode === 0120000) {
+                    throw new RuntimeException('Symlinks sind in LaTeX-Vorlagenpaketen nicht erlaubt: ' . $path);
+                }
+            }
+
+            $ignoreReason = latex_template_package_ignore_reason($path, $isDirectory);
+            if ($ignoreReason !== null) {
+                $ignoredFiles[] = ['path' => $path, 'reason' => $ignoreReason];
                 continue;
             }
-            if (!latex_template_package_allowed_extension($path)) throw new RuntimeException('Nicht erlaubte Datei im ZIP: ' . $path);
+            if ($isDirectory) continue;
+            if (!latex_template_package_allowed_extension($path)) {
+                $ignoredFiles[] = ['path' => $path, 'reason' => 'unsupported_file_type'];
+                continue;
+            }
             if ((int)($stat['size'] ?? 0) > 10 * 1024 * 1024) throw new RuntimeException('Einzeldatei ist zu groß: ' . $path);
             $content = $zip->getFromIndex($i);
             if ($content === false) throw new RuntimeException('Datei konnte nicht aus ZIP gelesen werden: ' . $path);
@@ -147,6 +207,11 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
                 $warnings[] = 'data.tex im Paket wird beim Generieren vom System ersetzt.';
             }
             $dest = $absDir . '/' . $path;
+            $destNorm = str_replace('\\', '/', $dest);
+            $rootNorm = rtrim(str_replace('\\', '/', $absDir), '/') . '/';
+            if (strncmp($destNorm, $rootNorm, strlen($rootNorm)) !== 0) {
+                throw new RuntimeException('Ungültiger Zielpfad im LaTeX-Paket: ' . $path);
+            }
             $destDir = dirname($dest);
             if (!is_dir($destDir) && !@mkdir($destDir, 0750, true)) throw new RuntimeException('Zielordner konnte nicht angelegt werden.');
             if (@file_put_contents($dest, $content, LOCK_EX) === false) throw new RuntimeException('Datei konnte nicht gespeichert werden: ' . $path);
@@ -167,9 +232,12 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
     }
     $hasDataInput = (bool)preg_match('/\\(?:input|include)\s*\{\s*data(?:\.tex)?\s*\}/i', $mainContent);
     if (!$hasDataInput) $warnings[] = 'Hauptdatei enthält keinen erkennbaren \\input{data.tex}- oder \\include{data.tex}-Verweis.';
+    if ($ignoredFiles) $warnings[] = count($ignoredFiles) . ' nicht unterstützte Dateien wurden ignoriert.';
 
     $manifest = [
         'files' => $files,
+        'ignored_files' => $ignoredFiles,
+        'ignored_count' => count($ignoredFiles),
         'main_file' => $mainFile,
         'contains_data_tex' => $containsDataTex,
         'has_data_input' => $hasDataInput,

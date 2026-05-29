@@ -29,8 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'is_active' => isset($_POST['package_is_active']),
                 'is_default' => isset($_POST['package_is_default']),
             ]);
+            $ignoredCount = (int)($result['manifest']['ignored_count'] ?? 0);
             $msg = 'LaTeX-Vorlagenpaket importiert.';
-            if (!empty($result['warnings'])) $msg .= ' Hinweise: ' . implode(' ', (array)$result['warnings']);
+            if ($ignoredCount > 0) {
+                $msg .= ' ' . $ignoredCount . ' nicht unterstützte Dateien wurden ignoriert.';
+            }
+            $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !str_contains((string)$warning, 'nicht unterstützte Dateien wurden ignoriert')));
+            if ($warnings) $msg .= ' Hinweise: ' . implode(' ', $warnings);
         } elseif ($packageAction === 'toggle_active') {
             $id = (int)($_POST['package_id'] ?? 0);
             $pkg = find_latex_template_package($pdo, $id, false);
