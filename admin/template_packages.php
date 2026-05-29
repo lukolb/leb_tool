@@ -488,7 +488,15 @@ if ($confirmId > 0) {
 }
 
 $packages = $pdo->query("SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-$optionLists = template_import_option_list_templates($pdo);
+$optionLists = [];
+try {
+    $optionLists = template_import_option_list_templates($pdo);
+} catch (Throwable $e) {
+    error_log('Template-Pakete: Auswahllisten konnten nicht geladen werden: ' . $e->getMessage());
+    if ($err === '') {
+        $err = 'Auswahllisten konnten nicht geladen werden. Die Paketliste bleibt verfügbar; technische Details wurden protokolliert.';
+    }
+}
 
 render_admin_header('Template-Pakete');
 ?>

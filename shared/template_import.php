@@ -137,36 +137,73 @@ function import_pdf_fields_to_template(PDO $pdo, int $templateId, array $fields)
 }
 
 function template_import_table_columns(PDO $pdo, string $table): array {
-    $cols = $pdo->query('SHOW COLUMNS FROM ' . $table)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return [];
     $out = [];
-    foreach ($cols as $c) {
-        $out[(string)($c['Field'] ?? '')] = true;
+    try {
+        $cols = $pdo->query('SHOW COLUMNS FROM ' . $table)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($cols as $c) {
+            $out[(string)($c['Field'] ?? '')] = true;
+        }
+        return $out;
+    } catch (Throwable $e) {
+        try {
+            $cols = $pdo->query('PRAGMA table_info(' . $table . ')')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($cols as $c) {
+                $out[(string)($c['name'] ?? '')] = true;
+            }
+        } catch (Throwable $ignored) {
+            return [];
+        }
     }
     return $out;
 }
 
+function template_import_db_has_table(PDO $pdo, string $table): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return false;
+    if (function_exists('db_has_table')) {
+        try { return (bool)db_has_table($pdo, $table); } catch (Throwable $e) { /* fall through */ }
+    }
+    try {
+        $pdo->query('SELECT 1 FROM `' . $table . '` LIMIT 1');
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 function template_import_option_list_templates(PDO $pdo): array {
-    if (!in_array('option_list_templates', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) ?: [], true)) {
+    if (!template_import_db_has_table($pdo, 'option_list_templates')) {
         return [];
     }
-    return $pdo->query(
-        "SELECT id, name, description, is_active
-         FROM option_list_templates
-         WHERE is_active=1
-         ORDER BY name ASC, id ASC"
-    )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    try {
+        return $pdo->query(
+            "SELECT id, name, description, is_active
+             FROM option_list_templates
+             WHERE is_active=1
+             ORDER BY name ASC, id ASC"
+        )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        error_log('option_list_templates konnten nicht geladen werden: ' . $e->getMessage());
+        return [];
+    }
 }
 
 function template_import_option_list_exists(PDO $pdo, int $listId): bool {
-    if ($listId <= 0) return false;
+    if ($listId <= 0 || !template_import_db_has_table($pdo, 'option_list_templates')) return false;
     $st = $pdo->prepare('SELECT id FROM option_list_templates WHERE id=? AND is_active=1 LIMIT 1');
     $st->execute([$listId]);
     return (bool)$st->fetchColumn();
 }
 
 function template_import_option_list_options_json(PDO $pdo, int $listId): ?string {
+    if ($listId <= 0 || !template_import_db_has_table($pdo, 'option_list_items')) {
+        return json_encode(['options' => []], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: null;
+    }
+    $itemColumns = template_import_table_columns($pdo, 'option_list_items');
+    $labelEnSelect = isset($itemColumns['label_en']) ? 'label_en' : "'' AS label_en";
+    $iconSelect = isset($itemColumns['icon_id']) ? 'icon_id' : 'NULL AS icon_id';
     $st = $pdo->prepare(
-        "SELECT value, label, label_en, icon_id
+        "SELECT value, label, {$labelEnSelect}, {$iconSelect}
          FROM option_list_items
          WHERE list_id=?
          ORDER BY sort_order ASC, id ASC"
@@ -219,6 +256,9 @@ function template_import_unique_option_list_name(PDO $pdo, string $baseName): st
 }
 
 function template_import_create_rating_option_list(PDO $pdo, string $baseName, array $ratingValues, int $createdByUserId): array {
+    if (!template_import_db_has_table($pdo, 'option_list_templates') || !template_import_db_has_table($pdo, 'option_list_items')) {
+        throw new RuntimeException('Auswahllisten-Tabellen sind nicht verfügbar. Bitte Installation/Migration prüfen.');
+    }
     $values = array_values(array_unique(array_filter(array_map(static fn($v): string => trim((string)$v), $ratingValues), static fn(string $v): bool => $v !== '')));
     if (!$values) {
         throw new RuntimeException('Keine RCFF-rating_values für die neue Auswahlliste vorhanden.');
@@ -230,11 +270,30 @@ function template_import_create_rating_option_list(PDO $pdo, string $baseName, a
     $st->execute([$name, $desc, $createdByUserId > 0 ? $createdByUserId : null]);
     $listId = (int)$pdo->lastInsertId();
 
-    $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json) VALUES (?, ?, ?, ?, NULL, ?, ?)');
+    $itemColumns = template_import_table_columns($pdo, 'option_list_items');
+    $hasLabelEn = isset($itemColumns['label_en']);
+    $hasMetaJson = isset($itemColumns['meta_json']);
+    if ($hasLabelEn && $hasMetaJson) {
+        $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order, meta_json) VALUES (?, ?, ?, ?, NULL, ?, ?)');
+    } elseif ($hasLabelEn) {
+        $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, label_en, icon_id, sort_order) VALUES (?, ?, ?, ?, NULL, ?)');
+    } elseif ($hasMetaJson) {
+        $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, icon_id, sort_order, meta_json) VALUES (?, ?, ?, NULL, ?, ?)');
+    } else {
+        $ins = $pdo->prepare('INSERT INTO option_list_items (list_id, value, label, icon_id, sort_order) VALUES (?, ?, ?, NULL, ?)');
+    }
     foreach ($values as $idx => $value) {
         $labels = template_import_rating_value_labels($value);
         $metaJson = json_encode(['source' => 'rcff_rating_values'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $ins->execute([$listId, $value, $labels['label'], $labels['label_en'], $idx, $metaJson === false ? null : $metaJson]);
+        if ($hasLabelEn && $hasMetaJson) {
+            $ins->execute([$listId, $value, $labels['label'], $labels['label_en'], $idx, $metaJson === false ? null : $metaJson]);
+        } elseif ($hasLabelEn) {
+            $ins->execute([$listId, $value, $labels['label'], $labels['label_en'], $idx]);
+        } elseif ($hasMetaJson) {
+            $ins->execute([$listId, $value, $labels['label'], $idx, $metaJson === false ? null : $metaJson]);
+        } else {
+            $ins->execute([$listId, $value, $labels['label'], $idx]);
+        }
     }
 
     if (function_exists('audit')) {
