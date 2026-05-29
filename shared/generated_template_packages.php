@@ -137,7 +137,7 @@ function normalize_generated_template_package_rcff(array $rcff, bool $studentTea
     return $rcff;
 }
 
-function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcffData, array $metadata, string $pdfFilename = 'vorlage.pdf', string $rcffFilename = 'report.rcff'): array {
+function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcffData, array $metadata, string $pdfFilename = 'vorlage.pdf', string $rcffFilename = 'report.rcff', array $options = []): array {
     $user = function_exists('current_user') ? current_user() : null;
     if (!$user || (int)($user['id'] ?? 0) <= 0) {
         throw new RuntimeException('Nur angemeldete Nutzer dürfen Template-Pakete erzeugen.');
@@ -145,6 +145,15 @@ function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcf
     $role = function_exists('get_role') ? get_role() : (string)($user['role'] ?? '');
     if (!in_array($role, ['admin', 'teacher'], true)) {
         throw new RuntimeException('Unzulässige Rolle für Template-Paket.');
+    }
+
+    $status = (string)($options['status'] ?? 'draft');
+    if (!in_array($status, ['draft', 'submitted'], true)) {
+        throw new RuntimeException('Ungültiger Template-Paket-Status.');
+    }
+    $expiresDays = (int)($options['expires_days'] ?? ($status === 'submitted' ? 30 : 14));
+    if ($expiresDays < 1 || $expiresDays > 365) {
+        $expiresDays = ($status === 'submitted') ? 30 : 14;
     }
 
     ensure_generated_template_packages_table($pdo);
@@ -192,15 +201,17 @@ function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcf
     $rcffJson = generated_template_package_json_encode($rcffData);
     $metadataJson = generated_template_package_json_encode($metadata);
 
+    $submittedAtSql = ($status === 'submitted') ? 'NOW()' : 'NULL';
     $st = $pdo->prepare(
         "INSERT INTO generated_template_packages " .
-        "(token, created_by_user_id, created_by_role, status, title, pdf_path, pdf_filename, pdf_sha256, rcff_json, rcff_filename, metadata_json, created_at, expires_at) " .
-        "VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 14 DAY))"
+        "(token, created_by_user_id, created_by_role, status, title, pdf_path, pdf_filename, pdf_sha256, rcff_json, rcff_filename, metadata_json, created_at, expires_at, submitted_to_admin_at) " .
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL " . $expiresDays . " DAY), " . $submittedAtSql . ")"
     );
     $st->execute([
         $token,
         (int)$user['id'],
         $role,
+        $status,
         $title,
         $pdfRel,
         $safePdfFilename,
@@ -218,6 +229,6 @@ function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcf
         'rcff' => $rcffData,
         'rcff_filename' => $rcffFilename,
         'metadata' => $metadata,
-        'status' => 'draft',
+        'status' => $status,
     ];
 }

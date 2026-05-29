@@ -349,7 +349,8 @@ $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
 $enableStudentTeacherRatings = ((string)($_POST['enable_student_teacher_ratings'] ?? '0') === '1');
 $exportRcff = ((string)($_POST['export_rcff'] ?? '0') === '1');
 $createTemplatePackage = ((string)($_POST['create_template_package'] ?? '0') === '1');
-if ($createTemplatePackage) {
+$submitTemplatePackageToAdmin = ((string)($_POST['submit_template_package_to_admin'] ?? '0') === '1') && get_role() === 'teacher';
+if ($createTemplatePackage || $submitTemplatePackageToAdmin) {
     try {
         csrf_verify();
     } catch (Throwable $e) {
@@ -381,7 +382,7 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         . $generatedDataTex;
 }
 $rcffData = null;
-if (($exportRcff || $createTemplatePackage) && (string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+if (($exportRcff || $createTemplatePackage || $submitTemplatePackageToAdmin) && (string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $rcffData = generate_rcff_data($pdo, $selectedSkills, $selectedGrade, $enableStudentTeacherRatings, $gradeFieldCategoryIds);
     $rcffData = normalize_generated_template_package_rcff($rcffData, $enableStudentTeacherRatings);
 }
@@ -590,15 +591,17 @@ if (!$isPdf) {
 $pdfFilename = 'vorlage.pdf';
 $templatePackageResult = null;
 $templatePackageError = '';
-if ($createTemplatePackage && $rcffData !== null && $pdoForLayout instanceof PDO) {
+if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== null && $pdoForLayout instanceof PDO) {
     try {
         $title = 'Kompetenz-PDF Klasse ' . $selectedGrade;
+        $currentUser = current_user() ?: [];
+        $nowIso = gmdate('c');
         $metadata = [
             'title' => $title,
             'source' => 'latex_templates',
-            'created_by_user_id' => (int)((current_user() ?: [])['id'] ?? 0),
+            'created_by_user_id' => (int)($currentUser['id'] ?? 0),
             'created_by_role' => get_role(),
-            'created_at' => gmdate('c'),
+            'created_at' => $nowIso,
             'grade_level' => $selectedGrade,
             'layout_template_id' => $layoutTemplateId > 0 ? $layoutTemplateId : null,
             'layout_template_name' => (string)($layout['display_name'] ?? ''),
@@ -606,13 +609,23 @@ if ($createTemplatePackage && $rcffData !== null && $pdoForLayout instanceof PDO
             'show_ag' => $showAg,
             'student_teacher_ratings' => $enableStudentTeacherRatings,
             'grade_fields_enabled' => !empty($gradeFieldCategoryIds),
+            'grade_fields' => array_values($gradeFieldCategoryIds),
             'grade_field_category_ids' => array_values($gradeFieldCategoryIds),
             'selected_categories' => generated_template_package_categories($pdoForLayout, $activeCatIds),
             'selected_competencies' => generated_template_package_competencies($pdoForLayout, $selectedSkills),
             'rcff_version' => (int)($rcffData['version'] ?? 1),
             'rating_mode' => $enableStudentTeacherRatings ? 'student_teacher' : 'standard',
         ];
-        $templatePackageResult = build_generated_template_package($pdoForLayout, $body, $rcffData, $metadata, $pdfFilename, 'report.rcff');
+        $packageOptions = [];
+        if ($submitTemplatePackageToAdmin) {
+            $metadata['submitted_by_user_id'] = (int)($currentUser['id'] ?? 0);
+            $metadata['submitted_by_name'] = (string)($currentUser['display_name'] ?? $currentUser['name'] ?? '');
+            $metadata['submitted_by_email'] = (string)($currentUser['email'] ?? '');
+            $metadata['submitted_at'] = $nowIso;
+            $metadata['submission_source'] = 'teacher_latex_templates';
+            $packageOptions = ['status' => 'submitted', 'expires_days' => 30];
+        }
+        $templatePackageResult = build_generated_template_package($pdoForLayout, $body, $rcffData, $metadata, $pdfFilename, 'report.rcff', $packageOptions);
     } catch (Throwable $e) {
         $templatePackageError = $e->getMessage();
         error_log('Template-Paket konnte nicht vorbereitet werden: ' . $e->getMessage());
@@ -625,7 +638,11 @@ while (ob_get_level() > 0) {
 
 header_remove();
 if ($templatePackageResult !== null) {
-    header('X-Template-Package-Created: 1');
+    if ((string)($templatePackageResult['status'] ?? '') === 'submitted') {
+        header('X-Template-Package-Submitted: 1');
+    } else {
+        header('X-Template-Package-Created: 1');
+    }
     header('X-Template-Package-Id: ' . (int)$templatePackageResult['id']);
 } elseif ($templatePackageError !== '') {
     header('X-Template-Package-Error: ' . rawurlencode($templatePackageError));

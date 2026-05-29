@@ -20,6 +20,25 @@ function tp_bool_label($value): string {
     return !empty($value) ? 'Ja' : 'Nein';
 }
 
+function tp_status_label(string $status): string {
+    return match ($status) {
+        'submitted' => 'Eingereicht',
+        'draft' => 'Entwurf',
+        'imported' => 'Importiert',
+        'expired' => 'Abgelaufen',
+        default => $status,
+    };
+}
+
+function tp_user_label(array $pkg, array $meta = []): string {
+    $name = trim((string)($meta['submitted_by_name'] ?? $pkg['created_by_name'] ?? ''));
+    $email = trim((string)($meta['submitted_by_email'] ?? $pkg['created_by_email'] ?? ''));
+    if ($name !== '' && $email !== '') return $name . ' <' . $email . '>';
+    if ($name !== '') return $name;
+    if ($email !== '') return $email;
+    return '#' . (string)($pkg['created_by_user_id'] ?? '');
+}
+
 function tp_package_summary(array $pkg): array {
     $meta = tp_decode_json($pkg['metadata_json'] ?? null);
     $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
@@ -368,7 +387,7 @@ if ($confirmId > 0) {
     if ($confirmPkg) $confirmSummary = tp_package_summary($confirmPkg);
 }
 
-$packages = $pdo->query("SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id ORDER BY p.created_at DESC, p.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$packages = $pdo->query("SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 render_admin_header('Template-Pakete');
 ?>
@@ -400,7 +419,11 @@ render_admin_header('Template-Pakete');
   <div class="card" style="border-left:4px solid <?= h($cardColor) ?>;">
     <h2><?= ($viewAction === 'delete') ? 'Template-Paket löschen' : ($isImported ? 'Template-Paket' : 'Template-Paket übernehmen') ?></h2>
     <p><strong><?=h((string)$confirmPkg['title'])?></strong></p>
-    <p class="muted">Status: <?=h($confirmStatus)?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
+    <p class="muted">Status: <?=h(tp_status_label($confirmStatus))?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
+    <?php if ($confirmStatus === 'submitted'): ?>
+      <p class="muted">Eingereicht von <?=h(tp_user_label($confirmPkg, $confirmSummary['metadata']))?><?= !empty($confirmPkg['submitted_to_admin_at']) ? ' am ' . h((string)$confirmPkg['submitted_to_admin_at']) : '' ?>.</p>
+    <?php endif; ?>
+    <p class="muted">Klasse: <?=h((string)($confirmSummary['metadata']['grade_level'] ?? ''))?> · Layout: <?=h((string)($confirmSummary['metadata']['layout_template_name'] ?? ''))?> · S/T: <?=h(tp_bool_label($confirmSummary['metadata']['student_teacher_ratings'] ?? false))?> · SEL/AG: <?=h('SEL ' . tp_bool_label($confirmSummary['metadata']['show_sel'] ?? false) . ' / AG ' . tp_bool_label($confirmSummary['metadata']['show_ag'] ?? false))?></p>
     <?php if ($viewAction === 'delete'): ?>
       <?php if ($confirmImportedTemplateId > 0): ?>
         <p><strong>Warnung:</strong> Das daraus erzeugte Template #<?=h((string)$confirmImportedTemplateId)?> bleibt erhalten. Nur das vorbereitete Paket und die gespeicherte Paket-PDF werden gelöscht.</p>
@@ -549,15 +572,16 @@ render_admin_header('Template-Pakete');
   <?php else: ?>
     <div style="overflow:auto;">
       <table class="table" style="min-width:1100px;width:100%;">
-        <thead><tr><th>ID</th><th>Titel</th><th>Status</th><th>Erstellt</th><th>Erstellt von</th><th>Rolle</th><th>Klasse</th><th>Layout</th><th>S/T</th><th>SEL/AG</th><th>RCFF</th><th>Ablauf</th><th>Aktion</th></tr></thead>
+        <thead><tr><th>ID</th><th>Titel</th><th>Status</th><th>Erstellt</th><th>Erstellt von</th><th>Eingereicht</th><th>Rolle</th><th>Klasse</th><th>Layout</th><th>S/T</th><th>SEL/AG</th><th>RCFF</th><th>Ablauf</th><th>Aktion</th></tr></thead>
         <tbody>
         <?php foreach ($packages as $pkg): $summary = tp_package_summary($pkg); $meta = $summary['metadata']; $can = in_array((string)$pkg['status'], ['draft','submitted'], true); ?>
           <tr>
             <td><?=h((string)$pkg['id'])?></td>
             <td><?=h((string)$pkg['title'])?></td>
-            <td><?=h((string)$pkg['status'])?></td>
+            <td><?=h(tp_status_label((string)$pkg['status']))?></td>
             <td><?=h((string)$pkg['created_at'])?></td>
             <td><?=h(trim((string)($pkg['created_by_name'] ?? '')) ?: (string)($pkg['created_by_email'] ?? ('#' . $pkg['created_by_user_id'])))?></td>
+            <td><?= ((string)$pkg['status'] === 'submitted') ? h(tp_user_label($pkg, $meta) . (!empty($pkg['submitted_to_admin_at']) ? (' am ' . (string)$pkg['submitted_to_admin_at']) : '')) : '<span class="muted">—</span>' ?></td>
             <td><?=h((string)$pkg['created_by_role'])?></td>
             <td><?=h((string)($meta['grade_level'] ?? ''))?></td>
             <td><?=h((string)($meta['layout_template_name'] ?? ''))?></td>

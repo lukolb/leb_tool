@@ -109,6 +109,13 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   </label>
   <p class="muted" style="margin:6px 0 0;">Speichert intern PDF, RCFF-Felddaten und Generierungsmetadaten für eine spätere Vorlagenübernahme.</p>
   <?php endif; ?>
+  <?php if (!empty($allowTeacherTemplateSubmission)): ?>
+  <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
+    <input type="hidden" name="submit_template_package_to_admin" value="0">
+    <input type="checkbox" name="submit_template_package_to_admin" value="1"> Als Vorlage an Admin senden
+  </label>
+  <p class="muted" style="margin:6px 0 0;">Das PDF und die Felddaten werden intern gespeichert. Der Admin kann daraus eine Vorlage anlegen.</p>
+  <?php endif; ?>
 </div>
 
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -294,9 +301,14 @@ form.addEventListener('submit', async (event) => {
     }
 
     const packageCreated = response.headers.get('X-Template-Package-Created') === '1';
+    const packageSubmitted = response.headers.get('X-Template-Package-Submitted') === '1';
     const packageId = response.headers.get('X-Template-Package-Id') || '';
     const packageError = response.headers.get('X-Template-Package-Error') || '';
-    if (templatePackageStatus && packageCreated) {
+    if (templatePackageStatus && packageSubmitted) {
+      templatePackageStatus.textContent = 'Die Vorlage wurde an den Admin gesendet.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.style.borderLeft = '4px solid #067647';
+      templatePackageStatus.style.display = 'block';
+    } else if (templatePackageStatus && packageCreated) {
       templatePackageStatus.textContent = 'Template-Paket wurde vorbereitet und kann im nächsten Schritt als Vorlage übernommen werden.' + (packageId ? (' (Paket #' + packageId + ')') : '');
       templatePackageStatus.style.borderLeft = '4px solid #067647';
       templatePackageStatus.style.display = 'block';
