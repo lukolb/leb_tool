@@ -75,6 +75,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
 <form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
+<input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>">
 <input type="hidden" name="source" value="db">
 <input type="hidden" name="grade_level" value="<?= h((string)$selectedGrade) ?>">
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -101,6 +102,13 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="hidden" name="export_rcff" value="0">
     <input type="checkbox" name="export_rcff" value="1"> Zusätzlich RCFF-Felddatei exportieren
   </label>
+  <?php if (!empty($allowTemplatePackage)): ?>
+  <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
+    <input type="hidden" name="create_template_package" value="0">
+    <input type="checkbox" name="create_template_package" value="1"> Als Template-Paket vorbereiten (PDF + Felddaten)
+  </label>
+  <p class="muted" style="margin:6px 0 0;">Speichert intern PDF, RCFF-Felddaten und Generierungsmetadaten für eine spätere Vorlagenübernahme.</p>
+  <?php endif; ?>
 </div>
 
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -192,6 +200,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   </div>
 </div>
 
+<div id="templatePackageStatus" class="card" style="display:none; margin-top:16px;"></div>
+
 <div id="pdfPreviewWrap" style="display:none; margin-top:24px;">
   <iframe id="pdfPreview" style="width:100%; height:90vh;"></iframe>
 </div>
@@ -209,6 +219,7 @@ const createPdfButton = document.getElementById('createPdfButton');
 const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
 const pdfDebug = document.getElementById('pdfDebug');
 const pdfDebugText = document.getElementById('pdfDebugText');
+const templatePackageStatus = document.getElementById('templatePackageStatus');
 let currentPdfUrl = null;
 
 function applyCategoryState(catId){
@@ -264,6 +275,11 @@ form.addEventListener('submit', async (event) => {
   try {
     pdfDebug.style.display = 'none';
     pdfDebugText.textContent = '';
+    if (templatePackageStatus) {
+      templatePackageStatus.style.display = 'none';
+      templatePackageStatus.textContent = '';
+      templatePackageStatus.style.borderLeft = '';
+    }
 
     const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
@@ -275,6 +291,19 @@ form.addEventListener('submit', async (event) => {
       pdfDebug.style.display = 'block';
       console.error('PDF build failed', { status: response.status, contentType, body: msg });
       return;
+    }
+
+    const packageCreated = response.headers.get('X-Template-Package-Created') === '1';
+    const packageId = response.headers.get('X-Template-Package-Id') || '';
+    const packageError = response.headers.get('X-Template-Package-Error') || '';
+    if (templatePackageStatus && packageCreated) {
+      templatePackageStatus.textContent = 'Template-Paket wurde vorbereitet und kann im nächsten Schritt als Vorlage übernommen werden.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.style.borderLeft = '4px solid #067647';
+      templatePackageStatus.style.display = 'block';
+    } else if (templatePackageStatus && packageError) {
+      templatePackageStatus.textContent = 'PDF wurde erstellt, aber das Template-Paket konnte nicht gespeichert werden: ' + decodeURIComponent(packageError);
+      templatePackageStatus.style.borderLeft = '4px solid #b42318';
+      templatePackageStatus.style.display = 'block';
     }
 
     if (contentType.includes('application/zip')) {

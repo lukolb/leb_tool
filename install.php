@@ -366,6 +366,30 @@ CREATE TABLE IF NOT EXISTS `templates` (
   KEY `idx_templates_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `generated_template_packages` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `token` varchar(96) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_by_user_id` bigint UNSIGNED NOT NULL,
+  `created_by_role` enum('admin','teacher') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('draft','submitted','imported','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pdf_path` varchar(1024) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pdf_filename` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `pdf_sha256` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `rcff_json` {$JSON} COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rcff_filename` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'report.rcff',
+  `metadata_json` {$JSON} COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `submitted_to_admin_at` datetime DEFAULT NULL,
+  `imported_template_id` bigint UNSIGNED DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_generated_template_packages_token` (`token`),
+  KEY `idx_generated_template_packages_creator` (`created_by_user_id`,`status`,`created_at`),
+  KEY `idx_generated_template_packages_status_expires` (`status`,`expires_at`),
+  KEY `idx_generated_template_packages_imported` (`imported_template_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `template_fields` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `template_id` bigint UNSIGNED NOT NULL,
@@ -688,6 +712,10 @@ ALTER TABLE `templates`
 
 ALTER TABLE `template_fields`
   ADD CONSTRAINT `fk_template_fields_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `generated_template_packages`
+  ADD CONSTRAINT `fk_gtp_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_gtp_imported_template` FOREIGN KEY (`imported_template_id`) REFERENCES `templates` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE `report_instances`
   ADD CONSTRAINT `fk_report_instances_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

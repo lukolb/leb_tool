@@ -109,6 +109,7 @@ $templates = get_latex_layout_templates($pdo, false);
 
 render_admin_header(t('latex.title', 'Kompetenz-PDF erstellen'));
 $latexBuildUrl = url('admin/pdf_preview.php');
+$allowTemplatePackage = true;
 require __DIR__ . '/../shared/latex_page.php';
 ?>
 

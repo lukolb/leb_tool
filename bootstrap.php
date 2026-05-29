@@ -1003,6 +1003,56 @@ function ensure_schema(PDO $pdo): void {
         ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
       );
     }
+
+    if (!db_has_table($pdo, 'generated_template_packages')) {
+      $pdo->exec(
+        "CREATE TABLE generated_template_packages (
+" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+" .
+        "  token VARCHAR(96) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  created_by_user_id BIGINT UNSIGNED NOT NULL,
+" .
+        "  created_by_role ENUM('admin','teacher') COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  status ENUM('draft','submitted','imported','expired') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+" .
+        "  title VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  pdf_path VARCHAR(1024) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  pdf_filename VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  pdf_sha256 CHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+" .
+        "  rcff_json LONGTEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  rcff_filename VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'report.rcff',
+" .
+        "  metadata_json LONGTEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+" .
+        "  expires_at DATETIME NOT NULL,
+" .
+        "  submitted_to_admin_at DATETIME DEFAULT NULL,
+" .
+        "  imported_template_id BIGINT UNSIGNED DEFAULT NULL,
+" .
+        "  PRIMARY KEY (id),
+" .
+        "  UNIQUE KEY uq_generated_template_packages_token (token),
+" .
+        "  KEY idx_generated_template_packages_creator (created_by_user_id, status, created_at),
+" .
+        "  KEY idx_generated_template_packages_status_expires (status, expires_at),
+" .
+        "  KEY idx_generated_template_packages_imported (imported_template_id)
+" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
 // --- parent_portal_links: admin-approved, time-boxed Eltern-Zugänge
     if (!db_has_table($pdo, 'parent_portal_links')) {
       $pdo->exec(
