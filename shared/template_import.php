@@ -178,7 +178,28 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
         $byName[(string)$row['field_name']] = $row;
     }
 
-    $stats = ['read'=>0,'matched'=>0,'updated'=>0,'labels_updated'=>0,'groups_updated'=>0,'subgroups_updated'=>0,'meta_updated'=>0,'ignored'=>0,'skipped'=>0];
+    $templateFieldNames = array_keys($byName);
+    $stats = [
+        'rcff_fields_total' => 0,
+        'template_fields_total' => count($templateFieldNames),
+        'matched_fields' => 0,
+        'updated_fields' => 0,
+        'labels_updated' => 0,
+        'groups_updated' => 0,
+        'subgroups_updated' => 0,
+        'rating_meta_updated' => 0,
+        'ignored_missing_pdf_field' => 0,
+        'errors' => [],
+        'unmatched_rcff_field_names' => [],
+        'sample_template_field_names' => array_slice($templateFieldNames, 0, 5),
+        // Backwards-compatible keys used by the existing manual RCFF upload UI.
+        'read' => 0,
+        'matched' => 0,
+        'updated' => 0,
+        'ignored' => 0,
+        'skipped' => 0,
+        'meta_updated' => 0,
+    ];
     $rcffValuesByName = [];
     foreach ($rcff['fields'] as $candidate) {
         if (!is_array($candidate)) continue;
@@ -189,11 +210,18 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
 
     foreach ($rcff['fields'] as $field) {
         $stats['read']++;
-        if (!is_array($field)) { $stats['skipped']++; continue; }
+        $stats['rcff_fields_total']++;
+        if (!is_array($field)) { $stats['skipped']++; $stats['errors'][] = 'Ungültiger RCFF-Feldeintrag bei Index ' . ($stats['read'] - 1); continue; }
         $fieldName = trim((string)($field['field_name'] ?? ''));
-        if ($fieldName === '') { $stats['skipped']++; continue; }
-        if (!isset($byName[$fieldName])) { $stats['ignored']++; continue; }
+        if ($fieldName === '') { $stats['skipped']++; $stats['errors'][] = 'RCFF-Feld ohne field_name bei Index ' . ($stats['read'] - 1); continue; }
+        if (!isset($byName[$fieldName])) {
+            $stats['ignored']++;
+            $stats['ignored_missing_pdf_field']++;
+            if (count($stats['unmatched_rcff_field_names']) < 5) $stats['unmatched_rcff_field_names'][] = $fieldName;
+            continue;
+        }
         $stats['matched']++;
+        $stats['matched_fields']++;
         $row = $byName[$fieldName];
 
         $labelDe = trim((string)($field['label_de'] ?? ''));
@@ -203,8 +231,14 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
         $subcategoryDe = trim((string)($field['subcategory_de'] ?? ''));
         $subcategoryEn = trim((string)($field['subcategory_en'] ?? ''));
 
-        $newLabel = $labelDe !== '' ? $labelDe : (string)($row['label'] ?? '');
-        $newLabelEn = $labelEn !== '' ? $labelEn : (string)($row['label_en'] ?? '');
+        if ($hasLabelEn) {
+            $newLabel = $labelDe !== '' ? $labelDe : (string)($row['label'] ?? '');
+            $newLabelEn = $labelEn !== '' ? $labelEn : (string)($row['label_en'] ?? '');
+        } else {
+            $combined = ($labelDe !== '' && $labelEn !== '') ? ($labelDe . ' | ' . $labelEn) : ($labelDe !== '' ? $labelDe : $labelEn);
+            $newLabel = $combined !== '' ? $combined : (string)($row['label'] ?? '');
+            $newLabelEn = '';
+        }
         $labelChanged = ($newLabel !== (string)($row['label'] ?? '')) || ($hasLabelEn && $newLabelEn !== (string)($row['label_en'] ?? ''));
 
         $meta = json_decode((string)($row['meta_json'] ?? ''), true);
@@ -243,6 +277,7 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
         if ($categoryDe !== '' && $subcategoryDe !== '') $groupPath = $categoryDe . '/' . $subcategoryDe;
         elseif ($categoryDe !== '') $groupPath = $categoryDe;
         if ($groupPath !== '') $meta['group'] = $groupPath;
+        if ($subcategoryDe !== '') $meta['subgroup'] = $subcategoryDe;
         if ($categoryEn !== '') $meta['group_title_en'] = $categoryEn;
         if ($subcategoryEn !== '') $meta['subgroup_title_en'] = $subcategoryEn;
 
@@ -263,9 +298,11 @@ function apply_rcff_to_template_fields(PDO $pdo, int $templateId, array $rcff): 
         $pdo->prepare($sql)->execute($params);
 
         $stats['updated']++;
+        $stats['updated_fields']++;
         if ($labelChanged) $stats['labels_updated']++;
         if ($categoryDe !== '' || $categoryEn !== '') $stats['groups_updated']++;
         if ($subcategoryDe !== '' || $subcategoryEn !== '' || isset($field['subcategory_id'])) $stats['subgroups_updated']++;
+        if ((string)($field['type'] ?? '') === 'rating' && (array_key_exists('rating_values', $field) || array_key_exists('rating_mode', $field) || array_key_exists('role', $field))) $stats['rating_meta_updated']++;
         if ($metaChanged) $stats['meta_updated']++;
     }
 

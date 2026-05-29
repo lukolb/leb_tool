@@ -31,6 +31,34 @@ function tp_package_summary(array $pkg): array {
     ];
 }
 
+function tp_rcff_stats_text(?array $stats): string {
+    if (!$stats) return 'RCFF wurde nicht angewendet.';
+    $total = (int)($stats['rcff_fields_total'] ?? $stats['read'] ?? 0);
+    $matched = (int)($stats['matched_fields'] ?? $stats['matched'] ?? 0);
+    $updated = (int)($stats['updated_fields'] ?? $stats['updated'] ?? 0);
+    $labels = (int)($stats['labels_updated'] ?? 0);
+    $groups = (int)($stats['groups_updated'] ?? 0);
+    $subs = (int)($stats['subgroups_updated'] ?? 0);
+    $ratings = (int)($stats['rating_meta_updated'] ?? 0);
+    $ignored = (int)($stats['ignored_missing_pdf_field'] ?? $stats['ignored'] ?? 0);
+    if ($total > 0 && $matched === 0) {
+        return "RCFF wurde gelesen ({$total} Felder), aber keine Feldnamen passten zu den PDF-Feldern.";
+    }
+    return "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
+}
+
+function tp_log_rcff_application(int $packageId, int $templateId, array $stats): void {
+    error_log('generated_template_package RCFF apply: ' . json_encode([
+        'package_id' => $packageId,
+        'template_id' => $templateId,
+        'rcff_fields_total' => (int)($stats['rcff_fields_total'] ?? $stats['read'] ?? 0),
+        'template_fields_total' => (int)($stats['template_fields_total'] ?? 0),
+        'matches' => (int)($stats['matched_fields'] ?? $stats['matched'] ?? 0),
+        'first_unmatched_rcff_field_names' => array_slice((array)($stats['unmatched_rcff_field_names'] ?? []), 0, 5),
+        'first_template_field_names_if_no_matches' => ((int)($stats['matched_fields'] ?? $stats['matched'] ?? 0) === 0) ? array_slice((array)($stats['sample_template_field_names'] ?? []), 0, 5) : [],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
 $msg = '';
 $err = '';
 $importedTemplateId = 0;
@@ -41,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         csrf_verify();
         $action = (string)($_POST['action'] ?? '');
-        if ($action !== 'import_package') {
+        if (!in_array($action, ['import_package', 'reapply_rcff'], true)) {
             throw new RuntimeException('Unbekannte Aktion.');
         }
 
@@ -50,6 +78,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $useRcff = (string)($_POST['apply_rcff'] ?? '1') === '1';
         $fieldsJson = (string)($_POST['fields_json'] ?? '');
         if ($packageId <= 0) throw new RuntimeException('Paket fehlt.');
+        $handledPost = false;
+        if ($action === 'reapply_rcff') {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
+            $st->execute([$packageId]);
+            $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
+            $templateId = (int)($pkg['imported_template_id'] ?? 0);
+            if ((string)($pkg['status'] ?? '') !== 'imported' || $templateId <= 0) {
+                throw new RuntimeException('RCFF kann nur für bereits importierte Pakete erneut angewendet werden.');
+            }
+            $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
+            if (($rcff['format'] ?? '') !== 'rcff' || (int)($rcff['version'] ?? 0) !== 1 || !is_array($rcff['fields'] ?? null)) {
+                throw new RuntimeException('Gespeicherte RCFF-Daten sind ungültig.');
+            }
+            $rcffStats = apply_rcff_to_template_fields($pdo, $templateId, $rcff);
+            tp_log_rcff_application($packageId, $templateId, $rcffStats);
+            $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
+            $metadata['rcff_reapply'] = [
+                'reapplied_by_user_id' => (int)current_user()['id'],
+                'reapplied_at' => gmdate('c'),
+                'template_id' => $templateId,
+                'rcff_stats' => $rcffStats,
+            ];
+            $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($metadataJson !== false) {
+                $pdo->prepare('UPDATE generated_template_packages SET metadata_json=? WHERE id=?')->execute([$metadataJson, $packageId]);
+            }
+            audit('generated_template_package_rcff_reapply', (int)current_user()['id'], ['package_id' => $packageId, 'template_id' => $templateId, 'rcff_stats' => $rcffStats]);
+            $pdo->commit();
+            $importedTemplateId = $templateId;
+            $importStats = ['fields' => (int)($rcffStats['template_fields_total'] ?? 0), 'rcff' => $rcffStats];
+            $msg = 'RCFF wurde erneut auf das Template angewendet.';
+            $handledPost = true;
+        }
+        if (!$handledPost) {
         if ($templateName === '') throw new RuntimeException('Template-Name darf nicht leer sein.');
         if ((function_exists('mb_strlen') ? mb_strlen($templateName) : strlen($templateName)) > 255) throw new RuntimeException('Template-Name ist zu lang.');
         $fields = json_decode($fieldsJson, true);
@@ -89,6 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $fieldCount = import_pdf_fields_to_template($pdo, $templateId, $fields);
         $rcffStats = $useRcff ? apply_rcff_to_template_fields($pdo, $templateId, $rcff) : null;
+        if (is_array($rcffStats)) tp_log_rcff_application($packageId, $templateId, $rcffStats);
 
         $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
         $metadata['import'] = [
@@ -117,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $importedTemplateId = $templateId;
         $importStats = ['fields' => $fieldCount, 'rcff' => $rcffStats];
         $msg = 'Template wurde angelegt.';
+        }
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         if (is_string($cleanupPdf) && $cleanupPdf !== '' && is_file($cleanupPdf)) {
@@ -152,7 +218,7 @@ render_admin_header('Template-Pakete');
       <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $importedTemplateId))?>">Felder bearbeiten</a>
     <?php endif; ?>
     <?php if (is_array($importStats)): ?>
-      <div class="muted" style="margin-top:8px;">PDF-Felder: <?=h((string)($importStats['fields'] ?? 0))?><?php if (is_array($importStats['rcff'] ?? null)): ?> · RCFF: <?=h((string)(($importStats['rcff']['matched'] ?? 0)))?> Treffer, <?=h((string)(($importStats['rcff']['ignored'] ?? 0)))?> ignoriert<?php endif; ?></div>
+      <div class="muted" style="margin-top:8px;">PDF-Felder: <?=h((string)($importStats['fields'] ?? 0))?> · <?=h(tp_rcff_stats_text(is_array($importStats['rcff'] ?? null) ? $importStats['rcff'] : null))?></div>
     <?php endif; ?>
   </div>
 <?php endif; ?>
@@ -310,6 +376,14 @@ render_admin_header('Template-Pakete');
               <?php endif; ?>
               <?php if ((int)($pkg['imported_template_id'] ?? 0) > 0): ?>
                 <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id=' . (int)$pkg['imported_template_id']))?>">Template öffnen</a>
+              <?php endif; ?>
+              <?php if ((string)$pkg['status'] === 'imported' && (int)($pkg['imported_template_id'] ?? 0) > 0): ?>
+                <form method="post" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="reapply_rcff">
+                  <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+                  <button class="btn secondary" type="submit">RCFF erneut anwenden</button>
+                </form>
               <?php endif; ?>
             </td>
           </tr>
