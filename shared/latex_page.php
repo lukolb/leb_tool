@@ -127,25 +127,25 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   $selectedTemplateSource = $defaultPackageId > 0 ? ('package:' . $defaultPackageId) : ($defaultLayoutId > 0 ? ('layout:' . $defaultLayoutId) : 'system');
 ?>
 <div class="card" style="padding:12px;margin:12px 0;">
-  <label for="template_source"><strong>Vorlagenquelle</strong></label>
+  <label for="template_source"><strong><?=h(t('latex_templates.template_source.label'))?></strong></label>
   <select class="input" name="template_source" id="template_source">
-    <optgroup label="System / Titelseiten">
-      <option value="system" <?= $selectedTemplateSource === 'system' ? 'selected' : '' ?>>Systemvorlage / Standardlayout</option>
+    <optgroup label="<?=h(t('latex_templates.template_source.system_group'))?>">
+      <option value="system" <?= $selectedTemplateSource === 'system' ? 'selected' : '' ?>><?=h(t('latex_templates.template_source.system'))?></option>
       <?php foreach ($layoutTemplates as $tpl): ?>
         <?php $sourceValue = 'layout:' . (int)$tpl['id']; ?>
-        <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>>Titelseite: <?= h((string)$tpl['display_name']) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
+        <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.layout'), (string)$tpl['display_name'])) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
       <?php endforeach; ?>
     </optgroup>
     <?php if ($ltpList): ?>
-      <optgroup label="Komplette LaTeX-Vorlagenpakete">
+      <optgroup label="<?=h(t('latex_templates.template_source.package_group'))?>">
         <?php foreach ($ltpList as $pkg): ?>
           <?php $sourceValue = 'package:' . (int)$pkg['id']; ?>
-          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>>LaTeX-Paket: <?= h((string)$pkg['name']) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.package'), (string)$pkg['name'])) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
         <?php endforeach; ?>
       </optgroup>
     <?php endif; ?>
   </select>
-  <p class="muted" style="margin:6px 0 0;">Wähle entweder eine Titelseitenvorlage oder ein komplettes LaTeX-Vorlagenpaket. Bei einem LaTeX-Vorlagenpaket wird dessen layout.tex verwendet; die data.tex wird weiterhin vom System erzeugt.</p>
+  <p class="muted" style="margin:6px 0 0;"><?=h(t('latex_templates.template_source.help'))?></p>
   <?php if (!$ltpList && !empty($allowLatexTemplatePackageSelection)): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden.</p><?php endif; ?>
 </div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">

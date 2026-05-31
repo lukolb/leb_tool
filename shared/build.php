@@ -11,6 +11,7 @@ $latexDir = __DIR__ . '/../latex';
 require_once __DIR__ . '/latex_layout_templates.php';
 require_once __DIR__ . '/latex_template_packages.php';
 require_once __DIR__ . '/generated_template_packages.php';
+require_once __DIR__ . '/template_package_notifications.php';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -735,7 +736,11 @@ if (!$isPdf) {
     if ($selectedLatexPackage) {
         $debugJson = json_encode($latexBuildDebug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         error_log('LaTeX template package compile failure diagnostics: ' . ($debugJson ?: '{}'));
-        echo "Build-Diagnose: " . ($debugJson ?: '{}') . "\n";
+        echo "Build-Diagnose:\n";
+        echo "- copied_package_files_count: " . (int)($latexBuildDebug['copied_package_files_count'] ?? 0) . "\n";
+        echo "- copied_support_files_count: " . (int)($latexBuildDebug['copied_support_files_count'] ?? 0) . "\n";
+        echo "- copied_support_files: " . implode(', ', (array)($latexBuildDebug['copied_support_files'] ?? [])) . "\n";
+        echo "- ignored_zip_files_count: " . (int)($latexBuildDebug['ignored_zip_files_count'] ?? 0) . "\n";
     }
     echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
     echo "data.tex (erste 120 Zeilen):\n";
@@ -786,6 +791,9 @@ if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== n
             $packageOptions = ['status' => 'submitted', 'expires_days' => 30];
         }
         $templatePackageResult = build_generated_template_package($pdoForLayout, $body, $rcffData, $metadata, $pdfFilename, 'report.rcff', $packageOptions);
+        if ($submitTemplatePackageToAdmin && $templatePackageResult !== null) {
+            template_package_notify_admin_submission($pdoForLayout, $templatePackageResult, $metadata);
+        }
     } catch (Throwable $e) {
         $templatePackageError = $e->getMessage();
         error_log('Template-Paket konnte nicht vorbereitet werden: ' . $e->getMessage());

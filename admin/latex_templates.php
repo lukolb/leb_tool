@@ -34,11 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ignoredCount = (int)($result['manifest']['ignored_count'] ?? count($ignoredUploadFiles));
             $msg = 'LaTeX-Vorlagenpaket importiert.';
             if ($ignoredCount > 0) {
-                $msg .= ' ' . $ignoredCount . ' nicht unterstützte Dateien wurden ignoriert.';
+                $msg .= ' ' . sprintf(t('latex_templates.ignored_files.count'), $ignoredCount);
             }
-            $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !str_contains((string)$warning, 'nicht unterstützte Dateien wurden ignoriert')));
+            $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !str_contains((string)$warning, 'nicht unterstützte Dateien wurden ignoriert') && !str_contains((string)$warning, 'unsupported files were ignored')));
             if ($warnings) $msg .= ' Hinweise: ' . implode(' ', $warnings);
-            $msg .= ' Allgemeine LaTeX-Support-Dateien werden beim Build automatisch ergänzt.';
+            $msg .= ' ' . t('latex_templates.support.auto');
         } elseif ($packageAction === 'toggle_active') {
             $id = (int)($_POST['package_id'] ?? 0);
             $pkg = find_latex_template_package($pdo, $id, false);
@@ -187,7 +187,7 @@ require __DIR__ . '/../shared/latex_page.php';
     <?php if($ignoredUploadFiles): ?>
       <?php $ignoredPreview = array_slice($ignoredUploadFiles, 0, 30); ?>
       <details style="margin-top:8px;" open>
-        <summary>Ignorierte Dateien anzeigen</summary>
+        <summary><?=h(t('latex_templates.ignored_files.show'))?></summary>
         <ul style="margin:8px 0 0 18px;">
           <?php foreach($ignoredPreview as $ignored): ?>
             <?php
@@ -207,9 +207,9 @@ require __DIR__ . '/../shared/latex_page.php';
 <?php if($err): ?><div class="card" style="border-left:4px solid #b42318;"><?= h($err) ?></div><?php endif; ?>
 
 <details class="card" style="margin-top:20px;">
-  <summary><strong>LaTeX-Vorlagenpakete</strong></summary>
+  <summary><strong><?=h(t('latex_templates.packages.heading'))?></strong></summary>
   <div style="margin-top:10px;">
-    <p class="muted">Das ZIP muss eine Hauptdatei (z. B. main.tex) enthalten. data.tex wird beim Generieren automatisch vom System bereitgestellt und überschreibt eine ggf. enthaltene Datei.</p>
+    <p class="muted"><?=h(t('latex_templates.packages.description'))?></p>
     <table class="table">
       <tr><th>Name</th><th>Status</th><th>Standard</th><th>Hauptdatei</th><th>Erstellt</th><th>Dateien</th><th>Warnungen</th><th>Aktionen</th></tr>
       <?php foreach ($latexPackages as $pkg):

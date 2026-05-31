@@ -70,13 +70,13 @@ function latex_template_package_allowed_extension(string $path): bool {
 
 function latex_template_package_ignore_message(string $reason): string {
     return match ($reason) {
-        'macos_metadata' => 'macOS-Metadatei',
-        'hidden_system_file' => 'versteckte Systemdatei',
-        'unsupported_file_type' => 'nicht erlaubter Dateityp',
-        'executable_or_disallowed' => 'aus Sicherheitsgründen ignoriert',
-        'ignored_directory' => 'ignorierter Ordner',
-        'unknown_extension' => 'unbekannte Dateiendung',
-        default => 'ignoriert',
+        'macos_metadata' => t('latex_templates.ignored_reason.macos_metadata', 'macOS metadata file'),
+        'hidden_system_file' => t('latex_templates.ignored_reason.hidden_system_file', 'hidden system file'),
+        'unsupported_file_type' => t('latex_templates.ignored_reason.unsupported_file_type', 'unsupported file type'),
+        'executable_or_disallowed' => t('latex_templates.ignored_reason.executable_or_disallowed', 'ignored for security reasons'),
+        'ignored_directory' => t('latex_templates.ignored_reason.ignored_directory', 'ignored directory'),
+        'unknown_extension' => t('latex_templates.ignored_reason.unknown_extension', 'unknown file extension'),
+        default => t('latex_templates.ignored_reason.default', 'ignored'),
     };
 }
 

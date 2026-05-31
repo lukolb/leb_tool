@@ -6,6 +6,7 @@ require __DIR__ . '/_layout.php';
 require_admin();
 require_once __DIR__ . '/../shared/generated_template_packages.php';
 require_once __DIR__ . '/../shared/template_import.php';
+require_once __DIR__ . '/../shared/template_package_notifications.php';
 
 $pdo = db();
 ensure_generated_template_packages_table($pdo);
@@ -17,17 +18,41 @@ function tp_decode_json(?string $json): array {
 }
 
 function tp_bool_label($value): string {
-    return !empty($value) ? 'Ja' : 'Nein';
+    return !empty($value) ? t('ui.yes', 'Yes') : t('ui.no', 'No');
 }
 
 function tp_status_label(string $status): string {
     return match ($status) {
-        'submitted' => 'Eingereicht',
-        'draft' => 'Entwurf',
-        'imported' => 'Importiert',
-        'expired' => 'Abgelaufen',
-        default => $status,
+        'submitted' => t('template_packages.status.submitted', 'Submitted'),
+        'draft' => t('template_packages.status.draft', 'Draft'),
+        'imported' => t('template_packages.status.imported', 'Imported'),
+        'expired' => t('template_packages.status.expired', 'Expired'),
+        default => t('template_packages.status.unknown', 'Unknown'),
     };
+}
+
+function tp_status_badge(string $status): string {
+    $known = in_array($status, ['draft', 'submitted', 'imported', 'expired'], true) ? $status : 'unknown';
+    return '<span class="tp-status tp-status-' . h($known) . '">' . h(tp_status_label($status)) . '</span>';
+}
+
+function tp_source_label(array $meta): string {
+    $source = (string)($meta['template_source'] ?? '');
+    if (str_starts_with($source, 'package:')) {
+        $name = (string)($meta['latex_template_package_name'] ?? $source);
+        return sprintf(t('latex_templates.template_source.package', 'Package: %s'), $name !== '' ? $name : $source);
+    }
+    if (str_starts_with($source, 'layout:')) {
+        $name = (string)($meta['layout_template_name'] ?? $source);
+        return sprintf(t('latex_templates.template_source.layout', 'Title page: %s'), $name !== '' ? $name : $source);
+    }
+    if (!empty($meta['latex_template_package_id'])) {
+        return sprintf(t('latex_templates.template_source.package', 'Package: %s'), (string)($meta['latex_template_package_name'] ?? ('#' . $meta['latex_template_package_id'])));
+    }
+    if (!empty($meta['layout_template_id'])) {
+        return sprintf(t('latex_templates.template_source.layout', 'Title page: %s'), (string)($meta['layout_template_name'] ?? ('#' . $meta['layout_template_id'])));
+    }
+    return t('latex_templates.template_source.system', 'System template / default layout');
 }
 
 function tp_user_label(array $pkg, array $meta = []): string {
@@ -319,6 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->prepare('DELETE FROM generated_template_packages WHERE id=?')->execute([$packageId]);
             $pdo->commit();
+            template_package_notify_teacher_deleted($pkg);
             tp_remove_empty_package_dirs(is_string($deleteInfo['dir'] ?? null) ? $deleteInfo['dir'] : null);
             audit('generated_template_package_delete', (int)current_user()['id'], [
                 'package_id' => $packageId,
@@ -461,8 +487,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         $pdo->commit();
+        template_package_notify_teacher_imported($pkg, $templateName);
         $cleanupPdf = null;
-        tp_set_flash('success', 'Template wurde erfolgreich angelegt.', [
+        tp_set_flash('success', t('template_packages.flash.imported', 'Template was created successfully.'), [
             'template_id' => $templateId,
             'stats' => ['fields' => $fieldCount, 'rcff' => $rcffStats],
         ]);
@@ -494,7 +521,17 @@ if ($confirmId > 0) {
     if ($confirmPkg) $confirmSummary = tp_package_summary($confirmPkg);
 }
 
-$packages = $pdo->query("SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$statusFilter = (string)($_GET['status'] ?? '');
+$allowedStatusFilters = ['draft', 'submitted', 'imported', 'expired'];
+$where = in_array($statusFilter, $allowedStatusFilters, true) ? ' WHERE p.status=?' : '';
+$sql = "SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id" . $where . " ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200";
+if ($where !== '') {
+    $stPackages = $pdo->prepare($sql);
+    $stPackages->execute([$statusFilter]);
+    $packages = $stPackages->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} else {
+    $packages = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
 $optionLists = [];
 try {
     $optionLists = template_import_option_list_templates($pdo);
@@ -505,17 +542,25 @@ try {
     }
 }
 
-render_admin_header('Template-Pakete');
+render_admin_header(t('template_packages.title', 'Template packages'));
 ?>
 
-<h1>Template-Pakete</h1>
-<p class="muted">Vorbereitete PDF+RCFF-Pakete aus der LaTeX-Vorlagengenerierung anzeigen und als echte PDF-Templates übernehmen.</p>
+<style>
+.tp-status{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.85em;font-weight:700;border:1px solid transparent;}
+.tp-status-draft{background:#f2f4f7;color:#344054;border-color:#d0d5dd;}
+.tp-status-submitted{background:#e0f2fe;color:#075985;border-color:#7dd3fc;}
+.tp-status-imported{background:#dcfae6;color:#067647;border-color:#75e0a7;}
+.tp-status-expired,.tp-status-unknown{background:#fef3c7;color:#92400e;border-color:#fcd34d;}
+.tp-actions{display:flex;gap:6px;flex-wrap:wrap;}
+</style>
+<h1><?=h(t('template_packages.title', 'Template packages'))?></h1>
+<p class="muted"><?=h(t('template_packages.intro', 'View prepared PDF+RCFF packages and import them as PDF templates.'))?></p>
 
 <?php if ($msg): ?>
   <div class="card" style="border-left:4px solid #067647;">
     <?=h($msg)?>
     <?php if ($importedTemplateId > 0): ?>
-      <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $importedTemplateId))?>">Felder bearbeiten</a>
+      <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $importedTemplateId))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a>
     <?php endif; ?>
     <?php if (is_array($importStats)): ?>
       <div class="muted" style="margin-top:8px;">PDF-Felder: <?=h((string)($importStats['fields'] ?? 0))?> · <?=h(tp_rcff_stats_text(is_array($importStats['rcff'] ?? null) ? $importStats['rcff'] : null))?></div>
@@ -535,7 +580,7 @@ render_admin_header('Template-Pakete');
   <div class="card" style="border-left:4px solid <?= h($cardColor) ?>;">
     <h2><?= ($viewAction === 'delete') ? 'Template-Paket löschen' : ($isImported ? 'Template-Paket' : 'Template-Paket übernehmen') ?></h2>
     <p><strong><?=h((string)$confirmPkg['title'])?></strong></p>
-    <p class="muted">Status: <?=h(tp_status_label($confirmStatus))?> · RCFF-Felder: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
+    <p class="muted"><?=tp_status_badge($confirmStatus)?> · <?=h(t('template_packages.table.rcff_fields', 'RCFF fields'))?>: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
     <?php if ($confirmStatus === 'submitted'): ?>
       <p class="muted">Eingereicht von <?=h(tp_user_label($confirmPkg, $confirmSummary['metadata']))?><?= !empty($confirmPkg['submitted_to_admin_at']) ? ' am ' . h((string)$confirmPkg['submitted_to_admin_at']) : '' ?>.</p>
     <?php endif; ?>
@@ -555,12 +600,12 @@ render_admin_header('Template-Pakete');
       <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>
     <?php elseif ($isImported && $confirmImportedTemplateId > 0): ?>
       <p>Dieses Paket wurde bereits als Template übernommen.</p>
-      <p><a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $confirmImportedTemplateId))?>">Felder bearbeiten</a></p>
+      <p><a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $confirmImportedTemplateId))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a></p>
       <form method="post" style="display:inline;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="action" value="reapply_rcff">
         <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
-        <button class="btn secondary" type="submit">RCFF erneut anwenden</button>
+        <button class="btn secondary" type="submit"><?=h(t('template_packages.action.reapply_rcff', 'Reapply RCFF'))?></button>
       </form>
     <?php elseif ($isImported): ?>
       <p>Dieses Paket ist als importiert markiert, aber es ist kein Template verknüpft.</p>
@@ -599,7 +644,7 @@ render_admin_header('Template-Pakete');
           </div>
         <?php endif; ?>
         <p id="extractStatus" class="muted">PDF-Formularfelder werden ausgelesen …</p>
-        <button class="btn primary" id="importSubmit" type="submit" disabled>Als Template übernehmen</button>
+        <button class="btn primary" id="importSubmit" type="submit" disabled><?=h(t('template_packages.action.import', 'Import as template'))?></button>
         <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>
       </form>
       <iframe id="packagePdfPreview" src="<?=h(url('admin/template_package_file.php?package_id=' . (int)$confirmPkg['id']))?>" style="width:100%;height:70vh;margin-top:14px;border:1px solid var(--border);border-radius:10px;"></iframe>
@@ -707,45 +752,57 @@ render_admin_header('Template-Pakete');
 <?php endif; ?>
 
 <div class="card">
-  <h2>Vorbereitete Pakete</h2>
+  <h2><?=h(t('template_packages.title', 'Template packages'))?></h2>
+  <div class="tp-actions" style="margin:8px 0 14px;">
+    <?php $filters = ['' => t('template_packages.filter.all', 'All'), 'submitted' => tp_status_label('submitted'), 'draft' => tp_status_label('draft'), 'imported' => tp_status_label('imported'), 'expired' => tp_status_label('expired')]; ?>
+    <?php foreach ($filters as $filter => $label): ?>
+      <a class="btn <?= $statusFilter === $filter ? 'primary' : 'secondary' ?>" href="<?=h(url('admin/template_packages.php' . ($filter !== '' ? ('?status=' . rawurlencode($filter)) : '')))?>"><?=h($label)?></a>
+    <?php endforeach; ?>
+  </div>
   <?php if (!$packages): ?>
-    <p class="muted">Noch keine Template-Pakete vorhanden.</p>
+    <p class="muted"><?=h(t('template_packages.empty', 'No template packages yet.'))?></p>
   <?php else: ?>
     <div style="overflow:auto;">
-      <table class="table" style="min-width:1100px;width:100%;">
-        <thead><tr><th>ID</th><th>Titel</th><th>Status</th><th>Erstellt</th><th>Erstellt von</th><th>Eingereicht</th><th>Rolle</th><th>Klasse</th><th>Layout</th><th>S/T</th><th>SEL/AG</th><th>RCFF</th><th>Ablauf</th><th>Aktion</th></tr></thead>
+      <table class="table" style="min-width:980px;width:100%;">
+        <thead><tr>
+          <th><?=h(t('template_packages.table.status', 'Status'))?></th>
+          <th><?=h(t('template_packages.table.title', 'Title'))?></th>
+          <th><?=h(t('template_packages.table.grade', 'Grade'))?></th>
+          <th><?=h(t('template_packages.table.source', 'Source/type'))?></th>
+          <th><?=h(t('template_packages.table.submitted_by', 'Submitted by'))?></th>
+          <th><?=h(t('template_packages.table.created_submitted', 'Created/submitted'))?></th>
+          <th><?=h(t('template_packages.table.rcff_fields', 'RCFF fields'))?></th>
+          <th><?=h(t('template_packages.table.actions', 'Actions'))?></th>
+        </tr></thead>
         <tbody>
-        <?php foreach ($packages as $pkg): $summary = tp_package_summary($pkg); $meta = $summary['metadata']; $can = in_array((string)$pkg['status'], ['draft','submitted'], true); ?>
-          <tr>
-            <td><?=h((string)$pkg['id'])?></td>
-            <td><?=h((string)$pkg['title'])?></td>
-            <td><?=h(tp_status_label((string)$pkg['status']))?></td>
-            <td><?=h((string)$pkg['created_at'])?></td>
-            <td><?=h(trim((string)($pkg['created_by_name'] ?? '')) ?: (string)($pkg['created_by_email'] ?? ('#' . $pkg['created_by_user_id'])))?></td>
-            <td><?= ((string)$pkg['status'] === 'submitted') ? h(tp_user_label($pkg, $meta) . (!empty($pkg['submitted_to_admin_at']) ? (' am ' . (string)$pkg['submitted_to_admin_at']) : '')) : '<span class="muted">—</span>' ?></td>
-            <td><?=h((string)$pkg['created_by_role'])?></td>
+        <?php foreach ($packages as $pkg): $summary = tp_package_summary($pkg); $meta = $summary['metadata']; $status = (string)$pkg['status']; $can = in_array($status, ['draft','submitted'], true); ?>
+          <tr style="<?= $status === 'submitted' ? 'background:#f0f9ff;' : '' ?>">
+            <td><?=tp_status_badge($status)?></td>
+            <td><strong><?=h((string)$pkg['title'])?></strong><br><span class="muted">#<?=h((string)$pkg['id'])?></span></td>
             <td><?=h((string)($meta['grade_level'] ?? ''))?></td>
-            <td><?=h((string)($meta['layout_template_name'] ?? ''))?></td>
-            <td><?=h(tp_bool_label($meta['student_teacher_ratings'] ?? false))?></td>
-            <td><?=h('SEL ' . tp_bool_label($meta['show_sel'] ?? false) . ' / AG ' . tp_bool_label($meta['show_ag'] ?? false))?></td>
+            <td><?=h(tp_source_label($meta))?><br><span class="muted"><?=h((string)$pkg['created_by_role'])?></span></td>
+            <td><?= $status === 'submitted' ? h(tp_user_label($pkg, $meta)) : '<span class="muted">—</span>' ?></td>
+            <td><?=h((string)($pkg['submitted_to_admin_at'] ?: $pkg['created_at']))?></td>
             <td><?=h((string)$summary['field_count'])?></td>
-            <td><?=h((string)$pkg['expires_at'])?></td>
-            <td style="white-space:nowrap;">
-              <?php if ($can): ?>
-                <a class="btn primary" href="<?=h(url('admin/template_packages.php?import=' . (int)$pkg['id']))?>">Als Template übernehmen</a>
-              <?php endif; ?>
-              <?php if ((int)($pkg['imported_template_id'] ?? 0) > 0): ?>
-                <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id=' . (int)$pkg['imported_template_id']))?>">Template öffnen</a>
-              <?php endif; ?>
-              <?php if ((string)$pkg['status'] === 'imported' && (int)($pkg['imported_template_id'] ?? 0) > 0): ?>
-                <form method="post" style="display:inline;">
-                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-                  <input type="hidden" name="action" value="reapply_rcff">
-                  <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
-                  <button class="btn secondary" type="submit">RCFF erneut anwenden</button>
-                </form>
-              <?php endif; ?>
-              <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=delete&id=' . (int)$pkg['id']))?>">Paket löschen</a>
+            <td>
+              <div class="tp-actions">
+                <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=view&id=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.view', 'View'))?></a>
+                <?php if ($can): ?>
+                  <a class="btn primary" href="<?=h(url('admin/template_packages.php?import=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.import', 'Import as template'))?></a>
+                <?php endif; ?>
+                <?php if ((int)($pkg['imported_template_id'] ?? 0) > 0): ?>
+                  <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id=' . (int)$pkg['imported_template_id']))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a>
+                <?php endif; ?>
+                <?php if ($status === 'imported' && (int)($pkg['imported_template_id'] ?? 0) > 0): ?>
+                  <form method="post" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="action" value="reapply_rcff">
+                    <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+                    <button class="btn secondary" type="submit"><?=h(t('template_packages.action.reapply_rcff', 'Reapply RCFF'))?></button>
+                  </form>
+                <?php endif; ?>
+                <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=delete&id=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.delete', 'Delete'))?></a>
+              </div>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -754,5 +811,6 @@ render_admin_header('Template-Pakete');
     </div>
   <?php endif; ?>
 </div>
+
 
 <?php render_admin_footer(); ?>
