@@ -1276,22 +1276,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
       );
+      $checkByMaster = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
+      $checkByIdentity = $pdo->prepare(
+        "SELECT id FROM students
+         WHERE class_id=? AND first_name=? AND last_name=? AND date_of_birth=?
+         LIMIT 1"
+      );
 
+      $sourceCount = count($src);
       $copied = 0;
+      $skippedExcluded = 0;
+      $skippedMissingDob = 0;
+      $skippedExisting = 0;
       foreach ($src as $s) {
         $sid = (int)$s['id'];
-        if (isset($excludeMap[$sid])) continue;
-        if (empty($s['date_of_birth'])) continue;
-        if (find_existing_student_id($pdo, (string)$s['first_name'], (string)$s['last_name'], (string)$s['date_of_birth']) !== null) {
+        if (isset($excludeMap[$sid])) {
+          $skippedExcluded++;
+          continue;
+        }
+        if (empty($s['date_of_birth'])) {
+          $skippedMissingDob++;
           continue;
         }
 
         $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
         if ($master <= 0) $master = ensure_master_id($pdo, $sid);
 
-        $q = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
-        $q->execute([$classId, $master]);
-        if ($q->fetch()) continue;
+        $checkByMaster->execute([$classId, $master]);
+        if ($checkByMaster->fetch()) {
+          $skippedExisting++;
+          continue;
+        }
+
+        $checkByIdentity->execute([
+          $classId,
+          (string)$s['first_name'],
+          (string)$s['last_name'],
+          (string)$s['date_of_birth'],
+        ]);
+        if ($checkByIdentity->fetch()) {
+          $skippedExisting++;
+          continue;
+        }
 
         $ins->execute([
           $master,
@@ -1310,8 +1336,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       $pdo->commit();
 
-      audit('teacher_students_copy', $userId, ['from_class_id'=>$sourceClassId,'to_class_id'=>$classId,'copied'=>$copied,'exclude_ids'=>$excludeIds]);
-      $ok = strtr(t('teacher.students.ok_copied', 'Schüler übernommen: {count}'), ['{count}' => (string)$copied]);
+      audit('teacher_students_copy', $userId, [
+        'from_class_id'=>$sourceClassId,
+        'to_class_id'=>$classId,
+        'copied'=>$copied,
+        'skipped_existing'=>$skippedExisting,
+        'skipped_excluded'=>$skippedExcluded,
+        'skipped_missing_dob'=>$skippedMissingDob,
+        'exclude_ids'=>$excludeIds,
+      ]);
+      if ($sourceCount === 0) {
+        $messageKey = 'teacher.students.ok_copied_no_source';
+        $messageFallback = 'Keine Schüler übernommen. In der Quelle wurden keine aktiven Schüler gefunden.';
+      } else {
+        $messageKey = $copied > 0 ? 'teacher.students.ok_copied_detailed' : 'teacher.students.ok_copied_none';
+        $messageFallback = $copied > 0
+          ? 'Schüler übernommen: {copied}. Übersprungen: {existing} bereits vorhanden, {excluded} ausgeschlossen, {missing_dob} ohne Geburtsdatum.'
+          : 'Keine Schüler übernommen. Übersprungen: {existing} bereits vorhanden, {excluded} ausgeschlossen, {missing_dob} ohne Geburtsdatum.';
+      }
+      $ok = strtr(t($messageKey, $messageFallback), [
+        '{copied}' => (string)$copied,
+        '{existing}' => (string)$skippedExisting,
+        '{excluded}' => (string)$skippedExcluded,
+        '{missing_dob}' => (string)$skippedMissingDob,
+      ]);
 
     } elseif ($action === 'update') {
       $studentId = (int)($_POST['student_id'] ?? 0);
