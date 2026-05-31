@@ -12,6 +12,7 @@ require_once __DIR__ . '/latex_layout_templates.php';
 require_once __DIR__ . '/latex_template_packages.php';
 require_once __DIR__ . '/generated_template_packages.php';
 require_once __DIR__ . '/template_package_notifications.php';
+require_once __DIR__ . '/pdf_form_postprocess.php';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -561,6 +562,13 @@ $latexBuildDebug = [
     'copied_support_files_count' => 0,
     'copied_support_files' => [],
     'ignored_zip_files_count' => 0,
+    'pdf_postprocess_enabled' => true,
+    'pdf_postprocess_method' => 'none',
+    'pdf_postprocess_success' => false,
+    'pdf_postprocess_message' => '',
+    'pdf_postprocess_tool' => '',
+    'pdf_postprocess_acroform_before' => null,
+    'pdf_postprocess_acroform_after' => null,
 ];
 
 if ($selectedLatexPackage) {
@@ -768,11 +776,29 @@ if (!$isPdf) {
     exit;
 }
 
+$pdfPostprocess = normalize_generated_pdf_form_fields($body);
+$latexBuildDebug['pdf_postprocess_enabled'] = (bool)($pdfPostprocess['enabled'] ?? true);
+$latexBuildDebug['pdf_postprocess_method'] = (string)($pdfPostprocess['method'] ?? 'none');
+$latexBuildDebug['pdf_postprocess_success'] = (bool)($pdfPostprocess['success'] ?? false);
+$latexBuildDebug['pdf_postprocess_message'] = (string)($pdfPostprocess['message'] ?? '');
+$latexBuildDebug['pdf_postprocess_tool'] = (string)($pdfPostprocess['tool'] ?? '');
+$latexBuildDebug['pdf_postprocess_acroform_before'] = $pdfPostprocess['acroform_before'] ?? null;
+$latexBuildDebug['pdf_postprocess_acroform_after'] = $pdfPostprocess['acroform_after'] ?? null;
+$latexBuildDebug['pdf_postprocess_field_names_unchanged'] = (bool)($pdfPostprocess['field_names_unchanged'] ?? false);
+if (!empty($pdfPostprocess['success']) && isset($pdfPostprocess['bytes'])) {
+    $body = (string)$pdfPostprocess['bytes'];
+} else {
+    error_log('PDF form postprocessing failed: ' . (string)($pdfPostprocess['message'] ?? 'unknown error'));
+}
+
 $pdfFilename = 'vorlage.pdf';
 $templatePackageResult = null;
 $templatePackageError = '';
 if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== null && $pdoForLayout instanceof PDO) {
     try {
+        if (empty($pdfPostprocess['success'])) {
+            throw new RuntimeException('PDF-Postprocessing fehlgeschlagen: ' . (string)($pdfPostprocess['message'] ?? 'unbekannter Fehler'));
+        }
         $title = 'Kompetenz-PDF Klasse ' . $selectedGrade;
         $currentUser = current_user() ?: [];
         $nowIso = gmdate('c');
@@ -794,6 +820,16 @@ if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== n
             'grade_field_category_ids' => array_values($gradeFieldCategoryIds),
             'selected_categories' => generated_template_package_categories($pdoForLayout, $activeCatIds),
             'disabled_subcategories' => array_values($disabledSubcategoryIds),
+            'pdf_postprocess' => [
+                'enabled' => (bool)($pdfPostprocess['enabled'] ?? true),
+                'success' => (bool)($pdfPostprocess['success'] ?? false),
+                'method' => (string)($pdfPostprocess['method'] ?? 'none'),
+                'message' => (string)($pdfPostprocess['message'] ?? ''),
+                'tool' => (string)($pdfPostprocess['tool'] ?? ''),
+                'acroform_before' => $pdfPostprocess['acroform_before'] ?? null,
+                'acroform_after' => $pdfPostprocess['acroform_after'] ?? null,
+                'field_names_unchanged' => (bool)($pdfPostprocess['field_names_unchanged'] ?? false),
+            ],
             'selected_competencies' => generated_template_package_competencies($pdoForLayout, $selectedSkills),
             'rcff_version' => (int)($rcffData['version'] ?? 1),
             'rating_mode' => $enableStudentTeacherRatings ? 'student_teacher' : 'standard',
@@ -834,6 +870,12 @@ if ($templatePackageResult !== null) {
     header('X-Template-Package-Id: ' . (int)$templatePackageResult['id']);
 } elseif ($templatePackageError !== '') {
     header('X-Template-Package-Error: ' . rawurlencode($templatePackageError));
+}
+header('X-PDF-Postprocess-Enabled: ' . (!empty($pdfPostprocess['enabled']) ? '1' : '0'));
+header('X-PDF-Postprocess-Success: ' . (!empty($pdfPostprocess['success']) ? '1' : '0'));
+header('X-PDF-Postprocess-Method: ' . rawurlencode((string)($pdfPostprocess['method'] ?? 'none')));
+if (empty($pdfPostprocess['success']) && !empty($pdfPostprocess['message'])) {
+    header('X-PDF-Postprocess-Warning: ' . rawurlencode((string)$pdfPostprocess['message']));
 }
 if ($exportRcff && $rcffData !== null && class_exists('ZipArchive')) {
     $zipPath = tempnam(sys_get_temp_dir(), 'leb_rcff_');
