@@ -1486,6 +1486,12 @@ function class_period_label(PDO $pdo, int $classId): string {
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
   $periodLabel = normalize_class_period_label($periodLabel);
+  $classCheck = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+  $classCheck->execute([$classId]);
+  $classTemplateId = (int)($classCheck->fetchColumn() ?: 0);
+  if ($classTemplateId <= 0 || $classTemplateId !== $templateId) {
+    throw new RuntimeException(t('teacher.entry.error.invalid_class_report_context', 'Bericht kann nicht ohne gültige Klasse und passende Vorlage angelegt werden.'));
+  }
   $periodLabel = class_report_period_label($classId, $periodLabel);
   $st = $pdo->prepare(
     "SELECT id, status
@@ -1539,6 +1545,20 @@ function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
 
 function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId, bool $allowTemplateReplace = false): array {
   $periodLabel = normalize_class_period_label($periodLabel);
+  $studentClass = $pdo->prepare(
+    "SELECT s.class_id, c.template_id
+     FROM students s
+     LEFT JOIN classes c ON c.id=s.class_id
+     WHERE s.id=?
+     LIMIT 1"
+  );
+  $studentClass->execute([$studentId]);
+  $studentClassRow = $studentClass->fetch(PDO::FETCH_ASSOC);
+  $studentClassId = (int)($studentClassRow['class_id'] ?? 0);
+  $classTemplateId = (int)($studentClassRow['template_id'] ?? 0);
+  if ($studentClassId <= 0 || $classTemplateId <= 0 || $classTemplateId !== $templateId) {
+    throw new RuntimeException(t('teacher.entry.error.invalid_student_report_context', 'Bericht kann nicht ohne gültige Schüler-Klasse und passende Vorlage angelegt werden.'));
+  }
 
   $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
   if ($ri) {
