@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/pdf_form_postprocess.php';
+
 function generated_template_package_uploads_rel(): string {
     $cfg = app_config();
     $uploadsRel = trim((string)($cfg['app']['uploads_dir'] ?? 'uploads'), '/\\');
@@ -176,6 +178,7 @@ function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcf
         throw new RuntimeException('Template-Paket-PDF konnte nicht gespeichert werden.');
     }
     @chmod($pdfAbs, 0640);
+    $pdfFormStructure = inspect_pdf_form_structure($pdfAbs);
 
     $uploadsRel = generated_template_package_uploads_rel();
     $pdfRel = $uploadsRel . '/generated_template_packages/' . $subdir . '/' . $safePdfFilename;
@@ -197,6 +200,7 @@ function build_generated_template_package(PDO $pdo, string $pdfBytes, array $rcf
     $metadata['pdf_filename'] = $safePdfFilename;
     $metadata['rcff_filename'] = $rcffFilename;
     $metadata['pdf_sha256'] = hash('sha256', $pdfBytes);
+    $metadata['pdf_form_structure'] = $pdfFormStructure;
 
     $rcffJson = generated_template_package_json_encode($rcffData);
     $metadataJson = generated_template_package_json_encode($metadata);

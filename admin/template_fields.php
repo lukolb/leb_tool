@@ -962,15 +962,14 @@ function rectContains(rect, x, y){
 
 async function readPdfFieldInfoFromDoc(doc){
   const out = new Map();
-  if (!doc || typeof doc.getFieldObjects !== 'function') return { fields: out, names: new Set() };
+  if (!doc) return { fields: out, names: new Set() };
 
-  const fo = await doc.getFieldObjects();
-  if (!fo || typeof fo !== 'object') return { fields: out, names: new Set() };
+  const fo = (typeof doc.getFieldObjects === 'function') ? await doc.getFieldObjects() : null;
 
   const tmp = [];
   let hasZero = false;
 
-  for (const [name, arr] of Object.entries(fo)) {
+  if (fo && typeof fo === 'object') for (const [name, arr] of Object.entries(fo)) {
     if (!Array.isArray(arr)) continue;
 
     for (const it of arr) {
@@ -1009,6 +1008,31 @@ async function readPdfFieldInfoFromDoc(doc){
         hint: t.hint,
         pdf_max_len: t.maxLen
       });
+    }
+  }
+
+  if (out.size === 0 && Number(doc?.numPages || 0) > 0) {
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const annots = await page.getAnnotations({ intent: 'display' });
+      for (const a of annots || []) {
+        if (a?.subtype !== 'Widget') continue;
+        const name = String(a.fieldName || '').trim();
+        if (!name || out.has(name)) continue;
+        const rect = (Array.isArray(a.rect) && a.rect.length >= 4) ? a.rect.slice(0, 4) : null;
+        const rawType = a.fieldType || a.type || '';
+        const multiline = !!(a.multiline || a.multiLine);
+        const hint = (a.alternativeText || a.altText || a.tooltip || a.title || a.fieldLabel || '')?.toString?.() || '';
+        out.set(name, {
+          page: p,
+          rect,
+          rawType,
+          type: normalizePdfType(rawType, multiline),
+          multiline,
+          hint,
+          pdf_widget_fallback: true
+        });
+      }
     }
   }
 

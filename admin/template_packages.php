@@ -6,6 +6,7 @@ require __DIR__ . '/_layout.php';
 require_admin();
 require_once __DIR__ . '/../shared/generated_template_packages.php';
 require_once __DIR__ . '/../shared/template_import.php';
+require_once __DIR__ . '/../shared/pdf_form_postprocess.php';
 require_once __DIR__ . '/../shared/template_package_notifications.php';
 
 $pdo = db();
@@ -424,7 +425,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($templateName === '') throw new RuntimeException('Template-Name darf nicht leer sein.');
         if ((function_exists('mb_strlen') ? mb_strlen($templateName) : strlen($templateName)) > 255) throw new RuntimeException('Template-Name ist zu lang.');
         $fields = json_decode($fieldsJson, true);
-        if (!is_array($fields) || !$fields) throw new RuntimeException('PDF-Formularfelder konnten nicht gelesen werden.');
 
         $pdfAbs = generated_template_package_pdf_absolute_path((string)$pkg['pdf_path']);
         $expectedSha = trim((string)($pkg['pdf_sha256'] ?? ''));
@@ -433,6 +433,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!hash_equals($expectedSha, $actualSha)) {
                 throw new RuntimeException('SHA-256-Prüfung der Paket-PDF ist fehlgeschlagen.');
             }
+        }
+        $pdfFormStructure = inspect_pdf_form_structure($pdfAbs);
+        $fieldImportSource = 'acroform_or_pdfjs';
+        if (!is_array($fields) || !$fields) {
+            $fields = extract_pdf_widget_fields_from_file($pdfAbs);
+            $fieldImportSource = 'page_widget_annotations_server_fallback';
+        }
+        if (!is_array($fields) || !$fields) {
+            throw new RuntimeException(t('template_packages.pdf.no_form_fields', 'No form fields found in PDF.'));
         }
 
         $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
@@ -469,6 +478,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'imported_at' => gmdate('c'),
             'applied_rcff' => $useRcff,
             'field_count' => $fieldCount,
+            'field_import_source' => $fieldImportSource,
+            'pdf_form_structure' => $pdfFormStructure,
             'rcff_stats' => $rcffStats,
             'rating_lists' => $ratingListResolution['used_lists'],
             'created_option_lists' => $ratingListResolution['created_lists'],
@@ -585,6 +596,19 @@ render_admin_header(t('template_packages.title', 'Template packages'));
       <p class="muted">Eingereicht von <?=h(tp_user_label($confirmPkg, $confirmSummary['metadata']))?><?= !empty($confirmPkg['submitted_to_admin_at']) ? ' am ' . h((string)$confirmPkg['submitted_to_admin_at']) : '' ?>.</p>
     <?php endif; ?>
     <p class="muted">Klasse: <?=h((string)($confirmSummary['metadata']['grade_level'] ?? ''))?> · Layout: <?=h((string)($confirmSummary['metadata']['layout_template_name'] ?? ''))?> · S/T: <?=h(tp_bool_label($confirmSummary['metadata']['student_teacher_ratings'] ?? false))?> · SEL/AG: <?=h('SEL ' . tp_bool_label($confirmSummary['metadata']['show_sel'] ?? false) . ' / AG ' . tp_bool_label($confirmSummary['metadata']['show_ag'] ?? false))?></p>
+    <?php $pdfDiag = $confirmSummary['metadata']['pdf_form_structure'] ?? ($confirmSummary['metadata']['pdf_postprocess']['pdf_form_structure_after'] ?? ($confirmSummary['metadata']['pdf_postprocess']['acroform_after'] ?? null)); ?>
+    <?php if (is_array($pdfDiag)): ?>
+      <details class="muted" style="margin:8px 0;">
+        <summary><?=h(t('template_packages.pdf.diagnostics', 'PDF form structure diagnostics'))?></summary>
+        <?php if (!empty($pdfDiag['warning'])): ?><p><?=h((string)$pdfDiag['warning'])?></p><?php endif; ?>
+        <ul>
+          <li><?=h(t('template_packages.pdf.diag_acroform_fields', 'AcroForm Fields'))?>: <?=h((string)($pdfDiag['acroform_fields_count'] ?? 0))?></li>
+          <li><?=h(t('template_packages.pdf.diag_widget_annotations', 'Widget annotations'))?>: <?=h((string)($pdfDiag['page_widget_annotations_count'] ?? $pdfDiag['widget_annotations_count'] ?? 0))?></li>
+          <li><?=h(t('template_packages.pdf.diag_widgets_with', 'Widgets with'))?> /T: <?=h((string)($pdfDiag['widgets_with_T_count'] ?? 0))?> · /FT: <?=h((string)($pdfDiag['widgets_with_FT_count'] ?? 0))?> · /Parent: <?=h((string)($pdfDiag['widgets_with_parent_count'] ?? 0))?></li>
+          <li>/DA: <?=h(tp_bool_label($pdfDiag['acroform_DA'] ?? false))?> · /DR: <?=h(tp_bool_label($pdfDiag['acroform_DR'] ?? false))?> · NeedAppearances: <?=h(($pdfDiag['need_appearances'] ?? null) === null ? '—' : tp_bool_label($pdfDiag['need_appearances']))?></li>
+        </ul>
+      </details>
+    <?php endif; ?>
     <?php if ($viewAction === 'delete'): ?>
       <?php if ($confirmImportedTemplateId > 0): ?>
         <p><strong>Warnung:</strong> Das daraus erzeugte Template #<?=h((string)$confirmImportedTemplateId)?> bleibt erhalten. Nur das vorbereitete Paket und die gespeicherte Paket-PDF werden gelöscht.</p>
@@ -657,6 +681,9 @@ render_admin_header(t('template_packages.title', 'Template packages'));
       const submitEl = document.getElementById('importSubmit');
       const formEl = document.getElementById('importPackageForm');
       const FIELD_TYPES = ['text','multiline','date','number','grade','checkbox','radio','select','signature'];
+      const MSG_WIDGET_FALLBACK = <?=json_encode(t('template_packages.pdf.widgets_fallback', 'PDF has no AcroForm Fields tree; fields were imported from page widget annotations.'))?>;
+      const MSG_FIELDS_READY = <?=json_encode(t('template_packages.pdf.fields_ready', '{count} PDF form fields detected. Import can be started.'))?>;
+      const MSG_FIELDS_ERROR = <?=json_encode(t('template_packages.pdf.fields_error', 'PDF form fields could not be read: {error}'))?>;
       function normalizeType(rawType, multilineFlag){
         const t = String(rawType || '').trim();
         const u = t.toUpperCase();
@@ -672,11 +699,14 @@ render_admin_header(t('template_packages.title', 'Template packages'));
         const pdf = await pdfjsLib.getDocument({ url: pdfUrl, withCredentials:true }).promise;
         const out = new Map();
         let sort = 0;
+        let acroFieldCount = 0;
+        let widgetAnnotationCount = 0;
         if (pdf.getFieldObjects) {
           const fo = await pdf.getFieldObjects();
           if (fo && typeof fo === 'object') {
             for (const [name, arr] of Object.entries(fo)) {
               const first = (Array.isArray(arr) && arr[0]) ? arr[0] : {};
+              acroFieldCount++;
               const rawType = first.type || first.fieldType || '';
               const multilineFlag = !!(first.multiline || first.multiLine);
               const type = normalizeType(rawType, multilineFlag);
@@ -689,6 +719,7 @@ render_admin_header(t('template_packages.title', 'Template packages'));
           const annots = await page.getAnnotations({ intent:'display' });
           for (const a of annots) {
             if (a.subtype !== 'Widget') continue;
+            widgetAnnotationCount++;
             const name = String(a.fieldName || '').trim();
             if (!name) continue;
             const rect = Array.isArray(a.rect) && a.rect.length === 4 ? a.rect : null;
@@ -712,7 +743,7 @@ render_admin_header(t('template_packages.title', 'Template packages'));
             }
           }
         }
-        return Array.from(out.values()).sort((a,b)=>(a.sort ?? 0)-(b.sort ?? 0)).map((f,i)=>({
+        const fields = Array.from(out.values()).sort((a,b)=>(a.sort ?? 0)-(b.sort ?? 0)).map((f,i)=>({
           ...f,
           sort:i,
           can_child_edit:0,
@@ -721,14 +752,20 @@ render_admin_header(t('template_packages.title', 'Template packages'));
           help_text:f.help_text || '',
           type:FIELD_TYPES.includes(f.type) ? f.type : 'radio'
         }));
+        return { fields, acroFieldCount, widgetAnnotationCount };
       }
       try {
-        const fields = await extractFieldsFromPdf();
+        const result = await extractFieldsFromPdf();
+        const fields = result.fields || [];
         fieldsEl.value = JSON.stringify(fields);
-        statusEl.textContent = fields.length + ' PDF-Formularfelder erkannt. Der Import kann gestartet werden.';
+        let statusText = MSG_FIELDS_READY.replace('{count}', String(fields.length));
+        if ((result.acroFieldCount || 0) === 0 && (result.widgetAnnotationCount || 0) > 0 && fields.length > 0) {
+          statusText += ' ' + MSG_WIDGET_FALLBACK;
+        }
+        statusEl.textContent = statusText;
         submitEl.disabled = fields.length === 0;
       } catch (e) {
-        statusEl.textContent = 'PDF-Formularfelder konnten nicht gelesen werden: ' + (e && e.message ? e.message : e);
+        statusEl.textContent = MSG_FIELDS_ERROR.replace('{error}', String(e && e.message ? e.message : e));
         submitEl.disabled = true;
       }
       formEl.addEventListener('submit', (event)=>{
