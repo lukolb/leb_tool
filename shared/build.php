@@ -381,9 +381,12 @@ if (!is_array($pagebreaks)) {
 
 $selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
-$allCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_ids'] ?? []))));
-$activeCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_active'] ?? []))));
+$allCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_ids'] ?? [])), static fn($v) => $v > 0)));
+$activeCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_active'] ?? [])), static fn($v) => $v > 0)));
 $disabledCatIds = array_values(array_diff($allCatIds, $activeCatIds));
+$allSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_ids'] ?? [])), static fn($v) => $v > 0)));
+$activeSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_active'] ?? [])), static fn($v) => $v > 0)));
+$disabledSubcategoryIds = array_values(array_diff($allSubcategoryIds, $activeSubcategoryIds));
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
@@ -395,6 +398,11 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         $in = implode(',', array_fill(0, count($disabledCatIds), '?'));
         $reqSql .= " AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) NOT IN ($in)";
         $reqParams = array_merge($reqParams, $disabledCatIds);
+    }
+    if (!empty($disabledSubcategoryIds)) {
+        $in = implode(',', array_fill(0, count($disabledSubcategoryIds), '?'));
+        $reqSql .= " AND (c.subcategory_id IS NULL OR c.subcategory_id=0 OR c.subcategory_id NOT IN ($in))";
+        $reqParams = array_merge($reqParams, $disabledSubcategoryIds);
     }
     $stReq = $pdo->prepare($reqSql);
     $stReq->execute($reqParams);
@@ -431,12 +439,23 @@ $gradeFieldCategoryIds = array_values(array_unique(array_map('intval', (array)($
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    if (!empty($disabledCatIds) && !empty($selectedSkills)) {
-        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+    $disabledClauses = [];
+    $disabledParams = [];
+    if (!empty($disabledCatIds)) {
         $inCats = implode(',', array_fill(0, count($disabledCatIds), '?'));
-        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $disabledClauses[] = "COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $disabledParams = array_merge($disabledParams, $disabledCatIds);
+    }
+    if (!empty($disabledSubcategoryIds)) {
+        $inSubs = implode(',', array_fill(0, count($disabledSubcategoryIds), '?'));
+        $disabledClauses[] = "c.subcategory_id IN ($inSubs)";
+        $disabledParams = array_merge($disabledParams, $disabledSubcategoryIds);
+    }
+    if (!empty($disabledClauses) && !empty($selectedSkills)) {
+        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND (" . implode(' OR ', $disabledClauses) . ")";
         $stDisabled = $pdo->prepare($sql);
-        $stDisabled->execute(array_merge($selectedSkills, $disabledCatIds));
+        $stDisabled->execute(array_merge($selectedSkills, $disabledParams));
         $blocked = array_map('strval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
         if (!empty($blocked)) {
             $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
@@ -774,6 +793,7 @@ if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== n
             'grade_fields' => array_values($gradeFieldCategoryIds),
             'grade_field_category_ids' => array_values($gradeFieldCategoryIds),
             'selected_categories' => generated_template_package_categories($pdoForLayout, $activeCatIds),
+            'disabled_subcategories' => array_values($disabledSubcategoryIds),
             'selected_competencies' => generated_template_package_competencies($pdoForLayout, $selectedSkills),
             'rcff_version' => (int)($rcffData['version'] ?? 1),
             'rating_mode' => $enableStudentTeacherRatings ? 'student_teacher' : 'standard',
