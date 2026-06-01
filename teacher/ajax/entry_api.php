@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
 require_teacher();
@@ -833,29 +834,27 @@ function resolve_label_placeholders(string $tpl, array $classValueByName): strin
 }
 
 function group_parts_from_meta(array $meta): array {
-  $raw = trim((string)($meta['group'] ?? ''));
-  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
-  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $group = $parts[0];
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
-
-  $subgroup = '';
-  if (count($parts) > 1) {
-    $subgroup = implode(' / ', array_slice($parts, 1));
-  }
-
-  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+  return app_group_parts_from_meta($meta);
 }
 
 function group_key_from_meta(array $meta): string {
-  $parts = group_parts_from_meta($meta);
-  return $parts['group'];
+  return app_group_key_from_meta($meta);
+}
+
+function group_key_aliases_from_meta(array $meta): array {
+  return app_group_key_aliases_from_meta($meta);
+}
+
+function group_key_aliases_from_key(string $groupKey): array {
+  return app_group_key_aliases_from_label($groupKey);
+}
+
+function delegation_from_map_for_aliases(array $delegations, array $aliases): ?array {
+  return app_group_entry_from_alias_map($delegations, $aliases);
+}
+
+function delegation_from_map_for_meta(array $delegations, array $meta): ?array {
+  return delegation_from_map_for_aliases($delegations, group_key_aliases_from_meta($meta));
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): string {
@@ -969,12 +968,14 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   $status = ($status === 'done') ? 'done' : 'open';
 
   if ($userId <= 0) {
-    // clear
+    // clear current full key plus legacy aliases so stale pre-hyphen rows do not keep applying
+    $aliases = group_key_aliases_from_key($groupKey);
+    $in = implode(',', array_fill(0, count($aliases), '?'));
     $pdo->prepare(
       "DELETE FROM class_group_delegations
-       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
-    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
-    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey]);
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key IN ($in)"
+    )->execute(array_merge([$classId, $schoolYear, $periodLabel], $aliases));
+    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'aliases'=>$aliases]);
     return;
   }
   // NOTE: Do NOT auto-assign delegates as class teachers (separation requirement).
@@ -993,17 +994,19 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   audit('class_group_delegation_upsert', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status]);
 }
 
-function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey): array {
-  $groupKey = trim($groupKey);
-  if ($groupKey === '') return [];
+function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, $groupKey): array {
+  $aliases = is_array($groupKey) ? $groupKey : group_key_aliases_from_key((string)$groupKey);
+  $aliases = array_values(array_unique(array_filter(array_map(fn($k) => trim((string)$k), $aliases), fn($k) => $k !== '')));
+  if (!$aliases) return [];
   $periodLabel = normalize_period_label($periodLabel);
+  $in = implode(',', array_fill(0, count($aliases), '?'));
   $st = $pdo->prepare(
     "SELECT user_id
      FROM class_group_delegations
-     WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?
+     WHERE class_id=? AND school_year=? AND period_label=? AND group_key IN ($in)
      ORDER BY user_id ASC"
   );
-  $st->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+  $st->execute(array_merge([$classId, $schoolYear, $periodLabel], $aliases));
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $uid = (int)($r['user_id'] ?? 0);
@@ -1033,8 +1036,7 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
 
-  $groupKey = group_key_from_meta($meta);
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
   $isClassTeacher = user_is_class_teacher($pdo, $uid, $classId);
   if (!$assigned) return $isClassTeacher;
 
@@ -1062,8 +1064,7 @@ function can_user_edit_field_in_view(
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
-  $groupKey = group_key_from_meta($meta);
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
   return $assigned && in_array($uid, $assigned, true);
 }
 
@@ -1883,8 +1884,7 @@ function load_teacher_values_for_user(
     $fieldType = (string)($fieldMap[$fid]['field_type'] ?? '');
     $isMultiline = (int)($fieldMap[$fid]['is_multiline'] ?? 0);
 
-    $groupKey = group_key_from_meta($meta);
-    $del = $groupKey !== '' ? ($delegations[$groupKey] ?? null) : null;
+    $del = delegation_from_map_for_meta($delegations, $meta);
     $assignedUsers = $del && isset($del['user_ids']) && is_array($del['user_ids']) ? array_map('intval', $del['user_ids']) : [];
     $hasDelegates = !empty($assignedUsers);
 
@@ -2207,12 +2207,16 @@ try {
 
       $gParts = group_parts_from_meta($meta);
       $gKey = $gParts['group'];
+      $gAliases = group_key_aliases_from_meta($meta);
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = [
           'key' => $gKey,
           'title' => group_title_from_meta($meta, $gKey, $lang),
+          'aliases' => $gAliases,
           'fields' => [],
         ];
+      } else {
+        $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
       }
 
       $optsTeacher = [];
@@ -2295,7 +2299,8 @@ try {
     $groupsList2 = [];
     foreach ($groupsList as $g0) {
       $gk = (string)($g0['key'] ?? '');
-      $del = $gk !== '' && isset($delegations[$gk]) ? $delegations[$gk] : null;
+      $aliases = is_array($g0['aliases'] ?? null) ? $g0['aliases'] : group_key_aliases_from_key($gk);
+      $del = $gk !== '' ? delegation_from_map_for_aliases($delegations, $aliases) : null;
       $anyEditable = false;
       if (isset($g0['fields']) && is_array($g0['fields'])) {
         foreach ($g0['fields'] as $f0) {
@@ -2625,12 +2630,12 @@ try {
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
       $isSystemBound = is_system_bound($meta);
-      $groupKey = group_key_from_meta($meta);
+      $groupAliases = group_key_aliases_from_meta($meta);
       if (
         $delegateOnly
         && !$delegateShowOtherFieldsReadonly
         && !$isSystemBound
-        && !in_array($groupKey, $delegateGroupKeys, true)
+        && !array_intersect($groupAliases, $delegateGroupKeys)
       ) {
         return;
       }
@@ -2765,8 +2770,7 @@ try {
         $type = (string)($studentFieldMap[$fieldId]['field_type'] ?? '');
         $isMultiline = (int)($studentFieldMap[$fieldId]['is_multiline'] ?? 0);
         if (!is_free_text_field($type, $isMultiline)) continue;
-        $gKey = group_key_from_meta($meta);
-        $delMeta = $gKey !== '' ? ($delegations[$gKey] ?? null) : null;
+        $delMeta = delegation_from_map_for_meta($delegations, $meta);
         $assignedUsers = $delMeta && isset($delMeta['user_ids']) && is_array($delMeta['user_ids'])
           ? array_map('intval', $delMeta['user_ids'])
           : [];
@@ -3381,7 +3385,7 @@ if ($action === 'delegations_save') {
 
     // current delegations
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $cur = $delegations[$groupKey] ?? null;
+    $cur = delegation_from_map_for_aliases($delegations, group_key_aliases_from_key($groupKey));
     $assignedUsers = $cur && isset($cur['user_ids']) && is_array($cur['user_ids'])
       ? array_map('intval', $cur['user_ids'])
       : [];
