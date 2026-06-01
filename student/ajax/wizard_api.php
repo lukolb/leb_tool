@@ -122,27 +122,48 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
+function meta_first_string(array $meta, array $keys): string {
+  foreach ($keys as $key) {
+    $v = $meta[$key] ?? null;
+    if (is_string($v) || is_numeric($v)) {
+      $s = trim((string)$v);
+      if ($s !== '') return $s;
+    }
+  }
+  return '';
+}
+
+function meta_rcff_first_string(array $meta, array $keys): string {
+  $rcff = is_array($meta['rcff'] ?? null) ? $meta['rcff'] : [];
+  return meta_first_string($rcff, $keys);
+}
+
 function group_parts_from_meta(array $meta): array {
-  $raw = trim((string)($meta['group'] ?? ''));
-  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
+  $raw = meta_first_string($meta, ['group', 'category', 'category_de', 'group_label']);
+  if ($raw === '') $raw = meta_rcff_first_string($meta, ['category_de', 'category']);
 
   $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
-  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
 
-  $group = $parts[0];
+  // Group and subgroup labels are free-form text and may contain hyphens (e.g.
+  // "Sozial-Emotionales Lernen" / "Selbst- und Fremdwahrnehmung"). Keep
+  // labels intact; field-name normalization is handled separately in
+  // base_field_key().
+  $group = $parts[0] ?? '';
+  if ($group === '') $group = 'Allgemein';
 
-  // Normalize: ignore suffix after '-' (e.g. "Ger1-T" -> "Ger1")
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
-
-  $subgroup = '';
-  if (count($parts) > 1) {
+  $subgroup = meta_first_string($meta, ['subgroup', 'sub_group', 'subcategory', 'subcategory_de', 'subgroup_label']);
+  if ($subgroup === '') $subgroup = meta_rcff_first_string($meta, ['subcategory_de', 'subcategory']);
+  if ($subgroup === '' && count($parts) > 1) {
     $subgroup = implode(' / ', array_slice($parts, 1));
   }
 
-  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+  return ['group' => $group, 'subgroup' => $subgroup];
+}
+
+function subgroup_title_en_from_meta(array $meta): string {
+  $title = meta_first_string($meta, ['subgroup_title_en', 'subcategory_en', 'subgroup_label_en']);
+  if ($title !== '') return $title;
+  return meta_rcff_first_string($meta, ['subcategory_en']);
 }
 
 function group_key_from_meta(array $meta): string {
@@ -193,8 +214,8 @@ function group_title_override_lang(string $groupKey, string $lang): string {
 
 function group_title_from_meta(array $meta, string $groupKey, string $lang): string {
   if ($lang === 'en') {
-    $t = (string)($meta['group_title_en'] ?? '');
-    $t = trim($t);
+    $t = meta_first_string($meta, ['group_title_en', 'category_en']);
+    if ($t === '') $t = meta_rcff_first_string($meta, ['category_en']);
     if ($t !== '') return $t;
   }
   return group_title_override_lang($groupKey, $lang);
@@ -426,8 +447,12 @@ function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array
 }
 
 function load_child_fields(PDO $pdo, int $templateId): array {
+  $select = 'id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order';
+  foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
+    if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
+  }
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT $select
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -682,6 +707,15 @@ try {
         continue;
       }
       $meta = meta_read($r['meta_json'] ?? null);
+      foreach ([
+        'group_label' => 'group',
+        'group_label_en' => 'group_title_en',
+        'subgroup_label' => 'subgroup',
+        'subgroup_label_en' => 'subgroup_title_en',
+      ] as $column => $metaKey) {
+        $v = trim((string)($r[$column] ?? ''));
+        if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
+      }
 
       $gParts = group_parts_from_meta($meta);
       $gKey = $gParts['group'];
@@ -729,7 +763,7 @@ try {
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,
         'group' => $gKey,
         'subgroup' => $gParts['subgroup'],
-        'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
+        'subgroup_title_en' => subgroup_title_en_from_meta($meta),
         'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
         'max_length' => pdf_max_len_from_meta($meta),
