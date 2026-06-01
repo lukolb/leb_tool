@@ -83,6 +83,7 @@ $txJs = [
   'status_pdf_done' => t('teacher.export.js.status_pdf_done', 'Fertig. PDF wurde heruntergeladen.'),
   'status_create_pdf' => t('teacher.export.js.status_create_pdf', 'Erzeuge PDF …'),
   'status_create_booklet' => t('teacher.export.js.status_create_booklet', 'Erzeuge Broschüren-PDF …'),
+  'booklet_embed_failed' => t('teacher.export.js.booklet_embed_failed', 'Broschürenexport fehlgeschlagen: Seite {page} konnte nicht eingebettet werden ({operation}).'),
   'status_export_cancelled' => t('teacher.export.js.status_export_cancelled', 'Export abgebrochen.'),
   'progress_error' => t('teacher.export.js.progress_error', 'Fehler'),
   'admin_template_hint' => t('teacher.export.js.admin_template_hint', ' (Admin: bitte der Klasse eine Vorlage zuweisen.)'),
@@ -1600,6 +1601,27 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   return await pdfDoc.save();
 }
 
+function isPdfMissingContentsError(error){
+  const msg = (error?.message || String(error || '')).toLowerCase();
+  return msg.includes('missing contents') || msg.includes('missing /contents');
+}
+
+function pdfPageHasContents(page){
+  const PDFLib = window.PDFLib || {};
+  const { PDFName, PDFArray } = PDFLib;
+  if (!page?.node || !PDFName) return true;
+
+  try {
+    const contents = page.node.get(PDFName.of('Contents'));
+    if (!contents) return false;
+    if (PDFArray && contents instanceof PDFArray && contents.size() === 0) return false;
+  } catch (e) {
+    return true;
+  }
+
+  return true;
+}
+
 async function createBookletPdf(srcBytes){
   const { PDFDocument } = window.PDFLib;
   const src = await PDFDocument.load(srcBytes);
@@ -1610,18 +1632,57 @@ async function createBookletPdf(srcBytes){
   const width = firstSize.width;
   const height = firstSize.height;
 
+  // Keep booklet pagination unchanged, but do not create artificial source PDF
+  // pages that later have to be embedded. pdf-lib blank pages may not have a
+  // /Contents entry, so padded pages are represented as null placeholders and
+  // drawn as empty halves on the imposed sheet.
   const pad = (4 - (pageCount % 4)) % 4;
-  for (let i = 0; i < pad; i += 1) {
-    src.addPage([width, height]);
-  }
-
-  const total = src.getPageCount();
+  const total = pageCount + pad;
   const sheets = total / 4;
   const out = await PDFDocument.create();
 
-  const embed = async (index) => {
+  const logBlank = (index, reason) => {
+    if (DEBUG_PDF) {
+      console.warn('[PDF DEBUG] Booklet page has no /Contents and was inserted as a blank page.', {
+        page: index + 1,
+        reason,
+      });
+    }
+  };
+
+  const embed = async (index, operation) => {
+    if (index >= pageCount) {
+      logBlank(index, 'booklet-padding');
+      return null;
+    }
+
     const page = src.getPage(index);
-    return await out.embedPage(page);
+    if (!pdfPageHasContents(page)) {
+      logBlank(index, 'missing-contents');
+      return null;
+    }
+
+    try {
+      return await out.embedPage(page);
+    } catch (e) {
+      if (isPdfMissingContentsError(e)) {
+        logBlank(index, 'embed-missing-contents');
+        return null;
+      }
+
+      const msg = tfmt('booklet_embed_failed', null, {
+        page: index + 1,
+        operation,
+      });
+      const wrapped = new Error(msg);
+      wrapped.cause = e;
+      throw wrapped;
+    }
+  };
+
+  const drawEmbeddedPage = (target, embeddedPage, x) => {
+    if (!embeddedPage) return;
+    target.drawPage(embeddedPage, { x, y: 0, width, height });
   };
 
   for (let s = 0; s < sheets; s += 1) {
@@ -1631,16 +1692,16 @@ async function createBookletPdf(srcBytes){
     const backRightIndex = total - 2 - (s * 2);
 
     const front = out.addPage([width * 2, height]);
-    const leftPage = await embed(leftIndex);
-    const rightPage = await embed(rightIndex);
-    front.drawPage(leftPage, { x: 0, y: 0, width, height });
-    front.drawPage(rightPage, { x: width, y: 0, width, height });
+    const leftPage = await embed(leftIndex, 'booklet-impose/front-left');
+    const rightPage = await embed(rightIndex, 'booklet-impose/front-right');
+    drawEmbeddedPage(front, leftPage, 0);
+    drawEmbeddedPage(front, rightPage, width);
 
     const back = out.addPage([width * 2, height]);
-    const backLeft = await embed(backLeftIndex);
-    const backRight = await embed(backRightIndex);
-    back.drawPage(backLeft, { x: 0, y: 0, width, height });
-    back.drawPage(backRight, { x: width, y: 0, width, height });
+    const backLeft = await embed(backLeftIndex, 'booklet-impose/back-left');
+    const backRight = await embed(backRightIndex, 'booklet-impose/back-right');
+    drawEmbeddedPage(back, backLeft, 0);
+    drawEmbeddedPage(back, backRight, width);
   }
 
   return await out.save();
