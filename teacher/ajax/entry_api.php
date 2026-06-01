@@ -839,11 +839,11 @@ function group_parts_from_meta(array $meta): array {
   $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
   if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
 
+  // Group labels are free-form text and may contain hyphens (e.g.
+  // "Sozial-Emotionales Lernen"). Keep the original label intact; do not
+  // parse technical suffixes from group names here. Field-name normalization is
+  // handled separately in base_field_key().
   $group = $parts[0];
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
 
   $subgroup = '';
   if (count($parts) > 1) {

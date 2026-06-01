@@ -190,6 +190,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
       max-width: 190px;
     }
+    .nav a.item.section-step .lbl{ font-weight:750; }
 
     .save-status{
       margin-top:4px;
@@ -247,6 +248,15 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
     .section-h .t{ font-weight:850; }
     .section-h .s{ color: var(--muted); font-size:12px; }
+    .subsection-h{
+      margin: 0 0 12px;
+      padding: 11px 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(11,87,208,0.18);
+      background: rgba(11,87,208,0.06);
+    }
+    .subsection-h .t{ font-weight:900; }
+    .subsection-h .s{ color: var(--muted); font-size:12px; margin-top:2px; }
 
     .group-intro{
       border: 1px solid var(--border);
@@ -758,7 +768,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         return String(elBody.innerText || '').trim();
       }
       if (cur && cur.kind === 'group_intro') {
-        const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+        const groupLabel = cur.subgroupTitle ? sectionTitle(cur.groupTitle || cur.group, { title: cur.subgroupTitle }) : (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'));
         const intro = t('student.js.group_intro_tts', 'Weiter geht es mit dem Thema');
         return `${intro} ${groupLabel}.`.trim();
       }
@@ -766,7 +776,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         const idx = buildFieldNameIndex();
         const fieldLabel = resolveTextTemplate(String(cur.field?.label || cur.field?.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
         if (includeGroup) {
-          const groupLabel = cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt');
+          const groupLabel = cur.subgroupTitle ? sectionTitle(cur.groupTitle || cur.group, { title: cur.subgroupTitle }) : (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'));
           return `${groupLabel}. ${fieldLabel}`.trim();
         }
         return String(fieldLabel || '').trim();
@@ -1270,6 +1280,59 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return (Array.isArray(state.steps) ? state.steps : []).filter(s => s && !s.is_intro);
   }
 
+  function subgroupLabelForField(f){
+    const key = String(f?.subgroup || '').trim();
+    if (!key) return '';
+    if (currentLang === 'en') {
+      const titleEn = String(f?.subgroup_title_en || '').trim();
+      if (titleEn) return titleEn;
+    }
+    return key;
+  }
+
+  function sectionTitle(groupTitle, section){
+    const group = String(groupTitle || t('student.js.section', 'Abschnitt'));
+    const sub = String(section?.title || '').trim();
+    return sub ? `${group} – ${sub}` : group;
+  }
+
+  function stableSectionHash(value){
+    let h = 2166136261;
+    const raw = String(value || '');
+    for (let i = 0; i < raw.length; i += 1) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36);
+  }
+
+  function groupSections(g){
+    const gKey = String(g?.key || g?.title || t('student.js.section', 'Abschnitt'));
+    const fields = Array.isArray(g?.fields) ? g.fields : [];
+    const sections = [];
+    const bySubgroup = new Map();
+    for (const f of fields) {
+      const rawSubgroup = String(f?.subgroup || '').trim();
+      const mapKey = rawSubgroup === '' ? '__none__' : rawSubgroup;
+      if (!bySubgroup.has(mapKey)) {
+        const title = rawSubgroup === '' ? '' : subgroupLabelForField(f);
+        const sectionKey = 'sec:' + stableSectionHash(`${gKey}\u001f${rawSubgroup}`) + ':' + sections.length;
+        const section = {
+          key: sectionKey,
+          groupKey: gKey,
+          subgroupKey: rawSubgroup,
+          title,
+          fields: []
+        };
+        bySubgroup.set(mapKey, section);
+        sections.push(section);
+      }
+      bySubgroup.get(mapKey).fields.push(f);
+    }
+    return sections.filter(section => Array.isArray(section.fields) && section.fields.length > 0);
+  }
+
+
   function buildFlatSteps(){
     const steps = Array.isArray(state.steps) ? state.steps : [];
     const intro = steps.find(s => s && s.is_intro);
@@ -1289,64 +1352,81 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     if (displayMode === 'groups') {
       for (const g of groups) {
-        out.push({
-          kind:'group',
-          key: String(g.key || g.title || 'Abschnitt'),
-          title: String(g.title || g.key || 'Abschnitt'),
-          group: String(g.key || g.title || 'Abschnitt'),
-          fields: Array.isArray(g.fields) ? g.fields : []
-        });
+        const gKey = String(g.key || g.title || 'Abschnitt');
+        const gTitle = String(g.title || g.key || 'Abschnitt');
+        for (const section of groupSections(g)) {
+          out.push({
+            kind:'group',
+            key: section.key,
+            title: sectionTitle(gTitle, section),
+            group: gKey,
+            groupTitle: gTitle,
+            subgroup: section.subgroupKey,
+            subgroupTitle: section.title,
+            fields: section.fields
+          });
+        }
       }
     } else if (displayMode === 'items') {
       for (const g of groups) {
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
-        const fields = Array.isArray(g.fields) ? g.fields : [];
-
-        out.push({
-          kind: 'group_intro',
-          key: 'gi:' + gKey,
-          title: gTitle,
-          group: gKey,
-          groupTitle: gTitle,
-          fields: fields
-        });
-
-        for (const f of fields) {
+        for (const section of groupSections(g)) {
+          const title = sectionTitle(gTitle, section);
           out.push({
-            kind:'field',
-            key: gKey + ':' + String(f.id),
-            title: gTitle,
+            kind: 'group_intro',
+            key: 'gi:' + section.key,
+            title,
             group: gKey,
             groupTitle: gTitle,
-            field: f
+            subgroup: section.subgroupKey,
+            subgroupTitle: section.title,
+            fields: section.fields
           });
+
+          for (const f of section.fields) {
+            out.push({
+              kind:'field',
+              key: section.key + ':' + String(f.id),
+              title,
+              group: gKey,
+              groupTitle: gTitle,
+              subgroup: section.subgroupKey,
+              subgroupTitle: section.title,
+              field: f
+            });
+          }
         }
       }
     } else {
       for (const g of groups) {
         const gKey = String(g.key || g.title || 'Abschnitt');
         const gTitle = String(g.title || g.key || 'Abschnitt');
-        const fields = Array.isArray(g.fields) ? g.fields : [];
-
-        out.push({
-          kind: 'group_intro',
-          key: 'gi:' + gKey,
-          title: gTitle,
-          group: gKey,
-          groupTitle: gTitle,
-          fields: fields
-        });
-
-        for (const f of fields) {
+        for (const section of groupSections(g)) {
+          const title = sectionTitle(gTitle, section);
           out.push({
-            kind:'field',
-            key: gKey + ':' + String(f.id),
-            title: gTitle,
+            kind: 'group_intro',
+            key: 'gi:' + section.key,
+            title,
             group: gKey,
             groupTitle: gTitle,
-            field: f
+            subgroup: section.subgroupKey,
+            subgroupTitle: section.title,
+            fields: section.fields
           });
+
+          for (const f of section.fields) {
+            out.push({
+              kind:'field',
+              key: section.key + ':' + String(f.id),
+              title,
+              group: gKey,
+              groupTitle: gTitle,
+              subgroup: section.subgroupKey,
+              subgroupTitle: section.title,
+              field: f
+            });
+          }
         }
       }
     }
@@ -1395,11 +1475,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       </div>
     </div>`);
 
-    function stepIndexForGroupKey(gKey){
+    function stepIndexForSection(sectionKey){
       if (displayMode === 'groups') {
-        return flatSteps.findIndex(s => s.kind==='group' && String(s.group)===String(gKey));
+        return flatSteps.findIndex(s => s.kind === 'group' && String(s.key) === String(sectionKey));
       }
-      return flatSteps.findIndex(s => s.kind==='group_intro' && String(s.group)===String(gKey));
+      return flatSteps.findIndex(s => s.kind === 'group_intro' && String(s.key) === String('gi:' + sectionKey));
     }
 
     for (const g of groups) {
@@ -1409,20 +1489,29 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const st = groupStats(fields);
       const badgeCls = (st.missing === 0) ? 'ok' : 'miss';
       const badgeTxt = (st.missing === 0) ? '✓' : String(st.missing);
+      const sections = groupSections(g);
 
       if (displayMode === 'groups') {
-        const idx = stepIndexForGroupKey(gKey);
-        html.push(`<div class="group" data-group="${esc(gKey)}">
-          <div class="group-h" data-jump="${idx}">
-            <div class="left">
-              <div class="title">${esc(gTitle)}</div>
-              <div class="sub">${st.done}/${st.total}</div>
+        sections.forEach(section => {
+          const idx = stepIndexForSection(section.key);
+          const sectionStats = groupStats(section.fields);
+          const sectionBadgeCls = (sectionStats.missing === 0) ? 'ok' : 'miss';
+          const sectionBadgeTxt = (sectionStats.missing === 0) ? '✓' : String(sectionStats.missing);
+          const title = sectionTitle(gTitle, section);
+          const sub = section.title ? `${sectionStats.done}/${sectionStats.total}` : `${sectionStats.done}/${sectionStats.total}`;
+          html.push(`<div class="group" data-group="${esc(gKey)}" data-section="${esc(section.key)}">
+            <div class="group-h" data-jump="${idx}">
+              <div class="left">
+                <div class="title">${esc(title)}</div>
+                <div class="sub">${esc(sub)}</div>
+              </div>
+              <span class="badge-mini ${sectionBadgeCls}">${esc(sectionBadgeTxt)}</span>
             </div>
-            <span class="badge-mini ${badgeCls}">${esc(badgeTxt)}</span>
-          </div>
-        </div>`);
+          </div>`);
+        });
       } else {
-        const idx = stepIndexForGroupKey(gKey);
+        const firstSection = sections[0] || null;
+        const idx = firstSection ? stepIndexForSection(firstSection.key) : -1;
 
         html.push(`<div class="group" data-group="${esc(gKey)}">
           <div class="group-h" data-toggle="${esc(gKey)}" data-jump="${idx}">
@@ -1433,18 +1522,34 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
             <span class="badge-mini ${badgeCls}">${esc(badgeTxt)}</span>
           </div>
           <div class="items">` +
-            fields.map((f, i) => {
-              const missing = fieldIsMissing(f);
-              const stepIdx = flatSteps.findIndex(s => s.kind==='field' && String(s.group)===String(gKey) && String(s.field?.id)===String(f.id));
-              const active = stepIdx === activeStep;
-              const fullLbl = String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }));
-              return `<a class="item ${missing?'missing':'ok'} ${active?'active':''}" data-jump="${stepIdx}" title="${esc(fullLbl)}">
+            sections.map(section => {
+              const sectionIdx = stepIndexForSection(section.key);
+              const sectionStats = groupStats(section.fields);
+              const sectionMissing = sectionStats.missing > 0;
+              const sectionActive = sectionIdx === activeStep;
+              const sectionLabel = sectionTitle(gTitle, section);
+              const showSectionIntro = Boolean(section.title) || sections.length > 1;
+              const sectionIntro = showSectionIntro ? `<a class="item section-step ${sectionMissing?'missing':'ok'} ${sectionActive?'active':''}" data-jump="${sectionIdx}" title="${esc(sectionLabel)}">
                 <div class="txt">
                   <span class="dot" aria-hidden="true"></span>
-                  <span class="lbl">${esc(tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }))}</span>
+                  <span class="lbl">${esc(section.title || gTitle)}</span>
                 </div>
-                <span class="badge-mini ${missing?'miss':'ok'}">${missing?'!':'✓'}</span>
-              </a>`;
+                <span class="badge-mini ${sectionMissing?'miss':'ok'}">${sectionMissing ? String(sectionStats.missing) : '✓'}</span>
+              </a>` : '';
+              const fieldItems = section.fields.map((f, i) => {
+                const missing = fieldIsMissing(f);
+                const stepIdx = flatSteps.findIndex(s => s.kind === 'field' && String(s.key) === String(section.key + ':' + String(f.id)));
+                const active = stepIdx === activeStep;
+                const fullLbl = String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }));
+                return `<a class="item ${missing?'missing':'ok'} ${active?'active':''}" data-jump="${stepIdx}" title="${esc(fullLbl)}">
+                  <div class="txt">
+                    <span class="dot" aria-hidden="true"></span>
+                    <span class="lbl">${esc(tfmt('student.js.question_label', 'Frage {index}', { index: i + 1 }))}</span>
+                  </div>
+                  <span class="badge-mini ${missing?'miss':'ok'}">${missing?'!':'✓'}</span>
+                </a>`;
+              }).join('');
+              return sectionIntro + fieldItems;
             }).join('') +
           `</div>
         </div>`);
@@ -1820,12 +1925,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return null;
   }
 
-  function firstFieldIndexForGroup(groupKey){
-    if (!Array.isArray(flatSteps)) return null;
+  function firstFieldIndexForSectionStep(matchStep){
+    if (!Array.isArray(flatSteps) || !matchStep) return null;
     for (let i = 0; i < flatSteps.length; i += 1) {
       const step = flatSteps[i];
       if (!step || step.kind !== 'field') continue;
-      if (String(step.group) === String(groupKey)) return i;
+      if (String(step.group) !== String(matchStep.group)) continue;
+      if (String(step.subgroup || '') !== String(matchStep.subgroup || '')) continue;
+      return i;
     }
     return null;
   }
@@ -1840,9 +1947,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (typeof missingIdx !== 'number') return 0;
     const step = flatSteps[missingIdx];
     if (step && step.kind === 'field' && displayMode !== 'groups') {
-      const firstIdx = firstFieldIndexForGroup(step.group);
+      const firstIdx = firstFieldIndexForSectionStep(step);
       if (firstIdx === missingIdx) {
-        const giIdx = flatSteps.findIndex(s => s.kind === 'group_intro' && String(s.group) === String(step.group));
+        const giIdx = flatSteps.findIndex(s => s.kind === 'group_intro' && String(s.group) === String(step.group) && String(s.subgroup || '') === String(step.subgroup || ''));
         if (giIdx >= 0) return giIdx;
       }
     }
@@ -2023,9 +2130,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
 
     else if (cur.kind === 'group') {
-      elTitle.textContent = cur.title;
-      elSub.textContent = isBeginnerMode ? '' : t('student.js.group_sub', 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.');
-      elBody.innerHTML = ((cur.fields || []).map(f => renderFieldBlock(f)).join('') || `<p class="muted">${esc(t('student.js.no_fields', 'Keine Felder.'))}</p>`);
+      const subgroupTitle = String(cur.subgroupTitle || '').trim();
+      elTitle.textContent = cur.groupTitle || cur.title;
+      elSub.textContent = isBeginnerMode ? '' : (subgroupTitle || t('student.js.group_sub', 'Du kannst weiterklicken und später zurückspringen, wenn etwas fehlt.'));
+      const headerHtml = subgroupTitle
+        ? `<div class="subsection-h"><div class="t">${esc(subgroupTitle)}</div><div class="s">${esc(cur.groupTitle || cur.group || '')}</div></div>`
+        : '';
+      elBody.innerHTML = headerHtml + (((cur.fields || []).map(f => renderFieldBlock(f)).join('')) || `<p class="muted">${esc(t('student.js.no_fields', 'Keine Felder.'))}</p>`);
       attachFieldHandlers(elBody);
       btnNext.textContent = t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
@@ -2034,7 +2145,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     else if (cur.kind === 'group_intro') {
       const fields = Array.isArray(cur.fields) ? cur.fields : [];
-      const groupLabel = cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt');
+      const subgroupTitle = String(cur.subgroupTitle || '').trim();
+      const groupLabel = subgroupTitle ? sectionTitle(cur.groupTitle || cur.title, { title: subgroupTitle }) : (cur.groupTitle || cur.title || t('student.js.section', 'Abschnitt'));
       elTitle.textContent = isBeginnerMode ? groupLabel : groupLabel;
       elSub.textContent = isBeginnerMode ? '' : t('student.js.group_intro_sub', 'Bevor es losgeht: kurze Übersicht.');
       elBody.innerHTML = isBeginnerMode
@@ -2050,7 +2162,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const b = document.getElementById('btnStartGroup');
       if (b) {
         b.addEventListener('click', () => {
-          const idx = flatSteps.findIndex(s => s.kind === 'field' && String(s.group) === String(cur.group));
+          const idx = flatSteps.findIndex(s => s.kind === 'field' && String(s.group) === String(cur.group) && String(s.subgroup || '') === String(cur.subgroup || ''));
           if (idx >= 0) { activeStep = idx; render(); }
           else { activeStep = Math.min(activeStep + 1, flatSteps.length - 1); render(); }
         });
@@ -2067,9 +2179,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const f = cur.field;
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
-      elTitle.textContent = isBeginnerMode ? fieldLabel : cur.groupTitle;
+      const sectionLabel = cur.subgroupTitle ? sectionTitle(cur.groupTitle || cur.group, { title: cur.subgroupTitle }) : (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'));
+      elTitle.textContent = isBeginnerMode ? fieldLabel : sectionLabel;
       elSub.textContent = isBeginnerMode
-        ? (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'))
+        ? sectionLabel
         : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');
       elBody.innerHTML = renderFieldBlock(f, { showLabel: !isBeginnerMode, showHelp: !isBeginnerMode });
       attachFieldHandlers(elBody);
