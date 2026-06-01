@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/group_keys.php';
 require_teacher();
 
 $pdo = db();
@@ -27,29 +28,15 @@ function meta_read(?string $json): array {
 }
 
 function group_parts_from_meta(array $meta): array {
-  $raw = trim((string)($meta['group'] ?? ''));
-  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
-  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $group = $parts[0];
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
-
-  $subgroup = '';
-  if (count($parts) > 1) {
-    $subgroup = implode(' / ', array_slice($parts, 1));
-  }
-
-  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+  return app_group_parts_from_meta($meta);
 }
 
 function group_key_from_meta(array $meta): string {
-  $parts = group_parts_from_meta($meta);
-  return $parts['group'];
+  return app_group_key_from_meta($meta);
+}
+
+function group_key_aliases_from_meta(array $meta): array {
+  return app_group_key_aliases_from_meta($meta);
 }
 
 function group_title_override_lang(string $groupKey, string $lang): string {
@@ -73,8 +60,12 @@ function group_title_from_meta(array $meta, string $groupKey, string $lang): str
 
 function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang): array {
   if ($templateId <= 0) return [];
+  $select = 'id, meta_json';
+  foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
+    if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
+  }
   $st = $pdo->prepare(
-    "SELECT id, meta_json
+    "SELECT $select
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -85,12 +76,23 @@ function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang)
     $fid = (int)($r['id'] ?? 0);
     if ($fid <= 0) continue;
     $meta = meta_read($r['meta_json'] ?? null);
+    foreach ([
+      'group_label' => 'group',
+      'group_label_en' => 'group_title_en',
+      'subgroup_label' => 'subgroup',
+      'subgroup_label_en' => 'subgroup_title_en',
+    ] as $column => $metaKey) {
+      $v = trim((string)($r[$column] ?? ''));
+      if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
+    }
     $gKey = group_key_from_meta($meta);
     $gTitle = group_title_from_meta($meta, $gKey, $lang);
+    $gAliases = group_key_aliases_from_meta($meta);
     if (!isset($groups[$gKey])) {
-      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'field_ids' => []];
+      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'aliases' => $gAliases, 'field_ids' => []];
     } else {
       $groups[$gKey]['title'] = $gTitle;
+      $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
     }
     $groups[$gKey]['field_ids'][] = $fid;
   }
@@ -1655,8 +1657,9 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             <tbody>
               <?php foreach ($childGroups as $gKey => $gData): ?>
                 <?php
+                  $groupAliases = is_array($gData['aliases'] ?? null) ? $gData['aliases'] : [(string)$gKey];
                   $isUnlocked = $groupUnlockInfo['active']
-                    ? (bool)($groupUnlockInfo['map'][$gKey] ?? false)
+                    ? app_group_key_matches_map($groupUnlockInfo['map'], $groupAliases)
                     : true;
                   $prog = $groupProgress[$gKey] ?? ['students_done'=>0,'students_total'=>0,'fields_total'=>count($gData['field_ids'] ?? []),'students_percent'=>null];
                   $pct = $prog['students_percent'] !== null ? (string)$prog['students_percent'] : '–';
