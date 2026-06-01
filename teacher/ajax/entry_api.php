@@ -1486,6 +1486,12 @@ function class_period_label(PDO $pdo, int $classId): string {
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
   $periodLabel = normalize_class_period_label($periodLabel);
+  $classCheck = $pdo->prepare("SELECT template_id FROM classes WHERE id=? LIMIT 1");
+  $classCheck->execute([$classId]);
+  $classTemplateId = (int)($classCheck->fetchColumn() ?: 0);
+  if ($classTemplateId <= 0 || $classTemplateId !== $templateId) {
+    throw new RuntimeException(t('teacher.entry.error.invalid_class_report_context', 'Bericht kann nicht ohne gültige Klasse und passende Vorlage angelegt werden.'));
+  }
   $periodLabel = class_report_period_label($classId, $periodLabel);
   $st = $pdo->prepare(
     "SELECT id, status
@@ -1513,19 +1519,68 @@ function canonical_student_id(PDO $pdo, int $studentId): int {
   return $id > 0 ? $id : $studentId;
 }
 
-function find_existing_report_instance_for_student_period(PDO $pdo, int $studentId, string $schoolYear, string $periodLabel): ?array {
+function find_current_report_instance_for_student_period(PDO $pdo, int $studentId, int $classId, int $templateId, string $schoolYear, string $periodLabel): ?array {
   $canonicalId = canonical_student_id($pdo, $studentId);
   $st = $pdo->prepare(
     "SELECT ri.id, ri.status, ri.template_id
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
-     WHERE COALESCE(s.master_student_id, s.id)=? AND ri.school_year=? AND ri.period_label=?
-     ORDER BY ri.updated_at DESC, ri.id DESC
+     WHERE s.class_id=?
+       AND COALESCE(s.master_student_id, s.id)=?
+       AND ri.school_year=?
+       AND ri.period_label=?
+       AND ri.template_id=?
+     ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st->execute([$canonicalId, $schoolYear, $periodLabel]);
+  $st->execute([$classId, $canonicalId, $schoolYear, $periodLabel, $templateId, $studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
   return $row ?: null;
+}
+
+function find_mismatch_report_instance_for_student_period(PDO $pdo, int $studentId, int $classId, int $currentTemplateId, string $schoolYear, string $periodLabel): ?array {
+  $canonicalId = canonical_student_id($pdo, $studentId);
+  $st = $pdo->prepare(
+    "SELECT ri.id, ri.status, ri.template_id,
+            old_t.name AS old_template_name, old_t.template_version AS old_template_version,
+            cur_t.name AS current_template_name, cur_t.template_version AS current_template_version,
+            s.first_name, s.last_name
+     FROM report_instances ri
+     JOIN students s ON s.id=ri.student_id
+     LEFT JOIN templates old_t ON old_t.id=ri.template_id
+     LEFT JOIN templates cur_t ON cur_t.id=?
+     WHERE s.class_id=?
+       AND COALESCE(s.master_student_id, s.id)=?
+       AND ri.school_year=?
+       AND ri.period_label=?
+       AND ri.template_id IS NOT NULL
+       AND ri.template_id<>?
+     ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
+     LIMIT 1"
+  );
+  $st->execute([$currentTemplateId, $classId, $canonicalId, $schoolYear, $periodLabel, $currentTemplateId, $studentId]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function format_template_conflict_template_label(?string $name, $version, int $id): string {
+  $name = trim((string)$name);
+  $label = $name !== '' ? $name : t('teacher.entry.template_conflict.unknown_template', 'Unbekannte Vorlage');
+  if ($version !== null && (int)$version > 0) $label .= ' v' . (int)$version;
+  return $label . ' (#' . $id . ')';
+}
+
+function template_conflict_message(array $row, int $currentTemplateId): string {
+  $student = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? ''));
+  if ($student === '') $student = t('teacher.entry.template_conflict.unknown_student', 'Unbekannter Schüler');
+  $oldTemplateId = (int)($row['template_id'] ?? 0);
+  $oldTemplate = format_template_conflict_template_label($row['old_template_name'] ?? null, $row['old_template_version'] ?? null, $oldTemplateId);
+  $currentTemplate = format_template_conflict_template_label($row['current_template_name'] ?? null, $row['current_template_version'] ?? null, $currentTemplateId);
+  return str_replace(
+    ['{student}', '{report_id}', '{old_template}', '{current_template}'],
+    [$student, (string)(int)($row['id'] ?? 0), $oldTemplate, $currentTemplate],
+    t('teacher.entry.template_conflict.message', "Folgende Berichte verwenden nicht die aktuelle Vorlage dieser Klasse:\n- {student} — Bericht #{report_id} — verwendet {old_template}; aktuelle Klassenvorlage: {current_template}\n\nSoll dieser Bericht gelöscht und mit der aktuellen Vorlage neu erstellt werden?")
+  );
 }
 
 function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
@@ -1539,51 +1594,88 @@ function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
 
 function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId, bool $allowTemplateReplace = false): array {
   $periodLabel = normalize_class_period_label($periodLabel);
+  $studentClass = $pdo->prepare(
+    "SELECT s.class_id, c.template_id
+     FROM students s
+     LEFT JOIN classes c ON c.id=s.class_id
+     WHERE s.id=?
+     LIMIT 1"
+  );
+  $studentClass->execute([$studentId]);
+  $studentClassRow = $studentClass->fetch(PDO::FETCH_ASSOC);
+  $studentClassId = (int)($studentClassRow['class_id'] ?? 0);
+  $classTemplateId = (int)($studentClassRow['template_id'] ?? 0);
+  if ($studentClassId <= 0 || $classTemplateId <= 0 || $classTemplateId !== $templateId) {
+    throw new RuntimeException(t('teacher.entry.error.invalid_student_report_context', 'Bericht kann nicht ohne gültige Schüler-Klasse und passende Vorlage angelegt werden.'));
+  }
 
-  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
+  $ri = find_current_report_instance_for_student_period($pdo, $studentId, $studentClassId, $templateId, $schoolYear, $periodLabel);
   if ($ri) {
-    $existingTemplateId = (int)($ri['template_id'] ?? 0);
-    if ($existingTemplateId > 0 && $existingTemplateId !== $templateId) {
+    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
+  }
+
+  $replaceTransactionStarted = false;
+  try {
+    $mismatch = find_mismatch_report_instance_for_student_period($pdo, $studentId, $studentClassId, $templateId, $schoolYear, $periodLabel);
+    if ($mismatch) {
+      $existingTemplateId = (int)($mismatch['template_id'] ?? 0);
       if (!$allowTemplateReplace) {
         $errorPayload = [
           'type' => 'template_conflict',
           'student_id' => $studentId,
           'school_year' => $schoolYear,
           'period_label' => $periodLabel,
-          'existing_report_id' => (int)$ri['id'],
+          'existing_report_id' => (int)$mismatch['id'],
           'existing_template_id' => $existingTemplateId,
           'new_template_id' => $templateId,
-          'message' => 'Für diesen Schüler existiert in diesem Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und mit der neuen Vorlage neu erstellt werden?'
+          'message' => template_conflict_message($mismatch, $templateId),
         ];
         throw new RuntimeException('__TEMPLATE_SWITCH_REQUIRED__' . json_encode($errorPayload, JSON_UNESCAPED_UNICODE));
       }
-      delete_report_instance_and_values($pdo, (int)$ri['id']);
-      $ri = null;
-    } else {
+
+      if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $replaceTransactionStarted = true;
+      }
+
+      $revalidatedMismatch = find_mismatch_report_instance_for_student_period($pdo, $studentId, $studentClassId, $templateId, $schoolYear, $periodLabel);
+      if ($revalidatedMismatch && (int)($revalidatedMismatch['id'] ?? 0) === (int)($mismatch['id'] ?? 0)) {
+        delete_report_instance_and_values($pdo, (int)$revalidatedMismatch['id']);
+      }
+    }
+
+    $pdo->prepare(
+      "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())
+       ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
+    )->execute([$templateId, $studentId, $periodLabel, $schoolYear, $userId]);
+
+    $rid = (int)$pdo->lastInsertId();
+    if ($rid > 0) {
+      $st = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
+      $st->execute([$rid]);
+      $status = (string)($st->fetchColumn() ?: 'locked');
+      if ($replaceTransactionStarted) {
+        $pdo->commit();
+      }
+      return ['id' => $rid, 'status' => $status];
+    }
+
+    $ri = find_current_report_instance_for_student_period($pdo, $studentId, $studentClassId, $templateId, $schoolYear, $periodLabel);
+    if ($ri) {
+      if ($replaceTransactionStarted) {
+        $pdo->commit();
+      }
       return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
     }
+
+    throw new RuntimeException('Konnte Bericht nicht erstellen oder finden.');
+  } catch (Throwable $e) {
+    if ($replaceTransactionStarted && $pdo->inTransaction()) {
+      $pdo->rollBack();
+    }
+    throw $e;
   }
-
-  $pdo->prepare(
-    "INSERT INTO report_instances (template_id, student_id, period_label, school_year, status, created_by_user_id, locked_by_user_id, locked_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'locked', NULL, ?, NOW(), NOW(), NOW())
-     ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), updated_at=updated_at"
-  )->execute([$templateId, $studentId, $periodLabel, $schoolYear, $userId]);
-
-  $rid = (int)$pdo->lastInsertId();
-  if ($rid > 0) {
-    $st = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
-    $st->execute([$rid]);
-    $status = (string)($st->fetchColumn() ?: 'locked');
-    return ['id' => $rid, 'status' => $status];
-  }
-
-  $ri = find_existing_report_instance_for_student_period($pdo, $studentId, $schoolYear, $periodLabel);
-  if ($ri) {
-    return ['id' => (int)$ri['id'], 'status' => (string)$ri['status']];
-  }
-
-  throw new RuntimeException('Konnte Bericht nicht erstellen oder finden.');
 }
 
 function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {

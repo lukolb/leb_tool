@@ -9,6 +9,10 @@ $endpoint = 'https://latex.ytotech.com/builds/sync';
 
 $latexDir = __DIR__ . '/../latex';
 require_once __DIR__ . '/latex_layout_templates.php';
+require_once __DIR__ . '/latex_template_packages.php';
+require_once __DIR__ . '/generated_template_packages.php';
+require_once __DIR__ . '/template_package_notifications.php';
+require_once __DIR__ . '/pdf_form_postprocess.php';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -32,6 +36,71 @@ function readTextFileOrFail(string $path): string {
 
 function readBase64FileOrFail(string $path): string {
     return base64_encode(readTextFileOrFail($path));
+}
+
+function latex_support_file_candidates(string $latexDir): array {
+    return [
+        'eforms.sty',
+        'insdljs.sty',
+        'taborder.sty',
+        'epdftex.def',
+        'pdfdochex.def',
+        'dljslib.sty',
+    ];
+}
+
+function latex_support_file_resource_result(string $latexDir, array $existingPaths = []): array {
+    $existing = [];
+    foreach ($existingPaths as $path) {
+        $normalized = trim(str_replace('\\', '/', (string)$path), '/');
+        if ($normalized !== '') {
+            $existing[strtolower($normalized)] = true;
+        }
+    }
+
+    $resources = [];
+    $copied = [];
+    $checked = [];
+    $sourceDirs = [rtrim($latexDir, '/\\') . '/support', rtrim($latexDir, '/\\')];
+    foreach (latex_support_file_candidates($latexDir) as $relativePath) {
+        $relativePath = trim(str_replace('\\', '/', $relativePath), '/');
+        if ($relativePath === '' || isset($existing[strtolower($relativePath)])) {
+            continue;
+        }
+        foreach ($sourceDirs as $sourceDir) {
+            $candidate = $sourceDir . '/' . $relativePath;
+            $checked[$relativePath][] = is_dir($sourceDir) ? basename($sourceDir) : '(missing)';
+            if (!is_file($candidate)) {
+                continue;
+            }
+            $resources[] = ['path' => $relativePath, 'file' => readBase64FileOrFail($candidate)];
+            $copied[] = $relativePath;
+            $existing[strtolower($relativePath)] = true;
+            break;
+        }
+    }
+
+    return [
+        'resources' => $resources,
+        'copied_support_files' => $copied,
+        'copied_support_files_count' => count($copied),
+        'checked_support_files' => $checked,
+        'support_source_dirs' => ['latex/support', 'latex'],
+    ];
+}
+
+function latex_resource_paths(array $resources): array {
+    $paths = [];
+    foreach ($resources as $resource) {
+        if (!is_array($resource)) {
+            continue;
+        }
+        $path = (string)($resource['path'] ?? '');
+        if ($path !== '') {
+            $paths[] = $path;
+        }
+    }
+    return $paths;
 }
 
 function extract_balanced_block(string $text, int $startPos): array {
@@ -313,9 +382,12 @@ if (!is_array($pagebreaks)) {
 
 $selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
-$allCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_ids'] ?? []))));
-$activeCatIds = array_values(array_unique(array_map('intval', (array)($_POST['cat_active'] ?? []))));
+$allCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_ids'] ?? [])), static fn($v) => $v > 0)));
+$activeCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_active'] ?? [])), static fn($v) => $v > 0)));
 $disabledCatIds = array_values(array_diff($allCatIds, $activeCatIds));
+$allSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_ids'] ?? [])), static fn($v) => $v > 0)));
+$activeSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_active'] ?? [])), static fn($v) => $v > 0)));
+$disabledSubcategoryIds = array_values(array_diff($allSubcategoryIds, $activeSubcategoryIds));
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
@@ -327,6 +399,11 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         $in = implode(',', array_fill(0, count($disabledCatIds), '?'));
         $reqSql .= " AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) NOT IN ($in)";
         $reqParams = array_merge($reqParams, $disabledCatIds);
+    }
+    if (!empty($disabledSubcategoryIds)) {
+        $in = implode(',', array_fill(0, count($disabledSubcategoryIds), '?'));
+        $reqSql .= " AND (c.subcategory_id IS NULL OR c.subcategory_id=0 OR c.subcategory_id NOT IN ($in))";
+        $reqParams = array_merge($reqParams, $disabledSubcategoryIds);
     }
     $stReq = $pdo->prepare($reqSql);
     $stReq->execute($reqParams);
@@ -347,16 +424,39 @@ $showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
 $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
 $enableStudentTeacherRatings = ((string)($_POST['enable_student_teacher_ratings'] ?? '0') === '1');
 $exportRcff = ((string)($_POST['export_rcff'] ?? '0') === '1');
+$createTemplatePackage = ((string)($_POST['create_template_package'] ?? '0') === '1');
+$submitTemplatePackageToAdmin = ((string)($_POST['submit_template_package_to_admin'] ?? '0') === '1') && get_role() === 'teacher';
+if ($createTemplatePackage || $submitTemplatePackageToAdmin) {
+    try {
+        csrf_verify();
+    } catch (Throwable $e) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Template-Paket konnte nicht vorbereitet werden: ' . $e->getMessage();
+        exit;
+    }
+}
 $gradeFieldCategoryIds = array_values(array_unique(array_map('intval', (array)($_POST['grade_field_cats'] ?? []))));
 $generatedDataTex = generate_selected_data_tex($originalDataTex, $selectedSkills, $pagebreaks, $selectedGrade, $showSel, $showAg);
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    if (!empty($disabledCatIds) && !empty($selectedSkills)) {
-        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+    $disabledClauses = [];
+    $disabledParams = [];
+    if (!empty($disabledCatIds)) {
         $inCats = implode(',', array_fill(0, count($disabledCatIds), '?'));
-        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $disabledClauses[] = "COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) IN ($inCats)";
+        $disabledParams = array_merge($disabledParams, $disabledCatIds);
+    }
+    if (!empty($disabledSubcategoryIds)) {
+        $inSubs = implode(',', array_fill(0, count($disabledSubcategoryIds), '?'));
+        $disabledClauses[] = "c.subcategory_id IN ($inSubs)";
+        $disabledParams = array_merge($disabledParams, $disabledSubcategoryIds);
+    }
+    if (!empty($disabledClauses) && !empty($selectedSkills)) {
+        $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
+        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND (" . implode(' OR ', $disabledClauses) . ")";
         $stDisabled = $pdo->prepare($sql);
-        $stDisabled->execute(array_merge($selectedSkills, $disabledCatIds));
+        $stDisabled->execute(array_merge($selectedSkills, $disabledParams));
         $blocked = array_map('strval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
         if (!empty($blocked)) {
             $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
@@ -369,8 +469,9 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
         . $generatedDataTex;
 }
 $rcffData = null;
-if ($exportRcff && (string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
+if (($exportRcff || $createTemplatePackage || $submitTemplatePackageToAdmin) && (string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $rcffData = generate_rcff_data($pdo, $selectedSkills, $selectedGrade, $enableStudentTeacherRatings, $gradeFieldCategoryIds);
+    $rcffData = normalize_generated_template_package_rcff($rcffData, $enableStudentTeacherRatings);
 }
 
 try {
@@ -390,115 +491,210 @@ try {
 
 $pdoForLayout = function_exists('db') ? db() : null;
 $selectedLayoutPath = 'latex/layout.tex';
-if ($pdoForLayout instanceof PDO) {
-    ensure_default_latex_layout_template($pdoForLayout);
-    $layoutTemplateId = (int)($_POST['layout_template_id'] ?? 0);
-    $layout = $layoutTemplateId > 0 ? find_active_latex_layout_template($pdoForLayout, $layoutTemplateId) : null;
-    if (!$layout) {
-        $layout = get_default_latex_layout_template($pdoForLayout);
+$layoutTemplateId = 0;
+$layout = null;
+$selectedLatexPackage = null;
+$selectedLatexPackageId = 0;
+$templateSource = 'system';
+$templateSourceRaw = trim((string)($_POST['template_source'] ?? ''));
+
+try {
+    if ($templateSourceRaw !== '') {
+        if ($templateSourceRaw === 'system') {
+            $templateSource = 'system';
+        } elseif (preg_match('/^layout:(\d+)$/', $templateSourceRaw, $m)) {
+            $layoutTemplateId = (int)$m[1];
+            if ($layoutTemplateId <= 0) throw new RuntimeException('Ungültige Titelseitenvorlage.');
+            $templateSource = 'layout:' . $layoutTemplateId;
+        } elseif (preg_match('/^package:(\d+)$/', $templateSourceRaw, $m)) {
+            $selectedLatexPackageId = (int)$m[1];
+            if ($selectedLatexPackageId <= 0) throw new RuntimeException('Ungültiges LaTeX-Vorlagenpaket.');
+            $templateSource = 'package:' . $selectedLatexPackageId;
+        } else {
+            throw new RuntimeException('Ungültige Vorlagenquelle.');
+        }
+    } else {
+        $legacyPackageId = (int)($_POST['latex_template_package_id'] ?? 0);
+        $legacyLayoutId = (int)($_POST['layout_template_id'] ?? 0);
+        if ($legacyPackageId > 0) {
+            $selectedLatexPackageId = $legacyPackageId;
+            $templateSource = 'package:' . $selectedLatexPackageId;
+        } elseif ($legacyLayoutId > 0) {
+            $layoutTemplateId = $legacyLayoutId;
+            $templateSource = 'layout:' . $layoutTemplateId;
+        }
     }
-    if ($layout && !empty($layout['file_path'])) {
-        $selectedLayoutPath = (string)$layout['file_path'];
+
+    if ($pdoForLayout instanceof PDO) {
+        ensure_default_latex_layout_template($pdoForLayout);
+        if (str_starts_with($templateSource, 'package:')) {
+            if (get_role() !== 'admin') throw new RuntimeException('LaTeX-Vorlagenpakete dürfen nur von Admins verwendet werden.');
+            $selectedLatexPackage = find_latex_template_package($pdoForLayout, $selectedLatexPackageId, true);
+            if (!$selectedLatexPackage) throw new RuntimeException('Aktives LaTeX-Vorlagenpaket nicht gefunden.');
+            $layoutTemplateId = 0;
+            $layout = null;
+        } elseif (str_starts_with($templateSource, 'layout:')) {
+            $layout = find_active_latex_layout_template($pdoForLayout, $layoutTemplateId);
+            if (!$layout) throw new RuntimeException('Titelseitenvorlage nicht gefunden oder inaktiv.');
+            if (!empty($layout['file_path'])) {
+                $selectedLayoutPath = (string)$layout['file_path'];
+            }
+            $selectedLatexPackageId = 0;
+        } else {
+            $layout = get_default_latex_layout_template($pdoForLayout);
+            $layoutTemplateId = 0;
+            if ($layout && !empty($layout['file_path'])) {
+                $selectedLayoutPath = (string)$layout['file_path'];
+            }
+            $selectedLatexPackageId = 0;
+        }
     }
-}
-$layoutAbsolute = latex_layout_absolute_path($selectedLayoutPath);
-if (!is_file($layoutAbsolute)) {
+} catch (Throwable $e) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo 'Layoutvorlage nicht gefunden.';
+    echo 'Vorlagenquelle konnte nicht geladen werden.' . "\n";
+    echo $e->getMessage();
     exit;
 }
 
-$resources = [
-    [
-        'main' => true,
-        'content' => readTextFileOrFail($latexDir . '/main.tex'),
-    ],
-
-    [
-        'path' => 'layout.tex',
-        'file' => readBase64FileOrFail($layoutAbsolute),
-    ],
-    [
-        'path' => 'skills.tex',
-        'file' => readBase64FileOrFail($latexDir . '/skills.tex'),
-    ],
-    [
-        'path' => 'sel.tex',
-        'file' => readBase64FileOrFail($latexDir . '/sel.tex'),
-    ],
-    [
-        'path' => 'data.tex',
-        'content' => $generatedDataTex,
-    ],
-
-    [
-        'path' => 'eforms.sty',
-        'file' => readBase64FileOrFail($latexDir . '/eforms.sty'),
-    ],
-    [
-        'path' => 'epdftex.def',
-        'file' => readBase64FileOrFail($latexDir . '/epdftex.def'),
-    ],
-    [
-        'path' => 'insdljs.sty',
-        'file' => readBase64FileOrFail($latexDir . '/insdljs.sty'),
-    ],
-    [
-        'path' => 'taborder.sty',
-        'file' => readBase64FileOrFail($latexDir . '/taborder.sty'),
-    ],
-
-    [
-        'path' => 'assets/logo.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/logo.pdf'),
-    ],
-    [
-        'path' => 'assets/footer.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/footer.pdf'),
-    ],
-    [
-        'path' => 'assets/beginning.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/beginning.pdf'),
-    ],
-    [
-        'path' => 'assets/goal.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/goal.pdf'),
-    ],
-    [
-        'path' => 'assets/mastering.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/mastering.pdf'),
-    ],
-    [
-        'path' => 'assets/progressing.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/progressing.pdf'),
-    ],
-    [
-        'path' => 'assets/strength.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strength.pdf'),
-    ],
-    [
-        'path' => 'assets/strengthening.pdf',
-        'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.pdf'),
-    ],
-
-    [
-        'path' => 'fonts/OpenSans-Regular.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Regular.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-Bold.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Bold.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-Italic.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Italic.ttf'),
-    ],
-    [
-        'path' => 'fonts/OpenSans-BoldItalic.ttf',
-        'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-BoldItalic.ttf'),
-    ],
+$latexBuildDebug = [
+    'copied_package_files_count' => 0,
+    'copied_support_files_count' => 0,
+    'copied_support_files' => [],
+    'ignored_zip_files_count' => 0,
+    'pdf_postprocess_enabled' => true,
+    'pdf_postprocess_method' => 'none',
+    'pdf_postprocess_success' => false,
+    'pdf_postprocess_message' => '',
+    'pdf_postprocess_tool' => '',
+    'pdf_postprocess_acroform_before' => null,
+    'pdf_postprocess_acroform_after' => null,
 ];
+
+if ($selectedLatexPackage) {
+    try {
+        $resources = latex_template_package_files_as_resources($selectedLatexPackage);
+        $packageManifest = json_decode((string)($selectedLatexPackage['manifest_json'] ?? '{}'), true);
+        $latexBuildDebug['copied_package_files_count'] = count($resources);
+        $latexBuildDebug['ignored_zip_files_count'] = is_array($packageManifest) ? (int)($packageManifest['ignored_count'] ?? 0) : 0;
+        $supportResult = latex_support_file_resource_result($latexDir, latex_resource_paths($resources));
+        $resources = array_merge($resources, $supportResult['resources']);
+        $latexBuildDebug['copied_support_files_count'] = (int)$supportResult['copied_support_files_count'];
+        $latexBuildDebug['copied_support_files'] = $supportResult['copied_support_files'];
+        $resources[] = ['path' => 'data.tex', 'content' => $generatedDataTex];
+        error_log('LaTeX template package build diagnostics: ' . json_encode($latexBuildDebug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    } catch (Throwable $e) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "LaTeX-Vorlagenpaket konnte nicht geladen werden.\n";
+        echo "Paket-ID: " . $selectedLatexPackageId . "\n";
+        echo $e->getMessage();
+        exit;
+    }
+} else {
+    $layoutAbsolute = latex_layout_absolute_path($selectedLayoutPath);
+    if (!is_file($layoutAbsolute)) {
+        http_response_code(500);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Layoutvorlage nicht gefunden.';
+        exit;
+    }
+
+    $resources = [
+        [
+            'main' => true,
+            'content' => readTextFileOrFail($latexDir . '/main.tex'),
+        ],
+
+        [
+            'path' => 'layout.tex',
+            'file' => readBase64FileOrFail($layoutAbsolute),
+        ],
+        [
+            'path' => 'skills.tex',
+            'file' => readBase64FileOrFail($latexDir . '/skills.tex'),
+        ],
+        [
+            'path' => 'sel.tex',
+            'file' => readBase64FileOrFail($latexDir . '/sel.tex'),
+        ],
+        [
+            'path' => 'data.tex',
+            'content' => $generatedDataTex,
+        ],
+
+        [
+            'path' => 'eforms.sty',
+            'file' => readBase64FileOrFail($latexDir . '/eforms.sty'),
+        ],
+        [
+            'path' => 'epdftex.def',
+            'file' => readBase64FileOrFail($latexDir . '/epdftex.def'),
+        ],
+        [
+            'path' => 'insdljs.sty',
+            'file' => readBase64FileOrFail($latexDir . '/insdljs.sty'),
+        ],
+        [
+            'path' => 'taborder.sty',
+            'file' => readBase64FileOrFail($latexDir . '/taborder.sty'),
+        ],
+
+        [
+            'path' => 'assets/logo.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/logo.pdf'),
+        ],
+        [
+            'path' => 'assets/footer.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/footer.pdf'),
+        ],
+        [
+            'path' => 'assets/beginning.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/beginning.pdf'),
+        ],
+        [
+            'path' => 'assets/goal.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/goal.pdf'),
+        ],
+        [
+            'path' => 'assets/mastering.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/mastering.pdf'),
+        ],
+        [
+            'path' => 'assets/progressing.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/progressing.pdf'),
+        ],
+        [
+            'path' => 'assets/strength.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/strength.pdf'),
+        ],
+        [
+            'path' => 'assets/strengthening.pdf',
+            'file' => readBase64FileOrFail($latexDir . '/assets/strengthening.pdf'),
+        ],
+
+        [
+            'path' => 'fonts/OpenSans-Regular.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Regular.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-Bold.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Bold.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-Italic.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-Italic.ttf'),
+        ],
+        [
+            'path' => 'fonts/OpenSans-BoldItalic.ttf',
+            'file' => readBase64FileOrFail($latexDir . '/fonts/OpenSans-BoldItalic.ttf'),
+        ],
+    ];
+    $supportResult = latex_support_file_resource_result($latexDir, latex_resource_paths($resources));
+    $resources = array_merge($resources, $supportResult['resources']);
+    $latexBuildDebug['copied_support_files_count'] = (int)$supportResult['copied_support_files_count'];
+    $latexBuildDebug['copied_support_files'] = $supportResult['copied_support_files'];
+}
 
 $payload = [
     'compiler' => 'lualatex',
@@ -561,9 +757,18 @@ $isPdf = strncmp($body, '%PDF-', 5) === 0;
 if (!$isPdf) {
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "LaTeX konnte nicht kompiliert werden.\n";
+    echo ($selectedLatexPackage ? "LaTeX-Vorlagenpaket konnte nicht kompiliert werden.\nPaket: " . (string)($selectedLatexPackage['name'] ?? '') . "\nHauptdatei: " . (string)($selectedLatexPackage['main_file'] ?? '') . "\n" : "LaTeX konnte nicht kompiliert werden.\n");
     echo "HTTP Status: " . $statusCode . "\n";
     echo "Content-Type: " . $contentType . "\n";
+    if ($selectedLatexPackage) {
+        $debugJson = json_encode($latexBuildDebug, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        error_log('LaTeX template package compile failure diagnostics: ' . ($debugJson ?: '{}'));
+        echo "Build-Diagnose:\n";
+        echo "- copied_package_files_count: " . (int)($latexBuildDebug['copied_package_files_count'] ?? 0) . "\n";
+        echo "- copied_support_files_count: " . (int)($latexBuildDebug['copied_support_files_count'] ?? 0) . "\n";
+        echo "- copied_support_files: " . implode(', ', (array)($latexBuildDebug['copied_support_files'] ?? [])) . "\n";
+        echo "- ignored_zip_files_count: " . (int)($latexBuildDebug['ignored_zip_files_count'] ?? 0) . "\n";
+    }
     echo "Debug-Datei: " . ($debugPath ?? (sys_get_temp_dir() . "/leb_data_debug.tex")) . "\n";
     echo "data.tex (erste 120 Zeilen):\n";
     echo with_line_numbers($generatedDataTex, 120) . "\n";
@@ -571,13 +776,111 @@ if (!$isPdf) {
     exit;
 }
 
+$pdfPostprocess = normalize_generated_pdf_form_fields($body);
+$latexBuildDebug['pdf_postprocess_enabled'] = (bool)($pdfPostprocess['enabled'] ?? true);
+$latexBuildDebug['pdf_postprocess_method'] = (string)($pdfPostprocess['method'] ?? 'none');
+$latexBuildDebug['pdf_postprocess_success'] = (bool)($pdfPostprocess['success'] ?? false);
+$latexBuildDebug['pdf_postprocess_message'] = (string)($pdfPostprocess['message'] ?? '');
+$latexBuildDebug['pdf_postprocess_tool'] = (string)($pdfPostprocess['tool'] ?? '');
+$latexBuildDebug['pdf_postprocess_acroform_before'] = $pdfPostprocess['acroform_before'] ?? null;
+$latexBuildDebug['pdf_postprocess_acroform_after'] = $pdfPostprocess['acroform_after'] ?? null;
+$latexBuildDebug['pdf_postprocess_field_names_unchanged'] = (bool)($pdfPostprocess['field_names_unchanged'] ?? false);
+if (!empty($pdfPostprocess['success']) && isset($pdfPostprocess['bytes'])) {
+    $body = (string)$pdfPostprocess['bytes'];
+} else {
+    error_log('PDF form postprocessing failed: ' . (string)($pdfPostprocess['message'] ?? 'unknown error'));
+}
+
 $pdfFilename = 'vorlage.pdf';
+$templatePackageResult = null;
+$templatePackageError = '';
+if (($createTemplatePackage || $submitTemplatePackageToAdmin) && $rcffData !== null && $pdoForLayout instanceof PDO) {
+    try {
+        if (empty($pdfPostprocess['success'])) {
+            throw new RuntimeException('PDF-Postprocessing fehlgeschlagen: ' . (string)($pdfPostprocess['message'] ?? 'unbekannter Fehler'));
+        }
+        $title = 'Kompetenz-PDF Klasse ' . $selectedGrade;
+        $currentUser = current_user() ?: [];
+        $nowIso = gmdate('c');
+        $metadata = [
+            'title' => $title,
+            'source' => 'latex_templates',
+            'created_by_user_id' => (int)($currentUser['id'] ?? 0),
+            'created_by_role' => get_role(),
+            'created_at' => $nowIso,
+            'grade_level' => $selectedGrade,
+            'template_source' => $templateSource,
+            'layout_template_id' => str_starts_with($templateSource, 'layout:') && $layoutTemplateId > 0 ? $layoutTemplateId : null,
+            'layout_template_name' => str_starts_with($templateSource, 'layout:') ? (string)($layout['display_name'] ?? '') : '',
+            'show_sel' => $showSel,
+            'show_ag' => $showAg,
+            'student_teacher_ratings' => $enableStudentTeacherRatings,
+            'grade_fields_enabled' => !empty($gradeFieldCategoryIds),
+            'grade_fields' => array_values($gradeFieldCategoryIds),
+            'grade_field_category_ids' => array_values($gradeFieldCategoryIds),
+            'selected_categories' => generated_template_package_categories($pdoForLayout, $activeCatIds),
+            'disabled_subcategories' => array_values($disabledSubcategoryIds),
+            'pdf_postprocess' => [
+                'enabled' => (bool)($pdfPostprocess['enabled'] ?? true),
+                'success' => (bool)($pdfPostprocess['success'] ?? false),
+                'method' => (string)($pdfPostprocess['method'] ?? 'none'),
+                'message' => (string)($pdfPostprocess['message'] ?? ''),
+                'tool' => (string)($pdfPostprocess['tool'] ?? ''),
+                'acroform_before' => $pdfPostprocess['acroform_before'] ?? null,
+                'acroform_after' => $pdfPostprocess['acroform_after'] ?? null,
+                'pdf_form_structure_before' => $pdfPostprocess['acroform_before'] ?? null,
+                'pdf_form_structure_after' => $pdfPostprocess['acroform_after'] ?? null,
+                'normalization_method' => (string)($pdfPostprocess['method'] ?? 'none'),
+                'normalization_success' => (bool)($pdfPostprocess['success'] ?? false),
+                'field_names_unchanged' => (bool)($pdfPostprocess['field_names_unchanged'] ?? false),
+            ],
+            'selected_competencies' => generated_template_package_competencies($pdoForLayout, $selectedSkills),
+            'rcff_version' => (int)($rcffData['version'] ?? 1),
+            'rating_mode' => $enableStudentTeacherRatings ? 'student_teacher' : 'standard',
+            'latex_template_package_id' => $selectedLatexPackage ? (int)($selectedLatexPackage['id'] ?? 0) : null,
+            'latex_template_package_name' => $selectedLatexPackage ? (string)($selectedLatexPackage['name'] ?? '') : null,
+            'latex_template_package_main_file' => $selectedLatexPackage ? (string)($selectedLatexPackage['main_file'] ?? '') : null,
+        ];
+        $packageOptions = [];
+        if ($submitTemplatePackageToAdmin) {
+            $metadata['submitted_by_user_id'] = (int)($currentUser['id'] ?? 0);
+            $metadata['submitted_by_name'] = (string)($currentUser['display_name'] ?? $currentUser['name'] ?? '');
+            $metadata['submitted_by_email'] = (string)($currentUser['email'] ?? '');
+            $metadata['submitted_at'] = $nowIso;
+            $metadata['submission_source'] = 'teacher_latex_templates';
+            $packageOptions = ['status' => 'submitted', 'expires_days' => 30];
+        }
+        $templatePackageResult = build_generated_template_package($pdoForLayout, $body, $rcffData, $metadata, $pdfFilename, 'report.rcff', $packageOptions);
+        if ($submitTemplatePackageToAdmin && $templatePackageResult !== null) {
+            template_package_notify_admin_submission($pdoForLayout, $templatePackageResult, $metadata);
+        }
+    } catch (Throwable $e) {
+        $templatePackageError = $e->getMessage();
+        error_log('Template-Paket konnte nicht vorbereitet werden: ' . $e->getMessage());
+    }
+}
 
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
 header_remove();
+if ($templatePackageResult !== null) {
+    if ((string)($templatePackageResult['status'] ?? '') === 'submitted') {
+        header('X-Template-Package-Submitted: 1');
+    } else {
+        header('X-Template-Package-Created: 1');
+    }
+    header('X-Template-Package-Id: ' . (int)$templatePackageResult['id']);
+} elseif ($templatePackageError !== '') {
+    header('X-Template-Package-Error: ' . rawurlencode($templatePackageError));
+}
+header('X-PDF-Postprocess-Enabled: ' . (!empty($pdfPostprocess['enabled']) ? '1' : '0'));
+header('X-PDF-Postprocess-Success: ' . (!empty($pdfPostprocess['success']) ? '1' : '0'));
+header('X-PDF-Postprocess-Method: ' . rawurlencode((string)($pdfPostprocess['method'] ?? 'none')));
+if (empty($pdfPostprocess['success']) && !empty($pdfPostprocess['message'])) {
+    header('X-PDF-Postprocess-Warning: ' . rawurlencode((string)$pdfPostprocess['message']));
+}
 if ($exportRcff && $rcffData !== null && class_exists('ZipArchive')) {
     $zipPath = tempnam(sys_get_temp_dir(), 'leb_rcff_');
     $zip = new ZipArchive();

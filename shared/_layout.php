@@ -31,12 +31,13 @@ function nav_items_for_role(string $role): array {
 
       // Berichte
       ['label'=>t('nav.final_reports'), 'href'=>'admin/report_preview.php', 'files'=>[
-        'export.php','parent_requests.php','report_preview.php','latex_templates.php'], 'children'=>[
+        'export.php','parent_requests.php','report_preview.php','latex_templates.php','template_packages.php'], 'children'=>[
         ['label'=>t('nav.report_preview', 'Berichtsvorschau'), 'href'=>'admin/report_preview.php', 'files'=>['report_preview.php']],
         ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_requests'), 'href'=>'admin/parent_requests.php', 'files'=>['parent_requests.php']],
         ['label'=>'Kompetenzen', 'href'=>'admin/competencies.php', 'files'=>['competencies.php']],
         ['label'=>t('nav.pdf_templates', 'PDF-Vorlagen'), 'href'=>'admin/latex_templates.php', 'files'=>['latex_templates.php']],
+        ['label'=>'Template-Pakete', 'href'=>'admin/template_packages.php', 'files'=>['template_packages.php']],
       ]],
 
       // Stammdaten

@@ -1,0 +1,853 @@
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/../bootstrap.php';
+require __DIR__ . '/_layout.php';
+require_admin();
+require_once __DIR__ . '/../shared/generated_template_packages.php';
+require_once __DIR__ . '/../shared/template_import.php';
+require_once __DIR__ . '/../shared/pdf_form_postprocess.php';
+require_once __DIR__ . '/../shared/template_package_notifications.php';
+
+$pdo = db();
+ensure_generated_template_packages_table($pdo);
+ensure_generated_template_package_storage_dir();
+
+function tp_decode_json(?string $json): array {
+    $data = json_decode((string)$json, true);
+    return is_array($data) ? $data : [];
+}
+
+function tp_bool_label($value): string {
+    return !empty($value) ? t('ui.yes', 'Yes') : t('ui.no', 'No');
+}
+
+function tp_status_label(string $status): string {
+    return match ($status) {
+        'submitted' => t('template_packages.status.submitted', 'Submitted'),
+        'draft' => t('template_packages.status.draft', 'Draft'),
+        'imported' => t('template_packages.status.imported', 'Imported'),
+        'expired' => t('template_packages.status.expired', 'Expired'),
+        default => t('template_packages.status.unknown', 'Unknown'),
+    };
+}
+
+function tp_status_badge(string $status): string {
+    $known = in_array($status, ['draft', 'submitted', 'imported', 'expired'], true) ? $status : 'unknown';
+    return '<span class="tp-status tp-status-' . h($known) . '">' . h(tp_status_label($status)) . '</span>';
+}
+
+function tp_source_label(array $meta): string {
+    $source = (string)($meta['template_source'] ?? '');
+    if (str_starts_with($source, 'package:')) {
+        $name = (string)($meta['latex_template_package_name'] ?? $source);
+        return sprintf(t('latex_templates.template_source.package', 'Package: %s'), $name !== '' ? $name : $source);
+    }
+    if (str_starts_with($source, 'layout:')) {
+        $name = (string)($meta['layout_template_name'] ?? $source);
+        return sprintf(t('latex_templates.template_source.layout', 'Title page: %s'), $name !== '' ? $name : $source);
+    }
+    if (!empty($meta['latex_template_package_id'])) {
+        return sprintf(t('latex_templates.template_source.package', 'Package: %s'), (string)($meta['latex_template_package_name'] ?? ('#' . $meta['latex_template_package_id'])));
+    }
+    if (!empty($meta['layout_template_id'])) {
+        return sprintf(t('latex_templates.template_source.layout', 'Title page: %s'), (string)($meta['layout_template_name'] ?? ('#' . $meta['layout_template_id'])));
+    }
+    return t('latex_templates.template_source.system', 'System template / default layout');
+}
+
+function tp_user_label(array $pkg, array $meta = []): string {
+    $name = trim((string)($meta['submitted_by_name'] ?? $pkg['created_by_name'] ?? ''));
+    $email = trim((string)($meta['submitted_by_email'] ?? $pkg['created_by_email'] ?? ''));
+    if ($name !== '' && $email !== '') return $name . ' <' . $email . '>';
+    if ($name !== '') return $name;
+    if ($email !== '') return $email;
+    return '#' . (string)($pkg['created_by_user_id'] ?? '');
+}
+
+function tp_package_summary(array $pkg): array {
+    $meta = tp_decode_json($pkg['metadata_json'] ?? null);
+    $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
+    return [
+        'metadata' => $meta,
+        'rcff' => $rcff,
+        'field_count' => is_array($rcff['fields'] ?? null) ? count($rcff['fields']) : 0,
+        'suggested_name' => trim((string)($meta['title'] ?? $pkg['title'] ?? '')) ?: 'Importierte Vorlage',
+    ];
+}
+
+function tp_rcff_rating_groups(array $rcff): array {
+    $groups = [];
+    foreach (($rcff['fields'] ?? []) as $field) {
+        if (!is_array($field) || (string)($field['type'] ?? '') !== 'rating') continue;
+        $role = (string)($field['role'] ?? 'default');
+        if (!in_array($role, ['default', 'teacher', 'student'], true)) $role = 'default';
+        if (!isset($groups[$role])) {
+            $groups[$role] = ['role' => $role, 'count' => 0, 'values' => [], 'rating_mode' => (string)($field['rating_mode'] ?? '')];
+        }
+        $groups[$role]['count']++;
+        foreach ((array)($field['rating_values'] ?? []) as $value) {
+            $value = trim((string)$value);
+            if ($value !== '' && !in_array($value, $groups[$role]['values'], true)) $groups[$role]['values'][] = $value;
+        }
+        if ($groups[$role]['rating_mode'] === '' && isset($field['rating_mode'])) $groups[$role]['rating_mode'] = (string)$field['rating_mode'];
+    }
+    $order = ['teacher', 'student', 'default'];
+    uksort($groups, static fn(string $a, string $b): int => array_search($a, $order, true) <=> array_search($b, $order, true));
+    return $groups;
+}
+
+function tp_rating_role_label(string $role): string {
+    return match ($role) {
+        'teacher' => 'Lehrerbewertung',
+        'student' => 'Schülerbewertung',
+        default => 'Bewertungsfelder',
+    };
+}
+
+function tp_rating_list_base_name(string $role, string $templateName): string {
+    $prefix = trim($templateName) !== '' ? trim($templateName) . ' – ' : '';
+    return $prefix . match ($role) {
+        'teacher' => 'Lehrerbewertung (aus RCFF)',
+        'student' => 'Schülerbewertung (aus RCFF)',
+        default => 'Bewertung Standard (aus RCFF)',
+    };
+}
+
+function tp_resolve_rating_list_choices(PDO $pdo, array $ratingGroups, array $post, string $templateName): array {
+    $ratingLists = [];
+    $createdLists = [];
+    $usedLists = [];
+    foreach ($ratingGroups as $role => $group) {
+        $choice = trim((string)($post['rating_list_' . $role] ?? ''));
+        if ($choice === '' || $choice === 'none') continue;
+        if ($choice === 'create') {
+            $created = template_import_create_rating_option_list($pdo, tp_rating_list_base_name($role, $templateName), (array)($group['values'] ?? []), (int)current_user()['id']);
+            $ratingLists[$role] = (int)$created['id'];
+            $createdLists[] = $created + ['role' => $role];
+            $usedLists[$role] = ['id' => (int)$created['id'], 'name' => (string)$created['name'], 'created' => true];
+            continue;
+        }
+        if (preg_match('/^existing:(\d+)$/', $choice, $m)) {
+            $listId = (int)$m[1];
+            if (!template_import_option_list_exists($pdo, $listId)) {
+                throw new RuntimeException('Ausgewählte Auswahlliste #' . $listId . ' wurde nicht gefunden.');
+            }
+            $st = $pdo->prepare('SELECT name FROM option_list_templates WHERE id=? LIMIT 1');
+            $st->execute([$listId]);
+            $name = (string)($st->fetchColumn() ?: ('Liste #' . $listId));
+            $ratingLists[$role] = $listId;
+            $usedLists[$role] = ['id' => $listId, 'name' => $name, 'created' => false];
+            continue;
+        }
+        throw new RuntimeException('Ungültige Auswahllisten-Auswahl für ' . tp_rating_role_label($role) . '.');
+    }
+    return ['rating_lists' => $ratingLists, 'created_lists' => $createdLists, 'used_lists' => $usedLists];
+}
+
+function tp_rcff_stats_text(?array $stats): string {
+    if (!$stats) return 'RCFF wurde nicht angewendet.';
+    $total = (int)($stats['rcff_fields_total'] ?? $stats['read'] ?? 0);
+    $matched = (int)($stats['matched_fields'] ?? $stats['matched'] ?? 0);
+    $updated = (int)($stats['updated_fields'] ?? $stats['updated'] ?? 0);
+    $labels = (int)($stats['labels_updated'] ?? 0);
+    $groups = (int)($stats['groups_updated'] ?? 0);
+    $subs = (int)($stats['subgroups_updated'] ?? 0);
+    $ratings = (int)($stats['rating_meta_updated'] ?? 0);
+    $ratingDetected = (int)($stats['rating_fields_detected'] ?? 0);
+    $ratingLinked = (int)($stats['rating_fields_linked'] ?? 0);
+    $ratingWithoutList = (int)($stats['rating_fields_without_list'] ?? 0);
+    $createdLists = is_array($stats['created_option_lists'] ?? null) ? $stats['created_option_lists'] : [];
+    $usedLists = is_array($stats['used_option_lists'] ?? null) ? $stats['used_option_lists'] : [];
+    $studentEditable = (int)($stats['student_editable_fields_set'] ?? 0);
+    $teacherEditable = (int)($stats['teacher_editable_fields_set'] ?? 0);
+    $rolePermissions = (int)($stats['role_permissions_updated'] ?? 0);
+    $ignored = (int)($stats['ignored_missing_pdf_field'] ?? $stats['ignored'] ?? 0);
+    if ($total > 0 && $matched === 0) {
+        return "RCFF wurde gelesen ({$total} Felder), aber keine Feldnamen passten zu den PDF-Feldern.";
+    }
+    $text = "RCFF: {$total} Felder gelesen, {$matched} gematcht, {$updated} aktualisiert, {$labels} Labels, {$groups} Gruppen, {$subs} Untergruppen, {$ratings} Rating-Metadaten, {$ignored} ohne PDF-Feld.";
+    if ($ratingDetected > 0) {
+        $text .= " Ratingfelder: {$ratingDetected} erkannt, {$ratingLinked} mit Auswahllisten verknüpft" . ($ratingWithoutList > 0 ? ", {$ratingWithoutList} ohne Listen-Zuordnung" : '') . ".";
+    }
+    if ($rolePermissions > 0) {
+        $text .= " Rollenrechte: {$rolePermissions} aktualisiert ({$studentEditable} Schülerfelder, {$teacherEditable} Lehrerfelder).";
+    }
+    if ($usedLists) {
+        $parts = [];
+        foreach ($usedLists as $role => $list) {
+            if (!is_array($list)) continue;
+            $parts[] = tp_rating_role_label((string)$role) . ': ' . (string)($list['name'] ?? ('#' . (string)($list['id'] ?? '')));
+        }
+        if ($parts) $text .= ' Verwendete Listen: ' . implode(', ', $parts) . '.';
+    }
+    if ($createdLists) {
+        $names = array_map(static fn(array $l): string => (string)($l['name'] ?? ('#' . (string)($l['id'] ?? ''))), $createdLists);
+        $text .= ' Neue Auswahllisten: ' . implode(', ', $names) . '.';
+    }
+    return $text;
+}
+
+function tp_log_rcff_application(int $packageId, int $templateId, array $stats): void {
+    error_log('generated_template_package RCFF apply: ' . json_encode([
+        'package_id' => $packageId,
+        'template_id' => $templateId,
+        'rcff_fields_total' => (int)($stats['rcff_fields_total'] ?? $stats['read'] ?? 0),
+        'template_fields_total' => (int)($stats['template_fields_total'] ?? 0),
+        'matches' => (int)($stats['matched_fields'] ?? $stats['matched'] ?? 0),
+        'first_unmatched_rcff_field_names' => array_slice((array)($stats['unmatched_rcff_field_names'] ?? []), 0, 5),
+        'first_template_field_names_if_no_matches' => ((int)($stats['matched_fields'] ?? $stats['matched'] ?? 0) === 0) ? array_slice((array)($stats['sample_template_field_names'] ?? []), 0, 5) : [],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+function tp_set_flash(string $type, string $message, array $details = []): void {
+    $_SESSION['template_packages_flash'] = ['type' => $type, 'message' => $message, 'details' => $details];
+}
+
+function tp_take_flash(): ?array {
+    $flash = $_SESSION['template_packages_flash'] ?? null;
+    unset($_SESSION['template_packages_flash']);
+    return is_array($flash) ? $flash : null;
+}
+
+function tp_redirect_to_package(string $action, int $packageId): never {
+    header('Location: ' . url('admin/template_packages.php?action=' . rawurlencode($action) . '&id=' . $packageId));
+    exit;
+}
+
+function tp_log_import_error(int $packageId, string $action, ?array $pkg, string $reason, array $helperResult = []): void {
+    error_log('generated_template_package import error: ' . json_encode([
+        'package_id' => $packageId,
+        'action' => $action,
+        'status' => is_array($pkg) ? (string)($pkg['status'] ?? '') : null,
+        'imported_template_id' => is_array($pkg) ? (int)($pkg['imported_template_id'] ?? 0) : null,
+        'reason' => $reason,
+        'helper_result' => $helperResult,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+function tp_package_pdf_delete_path(string $pdfPath): array {
+    $pdfPath = ltrim(str_replace('\\', '/', $pdfPath), '/');
+    if ($pdfPath === '' || !preg_match('/\.pdf$/i', $pdfPath) || str_contains($pdfPath, '..')) {
+        throw new RuntimeException('Ungültiger Paket-PDF-Pfad.');
+    }
+    $uploadsRel = generated_template_package_uploads_rel();
+    $expectedPrefix = $uploadsRel . '/generated_template_packages/';
+    if (strncmp($pdfPath, $expectedPrefix, strlen($expectedPrefix)) !== 0) {
+        throw new RuntimeException('Paket-PDF liegt nicht im erlaubten Speicherbereich.');
+    }
+
+    $root = realpath(__DIR__ . '/..');
+    $storageRoot = realpath(generated_template_package_storage_root());
+    if (!$root || !$storageRoot) {
+        throw new RuntimeException('Paket-Speicher konnte nicht sicher geprüft werden.');
+    }
+
+    $abs = $root . '/' . $pdfPath;
+    $parent = dirname($abs);
+    $parentReal = realpath($parent);
+    $storageNorm = rtrim(str_replace('\\', '/', $storageRoot), '/') . '/';
+
+    if (file_exists($abs)) {
+        if (is_link($abs)) {
+            throw new RuntimeException('Paket-PDF darf kein Symlink sein.');
+        }
+        $fileReal = realpath($abs);
+        if (!$fileReal || !is_file($fileReal)) {
+            throw new RuntimeException('Paket-PDF konnte nicht sicher geprüft werden.');
+        }
+        $fileNorm = str_replace('\\', '/', $fileReal);
+        if (strncmp($fileNorm, $storageNorm, strlen($storageNorm)) !== 0) {
+            throw new RuntimeException('Paket-PDF liegt außerhalb des erlaubten Speicherbereichs.');
+        }
+        return ['abs' => $fileReal, 'exists' => true, 'dir' => dirname($fileReal)];
+    }
+
+    if ($parentReal !== false) {
+        $parentNorm = rtrim(str_replace('\\', '/', $parentReal), '/') . '/';
+        if (strncmp($parentNorm, $storageNorm, strlen($storageNorm)) !== 0) {
+            throw new RuntimeException('Paketordner liegt außerhalb des erlaubten Speicherbereichs.');
+        }
+        return ['abs' => $abs, 'exists' => false, 'dir' => $parentReal];
+    }
+
+    return ['abs' => $abs, 'exists' => false, 'dir' => null];
+}
+
+function tp_remove_empty_package_dirs(?string $startDir): void {
+    if (!$startDir) return;
+    $storageRoot = realpath(generated_template_package_storage_root());
+    $dir = realpath($startDir);
+    if (!$storageRoot || !$dir) return;
+
+    $storageNorm = rtrim(str_replace('\\', '/', $storageRoot), '/');
+    for ($i = 0; $i < 3; $i++) { // token, month, year directories at most
+        $dirNorm = rtrim(str_replace('\\', '/', $dir), '/');
+        if ($dirNorm === $storageNorm || strncmp($dirNorm . '/', $storageNorm . '/', strlen($storageNorm) + 1) !== 0) {
+            return;
+        }
+        $items = @scandir($dir);
+        if ($items === false || count(array_diff($items, ['.', '..'])) > 0) {
+            return;
+        }
+        @rmdir($dir);
+        $parent = dirname($dir);
+        if ($parent === $dir) return;
+        $dir = $parent;
+    }
+}
+
+$msg = '';
+$err = '';
+$importedTemplateId = 0;
+$importStats = null;
+$cleanupPdf = null;
+$flash = tp_take_flash();
+if ($flash) {
+    if (($flash['type'] ?? '') === 'success') {
+        $msg = (string)($flash['message'] ?? '');
+        $details = is_array($flash['details'] ?? null) ? $flash['details'] : [];
+        $importedTemplateId = (int)($details['template_id'] ?? 0);
+        $importStats = is_array($details['stats'] ?? null) ? $details['stats'] : null;
+    } elseif (($flash['type'] ?? '') === 'error') {
+        $err = (string)($flash['message'] ?? '');
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string)($_POST['action'] ?? '');
+    $packageId = (int)($_POST['package_id'] ?? 0);
+    $pkgForLog = null;
+    $helperResultForLog = [];
+    try {
+        csrf_verify();
+        if (!in_array($action, ['import_package', 'reapply_rcff', 'delete_package'], true)) {
+            throw new RuntimeException('Unbekannte Aktion.');
+        }
+        if ($packageId <= 0) throw new RuntimeException('Paket fehlt.');
+
+        if ($action === 'delete_package') {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
+            $st->execute([$packageId]);
+            $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            $pkgForLog = $pkg;
+            if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
+
+            $deleteInfo = tp_package_pdf_delete_path((string)($pkg['pdf_path'] ?? ''));
+            $fileMissing = !$deleteInfo['exists'];
+            if ($deleteInfo['exists']) {
+                if (!@unlink((string)$deleteInfo['abs'])) {
+                    error_log('generated_template_package delete file failed: ' . json_encode(['package_id' => $packageId, 'reason' => 'unlink_failed'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    throw new RuntimeException('Paket konnte nicht vollständig gelöscht werden, weil die Datei nicht entfernt werden konnte.');
+                }
+            }
+
+            $pdo->prepare('DELETE FROM generated_template_packages WHERE id=?')->execute([$packageId]);
+            $pdo->commit();
+            template_package_notify_teacher_deleted($pkg);
+            tp_remove_empty_package_dirs(is_string($deleteInfo['dir'] ?? null) ? $deleteInfo['dir'] : null);
+            audit('generated_template_package_delete', (int)current_user()['id'], [
+                'package_id' => $packageId,
+                'status' => (string)($pkg['status'] ?? ''),
+                'imported_template_id' => (int)($pkg['imported_template_id'] ?? 0),
+                'pdf_missing' => $fileMissing,
+            ]);
+            tp_set_flash('success', $fileMissing ? 'Template-Paket wurde gelöscht. Die gespeicherte PDF-Datei war bereits nicht mehr vorhanden.' : 'Template-Paket wurde gelöscht.');
+            header('Location: ' . url('admin/template_packages.php'));
+            exit;
+        }
+
+        if ($action === 'reapply_rcff') {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
+            $st->execute([$packageId]);
+            $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+            $pkgForLog = $pkg;
+            if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
+            $templateId = (int)($pkg['imported_template_id'] ?? 0);
+            if ((string)($pkg['status'] ?? '') !== 'imported' || $templateId <= 0) {
+                throw new RuntimeException('RCFF kann nur für bereits importierte Pakete erneut angewendet werden.');
+            }
+            $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
+            if (($rcff['format'] ?? '') !== 'rcff' || (int)($rcff['version'] ?? 0) !== 1 || !is_array($rcff['fields'] ?? null)) {
+                throw new RuntimeException('Gespeicherte RCFF-Daten sind ungültig.');
+            }
+            $rcffStats = apply_rcff_to_template_fields($pdo, $templateId, $rcff);
+            $helperResultForLog = ['rcff_stats' => $rcffStats];
+            tp_log_rcff_application($packageId, $templateId, $rcffStats);
+            $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
+            $metadata['rcff_reapply'] = [
+                'reapplied_by_user_id' => (int)current_user()['id'],
+                'reapplied_at' => gmdate('c'),
+                'template_id' => $templateId,
+                'rcff_stats' => $rcffStats,
+            ];
+            $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($metadataJson !== false) {
+                $pdo->prepare('UPDATE generated_template_packages SET metadata_json=? WHERE id=?')->execute([$metadataJson, $packageId]);
+            }
+            audit('generated_template_package_rcff_reapply', (int)current_user()['id'], ['package_id' => $packageId, 'template_id' => $templateId, 'rcff_stats' => $rcffStats]);
+            $pdo->commit();
+            tp_set_flash('success', 'RCFF wurde erneut auf das Template angewendet.', [
+                'template_id' => $templateId,
+                'stats' => ['fields' => (int)($rcffStats['template_fields_total'] ?? 0), 'rcff' => $rcffStats],
+            ]);
+            tp_redirect_to_package('view', $packageId);
+        }
+
+        // First import path. Load and lock the package before validating the submitted
+        // browser-side field payload so a double-click on an already imported package
+        // is treated as the successful end state, not as a new failed import.
+        $pdo->beginTransaction();
+        $st = $pdo->prepare('SELECT * FROM generated_template_packages WHERE id=? LIMIT 1 FOR UPDATE');
+        $st->execute([$packageId]);
+        $pkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        $pkgForLog = $pkg;
+        if (!$pkg) throw new RuntimeException('Template-Paket nicht gefunden.');
+        $status = (string)($pkg['status'] ?? '');
+        $alreadyTemplateId = (int)($pkg['imported_template_id'] ?? 0);
+        if ($status === 'imported' && $alreadyTemplateId > 0) {
+            $pdo->commit();
+            tp_set_flash('success', 'Dieses Paket wurde bereits importiert.', [
+                'template_id' => $alreadyTemplateId,
+                'stats' => null,
+            ]);
+            tp_redirect_to_package('imported', $packageId);
+        }
+        if (!in_array($status, ['draft', 'submitted'], true)) {
+            throw new RuntimeException('Dieses Paket kann nicht übernommen werden (Status: ' . $status . ').');
+        }
+
+        $templateName = trim((string)($_POST['template_name'] ?? ''));
+        $useRcff = (string)($_POST['apply_rcff'] ?? '1') === '1';
+        $fieldsJson = (string)($_POST['fields_json'] ?? '');
+        if ($templateName === '') throw new RuntimeException('Template-Name darf nicht leer sein.');
+        if ((function_exists('mb_strlen') ? mb_strlen($templateName) : strlen($templateName)) > 255) throw new RuntimeException('Template-Name ist zu lang.');
+        $fields = json_decode($fieldsJson, true);
+
+        $pdfAbs = generated_template_package_pdf_absolute_path((string)$pkg['pdf_path']);
+        $expectedSha = trim((string)($pkg['pdf_sha256'] ?? ''));
+        if ($expectedSha !== '') {
+            $actualSha = hash_file('sha256', $pdfAbs) ?: '';
+            if (!hash_equals($expectedSha, $actualSha)) {
+                throw new RuntimeException('SHA-256-Prüfung der Paket-PDF ist fehlgeschlagen.');
+            }
+        }
+        $pdfFormStructure = inspect_pdf_form_structure($pdfAbs);
+        $fieldImportSource = 'acroform_or_pdfjs';
+        if (!is_array($fields) || !$fields) {
+            $fields = extract_pdf_widget_fields_from_file($pdfAbs);
+            $fieldImportSource = 'page_widget_annotations_server_fallback';
+        }
+        if (!is_array($fields) || !$fields) {
+            throw new RuntimeException(t('template_packages.pdf.no_form_fields', 'No form fields found in PDF.'));
+        }
+
+        $rcff = tp_decode_json($pkg['rcff_json'] ?? null);
+        $ratingListResolution = ['rating_lists' => [], 'created_lists' => [], 'used_lists' => []];
+        if ($useRcff) {
+            if (($rcff['format'] ?? '') !== 'rcff' || (int)($rcff['version'] ?? 0) !== 1 || !is_array($rcff['fields'] ?? null)) {
+                throw new RuntimeException('Gespeicherte RCFF-Daten sind ungültig.');
+            }
+            $ratingGroups = tp_rcff_rating_groups($rcff);
+            if ($ratingGroups) {
+                $ratingListResolution = tp_resolve_rating_list_choices($pdo, $ratingGroups, $_POST, $templateName);
+            }
+        }
+
+        $origFilename = (string)($pkg['pdf_filename'] ?? 'vorlage.pdf');
+        if (!preg_match('/\.pdf$/i', $origFilename)) $origFilename = 'vorlage.pdf';
+        $created = create_template_from_pdf_file($pdo, $pdfAbs, $templateName, $origFilename, (int)current_user()['id']);
+        $cleanupPdf = $created['pdf_abs_path'] ?? null;
+        $templateId = (int)$created['template_id'];
+
+        $fieldCount = import_pdf_fields_to_template($pdo, $templateId, $fields);
+        $rcffStats = $useRcff ? apply_rcff_to_template_fields($pdo, $templateId, $rcff, ['rating_lists' => $ratingListResolution['rating_lists']]) : null;
+        if (is_array($rcffStats)) {
+            $rcffStats['created_option_lists'] = $ratingListResolution['created_lists'];
+            $rcffStats['used_option_lists'] = $ratingListResolution['used_lists'];
+        }
+        $helperResultForLog = ['field_count' => $fieldCount, 'rcff_stats' => $rcffStats, 'rating_lists' => $ratingListResolution];
+        if (is_array($rcffStats)) tp_log_rcff_application($packageId, $templateId, $rcffStats);
+
+        $metadata = tp_decode_json($pkg['metadata_json'] ?? null);
+        $metadata['import'] = [
+            'imported_by_user_id' => (int)current_user()['id'],
+            'imported_template_id' => $templateId,
+            'imported_at' => gmdate('c'),
+            'applied_rcff' => $useRcff,
+            'field_count' => $fieldCount,
+            'field_import_source' => $fieldImportSource,
+            'pdf_form_structure' => $pdfFormStructure,
+            'rcff_stats' => $rcffStats,
+            'rating_lists' => $ratingListResolution['used_lists'],
+            'created_option_lists' => $ratingListResolution['created_lists'],
+        ];
+        $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($metadataJson === false) $metadataJson = (string)$pkg['metadata_json'];
+
+        $upd = $pdo->prepare("UPDATE generated_template_packages SET status='imported', imported_template_id=?, imported_at=NOW(), metadata_json=? WHERE id=?");
+        $upd->execute([$templateId, $metadataJson, $packageId]);
+
+        audit('generated_template_package_import', (int)current_user()['id'], [
+            'package_id' => $packageId,
+            'template_id' => $templateId,
+            'field_count' => $fieldCount,
+            'rcff_stats' => $rcffStats,
+        ]);
+
+        $pdo->commit();
+        template_package_notify_teacher_imported($pkg, $templateName);
+        $cleanupPdf = null;
+        tp_set_flash('success', t('template_packages.flash.imported', 'Template was created successfully.'), [
+            'template_id' => $templateId,
+            'stats' => ['fields' => $fieldCount, 'rcff' => $rcffStats],
+        ]);
+        tp_redirect_to_package('imported', $packageId);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        if (is_string($cleanupPdf) && $cleanupPdf !== '' && is_file($cleanupPdf)) {
+            @unlink($cleanupPdf);
+            @rmdir(dirname($cleanupPdf));
+        }
+        tp_log_import_error($packageId, $action, $pkgForLog, $e->getMessage(), $helperResultForLog);
+        tp_set_flash('error', $e->getMessage());
+        if ($packageId > 0) {
+            tp_redirect_to_package('view', $packageId);
+        }
+        header('Location: ' . url('admin/template_packages.php'));
+        exit;
+    }
+}
+
+$viewAction = (string)($_GET['action'] ?? '');
+$confirmId = (int)($_GET['id'] ?? ($_GET['import'] ?? 0));
+$confirmPkg = null;
+$confirmSummary = null;
+if ($confirmId > 0) {
+    $st = $pdo->prepare('SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id WHERE p.id=? LIMIT 1');
+    $st->execute([$confirmId]);
+    $confirmPkg = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($confirmPkg) $confirmSummary = tp_package_summary($confirmPkg);
+}
+
+$statusFilter = (string)($_GET['status'] ?? '');
+$allowedStatusFilters = ['draft', 'submitted', 'imported', 'expired'];
+$where = in_array($statusFilter, $allowedStatusFilters, true) ? ' WHERE p.status=?' : '';
+$sql = "SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM generated_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id" . $where . " ORDER BY CASE WHEN p.status='submitted' THEN 0 ELSE 1 END, COALESCE(p.submitted_to_admin_at, p.created_at) DESC, p.id DESC LIMIT 200";
+if ($where !== '') {
+    $stPackages = $pdo->prepare($sql);
+    $stPackages->execute([$statusFilter]);
+    $packages = $stPackages->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} else {
+    $packages = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+$optionLists = [];
+try {
+    $optionLists = template_import_option_list_templates($pdo);
+} catch (Throwable $e) {
+    error_log('Template-Pakete: Auswahllisten konnten nicht geladen werden: ' . $e->getMessage());
+    if ($err === '') {
+        $err = 'Auswahllisten konnten nicht geladen werden. Die Paketliste bleibt verfügbar; technische Details wurden protokolliert.';
+    }
+}
+
+render_admin_header(t('template_packages.title', 'Template packages'));
+?>
+
+<style>
+.tp-status{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.85em;font-weight:700;border:1px solid transparent;}
+.tp-status-draft{background:#f2f4f7;color:#344054;border-color:#d0d5dd;}
+.tp-status-submitted{background:#e0f2fe;color:#075985;border-color:#7dd3fc;}
+.tp-status-imported{background:#dcfae6;color:#067647;border-color:#75e0a7;}
+.tp-status-expired,.tp-status-unknown{background:#fef3c7;color:#92400e;border-color:#fcd34d;}
+.tp-actions{display:flex;gap:6px;flex-wrap:wrap;}
+</style>
+<h1><?=h(t('template_packages.title', 'Template packages'))?></h1>
+<p class="muted"><?=h(t('template_packages.intro', 'View prepared PDF+RCFF packages and import them as PDF templates.'))?></p>
+
+<?php if ($msg): ?>
+  <div class="card" style="border-left:4px solid #067647;">
+    <?=h($msg)?>
+    <?php if ($importedTemplateId > 0): ?>
+      <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $importedTemplateId))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a>
+    <?php endif; ?>
+    <?php if (is_array($importStats)): ?>
+      <div class="muted" style="margin-top:8px;">PDF-Felder: <?=h((string)($importStats['fields'] ?? 0))?> · <?=h(tp_rcff_stats_text(is_array($importStats['rcff'] ?? null) ? $importStats['rcff'] : null))?></div>
+    <?php endif; ?>
+  </div>
+<?php endif; ?>
+<?php if ($err): ?><div class="card" style="border-left:4px solid #b42318;"><?=h($err)?></div><?php endif; ?>
+
+<?php if ($confirmPkg && $confirmSummary): ?>
+  <?php
+    $confirmStatus = (string)($confirmPkg['status'] ?? '');
+    $confirmImportedTemplateId = (int)($confirmPkg['imported_template_id'] ?? 0);
+    $canImport = in_array($confirmStatus, ['draft','submitted'], true);
+    $isImported = ($confirmStatus === 'imported');
+    $cardColor = ($viewAction === 'delete') ? '#b42318' : ($isImported && $confirmImportedTemplateId > 0 ? '#067647' : ($canImport ? '#0b57d0' : '#b54708'));
+  ?>
+  <div class="card" style="border-left:4px solid <?= h($cardColor) ?>;">
+    <h2><?= ($viewAction === 'delete') ? 'Template-Paket löschen' : ($isImported ? 'Template-Paket' : 'Template-Paket übernehmen') ?></h2>
+    <p><strong><?=h((string)$confirmPkg['title'])?></strong></p>
+    <p class="muted"><?=tp_status_badge($confirmStatus)?> · <?=h(t('template_packages.table.rcff_fields', 'RCFF fields'))?>: <?=h((string)$confirmSummary['field_count'])?> · Paket #<?=h((string)$confirmPkg['id'])?></p>
+    <?php if ($confirmStatus === 'submitted'): ?>
+      <p class="muted">Eingereicht von <?=h(tp_user_label($confirmPkg, $confirmSummary['metadata']))?><?= !empty($confirmPkg['submitted_to_admin_at']) ? ' am ' . h((string)$confirmPkg['submitted_to_admin_at']) : '' ?>.</p>
+    <?php endif; ?>
+    <p class="muted">Klasse: <?=h((string)($confirmSummary['metadata']['grade_level'] ?? ''))?> · Layout: <?=h((string)($confirmSummary['metadata']['layout_template_name'] ?? ''))?> · S/T: <?=h(tp_bool_label($confirmSummary['metadata']['student_teacher_ratings'] ?? false))?> · SEL/AG: <?=h('SEL ' . tp_bool_label($confirmSummary['metadata']['show_sel'] ?? false) . ' / AG ' . tp_bool_label($confirmSummary['metadata']['show_ag'] ?? false))?></p>
+    <?php $pdfDiag = $confirmSummary['metadata']['pdf_form_structure'] ?? ($confirmSummary['metadata']['pdf_postprocess']['pdf_form_structure_after'] ?? ($confirmSummary['metadata']['pdf_postprocess']['acroform_after'] ?? null)); ?>
+    <?php if (is_array($pdfDiag)): ?>
+      <details class="muted" style="margin:8px 0;">
+        <summary><?=h(t('template_packages.pdf.diagnostics', 'PDF form structure diagnostics'))?></summary>
+        <?php if (!empty($pdfDiag['warning'])): ?><p><?=h((string)$pdfDiag['warning'])?></p><?php endif; ?>
+        <ul>
+          <li><?=h(t('template_packages.pdf.diag_acroform_fields', 'AcroForm Fields'))?>: <?=h((string)($pdfDiag['acroform_fields_count'] ?? 0))?></li>
+          <li><?=h(t('template_packages.pdf.diag_widget_annotations', 'Widget annotations'))?>: <?=h((string)($pdfDiag['page_widget_annotations_count'] ?? $pdfDiag['widget_annotations_count'] ?? 0))?></li>
+          <li><?=h(t('template_packages.pdf.diag_widgets_with', 'Widgets with'))?> /T: <?=h((string)($pdfDiag['widgets_with_T_count'] ?? 0))?> · /FT: <?=h((string)($pdfDiag['widgets_with_FT_count'] ?? 0))?> · /Parent: <?=h((string)($pdfDiag['widgets_with_parent_count'] ?? 0))?></li>
+          <li>/DA: <?=h(tp_bool_label($pdfDiag['acroform_DA'] ?? false))?> · /DR: <?=h(tp_bool_label($pdfDiag['acroform_DR'] ?? false))?> · NeedAppearances: <?=h(($pdfDiag['need_appearances'] ?? null) === null ? '—' : tp_bool_label($pdfDiag['need_appearances']))?></li>
+        </ul>
+      </details>
+    <?php endif; ?>
+    <?php if ($viewAction === 'delete'): ?>
+      <?php if ($confirmImportedTemplateId > 0): ?>
+        <p><strong>Warnung:</strong> Das daraus erzeugte Template #<?=h((string)$confirmImportedTemplateId)?> bleibt erhalten. Nur das vorbereitete Paket und die gespeicherte Paket-PDF werden gelöscht.</p>
+      <?php else: ?>
+        <p><strong>Warnung:</strong> Dieses vorbereitete Paket wird gelöscht. Es kann danach nicht mehr als Template übernommen werden.</p>
+      <?php endif; ?>
+      <form method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="delete_package">
+        <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
+        <button class="btn danger" type="submit">Paket endgültig löschen</button>
+      </form>
+      <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>
+    <?php elseif ($isImported && $confirmImportedTemplateId > 0): ?>
+      <p>Dieses Paket wurde bereits als Template übernommen.</p>
+      <p><a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id=' . $confirmImportedTemplateId))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a></p>
+      <form method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="reapply_rcff">
+        <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
+        <button class="btn secondary" type="submit"><?=h(t('template_packages.action.reapply_rcff', 'Reapply RCFF'))?></button>
+      </form>
+    <?php elseif ($isImported): ?>
+      <p>Dieses Paket ist als importiert markiert, aber es ist kein Template verknüpft.</p>
+    <?php elseif ($canImport): ?>
+      <form method="post" id="importPackageForm">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="action" value="import_package">
+        <input type="hidden" name="package_id" value="<?=h((string)$confirmPkg['id'])?>">
+        <input type="hidden" name="fields_json" id="fieldsJson" value="">
+        <label style="display:block;margin:10px 0;">
+          <strong>Template-Name</strong><br>
+          <input class="input" name="template_name" maxlength="255" required value="<?=h((string)$confirmSummary['suggested_name'])?>" style="max-width:620px;">
+        </label>
+        <label style="display:block;margin:10px 0;">
+          <input type="hidden" name="apply_rcff" value="0">
+          <input type="checkbox" name="apply_rcff" value="1" checked> Feldbeschriftungen, Gruppen/Untergruppen und Rating-Metadaten aus RCFF übernehmen
+        </label>
+        <?php $ratingGroups = tp_rcff_rating_groups($confirmSummary['rcff']); ?>
+        <?php if ($ratingGroups): ?>
+          <div class="card" style="margin:12px 0;padding:12px;border-left:4px solid #0b57d0;">
+            <h3 style="margin-top:0;">Bewertungsfelder / Auswahllisten</h3>
+            <p class="muted">Ratingfelder aus RCFF können bestehenden Auswahllisten zugeordnet oder als neue Listen in der Icon-Library angelegt werden. Ohne Zuordnung bleiben bestehende Feld-Optionen unverändert.</p>
+            <?php foreach ($ratingGroups as $role => $group): ?>
+              <label style="display:block;margin:10px 0;">
+                <strong><?=h(tp_rating_role_label((string)$role))?></strong>
+                <span class="muted">(<?=h((string)$group['count'])?> Felder · Werte: <?=h(implode(', ', (array)$group['values']))?>)</span><br>
+                <select class="input" name="rating_list_<?=h((string)$role)?>" style="max-width:520px;">
+                  <option value="create" selected>Neue Liste aus RCFF-Werten anlegen</option>
+                  <?php foreach ($optionLists as $list): ?>
+                    <option value="existing:<?=h((string)$list['id'])?>">Bestehende Liste: <?=h((string)$list['name'])?></option>
+                  <?php endforeach; ?>
+                  <option value="none">Keine Liste zuordnen</option>
+                </select>
+              </label>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+        <p id="extractStatus" class="muted">PDF-Formularfelder werden ausgelesen …</p>
+        <button class="btn primary" id="importSubmit" type="submit" disabled><?=h(t('template_packages.action.import', 'Import as template'))?></button>
+        <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Abbrechen</a>
+      </form>
+      <iframe id="packagePdfPreview" src="<?=h(url('admin/template_package_file.php?package_id=' . (int)$confirmPkg['id']))?>" style="width:100%;height:70vh;margin-top:14px;border:1px solid var(--border);border-radius:10px;"></iframe>
+      <script type="module">
+      import * as pdfjsLib from <?=json_encode(url('assets/pdfjs/pdf.min.mjs'))?>;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = <?=json_encode(url('assets/pdfjs/pdf.worker.min.mjs'))?>;
+      const pdfUrl = <?=json_encode(url('admin/template_package_file.php?package_id=' . (int)$confirmPkg['id']))?>;
+      const statusEl = document.getElementById('extractStatus');
+      const fieldsEl = document.getElementById('fieldsJson');
+      const submitEl = document.getElementById('importSubmit');
+      const formEl = document.getElementById('importPackageForm');
+      const FIELD_TYPES = ['text','multiline','date','number','grade','checkbox','radio','select','signature'];
+      const MSG_WIDGET_FALLBACK = <?=json_encode(t('template_packages.pdf.widgets_fallback', 'PDF has no AcroForm Fields tree; fields were imported from page widget annotations.'))?>;
+      const MSG_FIELDS_READY = <?=json_encode(t('template_packages.pdf.fields_ready', '{count} PDF form fields detected. Import can be started.'))?>;
+      const MSG_FIELDS_ERROR = <?=json_encode(t('template_packages.pdf.fields_error', 'PDF form fields could not be read: {error}'))?>;
+      function normalizeType(rawType, multilineFlag){
+        const t = String(rawType || '').trim();
+        const u = t.toUpperCase();
+        if (u === 'TX' || u === 'TEXT') return multilineFlag ? 'multiline' : 'text';
+        if (u === 'CH' || u === 'SELECT') return 'select';
+        if (u === 'SIG' || u === 'SIGNATURE') return 'signature';
+        if (u === 'BTN') return 'checkbox';
+        if (u === 'CHECKBOX') return 'checkbox';
+        if (u === 'RADIO') return 'radio';
+        return 'radio';
+      }
+      async function extractFieldsFromPdf(){
+        const pdf = await pdfjsLib.getDocument({ url: pdfUrl, withCredentials:true }).promise;
+        const out = new Map();
+        let sort = 0;
+        let acroFieldCount = 0;
+        let widgetAnnotationCount = 0;
+        if (pdf.getFieldObjects) {
+          const fo = await pdf.getFieldObjects();
+          if (fo && typeof fo === 'object') {
+            for (const [name, arr] of Object.entries(fo)) {
+              const first = (Array.isArray(arr) && arr[0]) ? arr[0] : {};
+              acroFieldCount++;
+              const rawType = first.type || first.fieldType || '';
+              const multilineFlag = !!(first.multiline || first.multiLine);
+              const type = normalizeType(rawType, multilineFlag);
+              out.set(String(name), { name:String(name), type, label:String(name), help_text:'', multiline:multilineFlag, sort:sort++, meta:{ type:rawType, multiline:multilineFlag } });
+            }
+          }
+        }
+        for (let p=1; p<=pdf.numPages; p++) {
+          const page = await pdf.getPage(p);
+          const annots = await page.getAnnotations({ intent:'display' });
+          for (const a of annots) {
+            if (a.subtype !== 'Widget') continue;
+            widgetAnnotationCount++;
+            const name = String(a.fieldName || '').trim();
+            if (!name) continue;
+            const rect = Array.isArray(a.rect) && a.rect.length === 4 ? a.rect : null;
+            const rawType = a.fieldType || a.type || '';
+            let type = normalizeType(rawType, false);
+            if (a.radioButton === true) type = 'radio';
+            if (a.checkBox === true) type = 'checkbox';
+            const hint = (a.alternativeText || a.altText || a.tooltip || a.title || a.fieldLabel || '')?.toString?.() || '';
+            if (!out.has(name)) {
+              out.set(name, { name, type: FIELD_TYPES.includes(type) ? type : 'radio', label:name, help_text:hint || '', multiline:false, sort:sort++, meta:{ type:rawType } });
+            } else {
+              const item = out.get(name);
+              if (item && type === 'radio') item.type = 'radio';
+              if (item && !item.help_text && hint) item.help_text = hint;
+            }
+            const item = out.get(name);
+            if (item && rect) {
+              item.meta = item.meta || {};
+              if (!item.meta.page) item.meta.page = p;
+              if (!item.meta.rect) item.meta.rect = rect;
+            }
+          }
+        }
+        const fields = Array.from(out.values()).sort((a,b)=>(a.sort ?? 0)-(b.sort ?? 0)).map((f,i)=>({
+          ...f,
+          sort:i,
+          can_child_edit:0,
+          can_teacher_edit:1,
+          label:f.label || f.name,
+          help_text:f.help_text || '',
+          type:FIELD_TYPES.includes(f.type) ? f.type : 'radio'
+        }));
+        return { fields, acroFieldCount, widgetAnnotationCount };
+      }
+      try {
+        const result = await extractFieldsFromPdf();
+        const fields = result.fields || [];
+        fieldsEl.value = JSON.stringify(fields);
+        let statusText = MSG_FIELDS_READY.replace('{count}', String(fields.length));
+        if ((result.acroFieldCount || 0) === 0 && (result.widgetAnnotationCount || 0) > 0 && fields.length > 0) {
+          statusText += ' ' + MSG_WIDGET_FALLBACK;
+        }
+        statusEl.textContent = statusText;
+        submitEl.disabled = fields.length === 0;
+      } catch (e) {
+        statusEl.textContent = MSG_FIELDS_ERROR.replace('{error}', String(e && e.message ? e.message : e));
+        submitEl.disabled = true;
+      }
+      formEl.addEventListener('submit', (event)=>{
+        if (!fieldsEl.value) {
+          event.preventDefault();
+          alert('Bitte warten, bis die PDF-Formularfelder ausgelesen wurden.');
+        }
+      });
+      </script>
+    <?php else: ?>
+      <?php if ($confirmStatus === 'expired'): ?>
+        <p>Dieses Paket ist abgelaufen und kann nicht mehr übernommen werden.</p>
+      <?php else: ?>
+        <p>Dieses Paket kann wegen seines Status nicht übernommen werden. Bitte prüfen: <?=h($confirmStatus !== '' ? $confirmStatus : 'unbekannt')?>.</p>
+      <?php endif; ?>
+      <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Zurück zur Paketliste</a>
+    <?php endif; ?>
+  </div>
+<?php elseif ($confirmId > 0): ?>
+  <div class="card" style="border-left:4px solid #b42318;">Paket nicht gefunden.</div>
+<?php endif; ?>
+
+<div class="card">
+  <h2><?=h(t('template_packages.title', 'Template packages'))?></h2>
+  <div class="tp-actions" style="margin:8px 0 14px;">
+    <?php $filters = ['' => t('template_packages.filter.all', 'All'), 'submitted' => tp_status_label('submitted'), 'draft' => tp_status_label('draft'), 'imported' => tp_status_label('imported'), 'expired' => tp_status_label('expired')]; ?>
+    <?php foreach ($filters as $filter => $label): ?>
+      <a class="btn <?= $statusFilter === $filter ? 'primary' : 'secondary' ?>" href="<?=h(url('admin/template_packages.php' . ($filter !== '' ? ('?status=' . rawurlencode($filter)) : '')))?>"><?=h($label)?></a>
+    <?php endforeach; ?>
+  </div>
+  <?php if (!$packages): ?>
+    <p class="muted"><?=h(t('template_packages.empty', 'No template packages yet.'))?></p>
+  <?php else: ?>
+    <div style="overflow:auto;">
+      <table class="table" style="min-width:980px;width:100%;">
+        <thead><tr>
+          <th><?=h(t('template_packages.table.status', 'Status'))?></th>
+          <th><?=h(t('template_packages.table.title', 'Title'))?></th>
+          <th><?=h(t('template_packages.table.grade', 'Grade'))?></th>
+          <th><?=h(t('template_packages.table.source', 'Source/type'))?></th>
+          <th><?=h(t('template_packages.table.submitted_by', 'Submitted by'))?></th>
+          <th><?=h(t('template_packages.table.created_submitted', 'Created/submitted'))?></th>
+          <th><?=h(t('template_packages.table.rcff_fields', 'RCFF fields'))?></th>
+          <th><?=h(t('template_packages.table.actions', 'Actions'))?></th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($packages as $pkg): $summary = tp_package_summary($pkg); $meta = $summary['metadata']; $status = (string)$pkg['status']; $can = in_array($status, ['draft','submitted'], true); ?>
+          <tr style="<?= $status === 'submitted' ? 'background:#f0f9ff;' : '' ?>">
+            <td><?=tp_status_badge($status)?></td>
+            <td><strong><?=h((string)$pkg['title'])?></strong><br><span class="muted">#<?=h((string)$pkg['id'])?></span></td>
+            <td><?=h((string)($meta['grade_level'] ?? ''))?></td>
+            <td><?=h(tp_source_label($meta))?><br><span class="muted"><?=h((string)$pkg['created_by_role'])?></span></td>
+            <td><?= $status === 'submitted' ? h(tp_user_label($pkg, $meta)) : '<span class="muted">—</span>' ?></td>
+            <td><?=h((string)($pkg['submitted_to_admin_at'] ?: $pkg['created_at']))?></td>
+            <td><?=h((string)$summary['field_count'])?></td>
+            <td>
+              <div class="tp-actions">
+                <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=view&id=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.view', 'View'))?></a>
+                <?php if ($can): ?>
+                  <a class="btn primary" href="<?=h(url('admin/template_packages.php?import=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.import', 'Import as template'))?></a>
+                <?php endif; ?>
+                <?php if ((int)($pkg['imported_template_id'] ?? 0) > 0): ?>
+                  <a class="btn secondary" href="<?=h(url('admin/template_fields.php?template_id=' . (int)$pkg['imported_template_id']))?>"><?=h(t('template_packages.action.edit_fields', 'Edit fields'))?></a>
+                <?php endif; ?>
+                <?php if ($status === 'imported' && (int)($pkg['imported_template_id'] ?? 0) > 0): ?>
+                  <form method="post" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="action" value="reapply_rcff">
+                    <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
+                    <button class="btn secondary" type="submit"><?=h(t('template_packages.action.reapply_rcff', 'Reapply RCFF'))?></button>
+                  </form>
+                <?php endif; ?>
+                <a class="btn secondary" href="<?=h(url('admin/template_packages.php?action=delete&id=' . (int)$pkg['id']))?>"><?=h(t('template_packages.action.delete', 'Delete'))?></a>
+              </div>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
+</div>
+
+
+<?php render_admin_footer(); ?>

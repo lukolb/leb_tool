@@ -2100,6 +2100,7 @@ render_teacher_header($pageTitle);
   const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm'))?>;
   const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear'))?>;
+  const TEMPLATE_CONFLICT_CONFIRM_FALLBACK = <?=json_encode(t('teacher.entry.template_conflict.message'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
   const MEETING_MODE = (<?=json_encode($meetingMode ? 1 : 0)?> === 1);
@@ -6155,7 +6156,7 @@ render_teacher_header($pageTitle);
       if (!forceTemplateReplace && rawMsg.startsWith(prefix)) {
         let info = null;
         try { info = JSON.parse(rawMsg.slice(prefix.length)); } catch (_err) { info = null; }
-        const confirmMsg = String(info?.message || 'Für diesen Schüler existiert im selben Semester bereits ein Bericht mit anderer Vorlage. Soll der bestehende Bericht gelöscht und neu erstellt werden?');
+        const confirmMsg = String(info?.message || TEMPLATE_CONFLICT_CONFIRM_FALLBACK);
         if (window.confirm(confirmMsg)) {
           await loadClass(classId, { forceTemplateReplace: true });
           return;

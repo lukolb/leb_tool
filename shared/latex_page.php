@@ -27,6 +27,7 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
 
         if (!isset($sections[$catId]['subs'][$subId])) {
             $sections[$catId]['subs'][$subId] = [
+                'id' => $subId,
                 'de' => (string)($r['sub_de'] ?? ''),
                 'en' => (string)($r['sub_en'] ?? ''),
                 'items' => [],
@@ -75,6 +76,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 <p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
 
 <form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
+<input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>">
 <input type="hidden" name="source" value="db">
 <input type="hidden" name="grade_level" value="<?= h((string)$selectedGrade) ?>">
 <div class="card" style="padding:12px;margin:12px 0;">
@@ -101,15 +103,51 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <input type="hidden" name="export_rcff" value="0">
     <input type="checkbox" name="export_rcff" value="1"> Zusätzlich RCFF-Felddatei exportieren
   </label>
+  <?php if (!empty($allowTemplatePackage)): ?>
+  <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
+    <input type="hidden" name="create_template_package" value="0">
+    <input type="checkbox" name="create_template_package" value="1"> Als Template-Paket vorbereiten (PDF + Felddaten)
+  </label>
+  <p class="muted" style="margin:6px 0 0;">Speichert intern PDF, RCFF-Felddaten und Generierungsmetadaten für eine spätere Vorlagenübernahme.</p>
+  <?php endif; ?>
+  <?php if (!empty($allowTeacherTemplateSubmission)): ?>
+  <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
+    <input type="hidden" name="submit_template_package_to_admin" value="0">
+    <input type="checkbox" name="submit_template_package_to_admin" value="1"> Als Vorlage an Admin senden
+  </label>
+  <p class="muted" style="margin:6px 0 0;">Das PDF und die Felddaten werden intern gespeichert. Der Admin kann daraus eine Vorlage anlegen.</p>
+  <?php endif; ?>
 </div>
 
+<?php
+  $ltpList = !empty($allowLatexTemplatePackageSelection) && is_array($latexTemplatePackages ?? null) ? $latexTemplatePackages : [];
+  $defaultPackageId = 0;
+  foreach ($ltpList as $pkg) {
+      if ((int)($pkg['is_default'] ?? 0) === 1) { $defaultPackageId = (int)($pkg['id'] ?? 0); break; }
+  }
+  $selectedTemplateSource = $defaultPackageId > 0 ? ('package:' . $defaultPackageId) : ($defaultLayoutId > 0 ? ('layout:' . $defaultLayoutId) : 'system');
+?>
 <div class="card" style="padding:12px;margin:12px 0;">
-  <label><strong>Titelseitenvorlage</strong></label>
-  <select class="input" name="layout_template_id">
-    <?php foreach ($layoutTemplates as $tpl): ?>
-      <option value="<?= h((string)$tpl['id']) ?>" <?= ((int)$tpl['id'] === $defaultLayoutId) ? 'selected' : '' ?>><?= h((string)$tpl['display_name']) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
-    <?php endforeach; ?>
+  <label for="template_source"><strong><?=h(t('latex_templates.template_source.label'))?></strong></label>
+  <select class="input" name="template_source" id="template_source">
+    <optgroup label="<?=h(t('latex_templates.template_source.system_group'))?>">
+      <option value="system" <?= $selectedTemplateSource === 'system' ? 'selected' : '' ?>><?=h(t('latex_templates.template_source.system'))?></option>
+      <?php foreach ($layoutTemplates as $tpl): ?>
+        <?php $sourceValue = 'layout:' . (int)$tpl['id']; ?>
+        <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.layout'), (string)$tpl['display_name'])) ?> (<?= h((string)$tpl['key_name']) ?>)</option>
+      <?php endforeach; ?>
+    </optgroup>
+    <?php if ($ltpList): ?>
+      <optgroup label="<?=h(t('latex_templates.template_source.package_group'))?>">
+        <?php foreach ($ltpList as $pkg): ?>
+          <?php $sourceValue = 'package:' . (int)$pkg['id']; ?>
+          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.package'), (string)$pkg['name'])) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+        <?php endforeach; ?>
+      </optgroup>
+    <?php endif; ?>
   </select>
+  <p class="muted" style="margin:6px 0 0;"><?=h(t('latex_templates.template_source.help'))?></p>
+  <?php if (!$ltpList && !empty($allowLatexTemplatePackageSelection)): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden.</p><?php endif; ?>
 </div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
   <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
@@ -155,8 +193,22 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <?php endif; ?>
 
     <?php foreach (($section['subs'] ?? []) as $sub): ?>
-      <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
+      <?php
+        $subId = (int)($sub['id'] ?? 0);
+        $subHasRequired = false;
+        foreach (($sub['items'] ?? []) as $it) { if ((int)($it['is_required'] ?? 0) === 1) { $subHasRequired = true; break; } }
+      ?>
+      <details class="sub-details" data-sub-id="<?= h((string)$subId) ?>" data-parent-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $subHasRequired ? '1' : '0' ?>" style="margin-top:12px; margin-left:12px;" open>
+        <input type="hidden" name="sub_ids[]" value="<?= h((string)$subId) ?>">
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
+        <label style="display:block; margin:8px 0 8px 18px; font-weight:600;">
+          <input type="checkbox" class="subcategory-toggle" name="sub_active[]" value="<?= h((string)$subId) ?>" data-sub-id="<?= h((string)$subId) ?>" data-parent-cat-id="<?= h((string)$sectionId) ?>" checked>
+          <?= h(t('latex_templates.subcategory_active', 'Unterkategorie aktiv')) ?>
+        </label>
+        <div class="subcategory-warning" data-sub-warning="<?= h((string)$subId) ?>" style="display:none; margin:0 0 10px 18px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">
+          <?= h(t('latex_templates.subcategory_required_warning', 'Achtung: Diese Unterkategorie enthält verpflichtende Kompetenzen. Wenn du sie deaktivierst, erscheinen diese nicht im PDF.')) ?>
+        </div>
+        <div class="subcategory-body" data-sub-body="<?= h((string)$subId) ?>">
         <?php foreach (($sub['items'] ?? []) as $item): ?>
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
@@ -165,6 +217,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
             <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
+        </div>
       </details>
     <?php endforeach; ?>
     </div>
@@ -177,6 +230,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 <style>
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .cat-title{display:inline;margin:0;font-size:1.1rem;font-weight:700;line-height:1.3}
+  .sub-details.is-disabled{opacity:.62}
   .required-skill-row{opacity:.95}
   .required-skill-row input[type="checkbox"]{cursor:not-allowed}
   .required-badge{display:inline-block;margin:0 8px 0 6px;padding:1px 8px;border-radius:999px;background:#eef3ff;color:#2f4d8f;font-size:11px;font-weight:700;vertical-align:middle}
@@ -191,6 +245,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <span>PDF wird erstellt … bitte warten.</span>
   </div>
 </div>
+
+<div id="templatePackageStatus" class="card" style="display:none; margin-top:16px;"></div>
 
 <div id="pdfPreviewWrap" style="display:none; margin-top:24px;">
   <iframe id="pdfPreview" style="width:100%; height:90vh;"></iframe>
@@ -209,20 +265,11 @@ const createPdfButton = document.getElementById('createPdfButton');
 const pdfLoadingOverlay = document.getElementById('pdfLoadingOverlay');
 const pdfDebug = document.getElementById('pdfDebug');
 const pdfDebugText = document.getElementById('pdfDebugText');
+const templatePackageStatus = document.getElementById('templatePackageStatus');
 let currentPdfUrl = null;
 
-function applyCategoryState(catId){
-  const root = document.querySelector(`.cat-details[data-cat-id="${catId}"]`);
-  if(!root) return;
-  const toggle = root.querySelector('.category-toggle');
-  const active = !!toggle?.checked;
-  const body = root.querySelector(`[data-cat-body="${catId}"]`);
-  const warn = root.querySelector(`[data-cat-warning="${catId}"]`);
-  const hasReq = root.dataset.hasRequired === '1';
-  root.style.opacity = active ? '1' : '.62';
-  if(body) body.style.display = active ? '' : 'none';
-  if(warn) warn.style.display = (!active && hasReq) ? 'block' : 'none';
-  root.querySelectorAll('input[name="skills[]"]').forEach(el=>{
+function setSkillInputsState(container, active){
+  container.querySelectorAll('input[name="skills[]"]').forEach(el=>{
     const isRequiredCheckbox = el.dataset.requiredSkill === '1';
     const isRequiredHidden = el.dataset.requiredHidden === '1';
     if (isRequiredCheckbox) {
@@ -236,7 +283,44 @@ function applyCategoryState(catId){
     }
     el.disabled = !active;
   });
-  root.querySelectorAll('input[name="pagebreaks[]"]').forEach(el=>{ el.disabled = !active; });
+}
+
+function applySubcategoryState(subId){
+  const sub = document.querySelector(`.sub-details[data-sub-id="${subId}"]`);
+  if(!sub) return;
+  const cat = sub.closest('.cat-details');
+  const catActive = !!cat?.querySelector('.category-toggle')?.checked;
+  const toggle = sub.querySelector('.subcategory-toggle');
+  const subActive = !!toggle?.checked;
+  const effectiveActive = catActive && subActive;
+  const body = sub.querySelector(`[data-sub-body="${subId}"]`);
+  const warn = sub.querySelector(`[data-sub-warning="${subId}"]`);
+  const hasReq = sub.dataset.hasRequired === '1';
+  sub.classList.toggle('is-disabled', !effectiveActive);
+  if(toggle) toggle.disabled = !catActive;
+  if(body) body.style.display = effectiveActive ? '' : 'none';
+  if(warn) warn.style.display = (catActive && !subActive && hasReq) ? 'block' : 'none';
+  setSkillInputsState(sub, effectiveActive);
+}
+
+function applyCategoryState(catId){
+  const root = document.querySelector(`.cat-details[data-cat-id="${catId}"]`);
+  if(!root) return;
+  const toggle = root.querySelector('.category-toggle');
+  const active = !!toggle?.checked;
+  const body = root.querySelector(`[data-cat-body="${catId}"]`);
+  const warn = root.querySelector(`[data-cat-warning="${catId}"]`);
+  const hasReq = root.dataset.hasRequired === '1';
+  root.style.opacity = active ? '1' : '.62';
+  if(body) body.style.display = active ? '' : 'none';
+  if(warn) warn.style.display = (!active && hasReq) ? 'block' : 'none';
+  root.querySelectorAll(':scope > input[name="pagebreaks[]"], :scope > label input[name="pagebreaks[]"]').forEach(el=>{ el.disabled = !active; });
+  root.querySelectorAll(':scope > .category-body > details:not([data-sub-id])').forEach(direct=>{
+    setSkillInputsState(direct, active);
+  });
+  root.querySelectorAll('.subcategory-toggle').forEach(subToggle=>{
+    applySubcategoryState(subToggle.dataset.subId);
+  });
 }
 
 document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
@@ -245,6 +329,9 @@ document.getElementById('gradeLevelSelect').addEventListener('change', (e) => {
   window.location.href = u.toString();
 });
 
+document.querySelectorAll('.subcategory-toggle').forEach(cb=>{
+  cb.addEventListener('change',()=>applySubcategoryState(cb.dataset.subId));
+});
 document.querySelectorAll('.category-toggle').forEach(cb=>{
   cb.addEventListener('change',()=>applyCategoryState(cb.dataset.catId));
   applyCategoryState(cb.dataset.catId);
@@ -264,6 +351,11 @@ form.addEventListener('submit', async (event) => {
   try {
     pdfDebug.style.display = 'none';
     pdfDebugText.textContent = '';
+    if (templatePackageStatus) {
+      templatePackageStatus.style.display = 'none';
+      templatePackageStatus.textContent = '';
+      templatePackageStatus.style.borderLeft = '';
+    }
 
     const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
@@ -275,6 +367,24 @@ form.addEventListener('submit', async (event) => {
       pdfDebug.style.display = 'block';
       console.error('PDF build failed', { status: response.status, contentType, body: msg });
       return;
+    }
+
+    const packageCreated = response.headers.get('X-Template-Package-Created') === '1';
+    const packageSubmitted = response.headers.get('X-Template-Package-Submitted') === '1';
+    const packageId = response.headers.get('X-Template-Package-Id') || '';
+    const packageError = response.headers.get('X-Template-Package-Error') || '';
+    if (templatePackageStatus && packageSubmitted) {
+      templatePackageStatus.textContent = 'Die Vorlage wurde an den Admin gesendet.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.style.borderLeft = '4px solid #067647';
+      templatePackageStatus.style.display = 'block';
+    } else if (templatePackageStatus && packageCreated) {
+      templatePackageStatus.textContent = 'Template-Paket wurde vorbereitet und kann im nächsten Schritt als Vorlage übernommen werden.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.style.borderLeft = '4px solid #067647';
+      templatePackageStatus.style.display = 'block';
+    } else if (templatePackageStatus && packageError) {
+      templatePackageStatus.textContent = 'PDF wurde erstellt, aber das Template-Paket konnte nicht gespeichert werden: ' + decodeURIComponent(packageError);
+      templatePackageStatus.style.borderLeft = '4px solid #b42318';
+      templatePackageStatus.style.display = 'block';
     }
 
     if (contentType.includes('application/zip')) {

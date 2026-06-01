@@ -8,9 +8,77 @@ require_admin();
 $pdo = db();
 $err = '';
 $ok  = '';
+$deleteBlockClasses = [];
+$deleteConfirmReports = [];
+$deleteConfirmTemplateId = 0;
 
 function ensure_dir(string $p): void {
   if (!is_dir($p)) @mkdir($p, 0755, true);
+}
+
+function admin_template_class_label(array $c): string {
+  $label = (string)($c['label'] ?? '');
+  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $name = (string)($c['name'] ?? '');
+  return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . (int)$c['id']));
+}
+
+function admin_template_report_student_label(array $r): string {
+  $first = trim((string)($r['first_name'] ?? ''));
+  $last = trim((string)($r['last_name'] ?? ''));
+  $name = trim($first . ' ' . $last);
+  return $name !== '' ? $name : t('admin.templates.delete.unknown_student');
+}
+
+function admin_template_report_class_label(array $r): string {
+  $classId = (int)($r['class_id'] ?? 0);
+  if ($classId <= 0) return t('admin.templates.delete.no_class');
+  return admin_template_class_label([
+    'id' => $classId,
+    'grade_level' => $r['class_grade_level'] ?? null,
+    'label' => $r['class_label'] ?? '',
+    'name' => $r['class_name'] ?? '',
+  ]);
+}
+
+function admin_template_delete_dependencies(PDO $pdo, int $templateId): array {
+  $classSt = $pdo->prepare(
+    "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name,
+            (SELECT COUNT(*) FROM students s WHERE s.class_id=c.id) AS student_count,
+            (SELECT COUNT(*) FROM report_instances ri JOIN students rs ON rs.id=ri.student_id WHERE ri.template_id=? AND rs.class_id=c.id) AS report_count
+     FROM classes c
+     WHERE c.template_id=?
+     ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC, c.name ASC, c.id ASC"
+  );
+  $classSt->execute([$templateId, $templateId]);
+  $classes = $classSt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $reportSt = $pdo->prepare(
+    "SELECT ri.id, ri.student_id, ri.school_year, ri.period_label, ri.status,
+            s.first_name, s.last_name, s.class_id,
+            c.school_year AS class_school_year, c.period_label AS class_period_label,
+            c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
+     FROM report_instances ri
+     LEFT JOIN students s ON s.id=ri.student_id
+     LEFT JOIN classes c ON c.id=s.class_id
+     WHERE ri.template_id=?
+     ORDER BY ri.school_year DESC, ri.period_label ASC, ri.id ASC"
+  );
+  $reportSt->execute([$templateId]);
+  $reports = $reportSt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  return ['classes' => $classes, 'reports' => $reports];
+}
+
+function admin_delete_template_pdf_file(array $tpl): void {
+  $pdfRel = (string)($tpl['pdf_storage_path'] ?? '');
+  if ($pdfRel === '') return;
+  $rootAbs = realpath(__DIR__ . '/..');
+  if (!$rootAbs) return;
+  $pdfAbs = $rootAbs . '/' . ltrim($pdfRel, '/');
+  if (is_file($pdfAbs)) @unlink($pdfAbs);
+  $tplDirAbs = dirname($pdfAbs);
+  if (is_dir($tplDirAbs)) @rmdir($tplDirAbs);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -70,6 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'delete') {
       $templateId = (int)($_POST['template_id'] ?? 0);
+      $confirmDeleteReports = ((string)($_POST['confirm_delete_reports'] ?? '0') === '1');
       if ($templateId <= 0) throw new RuntimeException(t('admin.templates.error.invalid_template'));
 
       $st = $pdo->prepare("SELECT id, pdf_storage_path FROM templates WHERE id=? LIMIT 1");
@@ -77,38 +146,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $tpl = $st->fetch(PDO::FETCH_ASSOC);
       if (!$tpl) throw new RuntimeException(t('admin.templates.error.not_found'));
 
-      $stClass = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE template_id=?");
-      $stClass->execute([$templateId]);
-      $classCount = (int)$stClass->fetchColumn();
+      $deps = admin_template_delete_dependencies($pdo, $templateId);
+      $classes = $deps['classes'];
+      $reports = $deps['reports'];
 
-      $stReports = $pdo->prepare("SELECT COUNT(*) FROM report_instances WHERE template_id=?");
-      $stReports->execute([$templateId]);
-      $reportCount = (int)$stReports->fetchColumn();
-
-      if ($classCount > 0 || $reportCount > 0) {
-        $msg = t('admin.templates.error.delete_in_use');
-        $msg = str_replace('{classes}', (string)$classCount, $msg);
-        $msg = str_replace('{reports}', (string)$reportCount, $msg);
-        throw new RuntimeException($msg);
+      if ($classes) {
+        $deleteBlockClasses = $classes;
+        throw new RuntimeException(t('admin.templates.delete.blocked_by_classes'));
       }
 
-      $pdo->prepare("DELETE FROM templates WHERE id=?")->execute([$templateId]);
+      if ($reports && !$confirmDeleteReports) {
+        $deleteConfirmReports = $reports;
+        $deleteConfirmTemplateId = $templateId;
+        $err = t('admin.templates.delete.orphan_reports_intro');
+      } else {
+        $pdo->beginTransaction();
+        $st = $pdo->prepare("SELECT id, pdf_storage_path FROM templates WHERE id=? LIMIT 1");
+        $st->execute([$templateId]);
+        $tpl = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$tpl) throw new RuntimeException(t('admin.templates.error.not_found'));
 
-      $pdfRel = (string)($tpl['pdf_storage_path'] ?? '');
-      if ($pdfRel !== '') {
-        $cfg = app_config();
-        $uploadsRel = (string)($cfg['app']['uploads_dir'] ?? 'uploads');
-        $rootAbs = realpath(__DIR__ . '/..');
-        if ($rootAbs) {
-          $pdfAbs = $rootAbs . '/' . ltrim($pdfRel, '/');
-          if (is_file($pdfAbs)) @unlink($pdfAbs);
-          $tplDirAbs = dirname($pdfAbs);
-          if (is_dir($tplDirAbs)) @rmdir($tplDirAbs);
+        $deps = admin_template_delete_dependencies($pdo, $templateId);
+        if ($deps['classes']) {
+          $pdo->rollBack();
+          $deleteBlockClasses = $deps['classes'];
+          throw new RuntimeException(t('admin.templates.delete.blocked_by_classes'));
+        }
+
+        $deletedReportCount = count($deps['reports']);
+        if ($deletedReportCount > 0) {
+          if (!$confirmDeleteReports) {
+            $pdo->rollBack();
+            $deleteConfirmReports = $deps['reports'];
+            $deleteConfirmTemplateId = $templateId;
+            $err = t('admin.templates.delete.orphan_reports_intro');
+          } else {
+            $reportIds = array_map(static fn($r) => (int)($r['id'] ?? 0), $deps['reports']);
+            report_cleanup_delete_instances($pdo, $reportIds);
+          }
+        }
+
+        if (!$deleteConfirmReports) {
+          $pdo->prepare("DELETE FROM templates WHERE id=?")->execute([$templateId]);
+          $pdo->commit();
+          admin_delete_template_pdf_file($tpl);
+
+          audit('template_delete', (int)current_user()['id'], ['template_id' => $templateId, 'deleted_reports' => $deletedReportCount]);
+          $ok = $deletedReportCount > 0
+            ? str_replace(['{id}', '{reports}'], [(string)$templateId, (string)$deletedReportCount], t('admin.templates.status.deleted_with_reports'))
+            : str_replace('{id}', (string)$templateId, t('admin.templates.status.deleted'));
         }
       }
-
-      audit('template_delete', (int)current_user()['id'], ['template_id' => $templateId]);
-      $ok = str_replace('{id}', (string)$templateId, t('admin.templates.status.deleted'));
     }
 
     if ($action === 'upload') {
@@ -163,6 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
   } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
   }
 }
@@ -263,6 +352,43 @@ tr.tpl-inactive { opacity: 0.65; }
 <div class="card"><h1><?=h(t('admin.templates.heading'))?></h1></div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+<?php if ($deleteBlockClasses): ?>
+  <div class="alert danger">
+    <strong><?=h(t('admin.templates.delete.blocked_classes_heading'))?></strong>
+    <ul style="margin:8px 0 0 18px;">
+      <?php foreach ($deleteBlockClasses as $c): ?>
+        <li>
+          <?=h(admin_template_class_label($c))?> · <?=h((string)($c['school_year'] ?? ''))?> · <?=h((string)($c['period_label'] ?? ''))?>
+          (<?=h(str_replace(['{students}', '{reports}'], [(string)(int)($c['student_count'] ?? 0), (string)(int)($c['report_count'] ?? 0)], t('admin.templates.delete.class_counts')))?>)
+        </li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+<?php endif; ?>
+<?php if ($deleteConfirmReports && $deleteConfirmTemplateId > 0): ?>
+  <div class="alert" style="border-left:4px solid #b7791f;">
+    <strong><?=h(t('admin.templates.delete.orphan_reports_heading'))?></strong>
+    <p><?=h(t('admin.templates.delete.orphan_reports_explain'))?></p>
+    <ul style="margin:8px 0 12px 18px;">
+      <?php foreach ($deleteConfirmReports as $r): ?>
+        <li>
+          <?=h(admin_template_report_student_label($r))?> —
+          <?=h(str_replace('{id}', (string)(int)($r['id'] ?? 0), t('admin.templates.delete.report_number')))?> —
+          <?=h(admin_template_report_class_label($r))?> —
+          <?=h((string)($r['school_year'] ?? ''))?> · <?=h((string)($r['period_label'] ?? ''))?> · <?=h((string)($r['status'] ?? ''))?>
+        </li>
+      <?php endforeach; ?>
+    </ul>
+    <form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="action" value="delete">
+      <input type="hidden" name="template_id" value="<?=h((string)$deleteConfirmTemplateId)?>">
+      <input type="hidden" name="confirm_delete_reports" value="1">
+      <button class="btn danger" type="submit"><?=h(t('admin.templates.delete.confirm_reports_button'))?></button>
+      <a class="btn secondary" href="<?=h(url('admin/templates.php'))?>"><?=h(t('admin.templates.delete.cancel_button'))?></a>
+    </form>
+  </div>
+<?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
 <div class="card">
