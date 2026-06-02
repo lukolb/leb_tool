@@ -849,8 +849,19 @@ function group_key_aliases_from_key(string $groupKey): array {
   return app_group_key_aliases_from_label($groupKey);
 }
 
+function delegation_match_from_map_for_aliases(array $delegations, array $aliases): ?array {
+  foreach ($aliases as $alias) {
+    $alias = trim((string)$alias);
+    if ($alias !== '' && isset($delegations[$alias]) && is_array($delegations[$alias])) {
+      return ['key' => $alias, 'delegation' => $delegations[$alias]];
+    }
+  }
+  return null;
+}
+
 function delegation_from_map_for_aliases(array $delegations, array $aliases): ?array {
-  return app_group_entry_from_alias_map($delegations, $aliases);
+  $match = delegation_match_from_map_for_aliases($delegations, $aliases);
+  return $match['delegation'] ?? null;
 }
 
 function delegation_from_map_for_meta(array $delegations, array $meta): ?array {
@@ -3383,9 +3394,11 @@ if ($action === 'delegations_save') {
     if (!$cRow) throw new RuntimeException('Klasse nicht gefunden.');
     $schoolYear = (string)($cRow['school_year'] ?? '');
 
-    // current delegations
+    // current delegations: remember the stored key that matched (may be a legacy alias).
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $cur = delegation_from_map_for_aliases($delegations, group_key_aliases_from_key($groupKey));
+    $match = delegation_match_from_map_for_aliases($delegations, group_key_aliases_from_key($groupKey));
+    $cur = $match['delegation'] ?? null;
+    $storedGroupKey = (string)($match['key'] ?? $groupKey);
     $assignedUsers = $cur && isset($cur['user_ids']) && is_array($cur['user_ids'])
       ? array_map('intval', $cur['user_ids'])
       : [];
@@ -3408,7 +3421,7 @@ if ($action === 'delegations_save') {
       $classId,
       $schoolYear,
       $periodLabel,
-      $groupKey,
+      $storedGroupKey,
       (int)$userId,
       $status,
       $note,
