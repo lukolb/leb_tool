@@ -1235,8 +1235,13 @@ function save_free_text_value(
 
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
-  $s = explode('-', $s, 2)[0];
   $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+  $s = trim($s);
+  // Pair teacher/student variants only by an explicit trailing role suffix.
+  // Do not truncate at the first hyphen: field names such as ENG-001-S or
+  // skillcb-cid-477-1 must remain distinct so entry.php maps each stored
+  // child value to the correct template_field_id.
+  $s = preg_replace('/[-_](s|t)$/i', '', $s) ?? $s;
   return trim($s);
 }
 
