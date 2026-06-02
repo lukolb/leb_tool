@@ -2176,6 +2176,16 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const j = await api('bootstrap', {});
       applyBootstrapResponse(j);
 
+      if (String(state.report_status || '') === 'submitted') {
+        exitFullscreenForBeginner();
+        alert(t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
+        showLockedOnly(
+          t('student.js.already_submitted', 'Bereits abgegeben'),
+          t('student.js.already_submitted_text', 'Du hast deine Eingabe bereits abgegeben. Änderungen sind nicht mehr möglich.')
+        );
+        return;
+      }
+
       if (isLocked()) {
         showLockedOnly();
         return;
@@ -2191,8 +2201,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
     } finally {
       setSaving(false);
-      btnPrev.disabled = false;
-      btnNext.disabled = false;
+      if (!isLocked()) {
+        btnPrev.disabled = false;
+        btnNext.disabled = false;
+      }
     }
   }
 

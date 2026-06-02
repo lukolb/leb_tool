@@ -360,12 +360,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && (string)($_GET['action'] ?? '') === 
   $progressUnlocks = ($tpl && $schoolYearProgress !== '')
     ? load_child_group_unlocks($pdo, $classId, $schoolYearProgress, $periodLabel)
     : ['active' => false, 'map' => []];
+  $progressPayload = $tpl
+    ? build_student_child_entry_progress($pdo, $progressStudents, (int)$tpl['id'], $schoolYearProgress, $periodLabel, $progressGroups, $progressUnlocks)
+    : [];
+  $progressStudentIds = array_map(fn($r) => (int)($r['id'] ?? 0), $progressStudents ?: []);
+  $progressChildStatusMap = $tpl ? load_child_status_map($pdo, $progressStudentIds, $periodLabel, (int)$tpl['id'], $schoolYearProgress) : [];
+  foreach ($progressPayload as &$row) {
+    $sid = (int)($row['student_id'] ?? 0);
+    $row['child_status'] = $progressChildStatusMap[$sid] ?? null;
+  }
+  unset($row);
 
   students_json_out([
     'ok' => true,
-    'students' => $tpl
-      ? build_student_child_entry_progress($pdo, $progressStudents, (int)$tpl['id'], $schoolYearProgress, $periodLabel, $progressGroups, $progressUnlocks)
-      : [],
+    'students' => $progressPayload,
     'server_time' => date(DATE_ATOM),
   ]);
 }
@@ -829,7 +837,7 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
   $total = count($studentIds);
   if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
-  $statusMap = load_child_status_map($pdo, $studentIds, $periodLabel);
+  $statusMap = load_child_status_map($pdo, $studentIds, $periodLabel, $templateId, $schoolYear);
 
   $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
   foreach ($statusMap as $status) {
@@ -843,20 +851,30 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
 /**
  * NEW: per-student child status map + badge rendering
  */
-function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel): array {
+function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel, int $templateId = 0, string $schoolYear = ''): array {
   $periodLabel = normalize_class_period_label($periodLabel);
   $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
   if (!$studentIds) return [];
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $params = array_merge($studentIds, [$periodLabel]);
+  $filters = "student_id IN ($in) AND period_label=?";
+  if ($templateId > 0) {
+    $filters .= " AND template_id=?";
+    $params[] = $templateId;
+  }
+  $schoolYear = trim($schoolYear);
+  if ($schoolYear !== '') {
+    $filters .= " AND school_year=?";
+    $params[] = $schoolYear;
+  }
   $sql =
     "SELECT student_id, status, created_at, updated_at, id
      FROM report_instances
-     WHERE student_id IN ($in)
-       AND period_label=?
+     WHERE $filters
      ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge($studentIds, [$periodLabel]));
+  $q->execute($params);
 
   $map = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -924,12 +942,34 @@ function load_student_form_value_counts(PDO $pdo, array $studentIds): array {
   return $map;
 }
 
-function child_status_badge(?string $status): string {
+function child_status_label_key(?string $status, ?string $progressStatus = null): string {
   $status = (string)$status;
-  if ($status === 'submitted') return '<span class="badge success">Abgegeben</span>';
-  if ($status === 'locked') return '<span class="badge danger">Gesperrt</span>';
-  if ($status === 'draft') return '<span class="badge blue">Entwurf</span>';
-  return '<span class="badge">Nicht angelegt</span>';
+  $progressStatus = (string)$progressStatus;
+  if ($status === 'submitted') return 'teacher.students.child_status_submitted';
+  if ($status === 'draft') {
+    return $progressStatus === 'in_progress' || $progressStatus === 'complete'
+      ? 'teacher.students.child_status_in_progress'
+      : 'teacher.students.child_status_not_started';
+  }
+  return 'teacher.students.child_status_not_released';
+}
+
+function child_status_badge(?string $status, ?string $progressStatus = null): string {
+  $status = (string)$status;
+  $key = child_status_label_key($status, $progressStatus);
+  $label = t($key, match ($key) {
+    'teacher.students.child_status_submitted' => 'Abgegeben',
+    'teacher.students.child_status_in_progress' => 'In Bearbeitung',
+    'teacher.students.child_status_not_started' => 'Noch nicht begonnen',
+    default => 'Nicht freigegeben',
+  });
+  $class = match ($key) {
+    'teacher.students.child_status_submitted' => 'success',
+    'teacher.students.child_status_in_progress' => 'blue',
+    'teacher.students.child_status_not_started' => 'warn',
+    default => 'danger',
+  };
+  return '<span class="badge ' . h($class) . '">' . h($label) . '</span>';
 }
 
 // POST actions: add, deactivate, copy, lock/unlock class
@@ -1590,7 +1630,7 @@ if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_
 $counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi, $periodLabel) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
 
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
-$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds, $periodLabel) : [];
+$childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds, $periodLabel, $tplIdForUi, $schoolYearUi) : [];
 
 $reportMap = $tplIdForUi ? load_report_instance_map($pdo, $studentIds, $periodLabel) : [];
 $studentFormValueCounts = $students ? load_student_form_value_counts($pdo, $studentIds) : [];
@@ -1918,6 +1958,17 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             $sid = (int)($s['id'] ?? 0);
             $rid = (int)($reportMap[$sid]['report_instance_id'] ?? 0);
             $formValueCount = (int)($studentFormValueCounts[$sid] ?? 0);
+            $prog = $studentLiveProgressMap[$sid] ?? ['completed'=>0,'total'=>0,'percent'=>0,'status'=>'no_fields','updated_at'=>null];
+            $progStatus = (string)($prog['status'] ?? 'no_fields');
+            $progLabel = match ($progStatus) {
+              'complete' => t('teacher.students.progress_complete', 'fertig'),
+              'in_progress' => t('teacher.students.progress_in_progress', 'in Bearbeitung'),
+              'not_started' => t('teacher.students.progress_not_started', 'noch nicht begonnen'),
+              default => t('teacher.students.progress_no_fields', 'keine Schülerfelder'),
+            };
+            $progPct = max(0, min(100, (int)($prog['percent'] ?? 0)));
+            $progCompleted = (int)($prog['completed'] ?? 0);
+            $progTotal = (int)($prog['total'] ?? 0);
           ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
@@ -1927,23 +1978,10 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
               <?php if (!$tplIdForUi): ?>
                 <span class="muted">—</span>
               <?php else: ?>
-                <?= child_status_badge($childStatusMap[$sid] ?? null) ?>
+                <span data-child-status="<?=h((string)$sid)?>"><?= child_status_badge($childStatusMap[$sid] ?? null, $progStatus) ?></span>
               <?php endif; ?>
             </td>
             <td>
-              <?php
-                $prog = $studentLiveProgressMap[$sid] ?? ['completed'=>0,'total'=>0,'percent'=>0,'status'=>'no_fields','updated_at'=>null];
-                $progStatus = (string)($prog['status'] ?? 'no_fields');
-                $progLabel = match ($progStatus) {
-                  'complete' => t('teacher.students.progress_complete', 'fertig'),
-                  'in_progress' => t('teacher.students.progress_in_progress', 'in Bearbeitung'),
-                  'not_started' => t('teacher.students.progress_not_started', 'noch nicht begonnen'),
-                  default => t('teacher.students.progress_no_fields', 'keine Schülerfelder'),
-                };
-                $progPct = max(0, min(100, (int)($prog['percent'] ?? 0)));
-                $progCompleted = (int)($prog['completed'] ?? 0);
-                $progTotal = (int)($prog['total'] ?? 0);
-              ?>
               <div class="student-progress" data-student-progress="<?=h((string)$sid)?>" data-status="<?=h($progStatus)?>">
                 <div class="student-progress-meta">
                   <span data-progress-percent><?=h((string)$progPct)?>%</span>
@@ -1998,7 +2036,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     </table>
 
     <div class="muted" style="margin-top:8px;">
-      <?=t('teacher.students.child_status_hint', '„Nicht angelegt“ heißt: Es gibt noch keinen passenden Eintrag in <code>report_instances</code> (für aktives Template / Schuljahr / Standard).')?>
+      <?=t('teacher.students.child_status_hint', 'Kinder-Status und Fortschritt beziehen sich auf aktives Template, Schuljahr und Halbjahr; die Werte aktualisieren automatisch.')?>
     </div>
   <?php endif; ?>
 </div>
@@ -2145,8 +2183,32 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       'not_started' => t('teacher.students.progress_not_started', 'noch nicht begonnen'),
       'no_fields' => t('teacher.students.progress_no_fields', 'keine Schülerfelder'),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
+    const childStatusLabels = <?=json_encode([
+      'submitted' => t('teacher.students.child_status_submitted', 'Abgegeben'),
+      'in_progress' => t('teacher.students.child_status_in_progress', 'In Bearbeitung'),
+      'not_started' => t('teacher.students.child_status_not_started', 'Noch nicht begonnen'),
+      'not_released' => t('teacher.students.child_status_not_released', 'Nicht freigegeben'),
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
     const editModal = document.getElementById('editModal');
     const editForm = document.getElementById('editForm');
+
+    function childStatusView(status, progressStatus) {
+      const rawStatus = String(status || '');
+      const rawProgress = String(progressStatus || '');
+      if (rawStatus === 'submitted') return { key: 'submitted', badge: 'success' };
+      if (rawStatus === 'draft') {
+        if (rawProgress === 'in_progress' || rawProgress === 'complete') return { key: 'in_progress', badge: 'blue' };
+        return { key: 'not_started', badge: 'warn' };
+      }
+      return { key: 'not_released', badge: 'danger' };
+    }
+
+    function updateChildStatus(row, progressStatus) {
+      const holder = document.querySelector(`[data-child-status="${String(row.student_id).replace(/\"/g, '\\"')}"]`);
+      if (!holder) return;
+      const view = childStatusView(row.child_status, progressStatus);
+      holder.innerHTML = `<span class="badge ${view.badge}">${childStatusLabels[view.key] || view.key}</span>`;
+    }
 
     function applyStudentProgressRow(row) {
       if (!row || !row.student_id) return;
@@ -2166,6 +2228,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       if (countEl) countEl.textContent = `${completed}/${total}`;
       if (fillEl) fillEl.style.width = `${percent}%`;
       if (statusEl) statusEl.textContent = studentProgressLabels[status] || studentProgressLabels.no_fields || status;
+      updateChildStatus(row, status);
     }
 
     async function refreshStudentProgress() {
