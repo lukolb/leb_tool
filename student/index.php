@@ -150,6 +150,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     .sidebar{ position:sticky; top:14px; }
     .nav{ display:flex; flex-direction:column; gap:8px; }
+    .nav.saving-disabled{ opacity:.65; pointer-events:none; }
 
     .nav .group{ border:1px solid var(--border); border-radius:14px; overflow:hidden; background: #fff; }
     .nav .group.wizard-nav-category{ margin-top:4px; }
@@ -614,7 +615,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let didAutoReadIntro = false;
 
   const pendingTimers = new Map();
+  const dirtyFields = new Map();
+  const fieldSaveChains = new Map();
   let saveInFlight = 0;
+  let navigationSaveInFlight = false;
   let lastSaveAt = null;
 
   let T = <?= json_encode(ui_translations(), JSON_UNESCAPED_UNICODE) ?>;
@@ -1606,9 +1610,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       el.addEventListener('click', () => {
         const v = Number(el.getAttribute('data-jump'));
         if (!Number.isFinite(v) || v < 0) return;
-        activeStep = v;
-        render();
-        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        void navigateToStep(v);
       });
     });
 
@@ -1667,21 +1669,106 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
-  function debounceSave(fieldId, valueText, delayMs=450){
-    if (isLocked()) return;
+  function hasPendingSaves(){
+    return dirtyFields.size > 0 || pendingTimers.size > 0 || fieldSaveChains.size > 0 || saveInFlight > 0;
+  }
+
+  function setNavigationSaving(on){
+    navigationSaveInFlight = !!on;
+    if (on) {
+      if (btnPrev) btnPrev.disabled = true;
+      if (btnNext) btnNext.disabled = true;
+    }
+    if (elNav) elNav.classList.toggle('saving-disabled', !!on);
+  }
+
+  function runQueuedFieldSave(fieldId){
     const key = String(fieldId);
+    if (fieldSaveChains.has(key)) return fieldSaveChains.get(key);
+
+    const chain = (async () => {
+      try {
+        while (!isLocked() && dirtyFields.has(key)) {
+          const valueToSave = dirtyFields.get(key);
+          const ok = await saveFieldValue(fieldId, valueToSave);
+          if (!ok) return false;
+          if (dirtyFields.get(key) === valueToSave) {
+            dirtyFields.delete(key);
+          }
+        }
+        return true;
+      } finally {
+        fieldSaveChains.delete(key);
+      }
+    })();
+
+    fieldSaveChains.set(key, chain);
+    return chain;
+  }
+
+  function queueFieldSave(fieldId, valueText, options = {}){
+    if (isLocked()) return Promise.resolve(true);
+    const key = String(fieldId);
+    dirtyFields.set(key, String(valueText ?? ''));
+
     if (pendingTimers.has(key)) {
       clearTimeout(pendingTimers.get(key).timer);
-    }
-    const entry = {
-      timer: null,
-      value: valueText,
-    };
-    entry.timer = setTimeout(async () => {
       pendingTimers.delete(key);
-      try { await saveFieldValue(fieldId, valueText); } catch(e){ /* quiet */ }
+    }
+
+    if (options.immediate) return runQueuedFieldSave(fieldId);
+
+    const delayMs = Number.isFinite(Number(options.delayMs)) ? Number(options.delayMs) : 700;
+    const entry = { value: String(valueText ?? ''), timer: null };
+    entry.timer = setTimeout(() => {
+      pendingTimers.delete(key);
+      void runQueuedFieldSave(fieldId);
     }, delayMs);
     pendingTimers.set(key, entry);
+    return Promise.resolve(true);
+  }
+
+  function debounceSave(fieldId, valueText, delayMs=700){
+    return queueFieldSave(fieldId, valueText, { delayMs });
+  }
+
+  async function flushPendingSavesBlocking(){
+    if (isLocked()) return true;
+    pendingTimers.forEach((entry) => {
+      if (entry && entry.timer) clearTimeout(entry.timer);
+    });
+    pendingTimers.clear();
+
+    const keys = new Set([...dirtyFields.keys(), ...fieldSaveChains.keys()]);
+    if (!keys.size) return true;
+
+    const results = await Promise.all([...keys].map((key) => runQueuedFieldSave(Number(key))));
+    const ok = results.every(Boolean) && dirtyFields.size === 0;
+    if (!ok) {
+      setSaveStatus('error', t('student.js.save_error_block_nav', 'Bitte speichere zuerst erfolgreich.'));
+    }
+    return ok;
+  }
+
+  async function navigateToStep(nextStep){
+    if (navigationSaveInFlight || isLocked()) return;
+    const v = Number(nextStep);
+    if (!Number.isFinite(v) || v < 0 || v >= flatSteps.length) return;
+    if (v === activeStep) return;
+
+    setNavigationSaving(true);
+    let didNavigate = false;
+    try {
+      const ok = await flushPendingSavesBlocking();
+      if (!ok) return;
+      activeStep = v;
+      didNavigate = true;
+      render();
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    } finally {
+      setNavigationSaving(false);
+      if (!didNavigate) render();
+    }
   }
 
   function fireAndForgetSave(fieldId, valueText){
@@ -1701,12 +1788,12 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   function flushPendingSaves(){
-    if (!pendingTimers.size) return;
-    pendingTimers.forEach((entry, key) => {
-      if (!entry) return;
-      clearTimeout(entry.timer);
-      pendingTimers.delete(key);
-      fireAndForgetSave(key, entry.value);
+    pendingTimers.forEach((entry) => {
+      if (entry && entry.timer) clearTimeout(entry.timer);
+    });
+    pendingTimers.clear();
+    dirtyFields.forEach((value, key) => {
+      fireAndForgetSave(key, value);
     });
   }
 
@@ -1872,7 +1959,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           clearTimeout(pendingTimers.get(key).timer);
           pendingTimers.delete(key);
         }
-        saveFieldValue(fid, v).catch(()=>{});
+        void queueFieldSave(fid, v, { immediate: true });
         refreshDynamicTexts(container);
       });
     });
@@ -1889,7 +1976,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
           playPling();
         }
         render();
-        try { await saveFieldValue(fid, v); } catch(e){}
+        await queueFieldSave(fid, v, { immediate: true });
       };
       card.addEventListener('click', click);
       card.addEventListener('keydown', (e) => {
@@ -2065,11 +2152,12 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   async function handleSubmit(){
-    if (isLocked()) return;
+    if (isLocked() || navigationSaveInFlight) return;
 
-    for (const [k,t] of pendingTimers.entries()) {
-      clearTimeout(t);
-      pendingTimers.delete(k);
+    const saved = await flushPendingSavesBlocking();
+    if (!saved) {
+      alert(t('student.js.save_error_block_nav', 'Bitte speichere zuerst erfolgreich.'));
+      return;
     }
 
     const missing = totalMissingCount();
@@ -2265,16 +2353,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
 
     btnPrev.onclick = () => {
-      if (activeStep > 0) { activeStep--; render(); }
-      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      if (activeStep > 0) void navigateToStep(activeStep - 1);
     };
     btnNext.onclick = () => {
       const cur = flatSteps[activeStep];
       if (!cur) return;
       if (cur.kind === 'submit') return;
-      activeStep = Math.min(activeStep + 1, flatSteps.length - 1);
-      render();
-      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      void navigateToStep(Math.min(activeStep + 1, flatSteps.length - 1));
     };
 
     updateReqHint();
@@ -2300,10 +2385,21 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (e.target === aiModal) closeAiModal();
     });
   }
-  window.addEventListener('beforeunload', flushPendingSaves);
+  window.addEventListener('beforeunload', (event) => {
+    if (!hasPendingSaves()) return;
+    flushPendingSaves();
+    const message = t('student.js.unsaved_changes', 'Es gibt noch ungespeicherte Änderungen.');
+    event.preventDefault();
+    event.returnValue = message;
+    return message;
+  });
   window.addEventListener('pagehide', flushPendingSaves);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushPendingSaves();
+    if (document.visibilityState === 'hidden') {
+      flushPendingSaves();
+    } else if (hasPendingSaves()) {
+      void flushPendingSavesBlocking();
+    }
   });
 
   (async function init(){

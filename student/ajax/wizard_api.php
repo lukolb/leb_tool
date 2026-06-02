@@ -885,21 +885,39 @@ try {
       }
     }
 
-    $up = $pdo->prepare(
-      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_student_id, updated_at)
-       VALUES (?, ?, ?, ?, 'child', ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         value_text=VALUES(value_text),
-         value_json=VALUES(value_json),
-         source='child',
-         updated_by_student_id=VALUES(updated_by_student_id),
-         updated_at=NOW()"
-    );
-    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
+    try {
+      $pdo->beginTransaction();
 
-    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', null, $studentId);
+      $up = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_student_id, updated_at)
+         VALUES (?, ?, ?, ?, 'child', ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           value_text=VALUES(value_text),
+           value_json=VALUES(value_json),
+           source='child',
+           updated_by_student_id=VALUES(updated_by_student_id),
+           updated_at=NOW()"
+      );
+      $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
 
-    json_out(['ok' => true]);
+      record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', null, $studentId);
+
+      if (db_has_column($pdo, 'report_instances', 'updated_at')) {
+        $touch = $pdo->prepare("UPDATE report_instances SET updated_at=NOW() WHERE id=?");
+        $touch->execute([$reportId]);
+      }
+
+      $pdo->commit();
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      throw $e;
+    }
+
+    json_out([
+      'ok' => true,
+      'template_field_id' => $fieldId,
+      'updated_at' => date(DATE_ATOM),
+    ]);
   }
 
   // submit
