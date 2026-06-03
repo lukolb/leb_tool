@@ -6,9 +6,26 @@ require __DIR__ . '/../../bootstrap.php';
 require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
-require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
+if (!current_user()) {
+  http_response_code(401);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'session_expired',
+    'message' => t('teacher.entry_api.error.session_expired'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+if (get_role() !== 'teacher' && get_role() !== 'admin') {
+  http_response_code(403);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'forbidden',
+    'message' => t('teacher.entry_api.error.forbidden'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
 
 function read_json_body(): array {
   $raw = file_get_contents('php://input');
@@ -2009,6 +2026,9 @@ try {
   $u = current_user() ?: [];
   $lang = ui_lang();
   $userId = (int)($u['id'] ?? 0);
+  if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+  }
 
   $action = (string)($data['action'] ?? '');
   if ($action === '') throw new RuntimeException(t('teacher.entry_api.error.action_missing'));
@@ -3842,5 +3862,44 @@ if ($action === 'delegations_save') {
   throw new RuntimeException(t('teacher.entry_api.error.unknown_action'));
 
 } catch (Throwable $e) {
-  json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  $actionForLog = isset($action) ? (string)$action : (string)($data['action'] ?? '');
+  $userForLog = isset($userId) ? (int)$userId : 0;
+  $classForLog = isset($classId) ? (int)$classId : (int)($data['class_id'] ?? 0);
+  $reportForLog = (int)($data['report_instance_id'] ?? 0);
+  $status = 400;
+  $code = 'request_failed';
+  $message = $e->getMessage();
+  $lowerMessage = strtolower($message);
+
+  if (str_contains($lowerMessage, 'csrf') || str_contains($lowerMessage, 'token')) {
+    $status = 403;
+    $code = 'csrf_failed';
+    $message = t('teacher.entry_api.error.session_expired');
+  } elseif (str_contains($lowerMessage, 'berechtigung') || str_contains($lowerMessage, 'forbidden') || str_contains($lowerMessage, 'zugriff')) {
+    $status = 403;
+    $code = 'forbidden';
+  } elseif ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+    $status = 500;
+    $code = 'internal_error';
+    $message = t('teacher.entry_api.error.internal');
+  }
+
+  error_log(sprintf(
+    '[teacher_entry_api] action=%s user_id=%d class_id=%d report_instance_id=%d status=%d code=%s message=%s at %s:%d',
+    $actionForLog !== '' ? $actionForLog : '-',
+    $userForLog,
+    $classForLog,
+    $reportForLog,
+    $status,
+    $code,
+    $e->getMessage(),
+    $e->getFile(),
+    $e->getLine()
+  ));
+
+  json_out([
+    'ok' => false,
+    'error' => $code,
+    'message' => $message,
+  ], $status);
 }
