@@ -935,17 +935,26 @@ function load_teachers_for_delegation(PDO $pdo): array {
   return $out;
 }
 
-function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, int $visibleForUserId = 0): array {
   $periodLabel = normalize_period_label($periodLabel);
+  $where = "d.class_id=? AND d.school_year=? AND d.period_label=?";
+  $params = [$classId, $schoolYear, $periodLabel];
+  if ($visibleForUserId > 0) {
+    // Delegate-only users must not receive unrelated delegations from the same class.
+    // Directly affected rows are incoming rows (user_id) or rows they created.
+    $where .= " AND (d.user_id=? OR d.created_by_user_id=?)";
+    $params[] = $visibleForUserId;
+    $params[] = $visibleForUserId;
+  }
   $st = $pdo->prepare(
-    "SELECT d.group_key, d.user_id, d.status, d.note, d.updated_at,
+    "SELECT d.group_key, d.user_id, d.status, d.note, d.updated_at, d.created_by_user_id,
             u.display_name
      FROM class_group_delegations d
      LEFT JOIN users u ON u.id=d.user_id
-     WHERE d.class_id=? AND d.school_year=? AND d.period_label=?
+     WHERE $where
      ORDER BY d.group_key ASC, d.updated_at DESC, d.id DESC"
   );
-  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $st->execute($params);
 
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -958,9 +967,14 @@ function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear
         'users' => [],
         'status' => 'open',
         'note' => '',
+        'created_by_user_ids' => [],
       ];
     }
     $uid = (int)($r['user_id'] ?? 0);
+    $createdBy = (int)($r['created_by_user_id'] ?? 0);
+    if ($createdBy > 0 && !in_array($createdBy, $out[$g]['created_by_user_ids'], true)) {
+      $out[$g]['created_by_user_ids'][] = $createdBy;
+    }
     if ($uid > 0 && !in_array($uid, $out[$g]['user_ids'], true)) {
       $out[$g]['user_ids'][] = $uid;
       $out[$g]['users'][] = [
@@ -1048,6 +1062,15 @@ function user_is_class_teacher(PDO $pdo, int $userId, int $classId): bool {
   $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
   $st->execute([$userId, $classId]);
   return (bool)$st->fetch();
+}
+
+function can_manage_class_delegations(PDO $pdo, array $user, int $userId, int $classId): bool {
+  if (($user['role'] ?? '') === 'admin') return true;
+  return user_is_class_teacher($pdo, $userId, $classId);
+}
+
+function delegation_visibility_user_id(PDO $pdo, array $user, int $userId, int $classId): int {
+  return can_manage_class_delegations($pdo, $user, $userId, $classId) ? 0 : $userId;
 }
 
 function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, string $groupKey): bool {
@@ -2132,8 +2155,10 @@ try {
     }
 
     $periodLabel = class_period_label($pdo, $classId);
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $delegationUsers = load_teachers_for_delegation($pdo);
+    $canManageDelegations = can_manage_class_delegations($pdo, $u, $userId, $classId);
+    $delegationVisibilityUserId = $canManageDelegations ? 0 : $userId;
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $delegationVisibilityUserId);
+    $delegationUsers = $canManageDelegations ? load_teachers_for_delegation($pdo) : [];
 
     $teacherFieldMap = [];
     foreach ($teacherFields as $f0) {
@@ -2500,7 +2525,7 @@ try {
     $stClass->execute([$classId]);
     $classGradeLevel = $stClass->fetchColumn();
 
-    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+    $isClassTeacher = $canManageDelegations;
 
     json_out([
       'ok' => true,
@@ -2603,9 +2628,15 @@ try {
     if ($schoolYear === '') $schoolYear = date('Y');
     $periodLabel = class_period_label($pdo, $classId);
     $periodLabel = normalize_class_period_label($periodLabel);
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+    $isClassTeacher = can_manage_class_delegations($pdo, $u, $userId, $classId);
     $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
+    $delegations = load_class_group_delegations(
+      $pdo,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $delegateOnly ? $userId : 0
+    );
     $cfg = app_config();
     $delegationCfg = $cfg['delegation'] ?? [];
     $delegateShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
@@ -3352,7 +3383,7 @@ if ($action === 'delegations_save') {
     $classId = (int)($data['class_id'] ?? 0);
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
-    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+    if (!can_manage_class_delegations($pdo, $u, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
@@ -3420,7 +3451,9 @@ if ($action === 'delegations_save') {
     $schoolYear = (string)($cRow['school_year'] ?? '');
 
     // current delegations: remember the stored key that matched (may be a legacy alias).
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    // Delegate-only users only see/update rows that directly affect them.
+    $canManageDelegations = can_manage_class_delegations($pdo, $u, $userId, $classId);
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
     $match = delegation_match_from_map_for_aliases($delegations, group_key_aliases_from_key($groupKey));
     $cur = $match['delegation'] ?? null;
     $storedGroupKey = (string)($match['key'] ?? $groupKey);
@@ -3453,7 +3486,7 @@ if ($action === 'delegations_save') {
       $userId
     );
 
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
   }
 

@@ -112,8 +112,6 @@ try {
   if ($action === '') throw new RuntimeException('action fehlt.');
 
   if ($action === 'load') {
-    $users = load_teachers_for_delegation($pdo);
-
     if (($u['role'] ?? '') === 'admin') {
       $st = $pdo->query(
         "SELECT d.class_id, d.school_year, d.period_label, d.group_key, d.user_id, d.status, d.note, d.updated_at,
@@ -137,11 +135,12 @@ try {
          WHERE c.is_active=1
            AND (
              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
-             OR EXISTS (SELECT 1 FROM class_group_delegations dx WHERE dx.class_id=c.id AND dx.user_id=?)
+             OR d.user_id=?
+             OR d.created_by_user_id=?
            )
          ORDER BY d.updated_at DESC, d.class_id DESC, d.group_key ASC"
       );
-      $st->execute([$userId, $userId]);
+      $st->execute([$userId, $userId, $userId]);
       $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -151,6 +150,7 @@ try {
       $stAssign->execute([$userId]);
       $assignedClassIds = array_map('intval', $stAssign->fetchAll(PDO::FETCH_COLUMN));
     }
+    $users = (($u['role'] ?? '') === 'admin' || $assignedClassIds) ? load_teachers_for_delegation($pdo) : [];
 
     $byClass = [];
     foreach ($rows as $r) {
