@@ -38,6 +38,25 @@ function db_competency_sections(PDO $pdo, int $gradeLevel): array {
     return $sections;
 }
 
+
+function latex_display_pair(?string $de, ?string $en): array {
+    $de = trim((string)$de);
+    $en = trim((string)$en);
+    if (ui_lang() === 'en') {
+        return [$en !== '' ? $en : $de, $de];
+    }
+    return [$de !== '' ? $de : $en, $en];
+}
+
+function latex_render_label_pair(?string $de, ?string $en): string {
+    [$primary, $secondary] = latex_display_pair($de, $en);
+    $html = h($primary);
+    if ($secondary !== '' && $secondary !== $primary) {
+        $html .= ' | <span style="font-style:italic;color:#666;">' . h($secondary) . '</span>';
+    }
+    return $html;
+}
+
 function render_competency_placeholder_html(string $text): string {
     $escaped = h($text);
     $withCheckboxes = preg_replace(
@@ -161,7 +180,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   ?>
   <details class="card cat-details" data-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $hasRequired ? '1' : '0' ?>" style="padding:10px 14px; margin:12px 0;" open>
     <input type="hidden" name="cat_ids[]" value="<?= h((string)$sectionId) ?>">
-    <summary><h2 class="cat-title"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
+    <summary><h2 class="cat-title"><?= latex_render_label_pair($section['de'] ?? '', $section['en'] ?? '') ?></h2></summary>
     <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
       <input type="checkbox" class="category-toggle" name="cat_active[]" value="<?= h((string)$sectionId) ?>" data-cat-id="<?= h((string)$sectionId) ?>" checked>
       <?= h(t('latex.category_active')) ?>
@@ -185,8 +204,9 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
-            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
-            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
+            <?php [$skillPrimary, $skillSecondary] = latex_display_pair($item['text_de'] ?? '', $item['text_en'] ?? ''); ?>
+            <?= render_competency_placeholder_html_with_space($skillPrimary) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
+            <?php if ($skillSecondary !== '' && $skillSecondary !== $skillPrimary): ?><br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space($skillSecondary) ?></span><?php endif; ?>
           </label>
         <?php endforeach; ?>
       </details>
@@ -200,7 +220,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
       ?>
       <details class="sub-details" data-sub-id="<?= h((string)$subId) ?>" data-parent-cat-id="<?= h((string)$sectionId) ?>" data-has-required="<?= $subHasRequired ? '1' : '0' ?>" style="margin-top:12px; margin-left:12px;" open>
         <input type="hidden" name="sub_ids[]" value="<?= h((string)$subId) ?>">
-        <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
+        <summary><strong><?= latex_render_label_pair($sub['de'] ?? '', $sub['en'] ?? '') ?></strong></summary>
         <label style="display:block; margin:8px 0 8px 18px; font-weight:600;">
           <input type="checkbox" class="subcategory-toggle" name="sub_active[]" value="<?= h((string)$subId) ?>" data-sub-id="<?= h((string)$subId) ?>" data-parent-cat-id="<?= h((string)$sectionId) ?>" checked>
           <?= h(t('latex_templates.subcategory_active')) ?>
@@ -213,8 +233,9 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
             <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
-            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
-            <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
+            <?php [$skillPrimary, $skillSecondary] = latex_display_pair($item['text_de'] ?? '', $item['text_en'] ?? ''); ?>
+            <?= render_competency_placeholder_html_with_space($skillPrimary) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
+            <?php if ($skillSecondary !== '' && $skillSecondary !== $skillPrimary): ?><br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space($skillSecondary) ?></span><?php endif; ?>
           </label>
         <?php endforeach; ?>
         </div>
