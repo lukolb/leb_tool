@@ -32,68 +32,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $ignoredUploadFiles = is_array($result['manifest']['ignored_files'] ?? null) ? $result['manifest']['ignored_files'] : [];
             $ignoredCount = (int)($result['manifest']['ignored_count'] ?? count($ignoredUploadFiles));
-            $msg = 'LaTeX-Vorlagenpaket importiert.';
+            $msg = t('latex_templates.flash.package_imported');
             if ($ignoredCount > 0) {
                 $msg .= ' ' . sprintf(t('latex_templates.ignored_files.count'), $ignoredCount);
             }
-            $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !str_contains((string)$warning, 'nicht unterstützte Dateien wurden ignoriert') && !str_contains((string)$warning, 'unsupported files were ignored')));
-            if ($warnings) $msg .= ' Hinweise: ' . implode(' ', $warnings);
+            $translations = translations_catalog();
+            $unsupportedIgnoredMessages = array_filter([
+                $translations['de']['latex_templates.warning.unsupported_files_ignored'] ?? null,
+                $translations['en']['latex_templates.warning.unsupported_files_ignored'] ?? null,
+            ]);
+            $warnings = array_values(array_filter((array)($result['warnings'] ?? []), static fn($warning) => !in_array((string)$warning, $unsupportedIgnoredMessages, true)));
+            if ($warnings) $msg .= ' ' . t('latex_templates.flash.warnings_prefix') . ' ' . implode(' ', $warnings);
             $msg .= ' ' . t('latex_templates.support.auto');
         } elseif ($packageAction === 'toggle_active') {
             $id = (int)($_POST['package_id'] ?? 0);
             $pkg = find_latex_template_package($pdo, $id, false);
-            if (!$pkg) throw new RuntimeException('LaTeX-Paket nicht gefunden.');
-            if ((int)($pkg['is_default'] ?? 0) === 1) throw new RuntimeException('Standardpaket kann nicht deaktiviert werden.');
+            if (!$pkg) throw new RuntimeException(t('latex_templates.error.package_not_found'));
+            if ((int)($pkg['is_default'] ?? 0) === 1) throw new RuntimeException(t('latex_templates.error.default_package_cannot_deactivate'));
             $newStatus = ((string)($pkg['status'] ?? '') === 'active') ? 'inactive' : 'active';
             $pdo->prepare('UPDATE latex_template_packages SET status=?, updated_at=NOW() WHERE id=?')->execute([$newStatus, $id]);
-            $msg = 'LaTeX-Paket-Status aktualisiert.';
+            $msg = t('latex_templates.flash.package_status_updated');
         } elseif ($packageAction === 'set_default') {
             $id = (int)($_POST['package_id'] ?? 0);
             $pkg = find_latex_template_package($pdo, $id, true);
-            if (!$pkg) throw new RuntimeException('Aktives LaTeX-Paket nicht gefunden.');
+            if (!$pkg) throw new RuntimeException(t('latex_templates.error.active_package_not_found'));
             $pdo->beginTransaction();
             $pdo->exec('UPDATE latex_template_packages SET is_default=0 WHERE deleted_at IS NULL');
             $pdo->prepare('UPDATE latex_template_packages SET is_default=1, updated_at=NOW() WHERE id=?')->execute([$id]);
             $pdo->commit();
-            $msg = 'LaTeX-Paket als Standard gesetzt.';
+            $msg = t('latex_templates.flash.package_default_set');
         } elseif ($packageAction === 'delete') {
             $id = (int)($_POST['package_id'] ?? 0);
             $result = delete_latex_template_package($pdo, $id);
             if (!empty($result['was_default'])) {
                 $msg = !empty($result['new_default_id'])
-                    ? 'Standard-LaTeX-Vorlagenpaket wurde gelöscht. Ein anderes Paket wurde als Standard gesetzt.'
-                    : 'Standard-LaTeX-Vorlagenpaket wurde gelöscht. Es wird wieder die Systemvorlage verwendet.';
+                    ? t('latex_templates.flash.default_package_deleted_replaced')
+                    : t('latex_templates.flash.default_package_deleted_system');
             } else {
-                $msg = 'LaTeX-Paket gelöscht.';
+                $msg = t('latex_templates.flash.package_deleted');
             }
         } elseif ($action === 'set_default') {
             $id = (int)($_POST['template_id'] ?? 0);
             $tpl = find_active_latex_layout_template($pdo, $id);
-            if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden oder inaktiv.');
+            if (!$tpl) throw new RuntimeException(t('latex_templates.error.layout_not_found_or_inactive'));
             $pdo->beginTransaction();
             $pdo->exec("UPDATE latex_layout_templates SET is_default=0");
             $st = $pdo->prepare("UPDATE latex_layout_templates SET is_default=1 WHERE id=?");
             $st->execute([$id]);
             $countDefault = (int)$pdo->query("SELECT COUNT(*) FROM latex_layout_templates WHERE is_default=1")->fetchColumn();
-            if ($countDefault !== 1) { throw new RuntimeException('Standardvorlage konnte nicht eindeutig gesetzt werden.'); }
+            if ($countDefault !== 1) { throw new RuntimeException(t('latex_templates.error.default_layout_not_unique')); }
             $pdo->commit();
-            $msg = 'Standardvorlage gesetzt.';
+            $msg = t('latex_templates.flash.layout_default_set');
         } elseif ($action === 'toggle_active') {
             $id = (int)($_POST['template_id'] ?? 0);
             $stChk = $pdo->prepare("SELECT id, is_default FROM latex_layout_templates WHERE id=? LIMIT 1");
             $stChk->execute([$id]);
             $cur = $stChk->fetch(PDO::FETCH_ASSOC) ?: null;
-            if (!$cur) throw new RuntimeException('Vorlage nicht gefunden.');
-            if ((int)($cur['is_default'] ?? 0) === 1) throw new RuntimeException('Standardvorlage kann nicht deaktiviert werden.');
+            if (!$cur) throw new RuntimeException(t('latex_templates.error.layout_not_found'));
+            if ((int)($cur['is_default'] ?? 0) === 1) throw new RuntimeException(t('latex_templates.error.default_layout_cannot_deactivate'));
             $st = $pdo->prepare("UPDATE latex_layout_templates SET is_active = IF(is_active=1,0,1) WHERE id=?");
             $st->execute([$id]);
-            $msg = 'Aktiv-Status aktualisiert.';
+            $msg = t('latex_templates.flash.layout_status_updated');
         } elseif ($action === 'delete') {
             $id = (int)($_POST['template_id'] ?? 0);
             $st = $pdo->prepare("SELECT * FROM latex_layout_templates WHERE id=? LIMIT 1");
             $st->execute([$id]);
             $tpl = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-            if (!$tpl) throw new RuntimeException('Vorlage nicht gefunden.');
+            if (!$tpl) throw new RuntimeException(t('latex_templates.error.layout_not_found'));
             $wasDefault = ((int)($tpl['is_default'] ?? 0) === 1);
 
             $filePathRel = (string)($tpl['file_path'] ?? '');
@@ -117,25 +122,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($wasDefault) {
                 $msg = $newDefaultId !== null
-                    ? 'Standard-Layoutvorlage wurde gelöscht. Eine andere Vorlage wurde als Standard gesetzt.'
-                    : 'Standard-Layoutvorlage wurde gelöscht. Es wird wieder die Systemvorlage verwendet.';
+                    ? t('latex_templates.flash.default_layout_deleted_replaced')
+                    : t('latex_templates.flash.default_layout_deleted_system');
             } else {
-                $msg = 'Layoutvorlage gelöscht.';
+                $msg = t('latex_templates.flash.layout_deleted');
             }
         } elseif ($action === 'upload') {
             $displayName = trim((string)($_POST['display_name'] ?? ''));
             $keyName = trim((string)($_POST['key_name'] ?? ''));
             $isActive = isset($_POST['is_active']) ? 1 : 0;
             $setDefault = isset($_POST['is_default']) ? 1 : 0;
-            if ($displayName === '') throw new RuntimeException('Anzeigename darf nicht leer sein.');
-            if (!preg_match('/^[a-z0-9_-]+$/', $keyName)) throw new RuntimeException('Key enthält ungültige Zeichen.');
-            if (!isset($_FILES['layout_file']) || (int)$_FILES['layout_file']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Upload fehlgeschlagen.');
+            if ($displayName === '') throw new RuntimeException(t('latex_templates.error.display_name_required'));
+            if (!preg_match('/^[a-z0-9_-]+$/', $keyName)) throw new RuntimeException(t('latex_templates.error.invalid_key'));
+            if (!isset($_FILES['layout_file']) || (int)$_FILES['layout_file']['error'] !== UPLOAD_ERR_OK) throw new RuntimeException(t('latex_templates.error.upload_failed'));
             $orig = (string)($_FILES['layout_file']['name'] ?? '');
-            if (basename($orig) !== $orig) throw new RuntimeException('Ungültiger Dateiname.');
-            if (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) !== 'tex') throw new RuntimeException('Nur .tex erlaubt.');
+            if (basename($orig) !== $orig) throw new RuntimeException(t('latex_templates.error.invalid_filename'));
+            if (strtolower(pathinfo($orig, PATHINFO_EXTENSION)) !== 'tex') throw new RuntimeException(t('latex_templates.error.only_tex_allowed'));
             $tmp = (string)$_FILES['layout_file']['tmp_name'];
             $content = (string)file_get_contents($tmp);
-            if ($content === '' || stripos($content, '<?php') !== false) throw new RuntimeException('Ungültiger Dateiinhalt.');
+            if ($content === '' || stripos($content, '<?php') !== false) throw new RuntimeException(t('latex_templates.error.invalid_file_content'));
 
             $st = $pdo->prepare("INSERT INTO latex_layout_templates (key_name, display_name, file_path, is_default, is_active, created_at, updated_at) VALUES (?,?,?,?,?,NOW(),NOW()) ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), is_active=VALUES(is_active), updated_at=NOW()");
             $st->execute([$keyName, $displayName, '', 0, $isActive]);
@@ -144,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($uploadsRel === '') { $uploadsRel = 'uploads'; }
             $stored = $uploadsRel . '/latex_layouts/layout_template_' . $id . '.tex';
             $abs = latex_layout_absolute_path($stored);
-            if (!move_uploaded_file($tmp, $abs)) throw new RuntimeException('Datei konnte nicht gespeichert werden.');
+            if (!move_uploaded_file($tmp, $abs)) throw new RuntimeException(t('latex_templates.error.file_save_failed'));
             $st2 = $pdo->prepare("UPDATE latex_layout_templates SET file_path=?, is_active=?, updated_at=NOW() WHERE id=?");
             $st2->execute([$stored, $isActive, $id]);
             if ($setDefault) {
@@ -152,10 +157,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->exec("UPDATE latex_layout_templates SET is_default=0");
                 $pdo->prepare("UPDATE latex_layout_templates SET is_default=1 WHERE id=?")->execute([$id]);
                 $countDefault = (int)$pdo->query("SELECT COUNT(*) FROM latex_layout_templates WHERE is_default=1")->fetchColumn();
-                if ($countDefault !== 1) { throw new RuntimeException('Standardvorlage konnte nicht eindeutig gesetzt werden.'); }
+                if ($countDefault !== 1) { throw new RuntimeException(t('latex_templates.error.default_layout_not_unique')); }
                 $pdo->commit();
             }
-            $msg = 'Layoutvorlage gespeichert.';
+            $msg = t('latex_templates.flash.layout_saved');
         }
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -167,7 +172,7 @@ $templates = get_latex_layout_templates($pdo, false);
 $latexPackages = get_latex_template_packages($pdo, false);
 $activeLatexPackages = get_latex_template_packages($pdo, true);
 
-render_admin_header(t('latex.title', 'Kompetenz-PDF erstellen'));
+render_admin_header(t('latex.title'));
 $latexBuildUrl = url('admin/pdf_preview.php');
 $allowTemplatePackage = true;
 $allowLatexTemplatePackageSelection = true;
@@ -176,9 +181,9 @@ require __DIR__ . '/../shared/latex_page.php';
 ?>
 
 <div class="card" style="margin-top:16px;">
-  <strong>Vorbereitete Template-Pakete</strong>
-  <p class="muted">Intern vorbereitete Pakete können als echte Templates übernommen werden.</p>
-  <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>">Template-Pakete anzeigen</a>
+  <strong><?=h(t('latex_templates.prepared_packages.heading'))?></strong>
+  <p class="muted"><?=h(t('latex_templates.prepared_packages.description'))?></p>
+  <a class="btn secondary" href="<?=h(url('admin/template_packages.php'))?>"><?=h(t('latex_templates.prepared_packages.open'))?></a>
 </div>
 
 <?php if($msg): ?>
@@ -198,7 +203,7 @@ require __DIR__ . '/../shared/latex_page.php';
           <?php endforeach; ?>
         </ul>
         <?php if(count($ignoredUploadFiles) > count($ignoredPreview)): ?>
-          <p class="muted">… und <?= h((string)(count($ignoredUploadFiles) - count($ignoredPreview))) ?> weitere.</p>
+          <p class="muted"><?= h(sprintf(t('latex_templates.ignored_files.more'), count($ignoredUploadFiles) - count($ignoredPreview))) ?></p>
         <?php endif; ?>
       </details>
     <?php endif; ?>
@@ -211,7 +216,7 @@ require __DIR__ . '/../shared/latex_page.php';
   <div style="margin-top:10px;">
     <p class="muted"><?=h(t('latex_templates.packages.description'))?></p>
     <table class="table">
-      <tr><th>Name</th><th>Status</th><th>Standard</th><th>Hauptdatei</th><th>Erstellt</th><th>Dateien</th><th>Warnungen</th><th>Aktionen</th></tr>
+      <tr><th><?=h(t('latex_templates.table.name'))?></th><th><?=h(t('latex_templates.table.status'))?></th><th><?=h(t('latex_templates.table.default'))?></th><th><?=h(t('latex_templates.table.main_file'))?></th><th><?=h(t('latex_templates.table.created'))?></th><th><?=h(t('latex_templates.table.files'))?></th><th><?=h(t('latex_templates.table.warnings'))?></th><th><?=h(t('latex_templates.table.actions'))?></th></tr>
       <?php foreach ($latexPackages as $pkg):
         $manifest = json_decode((string)($pkg['manifest_json'] ?? '{}'), true);
         $fileCount = is_array($manifest['files'] ?? null) ? count($manifest['files']) : 0;
@@ -221,7 +226,7 @@ require __DIR__ . '/../shared/latex_page.php';
       <tr>
         <td><?=h((string)$pkg['name'])?></td>
         <td><?=h((string)$pkg['status'])?></td>
-        <td><?=$isDefaultPkg ? 'Ja' : 'Nein'?></td>
+        <td><?=h($isDefaultPkg ? t('common.yes') : t('common.no'))?></td>
         <td><?=h((string)$pkg['main_file'])?></td>
         <td><?=h((string)$pkg['created_at'])?></td>
         <td><?=h((string)$fileCount)?></td>
@@ -231,52 +236,52 @@ require __DIR__ . '/../shared/latex_page.php';
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="latex_package_action" value="toggle_active">
             <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
-            <button class="btn" type="submit" <?=$isDefaultPkg ? 'disabled title="Standardpaket kann nicht deaktiviert werden."' : ''?>>Aktiv/Inaktiv</button>
+            <button class="btn" type="submit" <?=$isDefaultPkg ? 'disabled title="' . h(t('latex_templates.error.default_package_cannot_deactivate')) . '"' : ''?>><?=h(t('latex_templates.action.toggle_active'))?></button>
           </form>
           <form method="post" style="display:inline">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="latex_package_action" value="set_default">
             <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
-            <button class="btn" type="submit" <?=((string)$pkg['status'] !== 'active') ? 'disabled title="Nur aktive Pakete können Standard sein."' : ''?>>Als Standard</button>
+            <button class="btn" type="submit" <?=((string)$pkg['status'] !== 'active') ? 'disabled title="' . h(t('latex_templates.error.only_active_package_default')) . '"' : ''?>><?=h(t('latex_templates.action.set_default'))?></button>
           </form>
           <?php
             $deletePackageConfirm = $isDefaultPkg
-              ? 'Dieses LaTeX-Vorlagenpaket ist aktuell als Standard gesetzt. Wenn du es löschst, wird automatisch ein anderes Paket als Standard gesetzt oder die Systemvorlage verwendet.'
-              : 'LaTeX-Paket wirklich löschen?';
+              ? t('latex_templates.confirm.delete_default_package')
+              : t('latex_templates.confirm.delete_package');
           ?>
           <form method="post" style="display:inline" onsubmit="return confirm('<?=h($deletePackageConfirm)?>');">
             <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
             <input type="hidden" name="latex_package_action" value="delete">
             <input type="hidden" name="package_id" value="<?=h((string)$pkg['id'])?>">
-            <button class="btn" type="submit">Löschen</button>
+            <button class="btn" type="submit"><?=h(t('latex_templates.action.delete'))?></button>
           </form>
         </td>
       </tr>
       <?php endforeach; ?>
-      <?php if (!$latexPackages): ?><tr><td colspan="8" class="muted">Noch keine LaTeX-Vorlagenpakete importiert.</td></tr><?php endif; ?>
+      <?php if (!$latexPackages): ?><tr><td colspan="8" class="muted"><?=h(t('latex_templates.packages.empty'))?></td></tr><?php endif; ?>
     </table>
 
-    <h4>LaTeX-Vorlagenpaket hochladen</h4>
+    <h4><?=h(t('latex_templates.package_upload.heading'))?></h4>
     <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="latex_package_action" value="upload">
-      <label>Name <input class="input" name="package_name" required></label>
-      <label>Beschreibung <input class="input" name="package_description"></label>
-      <label>Hauptdatei <input class="input" name="package_main_file" value="main.tex" required></label>
-      <label>ZIP-Datei <input class="input" type="file" name="latex_package_zip" accept=".zip" required></label>
-      <label><input type="checkbox" name="package_is_active" checked> Aktiv</label>
-      <label><input type="checkbox" name="package_is_default"> Als Standard setzen</label>
-      <button class="btn" type="submit">LaTeX-Paket importieren</button>
+      <label><?=h(t('latex_templates.form.name'))?> <input class="input" name="package_name" required></label>
+      <label><?=h(t('latex_templates.form.description'))?> <input class="input" name="package_description"></label>
+      <label><?=h(t('latex_templates.form.main_file'))?> <input class="input" name="package_main_file" value="main.tex" required></label>
+      <label><?=h(t('latex_templates.form.zip_file'))?> <input class="input" type="file" name="latex_package_zip" accept=".zip" required></label>
+      <label><input type="checkbox" name="package_is_active" checked> <?=h(t('latex_templates.form.active'))?></label>
+      <label><input type="checkbox" name="package_is_default"> <?=h(t('latex_templates.action.set_default'))?></label>
+      <button class="btn" type="submit"><?=h(t('latex_templates.action.import_package'))?></button>
     </form>
   </div>
 </details>
 
 <details class="card" style="margin-top:20px;">
-  <summary><strong>Layoutvorlagen / Titelseiten</strong></summary>
+  <summary><strong><?=h(t('latex_templates.layouts.heading'))?></strong></summary>
   <div style="margin-top:10px;">
-    <p>Die Layout-Datei muss dieselben Makros bereitstellen wie die bestehende layout.tex, insbesondere \CoverPage und \AGSection.</p>
+    <p><?=h(t('latex_templates.layouts.description'))?></p>
     <table class="table">
-      <tr><th>Name</th><th>Key</th><th>Aktiv</th><th>Standard</th><th>Datei</th><th>Aktionen</th></tr>
+      <tr><th><?=h(t('latex_templates.table.name'))?></th><th><?=h(t('latex_templates.table.key'))?></th><th><?=h(t('latex_templates.table.active'))?></th><th><?=h(t('latex_templates.table.default'))?></th><th><?=h(t('latex_templates.table.file'))?></th><th><?=h(t('latex_templates.table.actions'))?></th></tr>
       <?php foreach($templates as $tpl):
         $exists = is_file(latex_layout_absolute_path((string)$tpl['file_path']));
         $isDefault = ((int)$tpl['is_default'] === 1);
@@ -284,48 +289,48 @@ require __DIR__ . '/../shared/latex_page.php';
         <tr>
           <td><?= h((string)$tpl['display_name']) ?></td>
           <td><?= h((string)$tpl['key_name']) ?></td>
-          <td><?= ((int)$tpl['is_active']===1?'Ja':'Nein') ?></td>
-          <td><?= $isDefault ? 'Ja' : 'Nein' ?></td>
-          <td><?= $exists?'Ja':'Nein' ?></td>
+          <td><?= h(((int)$tpl['is_active']===1) ? t('common.yes') : t('common.no')) ?></td>
+          <td><?= h($isDefault ? t('common.yes') : t('common.no')) ?></td>
+          <td><?= h($exists ? t('common.yes') : t('common.no')) ?></td>
           <td>
             <form method="post" style="display:inline">
               <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
               <input type="hidden" name="layout_action" value="toggle_active">
               <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
-              <button class="btn" type="submit" <?= $isDefault ? 'disabled title="Standardvorlage kann nicht deaktiviert werden."' : '' ?>>Aktiv/Inaktiv</button>
+              <button class="btn" type="submit" <?= $isDefault ? 'disabled title="' . h(t('latex_templates.error.default_layout_cannot_deactivate')) . '"' : '' ?>><?=h(t('latex_templates.action.toggle_active'))?></button>
             </form>
             <form method="post" style="display:inline">
               <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
               <input type="hidden" name="layout_action" value="set_default">
               <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
-              <button class="btn" type="submit" <?= ((int)$tpl['is_active']!==1) ? 'disabled title="Nur aktive Vorlagen können Standard sein."' : '' ?>>Als Standard</button>
+              <button class="btn" type="submit" <?= ((int)$tpl['is_active']!==1) ? 'disabled title="' . h(t('latex_templates.error.only_active_layout_default')) . '"' : '' ?>><?=h(t('latex_templates.action.set_default'))?></button>
             </form>
             <?php
               $deleteLayoutConfirm = $isDefault
-                ? 'Diese Layoutvorlage ist aktuell als Standard gesetzt. Wenn du sie löschst, wird automatisch eine andere Vorlage als Standard gesetzt oder die Systemvorlage verwendet.'
-                : 'Vorlage wirklich löschen?';
+                ? t('latex_templates.confirm.delete_default_layout')
+                : t('latex_templates.confirm.delete_layout');
             ?>
             <form method="post" style="display:inline" onsubmit="return confirm('<?=h($deleteLayoutConfirm)?>');">
               <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
               <input type="hidden" name="layout_action" value="delete">
               <input type="hidden" name="template_id" value="<?= (int)$tpl['id'] ?>">
-              <button class="btn" type="submit">Löschen</button>
+              <button class="btn" type="submit"><?=h(t('latex_templates.action.delete'))?></button>
             </form>
           </td>
         </tr>
       <?php endforeach; ?>
     </table>
 
-    <h4>Neue Layoutvorlage hochladen / ersetzen</h4>
+    <h4><?=h(t('latex_templates.layout_upload.heading'))?></h4>
     <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="layout_action" value="upload">
-      <label>Anzeigename <input class="input" name="display_name" required></label>
-      <label>Key <input class="input" name="key_name" required pattern="[a-z0-9_-]+"></label>
-      <label>Datei (.tex) <input class="input" type="file" name="layout_file" accept=".tex" required></label>
-      <label><input type="checkbox" name="is_active" checked> Aktiv</label>
-      <label><input type="checkbox" name="is_default"> Als Standard setzen</label>
-      <button class="btn" type="submit">Layoutvorlage hochladen</button>
+      <label><?=h(t('latex_templates.form.display_name'))?> <input class="input" name="display_name" required></label>
+      <label><?=h(t('latex_templates.form.key'))?> <input class="input" name="key_name" required pattern="[a-z0-9_-]+"></label>
+      <label><?=h(t('latex_templates.form.tex_file'))?> <input class="input" type="file" name="layout_file" accept=".tex" required></label>
+      <label><input type="checkbox" name="is_active" checked> <?=h(t('latex_templates.form.active'))?></label>
+      <label><input type="checkbox" name="is_default"> <?=h(t('latex_templates.action.set_default'))?></label>
+      <button class="btn" type="submit"><?=h(t('latex_templates.action.upload_layout'))?></button>
     </form>
   </div>
 </details>

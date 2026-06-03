@@ -42,12 +42,12 @@ function render_competency_placeholder_html(string $text): string {
     $escaped = h($text);
     $withCheckboxes = preg_replace(
         '/\[checkbox(?:\:[^\]]*)?\]/i',
-        '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="Checkbox-Platzhalter"></span>',
+        '<span class="inline-checkbox-placeholder" title="[checkbox]" aria-label="' . h(t('latex.inline.checkbox_placeholder')) . '"></span>',
         $escaped
     ) ?? $escaped;
     return preg_replace(
         '/\[vline\]/i',
-        '<span class="inline-vline-placeholder" title="[vline]" aria-label="Vertikale Trennlinie"></span>',
+        '<span class="inline-vline-placeholder" title="[vline]" aria-label="' . h(t('latex.inline.vertical_line')) . '"></span>',
         $withCheckboxes
     ) ?? $withCheckboxes;
 }
@@ -56,7 +56,7 @@ function render_competency_placeholder_html_with_space(string $text): string {
     $base = render_competency_placeholder_html($text);
     return preg_replace(
         '/\[space\s*=\s*[^\]]+\]/i',
-        '<span class="inline-space-placeholder" title="[space]" aria-label="Abstand"></span>',
+        '<span class="inline-space-placeholder" title="[space]" aria-label="' . h(t('latex.inline.space')) . '"></span>',
         $base
     ) ?? $base;
 }
@@ -72,50 +72,50 @@ if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 ?>
 
-<h1><?= h(t('latex.title', 'Kompetenz-PDF erstellen')) ?></h1>
-<p><?= h(t('latex.desc', 'Wähle die Kompetenzen aus, die im PDF erscheinen sollen.')) ?></p>
+<h1><?= h(t('latex.title')) ?></h1>
+<p><?= h(t('latex.desc')) ?></p>
 
 <form id="pdfForm" method="post" action="<?= h($latexBuildUrl) ?>">
 <input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>">
 <input type="hidden" name="source" value="db">
 <input type="hidden" name="grade_level" value="<?= h((string)$selectedGrade) ?>">
 <div class="card" style="padding:12px;margin:12px 0;">
-  <label><strong>Klassenstufe</strong></label>
+  <label><strong><?= h(t('latex.grade_level')) ?></strong></label>
   <select class="input" id="gradeLevelSelect">
     <?php for($g=1;$g<=4;$g++): ?><option value="<?= $g ?>" <?= $selectedGrade===$g?'selected':'' ?>><?= $g ?></option><?php endfor; ?>
   </select>
 </div>
 <div class="card" style="padding:12px;margin:12px 0;">
-  <strong>Sonderbereiche</strong>
+  <strong><?= h(t('latex.special_sections')) ?></strong>
   <label style="display:block;margin-top:8px;">
     <input type="hidden" name="show_sel" value="0">
-    <input type="checkbox" name="show_sel" value="1" checked> SEL-Bereich anzeigen
+    <input type="checkbox" name="show_sel" value="1" checked > <?= h(t('latex.option.show_sel')) ?>
   </label>
   <label style="display:block;margin-top:6px;">
     <input type="hidden" name="show_ag" value="0">
-    <input type="checkbox" name="show_ag" value="1" checked> AG-Bereich anzeigen
+    <input type="checkbox" name="show_ag" value="1" checked > <?= h(t('latex.option.show_ag')) ?>
   </label>
   <label style="display:block;margin-top:6px;">
     <input type="hidden" name="enable_student_teacher_ratings" value="0">
-    <input type="checkbox" name="enable_student_teacher_ratings" value="1"> Schüler-/Lehrer-Bewertungsspalten anzeigen
+    <input type="checkbox" name="enable_student_teacher_ratings" value="1" > <?= h(t('latex.option.student_teacher_ratings')) ?>
   </label>
   <label style="display:block;margin-top:6px;">
     <input type="hidden" name="export_rcff" value="0">
-    <input type="checkbox" name="export_rcff" value="1"> Zusätzlich RCFF-Felddatei exportieren
+    <input type="checkbox" name="export_rcff" value="1" > <?= h(t('latex.option.export_rcff')) ?>
   </label>
   <?php if (!empty($allowTemplatePackage)): ?>
   <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
     <input type="hidden" name="create_template_package" value="0">
-    <input type="checkbox" name="create_template_package" value="1"> Als Template-Paket vorbereiten (PDF + Felddaten)
+    <input type="checkbox" name="create_template_package" value="1" > <?= h(t('latex.option.prepare_template_package')) ?>
   </label>
-  <p class="muted" style="margin:6px 0 0;">Speichert intern PDF, RCFF-Felddaten und Generierungsmetadaten für eine spätere Vorlagenübernahme.</p>
+  <p class="muted" style="margin:6px 0 0;"><?= h(t('latex.option.prepare_template_package_help')) ?></p>
   <?php endif; ?>
   <?php if (!empty($allowTeacherTemplateSubmission)): ?>
   <label style="display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
     <input type="hidden" name="submit_template_package_to_admin" value="0">
-    <input type="checkbox" name="submit_template_package_to_admin" value="1"> Als Vorlage an Admin senden
+    <input type="checkbox" name="submit_template_package_to_admin" value="1" > <?= h(t('latex.option.submit_template_package')) ?>
   </label>
-  <p class="muted" style="margin:6px 0 0;">Das PDF und die Felddaten werden intern gespeichert. Der Admin kann daraus eine Vorlage anlegen.</p>
+  <p class="muted" style="margin:6px 0 0;"><?= h(t('latex.option.submit_template_package_help')) ?></p>
   <?php endif; ?>
 </div>
 
@@ -141,17 +141,17 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
       <optgroup label="<?=h(t('latex_templates.template_source.package_group'))?>">
         <?php foreach ($ltpList as $pkg): ?>
           <?php $sourceValue = 'package:' . (int)$pkg['id']; ?>
-          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.package'), (string)$pkg['name'])) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (Standard)' : '' ?></option>
+          <option value="<?= h($sourceValue) ?>" <?= $selectedTemplateSource === $sourceValue ? 'selected' : '' ?>><?= h(sprintf(t('latex_templates.template_source.package'), (string)$pkg['name'])) ?><?= ((int)($pkg['is_default'] ?? 0) === 1) ? ' (' . h(t('latex_templates.table.default')) . ')' : '' ?></option>
         <?php endforeach; ?>
       </optgroup>
     <?php endif; ?>
   </select>
   <p class="muted" style="margin:6px 0 0;"><?=h(t('latex_templates.template_source.help'))?></p>
-  <?php if (!$ltpList && !empty($allowLatexTemplatePackageSelection)): ?><p class="muted" style="margin:6px 0 0;">Keine importierten LaTeX-Vorlagenpakete vorhanden.</p><?php endif; ?>
+  <?php if (!$ltpList && !empty($allowLatexTemplatePackageSelection)): ?><p class="muted" style="margin:6px 0 0;"><?= h(t('latex_templates.packages.empty')) ?></p><?php endif; ?>
 </div>
 <div style="display:flex;gap:8px;margin:8px 0 12px;">
-  <button type="button" class="btn" id="collapseAllBtn">Alle einklappen</button>
-  <button type="button" class="btn" id="expandAllBtn">Alle ausklappen</button>
+  <button type="button" class="btn" id="collapseAllBtn"><?= h(t('latex.action.collapse_all')) ?></button>
+  <button type="button" class="btn" id="expandAllBtn"><?= h(t('latex.action.expand_all')) ?></button>
 </div>
 <?php foreach ($sectionsDb as $sectionId => $section): ?>
   <?php
@@ -164,28 +164,28 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
     <summary><h2 class="cat-title"><?= h($section['de']) ?> | <span style="font-style:italic;color:#666;"><?= h((string)($section['en'] ?? '')) ?></span></h2></summary>
     <label style="display:block; margin:8px 0 8px 0; font-weight:600;">
       <input type="checkbox" class="category-toggle" name="cat_active[]" value="<?= h((string)$sectionId) ?>" data-cat-id="<?= h((string)$sectionId) ?>" checked>
-      Kategorie aktiv
+      <?= h(t('latex.category_active')) ?>
     </label>
     <div class="category-warning" data-cat-warning="<?= h((string)$sectionId) ?>" style="display:none; margin:0 0 10px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">
-      Achtung: Durch das Deaktivieren dieser Kategorie werden auch verpflichtende Kompetenzen ausgeblendet.
+      <?= h(t('latex.category_required_warning')) ?>
     </div>
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="pagebreaks[]" value="<?= h((string)$sectionId) ?>">
-      Seitenumbruch vor dieser Kategorie
+      <?= h(t('latex.pagebreak_before_category')) ?>
     </label>
     <label style="display:block; margin:8px 0 12px 0;">
       <input type="checkbox" name="grade_field_cats[]" value="<?= h((string)$sectionId) ?>">
-      Notenfeld im Kategorie-Header anzeigen
+      <?= h(t('latex.grade_field_in_header')) ?>
     </label>
     <div class="category-body" data-cat-body="<?= h((string)$sectionId) ?>">
     <?php if (!empty($section['direct'])): ?>
       <details class="sub-details" style="margin-top:12px; margin-left:12px;" open>
-        <summary><strong>Ohne Unterkategorie</strong></summary>
+        <summary><strong><?= h(t('latex.without_subcategory')) ?></strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
-          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge">Infozeile</span><?php endif; ?>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
+            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
             <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
@@ -203,17 +203,17 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <summary><strong><?= h((string)$sub['de']) ?></strong> | <span style="font-style:italic;color:#666;"><?= h((string)($sub['en'] ?? '')) ?></span></summary>
         <label style="display:block; margin:8px 0 8px 18px; font-weight:600;">
           <input type="checkbox" class="subcategory-toggle" name="sub_active[]" value="<?= h((string)$subId) ?>" data-sub-id="<?= h((string)$subId) ?>" data-parent-cat-id="<?= h((string)$sectionId) ?>" checked>
-          <?= h(t('latex_templates.subcategory_active', 'Unterkategorie aktiv')) ?>
+          <?= h(t('latex_templates.subcategory_active')) ?>
         </label>
         <div class="subcategory-warning" data-sub-warning="<?= h((string)$subId) ?>" style="display:none; margin:0 0 10px 18px; padding:8px 10px; border-radius:8px; background:#fdecec; color:#a61b1b; border:1px solid #f4b4b4;">
-          <?= h(t('latex_templates.subcategory_required_warning', 'Achtung: Diese Unterkategorie enthält verpflichtende Kompetenzen. Wenn du sie deaktivierst, erscheinen diese nicht im PDF.')) ?>
+          <?= h(t('latex_templates.subcategory_required_warning')) ?>
         </div>
         <div class="subcategory-body" data-sub-body="<?= h((string)$subId) ?>">
         <?php foreach (($sub['items'] ?? []) as $item): ?>
-          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'Verpflichtende Kompetenz kann nicht einzeln deaktiviert werden' : '' ?>">
+          <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
             <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge">Pflicht</span><?php endif; ?>
-            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge">Infozeile</span><?php endif; ?>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
+            <?= render_competency_placeholder_html_with_space((string)$item['text_de']) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
             <br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space((string)($item['text_en'] ?? '')) ?></span>
           </label>
         <?php endforeach; ?>
@@ -224,7 +224,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
   </details>
 <?php endforeach; ?>
 
-<button class="btn" type="submit" id="createPdfButton">PDF erstellen</button>
+<button class="btn" type="submit" id="createPdfButton"><?= h(t('latex.action.create_pdf')) ?></button>
 </form>
 
 <style>
@@ -242,7 +242,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 <div id="pdfLoadingOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; align-items:center; justify-content:center;">
   <div class="card" style="padding:18px 22px; font-weight:600; display:flex; gap:12px; align-items:center;">
     <span style="width:18px; height:18px; border:3px solid #d0d7de; border-top-color:#0b57d0; border-radius:50%; display:inline-block; animation:spin .8s linear infinite;"></span>
-    <span>PDF wird erstellt … bitte warten.</span>
+    <span><?= h(t('latex.loading')) ?></span>
   </div>
 </div>
 
@@ -253,7 +253,7 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
 </div>
 
 <div id="pdfDebug" class="card" style="display:none; margin-top:16px; border-left:4px solid #b42318;">
-  <h3 style="margin-top:0;">Fehlerdetails</h3>
+  <h3 style="margin-top:0;"><?= h(t('latex.error_details')) ?></h3>
   <pre id="pdfDebugText" style="white-space:pre-wrap; overflow:auto; max-height:280px;"></pre>
 </div>
 
@@ -362,7 +362,7 @@ form.addEventListener('submit', async (event) => {
 
     if (!response.ok) {
       const text = await response.text();
-      const msg = text || 'PDF konnte nicht erstellt werden.';
+      const msg = text || <?= json_encode(t('latex.error.create_failed')) ?>;
       pdfDebugText.textContent = msg;
       pdfDebug.style.display = 'block';
       console.error('PDF build failed', { status: response.status, contentType, body: msg });
@@ -374,15 +374,15 @@ form.addEventListener('submit', async (event) => {
     const packageId = response.headers.get('X-Template-Package-Id') || '';
     const packageError = response.headers.get('X-Template-Package-Error') || '';
     if (templatePackageStatus && packageSubmitted) {
-      templatePackageStatus.textContent = 'Die Vorlage wurde an den Admin gesendet.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.textContent = <?= json_encode(t('latex.template_package.submitted')) ?> + (packageId ? (' (' + <?= json_encode(t('latex.template_package.package_number')) ?> + ' #' + packageId + ')') : '');
       templatePackageStatus.style.borderLeft = '4px solid #067647';
       templatePackageStatus.style.display = 'block';
     } else if (templatePackageStatus && packageCreated) {
-      templatePackageStatus.textContent = 'Template-Paket wurde vorbereitet und kann im nächsten Schritt als Vorlage übernommen werden.' + (packageId ? (' (Paket #' + packageId + ')') : '');
+      templatePackageStatus.textContent = <?= json_encode(t('latex.template_package.prepared')) ?> + (packageId ? (' (' + <?= json_encode(t('latex.template_package.package_number')) ?> + ' #' + packageId + ')') : '');
       templatePackageStatus.style.borderLeft = '4px solid #067647';
       templatePackageStatus.style.display = 'block';
     } else if (templatePackageStatus && packageError) {
-      templatePackageStatus.textContent = 'PDF wurde erstellt, aber das Template-Paket konnte nicht gespeichert werden: ' + decodeURIComponent(packageError);
+      templatePackageStatus.textContent = <?= json_encode(t('latex.template_package.save_failed_prefix')) ?> + ' ' + decodeURIComponent(packageError);
       templatePackageStatus.style.borderLeft = '4px solid #b42318';
       templatePackageStatus.style.display = 'block';
     }
@@ -400,7 +400,7 @@ form.addEventListener('submit', async (event) => {
 
     if (!contentType.includes('application/pdf')) {
       const text = await response.text();
-      const msg = text || 'Unerwartete Serverantwort (kein PDF).';
+      const msg = text || <?= json_encode(t('latex.error.non_pdf_response')) ?>;
       pdfDebugText.textContent = msg;
       pdfDebug.style.display = 'block';
       console.error('PDF build returned non-PDF response', { status: response.status, contentType, body: msg });
@@ -418,7 +418,7 @@ form.addEventListener('submit', async (event) => {
     pdfPreviewWrap.style.display = 'block';
     pdfPreviewWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) {
-    const msg = (error && error.message) ? error.message : 'Unbekannter Fehler bei der PDF-Erstellung.';
+    const msg = (error && error.message) ? error.message : <?= json_encode(t('latex.error.unknown_create')) ?>;
     pdfDebugText.textContent = msg;
     pdfDebug.style.display = 'block';
     console.error('PDF build exception', error);
