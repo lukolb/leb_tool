@@ -945,5 +945,25 @@ try {
   json_out(['ok' => true]);
 
 } catch (Throwable $e) {
-  json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  $message = $e->getMessage();
+  $lowerMessage = strtolower($message);
+  $status = 400;
+  $code = 'request_failed';
+  if (str_contains($lowerMessage, 'csrf') || str_contains($lowerMessage, 'token')) {
+    $status = 403;
+    $code = 'csrf_failed';
+  } elseif (str_contains($lowerMessage, 'nicht angemeldet') || str_contains($lowerMessage, 'not_logged_in')) {
+    $status = 401;
+    $code = 'session_expired';
+  } elseif ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+    $status = 500;
+    $code = 'internal_error';
+    $message = t('student.js.save_error_generic');
+  }
+  json_out([
+    'ok' => false,
+    'error' => $code,
+    'message' => $message,
+    'retryable' => in_array($status, [500, 502, 503, 504], true),
+  ], $status);
 }

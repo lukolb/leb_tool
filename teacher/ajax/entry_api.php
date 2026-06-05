@@ -3916,6 +3916,7 @@ if ($action === 'delegations_save') {
     $code = 'internal_error';
     $message = t('teacher.entry_api.error.internal');
   }
+  $retryable = in_array($status, [500, 502, 503, 504], true);
 
   error_log(sprintf(
     '[teacher_entry_api] action=%s user_id=%d class_id=%d report_instance_id=%d status=%d code=%s message=%s at %s:%d',
@@ -3934,5 +3935,6 @@ if ($action === 'delegations_save') {
     'ok' => false,
     'error' => $code,
     'message' => $message,
+    'retryable' => $retryable,
   ], $status);
 }

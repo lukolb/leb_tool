@@ -617,6 +617,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const pendingTimers = new Map();
   const dirtyFields = new Map();
   const fieldSaveChains = new Map();
+  const retryTimers = new Map();
+  const retryAttempts = new Map();
+  const fieldRetryableErrors = new Map();
   let saveInFlight = 0;
   let navigationSaveInFlight = false;
   let lastSaveAt = null;
@@ -993,17 +996,76 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
+  function isRetryableSaveError(err){
+    if (typeof err?.retryable === 'boolean') return !!err.retryable;
+    const status = Number(err?.status || 0);
+    const code = String(err?.code || '').toLowerCase();
+    if ([401, 403, 404, 409, 422].includes(status)) return false;
+    if (status >= 500 || status === 0) return true;
+    return ['network','timeout','invalid_json','non_json'].includes(code);
+  }
+
+  function retryDelayForAttempt(attempt){
+    const delays = [2000, 5000, 10000, 20000, 30000];
+    return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
+  }
+
   async function api(action, payload, options = {}){
     const keepalive = !!options.keepalive;
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
-      keepalive
-    });
-    const j = await res.json().catch(()=>null);
-    if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
-    return j;
+    const controller = new AbortController();
+    const timeoutMs = Number(options.timeoutMs || 30000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ action, csrf_token: csrf, ...payload }),
+        keepalive,
+        signal: controller.signal
+      });
+      const text = await res.text();
+      let j = null;
+      try { j = text ? JSON.parse(text) : null; } catch (parseErr) {
+        const err = new Error(t('student.js.ajax_invalid_json', 'Server response could not be read.'));
+        err.code = 'invalid_json';
+        err.status = res.status;
+        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.bodySnippet = text.slice(0, 300);
+        throw err;
+      }
+      if (!j) {
+        const err = new Error(t('student.js.ajax_non_json', 'Unexpected server response.'));
+        err.code = 'non_json';
+        err.status = res.status;
+        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.bodySnippet = text.slice(0, 300);
+        throw err;
+      }
+      if (!res.ok || !j.ok) {
+        const err = new Error(String(j.message || j.error || t('student.js.save_error_generic', 'Error while saving')));
+        err.code = String(j.error || 'http_error');
+        err.status = res.status;
+        err.retryable = typeof j.retryable === 'boolean' ? !!j.retryable : isRetryableSaveError(err);
+        throw err;
+      }
+      return j;
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        err.code = 'timeout';
+        err.status = 0;
+        err.retryable = true;
+        err.message = t('student.js.ajax_timeout', 'The request took too long.');
+      } else if (!err.code) {
+        err.code = 'network';
+        err.status = 0;
+        err.retryable = true;
+        err.message = t('student.js.connection_interrupted', 'Connection interrupted. Your input is kept.');
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   // ---------- Language switch without page reload ----------
@@ -1660,8 +1722,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       return true;
     } catch(err){
       const msg = String(err?.message || t('student.js.save_error_generic', 'Fehler beim Speichern'));
-      const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-      setSaveStatus('error', offline ? t('student.js.save_error_offline', '❌ Fehler (offline)') : tfmt('student.js.save_error', '❌ Fehler: {message}', { message: msg }));
+      const retryable = isRetryableSaveError(err);
+      fieldRetryableErrors.set(String(fieldId), retryable);
+      if (retryable) {
+        setSaveStatus('retrying', t('student.js.save_retry_failed_auto', 'Save failed. It will be retried automatically…'));
+      } else {
+        setSaveStatus('failed_permanent', tfmt('student.js.save_permanent_error', 'Saving is not possible: {message}', { message: msg }));
+      }
       return false;
     } finally {
       saveInFlight--;
@@ -1670,7 +1737,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   function hasPendingSaves(){
-    return dirtyFields.size > 0 || pendingTimers.size > 0 || fieldSaveChains.size > 0 || saveInFlight > 0;
+    return dirtyFields.size > 0 || pendingTimers.size > 0 || fieldSaveChains.size > 0 || retryTimers.size > 0 || saveInFlight > 0;
   }
 
   function setNavigationSaving(on){
@@ -1682,6 +1749,28 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (elNav) elNav.classList.toggle('saving-disabled', !!on);
   }
 
+  function clearFieldRetry(key){
+    if (retryTimers.has(key)) {
+      clearTimeout(retryTimers.get(key));
+      retryTimers.delete(key);
+    }
+  }
+
+  function scheduleFieldRetry(fieldId){
+    const key = String(fieldId);
+    if (!dirtyFields.has(key) || fieldRetryableErrors.get(key) === false || retryTimers.has(key) || isLocked()) return;
+    const attempt = (retryAttempts.get(key) || 0) + 1;
+    retryAttempts.set(key, attempt);
+    const delay = retryDelayForAttempt(attempt);
+    setSaveStatus('retrying', t('student.js.save_retry_failed_auto', 'Save failed. It will be retried automatically…'));
+    retryTimers.set(key, setTimeout(() => {
+      retryTimers.delete(key);
+      if (!dirtyFields.has(key) || fieldSaveChains.has(key) || isLocked()) return;
+      setSaveStatus('retrying', t('student.js.save_retrying', 'Retrying save…'));
+      void runQueuedFieldSave(fieldId);
+    }, delay));
+  }
+
   function runQueuedFieldSave(fieldId){
     const key = String(fieldId);
     if (fieldSaveChains.has(key)) return fieldSaveChains.get(key);
@@ -1689,9 +1778,15 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     const chain = (async () => {
       try {
         while (!isLocked() && dirtyFields.has(key)) {
+          clearFieldRetry(key);
           const valueToSave = dirtyFields.get(key);
           const ok = await saveFieldValue(fieldId, valueToSave);
-          if (!ok) return false;
+          if (!ok) {
+            scheduleFieldRetry(fieldId);
+            return false;
+          }
+          retryAttempts.delete(key);
+          fieldRetryableErrors.delete(key);
           if (dirtyFields.get(key) === valueToSave) {
             dirtyFields.delete(key);
           }
@@ -1738,14 +1833,16 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (entry && entry.timer) clearTimeout(entry.timer);
     });
     pendingTimers.clear();
+    retryTimers.forEach((timer) => clearTimeout(timer));
+    retryTimers.clear();
 
     const keys = new Set([...dirtyFields.keys(), ...fieldSaveChains.keys()]);
     if (!keys.size) return true;
 
     const results = await Promise.all([...keys].map((key) => runQueuedFieldSave(Number(key))));
     const ok = results.every(Boolean) && dirtyFields.size === 0;
-    if (!ok) {
-      setSaveStatus('error', t('student.js.save_error_block_nav', 'Bitte speichere zuerst erfolgreich.'));
+    if (!ok && retryTimers.size > 0) {
+      setSaveStatus('retrying', t('student.js.save_retry_failed_auto', 'Save failed. It will be retried automatically…'));
     }
     return ok;
   }
@@ -1792,6 +1889,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (entry && entry.timer) clearTimeout(entry.timer);
     });
     pendingTimers.clear();
+    retryTimers.forEach((timer) => clearTimeout(timer));
+    retryTimers.clear();
     dirtyFields.forEach((value, key) => {
       fireAndForgetSave(key, value);
     });

@@ -2043,6 +2043,10 @@ render_teacher_header($pageTitle);
     'save_unsaved_changes' => t('teacher.entry.save.unsaved_changes'),
     'save_failed_unsaved' => t('teacher.entry.save.failed_unsaved'),
     'save_blocked_switch' => t('teacher.entry.save.blocked_switch'),
+    'save_retry_failed_auto' => t('teacher.entry.save.retry_failed_auto'),
+    'save_retrying' => t('teacher.entry.save.retrying'),
+    'save_permanent_error' => t('teacher.entry.save.permanent_error'),
+    'save_connection_interrupted' => t('teacher.entry.save.connection_interrupted'),
     'ajax_network_error' => t('teacher.entry.ajax.network_error'),
     'ajax_session_expired' => t('teacher.entry.ajax.session_expired'),
     'ajax_non_json' => t('teacher.entry.ajax.non_json'),
@@ -2349,6 +2353,8 @@ render_teacher_header($pageTitle);
     saveTimers: new Map(),
     pendingPayloads: new Map(),
     saveChains: new Map(),
+    retryTimers: new Map(),
+    retryAttempts: new Map(),
     saveInFlight: 0,
     navigationLocked: false,
     mergeDecisions: new Map(),
@@ -2944,6 +2950,20 @@ render_teacher_header($pageTitle);
     return String(err?.message || tEntry('ajax_request_failed'));
   }
 
+  function isRetryableSaveError(err){
+    if (typeof err?.retryable === 'boolean') return !!err.retryable;
+    const status = Number(err?.status || 0);
+    const code = String(err?.code || '').toLowerCase();
+    if ([401, 403, 404, 409, 422].includes(status)) return false;
+    if (status >= 500 || status === 0) return true;
+    return ['network','timeout','invalid_json','non_json'].includes(code);
+  }
+
+  function retryDelayForAttempt(attempt){
+    const delays = [2000, 5000, 10000, 20000, 30000];
+    return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
+  }
+
   async function apiFetchJson(url, payload, options = {}){
     const controller = new AbortController();
     const timeoutMs = Number(options.timeoutMs || 30000);
@@ -2966,6 +2986,7 @@ render_teacher_header($pageTitle);
           err.code = 'invalid_json';
           err.status = res.status;
           err.bodySnippet = text.slice(0, 300);
+          err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
           throw err;
         }
       } else if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
@@ -2976,6 +2997,7 @@ render_teacher_header($pageTitle);
         err.code = 'non_json';
         err.status = res.status;
         err.bodySnippet = text.slice(0, 300);
+        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
         throw err;
       }
       if (!res.ok || json.ok === false) {
@@ -2983,16 +3005,21 @@ render_teacher_header($pageTitle);
         err.code = String(json.error || 'http_error');
         err.status = res.status;
         err.bodySnippet = text.slice(0, 300);
+        err.retryable = typeof json.retryable === 'boolean' ? !!json.retryable : isRetryableSaveError(err);
         throw err;
       }
       return json;
     } catch (err) {
       if (err && err.name === 'AbortError') {
         err.code = 'timeout';
+        err.status = 0;
+        err.retryable = true;
         err.message = tEntry('ajax_timeout');
       } else if (!err.code) {
         err.code = 'network';
-        err.message = tEntry('ajax_network_error');
+        err.status = 0;
+        err.retryable = true;
+        err.message = tEntry('save_connection_interrupted');
       }
       console.warn('entry api request failed', { code: err.code, status: err.status || 0, body: err.bodySnippet || '' });
       throw err;
@@ -3024,7 +3051,7 @@ render_teacher_header($pageTitle);
   }
 
   function hasPendingSaves(){
-    return ui.pendingPayloads.size > 0 || ui.saveTimers.size > 0 || ui.saveChains.size > 0 || ui.saveInFlight > 0;
+    return ui.pendingPayloads.size > 0 || ui.saveTimers.size > 0 || ui.saveChains.size > 0 || ui.retryTimers.size > 0 || ui.saveInFlight > 0;
   }
 
   function setNavigationLocked(on){
@@ -3039,11 +3066,33 @@ render_teacher_header($pageTitle);
     setSaveStatus('dirty', tEntry('save_dirty'));
   }
 
+  function clearSaveRetry(key){
+    if (ui.retryTimers.has(key)) {
+      clearTimeout(ui.retryTimers.get(key));
+      ui.retryTimers.delete(key);
+    }
+  }
+
+  function scheduleSaveRetry(key){
+    if (!ui.pendingPayloads.has(key) || ui.retryTimers.has(key)) return;
+    const attempt = (ui.retryAttempts.get(key) || 0) + 1;
+    ui.retryAttempts.set(key, attempt);
+    const delay = retryDelayForAttempt(attempt);
+    setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
+    ui.retryTimers.set(key, setTimeout(() => {
+      ui.retryTimers.delete(key);
+      if (!ui.pendingPayloads.has(key) || ui.saveChains.has(key)) return;
+      setSaveStatus('retrying', tEntry('save_retrying'));
+      void runQueuedSave(key);
+    }, delay));
+  }
+
   async function runQueuedSave(key){
     if (ui.saveChains.has(key)) return ui.saveChains.get(key);
     const chain = (async () => {
       try {
         while (ui.pendingPayloads.has(key)) {
+          clearSaveRetry(key);
           const info = ui.pendingPayloads.get(key);
           ui.pendingPayloads.delete(key);
           ui.saveInFlight++;
@@ -3051,14 +3100,23 @@ render_teacher_header($pageTitle);
           setSaveStatus('saving', tEntry('save_saving'));
           try {
             const res = await api(info.action, info.payload);
-            if (typeof info.onSuccess === 'function') info.onSuccess(res);
+            const hasNewerPending = ui.pendingPayloads.has(key);
+            if (!hasNewerPending && typeof info.onSuccess === 'function') info.onSuccess(res);
+            ui.retryAttempts.delete(key);
+            clearErr();
             lastSaveAt = new Date();
             setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
           } catch (e) {
             if (!ui.pendingPayloads.has(key)) ui.pendingPayloads.set(key, info);
             const msg = friendlyFetchError(e, true);
-            showErr(msg);
-            setSaveStatus('error', tfmtEntry('save_error', { msg }));
+            if (isRetryableSaveError(e)) {
+              showErr(tEntry('save_retry_failed_auto'));
+              setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
+              scheduleSaveRetry(key);
+            } else {
+              showErr(tfmtEntry('save_permanent_error', { msg }));
+              setSaveStatus('failed_permanent', tfmtEntry('save_permanent_error', { msg }));
+            }
             return false;
           } finally {
             ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
@@ -3089,11 +3147,13 @@ render_teacher_header($pageTitle);
       clearTimeout(timer);
       ui.saveTimers.delete(key);
     });
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
     const keys = new Set([...ui.pendingPayloads.keys(), ...ui.saveChains.keys()]);
     if (!keys.size) return true;
     const results = await Promise.all([...keys].map(key => runQueuedSave(key)));
     const ok = results.every(Boolean) && ui.pendingPayloads.size === 0;
-    if (!ok) setSaveStatus('error', tEntry('save_blocked_switch'));
+    if (!ok) setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
     return ok;
   }
 
@@ -3111,6 +3171,8 @@ render_teacher_header($pageTitle);
 
   function flushPendingSaves(){
     if (!ui.pendingPayloads.size) return;
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
     ui.pendingPayloads.forEach((info, key) => {
       if (!info) return;
       if (ui.saveTimers.has(key)) {
