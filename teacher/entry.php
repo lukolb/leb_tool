@@ -1731,7 +1731,7 @@ render_teacher_header($pageTitle);
   .srow{ border:1px solid var(--border); border-radius:14px; padding:10px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .srow:hover{ background: rgba(0,0,0,0.02); }
   .srow.active{ outline:2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
-  .smeta{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .smeta{ display:flex; flex-direction:column; gap:2px; min-width:0; width:100%; }
   .smeta .n{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .smeta .sub{ color:var(--muted); font-size:12px; }
 
