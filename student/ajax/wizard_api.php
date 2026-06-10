@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/value_history.php';
 require_student();
 
@@ -122,32 +123,34 @@ function resolve_option_value_text(PDO $pdo, array $meta, ?string $valueJsonRaw,
   return $out;
 }
 
+function meta_first_string(array $meta, array $keys): string {
+  return app_group_meta_first_string($meta, $keys);
+}
+
+function meta_rcff_first_string(array $meta, array $keys): string {
+  return app_group_meta_rcff_first_string($meta, $keys);
+}
+
 function group_parts_from_meta(array $meta): array {
-  $raw = trim((string)($meta['group'] ?? ''));
-  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
+  return app_group_parts_from_meta($meta);
+}
 
-  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
-  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $group = $parts[0];
-
-  // Normalize: ignore suffix after '-' (e.g. "Ger1-T" -> "Ger1")
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
-
-  $subgroup = '';
-  if (count($parts) > 1) {
-    $subgroup = implode(' / ', array_slice($parts, 1));
-  }
-
-  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+function subgroup_title_en_from_meta(array $meta): string {
+  $title = app_group_meta_first_string($meta, ['subgroup_title_en', 'subcategory_en', 'subgroup_label_en']);
+  if ($title !== '') return $title;
+  return app_group_meta_rcff_first_string($meta, ['subcategory_en']);
 }
 
 function group_key_from_meta(array $meta): string {
-  $parts = group_parts_from_meta($meta);
-  return $parts['group'];
+  return app_group_key_from_meta($meta);
+}
+
+function group_key_aliases_from_meta(array $meta): array {
+  return app_group_key_aliases_from_meta($meta);
+}
+
+function group_key_unlocked(array $unlockMap, array $aliases): bool {
+  return app_group_key_matches_map($unlockMap, $aliases);
 }
 
 function base_field_key(string $fieldName): string {
@@ -193,8 +196,8 @@ function group_title_override_lang(string $groupKey, string $lang): string {
 
 function group_title_from_meta(array $meta, string $groupKey, string $lang): string {
   if ($lang === 'en') {
-    $t = (string)($meta['group_title_en'] ?? '');
-    $t = trim($t);
+    $t = meta_first_string($meta, ['group_title_en', 'category_en']);
+    if ($t === '') $t = meta_rcff_first_string($meta, ['category_en']);
     if ($t !== '') return $t;
   }
   return group_title_override_lang($groupKey, $lang);
@@ -426,8 +429,12 @@ function load_all_fields_lookup(PDO $pdo, int $templateId, int $reportId): array
 }
 
 function load_child_fields(PDO $pdo, int $templateId): array {
+  $select = 'id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order';
+  foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
+    if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
+  }
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order
+    "SELECT $select
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -682,15 +689,26 @@ try {
         continue;
       }
       $meta = meta_read($r['meta_json'] ?? null);
+      foreach ([
+        'group_label' => 'group',
+        'group_label_en' => 'group_title_en',
+        'subgroup_label' => 'subgroup',
+        'subgroup_label_en' => 'subgroup_title_en',
+      ] as $column => $metaKey) {
+        $v = trim((string)($r[$column] ?? ''));
+        if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
+      }
 
       $gParts = group_parts_from_meta($meta);
       $gKey = $gParts['group'];
       $gTitle = group_title_from_meta($meta, $gKey, $lang);
 
+      $gAliases = group_key_aliases_from_meta($meta);
       if (!isset($groups[$gKey])) {
-        $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'fields' => []];
+        $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'aliases' => $gAliases, 'fields' => []];
       } else {
         $groups[$gKey]['title'] = $gTitle;
+        $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
       }
 
       $opts = [];
@@ -729,7 +747,7 @@ try {
         'multiline' => (int)($r['is_multiline'] ?? 0) === 1,
         'group' => $gKey,
         'subgroup' => $gParts['subgroup'],
-        'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
+        'subgroup_title_en' => subgroup_title_en_from_meta($meta),
         'options' => $opts,     // includes label_en now (for option-list templates)
         'value' => $val,
         'max_length' => pdf_max_len_from_meta($meta),
@@ -760,7 +778,8 @@ try {
 
     if ($groupUnlocks['active']) {
       foreach ($groups as $gKey => $gData) {
-        if (empty($groupUnlocks['map'][$gKey])) unset($groups[$gKey]);
+        $aliases = is_array($gData['aliases'] ?? null) ? $gData['aliases'] : [$gKey];
+        if (!group_key_unlocked($groupUnlocks['map'], $aliases)) unset($groups[$gKey]);
       }
       if (!$groups) $childCanEdit = false;
     }
@@ -800,8 +819,12 @@ try {
     $fieldId = (int)($data['template_field_id'] ?? 0);
     if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
 
+    $fieldSelect = 'id, field_name, field_type, meta_json';
+    foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
+      if (db_has_column($pdo, 'template_fields', $column)) $fieldSelect .= ', ' . $column;
+    }
     $st = $pdo->prepare(
-      "SELECT id, field_name, field_type, meta_json
+      "SELECT $fieldSelect
        FROM template_fields
        WHERE id=? AND template_id=? AND can_child_edit=1
        LIMIT 1"
@@ -817,12 +840,20 @@ try {
 
     $type = (string)$frow['field_type'];
     $meta = meta_read($frow['meta_json'] ?? null);
+    foreach ([
+      'group_label' => 'group',
+      'group_label_en' => 'group_title_en',
+      'subgroup_label' => 'subgroup',
+      'subgroup_label_en' => 'subgroup_title_en',
+    ] as $column => $metaKey) {
+      $v = trim((string)($frow[$column] ?? ''));
+      if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
+    }
     $maxLen = pdf_max_len_from_meta($meta);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     if ($groupUnlocks['active']) {
-      $gKey = group_key_from_meta($meta);
-      if (empty($groupUnlocks['map'][$gKey])) {
+      if (!group_key_unlocked($groupUnlocks['map'], group_key_aliases_from_meta($meta))) {
         throw new RuntimeException('Kategorie noch nicht freigegeben.');
       }
     }
@@ -854,21 +885,39 @@ try {
       }
     }
 
-    $up = $pdo->prepare(
-      "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_student_id, updated_at)
-       VALUES (?, ?, ?, ?, 'child', ?, NOW())
-       ON DUPLICATE KEY UPDATE
-         value_text=VALUES(value_text),
-         value_json=VALUES(value_json),
-         source='child',
-         updated_by_student_id=VALUES(updated_by_student_id),
-         updated_at=NOW()"
-    );
-    $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
+    try {
+      $pdo->beginTransaction();
 
-    record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', null, $studentId);
+      $up = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_student_id, updated_at)
+         VALUES (?, ?, ?, ?, 'child', ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           value_text=VALUES(value_text),
+           value_json=VALUES(value_json),
+           source='child',
+           updated_by_student_id=VALUES(updated_by_student_id),
+           updated_at=NOW()"
+      );
+      $up->execute([$reportId, $fieldId, $valueText, $valueJson, $studentId]);
 
-    json_out(['ok' => true]);
+      record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'child', null, $studentId);
+
+      if (db_has_column($pdo, 'report_instances', 'updated_at')) {
+        $touch = $pdo->prepare("UPDATE report_instances SET updated_at=NOW() WHERE id=?");
+        $touch->execute([$reportId]);
+      }
+
+      $pdo->commit();
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      throw $e;
+    }
+
+    json_out([
+      'ok' => true,
+      'template_field_id' => $fieldId,
+      'updated_at' => date(DATE_ATOM),
+    ]);
   }
 
   // submit
@@ -896,5 +945,25 @@ try {
   json_out(['ok' => true]);
 
 } catch (Throwable $e) {
-  json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  $message = $e->getMessage();
+  $lowerMessage = strtolower($message);
+  $status = 400;
+  $code = 'request_failed';
+  if (str_contains($lowerMessage, 'csrf') || str_contains($lowerMessage, 'token')) {
+    $status = 403;
+    $code = 'csrf_failed';
+  } elseif (str_contains($lowerMessage, 'nicht angemeldet') || str_contains($lowerMessage, 'not_logged_in')) {
+    $status = 401;
+    $code = 'session_expired';
+  } elseif ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+    $status = 500;
+    $code = 'internal_error';
+    $message = t('student.js.save_error_generic');
+  }
+  json_out([
+    'ok' => false,
+    'error' => $code,
+    'message' => $message,
+    'retryable' => in_array($status, [500, 502, 503, 504], true),
+  ], $status);
 }

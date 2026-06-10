@@ -2039,6 +2039,20 @@ render_teacher_header($pageTitle);
     'save_saved_at' => t('teacher.entry.save.saved_at'),
     'save_error_offline' => t('teacher.entry.save.error_offline'),
     'save_error' => t('teacher.entry.save.error'),
+    'save_dirty' => t('teacher.entry.save.dirty'),
+    'save_unsaved_changes' => t('teacher.entry.save.unsaved_changes'),
+    'save_failed_unsaved' => t('teacher.entry.save.failed_unsaved'),
+    'save_blocked_switch' => t('teacher.entry.save.blocked_switch'),
+    'save_retry_failed_auto' => t('teacher.entry.save.retry_failed_auto'),
+    'save_retrying' => t('teacher.entry.save.retrying'),
+    'save_permanent_error' => t('teacher.entry.save.permanent_error'),
+    'save_connection_interrupted' => t('teacher.entry.save.connection_interrupted'),
+    'ajax_network_error' => t('teacher.entry.ajax.network_error'),
+    'ajax_session_expired' => t('teacher.entry.ajax.session_expired'),
+    'ajax_non_json' => t('teacher.entry.ajax.non_json'),
+    'ajax_invalid_json' => t('teacher.entry.ajax.invalid_json'),
+    'ajax_timeout' => t('teacher.entry.ajax.timeout'),
+    'ajax_request_failed' => t('teacher.entry.ajax.request_failed'),
     'error_save' => t('teacher.entry.error_save'),
     'error_unlock' => t('teacher.entry.error_unlock'),
     'error_update' => t('teacher.entry.error_update'),
@@ -2338,7 +2352,11 @@ render_teacher_header($pageTitle);
     optionMode: (localStorage.getItem(OPTION_STYLE_KEY) === 'buttons') ? 'buttons' : 'dropdown',
     saveTimers: new Map(),
     pendingPayloads: new Map(),
+    saveChains: new Map(),
+    retryTimers: new Map(),
+    retryAttempts: new Map(),
     saveInFlight: 0,
+    navigationLocked: false,
     mergeDecisions: new Map(),
   };
 
@@ -2920,18 +2938,99 @@ render_teacher_header($pageTitle);
     state.fieldMap = map;
   }
 
+  function friendlyFetchError(err, saveContext=false){
+    const code = String(err?.code || err?.error || '');
+    const status = Number(err?.status || 0);
+    if (code === 'timeout') return tEntry('ajax_timeout');
+    if (code === 'csrf_failed' || code === 'session_expired' || status === 401) return tEntry('ajax_session_expired');
+    if (code === 'invalid_json') return tEntry('ajax_invalid_json');
+    if (code === 'non_json') return tEntry('ajax_non_json');
+    if (code === 'network') return tEntry('ajax_network_error');
+    if (saveContext) return tEntry('save_failed_unsaved');
+    return String(err?.message || tEntry('ajax_request_failed'));
+  }
+
+  function isRetryableSaveError(err){
+    if (typeof err?.retryable === 'boolean') return !!err.retryable;
+    const status = Number(err?.status || 0);
+    const code = String(err?.code || '').toLowerCase();
+    if ([401, 403, 404, 409, 422].includes(status)) return false;
+    if (status >= 500 || status === 0) return true;
+    return ['network','timeout','invalid_json','non_json'].includes(code);
+  }
+
+  function retryDelayForAttempt(attempt){
+    const delays = [2000, 5000, 10000, 20000, 30000];
+    return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
+  }
+
+  async function apiFetchJson(url, payload, options = {}){
+    const controller = new AbortController();
+    const timeoutMs = Number(options.timeoutMs || 30000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: options.method || 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, ...(options.headers || {}) },
+        body: payload !== null && typeof payload !== 'undefined' ? JSON.stringify(payload) : undefined,
+        keepalive: !!options.keepalive,
+        signal: controller.signal,
+      });
+      const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+      const text = await res.text();
+      let json = null;
+      if (contentType.includes('application/json')) {
+        try { json = text ? JSON.parse(text) : null; } catch (parseErr) {
+          const err = new Error(tEntry('ajax_invalid_json'));
+          err.code = 'invalid_json';
+          err.status = res.status;
+          err.bodySnippet = text.slice(0, 300);
+          err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+          throw err;
+        }
+      } else if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        try { json = JSON.parse(text); } catch (parseErr) { /* handled below as non-json */ }
+      }
+      if (!json) {
+        const err = new Error(tEntry('ajax_non_json'));
+        err.code = 'non_json';
+        err.status = res.status;
+        err.bodySnippet = text.slice(0, 300);
+        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        throw err;
+      }
+      if (!res.ok || json.ok === false) {
+        const err = new Error(String(json.message || json.error || tEntry('ajax_request_failed')));
+        err.code = String(json.error || 'http_error');
+        err.status = res.status;
+        err.bodySnippet = text.slice(0, 300);
+        err.retryable = typeof json.retryable === 'boolean' ? !!json.retryable : isRetryableSaveError(err);
+        throw err;
+      }
+      return json;
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        err.code = 'timeout';
+        err.status = 0;
+        err.retryable = true;
+        err.message = tEntry('ajax_timeout');
+      } else if (!err.code) {
+        err.code = 'network';
+        err.status = 0;
+        err.retryable = true;
+        err.message = tEntry('save_connection_interrupted');
+      }
+      console.warn('entry api request failed', { code: err.code, status: err.status || 0, body: err.bodySnippet || '' });
+      throw err;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
   async function api(action, payload, options = {}){
-    const keepalive = !!options.keepalive;
     const delegated = DELEGATED_MODE ? { delegated: 1 } : {};
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, csrf_token: csrf, ...delegated, ...payload }),
-      keepalive
-    });
-    const j = await res.json().catch(()=>null);
-    if (!j || !j.ok) throw new Error((j && j.error) ? j.error : 'Fehler');
-    return j;
+    return apiFetchJson(apiUrl, { action, csrf_token: csrf, ...delegated, ...payload }, options);
   }
 
   function fireAndForget(action, payload){
@@ -2944,21 +3043,142 @@ render_teacher_header($pageTitle);
     }
     fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
       body,
       keepalive: true,
     }).catch(()=>{});
   }
 
+  function hasPendingSaves(){
+    return ui.pendingPayloads.size > 0 || ui.saveTimers.size > 0 || ui.saveChains.size > 0 || ui.retryTimers.size > 0 || ui.saveInFlight > 0;
+  }
+
+  function setNavigationLocked(on){
+    ui.navigationLocked = !!on;
+    [btnPrevStudent, btnNextStudent, viewSelect, groupSelect, gradeGroupSelect, studentGroupSelect, gradeOrientation].forEach(el => {
+      if (!el) return;
+      el.disabled = !!on;
+    });
+  }
+
+  function markSaveDirty(){
+    setSaveStatus('dirty', tEntry('save_dirty'));
+  }
+
+  function clearSaveRetry(key){
+    if (ui.retryTimers.has(key)) {
+      clearTimeout(ui.retryTimers.get(key));
+      ui.retryTimers.delete(key);
+    }
+  }
+
+  function scheduleSaveRetry(key){
+    if (!ui.pendingPayloads.has(key) || ui.retryTimers.has(key)) return;
+    const attempt = (ui.retryAttempts.get(key) || 0) + 1;
+    ui.retryAttempts.set(key, attempt);
+    const delay = retryDelayForAttempt(attempt);
+    setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
+    ui.retryTimers.set(key, setTimeout(() => {
+      ui.retryTimers.delete(key);
+      if (!ui.pendingPayloads.has(key) || ui.saveChains.has(key)) return;
+      setSaveStatus('retrying', tEntry('save_retrying'));
+      void runQueuedSave(key);
+    }, delay));
+  }
+
+  async function runQueuedSave(key){
+    if (ui.saveChains.has(key)) return ui.saveChains.get(key);
+    const chain = (async () => {
+      try {
+        while (ui.pendingPayloads.has(key)) {
+          clearSaveRetry(key);
+          const info = ui.pendingPayloads.get(key);
+          ui.pendingPayloads.delete(key);
+          ui.saveInFlight++;
+          setSaving(true);
+          setSaveStatus('saving', tEntry('save_saving'));
+          try {
+            const res = await api(info.action, info.payload);
+            const hasNewerPending = ui.pendingPayloads.has(key);
+            if (!hasNewerPending && typeof info.onSuccess === 'function') info.onSuccess(res);
+            ui.retryAttempts.delete(key);
+            clearErr();
+            lastSaveAt = new Date();
+            setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
+          } catch (e) {
+            if (!ui.pendingPayloads.has(key)) ui.pendingPayloads.set(key, info);
+            const msg = friendlyFetchError(e, true);
+            if (isRetryableSaveError(e)) {
+              showErr(tEntry('save_retry_failed_auto'));
+              setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
+              scheduleSaveRetry(key);
+            } else {
+              showErr(tfmtEntry('save_permanent_error', { msg }));
+              setSaveStatus('failed_permanent', tfmtEntry('save_permanent_error', { msg }));
+            }
+            return false;
+          } finally {
+            ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
+            if (ui.saveInFlight === 0) setSaving(false);
+          }
+        }
+        return true;
+      } finally {
+        ui.saveChains.delete(key);
+      }
+    })();
+    ui.saveChains.set(key, chain);
+    return chain;
+  }
+
+  function queueSave(key, action, payload, onSuccess, delayMs=350){
+    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
+    ui.pendingPayloads.set(key, { action, payload, onSuccess });
+    markSaveDirty();
+    ui.saveTimers.set(key, setTimeout(() => {
+      ui.saveTimers.delete(key);
+      void runQueuedSave(key);
+    }, delayMs));
+  }
+
+  async function flushPendingSavesBlocking(){
+    ui.saveTimers.forEach((timer, key) => {
+      clearTimeout(timer);
+      ui.saveTimers.delete(key);
+    });
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
+    const keys = new Set([...ui.pendingPayloads.keys(), ...ui.saveChains.keys()]);
+    if (!keys.size) return true;
+    const results = await Promise.all([...keys].map(key => runQueuedSave(key)));
+    const ok = results.every(Boolean) && ui.pendingPayloads.size === 0;
+    if (!ok) setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
+    return ok;
+  }
+
+  async function withSavedChanges(fn){
+    if (ui.navigationLocked) return;
+    setNavigationLocked(true);
+    try {
+      const ok = await flushPendingSavesBlocking();
+      if (!ok) return;
+      await fn();
+    } finally {
+      setNavigationLocked(false);
+    }
+  }
+
   function flushPendingSaves(){
     if (!ui.pendingPayloads.size) return;
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
     ui.pendingPayloads.forEach((info, key) => {
       if (!info) return;
       if (ui.saveTimers.has(key)) {
         clearTimeout(ui.saveTimers.get(key));
         ui.saveTimers.delete(key);
       }
-      ui.pendingPayloads.delete(key);
       fireAndForget(info.action, info.payload);
     });
   }
@@ -3070,7 +3290,7 @@ render_teacher_header($pageTitle);
       setSaveStatus('ok', tEntry('save_child_unlocked'));
     } catch (e) {
       console.error(e);
-      showErr(e?.message || tEntry('error_unlock'));
+      showErr(friendlyFetchError(e));
       setSaveStatus('error', tEntry('save_child_unlock_error'));
     }
   }
@@ -3350,7 +3570,7 @@ render_teacher_header($pageTitle);
       setSaveStatus('ok', deleting ? tEntry('save_child_deleted') : tEntry('save_child_updated'));
     } catch (e) {
       console.error(e);
-      showErr(e?.message || tEntry('error_update'));
+      showErr(friendlyFetchError(e));
       setSaveStatus('error', tEntry('save_child_save_error'));
     }
   }
@@ -3769,12 +3989,6 @@ render_teacher_header($pageTitle);
 
   function scheduleSave(reportId, fieldId, value){
     const key = `${reportId}:${fieldId}`;
-    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
-    ui.pendingPayloads.set(key, {
-      action: 'save',
-      payload: { report_instance_id: reportId, template_field_id: fieldId, value_text: value },
-    });
-
     const updated = setTeacherFreeTextPart(reportId, fieldId, value);
     if (!updated) {
       if (!state.values_teacher[String(reportId)]) state.values_teacher[String(reportId)] = {};
@@ -3784,30 +3998,17 @@ render_teacher_header($pageTitle);
     }
     onTeacherValueChanged(reportId, fieldId);
 
-    ui.saveTimers.set(key, setTimeout(async () => {
-      ui.saveTimers.delete(key);
-      ui.pendingPayloads.delete(key);
-      ui.saveInFlight++;
-      setSaving(true);
-      setSaveStatus('saving', tEntry('save_saving'));
-      try {
-        await api('save', { report_instance_id: reportId, template_field_id: fieldId, value_text: value });
+    queueSave(
+      key,
+      'save',
+      { report_instance_id: reportId, template_field_id: fieldId, value_text: value },
+      () => {
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(reportId, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
         addHistoryEntry(reportId, fieldId, displayVal, 'teacher', combinedValue);
-        lastSaveAt = new Date();
-        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
-      } catch (e) {
-        showErr(e.message || String(e));
-        const msg = String(e?.message || tEntry('error_save'));
-        const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
-      } finally {
-        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
-        if (ui.saveInFlight === 0) setSaving(false);
       }
-    }, 350));
+    );
   }
 
   function onChildValueChanged(reportId){
@@ -3822,12 +4023,6 @@ render_teacher_header($pageTitle);
 
   function scheduleChildSave(reportId, fieldId, value, labelText){
     const key = `child:${reportId}:${fieldId}`;
-    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
-    ui.pendingPayloads.set(key, {
-      action: 'child_value_update',
-      payload: { report_instance_id: reportId, child_field_id: fieldId, value_text: String(value ?? '') },
-    });
-
     const ridKey = String(reportId);
     const fidKey = String(fieldId);
     const prevRaw = childVal(reportId, fieldId);
@@ -3837,43 +4032,21 @@ render_teacher_header($pageTitle);
     adjustChildProgress(reportId, labelText || '', prevRaw, value ?? '');
     onChildValueChanged(reportId);
 
-    ui.saveTimers.set(key, setTimeout(async () => {
-      ui.saveTimers.delete(key);
-      ui.pendingPayloads.delete(key);
-      ui.saveInFlight++;
-      setSaving(true);
-      setSaveStatus('saving', tEntry('save_saving'));
-      try {
-        const res = await api('child_value_update', {
-          report_instance_id: reportId,
-          child_field_id: fieldId,
-          value_text: String(value ?? ''),
-        });
+    queueSave(
+      key,
+      'child_value_update',
+      { report_instance_id: reportId, child_field_id: fieldId, value_text: String(value ?? '') },
+      (res) => {
         if (!state.values_child[ridKey]) state.values_child[ridKey] = {};
         state.values_child[ridKey][fidKey] = res.value_text ?? '';
         addHistoryEntry(reportId, fieldId, res.value_text || '', 'child', res.raw_value_text ?? null, res.value_json ?? null);
-        lastSaveAt = new Date();
-        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
-      } catch (e) {
-        showErr(e.message || String(e));
-        const msg = String(e?.message || tEntry('error_save'));
-        const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
-      } finally {
-        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
-        if (ui.saveInFlight === 0) setSaving(false);
       }
-    }, 350));
+    );
   }
 
   function scheduleSaveClass(fieldId, value){
     const rid = classReportId();
     const key = `class:${rid}:${fieldId}`;
-    if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
-    ui.pendingPayloads.set(key, {
-      action: 'save_class',
-      payload: { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value },
-    });
 
     const updated = setTeacherFreeTextPart(rid, fieldId, value);
     if (!updated) {
@@ -3884,30 +4057,17 @@ render_teacher_header($pageTitle);
     }
     onTeacherValueChanged(rid, fieldId);
 
-    ui.saveTimers.set(key, setTimeout(async () => {
-      ui.saveTimers.delete(key);
-      ui.pendingPayloads.delete(key);
-      ui.saveInFlight++;
-      setSaving(true);
-      setSaveStatus('saving', tEntry('save_saving'));
-      try {
-        await api('save_class', { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value });
+    queueSave(
+      key,
+      'save_class',
+      { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value },
+      () => {
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(rid, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
         addHistoryEntry(rid, fieldId, displayVal, 'teacher', combinedValue);
-        lastSaveAt = new Date();
-        setSaveStatus('ok', tfmtEntry('save_saved_at', { time: formatTime(lastSaveAt) }));
-      } catch (e) {
-        showErr(e.message || String(e));
-        const msg = String(e?.message || tEntry('error_save'));
-        const offline = (navigator.onLine === false) || msg.toLowerCase().includes('failed to fetch');
-        setSaveStatus('error', offline ? tEntry('save_error_offline') : tfmtEntry('save_error', { msg }));
-      } finally {
-        ui.saveInFlight = Math.max(0, ui.saveInFlight - 1);
-        if (ui.saveInFlight === 0) setSaving(false);
       }
-    }, 350));
+    );
   }
 
   function isVisibleElement(el){
@@ -4674,7 +4834,7 @@ render_teacher_header($pageTitle);
           refreshSnippetCategoryList();
           hideSnippetMenu();
         } catch (e) {
-          alert(e.message || String(e));
+          alert(friendlyFetchError(e));
         }
       });
       snippetMenu.appendChild(saveBox);
@@ -6439,23 +6599,27 @@ if (dlgSave) {
         if (snippetTitle) snippetTitle.value = '';
         updateSnippetSelectionUI();
       } catch (e) {
-        showErr(e.message || String(e));
+        showErr(friendlyFetchError(e));
       }
     });
   }
 
   classSelect.addEventListener('change', () => {
-    const cid = Number(classSelect.value || '0');
-    if (cid > 0) {
-      history.replaceState(null, '', `?class_id=${encodeURIComponent(String(cid))}`);
-      loadClass(cid).catch(e => showErr(e.message || String(e)));
-    }
+    void withSavedChanges(async () => {
+      const cid = Number(classSelect.value || '0');
+      if (cid > 0) {
+        history.replaceState(null, '', `?class_id=${encodeURIComponent(String(cid))}`);
+        await loadClass(cid);
+      }
+    }).catch(e => showErr(friendlyFetchError(e)));
   });
 
   applyStoredView();
   viewSelect.addEventListener('change', () => {
-    saveViewSelection();
-    renderWithLoading();
+    void withSavedChanges(async () => {
+      saveViewSelection();
+      renderWithLoading();
+    });
   });
   if (toggleChild) {
     toggleChild.addEventListener('change', () => render());
@@ -6474,9 +6638,11 @@ if (dlgSave) {
 
   if (studentGroupSelect) {
     studentGroupSelect.addEventListener('change', () => {
-      ui.studentGroupKey = studentGroupSelect.value || 'ALL';
-      ui.activeStudentIndex = 0;
-      renderStudentView();
+      void withSavedChanges(async () => {
+        ui.studentGroupKey = studentGroupSelect.value || 'ALL';
+        ui.activeStudentIndex = 0;
+        renderStudentView();
+      });
     });
   }
 
@@ -6493,25 +6659,35 @@ if (dlgSave) {
   });
 
   btnPrevStudent.addEventListener('click', () => {
-    ui.activeStudentIndex = Math.max(0, ui.activeStudentIndex - 1);
-    renderStudentView();
+    void withSavedChanges(async () => {
+      ui.activeStudentIndex = Math.max(0, ui.activeStudentIndex - 1);
+      renderStudentView();
+    });
   });
   btnNextStudent.addEventListener('click', () => {
-    ui.activeStudentIndex = ui.activeStudentIndex + 1;
-    renderStudentView();
+    void withSavedChanges(async () => {
+      ui.activeStudentIndex = ui.activeStudentIndex + 1;
+      renderStudentView();
+    });
   });
 
-  groupSelect.addEventListener('change', () => renderItemView());
+  groupSelect.addEventListener('change', () => {
+    void withSavedChanges(async () => renderItemView());
+  });
   itemSearch.addEventListener('input', () => { ui.itemFilter = itemSearch.value; renderItemView(); });
 
-  gradeGroupSelect.addEventListener('change', () => renderGradesView());
+  gradeGroupSelect.addEventListener('change', () => {
+    void withSavedChanges(async () => renderGradesView());
+  });
   gradeSearch.addEventListener('input', () => { ui.gradeFilter = gradeSearch.value; renderGradesView(); });
 
   gradeOrientation.value = ui.gradeOrientation;
   gradeOrientation.addEventListener('change', () => {
-    ui.gradeOrientation = gradeOrientation.value || 'students_rows';
-    localStorage.setItem('leb_grade_orientation', ui.gradeOrientation);
-    renderGradesView();
+    void withSavedChanges(async () => {
+      ui.gradeOrientation = gradeOrientation.value || 'students_rows';
+      localStorage.setItem('leb_grade_orientation', ui.gradeOrientation);
+      renderGradesView();
+    });
   });
 
   window.addEventListener('keydown', (ev) => {
@@ -6524,8 +6700,10 @@ if (dlgSave) {
         const cur = viewSelect.value || 'grades';
         const idx = order.indexOf(cur);
         viewSelect.value = order[(idx + 1) % order.length];
-        saveViewSelection();
-        renderWithLoading();
+        void withSavedChanges(async () => {
+          saveViewSelection();
+          renderWithLoading();
+        });
       }
       if (k === 'arrowleft') {
         if (btnPrevStudent && !btnPrevStudent.disabled) {
@@ -6542,7 +6720,14 @@ if (dlgSave) {
     }
   });
 
-  window.addEventListener('beforeunload', flushPendingSaves);
+  window.addEventListener('beforeunload', (event) => {
+    if (!hasPendingSaves()) return;
+    flushPendingSaves();
+    const msg = tEntry('save_unsaved_changes');
+    event.preventDefault();
+    event.returnValue = msg;
+    return msg;
+  });
   window.addEventListener('pagehide', flushPendingSaves);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushPendingSaves();
@@ -6550,7 +6735,7 @@ if (dlgSave) {
 
   const initialClassId = Number(classSelect.value || <?=json_encode((int)$classId)?> || 0);
   if (initialClassId > 0) {
-    loadClass(initialClassId).catch(e => showErr(e.message || String(e)));
+    loadClass(initialClassId).catch(e => showErr(friendlyFetchError(e)));
   } else {
     showErr(tEntry('no_class_available'));
   }

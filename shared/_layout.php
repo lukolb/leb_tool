@@ -11,13 +11,13 @@ function nav_items_for_role(string $role): array {
     return [
       ['label'=>t('nav.dashboard'), 'href'=>'admin/index.php', 'files'=>['index.php']],
 
-      // Stammdaten
+      // Master data
       ['label'=>t('nav.school'), 'href'=>'admin/classes.php', 'files'=>['classes.php','students.php'], 'children'=>[
         ['label'=>t('nav.classes'),  'href'=>'admin/classes.php',  'files'=>['classes.php']],
         ['label'=>t('nav.students'), 'href'=>'admin/students.php', 'files'=>['students.php']],
       ]],
 
-      // Vorlagen & Inhalte
+      // Templates & content
       ['label'=>t('nav.reports'), 'href'=>'admin/templates.php', 'files'=>[
         'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php','ags.php'
       ], 'children'=>[
@@ -29,18 +29,18 @@ function nav_items_for_role(string $role): array {
         ['label'=>t('nav.ags', 'AGs'),  'href'=>'admin/ags.php',  'files'=>['ags.php']],
       ]],
 
-      // Berichte
+      // Reports
       ['label'=>t('nav.final_reports'), 'href'=>'admin/report_preview.php', 'files'=>[
         'export.php','parent_requests.php','report_preview.php','latex_templates.php','template_packages.php'], 'children'=>[
-        ['label'=>t('nav.report_preview', 'Berichtsvorschau'), 'href'=>'admin/report_preview.php', 'files'=>['report_preview.php']],
+        ['label'=>t('nav.report_preview'), 'href'=>'admin/report_preview.php', 'files'=>['report_preview.php']],
         ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_requests'), 'href'=>'admin/parent_requests.php', 'files'=>['parent_requests.php']],
-        ['label'=>'Kompetenzen', 'href'=>'admin/competencies.php', 'files'=>['competencies.php']],
-        ['label'=>t('nav.pdf_templates', 'PDF-Vorlagen'), 'href'=>'admin/latex_templates.php', 'files'=>['latex_templates.php']],
-        ['label'=>'Template-Pakete', 'href'=>'admin/template_packages.php', 'files'=>['template_packages.php']],
+        ['label'=>t('nav.competencies'), 'href'=>'admin/competencies.php', 'files'=>['competencies.php']],
+        ['label'=>t('nav.pdf_templates'), 'href'=>'admin/latex_templates.php', 'files'=>['latex_templates.php']],
+        ['label'=>t('nav.template_packages'), 'href'=>'admin/template_packages.php', 'files'=>['template_packages.php']],
       ]],
 
-      // Stammdaten
+      // Master data
       ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php'], 'children'=>[
         ['label'=>t('nav.settings'),  'href'=>'admin/settings.php',  'files'=>['settings.php']],
         ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
@@ -61,14 +61,14 @@ function nav_items_for_role(string $role): array {
     ]],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
 
-    // Berichte
+    // Reports
     ['label'=>t('nav.final_reports'), 'href'=>'teacher/report_preview.php', 'files'=>[
       'export.php','parents.php','report_preview.php','latex_templates.php'], 'children'=>[
-        ['label'=>t('nav.report_preview', 'Berichtsvorschau'), 'href'=>'teacher/report_preview.php', 'files'=>['report_preview.php']],
+        ['label'=>t('nav.report_preview'), 'href'=>'teacher/report_preview.php', 'files'=>['report_preview.php']],
         ['label'=>t('nav.export'), 'href'=>'teacher/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_links'), 'href'=>'teacher/parents.php', 'files'=>['parents.php']],
-        ['label'=>'Kompetenz-Anträge', 'href'=>'teacher/competency_requests.php', 'files'=>['competency_requests.php']],
-        ['label'=>t('nav.pdf_templates', 'PDF-Vorlagen'), 'href'=>'teacher/latex_templates.php', 'files'=>['latex_templates.php']],
+        ['label'=>t('nav.competency_requests'), 'href'=>'teacher/competency_requests.php', 'files'=>['competency_requests.php']],
+        ['label'=>t('nav.pdf_templates'), 'href'=>'teacher/latex_templates.php', 'files'=>['latex_templates.php']],
     ]],
       
     ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],

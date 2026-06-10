@@ -3,11 +3,29 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
-require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
+if (!current_user()) {
+  http_response_code(401);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'session_expired',
+    'message' => t('teacher.entry_api.error.session_expired'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+if (get_role() !== 'teacher' && get_role() !== 'admin') {
+  http_response_code(403);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'forbidden',
+    'message' => t('teacher.entry_api.error.forbidden'),
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
 
 function read_json_body(): array {
   $raw = file_get_contents('php://input');
@@ -833,29 +851,38 @@ function resolve_label_placeholders(string $tpl, array $classValueByName): strin
 }
 
 function group_parts_from_meta(array $meta): array {
-  $raw = trim((string)($meta['group'] ?? ''));
-  if ($raw === '') return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $parts = array_values(array_filter(array_map('trim', explode('/', $raw)), fn($p) => $p !== ''));
-  if (!$parts) return ['group' => 'Allgemein', 'subgroup' => ''];
-
-  $group = $parts[0];
-  if ($group !== '' && strpos($group, '-') !== false) {
-    $group = explode('-', $group, 2)[0];
-    $group = trim($group);
-  }
-
-  $subgroup = '';
-  if (count($parts) > 1) {
-    $subgroup = implode(' / ', array_slice($parts, 1));
-  }
-
-  return ['group' => $group !== '' ? $group : 'Allgemein', 'subgroup' => $subgroup];
+  return app_group_parts_from_meta($meta);
 }
 
 function group_key_from_meta(array $meta): string {
-  $parts = group_parts_from_meta($meta);
-  return $parts['group'];
+  return app_group_key_from_meta($meta);
+}
+
+function group_key_aliases_from_meta(array $meta): array {
+  return app_group_key_aliases_from_meta($meta);
+}
+
+function group_key_aliases_from_key(string $groupKey): array {
+  return app_group_key_aliases_from_label($groupKey);
+}
+
+function delegation_match_from_map_for_aliases(array $delegations, array $aliases): ?array {
+  foreach ($aliases as $alias) {
+    $alias = trim((string)$alias);
+    if ($alias !== '' && isset($delegations[$alias]) && is_array($delegations[$alias])) {
+      return ['key' => $alias, 'delegation' => $delegations[$alias]];
+    }
+  }
+  return null;
+}
+
+function delegation_from_map_for_aliases(array $delegations, array $aliases): ?array {
+  $match = delegation_match_from_map_for_aliases($delegations, $aliases);
+  return $match['delegation'] ?? null;
+}
+
+function delegation_from_map_for_meta(array $delegations, array $meta): ?array {
+  return delegation_from_map_for_aliases($delegations, group_key_aliases_from_meta($meta));
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): string {
@@ -908,17 +935,26 @@ function load_teachers_for_delegation(PDO $pdo): array {
   return $out;
 }
 
-function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
+function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, int $visibleForUserId = 0): array {
   $periodLabel = normalize_period_label($periodLabel);
+  $where = "d.class_id=? AND d.school_year=? AND d.period_label=?";
+  $params = [$classId, $schoolYear, $periodLabel];
+  if ($visibleForUserId > 0) {
+    // Delegate-only users must not receive unrelated delegations from the same class.
+    // Directly affected rows are incoming rows (user_id) or rows they created.
+    $where .= " AND (d.user_id=? OR d.created_by_user_id=?)";
+    $params[] = $visibleForUserId;
+    $params[] = $visibleForUserId;
+  }
   $st = $pdo->prepare(
-    "SELECT d.group_key, d.user_id, d.status, d.note, d.updated_at,
+    "SELECT d.group_key, d.user_id, d.status, d.note, d.updated_at, d.created_by_user_id,
             u.display_name
      FROM class_group_delegations d
      LEFT JOIN users u ON u.id=d.user_id
-     WHERE d.class_id=? AND d.school_year=? AND d.period_label=?
+     WHERE $where
      ORDER BY d.group_key ASC, d.updated_at DESC, d.id DESC"
   );
-  $st->execute([$classId, $schoolYear, $periodLabel]);
+  $st->execute($params);
 
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -931,9 +967,14 @@ function load_class_group_delegations(PDO $pdo, int $classId, string $schoolYear
         'users' => [],
         'status' => 'open',
         'note' => '',
+        'created_by_user_ids' => [],
       ];
     }
     $uid = (int)($r['user_id'] ?? 0);
+    $createdBy = (int)($r['created_by_user_id'] ?? 0);
+    if ($createdBy > 0 && !in_array($createdBy, $out[$g]['created_by_user_ids'], true)) {
+      $out[$g]['created_by_user_ids'][] = $createdBy;
+    }
     if ($uid > 0 && !in_array($uid, $out[$g]['user_ids'], true)) {
       $out[$g]['user_ids'][] = $uid;
       $out[$g]['users'][] = [
@@ -969,12 +1010,14 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   $status = ($status === 'done') ? 'done' : 'open';
 
   if ($userId <= 0) {
-    // clear
+    // clear current full key plus legacy aliases so stale pre-hyphen rows do not keep applying
+    $aliases = group_key_aliases_from_key($groupKey);
+    $in = implode(',', array_fill(0, count($aliases), '?'));
     $pdo->prepare(
       "DELETE FROM class_group_delegations
-       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
-    )->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
-    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey]);
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key IN ($in)"
+    )->execute(array_merge([$classId, $schoolYear, $periodLabel], $aliases));
+    audit('class_group_delegation_clear', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'aliases'=>$aliases]);
     return;
   }
   // NOTE: Do NOT auto-assign delegates as class teachers (separation requirement).
@@ -993,17 +1036,19 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   audit('class_group_delegation_upsert', $actorUserId, ['class_id'=>$classId,'school_year'=>$schoolYear,'period_label'=>$periodLabel,'group_key'=>$groupKey,'user_id'=>$userId,'status'=>$status]);
 }
 
-function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, string $groupKey): array {
-  $groupKey = trim($groupKey);
-  if ($groupKey === '') return [];
+function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, $groupKey): array {
+  $aliases = is_array($groupKey) ? $groupKey : group_key_aliases_from_key((string)$groupKey);
+  $aliases = array_values(array_unique(array_filter(array_map(fn($k) => trim((string)$k), $aliases), fn($k) => $k !== '')));
+  if (!$aliases) return [];
   $periodLabel = normalize_period_label($periodLabel);
+  $in = implode(',', array_fill(0, count($aliases), '?'));
   $st = $pdo->prepare(
     "SELECT user_id
      FROM class_group_delegations
-     WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?
+     WHERE class_id=? AND school_year=? AND period_label=? AND group_key IN ($in)
      ORDER BY user_id ASC"
   );
-  $st->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+  $st->execute(array_merge([$classId, $schoolYear, $periodLabel], $aliases));
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $uid = (int)($r['user_id'] ?? 0);
@@ -1017,6 +1062,15 @@ function user_is_class_teacher(PDO $pdo, int $userId, int $classId): bool {
   $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
   $st->execute([$userId, $classId]);
   return (bool)$st->fetch();
+}
+
+function can_manage_class_delegations(PDO $pdo, array $user, int $userId, int $classId): bool {
+  if (($user['role'] ?? '') === 'admin') return true;
+  return user_is_class_teacher($pdo, $userId, $classId);
+}
+
+function delegation_visibility_user_id(PDO $pdo, array $user, int $userId, int $classId): int {
+  return can_manage_class_delegations($pdo, $user, $userId, $classId) ? 0 : $userId;
 }
 
 function can_user_edit_group(PDO $pdo, array $currentUser, int $classId, string $schoolYear, string $periodLabel, string $groupKey): bool {
@@ -1033,8 +1087,7 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
 
-  $groupKey = group_key_from_meta($meta);
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
   $isClassTeacher = user_is_class_teacher($pdo, $uid, $classId);
   if (!$assigned) return $isClassTeacher;
 
@@ -1062,8 +1115,7 @@ function can_user_edit_field_in_view(
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
-  $groupKey = group_key_from_meta($meta);
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $groupKey);
+  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
   return $assigned && in_array($uid, $assigned, true);
 }
 
@@ -1223,8 +1275,13 @@ function save_free_text_value(
 
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
-  $s = explode('-', $s, 2)[0];
   $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+  $s = trim($s);
+  // Pair teacher/student variants only by an explicit trailing role suffix.
+  // Do not truncate at the first hyphen: field names such as ENG-001-S or
+  // skillcb-cid-477-1 must remain distinct so entry.php maps each stored
+  // child value to the correct template_field_id.
+  $s = preg_replace('/[-_](s|t)$/i', '', $s) ?? $s;
   return trim($s);
 }
 
@@ -1883,8 +1940,7 @@ function load_teacher_values_for_user(
     $fieldType = (string)($fieldMap[$fid]['field_type'] ?? '');
     $isMultiline = (int)($fieldMap[$fid]['is_multiline'] ?? 0);
 
-    $groupKey = group_key_from_meta($meta);
-    $del = $groupKey !== '' ? ($delegations[$groupKey] ?? null) : null;
+    $del = delegation_from_map_for_meta($delegations, $meta);
     $assignedUsers = $del && isset($del['user_ids']) && is_array($del['user_ids']) ? array_map('intval', $del['user_ids']) : [];
     $hasDelegates = !empty($assignedUsers);
 
@@ -1993,6 +2049,9 @@ try {
   $u = current_user() ?: [];
   $lang = ui_lang();
   $userId = (int)($u['id'] ?? 0);
+  if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+  }
 
   $action = (string)($data['action'] ?? '');
   if ($action === '') throw new RuntimeException(t('teacher.entry_api.error.action_missing'));
@@ -2096,8 +2155,10 @@ try {
     }
 
     $periodLabel = class_period_label($pdo, $classId);
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $delegationUsers = load_teachers_for_delegation($pdo);
+    $canManageDelegations = can_manage_class_delegations($pdo, $u, $userId, $classId);
+    $delegationVisibilityUserId = $canManageDelegations ? 0 : $userId;
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $delegationVisibilityUserId);
+    $delegationUsers = $canManageDelegations ? load_teachers_for_delegation($pdo) : [];
 
     $teacherFieldMap = [];
     foreach ($teacherFields as $f0) {
@@ -2207,12 +2268,16 @@ try {
 
       $gParts = group_parts_from_meta($meta);
       $gKey = $gParts['group'];
+      $gAliases = group_key_aliases_from_meta($meta);
       if (!isset($groups[$gKey])) {
         $groups[$gKey] = [
           'key' => $gKey,
           'title' => group_title_from_meta($meta, $gKey, $lang),
+          'aliases' => $gAliases,
           'fields' => [],
         ];
+      } else {
+        $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
       }
 
       $optsTeacher = [];
@@ -2295,7 +2360,8 @@ try {
     $groupsList2 = [];
     foreach ($groupsList as $g0) {
       $gk = (string)($g0['key'] ?? '');
-      $del = $gk !== '' && isset($delegations[$gk]) ? $delegations[$gk] : null;
+      $aliases = is_array($g0['aliases'] ?? null) ? $g0['aliases'] : group_key_aliases_from_key($gk);
+      $del = $gk !== '' ? delegation_from_map_for_aliases($delegations, $aliases) : null;
       $anyEditable = false;
       if (isset($g0['fields']) && is_array($g0['fields'])) {
         foreach ($g0['fields'] as $f0) {
@@ -2459,7 +2525,7 @@ try {
     $stClass->execute([$classId]);
     $classGradeLevel = $stClass->fetchColumn();
 
-    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+    $isClassTeacher = $canManageDelegations;
 
     json_out([
       'ok' => true,
@@ -2562,9 +2628,15 @@ try {
     if ($schoolYear === '') $schoolYear = date('Y');
     $periodLabel = class_period_label($pdo, $classId);
     $periodLabel = normalize_class_period_label($periodLabel);
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $isClassTeacher = (($u['role'] ?? '') === 'admin') || user_is_class_teacher($pdo, $userId, $classId);
+    $isClassTeacher = can_manage_class_delegations($pdo, $u, $userId, $classId);
     $delegateOnly = !$isClassTeacher && (($u['role'] ?? '') !== 'admin');
+    $delegations = load_class_group_delegations(
+      $pdo,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $delegateOnly ? $userId : 0
+    );
     $cfg = app_config();
     $delegationCfg = $cfg['delegation'] ?? [];
     $delegateShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
@@ -2625,12 +2697,12 @@ try {
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
       $isSystemBound = is_system_bound($meta);
-      $groupKey = group_key_from_meta($meta);
+      $groupAliases = group_key_aliases_from_meta($meta);
       if (
         $delegateOnly
         && !$delegateShowOtherFieldsReadonly
         && !$isSystemBound
-        && !in_array($groupKey, $delegateGroupKeys, true)
+        && !array_intersect($groupAliases, $delegateGroupKeys)
       ) {
         return;
       }
@@ -2765,8 +2837,7 @@ try {
         $type = (string)($studentFieldMap[$fieldId]['field_type'] ?? '');
         $isMultiline = (int)($studentFieldMap[$fieldId]['is_multiline'] ?? 0);
         if (!is_free_text_field($type, $isMultiline)) continue;
-        $gKey = group_key_from_meta($meta);
-        $delMeta = $gKey !== '' ? ($delegations[$gKey] ?? null) : null;
+        $delMeta = delegation_from_map_for_meta($delegations, $meta);
         $assignedUsers = $delMeta && isset($delMeta['user_ids']) && is_array($delMeta['user_ids'])
           ? array_map('intval', $delMeta['user_ids'])
           : [];
@@ -3312,7 +3383,7 @@ if ($action === 'delegations_save') {
     $classId = (int)($data['class_id'] ?? 0);
     if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
-    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+    if (!can_manage_class_delegations($pdo, $u, $userId, $classId)) {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
@@ -3379,9 +3450,13 @@ if ($action === 'delegations_save') {
     if (!$cRow) throw new RuntimeException('Klasse nicht gefunden.');
     $schoolYear = (string)($cRow['school_year'] ?? '');
 
-    // current delegations
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    $cur = $delegations[$groupKey] ?? null;
+    // current delegations: remember the stored key that matched (may be a legacy alias).
+    // Delegate-only users only see/update rows that directly affect them.
+    $canManageDelegations = can_manage_class_delegations($pdo, $u, $userId, $classId);
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
+    $match = delegation_match_from_map_for_aliases($delegations, group_key_aliases_from_key($groupKey));
+    $cur = $match['delegation'] ?? null;
+    $storedGroupKey = (string)($match['key'] ?? $groupKey);
     $assignedUsers = $cur && isset($cur['user_ids']) && is_array($cur['user_ids'])
       ? array_map('intval', $cur['user_ids'])
       : [];
@@ -3404,14 +3479,14 @@ if ($action === 'delegations_save') {
       $classId,
       $schoolYear,
       $periodLabel,
-      $groupKey,
+      $storedGroupKey,
       (int)$userId,
       $status,
       $note,
       $userId
     );
 
-    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
+    $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
   }
 
@@ -3820,5 +3895,46 @@ if ($action === 'delegations_save') {
   throw new RuntimeException(t('teacher.entry_api.error.unknown_action'));
 
 } catch (Throwable $e) {
-  json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+  $actionForLog = isset($action) ? (string)$action : (string)($data['action'] ?? '');
+  $userForLog = isset($userId) ? (int)$userId : 0;
+  $classForLog = isset($classId) ? (int)$classId : (int)($data['class_id'] ?? 0);
+  $reportForLog = (int)($data['report_instance_id'] ?? 0);
+  $status = 400;
+  $code = 'request_failed';
+  $message = $e->getMessage();
+  $lowerMessage = strtolower($message);
+
+  if (str_contains($lowerMessage, 'csrf') || str_contains($lowerMessage, 'token')) {
+    $status = 403;
+    $code = 'csrf_failed';
+    $message = t('teacher.entry_api.error.session_expired');
+  } elseif (str_contains($lowerMessage, 'berechtigung') || str_contains($lowerMessage, 'forbidden') || str_contains($lowerMessage, 'zugriff')) {
+    $status = 403;
+    $code = 'forbidden';
+  } elseif ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+    $status = 500;
+    $code = 'internal_error';
+    $message = t('teacher.entry_api.error.internal');
+  }
+  $retryable = in_array($status, [500, 502, 503, 504], true);
+
+  error_log(sprintf(
+    '[teacher_entry_api] action=%s user_id=%d class_id=%d report_instance_id=%d status=%d code=%s message=%s at %s:%d',
+    $actionForLog !== '' ? $actionForLog : '-',
+    $userForLog,
+    $classForLog,
+    $reportForLog,
+    $status,
+    $code,
+    $e->getMessage(),
+    $e->getFile(),
+    $e->getLine()
+  ));
+
+  json_out([
+    'ok' => false,
+    'error' => $code,
+    'message' => $message,
+    'retryable' => $retryable,
+  ], $status);
 }

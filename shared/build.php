@@ -504,14 +504,14 @@ try {
             $templateSource = 'system';
         } elseif (preg_match('/^layout:(\d+)$/', $templateSourceRaw, $m)) {
             $layoutTemplateId = (int)$m[1];
-            if ($layoutTemplateId <= 0) throw new RuntimeException('Ungültige Titelseitenvorlage.');
+            if ($layoutTemplateId <= 0) throw new RuntimeException(t('latex_templates.error.invalid_layout_source'));
             $templateSource = 'layout:' . $layoutTemplateId;
         } elseif (preg_match('/^package:(\d+)$/', $templateSourceRaw, $m)) {
             $selectedLatexPackageId = (int)$m[1];
-            if ($selectedLatexPackageId <= 0) throw new RuntimeException('Ungültiges LaTeX-Vorlagenpaket.');
+            if ($selectedLatexPackageId <= 0) throw new RuntimeException(t('latex_templates.error.invalid_package_source'));
             $templateSource = 'package:' . $selectedLatexPackageId;
         } else {
-            throw new RuntimeException('Ungültige Vorlagenquelle.');
+            throw new RuntimeException(t('latex_templates.error.invalid_template_source'));
         }
     } else {
         $legacyPackageId = (int)($_POST['latex_template_package_id'] ?? 0);
@@ -528,14 +528,13 @@ try {
     if ($pdoForLayout instanceof PDO) {
         ensure_default_latex_layout_template($pdoForLayout);
         if (str_starts_with($templateSource, 'package:')) {
-            if (get_role() !== 'admin') throw new RuntimeException('LaTeX-Vorlagenpakete dürfen nur von Admins verwendet werden.');
             $selectedLatexPackage = find_latex_template_package($pdoForLayout, $selectedLatexPackageId, true);
-            if (!$selectedLatexPackage) throw new RuntimeException('Aktives LaTeX-Vorlagenpaket nicht gefunden.');
+            if (!$selectedLatexPackage) throw new RuntimeException(t('latex_templates.error.active_package_not_found'));
             $layoutTemplateId = 0;
             $layout = null;
         } elseif (str_starts_with($templateSource, 'layout:')) {
             $layout = find_active_latex_layout_template($pdoForLayout, $layoutTemplateId);
-            if (!$layout) throw new RuntimeException('Titelseitenvorlage nicht gefunden oder inaktiv.');
+            if (!$layout) throw new RuntimeException(t('latex_templates.error.layout_not_found_or_inactive'));
             if (!empty($layout['file_path'])) {
                 $selectedLayoutPath = (string)$layout['file_path'];
             }
