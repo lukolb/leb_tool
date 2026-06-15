@@ -3951,6 +3951,9 @@ render_teacher_header($pageTitle);
     const cTotal = Number(s.progress_child_total || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+    const revokedSuffix = Number(s.revoked_delegation_comments_count || 0) > 0
+      ? ` · ⚠ zurückgezogene Delegationstexte prüfen`
+      : '';
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
       childDone: breakdown?.childDone ?? Math.max(0, cDone),
@@ -3960,7 +3963,7 @@ render_teacher_header($pageTitle);
       ownDone: breakdown?.ownDone ?? Math.max(0, tDone),
       ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
-    }).trim();
+    }).trim() + revokedSuffix;
   }
 
   function updatePdfEntryButton(student){
@@ -5489,11 +5492,21 @@ render_teacher_header($pageTitle);
             ownTotal: breakdown.ownTotal,
           }))}</span>`
         : '';
+      const revokedCount = Number(s.revoked_delegation_comments_count || 0);
+      const revokedNames = Array.isArray(s.revoked_delegation_comment_names)
+        ? s.revoked_delegation_comment_names.filter(x => String(x).trim() !== '')
+        : [];
+      const revokedTitle = revokedNames.length
+        ? `Zurückgezogene Delegations-Kommentare von ${revokedNames.join(', ')}`
+        : 'Zurückgezogene Delegations-Kommentare prüfen';
+      const revokedHtml = revokedCount > 0
+        ? ` <span class="pill yellow" title="${esc(revokedTitle)}">⚠ Delegationstext</span>`
+        : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
-          <div class="n">${esc(s.name)}</div>
+          <div class="n">${esc(s.name)}${revokedHtml}</div>
           <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>

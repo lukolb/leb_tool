@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/delegation_revoke.php';
 require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -73,6 +74,12 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   $status = ($status === 'done') ? 'done' : 'open';
 
   if ($userId <= 0) {
+    annotate_revoked_delegation_texts($pdo, [[
+      'class_id' => $classId,
+      'school_year' => $schoolYear,
+      'period_label' => $periodLabel,
+      'group_key' => $groupKey,
+    ]]);
     $pdo->prepare(
       "DELETE FROM class_group_delegations
        WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
@@ -275,6 +282,12 @@ try {
 
     if (!$userIds) {
       // clear delegation
+      annotate_revoked_delegation_texts($pdo, [[
+        'class_id' => $classId,
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'group_key' => $groupKey,
+      ]]);
       $del = $pdo->prepare(
         "DELETE FROM class_group_delegations
          WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
@@ -288,6 +301,12 @@ try {
       json_out(['ok'=>true]);
     }
 
+    annotate_revoked_delegation_texts($pdo, [[
+      'class_id' => $classId,
+      'school_year' => $schoolYear,
+      'period_label' => $periodLabel,
+      'group_key' => $groupKey,
+    ]]);
     $pdo->prepare(
       "DELETE FROM class_group_delegations
        WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"

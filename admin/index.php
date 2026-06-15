@@ -2,9 +2,40 @@
 declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/delegation_revoke.php';
 require_admin();
 
 $pdo = db();
+$alerts = [];
+$errors = [];
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  try {
+    csrf_verify();
+    $action = (string)($_POST['action'] ?? '');
+    if ($action === 'revoke_all_delegations') {
+      $uPost = current_user();
+      $pdo->beginTransaction();
+      try {
+        $count = (int)$pdo->query("SELECT COUNT(*) FROM class_group_delegations")->fetchColumn();
+        $annotatedCount = annotate_revoked_delegation_texts($pdo);
+        $pdo->exec("DELETE FROM class_group_delegations");
+        $pdo->commit();
+      } catch (Throwable $e2) {
+        $pdo->rollBack();
+        throw $e2;
+      }
+      audit('class_group_delegation_revoke_all', (int)($uPost['id'] ?? 0), ['count' => $count, 'annotated_fields' => $annotatedCount]);
+      $alerts[] = strtr(t('admin.dashboard.delegations_revoke_all_done', '{count} Delegationen wurden beendet. In {fields} Textfeldern wurden die Ergänzungen der delegierten Lehrkräfte gekennzeichnet.'), ['{count}' => (string)$count, '{fields}' => (string)$annotatedCount]);
+    } else {
+      throw new RuntimeException('Unbekannte Aktion.');
+    }
+  } catch (Throwable $e) {
+    $errors[] = $e->getMessage();
+  }
+}
+
 
 function meta_read(?string $json): array {
   if (!$json) return [];
@@ -697,6 +728,23 @@ render_admin_header('Admin – Dashboard');
   <?php else: ?>
     <div class="alert" style="margin:0;"><?=h(t('admin.dashboard.absence_upload_no', 'Für dieses Halbjahr wurden noch keine Fehlzeiten hochgeladen.'))?></div>
   <?php endif; ?>
+</div>
+
+<?php if ($errors): ?>
+  <div class="alert danger"><?php foreach ($errors as $e): ?><div><?=h($e)?></div><?php endforeach; ?></div>
+<?php endif; ?>
+<?php if ($alerts): ?>
+  <div class="alert success"><?php foreach ($alerts as $a): ?><div><?=h($a)?></div><?php endforeach; ?></div>
+<?php endif; ?>
+
+<div class="card">
+  <h2><?=h(t('admin.dashboard.delegations_admin_title', 'Delegationen verwalten'))?></h2>
+  <p class="muted"><?=h(t('admin.dashboard.delegations_admin_desc', 'Beende bei Bedarf alle Delegationen aller Nutzer auf einmal. Die Lehrkräfte können danach wieder neu delegieren.'))?></p>
+  <form method="post" style="margin:0;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="revoke_all_delegations">
+    <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('admin.dashboard.delegations_revoke_all_confirm', 'Wirklich alle Delegationen aller Nutzer beenden?'))?>');"><?=h(t('admin.dashboard.delegations_revoke_all', 'Alle Delegationen beenden'))?></button>
+  </form>
 </div>
 
 <div class="card">

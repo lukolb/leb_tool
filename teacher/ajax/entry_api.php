@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/delegation_revoke.php';
 require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
@@ -1012,6 +1013,12 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   if ($userId <= 0) {
     // clear current full key plus legacy aliases so stale pre-hyphen rows do not keep applying
     $aliases = group_key_aliases_from_key($groupKey);
+    annotate_revoked_delegation_texts($pdo, [[
+      'class_id' => $classId,
+      'school_year' => $schoolYear,
+      'period_label' => $periodLabel,
+      'group_aliases' => $aliases,
+    ]]);
     $in = implode(',', array_fill(0, count($aliases), '?'));
     $pdo->prepare(
       "DELETE FROM class_group_delegations
@@ -2397,6 +2404,14 @@ try {
     );
     $valuesTeacher = $teacherValues['combined'] ?? [];
     $valuesTeacherOwn = $teacherValues['own'] ?? [];
+    $revokedDelegationCommentFlags = revoked_delegation_comment_flags($pdo, $reportIds);
+    foreach ($students as &$studentRow) {
+      $ridKey = (string)(int)($studentRow['report_instance_id'] ?? 0);
+      $flag = $revokedDelegationCommentFlags[$ridKey] ?? ['count' => 0, 'names' => []];
+      $studentRow['revoked_delegation_comments_count'] = (int)($flag['count'] ?? 0);
+      $studentRow['revoked_delegation_comment_names'] = is_array($flag['names'] ?? null) ? array_values($flag['names']) : [];
+    }
+    unset($studentRow);
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
 
     // --- progress (teacher / child / overall) ---
