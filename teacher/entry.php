@@ -1731,6 +1731,10 @@ render_teacher_header($pageTitle);
   .srow{ border:1px solid var(--border); border-radius:14px; padding:10px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .srow:hover{ background: rgba(0,0,0,0.02); }
   .srow.active{ outline:2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
+  .srow.delegation-review{ border-color:#f59e0b; background:#fff7ed; box-shadow: inset 4px 0 0 #f59e0b; }
+  .srow.delegation-review.active{ outline:2px solid rgba(245,158,11,0.35); background:#ffedd5; }
+  .delegation-review-pill{ display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:2px 7px; border-radius:999px; background:#f59e0b; color:#111827; font-size:11px; font-weight:800; }
+  .delegation-review-note{ display:block; margin-top:4px; color:#9a3412; font-weight:700; font-size:12px; }
   .smeta{ display:flex; flex-direction:column; gap:2px; min-width:0; width:100%; }
   .smeta .n{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .smeta .sub{ color:var(--muted); font-size:12px; }
@@ -3937,7 +3941,12 @@ render_teacher_header($pageTitle);
           ownTotal: breakdown.ownTotal,
         })
         : '';
-      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
+      const revokedCount = Number(student.revoked_delegation_comments_count || 0);
+      const revokedNoteHtml = revokedCount > 0
+        ? `<span class="delegation-review-note">⚠ Delegationsrückläufer prüfen</span>`
+        : '';
+      row.classList.toggle('delegation-review', revokedCount > 0);
+      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}${revokedNoteHtml}`;
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -5503,7 +5512,10 @@ render_teacher_header($pageTitle);
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
       const div = document.createElement('div');
-      div.className = 'srow' + (idx === ui.activeStudentIndex ? ' active' : '');
+      const revokedCount = Number(s.revoked_delegation_comments_count || 0);
+      div.className = 'srow'
+        + (idx === ui.activeStudentIndex ? ' active' : '')
+        + (revokedCount > 0 ? ' delegation-review' : '');
       const status = String(s.status || 'draft');
       const statusLbl = (status === 'locked')
         ? tEntry('status_locked')
@@ -5528,7 +5540,6 @@ render_teacher_header($pageTitle);
             ownTotal: breakdown.ownTotal,
           }))}</span>`
         : '';
-      const revokedCount = Number(s.revoked_delegation_comments_count || 0);
       const revokedNames = Array.isArray(s.revoked_delegation_comment_names)
         ? s.revoked_delegation_comment_names.filter(x => String(x).trim() !== '')
         : [];
@@ -5536,14 +5547,17 @@ render_teacher_header($pageTitle);
         ? `Zurückgezogene Delegations-Kommentare von ${revokedNames.join(', ')}`
         : 'Zurückgezogene Delegations-Kommentare prüfen';
       const revokedHtml = revokedCount > 0
-        ? ` <span class="pill yellow" title="${esc(revokedTitle)}">⚠ Delegationstext</span>`
+        ? ` <span class="delegation-review-pill" title="${esc(revokedTitle)}">⚠ Prüfen</span>`
+        : '';
+      const revokedNoteHtml = revokedCount > 0
+        ? `<span class="delegation-review-note">⚠ Delegationsrückläufer prüfen</span>`
         : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
           <div class="n">${esc(s.name)}${revokedHtml}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}</div>
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}${revokedNoteHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
