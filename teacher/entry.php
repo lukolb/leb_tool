@@ -1832,6 +1832,8 @@ render_teacher_header($pageTitle);
   .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
   .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
   .combined-inline-text{ font-size:14px; line-height:1.5; }
+  .combined-inline-entry{ padding:6px 0; border-top:1px solid var(--border); }
+  .combined-inline-entry:first-child{ border-top:0; padding-top:0; }
   .combined-inline-text .delegate-part,
   .combined-tip-bubble .delegate-part{
     background: rgba(255, 193, 7, 0.25);
@@ -3400,10 +3402,18 @@ render_teacher_header($pageTitle);
     const next = {
       class_text: existing.class_text ?? '',
       delegate_text: existing.delegate_text ?? '',
+      delegate_texts: (existing.delegate_texts && typeof existing.delegate_texts === 'object') ? { ...existing.delegate_texts } : {},
       delegate_user_id: delegatedUserId,
     };
-    if (part === 'delegate') next.delegate_text = String(value ?? '');
-    else next.class_text = String(value ?? '');
+    if (part === 'delegate') {
+      next.delegate_texts[String(CURRENT_USER_ID)] = String(value ?? '');
+      next.delegate_text = Object.values(next.delegate_texts)
+        .map(x => String(x ?? '').trim())
+        .filter(x => x !== '')
+        .join('\n\n');
+    } else {
+      next.class_text = String(value ?? '');
+    }
     state.values_teacher_parts[ridKey][fidKey] = next;
 
     if (!state.values_teacher_own[ridKey]) state.values_teacher_own[ridKey] = {};
@@ -3418,6 +3428,32 @@ render_teacher_header($pageTitle);
     const t = String(f.field_type || 'text').toLowerCase();
     if (t === 'multiline' || t === 'text') return true;
     return Number(f.is_multiline || 0) === 1;
+  }
+
+  function delegatedPeerInputsHtml(parts){
+    if (!parts || typeof parts !== 'object') return '';
+    const entries = [];
+    const classText = String(parts.class_text ?? '').trim();
+    if (classText !== '') {
+      entries.push({ label: 'Klassenlehrkraft', text: classText });
+    }
+    const delegateTexts = (parts.delegate_texts && typeof parts.delegate_texts === 'object') ? parts.delegate_texts : {};
+    const userNameById = new Map((state.delegation_users || []).map(u => [String(u.id), String(u.name || `Nutzer #${u.id}`)]));
+    Object.entries(delegateTexts).forEach(([uid, txt]) => {
+      if (String(uid) === String(CURRENT_USER_ID)) return;
+      const text = String(txt ?? '').trim();
+      if (text === '') return;
+      entries.push({ label: userNameById.get(String(uid)) || `Nutzer #${uid}`, text });
+    });
+    const body = entries.length
+      ? entries.map(item => `<div class="combined-inline-entry"><strong>${esc(item.label)}</strong><br>${esc(item.text).replace(/\n/g, '<br>')}</div>`).join('')
+      : '<span class="muted">Noch keine Eingaben von Kolleg:innen vorhanden.</span>';
+    return `
+      <div class="combined-inline">
+        <div class="combined-inline-label">Eingaben der Kolleg:innen</div>
+        <div class="combined-inline-text">${body}</div>
+      </div>
+    `;
   }
 
   function combinedPreviewHtml(reportId, field){
@@ -3440,12 +3476,7 @@ render_teacher_header($pageTitle);
           return combined ? esc(String(combined)).replace(/\n/g, '<br>') : '<span class="muted">—</span>';
         })();
     if (DELEGATED_MODE) {
-      return `
-        <div class="combined-inline">
-          <div class="combined-inline-label">Gesamtwert</div>
-          <div class="combined-inline-text">${html}</div>
-        </div>
-      `;
+      return delegatedPeerInputsHtml(parts || {});
     }
     return `
       <span class="combined-tip" data-tip="1">
