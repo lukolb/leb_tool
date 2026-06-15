@@ -151,7 +151,7 @@ function revoked_delegation_comment_flags(PDO $pdo, array $reportIds): array {
   if (!$reportIds) return [];
   $in = implode(',', array_fill(0, count($reportIds), '?'));
   $st = $pdo->prepare(
-    "SELECT report_instance_id, value_json
+    "SELECT report_instance_id, value_text, value_json
      FROM field_values
      WHERE source='teacher'
        AND report_instance_id IN ($in)
@@ -165,6 +165,12 @@ function revoked_delegation_comment_flags(PDO $pdo, array $reportIds): array {
     $decoded = json_decode((string)$row['value_json'], true);
     $items = $decoded['free_text']['revoked_delegate_texts'] ?? null;
     if (!is_array($items) || !$items) continue;
+    $visibleText = (string)($row['value_text'] ?? '');
+    $classText = (string)($decoded['free_text']['class_text'] ?? '');
+    if (strpos($visibleText, 'Ergänzungen aus zurückgezogenen Delegationen:') === false
+        && strpos($classText, 'Ergänzungen aus zurückgezogenen Delegationen:') === false) {
+      continue;
+    }
     $names = [];
     foreach ($items as $item) {
       $name = trim((string)($item['name'] ?? ''));

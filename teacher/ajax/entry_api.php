@@ -3633,7 +3633,8 @@ if ($action === 'delegations_save') {
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
     audit('teacher_class_value_save', $userId, ['class_id'=>$classId,'report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
-    json_out(['ok' => true]);
+    $flags = revoked_delegation_comment_flags($pdo, [$reportId]);
+    json_out(['ok' => true, 'revoked_delegation_comments' => $flags[(string)$reportId] ?? ['count' => 0, 'names' => []]]);
   }
 
   if ($action === 'save') {
@@ -3760,7 +3761,8 @@ if ($action === 'delegations_save') {
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
     audit('teacher_value_save', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
-    json_out(['ok' => true]);
+    $flags = revoked_delegation_comment_flags($pdo, [$reportId]);
+    json_out(['ok' => true, 'revoked_delegation_comments' => $flags[(string)$reportId] ?? ['count' => 0, 'names' => []]]);
   }
 
   if ($action === 'child_value_update') {

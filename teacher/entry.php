@@ -4020,6 +4020,17 @@ render_teacher_header($pageTitle);
     btnPdfEntry.dataset.studentId = active ? String(sid) : '';
   }
 
+
+  function applyRevokedDelegationComments(reportId, payload){
+    if (!payload || typeof payload !== 'object') return;
+    const st = findStudentByReportId(reportId);
+    if (!st) return;
+    st.revoked_delegation_comments_count = Number(payload.count || 0);
+    st.revoked_delegation_comment_names = Array.isArray(payload.names) ? payload.names : [];
+    updateStudentRowUI(st);
+    if (activeStudent()?.id === st.id) updateActiveStudentBadge();
+  }
+
   function onTeacherValueChanged(reportId, fieldId){
     if (isClassFieldId(fieldId)) {
       updateClassFieldsProgressUI();
@@ -4050,7 +4061,8 @@ render_teacher_header($pageTitle);
       key,
       'save',
       { report_instance_id: reportId, template_field_id: fieldId, value_text: value },
-      () => {
+      (res) => {
+        applyRevokedDelegationComments(reportId, res?.revoked_delegation_comments);
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(reportId, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
@@ -4109,7 +4121,8 @@ render_teacher_header($pageTitle);
       key,
       'save_class',
       { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value },
-      () => {
+      (res) => {
+        applyRevokedDelegationComments(rid, res?.revoked_delegation_comments);
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(rid, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
