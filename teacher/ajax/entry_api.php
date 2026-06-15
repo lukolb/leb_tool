@@ -3574,7 +3574,7 @@ if ($action === 'delegations_save') {
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = $delegatedView && in_array($userId, $assignedUsers, true);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 
@@ -3701,7 +3701,7 @@ if ($action === 'delegations_save') {
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = $delegatedView && in_array($userId, $assignedUsers, true);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 

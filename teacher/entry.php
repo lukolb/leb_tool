@@ -3383,8 +3383,8 @@ render_teacher_header($pageTitle);
       ? f._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
       : [];
     if (!delegatedUserIds.length) return null;
-    const isDelegate = delegatedUserIds.includes(CURRENT_USER_ID) && !state.is_class_teacher;
-    return isDelegate ? 'delegate' : 'class';
+    const isDelegate = delegatedUserIds.includes(CURRENT_USER_ID);
+    return (DELEGATED_MODE && isDelegate) ? 'delegate' : 'class';
   }
 
   function setTeacherFreeTextPart(reportId, fieldId, value){
@@ -3430,28 +3430,33 @@ render_teacher_header($pageTitle);
     return Number(f.is_multiline || 0) === 1;
   }
 
-  function delegatedPeerInputsHtml(parts){
-    if (!parts || typeof parts !== 'object') return '';
+  function namedTextParts(parts, includeCurrentDelegate){
+    if (!parts || typeof parts !== 'object') return [];
     const entries = [];
     const classText = String(parts.class_text ?? '').trim();
-    if (classText !== '') {
-      entries.push({ label: 'Klassenlehrkraft', text: classText });
-    }
+    if (classText !== '') entries.push({ label: 'Klassenlehrkraft', text: classText, kind: 'class' });
     const delegateTexts = (parts.delegate_texts && typeof parts.delegate_texts === 'object') ? parts.delegate_texts : {};
     const userNameById = new Map((state.delegation_users || []).map(u => [String(u.id), String(u.name || `Nutzer #${u.id}`)]));
     Object.entries(delegateTexts).forEach(([uid, txt]) => {
-      if (String(uid) === String(CURRENT_USER_ID)) return;
+      if (!includeCurrentDelegate && String(uid) === String(CURRENT_USER_ID)) return;
       const text = String(txt ?? '').trim();
       if (text === '') return;
-      entries.push({ label: userNameById.get(String(uid)) || `Nutzer #${uid}`, text });
+      entries.push({ label: userNameById.get(String(uid)) || `Nutzer #${uid}`, text, kind: 'delegate' });
     });
-    const body = entries.length
-      ? entries.map(item => `<div class="combined-inline-entry"><strong>${esc(item.label)}</strong><br>${esc(item.text).replace(/\n/g, '<br>')}</div>`).join('')
-      : '<span class="muted">Noch keine Eingaben von Kolleg:innen vorhanden.</span>';
+    return entries;
+  }
+
+  function namedTextPartsHtml(parts, includeCurrentDelegate){
+    const entries = namedTextParts(parts, includeCurrentDelegate);
+    if (!entries.length) return '<span class="muted">Noch keine Eingaben von Kolleg:innen vorhanden.</span>';
+    return entries.map(item => `<div class="combined-inline-entry"><strong>${esc(item.label)}</strong><br>${esc(item.text).replace(/\n/g, '<br>')}</div>`).join('');
+  }
+
+  function delegatedPeerInputsHtml(parts){
     return `
       <div class="combined-inline">
         <div class="combined-inline-label">Eingaben der Kolleg:innen</div>
-        <div class="combined-inline-text">${body}</div>
+        <div class="combined-inline-text">${namedTextPartsHtml(parts, false)}</div>
       </div>
     `;
   }
@@ -3470,7 +3475,7 @@ render_teacher_header($pageTitle);
     const hasParts = !!parts;
     const highlightDelegate = !DELEGATED_MODE && !!(state.is_class_teacher);
     const html = hasParts
-      ? combineTextPartsHtml(parts.class_text ?? '', parts.delegate_text ?? '', highlightDelegate)
+      ? namedTextPartsHtml(parts, true)
       : (() => {
           const combined = teacherVal(reportId, field.id);
           return combined ? esc(String(combined)).replace(/\n/g, '<br>') : '<span class="muted">—</span>';
