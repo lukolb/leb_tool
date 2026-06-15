@@ -2404,7 +2404,7 @@ try {
     );
     $valuesTeacher = $teacherValues['combined'] ?? [];
     $valuesTeacherOwn = $teacherValues['own'] ?? [];
-    $revokedDelegationCommentFlags = revoked_delegation_comment_flags($pdo, $reportIds);
+    $revokedDelegationCommentFlags = $delegatedView ? [] : revoked_delegation_comment_flags($pdo, $reportIds);
     foreach ($students as &$studentRow) {
       $ridKey = (string)(int)($studentRow['report_instance_id'] ?? 0);
       $flag = $revokedDelegationCommentFlags[$ridKey] ?? ['count' => 0, 'names' => []];

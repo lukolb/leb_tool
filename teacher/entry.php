@@ -3941,7 +3941,7 @@ render_teacher_header($pageTitle);
           ownTotal: breakdown.ownTotal,
         })
         : '';
-      const revokedCount = Number(student.revoked_delegation_comments_count || 0);
+      const revokedCount = DELEGATED_MODE ? 0 : Number(student.revoked_delegation_comments_count || 0);
       const revokedNoteHtml = revokedCount > 0
         ? `<span class="delegation-review-note">⚠ Delegationsrückläufer prüfen</span>`
         : '';
@@ -3996,7 +3996,7 @@ render_teacher_header($pageTitle);
     const cTotal = Number(s.progress_child_total || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
-    const revokedSuffix = Number(s.revoked_delegation_comments_count || 0) > 0
+    const revokedSuffix = (!DELEGATED_MODE && Number(s.revoked_delegation_comments_count || 0) > 0)
       ? ` · ⚠ zurückgezogene Delegationstexte prüfen`
       : '';
     studentBadge.textContent = tfmtEntry('student_badge_both', {
@@ -4022,7 +4022,7 @@ render_teacher_header($pageTitle);
 
 
   function applyRevokedDelegationComments(reportId, payload){
-    if (!payload || typeof payload !== 'object') return;
+    if (DELEGATED_MODE || !payload || typeof payload !== 'object') return;
     const st = findStudentByReportId(reportId);
     if (!st) return;
     st.revoked_delegation_comments_count = Number(payload.count || 0);
@@ -5525,7 +5525,7 @@ render_teacher_header($pageTitle);
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
       const div = document.createElement('div');
-      const revokedCount = Number(s.revoked_delegation_comments_count || 0);
+      const revokedCount = DELEGATED_MODE ? 0 : Number(s.revoked_delegation_comments_count || 0);
       div.className = 'srow'
         + (idx === ui.activeStudentIndex ? ' active' : '')
         + (revokedCount > 0 ? ' delegation-review' : '');
