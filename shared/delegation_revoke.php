@@ -137,9 +137,6 @@ function annotate_revoked_delegation_texts(PDO $pdo, ?array $scopes = null): int
     if ($valueText === '') continue;
 
     $decoded['free_text']['class_text'] = $valueText;
-    $decoded['free_text']['delegate_text'] = '';
-    $decoded['free_text']['delegate_texts'] = [];
-    $decoded['free_text']['delegate_user_id'] = 0;
     $decoded['free_text']['delegation_revoked_at'] = date('c');
     $decoded['free_text']['revoked_delegate_texts'] = $delegateTexts;
     $nextJson = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
