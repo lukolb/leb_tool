@@ -1745,7 +1745,7 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
 function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
   $where = $includeReadonly ? ' AND NOT (can_child_edit=1 AND can_teacher_edit=0)' : ' AND can_teacher_edit=1';
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order, can_teacher_edit
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, options_json, meta_json, sort_order, can_teacher_edit
      FROM template_fields
      WHERE template_id=?$where
      ORDER BY sort_order ASC, id ASC"
@@ -1773,7 +1773,7 @@ function load_system_bound_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -2341,6 +2341,7 @@ try {
         'help_text' => (string)($f['help_text'] ?? ''),
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
+        'is_required' => (int)($f['is_required'] ?? 0),
         'options' => $optsTeacher,
         'subgroup' => $gParts['subgroup'],
         'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
@@ -2354,6 +2355,7 @@ try {
           'label' => (string)($child['label'] ?? ''),
           'help_text' => (string)($child['help_text'] ?? ''),
           'is_multiline' => (int)($child['is_multiline'] ?? 0),
+          'is_required' => (int)($child['is_required'] ?? 0),
           'options' => $child['options'],
           'snippet_categories' => snippet_categories_from_meta(meta_read($child['meta_json'] ?? null)),
           'snippet_category_ids' => snippet_category_ids_from_meta(meta_read($child['meta_json'] ?? null)),
@@ -2416,14 +2418,17 @@ try {
 
     // --- progress (teacher / child / overall) ---
     $teacherProgressIds = [];
+    $teacherOptionalIds = [];
     foreach ($teacherFields as $f0) {
       $m0 = meta_read($f0['meta_json'] ?? null);
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
+      if ((int)($f0['is_required'] ?? 0) !== 1) { $teacherOptionalIds[] = (int)$f0['id']; continue; }
       $teacherProgressIds[] = (int)$f0['id'];
     }
 
     $childProgressIds = [];
+    $childOptionalIds = [];
     $childProgressLabels = [];
     // load ALL child-editable fields for progress counting (not only paired)
     $childFieldsAll = load_child_fields_for_pairing($pdo, $templateId);
@@ -2431,6 +2436,7 @@ try {
       $m0 = meta_read($cf0['meta_json'] ?? null);
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
+      if ((int)($cf0['is_required'] ?? 0) !== 1) { $childOptionalIds[] = (int)$cf0['id']; continue; }
       $childProgressIds[] = (int)$cf0['id'];
       $labelC = label_for_lang($cf0['label'] ?? null, $cf0['label_en'] ?? null, $lang);
       $fnameC = (string)($cf0['field_name'] ?? '');
@@ -2452,10 +2458,12 @@ try {
     $historyFieldIds = array_values(array_unique(array_merge($teacherFieldIds, $childProgressIds, $classFieldIdsEditable)));
     $valueHistory = load_value_history($pdo, $reportIds, $historyFieldIds, $fieldMetaById, $lang, 5);
 
-    $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child', $lang);
+    $valuesChildAllForProgress = load_values($pdo, $reportIds, array_values(array_unique(array_merge($childProgressIds, $childOptionalIds))), 'child', $lang);
 
     $teacherTotal = count($teacherProgressIds);
+    $teacherOptionalTotal = count($teacherOptionalIds);
     $childTotal = count($childProgressIds);
+    $childOptionalTotal = count($childOptionalIds);
     $overallTotal = $teacherTotal + $childTotal;
 
     $completeForms = 0;
@@ -2490,6 +2498,18 @@ try {
         }
       }
 
+      $teacherOptionalDone = 0;
+      foreach ($teacherOptionalIds as $fid) {
+        $v = $valuesTeacher[$ridKey][(string)$fid] ?? '';
+        if (trim((string)$v) !== '') $teacherOptionalDone++;
+      }
+      $childOptionalDone = 0;
+      foreach ($childOptionalIds as $fid) {
+        if (!empty($lockedChildIds[$fid])) continue;
+        $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
+        if (trim((string)$v) !== '') $childOptionalDone++;
+      }
+
       $overallTotalForStudent = $teacherTotal + $childTotalForStudent;
       $oDone = $tDone + $cDone;
       $oMissing = max(0, $overallTotalForStudent - $oDone);
@@ -2499,10 +2519,16 @@ try {
       $srow['progress_teacher_total'] = $teacherTotal;
       $srow['progress_teacher_done'] = $tDone;
       $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone);
+      $srow['progress_teacher_optional_total'] = $teacherOptionalTotal;
+      $srow['progress_teacher_optional_done'] = $teacherOptionalDone;
+      $srow['progress_teacher_optional_empty'] = max(0, $teacherOptionalTotal - $teacherOptionalDone);
 
       $srow['progress_child_total'] = $childTotalForStudent;
       $srow['progress_child_done'] = $cDone;
       $srow['progress_child_missing'] = max(0, $childTotalForStudent - $cDone);
+      $srow['progress_child_optional_total'] = $childOptionalTotal;
+      $srow['progress_child_optional_done'] = $childOptionalDone;
+      $srow['progress_child_optional_empty'] = max(0, $childOptionalTotal - $childOptionalDone);
       $srow['child_missing_fields'] = $missingChildLabels;
 
       $srow['progress_overall_total'] = $overallTotalForStudent;
@@ -2528,7 +2554,9 @@ try {
       'forms_complete' => $completeForms,
       'forms_incomplete' => max(0, count($students) - $completeForms),
       'teacher_fields_total' => $teacherTotal,
+      'teacher_optional_fields_total' => $teacherOptionalTotal,
       'child_fields_total' => $childTotal,
+      'child_optional_fields_total' => $childOptionalTotal,
       'overall_fields_total' => $overallTotal,
       'class_fields_total' => $classTotal,
       'class_fields_done' => $classDone,

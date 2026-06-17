@@ -1879,6 +1879,7 @@ render_teacher_header($pageTitle);
   .show-child .cellChild{ display:block; }
 
   .missing{ outline:2px solid rgba(200,20,20,0.5); background: rgba(200,20,20,0.2); border-radius:12px; padding:4px; }
+  .optional-empty{ outline:2px solid rgba(245,158,11,0.45); background: rgba(245,158,11,0.16); border-radius:12px; padding:4px; }
   .missing:not(.field){ width: fit-content; }
 
   .modal{ position:fixed; inset:0; z-index:9999; }
@@ -2510,12 +2511,23 @@ render_teacher_header($pageTitle);
     return groupEditable && fieldEditable;
   }
 
+  function isRequiredField(field){
+    return Number(field?.is_required || 0) === 1;
+  }
+
+  function fieldStatusClass(field, value){
+    const empty = String(value ?? '').trim() === '';
+    if (!empty) return '';
+    return isRequiredField(field) ? 'missing' : 'optional-empty';
+  }
+
   function activeProgressFieldIds(reportId){
     const ids = [];
     const groups = CHILD_MODE ? activeGroupsForReport(reportId) : activeGroups();
     groups.forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         ids.push(Number(f.id));
       });
     });
@@ -2546,6 +2558,8 @@ render_teacher_header($pageTitle);
   }
 
   function isTeacherFieldMissing(reportId, fieldId){
+    const f = state.fieldMap?.[String(fieldId)];
+    if (f && !isRequiredField(f)) return false;
     return String(teacherEditVal(reportId, fieldId) ?? '').trim() === '';
   }
 
@@ -2556,6 +2570,7 @@ render_teacher_header($pageTitle);
     (state.groups || []).forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         const type = String(f.field_type || '');
         const hasOptions = Array.isArray(f.options) && f.options.length > 0;
         if (!hasOptions) return;
@@ -2665,6 +2680,8 @@ render_teacher_header($pageTitle);
   }
 
   function isActiveFieldMissing(reportId, fieldId){
+    const f = state.fieldMap?.[String(fieldId)];
+    if (f && !isRequiredField(f)) return false;
     if (isChildFieldLocked(reportId, fieldId)) return false;
     return String(activeFieldValue(reportId, fieldId) ?? '').trim() === '';
   }
@@ -3713,7 +3730,10 @@ render_teacher_header($pageTitle);
     const wrap = inp.closest('.cellWrap') || inp.closest('.field');
     if (!wrap) return;
     const missing = String(value ?? '').trim() === '';
-    wrap.classList.toggle('missing', missing);
+    const fieldId = inp.dataset?.fieldId || inp.getAttribute('data-field-id');
+    const fDef = state.fieldMap?.[String(fieldId)];
+    wrap.classList.toggle('missing', missing && (!fDef || isRequiredField(fDef)));
+    wrap.classList.toggle('optional-empty', missing && fDef && !isRequiredField(fDef));
   }
 
   // --- progress helpers ---
@@ -3722,6 +3742,7 @@ render_teacher_header($pageTitle);
     activeGroups().forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         ids.push(Number(f.id));
       });
     });
@@ -3877,6 +3898,7 @@ render_teacher_header($pageTitle);
       const delegatedToOthers = delegatedUsers.length > 0
         && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
       (g.fields || []).forEach(f => {
+        if (!isRequiredField(f)) return;
         const raw = delegatedToOthers ? teacherVal(reportId, f.id) : teacherEditVal(reportId, f.id);
         const missing = String(raw ?? '').trim() === '';
         if (!delegatedToOthers && isEditableField(f, g)) {
@@ -5391,7 +5413,7 @@ render_teacher_header($pageTitle);
       const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
       const lbl = resolveLabelTemplate(String(f.label || f.field_name || tEntry('field_label')));
       const help = resolveLabelTemplate(String(f.help_text || ''));
-      const missingCls = (v === '') ? 'missing' : '';
+      const missingCls = fieldStatusClass(f, v);
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
       const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
       const clearBtn = (CHILD_MODE && !DELEGATED_MODE)
@@ -5654,7 +5676,7 @@ render_teacher_header($pageTitle);
     activeGroupsForReport(reportId).forEach(g => {
       if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
-      const progressFields = fields.filter(f => isEditableField(f, g));
+      const progressFields = fields.filter(f => isEditableField(f, g) && isRequiredField(f));
       if (ui.studentMissingOnly) {
         fields = progressFields.filter(f => isActiveFieldMissing(reportId, f.id));
       }
@@ -5740,7 +5762,10 @@ render_teacher_header($pageTitle);
         const val = (current ?? '');
         const wrap = btn.closest('.field') || btn.closest('.cellWrap');
         if (wrap) {
-          wrap.classList.toggle('missing', String(val).trim() === '');
+          const fDef = state.fieldMap?.[String(fid)];
+          const isEmpty = String(val).trim() === '';
+          wrap.classList.toggle('missing', isEmpty && (!fDef || isRequiredField(fDef)));
+          wrap.classList.toggle('optional-empty', isEmpty && fDef && !isRequiredField(fDef));
           const input = wrap.querySelector('[data-child-input="1"]');
           if (input) {
             if (input.dataset.combo === '1') {
@@ -6086,7 +6111,7 @@ render_teacher_header($pageTitle);
           const v = activeFieldValue(reportId, f.id);
           const canEditField = (Number(f.can_edit || 0) === 1);
 
-          const missingCls = (v === '') ? 'missing' : '';
+          const missingCls = fieldStatusClass(f, v);
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
           const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
@@ -6174,7 +6199,7 @@ render_teacher_header($pageTitle);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
-        const missingCls = (v === '') ? 'missing' : '';
+        const missingCls = fieldStatusClass(f, v);
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
@@ -6256,7 +6281,7 @@ render_teacher_header($pageTitle);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
-        const missingCls = (v === '') ? 'missing' : '';
+        const missingCls = fieldStatusClass(f, v);
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
           const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
