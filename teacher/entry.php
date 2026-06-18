@@ -2134,6 +2134,11 @@ render_teacher_header($pageTitle);
     'text_review_explanation' => t('teacher.text_review.explanation', 'Begründung'),
     'text_review_applied' => t('teacher.text_review.applied', 'Übernommen'),
     'text_review_ignored' => t('teacher.text_review.ignored', 'Ignoriert'),
+    'text_review_snippets_ignored' => t('teacher.text_review.snippets_ignored', 'Textbausteinbereiche wurden vor der Prüfung ausgelassen.'),
+    'text_review_snippet_blocked' => t('teacher.text_review.snippet_blocked', 'Textbaustein kann nicht automatisch geändert werden'),
+    'text_review_snippet_only' => t('teacher.text_review.snippet_only', 'Reine Textbaustein-Felder übersprungen'),
+    'text_review_snippet_chars_removed' => t('teacher.text_review.snippet_chars_removed', 'Textbaustein-Zeichen ausgelassen'),
+    'text_review_free_chars_sent' => t('teacher.text_review.free_chars_sent', 'Freitext-Zeichen geprüft'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
@@ -4105,10 +4110,16 @@ render_teacher_header($pageTitle);
       [tEntry('text_review_model'), diag.model || prep.model || '—'],
       [tEntry('text_review_fields_checked'), `${Number(diag.checked || 0)} / ${Number(diag.prepared || (prep.items || []).length || 0)}`],
       [tEntry('text_review_skipped'), String(Number(diag.skipped_empty || 0) + Number(diag.skipped_snippet_only || 0) + Number(diag.skipped_too_long || 0))],
+      [tEntry('text_review_snippet_only'), String(Number(diag.skipped_snippet_only || 0))],
+      [tEntry('text_review_snippet_chars_removed'), String(Number(diag.snippet_chars_removed || 0))],
+      [tEntry('text_review_free_chars_sent'), `${Number(diag.free_text_chars_sent || 0)} / ${Number(diag.original_chars_total || 0)}`],
       [tEntry('text_review_ai_requests'), String(Number(diag.ai_requests || 0))],
       [tEntry('text_review_suggestions'), String(Number(diag.suggestions || 0))],
     ];
-    return `<div class="card" style="margin:10px 0;padding:10px;"><strong>${esc(tEntry('text_review_diagnostics'))}</strong><dl style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0 0;">${rows.map(([k,v]) => `<dt class="muted">${esc(k)}</dt><dd style="margin:0;">${esc(v)}</dd>`).join('')}</dl></div>`;
+    const snippetNote = Number(diag.snippet_chars_removed || 0) > 0 || Number(diag.skipped_snippet_only || 0) > 0
+      ? `<div class="alert info" style="margin-top:8px;">${esc(tEntry('text_review_snippets_ignored'))}</div>`
+      : '';
+    return `<div class="card" style="margin:10px 0;padding:10px;"><strong>${esc(tEntry('text_review_diagnostics'))}</strong><dl style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0 0;">${rows.map(([k,v]) => `<dt class="muted">${esc(k)}</dt><dd style="margin:0;">${esc(v)}</dd>`).join('')}</dl>${snippetNote}</div>`;
   }
 
   function currentTextReviewFieldText(suggestion){
@@ -4125,6 +4136,13 @@ render_teacher_header($pageTitle);
       return false;
     }
     const excerpt = String(suggestion.original_excerpt || '');
+    const snippetRanges = Array.isArray(suggestion.snippet_ranges) ? suggestion.snippet_ranges : [];
+    const touchesSnippet = excerpt && snippetRanges.some(r => String(r?.text || '').includes(excerpt));
+    if (touchesSnippet || (!excerpt && snippetRanges.length > 0)) {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_snippet_blocked');
+      return false;
+    }
     const nextPart = String(replacement || '');
     let nextText = '';
     if (excerpt && current.includes(excerpt)) {
@@ -4192,7 +4210,8 @@ render_teacher_header($pageTitle);
           const items = Array.isArray(prep.items) ? prep.items : [];
           const batchSize = Math.max(1, Number(prep.max_fields_per_batch || 8));
           const allSuggestions = [];
-          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
+          const prepDiag = prep.snippet_diagnostics || {};
+          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, fields_with_snippet_parts: Number(prepDiag.fields_with_snippet_parts || 0), snippet_chars_removed: 0, free_text_chars_sent: 0, original_chars_total: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
           for (let offset = 0; offset < items.length; offset += batchSize) {
             const run = await textReviewApi('run_batch', { items: items.slice(offset, offset + batchSize) });
             const diag = run.diagnostics || {};
@@ -4200,6 +4219,9 @@ render_teacher_header($pageTitle);
             aggregate.skipped_empty += Number(diag.skipped_empty || 0);
             aggregate.skipped_too_long += Number(diag.skipped_too_long || 0);
             aggregate.skipped_snippet_only += Number(diag.skipped_snippet_only || 0);
+            aggregate.snippet_chars_removed += Number(diag.snippet_chars_removed || 0);
+            aggregate.free_text_chars_sent += Number(diag.free_text_chars_sent || 0);
+            aggregate.original_chars_total += Number(diag.original_chars_total || 0);
             aggregate.ai_requests += Number(diag.ai_requests || 0);
             aggregate.provider = diag.provider || aggregate.provider;
             aggregate.model = diag.model || aggregate.model;
