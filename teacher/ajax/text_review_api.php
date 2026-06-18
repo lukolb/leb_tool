@@ -1,0 +1,34 @@
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/../../bootstrap.php';
+require_teacher();
+header('Content-Type: application/json; charset=utf-8');
+
+function tr_json(array $payload, int $status = 200): never { http_response_code($status); echo json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); exit; }
+function tr_body(): array { $raw=file_get_contents('php://input'); $j=$raw?json_decode($raw,true):[]; return is_array($j)?$j:[]; }
+function tr_cfg(): array { $cfg=app_config(); $tc=$cfg['text_check']??[]; return is_array($tc)?$tc:[]; }
+function tr_enabled(): bool { $c=tr_cfg(); return !empty($c['enabled']) && (($c['provider']??'disabled') !== 'disabled'); }
+function tr_is_free_text(array $f): bool { $t=strtolower((string)($f['field_type']??'')); return $t==='text'||$t==='multiline'||(int)($f['is_multiline']??0)===1; }
+function tr_reports(PDO $pdo,int $classId,int $tplId,string $year,string $period): array {
+  $st=$pdo->prepare("SELECT s.id student_id, CONCAT(s.last_name, ', ', s.first_name) student_name, ri.id report_id FROM students s JOIN report_instances ri ON ri.student_id=s.id AND ri.template_id=? AND ri.school_year=? AND ri.period_label=? WHERE s.class_id=? AND s.is_active=1 ORDER BY s.last_name,s.first_name,s.id");
+  $st->execute([$tplId,$year,$period,$classId]); return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+function tr_class_context(PDO $pdo,int $classId): array {
+  $st=$pdo->prepare("SELECT id, template_id, school_year, period_label FROM classes WHERE id=? LIMIT 1"); $st->execute([$classId]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Klasse nicht gefunden.');
+  return ['template_id'=>(int)$c['template_id'],'school_year'=>(string)$c['school_year'],'period_label'=>normalize_class_period_label($c['period_label']??'Standard')];
+}
+function tr_status(PDO $pdo,int $classId): array {
+  $ctx=tr_class_context($pdo,$classId); $tplId=$ctx['template_id'];
+  $fields=$pdo->prepare("SELECT id, can_teacher_edit, can_child_edit, is_required, field_type, is_multiline, field_name, label, label_en, meta_json FROM template_fields WHERE template_id=?"); $fields->execute([$tplId]); $rows=$fields->fetchAll(PDO::FETCH_ASSOC);
+  $reqTeacher=[]; $reqChild=[]; $free=[];
+  foreach($rows as $f){ $meta=json_decode((string)($f['meta_json']??''),true); $meta=is_array($meta)?$meta:[]; $sys=(!empty($meta['system_binding'])||!empty($meta['system_binding_tpl'])); $class=((string)($meta['scope']??'')==='class'||(int)($meta['is_class_field']??0)===1); if($sys||$class) continue; if((int)$f['is_required']===1 && (int)$f['can_teacher_edit']===1)$reqTeacher[]=(int)$f['id']; if((int)$f['is_required']===1 && (int)$f['can_child_edit']===1)$reqChild[]=(int)$f['id']; if((int)$f['can_teacher_edit']===1 && tr_is_free_text($f))$free[(int)$f['id']]=$f; }
+  $reports=tr_reports($pdo,$classId,$tplId,$ctx['school_year'],$ctx['period_label']); $unfinished=0; $missing=0;
+  $checkVals=function(array $ids,string $source)use($pdo,$reports){ if(!$ids||!$reports)return[]; $rids=array_map(fn($r)=>(int)$r['report_id'],$reports); $inR=implode(',',array_fill(0,count($rids),'?')); $inF=implode(',',array_fill(0,count($ids),'?')); $st=$pdo->prepare("SELECT report_instance_id,template_field_id,value_text FROM field_values WHERE source=? AND report_instance_id IN ($inR) AND template_field_id IN ($inF)"); $st->execute(array_merge([$source],$rids,$ids)); $out=[]; foreach($st->fetchAll(PDO::FETCH_ASSOC) as $v)$out[(int)$v['report_instance_id']][(int)$v['template_field_id']]=(string)($v['value_text']??''); return$out; };
+  $tv=$checkVals($reqTeacher,'teacher'); $cv=$checkVals($reqChild,'child');
+  foreach($reports as $r){$rid=(int)$r['report_id'];$miss=0;foreach($reqTeacher as $fid) if(trim($tv[$rid][$fid]??'')==='')$miss++; foreach($reqChild as $fid) if(trim($cv[$rid][$fid]??'')==='')$miss++; if($miss>0){$unfinished++;$missing+=$miss;}}
+  return ['ok'=>true,'enabled'=>tr_enabled(),'available'=>tr_enabled()&&$unfinished===0,'unfinished_reports'=>$unfinished,'missing_required_fields'=>$missing,'students_total'=>count($reports),'free_text_fields_total'=>count($free),'message'=>tr_enabled()?($unfinished===0?'':'Textprüfung verfügbar, sobald alle Pflichtfelder abgeschlossen sind.'):'Textprüfung ist derzeit nicht verfügbar.'];
+}
+function tr_prepare(PDO $pdo,int $classId): array { $s=tr_status($pdo,$classId); if(!$s['available']) return $s+['items'=>[],'estimated_chars'=>0]; $ctx=tr_class_context($pdo,$classId); $tplId=$ctx['template_id']; $reports=tr_reports($pdo,$classId,$tplId,$ctx['school_year'],$ctx['period_label']); $fields=$pdo->prepare("SELECT id, field_name, label, label_en, field_type, is_multiline FROM template_fields WHERE template_id=? AND can_teacher_edit=1"); $fields->execute([$tplId]); $free=[]; foreach($fields->fetchAll(PDO::FETCH_ASSOC) as $f) if(tr_is_free_text($f))$free[(int)$f['id']]=$f; if(!$free||!$reports)return$s+['items'=>[],'estimated_chars'=>0]; $rids=array_map(fn($r)=>(int)$r['report_id'],$reports); $inR=implode(',',array_fill(0,count($rids),'?')); $inF=implode(',',array_fill(0,count($free),'?')); $st=$pdo->prepare("SELECT report_instance_id,template_field_id,value_text FROM field_values WHERE source='teacher' AND report_instance_id IN ($inR) AND template_field_id IN ($inF)"); $st->execute(array_merge($rids,array_keys($free))); $byReport=[]; foreach($reports as $r)$byReport[(int)$r['report_id']]=$r; $items=[];$chars=0; foreach($st->fetchAll(PDO::FETCH_ASSOC) as $v){$text=trim((string)($v['value_text']??'')); if($text==='')continue; $fid=(int)$v['template_field_id']; $rid=(int)$v['report_instance_id']; $f=$free[$fid]; $r=$byReport[$rid]; $chars+=mb_strlen($text); $items[]=['student_id'=>(int)$r['student_id'],'student_name'=>(string)$r['student_name'],'report_id'=>$rid,'field_id'=>$fid,'field_name'=>(string)$f['field_name'],'field_label_de'=>(string)($f['label']??''),'field_label_en'=>(string)($f['label_en']??''),'language'=>'auto','current_text'=>$text]; } return $s+['items'=>$items,'estimated_chars'=>$chars]; }
+
+try{ $data=tr_body(); if(!isset($_POST['csrf_token']) && isset($data['csrf_token']))$_POST['csrf_token']=(string)$data['csrf_token']; csrf_verify(); $pdo=db(); $u=current_user(); $uid=(int)($u['id']??0); $classId=(int)($data['class_id']??0); if($classId<=0)throw new RuntimeException('class_id fehlt.'); if(($u['role']??'')!=='admin' && !user_can_access_class($pdo,$uid,$classId)) throw new RuntimeException('Keine Berechtigung.'); $action=(string)($data['action']??'status'); if($action==='status')tr_json(tr_status($pdo,$classId)); if($action==='prepare')tr_json(tr_prepare($pdo,$classId)); if($action==='run_batch')tr_json(['ok'=>true,'suggestions'=>[],'checked'=>0,'message'=>'Textprüfung ist derzeit nicht verfügbar.']); throw new RuntimeException('Unbekannte action.'); }catch(Throwable $e){ tr_json(['ok'=>false,'error'=>$e->getMessage()],400); }

@@ -1318,6 +1318,23 @@ render_teacher_header($pageTitle);
   </div>
 </div>
 
+<div id="textReviewModal" class="modal" style="display:none;">
+  <div class="modal-backdrop" data-text-review-close="1"></div>
+  <div class="modal-card" style="max-width:900px;">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <h3 style="margin:0;"><?=h(t('teacher.text_review.title', 'Textprüfung'))?></h3>
+      <button class="btn secondary" type="button" data-text-review-close="1">×</button>
+    </div>
+    <div id="textReviewStatus" class="alert" style="margin-top:10px;"></div>
+    <div id="textReviewSummary" class="muted" style="margin-top:10px;"></div>
+    <div id="textReviewResults" style="margin-top:12px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+      <button class="btn primary" type="button" id="btnTextReviewStart"><?=h(t('teacher.text_review.start', 'Prüfung starten'))?></button>
+      <button class="btn secondary" type="button" data-text-review-close="1"><?=h(t('teacher.delegations.modal.close', 'Schließen'))?></button>
+    </div>
+  </div>
+</div>
+
 <?php if ($delegatedMode): ?>
 <div id="dlgDelegationDone" class="modal" style="display:none;">
   <div class="modal-backdrop" data-close="1"></div>
@@ -1531,6 +1548,7 @@ render_teacher_header($pageTitle);
         <div class="row-actions" style="justify-content:space-between;">
             <div class="pill-mini" id="studentBadge" style="font-weight: bold">—</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn secondary" type="button" id="btnTextReview" disabled title="<?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?>"><?=h(t('teacher.text_review.review_all', 'Alle Freitexte prüfen'))?></button>
             <button class="btn secondary" type="button" id="btnPdfEntry">
               <?=h(t('teacher.students.btn_pdf_entry'))?>
             </button>
@@ -2090,6 +2108,12 @@ render_teacher_header($pageTitle);
     'delegated_badge' => t('teacher.entry.delegated_badge'),
     'delegated_badge_done' => t('teacher.entry.delegated_badge_done'),
     'readonly_badge' => t('teacher.entry.readonly_badge'),
+    'text_review_available_when_complete' => t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'),
+    'text_review_unavailable' => t('teacher.text_review.unavailable', 'Textprüfung ist derzeit nicht verfügbar'),
+    'text_review_ready' => t('teacher.text_review.ready', 'Textprüfung bereit'),
+    'text_review_summary' => t('teacher.text_review.summary', '{students} Schüler:innen · {fields} Freitextfelder · ca. {chars} Zeichen'),
+    'text_review_cost_hint' => t('teacher.text_review.cost_hint', 'Die Prüfung kann kostenpflichtige KI-Anfragen verursachen.'),
+    'text_review_no_suggestions' => t('teacher.text_review.no_suggestions', 'Keine Verbesserungen gefunden'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
@@ -2117,6 +2141,7 @@ render_teacher_header($pageTitle);
 
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
+  const textReviewApiUrl = <?=json_encode(url('teacher/ajax/text_review_api.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
   const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm'))?>;
@@ -2282,6 +2307,12 @@ render_teacher_header($pageTitle);
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
   const btnPdfEntry = document.getElementById('btnPdfEntry');
+  const btnTextReview = document.getElementById('btnTextReview');
+  const textReviewModal = document.getElementById('textReviewModal');
+  const textReviewStatus = document.getElementById('textReviewStatus');
+  const textReviewSummary = document.getElementById('textReviewSummary');
+  const textReviewResults = document.getElementById('textReviewResults');
+  const btnTextReviewStart = document.getElementById('btnTextReviewStart');
   const delegationOtherFieldsToggle = document.getElementById('toggleDelegationOtherFields');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
@@ -2431,6 +2462,9 @@ render_teacher_header($pageTitle);
   }
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
+
+  if (btnTextReview) btnTextReview.addEventListener('click', openTextReviewModal);
+  if (textReviewModal) textReviewModal.querySelectorAll('[data-text-review-close]').forEach(el => el.addEventListener('click', closeTextReviewModal));
 
   if (btnPdfEntry) {
     btnPdfEntry.addEventListener('click', () => {
@@ -4031,6 +4065,24 @@ render_teacher_header($pageTitle);
       ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
     }).trim() + revokedSuffix;
+  }
+
+  async function textReviewApi(action, payload = {}){
+    const res = await fetch(textReviewApiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({ action, csrf_token: csrf, class_id: state.class_id, ...payload }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) throw new Error(j.error || 'Textprüfung fehlgeschlagen');
+    return j;
+  }
+  async function refreshTextReviewStatus(){
+    if (!btnTextReview || !state.class_id || DELEGATED_MODE || CHILD_MODE) return;
+    try { const j = await textReviewApi('status'); btnTextReview.disabled = !j.available; btnTextReview.title = j.available ? tEntry('text_review_ready') : (j.message || tEntry('text_review_available_when_complete')); }
+    catch(e){ btnTextReview.disabled = true; btnTextReview.title = friendlyFetchError(e, true) || tEntry('text_review_unavailable'); }
+  }
+  function closeTextReviewModal(){ if (textReviewModal) textReviewModal.style.display='none'; }
+  async function openTextReviewModal(){
+    if (!textReviewModal) return; textReviewModal.style.display='block'; textReviewResults.innerHTML=''; textReviewSummary.textContent=''; textReviewStatus.textContent=tEntry('text_review_available_when_complete'); btnTextReviewStart.disabled=true;
+    try { const prep = await textReviewApi('prepare'); btnTextReviewStart.disabled = !prep.available; textReviewStatus.textContent = prep.message || (prep.available ? tEntry('text_review_ready') : tEntry('text_review_unavailable')); textReviewSummary.textContent = tfmtEntry('text_review_summary', { students: prep.students_total || 0, fields: (prep.items || []).length, chars: prep.estimated_chars || 0 }) + ' · ' + tEntry('text_review_cost_hint'); btnTextReviewStart.onclick = async () => { btnTextReviewStart.disabled=true; const run = await textReviewApi('run_batch', { items:(prep.items||[]).slice(0,10) }); textReviewResults.innerHTML = (run.suggestions||[]).length ? '' : `<div class="alert success">${esc(tEntry('text_review_no_suggestions'))}</div>`; }; }
+    catch(e){ textReviewStatus.textContent = friendlyFetchError(e); }
   }
 
   function updatePdfEntryButton(student){
@@ -6360,6 +6412,7 @@ render_teacher_header($pageTitle);
       aiCache = new Map();
       aiCurrentStudent = null;
       ui.mergeDecisions = new Map();
+      void refreshTextReviewStatus();
       const savedDecisions = readMergeMemory();
       Object.entries(savedDecisions).forEach(([k, v]) => {
         if (!v || typeof v !== 'object') return;
