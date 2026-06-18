@@ -1533,6 +1533,13 @@ render_teacher_header($pageTitle);
 
   <!-- Student view -->
   <div id="viewStudent" style="display:none;">
+    <div class="card" id="textReviewTopBar" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0; font-size:18px;"><?=h(t('teacher.entry.student_fields.title'))?></h2>
+        <div class="muted"><?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?></div>
+      </div>
+      <button class="btn secondary" type="button" id="btnTextReview" disabled title="<?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?>"><?=h(t('teacher.text_review.review_all', 'Alle Freitexte prüfen'))?></button>
+    </div>
     <div id="studentViewGrid" style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
@@ -1548,7 +1555,6 @@ render_teacher_header($pageTitle);
         <div class="row-actions" style="justify-content:space-between;">
             <div class="pill-mini" id="studentBadge" style="font-weight: bold">—</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn secondary" type="button" id="btnTextReview" disabled title="<?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?>"><?=h(t('teacher.text_review.review_all', 'Alle Freitexte prüfen'))?></button>
             <button class="btn secondary" type="button" id="btnPdfEntry">
               <?=h(t('teacher.students.btn_pdf_entry'))?>
             </button>
@@ -2139,6 +2145,9 @@ render_teacher_header($pageTitle);
     'text_review_snippet_only' => t('teacher.text_review.snippet_only', 'Reine Textbaustein-Felder übersprungen'),
     'text_review_snippet_chars_removed' => t('teacher.text_review.snippet_chars_removed', 'Textbaustein-Zeichen ausgelassen'),
     'text_review_free_chars_sent' => t('teacher.text_review.free_chars_sent', 'Freitext-Zeichen geprüft'),
+    'text_review_dropped_identical' => t('teacher.text_review.dropped_identical', 'Identische Vorschläge verworfen'),
+    'text_review_replacement' => t('teacher.text_review.replacement', 'Vorgeschlagene Änderung'),
+    'text_review_result' => t('teacher.text_review.result', 'Neuer Text nach Übernahme'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
@@ -2333,6 +2342,7 @@ render_teacher_header($pageTitle);
   const studentBadge = document.getElementById('studentBadge');
   const btnPdfEntry = document.getElementById('btnPdfEntry');
   const btnTextReview = document.getElementById('btnTextReview');
+  const textReviewTopBar = document.getElementById('textReviewTopBar');
   const textReviewModal = document.getElementById('textReviewModal');
   const textReviewStatus = document.getElementById('textReviewStatus');
   const textReviewSummary = document.getElementById('textReviewSummary');
@@ -2488,6 +2498,7 @@ render_teacher_header($pageTitle);
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
 
+  if (textReviewTopBar && (DELEGATED_MODE || CHILD_MODE)) textReviewTopBar.style.display = 'none';
   if (btnTextReview) btnTextReview.addEventListener('click', openTextReviewModal);
   if (textReviewModal) textReviewModal.querySelectorAll('[data-text-review-close]').forEach(el => el.addEventListener('click', closeTextReviewModal));
 
@@ -4114,6 +4125,7 @@ render_teacher_header($pageTitle);
       [tEntry('text_review_snippet_chars_removed'), String(Number(diag.snippet_chars_removed || 0))],
       [tEntry('text_review_free_chars_sent'), `${Number(diag.free_text_chars_sent || 0)} / ${Number(diag.original_chars_total || 0)}`],
       [tEntry('text_review_ai_requests'), String(Number(diag.ai_requests || 0))],
+      [tEntry('text_review_dropped_identical'), String(Number(diag.dropped_identical_suggestions || 0))],
       [tEntry('text_review_suggestions'), String(Number(diag.suggestions || 0))],
     ];
     const snippetNote = Number(diag.snippet_chars_removed || 0) > 0 || Number(diag.skipped_snippet_only || 0) > 0
@@ -4126,11 +4138,31 @@ render_teacher_header($pageTitle);
     return teacherEditVal(Number(suggestion.report_id || 0), Number(suggestion.field_id || 0));
   }
 
+  function normalizeReviewText(value){
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function visibleTextReviewSuggestions(suggestions, diag = null){
+    let dropped = 0;
+    const list = (suggestions || []).filter(s => {
+      const current = normalizeReviewText(s.original_excerpt || s.check_text || s.original_text || '');
+      const replacement = normalizeReviewText(s.replacement_text || s.suggested_text || '');
+      const full = normalizeReviewText(s.suggested_full_text || '');
+      const sameReplacement = replacement && current && replacement === current;
+      const sameFull = full && normalizeReviewText(s.check_text || s.original_text || '') === full;
+      if (!replacement && !full) { dropped++; return false; }
+      if (sameReplacement || sameFull) { dropped++; return false; }
+      return true;
+    });
+    if (diag && dropped > 0) diag.dropped_identical_suggestions = Number(diag.dropped_identical_suggestions || 0) + dropped;
+    return list;
+  }
+
   function applyTextReviewSuggestion(suggestion, replacement, mode, box){
     const reportId = Number(suggestion.report_id || 0);
     const fieldId = Number(suggestion.field_id || 0);
     const current = currentTextReviewFieldText(suggestion);
-    if (String(current) !== String(suggestion.original_text || '')) {
+    if (normalizeReviewText(current) !== normalizeReviewText(suggestion.original_text || '')) {
       box.classList.add('text-review-stale');
       box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_changed');
       return false;
@@ -4138,18 +4170,21 @@ render_teacher_header($pageTitle);
     const excerpt = String(suggestion.original_excerpt || '');
     const snippetRanges = Array.isArray(suggestion.snippet_ranges) ? suggestion.snippet_ranges : [];
     const touchesSnippet = excerpt && snippetRanges.some(r => String(r?.text || '').includes(excerpt));
+    const replacementText = String(replacement || suggestion.replacement_text || suggestion.suggested_text || '');
+    const fullText = String(suggestion.suggested_full_text || '');
     if (touchesSnippet || (!excerpt && snippetRanges.length > 0)) {
       box.classList.add('text-review-stale');
       box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_snippet_blocked');
       return false;
     }
-    const nextPart = String(replacement || '');
     let nextText = '';
     if (excerpt && current.includes(excerpt)) {
-      nextText = current.replace(excerpt, nextPart);
-    } else if (confirm(tEntry('text_review_changed') + ' / ' + tEntry('text_review_apply') + '?')) {
-      nextText = nextPart;
+      nextText = current.replace(excerpt, replacementText);
+    } else if (fullText && confirm(tEntry('text_review_changed') + ' / ' + tEntry('text_review_apply') + '?')) {
+      nextText = fullText;
     } else {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_changed');
       return false;
     }
     scheduleSave(reportId, fieldId, nextText);
@@ -4166,11 +4201,12 @@ render_teacher_header($pageTitle);
         <div><strong>${esc(s.student_name || '')}</strong> · ${esc(s.field_label || s.field_name || '')} · <span class="pill">${esc(s.type || 'style')}</span></div>
         <p class="muted" style="margin:6px 0;"><strong>${esc(tEntry('text_review_explanation'))}:</strong> ${esc(s.explanation || '')}</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div><strong>${esc(tEntry('text_review_current'))}</strong><div class="history-box">${esc(s.original_excerpt || s.original_text || '').replace(/\n/g,'<br>')}</div></div>
-          <div><strong>${esc(tEntry('text_review_suggestion'))}</strong><div class="history-box">${esc(s.suggested_text || '').replace(/\n/g,'<br>')}</div></div>
+          <div><strong>${esc(tEntry('text_review_current'))}</strong><div class="history-box">${esc(s.original_excerpt || s.check_text || '').replace(/\n/g,'<br>')}</div></div>
+          <div><strong>${esc(tEntry('text_review_replacement'))}</strong><div class="history-box">${esc(s.replacement_text || s.suggested_text || '').replace(/\n/g,'<br>')}</div></div>
         </div>
+        ${s.suggested_full_text ? `<div style="margin-top:8px;"><strong>${esc(tEntry('text_review_result'))}</strong><div class="history-box">${esc(s.suggested_full_text).replace(/\n/g,'<br>')}</div></div>` : ''}
         <div data-text-review-state class="muted" style="margin-top:6px;"></div>
-        <div data-partial-box style="display:none;margin-top:8px;"><label>${esc(tEntry('text_review_edit_suggestion'))}</label><textarea rows="4" style="width:100%;">${esc(s.suggested_text || '')}</textarea><button type="button" class="btn primary" data-action="apply-partial">${esc(tEntry('text_review_apply'))}</button></div>
+        <div data-partial-box style="display:none;margin-top:8px;"><label>${esc(tEntry('text_review_edit_suggestion'))}</label><textarea rows="4" style="width:100%;">${esc(s.replacement_text || s.suggested_text || s.suggested_full_text || '')}</textarea><button type="button" class="btn primary" data-action="apply-partial">${esc(tEntry('text_review_apply'))}</button></div>
         <div class="actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
           <button type="button" class="btn primary" data-action="accept">${esc(tEntry('text_review_accept_all'))}</button>
           <button type="button" class="btn secondary" data-action="partial">${esc(tEntry('text_review_accept_partial'))}</button>
@@ -4186,7 +4222,7 @@ render_teacher_header($pageTitle);
         const btn = ev.target.closest('button[data-action]');
         if (!btn) return;
         const action = btn.dataset.action;
-        if (action === 'accept') applyTextReviewSuggestion(suggestion, suggestion.suggested_text || '', 'accepted', box);
+        if (action === 'accept') applyTextReviewSuggestion(suggestion, suggestion.replacement_text || suggestion.suggested_text || suggestion.suggested_full_text || '', 'accepted', box);
         if (action === 'partial') box.querySelector('[data-partial-box]').style.display = 'block';
         if (action === 'apply-partial') applyTextReviewSuggestion(suggestion, box.querySelector('[data-partial-box] textarea').value, 'partially_accepted', box);
         if (action === 'ignore') { box.dataset.status = 'ignored'; box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_ignored'); box.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; }); }
@@ -4211,7 +4247,7 @@ render_teacher_header($pageTitle);
           const batchSize = Math.max(1, Number(prep.max_fields_per_batch || 8));
           const allSuggestions = [];
           const prepDiag = prep.snippet_diagnostics || {};
-          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, fields_with_snippet_parts: Number(prepDiag.fields_with_snippet_parts || 0), snippet_chars_removed: 0, free_text_chars_sent: 0, original_chars_total: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
+          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, fields_with_snippet_parts: Number(prepDiag.fields_with_snippet_parts || 0), snippet_chars_removed: 0, free_text_chars_sent: 0, original_chars_total: 0, dropped_identical_suggestions: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
           for (let offset = 0; offset < items.length; offset += batchSize) {
             const run = await textReviewApi('run_batch', { items: items.slice(offset, offset + batchSize) });
             const diag = run.diagnostics || {};
@@ -4223,9 +4259,10 @@ render_teacher_header($pageTitle);
             aggregate.free_text_chars_sent += Number(diag.free_text_chars_sent || 0);
             aggregate.original_chars_total += Number(diag.original_chars_total || 0);
             aggregate.ai_requests += Number(diag.ai_requests || 0);
+            aggregate.dropped_identical_suggestions += Number(diag.dropped_identical_suggestions || 0);
             aggregate.provider = diag.provider || aggregate.provider;
             aggregate.model = diag.model || aggregate.model;
-            const batchSuggestions = Array.isArray(run.suggestions) ? run.suggestions : [];
+            const batchSuggestions = visibleTextReviewSuggestions(Array.isArray(run.suggestions) ? run.suggestions : [], aggregate);
             allSuggestions.push(...batchSuggestions);
             aggregate.suggestions = allSuggestions.length;
             textReviewStatus.textContent = `${aggregate.checked} / ${items.length} ${tEntry('text_review_fields_checked')}`;
@@ -4859,6 +4896,7 @@ render_teacher_header($pageTitle);
     const start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
     const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
     const val = String(el.value || '');
+    // TODO: persist report_field_text_segments (report_id, field_id, source_type='snippet', source_id, start_offset, length, text_hash, created_by_user_id, created_at) once the save API accepts snippet segment metadata.
     el.value = val.slice(0, start) + snippet + val.slice(end);
     const pos = start + snippet.length;
     if (typeof el.setSelectionRange === 'function') {
