@@ -2114,6 +2114,26 @@ render_teacher_header($pageTitle);
     'text_review_summary' => t('teacher.text_review.summary', '{students} Schüler:innen · {fields} Freitextfelder · ca. {chars} Zeichen'),
     'text_review_cost_hint' => t('teacher.text_review.cost_hint', 'Die Prüfung kann kostenpflichtige KI-Anfragen verursachen.'),
     'text_review_no_suggestions' => t('teacher.text_review.no_suggestions', 'Keine Verbesserungen gefunden'),
+    'text_review_suggestions' => t('teacher.text_review.suggestions', 'Empfehlungen'),
+    'text_review_fields_checked' => t('teacher.text_review.fields_checked', 'Felder geprüft'),
+    'text_review_running' => t('teacher.text_review.running', 'Prüfung läuft…'),
+    'text_review_accept_all' => t('teacher.text_review.accept_all', 'Ganz übernehmen'),
+    'text_review_accept_partial' => t('teacher.text_review.accept_partial', 'Teilweise übernehmen'),
+    'text_review_reject' => t('teacher.text_review.reject', 'Nicht übernehmen'),
+    'text_review_edit_suggestion' => t('teacher.text_review.edit_suggestion', 'Vorschlag bearbeiten'),
+    'text_review_apply' => t('teacher.text_review.apply', 'Übernehmen'),
+    'text_review_stale' => t('teacher.text_review.stale', 'Nicht mehr aktuell'),
+    'text_review_changed' => t('teacher.text_review.changed', 'Text wurde seit der Prüfung geändert'),
+    'text_review_diagnostics' => t('teacher.text_review.diagnostics', 'Diagnose'),
+    'text_review_provider' => t('teacher.text_review.provider', 'Provider'),
+    'text_review_model' => t('teacher.text_review.model', 'Modell'),
+    'text_review_ai_requests' => t('teacher.text_review.ai_requests', 'KI-Anfragen'),
+    'text_review_skipped' => t('teacher.text_review.skipped', 'Übersprungen'),
+    'text_review_current' => t('teacher.text_review.current', 'Aktueller Text'),
+    'text_review_suggestion' => t('teacher.text_review.suggestion', 'Vorschlag'),
+    'text_review_explanation' => t('teacher.text_review.explanation', 'Begründung'),
+    'text_review_applied' => t('teacher.text_review.applied', 'Übernommen'),
+    'text_review_ignored' => t('teacher.text_review.ignored', 'Ignoriert'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
@@ -4079,10 +4099,126 @@ render_teacher_header($pageTitle);
     catch(e){ btnTextReview.disabled = true; btnTextReview.title = friendlyFetchError(e, true) || tEntry('text_review_unavailable'); }
   }
   function closeTextReviewModal(){ if (textReviewModal) textReviewModal.style.display='none'; }
+  function renderTextReviewDiagnostics(diag = {}, prep = {}){
+    const rows = [
+      [tEntry('text_review_provider'), diag.provider || prep.provider || '—'],
+      [tEntry('text_review_model'), diag.model || prep.model || '—'],
+      [tEntry('text_review_fields_checked'), `${Number(diag.checked || 0)} / ${Number(diag.prepared || (prep.items || []).length || 0)}`],
+      [tEntry('text_review_skipped'), String(Number(diag.skipped_empty || 0) + Number(diag.skipped_snippet_only || 0) + Number(diag.skipped_too_long || 0))],
+      [tEntry('text_review_ai_requests'), String(Number(diag.ai_requests || 0))],
+      [tEntry('text_review_suggestions'), String(Number(diag.suggestions || 0))],
+    ];
+    return `<div class="card" style="margin:10px 0;padding:10px;"><strong>${esc(tEntry('text_review_diagnostics'))}</strong><dl style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0 0;">${rows.map(([k,v]) => `<dt class="muted">${esc(k)}</dt><dd style="margin:0;">${esc(v)}</dd>`).join('')}</dl></div>`;
+  }
+
+  function currentTextReviewFieldText(suggestion){
+    return teacherEditVal(Number(suggestion.report_id || 0), Number(suggestion.field_id || 0));
+  }
+
+  function applyTextReviewSuggestion(suggestion, replacement, mode, box){
+    const reportId = Number(suggestion.report_id || 0);
+    const fieldId = Number(suggestion.field_id || 0);
+    const current = currentTextReviewFieldText(suggestion);
+    if (String(current) !== String(suggestion.original_text || '')) {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_changed');
+      return false;
+    }
+    const excerpt = String(suggestion.original_excerpt || '');
+    const nextPart = String(replacement || '');
+    let nextText = '';
+    if (excerpt && current.includes(excerpt)) {
+      nextText = current.replace(excerpt, nextPart);
+    } else if (confirm(tEntry('text_review_changed') + ' / ' + tEntry('text_review_apply') + '?')) {
+      nextText = nextPart;
+    } else {
+      return false;
+    }
+    scheduleSave(reportId, fieldId, nextText);
+    box.dataset.status = mode;
+    box.querySelector('[data-text-review-state]').textContent = mode === 'partially_accepted' ? tEntry('text_review_accept_partial') : tEntry('text_review_applied');
+    box.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; });
+    return true;
+  }
+
+  function renderTextReviewSuggestions(suggestions){
+    if (!suggestions.length) return `<div class="alert success">${esc(tEntry('text_review_no_suggestions'))}</div>`;
+    return `<h4>${esc(tEntry('text_review_suggestions'))}</h4>` + suggestions.map((s, idx) => `
+      <div class="card text-review-suggestion" data-suggestion-index="${idx}" style="margin:10px 0;padding:12px;">
+        <div><strong>${esc(s.student_name || '')}</strong> · ${esc(s.field_label || s.field_name || '')} · <span class="pill">${esc(s.type || 'style')}</span></div>
+        <p class="muted" style="margin:6px 0;"><strong>${esc(tEntry('text_review_explanation'))}:</strong> ${esc(s.explanation || '')}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><strong>${esc(tEntry('text_review_current'))}</strong><div class="history-box">${esc(s.original_excerpt || s.original_text || '').replace(/\n/g,'<br>')}</div></div>
+          <div><strong>${esc(tEntry('text_review_suggestion'))}</strong><div class="history-box">${esc(s.suggested_text || '').replace(/\n/g,'<br>')}</div></div>
+        </div>
+        <div data-text-review-state class="muted" style="margin-top:6px;"></div>
+        <div data-partial-box style="display:none;margin-top:8px;"><label>${esc(tEntry('text_review_edit_suggestion'))}</label><textarea rows="4" style="width:100%;">${esc(s.suggested_text || '')}</textarea><button type="button" class="btn primary" data-action="apply-partial">${esc(tEntry('text_review_apply'))}</button></div>
+        <div class="actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn primary" data-action="accept">${esc(tEntry('text_review_accept_all'))}</button>
+          <button type="button" class="btn secondary" data-action="partial">${esc(tEntry('text_review_accept_partial'))}</button>
+          <button type="button" class="btn secondary" data-action="ignore">${esc(tEntry('text_review_reject'))}</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function bindTextReviewSuggestionActions(suggestions){
+    textReviewResults.querySelectorAll('[data-suggestion-index]').forEach(box => {
+      const suggestion = suggestions[Number(box.dataset.suggestionIndex || 0)];
+      box.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        if (action === 'accept') applyTextReviewSuggestion(suggestion, suggestion.suggested_text || '', 'accepted', box);
+        if (action === 'partial') box.querySelector('[data-partial-box]').style.display = 'block';
+        if (action === 'apply-partial') applyTextReviewSuggestion(suggestion, box.querySelector('[data-partial-box] textarea').value, 'partially_accepted', box);
+        if (action === 'ignore') { box.dataset.status = 'ignored'; box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_ignored'); box.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; }); }
+      });
+    });
+  }
+
   async function openTextReviewModal(){
-    if (!textReviewModal) return; textReviewModal.style.display='block'; textReviewResults.innerHTML=''; textReviewSummary.textContent=''; textReviewStatus.textContent=tEntry('text_review_available_when_complete'); btnTextReviewStart.disabled=true;
-    try { const prep = await textReviewApi('prepare'); btnTextReviewStart.disabled = !prep.available; textReviewStatus.textContent = prep.message || (prep.available ? tEntry('text_review_ready') : tEntry('text_review_unavailable')); textReviewSummary.textContent = tfmtEntry('text_review_summary', { students: prep.students_total || 0, fields: (prep.items || []).length, chars: prep.estimated_chars || 0 }) + ' · ' + tEntry('text_review_cost_hint'); btnTextReviewStart.onclick = async () => { btnTextReviewStart.disabled=true; const run = await textReviewApi('run_batch', { items:(prep.items||[]).slice(0,10) }); textReviewResults.innerHTML = (run.suggestions||[]).length ? '' : `<div class="alert success">${esc(tEntry('text_review_no_suggestions'))}</div>`; }; }
-    catch(e){ textReviewStatus.textContent = friendlyFetchError(e); }
+    if (!textReviewModal) return;
+    textReviewModal.style.display='block'; textReviewResults.innerHTML=''; textReviewSummary.textContent=''; textReviewStatus.textContent=tEntry('text_review_available_when_complete'); btnTextReviewStart.disabled=true;
+    try {
+      const prep = await textReviewApi('prepare');
+      btnTextReviewStart.disabled = !prep.available;
+      textReviewStatus.textContent = prep.message || (prep.available ? tEntry('text_review_ready') : tEntry('text_review_unavailable'));
+      textReviewSummary.textContent = tfmtEntry('text_review_summary', { students: prep.students_total || 0, fields: (prep.items || []).length, chars: prep.estimated_chars || 0 }) + ' · ' + tEntry('text_review_cost_hint');
+      textReviewResults.innerHTML = renderTextReviewDiagnostics({ prepared:(prep.items || []).length, checked:0, suggestions:0, ai_requests:0, provider:prep.provider, model:prep.model }, prep);
+      btnTextReviewStart.onclick = async () => {
+        btnTextReviewStart.disabled=true;
+        textReviewStatus.textContent = tEntry('text_review_running');
+        try {
+          const items = Array.isArray(prep.items) ? prep.items : [];
+          const batchSize = Math.max(1, Number(prep.max_fields_per_batch || 8));
+          const allSuggestions = [];
+          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
+          for (let offset = 0; offset < items.length; offset += batchSize) {
+            const run = await textReviewApi('run_batch', { items: items.slice(offset, offset + batchSize) });
+            const diag = run.diagnostics || {};
+            aggregate.checked += Number(diag.checked || 0);
+            aggregate.skipped_empty += Number(diag.skipped_empty || 0);
+            aggregate.skipped_too_long += Number(diag.skipped_too_long || 0);
+            aggregate.skipped_snippet_only += Number(diag.skipped_snippet_only || 0);
+            aggregate.ai_requests += Number(diag.ai_requests || 0);
+            aggregate.provider = diag.provider || aggregate.provider;
+            aggregate.model = diag.model || aggregate.model;
+            const batchSuggestions = Array.isArray(run.suggestions) ? run.suggestions : [];
+            allSuggestions.push(...batchSuggestions);
+            aggregate.suggestions = allSuggestions.length;
+            textReviewStatus.textContent = `${aggregate.checked} / ${items.length} ${tEntry('text_review_fields_checked')}`;
+            textReviewResults.innerHTML = renderTextReviewDiagnostics(aggregate, prep);
+          }
+          textReviewStatus.textContent = allSuggestions.length ? `${allSuggestions.length} ${tEntry('text_review_suggestions')}` : tEntry('text_review_no_suggestions');
+          textReviewResults.innerHTML = renderTextReviewDiagnostics(aggregate, prep) + renderTextReviewSuggestions(allSuggestions);
+          bindTextReviewSuggestionActions(allSuggestions);
+        } catch(e) {
+          textReviewStatus.textContent = friendlyFetchError(e, true) || tEntry('text_review_unavailable');
+          textReviewResults.innerHTML = renderTextReviewDiagnostics({ prepared:(prep.items || []).length, checked:0, suggestions:0, ai_requests:0, provider:prep.provider, model:prep.model }, prep) + `<div class="alert error">${esc(friendlyFetchError(e, true) || e.message || tEntry('text_review_unavailable'))}</div>`;
+        }
+      };
+    }
+    catch(e){ textReviewStatus.textContent = friendlyFetchError(e); textReviewResults.innerHTML = `<div class="alert error">${esc(friendlyFetchError(e, true) || e.message || tEntry('text_review_unavailable'))}</div>`; }
   }
 
   function updatePdfEntryButton(student){
