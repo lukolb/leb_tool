@@ -8,7 +8,7 @@ header('Content-Type: application/json; charset=utf-8');
 function tr_json(array $payload, int $status = 200): never { http_response_code($status); echo json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); exit; }
 function tr_body(): array { $raw=file_get_contents('php://input'); $j=$raw?json_decode($raw,true):[]; return is_array($j)?$j:[]; }
 function tr_cfg(): array { $cfg=app_config(); $tc=$cfg['text_check']??[]; return is_array($tc)?$tc:[]; }
-function tr_enabled(): bool { $c=tr_cfg(); return !empty($c['enabled']) && (($c['provider']??'disabled') !== 'disabled'); }
+function tr_enabled(): bool { $cfg=app_config(); $c=tr_cfg(); if (empty($c['enabled']) || (($c['provider']??'disabled') === 'disabled')) return false; if (($c['provider']??'disabled') === 'ai') { $ai=$cfg['ai']??[]; return !empty($ai['enabled']) && (trim((string)($ai['api_key'] ?? getenv('OPENAI_API_KEY') ?: '')) !== ''); } return false; }
 function tr_is_free_text(array $f): bool { $t=strtolower((string)($f['field_type']??'')); return $t==='text'||$t==='multiline'||(int)($f['is_multiline']??0)===1; }
 function tr_reports(PDO $pdo,int $classId,int $tplId,string $year,string $period): array {
   $st=$pdo->prepare("SELECT s.id student_id, CONCAT(s.last_name, ', ', s.first_name) student_name, ri.id report_id FROM students s JOIN report_instances ri ON ri.student_id=s.id AND ri.template_id=? AND ri.school_year=? AND ri.period_label=? WHERE s.class_id=? AND s.is_active=1 ORDER BY s.last_name,s.first_name,s.id");
