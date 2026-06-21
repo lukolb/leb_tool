@@ -2412,6 +2412,7 @@ try {
       $flag = $revokedDelegationCommentFlags[$ridKey] ?? ['count' => 0, 'names' => []];
       $studentRow['revoked_delegation_comments_count'] = (int)($flag['count'] ?? 0);
       $studentRow['revoked_delegation_comment_names'] = is_array($flag['names'] ?? null) ? array_values($flag['names']) : [];
+      $studentRow['revoked_delegation_comment_field_ids'] = is_array($flag['field_ids'] ?? null) ? array_values(array_map('intval', $flag['field_ids'])) : [];
     }
     unset($studentRow);
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
@@ -2510,15 +2511,21 @@ try {
         if (trim((string)$v) !== '') $childOptionalDone++;
       }
 
-      $overallTotalForStudent = $teacherTotal + $childTotalForStudent;
+      $revokedReviewMissing = 0;
+      if (!$delegatedView) {
+        $revokedFieldIds = is_array($srow['revoked_delegation_comment_field_ids'] ?? null) ? $srow['revoked_delegation_comment_field_ids'] : [];
+        $revokedReviewMissing = count($revokedFieldIds) > 0 ? count($revokedFieldIds) : (int)($srow['revoked_delegation_comments_count'] ?? 0);
+      }
+
+      $overallTotalForStudent = $teacherTotal + $childTotalForStudent + $revokedReviewMissing;
       $oDone = $tDone + $cDone;
       $oMissing = max(0, $overallTotalForStudent - $oDone);
       $isComplete = ($overallTotalForStudent > 0 && $oMissing === 0);
       if ($isComplete) $completeForms++;
 
-      $srow['progress_teacher_total'] = $teacherTotal;
+      $srow['progress_teacher_total'] = $teacherTotal + $revokedReviewMissing;
       $srow['progress_teacher_done'] = $tDone;
-      $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone);
+      $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone) + $revokedReviewMissing;
       $srow['progress_teacher_optional_total'] = $teacherOptionalTotal;
       $srow['progress_teacher_optional_done'] = $teacherOptionalDone;
       $srow['progress_teacher_optional_empty'] = max(0, $teacherOptionalTotal - $teacherOptionalDone);

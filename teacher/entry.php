@@ -2604,6 +2604,27 @@ render_teacher_header($pageTitle);
     return ids;
   }
 
+  function revokedDelegationFieldIdsForStudent(student){
+    if (!student || DELEGATED_MODE || CHILD_MODE) return [];
+    const ids = Array.isArray(student.revoked_delegation_comment_field_ids)
+      ? student.revoked_delegation_comment_field_ids.map(x => Number(x)).filter(x => x > 0)
+      : [];
+    return [...new Set(ids)];
+  }
+
+  function revokedDelegationReviewCount(student){
+    const ids = revokedDelegationFieldIdsForStudent(student);
+    if (ids.length) return ids.length;
+    return (!DELEGATED_MODE && !CHILD_MODE) ? Number(student?.revoked_delegation_comments_count || 0) : 0;
+  }
+
+  function fieldHasRevokedDelegationReview(reportId, fieldId){
+    if (DELEGATED_MODE || CHILD_MODE) return false;
+    const st = findStudentByReportId(reportId);
+    if (!st) return false;
+    return revokedDelegationFieldIdsForStudent(st).includes(Number(fieldId));
+  }
+
   function activeProgressForStudent(reportId){
     const ids = activeProgressFieldIds(reportId);
     const total = ids.length;
@@ -2619,7 +2640,7 @@ render_teacher_header($pageTitle);
   function studentHasActiveMissing(student){
     const rid = Number(student?.report_instance_id || 0);
     if (!rid) return false;
-    return activeProgressForStudent(rid).missing > 0;
+    return activeProgressForStudent(rid).missing > 0 || revokedDelegationReviewCount(student) > 0;
   }
 
   function filterStudentsForMissing(list){
@@ -2750,6 +2771,7 @@ render_teacher_header($pageTitle);
   }
 
   function isActiveFieldMissing(reportId, fieldId){
+    if (fieldHasRevokedDelegationReview(reportId, fieldId)) return true;
     const f = state.fieldMap?.[String(fieldId)];
     if (f && !isRequiredField(f)) return false;
     if (isChildFieldLocked(reportId, fieldId)) return false;
@@ -3856,13 +3878,14 @@ render_teacher_header($pageTitle);
     const cTotal = DELEGATED_MODE ? 0 : Number(student.progress_child_total || 0);
     const cDone  = DELEGATED_MODE ? 0 : Number(student.progress_child_done || 0);
 
-    const overallTotal = tTotal + cTotal;
+    const revokedMissing = revokedDelegationReviewCount(student);
+    const overallTotal = tTotal + cTotal + revokedMissing;
     const overallDone  = tDone + cDone;
     const overallMissing = Math.max(0, overallTotal - overallDone);
 
-    student.progress_teacher_total = tTotal;
+    student.progress_teacher_total = tTotal + revokedMissing;
     student.progress_teacher_done = tDone;
-    student.progress_teacher_missing = Math.max(0, tTotal - tDone);
+    student.progress_teacher_missing = Math.max(0, tTotal - tDone) + revokedMissing;
 
     student.progress_child_total = cTotal;
     student.progress_child_done = cDone;
@@ -3983,6 +4006,9 @@ render_teacher_header($pageTitle);
     const childTotal = Number(student.progress_child_total || 0);
     const childDone = Math.min(childTotal, Math.max(0, Number(student.progress_child_done || 0)));
     const childMissing = Math.max(0, Number(student.progress_child_missing ?? (childTotal - childDone)));
+    const revokedMissing = revokedDelegationReviewCount(student);
+    ownMissing += revokedMissing;
+    ownTotal += revokedMissing;
     const totalMissing = ownMissing + delegatedMissing + childMissing;
     const totalFields = ownTotal + delegatedTotal + childTotal;
     const ownDone = Math.max(0, ownTotal - ownMissing);
@@ -4296,6 +4322,10 @@ render_teacher_header($pageTitle);
     if (!st) return;
     st.revoked_delegation_comments_count = Number(payload.count || 0);
     st.revoked_delegation_comment_names = Array.isArray(payload.names) ? payload.names : [];
+    st.revoked_delegation_comment_field_ids = Array.isArray(payload.field_ids) ? payload.field_ids.map(x => Number(x)).filter(x => x > 0) : [];
+    recomputeStudentProgress(st);
+    recomputeFormsSummary();
+    updateFormsProgressUI();
     updateStudentRowUI(st);
     if (activeStudent()?.id === st.id) updateActiveStudentBadge();
   }
@@ -5926,7 +5956,7 @@ render_teacher_header($pageTitle);
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
       const progressFields = fields.filter(f => isEditableField(f, g) && isRequiredField(f));
       if (ui.studentMissingOnly) {
-        fields = progressFields.filter(f => isActiveFieldMissing(reportId, f.id));
+        fields = fields.filter(f => isActiveFieldMissing(reportId, f.id));
       }
 
       if (!fields.length) return;

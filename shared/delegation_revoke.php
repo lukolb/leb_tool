@@ -151,7 +151,7 @@ function revoked_delegation_comment_flags(PDO $pdo, array $reportIds): array {
   if (!$reportIds) return [];
   $in = implode(',', array_fill(0, count($reportIds), '?'));
   $st = $pdo->prepare(
-    "SELECT report_instance_id, value_text, value_json
+    "SELECT report_instance_id, template_field_id, value_text, value_json
      FROM field_values
      WHERE source='teacher'
        AND report_instance_id IN ($in)
@@ -176,8 +176,11 @@ function revoked_delegation_comment_flags(PDO $pdo, array $reportIds): array {
       $name = trim((string)($item['name'] ?? ''));
       if ($name !== '') $names[$name] = true;
     }
-    if (!isset($out[$rid])) $out[$rid] = ['count' => 0, 'names' => []];
+    if (!isset($out[$rid])) $out[$rid] = ['count' => 0, 'names' => [], 'field_ids' => []];
     $out[$rid]['count']++;
+    $fid = (int)($row['template_field_id'] ?? 0);
+    if ($fid > 0) $out[$rid]['field_ids'][] = $fid;
+    $out[$rid]['field_ids'] = array_values(array_unique($out[$rid]['field_ids']));
     $out[$rid]['names'] = array_values(array_unique(array_merge($out[$rid]['names'], array_keys($names))));
   }
   return $out;
