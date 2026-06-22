@@ -319,6 +319,7 @@ function build_progress(PDO $pdo, array $classes): array {
       'avg_minutes_count' => 0,
       'delegations_total' => 0,
       'delegations_done' => 0,
+      'delegation_returns_open' => 0,
       'recent_delegations' => 0,
     ];
   }
@@ -365,6 +366,7 @@ function build_progress(PDO $pdo, array $classes): array {
       'child_field_ids' => $fieldSets[$tplId]['child'] ?? [],
       'child_filled' => 0,
       'teacher_filled' => 0,
+      'revoked_delegation_missing' => 0,
       'locked_child_ids' => [],
     ];
     $minutes = strtotime((string)$r['updated_at']) - strtotime((string)$r['created_at']);
@@ -449,14 +451,27 @@ function build_progress(PDO $pdo, array $classes): array {
         $reports[$rid]['teacher_filled']++;
       }
     }
+
+    $revokedFlags = revoked_delegation_comment_flags($pdo, $reportIds);
+    foreach ($reports as $rid => &$info) {
+      $flag = $revokedFlags[(string)$rid] ?? [];
+      $fieldIds = is_array($flag['field_ids'] ?? null) ? array_values(array_unique(array_map('intval', $flag['field_ids']))) : [];
+      $missing = $fieldIds ? count($fieldIds) : (int)($flag['count'] ?? 0);
+      if ($missing <= 0) continue;
+      $info['revoked_delegation_missing'] = $missing;
+      $cid = (int)($info['class_id'] ?? 0);
+      if (isset($progress[$cid])) $progress[$cid]['delegation_returns_open'] += $missing;
+    }
+    unset($info);
   }
 
   foreach ($reports as $rid => $info) {
     $cid = $info['class_id'];
     $reqChild = $info['child_required'];
     $reqTeacher = $info['teacher_required'];
+    $revokedMissing = (int)($info['revoked_delegation_missing'] ?? 0);
     if ($info['child_filled'] >= $reqChild) $progress[$cid]['students_done']++;
-    if ($reqTeacher > 0 && $info['teacher_filled'] >= $reqTeacher) $progress[$cid]['teachers_done']++;
+    if ($reqTeacher > 0 && $info['teacher_filled'] >= $reqTeacher && $revokedMissing === 0) $progress[$cid]['teachers_done']++;
   }
 
   // delegations
@@ -573,6 +588,7 @@ $overall = [
   'teachers_done' => 0,
   'delegations_total' => 0,
   'delegations_done' => 0,
+  'delegation_returns_open' => 0,
   'recent_delegations' => 0,
   'avg_minutes_sum' => 0.0,
   'avg_minutes_count' => 0,
@@ -583,6 +599,7 @@ foreach ($progressByClass as $p) {
   $overall['teachers_done'] += (int)$p['teachers_done'];
   $overall['delegations_total'] += (int)$p['delegations_total'];
   $overall['delegations_done'] += (int)$p['delegations_done'];
+  $overall['delegation_returns_open'] += (int)($p['delegation_returns_open'] ?? 0);
   $overall['recent_delegations'] += (int)$p['recent_delegations'];
   $overall['avg_minutes_sum'] += (float)($p['avg_minutes_sum'] ?? 0.0);
   $overall['avg_minutes_count'] += (int)($p['avg_minutes_count'] ?? 0);
@@ -797,6 +814,11 @@ render_admin_header('Admin – Dashboard');
           <span class="muted small"> / <?=h((string)($scope['forms_total'] ?? 0))?> (<?=h((string)($scope['teachers_percent'] ?? '–'))?> %)</span>
         </div>
         <div class="stat-label"><?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?></div>
+        <?php if ((int)($scope['delegation_returns_open'] ?? 0) > 0): ?>
+          <div class="muted small" style="color:#9a3412; font-weight:700; margin-top:4px;">
+            ⚠ <?=h(strtr(t('admin.progress.delegation_returns_open', '{count} offene Delegationsrückläufer'), ['{count}' => (string)(int)$scope['delegation_returns_open']]))?>
+          </div>
+        <?php endif; ?>
         <div class="progress-pie teacher" role="img" aria-label="<?=h(t('admin.progress.teacher_done', 'abgeschlossene Lehrkraft-Eingaben'))?> <?=h((string)$teachersBar)?>%" style="--percent: <?=h((string)$teachersBar)?>;">
           <span><?=h((string)$teachersBar)?>%</span>
         </div>
