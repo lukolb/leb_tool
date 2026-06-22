@@ -1759,6 +1759,8 @@ render_teacher_header($pageTitle);
   .srow.delegation-review.active{ outline:2px solid rgba(245,158,11,0.35); background:#ffedd5; }
   .delegation-review-pill{ display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:2px 7px; border-radius:999px; background:#f59e0b; color:#111827; font-size:11px; font-weight:800; }
   .delegation-review-note{ display:block; margin-top:4px; color:#9a3412; font-weight:700; font-size:12px; }
+  .delegation-review-field{ outline:2px solid rgba(245,158,11,0.75); background:#fff7ed; border-radius:12px; padding:4px; box-shadow: inset 4px 0 0 #f59e0b; }
+  .delegation-review-field-pill{ display:inline-flex; align-items:center; gap:4px; margin-left:8px; padding:2px 7px; border-radius:999px; background:#fed7aa; color:#9a3412; font-size:12px; font-weight:800; }
   .smeta{ display:flex; flex-direction:column; gap:2px; min-width:0; width:100%; }
   .smeta .n{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .smeta .sub{ color:var(--muted); font-size:12px; }
@@ -2113,6 +2115,7 @@ render_teacher_header($pageTitle);
     'ai_require_options_start' => t('teacher.entry.ai.require_options_start'),
     'delegated_badge' => t('teacher.entry.delegated_badge'),
     'delegated_badge_done' => t('teacher.entry.delegated_badge_done'),
+    'delegation_review_field' => t('teacher.entry.delegation_review_field', 'Rückläufer prüfen'),
     'readonly_badge' => t('teacher.entry.readonly_badge'),
     'text_review_available_when_complete' => t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'),
     'text_review_unavailable' => t('teacher.text_review.unavailable', 'Textprüfung ist derzeit nicht verfügbar'),
@@ -3823,9 +3826,12 @@ render_teacher_header($pageTitle);
     if (!wrap) return;
     const missing = String(value ?? '').trim() === '';
     const fieldId = inp.dataset?.fieldId || inp.getAttribute('data-field-id');
+    const reportId = inp.dataset?.reportId || inp.getAttribute('data-report-id');
     const fDef = state.fieldMap?.[String(fieldId)];
-    wrap.classList.toggle('missing', missing && (!fDef || isRequiredField(fDef)));
-    wrap.classList.toggle('optional-empty', missing && fDef && !isRequiredField(fDef));
+    const hasDelegationReview = fieldHasRevokedDelegationReview(Number(reportId || 0), Number(fieldId || 0));
+    wrap.classList.toggle('delegation-review-field', hasDelegationReview);
+    wrap.classList.toggle('missing', !hasDelegationReview && missing && (!fDef || isRequiredField(fDef)));
+    wrap.classList.toggle('optional-empty', !hasDelegationReview && missing && fDef && !isRequiredField(fDef));
   }
 
   // --- progress helpers ---
@@ -5691,7 +5697,11 @@ render_teacher_header($pageTitle);
       const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
       const lbl = resolveLabelTemplate(String(f.label || f.field_name || tEntry('field_label')));
       const help = resolveLabelTemplate(String(f.help_text || ''));
-      const missingCls = fieldStatusClass(f, v);
+      const hasDelegationReview = fieldHasRevokedDelegationReview(reportId, f.id);
+      const missingCls = hasDelegationReview ? 'delegation-review-field' : fieldStatusClass(f, v);
+      const delegationReviewFieldPill = hasDelegationReview
+        ? `<span class="delegation-review-field-pill">⚠ ${esc(tEntry('delegation_review_field'))}</span>`
+        : '';
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
       const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
       const clearBtn = (CHILD_MODE && !DELEGATED_MODE)
@@ -5702,8 +5712,8 @@ render_teacher_header($pageTitle);
         : '';
         const helpDisp = MEETING_MODE ? '' : `<div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>`;
       html += `
-        <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-          <div class="lbl">${esc(lbl)}</div>
+        <div class="field ${missingCls}" data-fieldwrap="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}">
+          <div class="lbl">${esc(lbl)}${delegationReviewFieldPill}</div>
           ${helpDisp}
           ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
           ${actionsHtml}
@@ -5742,14 +5752,18 @@ render_teacher_header($pageTitle);
       const lbl = String(f.label_resolved || f.label || f.field_name || '');
       const help = String(f.help_text_resolved || f.help_text || '');
       const canEditField = (Number(f.can_edit || 0) === 1);
+      const hasDelegationReview = fieldHasRevokedDelegationReview(rid, fid);
+      const delegationReviewFieldPill = hasDelegationReview
+        ? `<span class="delegation-review-field-pill">⚠ ${esc(tEntry('delegation_review_field'))}</span>`
+        : '';
       const combinedHtml = combinedPreviewHtml(rid, f);
       const historyHtml = renderHistoryHtml(rid, fid);
       const actionsHtml = (combinedHtml || historyHtml)
         ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
         : '';
       return `
-        <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
-          <div class="lbl" data-dyn="label">${esc(lbl)}</div>
+        <div class="field ${hasDelegationReview ? 'delegation-review-field' : ''}" data-fieldwrap="1" data-report-id="${esc(rid)}" data-field-id="${esc(fid)}">
+          <div class="lbl" data-dyn="label">${esc(lbl)}${delegationReviewFieldPill}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
           ${renderInputHtml(f, rid, v, locked, canEditField)}
           ${actionsHtml}
@@ -6042,8 +6056,10 @@ render_teacher_header($pageTitle);
         if (wrap) {
           const fDef = state.fieldMap?.[String(fid)];
           const isEmpty = String(val).trim() === '';
-          wrap.classList.toggle('missing', isEmpty && (!fDef || isRequiredField(fDef)));
-          wrap.classList.toggle('optional-empty', isEmpty && fDef && !isRequiredField(fDef));
+          const hasDelegationReview = fieldHasRevokedDelegationReview(rid, fid);
+          wrap.classList.toggle('delegation-review-field', hasDelegationReview);
+          wrap.classList.toggle('missing', !hasDelegationReview && isEmpty && (!fDef || isRequiredField(fDef)));
+          wrap.classList.toggle('optional-empty', !hasDelegationReview && isEmpty && fDef && !isRequiredField(fDef));
           const input = wrap.querySelector('[data-child-input="1"]');
           if (input) {
             if (input.dataset.combo === '1') {
