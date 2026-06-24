@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/absence_import.php';
 require_admin();
 
 $pdo = db();
@@ -394,8 +395,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $colStudent = max(1, (int)($_POST['absence_col_student'] ?? 2));
       $colTotal = max(1, (int)($_POST['absence_col_total'] ?? 15));
       $colUnexcused = max(1, (int)($_POST['absence_col_unexcused'] ?? 16));
+      $manualStudentMap = $_POST['absence_manual_student_id'] ?? [];
+      if (!is_array($manualStudentMap)) $manualStudentMap = [];
 
-      $rows = read_tab_rows($csvTmp);
+      $detectedDelimiter = null;
+      $rows = read_absence_csv_rows($csvTmp, $detectedDelimiter);
       if (!$rows) {
         throw new RuntimeException(t('admin.students.import.reason.empty_csv'));
       }
@@ -411,12 +415,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       foreach ($classRows->fetchAll(PDO::FETCH_ASSOC) as $c) {
         $id = (int)($c['id'] ?? 0);
         if ($id <= 0) continue;
-        $name = normalize_lookup_token((string)($c['name'] ?? ''));
-        if ($name !== '') $classMap[$name] = $id;
+        foreach ([(string)($c['name'] ?? '')] as $className) {
+          $name = absence_import_normalize_token($className);
+          if ($name !== '') $classMap[$name] = $id;
+        }
         $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
         $label = (string)($c['label'] ?? '');
         $displayName = computed_class_name($grade, $label);
-        $display = normalize_lookup_token($displayName);
+        $display = absence_import_normalize_token($displayName);
         if ($display !== '') $classMap[$display] = $id;
         $classById[$id] = [
           'id' => $id,
@@ -425,24 +431,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
       }
 
-      $studentRows = $pdo->prepare(
-        "SELECT s.id, s.first_name, s.last_name, s.class_id
-         FROM students s
-         INNER JOIN classes c ON c.id=s.class_id
-         WHERE c.school_year=? AND c.period_label=?"
+      $studentIndex = absence_import_student_index($pdo, $schoolYearAbs, $periodLabelAbs);
+
+      $existingAbsRows = $pdo->prepare(
+        "SELECT student_id, absence_days_total, absence_days_unexcused
+         FROM student_period_absences
+         WHERE school_year=? AND period_label=?"
       );
-      $studentRows->execute([$schoolYearAbs, $periodLabelAbs]);
-      $studentMap = [];
-      foreach ($studentRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
-        $sid = (int)($r['id'] ?? 0);
-        $cid = (int)($r['class_id'] ?? 0);
-        if ($sid <= 0 || $cid <= 0) continue;
-        $first = (string)($r['first_name'] ?? '');
-        $last = (string)($r['last_name'] ?? '');
-        $k1 = normalize_lookup_token($last . ',' . $first);
-        $k2 = normalize_lookup_token($last . ' ' . $first);
-        if ($k1 !== '') $studentMap[$cid][$k1] = $sid;
-        if ($k2 !== '') $studentMap[$cid][$k2] = $sid;
+      $existingAbsRows->execute([$schoolYearAbs, $periodLabelAbs]);
+      $existingAbs = [];
+      foreach ($existingAbsRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $existingAbs[(int)$r['student_id']] = [
+          'total' => (int)($r['absence_days_total'] ?? 0),
+          'unexcused' => (int)($r['absence_days_unexcused'] ?? 0),
+        ];
       }
 
       $upAbs = $pdo->prepare(
@@ -450,72 +452,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          VALUES (?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE class_id=VALUES(class_id), absence_days_total=VALUES(absence_days_total), absence_days_unexcused=VALUES(absence_days_unexcused), updated_at=NOW()"
       );
-      $delAbs = $pdo->prepare(
-        "DELETE FROM student_period_absences WHERE student_id=? AND school_year=? AND period_label=?"
-      );
 
       $processed = 0;
       $upserted = 0;
-      $deleted = 0;
       $skipped = 0;
+      $importedZero = 0;
+      $notFound = 0;
+      $ambiguous = 0;
+      $invalidNames = 0;
+      $invalidValues = 0;
+      $manualRequired = 0;
+      $manualAssigned = 0;
       $skipDetails = [];
       $classIdsInImport = [];
 
       $pdo->beginTransaction();
       foreach ($rows as $lineNo => $row) {
         $processed++;
-        $classRaw = trim((string)($row[$colClass - 1] ?? ''));
-        $studentRaw = trim((string)($row[$colStudent - 1] ?? ''));
+        $classRaw = absence_import_clean_string($row[$colClass - 1] ?? '');
+        $studentRaw = absence_import_clean_string($row[$colStudent - 1] ?? '');
         if ($classRaw === '' && $studentRaw === '') continue;
 
-        $classKey = normalize_lookup_token($classRaw);
+        $classKey = absence_import_normalize_token($classRaw);
         $classIdAbs = $classMap[$classKey] ?? 0;
         if ($classIdAbs > 0) $classIdsInImport[$classIdAbs] = true;
         if ($classIdAbs <= 0) {
           $skipped++;
-          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden: {class}') . ' ' . $classRaw];
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'class' => $classRaw, 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden:') . ' ' . $classRaw];
           continue;
         }
 
-        $studentKey = normalize_lookup_token($studentRaw);
-        $studentIdAbs = (int)($studentMap[$classIdAbs][$studentKey] ?? 0);
-        if ($studentIdAbs <= 0) {
-          [$lastP, $firstP] = parse_student_name_token($studentRaw);
-          $fallback1 = normalize_lookup_token($lastP . ',' . $firstP);
-          $fallback2 = normalize_lookup_token($lastP . ' ' . $firstP);
-          if ($fallback1 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback1] ?? 0);
-          if ($studentIdAbs <= 0 && $fallback2 !== '') $studentIdAbs = (int)($studentMap[$classIdAbs][$fallback2] ?? 0);
+        $match = absence_import_match_student($studentIndex, $classIdAbs, $studentRaw);
+        $studentIdAbs = (int)($match['student_id'] ?? 0);
+        $manualStudentId = (int)($manualStudentMap[$lineNo] ?? 0);
+        if ($studentIdAbs <= 0 && $manualStudentId > 0) {
+          $manualCandidate = $studentIndex[$classIdAbs]['students'][$manualStudentId] ?? null;
+          if (is_array($manualCandidate)) {
+            $studentIdAbs = $manualStudentId;
+            $manualAssigned++;
+          }
         }
         if ($studentIdAbs <= 0) {
           $skipped++;
-          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('admin.students.import.absence.reason.student_not_found', 'Schüler nicht gefunden.')];
+          $status = (string)($match['status'] ?? 'not_found');
+          if ($status === 'ambiguous') $ambiguous++; else $notFound++;
+          if (empty(($match['parsed'] ?? [])['ok'])) $invalidNames++;
+          $manualRequired++;
+          $suggestions = array_map(static fn($s) => (string)($s['name'] ?? ''), (array)($match['suggestions'] ?? []));
+          $reason = (string)($match['warning'] ?? t('admin.students.import.absence.reason.student_not_found', 'Schüler nicht gefunden.'));
+          if ($suggestions) $reason .= ' ' . strtr(t('admin.students.import.absence.suggestions', 'Vorschläge: {names}'), ['{names}' => implode('; ', array_slice($suggestions, 0, 5))]);
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'class' => (string)($classById[$classIdAbs]['display'] ?? $classRaw), 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => $reason];
           continue;
         }
 
-        try {
-          $total = parse_optional_non_negative_int((string)($row[$colTotal - 1] ?? ''), t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
-          $unexcused = parse_optional_non_negative_int((string)($row[$colUnexcused - 1] ?? ''), t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));
-        } catch (Throwable $ex) {
+        $totalParsed = parse_absence_value((string)($row[$colTotal - 1] ?? ''), t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
+        $unexcusedParsed = parse_absence_value((string)($row[$colUnexcused - 1] ?? ''), t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));
+        $totalOk = !empty($totalParsed['ok']);
+        $unexcusedOk = !empty($unexcusedParsed['ok']);
+        if (!$totalOk && !$unexcusedOk) {
           $skipped++;
-          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => $ex->getMessage() . ' (Zeile ' . (string)($lineNo + 1) . ')'];
+          $invalidValues++;
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'class' => (string)($classById[$classIdAbs]['display'] ?? $classRaw), 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => trim((string)($totalParsed['warning'] ?? '') . ' ' . (string)($unexcusedParsed['warning'] ?? ''))];
           continue;
         }
 
-        if ($total === null && $unexcused === null) {
-          $delAbs->execute([$studentIdAbs, $schoolYearAbs, $periodLabelAbs]);
-          if ($delAbs->rowCount() > 0) $deleted++;
+        $existing = $existingAbs[$studentIdAbs] ?? null;
+        if (!$totalOk && !$existing) {
+          $skipped++;
+          $invalidValues++;
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw, 'class' => (string)($classById[$classIdAbs]['display'] ?? $classRaw), 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => t('admin.students.import.absence.reason.total_required_for_new', 'Fehltage gesamt fehlt; ohne bestehenden Wert wird nichts importiert.')];
+          continue;
+        }
+        if (!$unexcusedOk && !$existing) {
+          $skipped++;
+          $invalidValues++;
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw, 'class' => (string)($classById[$classIdAbs]['display'] ?? $classRaw), 'value' => absence_import_clean_string($row[$colUnexcused - 1] ?? ''), 'reason' => t('admin.students.import.absence.reason.unexcused_required_for_new', 'Unentschuldigte Fehltage fehlt; ohne bestehenden Wert wird nichts importiert.')];
           continue;
         }
 
-        $totalVal = $total ?? 0;
-        $unexcusedVal = $unexcused ?? 0;
+        $totalVal = $totalOk ? (int)$totalParsed['value'] : (int)($existing['total'] ?? 0);
+        $unexcusedVal = $unexcusedOk ? (int)$unexcusedParsed['value'] : (int)($existing['unexcused'] ?? 0);
         if ($unexcusedVal > $totalVal) {
           $skipped++;
-          $skipDetails[] = ['name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'reason' => t('teacher.students.error.absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Gesamt-Fehltage sein.')];
+          $invalidValues++;
+          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'class' => (string)($classById[$classIdAbs]['display'] ?? $classRaw), 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => t('teacher.students.error.absence_unexcused_gt_total', 'Unentschuldigte Fehltage dürfen nicht größer als Gesamt-Fehltage sein.')];
           continue;
         }
 
         $upAbs->execute([$studentIdAbs, $classIdAbs, $schoolYearAbs, $periodLabelAbs, $totalVal, $unexcusedVal]);
+        $existingAbs[$studentIdAbs] = ['total' => $totalVal, 'unexcused' => $unexcusedVal];
+        if (($totalOk && (int)$totalParsed['value'] === 0) || ($unexcusedOk && (int)$unexcusedParsed['value'] === 0)) $importedZero++;
         $upserted++;
       }
       $pdo->commit();
@@ -539,8 +565,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'period_label' => $periodLabelAbs,
         'processed' => $processed,
         'updated' => $upserted,
-        'deleted' => $deleted,
         'skipped' => $skipped,
+        'imported_zero' => $importedZero,
+        'not_found' => $notFound,
+        'ambiguous' => $ambiguous,
+        'invalid_names' => $invalidNames,
+        'invalid_values' => $invalidValues,
+        'manual_required' => $manualRequired,
+        'manual_assigned' => $manualAssigned,
+        'delimiter' => $detectedDelimiter === "\t" ? 'Tab' : (string)$detectedDelimiter,
+        'details' => $skipDetails,
         'found_classes' => $foundClasses,
         'missing_classes' => $missingClasses,
       ];
@@ -551,14 +585,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'period_label' => $periodLabelAbs,
         'processed' => $processed,
         'upserted' => $upserted,
-        'deleted' => $deleted,
         'skipped' => $skipped,
+        'imported_zero' => $importedZero,
+        'not_found' => $notFound,
+        'ambiguous' => $ambiguous,
+        'invalid_names' => $invalidNames,
+        'invalid_values' => $invalidValues,
+        'manual_assigned' => $manualAssigned,
       ]);
 
       $ok = str_replace(
-        ['{processed}', '{updated}', '{deleted}', '{skipped}'],
-        [(string)$processed, (string)$upserted, (string)$deleted, (string)$skipped],
-        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, gelöscht {deleted}, übersprungen {skipped}.')
+        ['{processed}', '{updated}', '{skipped}'],
+        [(string)$processed, (string)$upserted, (string)$skipped],
+        t('admin.students.import.absence.summary', 'Fehltage-Import abgeschlossen: verarbeitet {processed}, übernommen {updated}, übersprungen {skipped}.')
       );
     }
 
@@ -984,6 +1023,39 @@ render_admin_header(t('admin.students.title'));
 <?php if ($absenceImportSummary): ?>
   <div class="alert success">
     <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
+    <div class="muted" style="margin-top:6px;">
+      <?=h(strtr(t('admin.students.import.absence.report_stats', 'Verarbeitet: {processed} · Übernommen: {updated} · echte 0-Werte: {zero} · übersprungen: {skipped} · nicht gefunden: {not_found} · mehrdeutig: {ambiguous} · ungültige Werte: {invalid_values} · manuell zu prüfen: {manual} · Trennzeichen: {delimiter}'), [
+        '{processed}' => (string)($absenceImportSummary['processed'] ?? 0),
+        '{updated}' => (string)($absenceImportSummary['updated'] ?? 0),
+        '{zero}' => (string)($absenceImportSummary['imported_zero'] ?? 0),
+        '{skipped}' => (string)($absenceImportSummary['skipped'] ?? 0),
+        '{not_found}' => (string)($absenceImportSummary['not_found'] ?? 0),
+        '{ambiguous}' => (string)($absenceImportSummary['ambiguous'] ?? 0),
+        '{invalid_values}' => (string)($absenceImportSummary['invalid_values'] ?? 0),
+        '{manual}' => (string)($absenceImportSummary['manual_required'] ?? 0),
+        '{manual_assigned}' => (string)($absenceImportSummary['manual_assigned'] ?? 0),
+        '{delimiter}' => (string)($absenceImportSummary['delimiter'] ?? ''),
+      ]))?>
+    </div>
+    <?php $details = (array)($absenceImportSummary['details'] ?? []); if ($details): ?>
+      <details style="margin-top:10px;">
+        <summary class="btn secondary" style="display:inline-block; cursor:pointer;"><?=h(t('admin.students.import.absence.problem_rows', 'Problematische Zeilen anzeigen'))?></summary>
+        <table class="table" style="margin-top:8px;">
+          <thead><tr><th><?=h(t('admin.students.import.absence.line', 'Zeile'))?></th><th><?=h(t('admin.students.import.table.name', 'Name'))?></th><th><?=h(t('admin.students.import.table.class', 'Klasse'))?></th><th><?=h(t('admin.students.import.absence.raw_value', 'Rohwert'))?></th><th><?=h(t('admin.students.import.table.status', 'Status'))?></th></tr></thead>
+          <tbody>
+          <?php foreach (array_slice($details, 0, 100) as $d): ?>
+            <tr>
+              <td><?=h((string)($d['line'] ?? ''))?></td>
+              <td><?=h((string)($d['name'] ?? ''))?></td>
+              <td><?=h((string)($d['class'] ?? ''))?></td>
+              <td><?=h((string)($d['value'] ?? ''))?></td>
+              <td><?=h((string)($d['reason'] ?? ''))?></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </details>
+    <?php endif; ?>
     <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
       <div>
         <div><strong><?=h(t('admin.students.import.absence.found_classes', 'Klassen im Import gefunden'))?></strong></div>
@@ -1126,8 +1198,8 @@ render_admin_header(t('admin.students.title'));
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.students.import.absence_heading', 'Fehltage-Import (CSV, tab-getrennt)'))?></h2>
-  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere Werte in beiden Fehltage-Spalten löschen bestehende Einträge.'))?></p>
-  <form method="post" enctype="multipart/form-data" class="grid" style="grid-template-columns: 260px minmax(260px,1fr) auto; gap:10px; align-items:end;">
+  <p class="muted"><?=h(t('admin.students.import.absence_hint', 'Importiert Fehltage für ein Schulhalbjahr für bestehende Klassen und Schüler. Spalten-Standard: Klasse=1, Schüler=2, Fehltage gesamt=15, unentschuldigt=16. Leere/ungültige Werte und nicht eindeutige Namen werden übersprungen; bestehende Werte bleiben erhalten.'))?></p>
+  <form method="post" enctype="multipart/form-data" class="grid" id="absenceImportForm" style="grid-template-columns: 260px minmax(260px,1fr) auto; gap:10px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="import_absence_csv">
 
@@ -1405,12 +1477,26 @@ render_admin_header(t('admin.students.title'));
   const colTotal = document.getElementById('absenceColTotal');
   const colUnexcused = document.getElementById('absenceColUnexcused');
   const scopeSelect = document.getElementById('absenceScopeSelect');
+  const importForm = document.getElementById('absenceImportForm');
   if (!fileInput || !wrap) return;
 
   const previewApiUrl = <?= json_encode($absencePreviewApiUrl) ?>;
   const csrf = <?= json_encode(csrf_token()) ?>;
+  const labels = {
+    previewUnavailable: <?= json_encode(t('admin.students.import.absence.preview_unavailable', 'Preview-API ist nicht verfügbar.')) ?>,
+    class: <?= json_encode(t('admin.students.import.table.class', 'Klasse')) ?>,
+    student: <?= json_encode(t('admin.students.import.table.name', 'Name')) ?>,
+    total: <?= json_encode(t('admin.students.import.absence.col_total', 'Fehltage gesamt')) ?>,
+    unexcused: <?= json_encode(t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt')) ?>,
+    status: <?= json_encode(t('admin.students.import.table.status', 'Status')) ?>,
+    noMatches: <?= json_encode(t('admin.students.import.absence.preview_no_matches', 'Keine passenden System-Schüler in den ersten Zeilen gefunden.')) ?>,
+    suggestions: <?= json_encode(t('admin.students.import.absence.preview_suggestions', 'Vorschläge')) ?>,
+    manualAssign: <?= json_encode(t('admin.students.import.absence.manual_assign', 'Manuell zuordnen')) ?>,
+    previewFailed: <?= json_encode(t('admin.students.import.absence.preview_failed', 'Preview fehlgeschlagen')) ?>,
+    stats: <?= json_encode(t('admin.students.import.absence.preview_stats', 'Gefundene System-Schüler: {matched} · Übersprungen: {skipped}')) ?>,
+  };
   if (!previewApiUrl || typeof previewApiUrl !== 'string') {
-    wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc('Preview-API ist nicht verfügbar.')}</div>`;
+    wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc(labels.previewUnavailable)}</div>`;
     if (hint) hint.style.display = 'none';
     return;
   }
@@ -1430,7 +1516,8 @@ render_admin_header(t('admin.students.title'));
 
   function extractRows(){
     const ci = idx(colClass,1), si = idx(colStudent,2), ti = idx(colTotal,15), ui = idx(colUnexcused,16);
-    return parsed.slice(0,200).map(r => ({
+    return parsed.slice(0,200).map((r, index) => ({
+      line: index,
       class: r[ci] ?? '',
       student: r[si] ?? '',
       total: r[ti] ?? '',
@@ -1456,15 +1543,56 @@ render_admin_header(t('admin.students.title'));
     const csvHeaderRow = hdr
       ? `<tr><th class="muted">${esc(hdr.class || '—')}</th><th class="muted">${esc(hdr.student || '—')}</th><th class="muted">${esc(hdr.total || '—')}</th><th class="muted">${esc(hdr.unexcused || '—')}</th></tr>`
       : '';
-    const thead = `<thead><tr><th>${esc('Klasse')}</th><th>${esc('Schüler')}</th><th>${esc('Fehltage gesamt')}</th><th>${esc('Unentschuldigt')}</th></tr>${csvHeaderRow}</thead>`;
+    const thead = `<thead><tr><th>${esc(labels.class)}</th><th>${esc(labels.student)}</th><th>${esc(labels.total)}</th><th>${esc(labels.unexcused)}</th><th>${esc(labels.status)}</th></tr>${csvHeaderRow}</thead>`;
     if (!rows.length) {
-      wrap.innerHTML = `<table class="table" style="margin-top:8px;">${thead}<tbody></tbody></table><div class="muted" style="margin-top:8px;">${esc('Keine passenden System-Schüler in den ersten Zeilen gefunden.')}</div>`;
+      wrap.innerHTML = `<table class="table" style="margin-top:8px;">${thead}<tbody></tbody></table><div class="muted" style="margin-top:8px;">${esc(labels.noMatches)}</div>`;
       if (hint) hint.style.display = 'none';
       return;
     }
-    const trs = rows.map(r => `<tr><td>${esc(r.class)}</td><td>${esc(r.student)}</td><td>${esc(r.total)}</td><td>${esc(r.unexcused)}</td></tr>`).join('');
-    wrap.innerHTML = `<div class="muted" style="margin:6px 0;">${esc('Gefundene System-Schüler: ' + matched + ' · Übersprungen: ' + skipped)}</div><table class="table" style="margin-top:8px;">${thead}<tbody>${trs}</tbody></table>`;
+    const trs = rows.map(r => {
+      const suggestions = Array.isArray(r.suggestions) ? r.suggestions.filter(s => Number(s?.id || 0) > 0) : [];
+      const suggestionText = suggestions.length ? ` · ${esc(labels.suggestions + ': ' + suggestions.map(s => s.name || '').join('; '))}` : '';
+      const manualSelect = suggestions.length && String(r.status || '') !== 'matched'
+        ? `<div style="margin-top:4px;"><label class="muted">${esc(labels.manualAssign)}</label> <select class="absence-manual-map" data-line="${esc(r.line)}"><option value=""></option>${suggestions.map(s => `<option value="${esc(s.id)}">${esc(s.name || '')}</option>`).join('')}</select></div>`
+        : '';
+      const ok = String(r.status || '') === 'matched';
+      return `<tr style="${ok ? '' : 'background:#fff7ed;'}"><td>${esc(r.class)}</td><td>${esc(r.student)}</td><td>${esc(r.total)}</td><td>${esc(r.unexcused)}</td><td>${esc(r.status || '')}${r.message ? ` – ${esc(r.message)}` : ''}${suggestionText}${manualSelect}</td></tr>`;
+    }).join('');
+    const stats = labels.stats.replace('{matched}', String(matched)).replace('{skipped}', String(skipped));
+    wrap.innerHTML = `<div class="muted" style="margin:6px 0;">${esc(stats)}</div><table class="table" style="margin-top:8px;">${thead}<tbody>${trs}</tbody></table>`;
+    wrap.querySelectorAll('.absence-manual-map').forEach(sel => sel.addEventListener('change', syncManualMap));
     if (hint) hint.style.display = 'none';
+  }
+
+  function syncManualMap(ev) {
+    if (!importForm) return;
+    const sel = ev.currentTarget;
+    const line = String(sel?.dataset?.line ?? '');
+    if (line === '') return;
+    const inputName = `absence_manual_student_id[${line}]`;
+    const hiddenId = `absenceManualMap_${line}`;
+    let hidden = document.getElementById(hiddenId);
+    if (!sel.value) {
+      hidden?.remove();
+      return;
+    }
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.id = hiddenId;
+      hidden.name = inputName;
+      importForm.appendChild(hidden);
+    }
+    hidden.value = sel.value;
+  }
+
+  function clearManualMaps() {
+    importForm?.querySelectorAll('input[id^="absenceManualMap_"]').forEach(input => input.remove());
+  }
+
+  function handlePreviewSourceChange() {
+    clearManualMaps();
+    refreshPreview();
   }
 
   async function refreshPreview(){
@@ -1482,7 +1610,7 @@ render_admin_header(t('admin.students.title'));
         body: JSON.stringify(payload)
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || !data.ok) throw new Error(data.error || 'Preview fehlgeschlagen');
+      if (!resp.ok || !data.ok) throw new Error(data.error || labels.previewFailed);
       renderRows(Array.isArray(data.preview) ? data.preview : [], Number(data.matched||0), Number(data.skipped||0));
     } catch (e) {
       wrap.innerHTML = `<div class="muted" style="margin-top:8px;">${esc(String(e?.message || e))}</div>`;
@@ -1493,19 +1621,41 @@ render_admin_header(t('admin.students.title'));
   async function parseFile(){
     const f = fileInput.files?.[0];
     parsed = [];
+    clearManualMaps();
     if (!f) { wrap.innerHTML=''; if (hint) hint.style.display=''; return; }
     const txt = await f.text();
     const normalized = String(txt).split('\r').join('');
+    const firstLine = normalized.split('\n').find(l => l.trim() !== '') || '';
+    const delimiter = ['\t',';',','].sort((a,b) => firstLine.split(b).length - firstLine.split(a).length)[0] || '\t';
     parsed = normalized
       .split('\n')
-      .map((l) => l.split('\t'))
+      .map((l) => parseCsvLine(l, delimiter))
       .filter((r) => r.some((c) => String(c).trim() !== ''));
-  [colClass,colStudent,colTotal,colUnexcused,scopeSelect].forEach(el => el?.addEventListener('input', refreshPreview));
     await refreshPreview();
   }
 
+  function parseCsvLine(line, delimiter) {
+    const out = [];
+    let cur = '';
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (quoted && line[i + 1] === '"') { cur += '"'; i++; }
+        else quoted = !quoted;
+      } else if (ch === delimiter && !quoted) {
+        out.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+
   fileInput.addEventListener('change', parseFile);
-  [colClass,colStudent,colTotal,colUnexcused,schoolYear,period].forEach(el => el?.addEventListener('input', refreshPreview));
+  [colClass,colStudent,colTotal,colUnexcused,scopeSelect].forEach(el => el?.addEventListener('input', handlePreviewSourceChange));
 })();
 </script>
 
