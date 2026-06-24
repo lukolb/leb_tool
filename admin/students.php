@@ -478,8 +478,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $classIdAbs = $classMap[$classKey] ?? 0;
         if ($classIdAbs > 0) $classIdsInImport[$classIdAbs] = true;
         if ($classIdAbs <= 0) {
-          $skipped++;
-          $skipDetails[] = ['line' => $lineNo + 1, 'name' => $studentRaw !== '' ? $studentRaw : t('admin.students.import.unknown_name'), 'class' => $classRaw, 'value' => absence_import_clean_string($row[$colTotal - 1] ?? ''), 'reason' => t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden:') . ' ' . $classRaw];
+          $ignoredExternal++;
           continue;
         }
 
@@ -1031,7 +1030,7 @@ render_admin_header(t('admin.students.title'));
   <div class="alert success">
     <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
     <div class="muted" style="margin-top:6px;">
-      <?=h(strtr(t('admin.students.import.absence.report_stats', 'Verarbeitet: {processed} · Übernommen: {updated} · echte 0-Werte: {zero} · übersprungen: {skipped} · externe Schüler ignoriert: {ignored_external} · mehrdeutig: {ambiguous} · ungültige Werte: {invalid_values} · manuell zu prüfen: {manual} · manuell zugeordnet: {manual_assigned} · Trennzeichen: {delimiter}'), [
+      <?=h(strtr(t('admin.students.import.absence.report_stats', 'Verarbeitet: {processed} · Übernommen: {updated} · echte 0-Werte: {zero} · übersprungen: {skipped} · externe Datensätze ignoriert: {ignored_external} · mehrdeutig: {ambiguous} · ungültige Werte: {invalid_values} · manuell zu prüfen: {manual} · manuell zugeordnet: {manual_assigned} · Trennzeichen: {delimiter}'), [
         '{processed}' => (string)($absenceImportSummary['processed'] ?? 0),
         '{updated}' => (string)($absenceImportSummary['updated'] ?? 0),
         '{zero}' => (string)($absenceImportSummary['imported_zero'] ?? 0),

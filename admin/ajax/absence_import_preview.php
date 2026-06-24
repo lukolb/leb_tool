@@ -62,8 +62,11 @@ try {
     if ($classRaw === '' && $studentRaw === '') continue;
 
     $classId = (int)($classMap[absence_import_normalize_token($classRaw)] ?? 0);
+    if ($classId <= 0) {
+      continue;
+    }
     $match = $classId > 0 ? absence_import_match_student($studentIndex, $classId, $studentRaw) : ['status'=>'class_not_found', 'student'=>null, 'suggestions'=>[]];
-    if ($classId > 0 && (string)($match['status'] ?? '') === 'not_found') {
+    if ((string)($match['status'] ?? '') === 'not_found') {
       continue;
     }
     $student = $match['student'] ?? null;
