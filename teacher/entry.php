@@ -2086,6 +2086,14 @@ render_teacher_header($pageTitle);
     'ajax_invalid_json' => t('teacher.entry.ajax.invalid_json'),
     'ajax_timeout' => t('teacher.entry.ajax.timeout'),
     'ajax_request_failed' => t('teacher.entry.ajax.request_failed'),
+    'session_expired_title' => t('session.expired.title'),
+    'session_unsaved' => t('session.unsaved.message'),
+    'session_relogin' => t('session.relogin.message'),
+    'session_check' => t('session.check_again'),
+    'session_save_now' => t('session.save_now'),
+    'session_reload' => t('session.reload_page'),
+    'session_restored' => t('session.restored'),
+    'session_save_resuming' => t('session.save_resuming'),
     'error_save' => t('teacher.entry.error_save'),
     'error_unlock' => t('teacher.entry.error_unlock'),
     'error_update' => t('teacher.entry.error_update'),
@@ -2179,12 +2187,14 @@ render_teacher_header($pageTitle);
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
   const textReviewApiUrl = <?=json_encode(url('teacher/ajax/text_review_api.php'))?>;
+  const sessionStatusUrl = <?=json_encode(url('ajax/session_status.php'))?>;
+  const loginUrl = <?=json_encode(url('login.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
   const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm'))?>;
   const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear'))?>;
   const TEMPLATE_CONFLICT_CONFIRM_FALLBACK = <?=json_encode(t('teacher.entry.template_conflict.message'))?>;
-  const csrf = <?=json_encode(csrf_token())?>;
+  let csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
   const MEETING_MODE = (<?=json_encode($meetingMode ? 1 : 0)?> === 1);
 
@@ -3082,6 +3092,84 @@ render_teacher_header($pageTitle);
     return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
   }
 
+  function isSessionError(err){
+    const code = String(err?.code || err?.error || '').toLowerCase();
+    const status = Number(err?.status || 0);
+    return code === 'session_expired' || code === 'csrf_failed' || code === 'login_required' || status === 401 || (status === 403 && code !== 'forbidden');
+  }
+
+  function looksLikeLoginHtml(text){
+    const s = String(text || '').slice(0, 800).toLowerCase();
+    return s.includes('<!doctype html') || s.includes('<html') || s.includes('<form') && (s.includes('login') || s.includes('password') || s.includes('csrf'));
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+  }
+
+  let sessionExpired = false;
+  let sessionOverlay = null;
+
+  function ensureSessionOverlay(){
+    if (sessionOverlay) return sessionOverlay;
+    const overlay = document.createElement('div');
+    overlay.id = 'sessionExpiredOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(tEntry('session_expired_title'))}</h2><p>${escapeHtml(tEntry('session_unsaved'))}</p><p>${escapeHtml(tEntry('session_relogin'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(tEntry('session_relogin'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(tEntry('session_check'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(tEntry('session_save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(tEntry('session_reload'))}</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
+    overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
+      const ok = await checkSessionNow(true);
+      if (ok) {
+        setSaveStatus('saving', tEntry('session_save_resuming'));
+        void flushPendingSavesBlocking();
+      }
+    });
+    overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => window.location.reload());
+    sessionOverlay = overlay;
+    return overlay;
+  }
+
+  function showSessionOverlay(err){
+    sessionExpired = true;
+    ui.sessionExpired = true;
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
+    const overlay = ensureSessionOverlay();
+    overlay.style.display = 'flex';
+    showErr(String(err?.message || tEntry('ajax_session_expired')));
+    setSaveStatus('failed_permanent', tEntry('ajax_session_expired'));
+  }
+
+  function hideSessionOverlay(){
+    sessionExpired = false;
+    ui.sessionExpired = false;
+    if (sessionOverlay) sessionOverlay.style.display = 'none';
+    clearErr();
+    setSaveStatus('ok', tEntry('session_restored'));
+  }
+
+  async function checkSessionNow(showFeedback = false){
+    try {
+      const res = await fetch(sessionStatusUrl, { credentials:'same-origin', headers:{ 'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest' }, cache:'no-store' });
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+      if (!res.ok || !json || json.ok === false || json.authenticated === false) throw new Error(json?.message || tEntry('ajax_session_expired'));
+      if (json.csrf_token) csrf = String(json.csrf_token);
+      hideSessionOverlay();
+      if (hasPendingSaves()) void flushPendingSavesBlocking();
+      return true;
+    } catch (e) {
+      if (showFeedback) showSessionOverlay(e);
+      return false;
+    }
+  }
+
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    void checkSessionNow(false);
+  }, 180000);
+
   async function apiFetchJson(url, payload, options = {}){
     const controller = new AbortController();
     const timeoutMs = Number(options.timeoutMs || 30000);
@@ -3112,10 +3200,10 @@ render_teacher_header($pageTitle);
       }
       if (!json) {
         const err = new Error(tEntry('ajax_non_json'));
-        err.code = 'non_json';
+        err.code = looksLikeLoginHtml(text) ? 'session_expired' : 'non_json';
         err.status = res.status;
         err.bodySnippet = text.slice(0, 300);
-        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.retryable = err.code === 'session_expired' ? false : (res.status >= 500 || res.status === 0 || res.status === 200);
         throw err;
       }
       if (!res.ok || json.ok === false) {
@@ -3126,6 +3214,7 @@ render_teacher_header($pageTitle);
         err.retryable = typeof json.retryable === 'boolean' ? !!json.retryable : isRetryableSaveError(err);
         throw err;
       }
+      if (json.csrf_token) csrf = String(json.csrf_token);
       return json;
     } catch (err) {
       if (err && err.name === 'AbortError') {
@@ -3140,6 +3229,7 @@ render_teacher_header($pageTitle);
         err.message = tEntry('save_connection_interrupted');
       }
       console.warn('entry api request failed', { code: err.code, status: err.status || 0, body: err.bodySnippet || '' });
+      if (isSessionError(err)) showSessionOverlay(err);
       throw err;
     } finally {
       window.clearTimeout(timeout);
@@ -3192,6 +3282,7 @@ render_teacher_header($pageTitle);
   }
 
   function scheduleSaveRetry(key){
+    if (sessionExpired || ui.sessionExpired) return;
     if (!ui.pendingPayloads.has(key) || ui.retryTimers.has(key)) return;
     const attempt = (ui.retryAttempts.get(key) || 0) + 1;
     ui.retryAttempts.set(key, attempt);
@@ -3209,6 +3300,7 @@ render_teacher_header($pageTitle);
     if (ui.saveChains.has(key)) return ui.saveChains.get(key);
     const chain = (async () => {
       try {
+        if (sessionExpired || ui.sessionExpired) return false;
         while (ui.pendingPayloads.has(key)) {
           clearSaveRetry(key);
           const info = ui.pendingPayloads.get(key);
@@ -3227,7 +3319,10 @@ render_teacher_header($pageTitle);
           } catch (e) {
             if (!ui.pendingPayloads.has(key)) ui.pendingPayloads.set(key, info);
             const msg = friendlyFetchError(e, true);
-            if (isRetryableSaveError(e)) {
+            if (isSessionError(e)) {
+              showSessionOverlay(e);
+              setSaveStatus('failed_permanent', tEntry('ajax_session_expired'));
+            } else if (isRetryableSaveError(e)) {
               showErr(tEntry('save_retry_failed_auto'));
               setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
               scheduleSaveRetry(key);
@@ -3254,6 +3349,10 @@ render_teacher_header($pageTitle);
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
     ui.pendingPayloads.set(key, { action, payload, onSuccess });
     markSaveDirty();
+    if (sessionExpired || ui.sessionExpired) {
+      showSessionOverlay({ message: tEntry('ajax_session_expired') });
+      return;
+    }
     ui.saveTimers.set(key, setTimeout(() => {
       ui.saveTimers.delete(key);
       void runQueuedSave(key);
@@ -4136,10 +4235,7 @@ render_teacher_header($pageTitle);
   }
 
   async function textReviewApi(action, payload = {}){
-    const res = await fetch(textReviewApiUrl, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body: JSON.stringify({ action, csrf_token: csrf, class_id: state.class_id, ...payload }) });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok || !j.ok) throw new Error(j.error || 'Textprüfung fehlgeschlagen');
-    return j;
+    return apiFetchJson(textReviewApiUrl, { action, csrf_token: csrf, class_id: state.class_id, ...payload });
   }
   async function refreshTextReviewStatus(){
     if (!btnTextReview || !state.class_id || DELEGATED_MODE || CHILD_MODE) return;

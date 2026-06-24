@@ -14,6 +14,8 @@ if (!current_user()) {
   echo json_encode([
     'ok' => false,
     'error' => 'session_expired',
+    'retryable' => false,
+    'requires_login' => true,
     'message' => t('teacher.entry_api.error.session_expired'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -23,6 +25,8 @@ if (get_role() !== 'teacher' && get_role() !== 'admin') {
   echo json_encode([
     'ok' => false,
     'error' => 'forbidden',
+    'retryable' => false,
+    'requires_login' => false,
     'message' => t('teacher.entry_api.error.forbidden'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -3988,5 +3992,6 @@ if ($action === 'delegations_save') {
     'error' => $code,
     'message' => $message,
     'retryable' => $retryable,
+    'requires_login' => in_array($code, ['session_expired', 'csrf_failed'], true),
   ], $status);
 }

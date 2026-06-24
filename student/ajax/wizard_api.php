@@ -965,5 +965,6 @@ try {
     'error' => $code,
     'message' => $message,
     'retryable' => in_array($status, [500, 502, 503, 504], true),
+    'requires_login' => in_array($code, ['session_expired', 'csrf_failed'], true),
   ], $status);
 }
