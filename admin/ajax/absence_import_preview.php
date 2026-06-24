@@ -63,6 +63,9 @@ try {
 
     $classId = (int)($classMap[absence_import_normalize_token($classRaw)] ?? 0);
     $match = $classId > 0 ? absence_import_match_student($studentIndex, $classId, $studentRaw) : ['status'=>'class_not_found', 'student'=>null, 'suggestions'=>[]];
+    if ($classId > 0 && (string)($match['status'] ?? '') === 'not_found') {
+      continue;
+    }
     $student = $match['student'] ?? null;
     $totalParsed = parse_absence_value($totalRaw, t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
     $unexcusedParsed = parse_absence_value($unexcusedRaw, t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));

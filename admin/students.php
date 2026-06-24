@@ -463,6 +463,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $invalidValues = 0;
       $manualRequired = 0;
       $manualAssigned = 0;
+      $ignoredExternal = 0;
       $skipDetails = [];
       $classIdsInImport = [];
 
@@ -493,8 +494,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           }
         }
         if ($studentIdAbs <= 0) {
-          $skipped++;
           $status = (string)($match['status'] ?? 'not_found');
+          if ($status === 'not_found') {
+            $ignoredExternal++;
+            continue;
+          }
+          $skipped++;
           if ($status === 'ambiguous') $ambiguous++; else $notFound++;
           if (empty(($match['parsed'] ?? [])['ok'])) $invalidNames++;
           $manualRequired++;
@@ -573,6 +578,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'invalid_values' => $invalidValues,
         'manual_required' => $manualRequired,
         'manual_assigned' => $manualAssigned,
+        'ignored_external' => $ignoredExternal,
         'delimiter' => $detectedDelimiter === "\t" ? 'Tab' : (string)$detectedDelimiter,
         'details' => $skipDetails,
         'found_classes' => $foundClasses,
@@ -592,6 +598,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'invalid_names' => $invalidNames,
         'invalid_values' => $invalidValues,
         'manual_assigned' => $manualAssigned,
+        'ignored_external' => $ignoredExternal,
       ]);
 
       $ok = str_replace(
@@ -1024,7 +1031,7 @@ render_admin_header(t('admin.students.title'));
   <div class="alert success">
     <div><strong><?=h(t('admin.students.import.absence.summary_heading', 'Fehltage-Import Zusammenfassung'))?></strong></div>
     <div class="muted" style="margin-top:6px;">
-      <?=h(strtr(t('admin.students.import.absence.report_stats', 'Verarbeitet: {processed} · Übernommen: {updated} · echte 0-Werte: {zero} · übersprungen: {skipped} · nicht gefunden: {not_found} · mehrdeutig: {ambiguous} · ungültige Werte: {invalid_values} · manuell zu prüfen: {manual} · Trennzeichen: {delimiter}'), [
+      <?=h(strtr(t('admin.students.import.absence.report_stats', 'Verarbeitet: {processed} · Übernommen: {updated} · echte 0-Werte: {zero} · übersprungen: {skipped} · externe Schüler ignoriert: {ignored_external} · mehrdeutig: {ambiguous} · ungültige Werte: {invalid_values} · manuell zu prüfen: {manual} · manuell zugeordnet: {manual_assigned} · Trennzeichen: {delimiter}'), [
         '{processed}' => (string)($absenceImportSummary['processed'] ?? 0),
         '{updated}' => (string)($absenceImportSummary['updated'] ?? 0),
         '{zero}' => (string)($absenceImportSummary['imported_zero'] ?? 0),
@@ -1034,6 +1041,7 @@ render_admin_header(t('admin.students.title'));
         '{invalid_values}' => (string)($absenceImportSummary['invalid_values'] ?? 0),
         '{manual}' => (string)($absenceImportSummary['manual_required'] ?? 0),
         '{manual_assigned}' => (string)($absenceImportSummary['manual_assigned'] ?? 0),
+        '{ignored_external}' => (string)($absenceImportSummary['ignored_external'] ?? 0),
         '{delimiter}' => (string)($absenceImportSummary['delimiter'] ?? ''),
       ]))?>
     </div>
