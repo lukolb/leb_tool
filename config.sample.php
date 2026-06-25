@@ -12,6 +12,9 @@ return [
   ],
   'app' => [
     'session_name' => 'legtool_sess',
+    // Automatische Abmeldung nach Inaktivität in Sekunden. Heartbeat-/Statuschecks verlängern diese Frist nicht.
+    // 0 deaktiviert den anwendungsseitigen Timeout und überlässt das Aufräumen PHP.
+    'session_idle_timeout_seconds' => 3600,
     'password_pepper' => '',
     // Schul-Zeitzone (IANA, z.B. "Europe/Berlin") für alle Zeitstempel im UI
     'timezone' => 'America/New_York',

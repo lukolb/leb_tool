@@ -34,6 +34,32 @@ if (session_status() === PHP_SESSION_NONE) {
   @session_start();
 }
 
+// Application-level idle timeout. The lightweight heartbeat must not extend this
+// timer; otherwise an open edit tab would keep a session alive forever.
+$sessionIdleTimeout = (int)($config['app']['session_idle_timeout_seconds'] ?? (int)ini_get('session.gc_maxlifetime'));
+if ($sessionIdleTimeout > 0) {
+  $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?? '');
+  $isSessionStatusRequest = str_ends_with($requestPath, '/ajax/session_status.php');
+  $hasAuthenticatedPrincipal = isset($_SESSION['user']) || isset($_SESSION['student']);
+  if ($hasAuthenticatedPrincipal) {
+    $now = time();
+    $lastActivity = isset($_SESSION['_last_activity']) ? (int)$_SESSION['_last_activity'] : $now;
+    if (($now - $lastActivity) > $sessionIdleTimeout) {
+      $_SESSION = [];
+      if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'] ?? '/', $params['domain'] ?? '', (bool)($params['secure'] ?? false), (bool)($params['httponly'] ?? true));
+      }
+      session_destroy();
+      if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+      }
+    } elseif (!$isSessionStatusRequest) {
+      $_SESSION['_last_activity'] = $now;
+    }
+  }
+}
+
 // Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
 ob_start(function (string $buffer): string {
   if (is_ajax_request()) return $buffer;
