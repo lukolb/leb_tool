@@ -34,6 +34,32 @@ if (session_status() === PHP_SESSION_NONE) {
   @session_start();
 }
 
+// Application-level idle timeout. The lightweight heartbeat must not extend this
+// timer; otherwise an open edit tab would keep a session alive forever.
+$sessionIdleTimeout = (int)($config['app']['session_idle_timeout_seconds'] ?? (int)ini_get('session.gc_maxlifetime'));
+if ($sessionIdleTimeout > 0) {
+  $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?? '');
+  $isSessionStatusRequest = str_ends_with($requestPath, '/ajax/session_status.php');
+  $hasAuthenticatedPrincipal = isset($_SESSION['user']) || isset($_SESSION['student']);
+  if ($hasAuthenticatedPrincipal) {
+    $now = time();
+    $lastActivity = isset($_SESSION['_last_activity']) ? (int)$_SESSION['_last_activity'] : $now;
+    if (($now - $lastActivity) > $sessionIdleTimeout) {
+      $_SESSION = [];
+      if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'] ?? '/', $params['domain'] ?? '', (bool)($params['secure'] ?? false), (bool)($params['httponly'] ?? true));
+      }
+      session_destroy();
+      if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
+      }
+    } elseif (!$isSessionStatusRequest) {
+      $_SESSION['_last_activity'] = $now;
+    }
+  }
+}
+
 // Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
 ob_start(function (string $buffer): string {
   if (is_ajax_request()) return $buffer;
@@ -77,7 +103,8 @@ function is_ajax_request(): bool {
   $xrw = (string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
   if (strtolower($xrw) === 'xmlhttprequest') return true;
   $accept = (string)($_SERVER['HTTP_ACCEPT'] ?? '');
-  return stripos($accept, 'application/json') !== false;
+  $contentType = (string)($_SERVER['CONTENT_TYPE'] ?? '');
+  return stripos($accept, 'application/json') !== false || stripos($contentType, 'application/json') !== false;
 }
 
 /**
@@ -1368,8 +1395,26 @@ function current_user(): ?array {
   return $_SESSION['user'] ?? null;
 }
 
+function auth_json_error(string $error, string $message, int $status = 401, bool $requiresLogin = true): never {
+  if (!headers_sent()) {
+    http_response_code($status);
+    header('Content-Type: application/json; charset=utf-8');
+  }
+  echo json_encode([
+    'ok' => false,
+    'error' => $error,
+    'retryable' => false,
+    'requires_login' => $requiresLogin,
+    'message' => $message,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 function require_login(): void {
   if (!current_user()) {
+    if (is_ajax_request()) {
+      auth_json_error('session_expired', t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'), 401, true);
+    }
     $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
     $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
     $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
@@ -1392,6 +1437,9 @@ function get_role(): string {
 
 function require_admin(): void {
   if (!current_user()) {
+    if (is_ajax_request()) {
+      auth_json_error('session_expired', t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'), 401, true);
+    }
     $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
     $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
     $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
@@ -1399,6 +1447,9 @@ function require_admin(): void {
     redirect('login.php?next=' . rawurlencode($next));
   }
   if (get_role() !== 'admin') {
+    if (is_ajax_request()) {
+      auth_json_error('forbidden', t('session.forbidden.message', 'Keine Berechtigung.'), 403, false);
+    }
     $req = (string)($_SERVER['REQUEST_URI'] ?? '/');
     $path = (string)(parse_url($req, PHP_URL_PATH) ?? '/');
     $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
@@ -1411,6 +1462,9 @@ function require_teacher(): void {
   require_login();
   $role = get_role();
   if ($role !== 'teacher' && $role !== 'admin') {
+    if (is_ajax_request()) {
+      auth_json_error('forbidden', t('session.forbidden.message', 'Keine Berechtigung.'), 403, false);
+    }
     http_response_code(403);
     echo "403 Forbidden";
     exit;
@@ -1455,6 +1509,9 @@ function current_student(): ?array {
 
 function require_student(): void {
   if (!isset($_SESSION['student']['id'])) {
+    if (is_ajax_request()) {
+      auth_json_error('session_expired', t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'), 401, true);
+    }
     header('Location: ' . url('student/login.php'));
     exit;
   }
@@ -1471,8 +1528,11 @@ function csrf_token(): string {
 }
 
 function csrf_verify(): void {
-  $t = $_POST['csrf_token'] ?? '';
+  $t = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
   if (!is_string($t) || $t === '' || !hash_equals($_SESSION['csrf_token'] ?? '', $t)) {
+    if (is_ajax_request()) {
+      auth_json_error('csrf_failed', t('session.csrf_failed.message', 'Die Sicherheitsprüfung ist abgelaufen. Bitte lade die Seite neu oder melde dich erneut an.'), 403, !current_user() && !current_student());
+    }
     throw new RuntimeException('CSRF Token ungültig.');
   }
 }

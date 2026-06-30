@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/delegation_revoke.php';
 require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
@@ -13,6 +14,8 @@ if (!current_user()) {
   echo json_encode([
     'ok' => false,
     'error' => 'session_expired',
+    'retryable' => false,
+    'requires_login' => true,
     'message' => t('teacher.entry_api.error.session_expired'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -22,6 +25,8 @@ if (get_role() !== 'teacher' && get_role() !== 'admin') {
   echo json_encode([
     'ok' => false,
     'error' => 'forbidden',
+    'retryable' => false,
+    'requires_login' => false,
     'message' => t('teacher.entry_api.error.forbidden'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
@@ -1012,6 +1017,12 @@ function upsert_class_group_delegation(PDO $pdo, int $classId, string $schoolYea
   if ($userId <= 0) {
     // clear current full key plus legacy aliases so stale pre-hyphen rows do not keep applying
     $aliases = group_key_aliases_from_key($groupKey);
+    annotate_revoked_delegation_texts($pdo, [[
+      'class_id' => $classId,
+      'school_year' => $schoolYear,
+      'period_label' => $periodLabel,
+      'group_aliases' => $aliases,
+    ]]);
     $in = implode(',', array_fill(0, count($aliases), '?'));
     $pdo->prepare(
       "DELETE FROM class_group_delegations
@@ -1738,7 +1749,7 @@ function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, i
 function load_teacher_fields(PDO $pdo, int $templateId, bool $includeReadonly = false): array {
   $where = $includeReadonly ? ' AND NOT (can_child_edit=1 AND can_teacher_edit=0)' : ' AND can_teacher_edit=1';
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json, sort_order, can_teacher_edit
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, options_json, meta_json, sort_order, can_teacher_edit
      FROM template_fields
      WHERE template_id=?$where
      ORDER BY sort_order ASC, id ASC"
@@ -1766,7 +1777,7 @@ function load_system_bound_fields(PDO $pdo, int $templateId): array {
 
 function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, options_json, meta_json
+    "SELECT id, field_name, field_type, label, label_en, help_text, is_multiline, is_required, options_json, meta_json
      FROM template_fields
      WHERE template_id=? AND can_child_edit=1
      ORDER BY sort_order ASC, id ASC"
@@ -2334,6 +2345,7 @@ try {
         'help_text' => (string)($f['help_text'] ?? ''),
         'help_text_resolved' => resolve_label_placeholders((string)($f['help_text'] ?? ''), $classValueByName),
         'is_multiline' => (int)($f['is_multiline'] ?? 0),
+        'is_required' => (int)($f['is_required'] ?? 0),
         'options' => $optsTeacher,
         'subgroup' => $gParts['subgroup'],
         'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
@@ -2347,6 +2359,7 @@ try {
           'label' => (string)($child['label'] ?? ''),
           'help_text' => (string)($child['help_text'] ?? ''),
           'is_multiline' => (int)($child['is_multiline'] ?? 0),
+          'is_required' => (int)($child['is_required'] ?? 0),
           'options' => $child['options'],
           'snippet_categories' => snippet_categories_from_meta(meta_read($child['meta_json'] ?? null)),
           'snippet_category_ids' => snippet_category_ids_from_meta(meta_read($child['meta_json'] ?? null)),
@@ -2397,18 +2410,30 @@ try {
     );
     $valuesTeacher = $teacherValues['combined'] ?? [];
     $valuesTeacherOwn = $teacherValues['own'] ?? [];
+    $revokedDelegationCommentFlags = $delegatedView ? [] : revoked_delegation_comment_flags($pdo, $reportIds);
+    foreach ($students as &$studentRow) {
+      $ridKey = (string)(int)($studentRow['report_instance_id'] ?? 0);
+      $flag = $revokedDelegationCommentFlags[$ridKey] ?? ['count' => 0, 'names' => []];
+      $studentRow['revoked_delegation_comments_count'] = (int)($flag['count'] ?? 0);
+      $studentRow['revoked_delegation_comment_names'] = is_array($flag['names'] ?? null) ? array_values($flag['names']) : [];
+      $studentRow['revoked_delegation_comment_field_ids'] = is_array($flag['field_ids'] ?? null) ? array_values(array_map('intval', $flag['field_ids'])) : [];
+    }
+    unset($studentRow);
     $valuesChild = load_values($pdo, $reportIds, $childFieldIds, 'child', $lang);
 
     // --- progress (teacher / child / overall) ---
     $teacherProgressIds = [];
+    $teacherOptionalIds = [];
     foreach ($teacherFields as $f0) {
       $m0 = meta_read($f0['meta_json'] ?? null);
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
+      if ((int)($f0['is_required'] ?? 0) !== 1) { $teacherOptionalIds[] = (int)$f0['id']; continue; }
       $teacherProgressIds[] = (int)$f0['id'];
     }
 
     $childProgressIds = [];
+    $childOptionalIds = [];
     $childProgressLabels = [];
     // load ALL child-editable fields for progress counting (not only paired)
     $childFieldsAll = load_child_fields_for_pairing($pdo, $templateId);
@@ -2416,6 +2441,7 @@ try {
       $m0 = meta_read($cf0['meta_json'] ?? null);
       if (is_system_bound($m0)) continue;
       if (is_class_field($m0)) continue;
+      if ((int)($cf0['is_required'] ?? 0) !== 1) { $childOptionalIds[] = (int)$cf0['id']; continue; }
       $childProgressIds[] = (int)$cf0['id'];
       $labelC = label_for_lang($cf0['label'] ?? null, $cf0['label_en'] ?? null, $lang);
       $fnameC = (string)($cf0['field_name'] ?? '');
@@ -2437,10 +2463,12 @@ try {
     $historyFieldIds = array_values(array_unique(array_merge($teacherFieldIds, $childProgressIds, $classFieldIdsEditable)));
     $valueHistory = load_value_history($pdo, $reportIds, $historyFieldIds, $fieldMetaById, $lang, 5);
 
-    $valuesChildAllForProgress = load_values($pdo, $reportIds, $childProgressIds, 'child', $lang);
+    $valuesChildAllForProgress = load_values($pdo, $reportIds, array_values(array_unique(array_merge($childProgressIds, $childOptionalIds))), 'child', $lang);
 
     $teacherTotal = count($teacherProgressIds);
+    $teacherOptionalTotal = count($teacherOptionalIds);
     $childTotal = count($childProgressIds);
+    $childOptionalTotal = count($childOptionalIds);
     $overallTotal = $teacherTotal + $childTotal;
 
     $completeForms = 0;
@@ -2475,19 +2503,43 @@ try {
         }
       }
 
-      $overallTotalForStudent = $teacherTotal + $childTotalForStudent;
+      $teacherOptionalDone = 0;
+      foreach ($teacherOptionalIds as $fid) {
+        $v = $valuesTeacher[$ridKey][(string)$fid] ?? '';
+        if (trim((string)$v) !== '') $teacherOptionalDone++;
+      }
+      $childOptionalDone = 0;
+      foreach ($childOptionalIds as $fid) {
+        if (!empty($lockedChildIds[$fid])) continue;
+        $v = $valuesChildAllForProgress[$ridKey][(string)$fid] ?? '';
+        if (trim((string)$v) !== '') $childOptionalDone++;
+      }
+
+      $revokedReviewMissing = 0;
+      if (!$delegatedView) {
+        $revokedFieldIds = is_array($srow['revoked_delegation_comment_field_ids'] ?? null) ? $srow['revoked_delegation_comment_field_ids'] : [];
+        $revokedReviewMissing = count($revokedFieldIds) > 0 ? count($revokedFieldIds) : (int)($srow['revoked_delegation_comments_count'] ?? 0);
+      }
+
+      $overallTotalForStudent = $teacherTotal + $childTotalForStudent + $revokedReviewMissing;
       $oDone = $tDone + $cDone;
       $oMissing = max(0, $overallTotalForStudent - $oDone);
       $isComplete = ($overallTotalForStudent > 0 && $oMissing === 0);
       if ($isComplete) $completeForms++;
 
-      $srow['progress_teacher_total'] = $teacherTotal;
+      $srow['progress_teacher_total'] = $teacherTotal + $revokedReviewMissing;
       $srow['progress_teacher_done'] = $tDone;
-      $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone);
+      $srow['progress_teacher_missing'] = max(0, $teacherTotal - $tDone) + $revokedReviewMissing;
+      $srow['progress_teacher_optional_total'] = $teacherOptionalTotal;
+      $srow['progress_teacher_optional_done'] = $teacherOptionalDone;
+      $srow['progress_teacher_optional_empty'] = max(0, $teacherOptionalTotal - $teacherOptionalDone);
 
       $srow['progress_child_total'] = $childTotalForStudent;
       $srow['progress_child_done'] = $cDone;
       $srow['progress_child_missing'] = max(0, $childTotalForStudent - $cDone);
+      $srow['progress_child_optional_total'] = $childOptionalTotal;
+      $srow['progress_child_optional_done'] = $childOptionalDone;
+      $srow['progress_child_optional_empty'] = max(0, $childOptionalTotal - $childOptionalDone);
       $srow['child_missing_fields'] = $missingChildLabels;
 
       $srow['progress_overall_total'] = $overallTotalForStudent;
@@ -2513,7 +2565,9 @@ try {
       'forms_complete' => $completeForms,
       'forms_incomplete' => max(0, count($students) - $completeForms),
       'teacher_fields_total' => $teacherTotal,
+      'teacher_optional_fields_total' => $teacherOptionalTotal,
       'child_fields_total' => $childTotal,
+      'child_optional_fields_total' => $childOptionalTotal,
       'overall_fields_total' => $overallTotal,
       'class_fields_total' => $classTotal,
       'class_fields_done' => $classDone,
@@ -3559,7 +3613,7 @@ if ($action === 'delegations_save') {
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = $delegatedView && in_array($userId, $assignedUsers, true);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 
@@ -3618,7 +3672,8 @@ if ($action === 'delegations_save') {
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
     audit('teacher_class_value_save', $userId, ['class_id'=>$classId,'report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
-    json_out(['ok' => true]);
+    $flags = revoked_delegation_comment_flags($pdo, [$reportId]);
+    json_out(['ok' => true, 'revoked_delegation_comments' => $flags[(string)$reportId] ?? ['count' => 0, 'names' => []]]);
   }
 
   if ($action === 'save') {
@@ -3686,7 +3741,7 @@ if ($action === 'delegations_save') {
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
       $inputText = $valueTextInput !== null ? trim($valueTextInput) : '';
       $inputText = clamp_text_length($inputText, $maxLen) ?? '';
-      $isDelegate = in_array($userId, $assignedUsers, true) && !user_is_class_teacher($pdo, $userId, $classId);
+      $isDelegate = $delegatedView && in_array($userId, $assignedUsers, true);
       $classText = $isDelegate ? '' : $inputText;
       $delegateText = $isDelegate ? $inputText : '';
 
@@ -3745,7 +3800,8 @@ if ($action === 'delegations_save') {
     record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
 
     audit('teacher_value_save', $userId, ['report_instance_id'=>$reportId,'template_field_id'=>$fieldId]);
-    json_out(['ok' => true]);
+    $flags = revoked_delegation_comment_flags($pdo, [$reportId]);
+    json_out(['ok' => true, 'revoked_delegation_comments' => $flags[(string)$reportId] ?? ['count' => 0, 'names' => []]]);
   }
 
   if ($action === 'child_value_update') {
@@ -3936,5 +3992,6 @@ if ($action === 'delegations_save') {
     'error' => $code,
     'message' => $message,
     'retryable' => $retryable,
+    'requires_login' => in_array($code, ['session_expired', 'csrf_failed'], true),
   ], $status);
 }

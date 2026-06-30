@@ -43,7 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     student_session_set((int)$row['id']);
     redirect('student/index.php');
   } catch (Throwable $e) {
-    $err = $e->getMessage();
+    $msg = $e->getMessage();
+    if (str_contains(strtolower($msg), 'csrf') || str_contains(strtolower($msg), 'token')) {
+      unset($_SESSION['csrf_token']);
+      csrf_token();
+      $err = t('auth.login.csrf_expired', 'Die Login-Seite war zu lange geöffnet. Bitte versuche es erneut.');
+    } else {
+      $err = $msg;
+    }
   }
 }
 

@@ -2,15 +2,10 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/absence_import.php';
 require_admin();
 
 header('Content-Type: application/json; charset=utf-8');
-
-function normalize_lookup_token_preview(string $s): string {
-  $s = mb_strtolower(trim($s), 'UTF-8');
-  $s = preg_replace('/[\s,;]+/u', '', $s);
-  return (string)$s;
-}
 
 function computed_class_name_preview(?int $grade, string $label): string {
   $label = trim(mb_strtolower($label, 'UTF-8'));
@@ -45,55 +40,55 @@ try {
   foreach ($classRows->fetchAll(PDO::FETCH_ASSOC) as $c) {
     $id = (int)($c['id'] ?? 0);
     if ($id <= 0) continue;
-    $name = normalize_lookup_token_preview((string)($c['name'] ?? ''));
+    $name = absence_import_normalize_token((string)($c['name'] ?? ''));
     if ($name !== '') $classMap[$name] = $id;
     $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
     $label = (string)($c['label'] ?? '');
-    $display = normalize_lookup_token_preview(computed_class_name_preview($grade, $label));
+    $display = absence_import_normalize_token(computed_class_name_preview($grade, $label));
     if ($display !== '') $classMap[$display] = $id;
   }
 
-  $studentRows = $pdo->prepare(
-    "SELECT s.id, s.first_name, s.last_name, s.class_id
-     FROM students s
-     INNER JOIN classes c ON c.id=s.class_id
-     WHERE c.school_year=? AND c.period_label=?"
-  );
-  $studentRows->execute([$schoolYear, $periodLabel]);
-  $studentMap = [];
-  foreach ($studentRows->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $sid = (int)($r['id'] ?? 0);
-    $cid = (int)($r['class_id'] ?? 0);
-    if ($sid <= 0 || $cid <= 0) continue;
-    $first = (string)($r['first_name'] ?? '');
-    $last = (string)($r['last_name'] ?? '');
-    $k1 = normalize_lookup_token_preview($last . ',' . $first);
-    $k2 = normalize_lookup_token_preview($last . ' ' . $first);
-    if ($k1 !== '') $studentMap[$cid][$k1] = ['id'=>$sid,'name'=>trim($last.', '.$first)];
-    if ($k2 !== '') $studentMap[$cid][$k2] = ['id'=>$sid,'name'=>trim($last.', '.$first)];
-  }
+  $studentIndex = absence_import_student_index($pdo, $schoolYear, $periodLabel);
 
   $preview = [];
+  $matched = 0;
   $skipped = 0;
   foreach ($rows as $r) {
     if (!is_array($r)) continue;
-    $classRaw = trim((string)($r['class'] ?? ''));
-    $studentRaw = trim((string)($r['student'] ?? ''));
-    $totalRaw = trim((string)($r['total'] ?? ''));
-    $unexcusedRaw = trim((string)($r['unexcused'] ?? ''));
+    $classRaw = absence_import_clean_string($r['class'] ?? '');
+    $studentRaw = absence_import_clean_string($r['student'] ?? '');
+    $totalRaw = absence_import_clean_string($r['total'] ?? '');
+    $unexcusedRaw = absence_import_clean_string($r['unexcused'] ?? '');
     if ($classRaw === '' && $studentRaw === '') continue;
 
-    $classId = (int)($classMap[normalize_lookup_token_preview($classRaw)] ?? 0);
-    if ($classId <= 0) { $skipped++; continue; }
-    $studentKey = normalize_lookup_token_preview($studentRaw);
-    $student = $studentMap[$classId][$studentKey] ?? null;
-    if (!is_array($student)) { $skipped++; continue; }
+    $classId = (int)($classMap[absence_import_normalize_token($classRaw)] ?? 0);
+    if ($classId <= 0) {
+      continue;
+    }
+    $match = $classId > 0 ? absence_import_match_student($studentIndex, $classId, $studentRaw) : ['status'=>'class_not_found', 'student'=>null, 'suggestions'=>[]];
+    if ((string)($match['status'] ?? '') === 'not_found') {
+      continue;
+    }
+    $student = $match['student'] ?? null;
+    $totalParsed = parse_absence_value($totalRaw, t('admin.students.import.absence.col_total', 'Fehltage gesamt'));
+    $unexcusedParsed = parse_absence_value($unexcusedRaw, t('admin.students.import.absence.col_unexcused', 'Fehltage unentschuldigt'));
+    $isMatched = $classId > 0 && is_array($student) && !empty($totalParsed['ok']) && !empty($unexcusedParsed['ok']);
+    if ($isMatched) $matched++;
+    else $skipped++;
 
     $preview[] = [
       'class' => $classRaw,
-      'student' => (string)($student['name'] ?? $studentRaw),
+      'student' => is_array($student) ? (string)($student['name'] ?? $studentRaw) : $studentRaw,
+      'line' => (int)($r['line'] ?? 0),
       'total' => $totalRaw,
       'unexcused' => $unexcusedRaw,
+      'status' => ($classId <= 0 ? 'class_not_found' : (is_array($student) ? ((!$isMatched) ? 'invalid_value' : 'matched') : (string)($match['status'] ?? 'not_found'))),
+      'message' => $classId <= 0
+        ? t('admin.students.import.absence.reason.class_not_found', 'Klasse nicht gefunden:')
+        : (is_array($student)
+            ? trim((string)($totalParsed['warning'] ?? '') . ' ' . (string)($unexcusedParsed['warning'] ?? ''))
+            : (string)($match['warning'] ?? t('admin.students.import.absence.reason.student_not_found', 'Schüler nicht gefunden.'))),
+      'suggestions' => array_map(static fn($s) => ['id' => (int)($s['id'] ?? 0), 'name' => (string)($s['name'] ?? '')], (array)($match['suggestions'] ?? [])),
     ];
     if (count($preview) >= 10) break;
   }
@@ -101,7 +96,7 @@ try {
   echo json_encode([
     'ok' => true,
     'preview' => $preview,
-    'matched' => count($preview),
+    'matched' => $matched,
     'skipped' => $skipped,
   ], JSON_UNESCAPED_UNICODE);
   exit;

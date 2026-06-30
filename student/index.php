@@ -548,9 +548,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
+  const sessionStatusUrl = <?=json_encode(url('ajax/session_status.php'))?>;
+  const loginUrl = <?=json_encode(url('student/login.php'))?>;
   const aiApiUrl = <?=json_encode(url('student/ajax/ai_explain_api.php'))?>;
   const ORG_NAME = <?= json_encode($orgName) ?>;
-  const csrf = <?=json_encode(csrf_token())?>;
+  let csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const STUDENT_ACTIVE = <?=json_encode($isActive)?>;
   const REPORT_STATUS = <?=json_encode($reportStatus)?>;
@@ -1010,6 +1012,79 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
   }
 
+  function isSessionError(err){
+    const code = String(err?.code || err?.error || '').toLowerCase();
+    const status = Number(err?.status || 0);
+    return code === 'session_expired' || code === 'csrf_failed' || code === 'login_required' || status === 401 || (status === 403 && code !== 'forbidden');
+  }
+
+  function looksLikeLoginHtml(text){
+    const s = String(text || '').slice(0, 800).toLowerCase();
+    return s.includes('<!doctype html') || s.includes('<html') || (s.includes('<form') && (s.includes('login') || s.includes('password') || s.includes('csrf')));
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+  }
+
+  let sessionExpired = false;
+  let sessionOverlay = null;
+
+  function ensureSessionOverlay(){
+    if (sessionOverlay) return sessionOverlay;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(t('session.expired.title', 'session.expired.title'))}</h2><p>${escapeHtml(t('session.unsaved.message', 'session.unsaved.message'))}</p><p>${escapeHtml(t('session.relogin.message', 'session.relogin.message'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(t('session.relogin.short', 'session.relogin.short'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(t('session.check_again', 'session.check_again'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(t('session.save_now', 'session.save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(t('session.reload_page', 'session.reload_page'))}</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
+    overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
+      const ok = await checkSessionNow(true);
+      if (ok) {
+        setSaveStatus('saving', t('session.save_resuming', 'session.save_resuming'));
+        void flushPendingSavesBlocking();
+      }
+    });
+    overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => window.location.reload());
+    sessionOverlay = overlay;
+    return overlay;
+  }
+
+  function showSessionOverlay(err){
+    sessionExpired = true;
+    retryTimers.forEach((timer) => clearTimeout(timer));
+    retryTimers.clear();
+    const overlay = ensureSessionOverlay();
+    overlay.style.display = 'flex';
+    setSaveStatus('failed_permanent', String(err?.message || t('session.expired.message', 'session.expired.message')));
+  }
+
+  function hideSessionOverlay(){
+    sessionExpired = false;
+    if (sessionOverlay) sessionOverlay.style.display = 'none';
+    setSaveStatus('ok', t('session.restored', 'session.restored'));
+  }
+
+  async function checkSessionNow(showFeedback = false){
+    try {
+      const res = await fetch(sessionStatusUrl, { credentials:'same-origin', headers:{ 'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest' }, cache:'no-store' });
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+      if (!res.ok || !json || json.ok === false || json.authenticated === false) throw new Error(json?.message || t('session.expired.message', 'session.expired.message'));
+      if (json.csrf_token) csrf = String(json.csrf_token);
+      hideSessionOverlay();
+      if (hasPendingSaves()) void flushPendingSavesBlocking();
+      return true;
+    } catch (e) {
+      if (showFeedback) showSessionOverlay(e);
+      return false;
+    }
+  }
+
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    void checkSessionNow(false);
+  }, 180000);
+
   async function api(action, payload, options = {}){
     const keepalive = !!options.keepalive;
     const controller = new AbortController();
@@ -1028,17 +1103,17 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       let j = null;
       try { j = text ? JSON.parse(text) : null; } catch (parseErr) {
         const err = new Error(t('student.js.ajax_invalid_json', 'Server response could not be read.'));
-        err.code = 'invalid_json';
+        err.code = looksLikeLoginHtml(text) ? 'session_expired' : 'invalid_json';
         err.status = res.status;
-        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.retryable = err.code === 'session_expired' ? false : (res.status >= 500 || res.status === 0 || res.status === 200);
         err.bodySnippet = text.slice(0, 300);
         throw err;
       }
       if (!j) {
         const err = new Error(t('student.js.ajax_non_json', 'Unexpected server response.'));
-        err.code = 'non_json';
+        err.code = looksLikeLoginHtml(text) ? 'session_expired' : 'non_json';
         err.status = res.status;
-        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.retryable = err.code === 'session_expired' ? false : (res.status >= 500 || res.status === 0 || res.status === 200);
         err.bodySnippet = text.slice(0, 300);
         throw err;
       }
@@ -1049,6 +1124,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         err.retryable = typeof j.retryable === 'boolean' ? !!j.retryable : isRetryableSaveError(err);
         throw err;
       }
+      if (j.csrf_token) csrf = String(j.csrf_token);
       return j;
     } catch (err) {
       if (err && err.name === 'AbortError') {
@@ -1062,6 +1138,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         err.retryable = true;
         err.message = t('student.js.connection_interrupted', 'Connection interrupted. Your input is kept.');
       }
+      if (isSessionError(err)) showSessionOverlay(err);
       throw err;
     } finally {
       window.clearTimeout(timeout);
@@ -1758,6 +1835,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
   function scheduleFieldRetry(fieldId){
     const key = String(fieldId);
+    if (sessionExpired) return;
     if (!dirtyFields.has(key) || fieldRetryableErrors.get(key) === false || retryTimers.has(key) || isLocked()) return;
     const attempt = (retryAttempts.get(key) || 0) + 1;
     retryAttempts.set(key, attempt);
@@ -1777,12 +1855,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     const chain = (async () => {
       try {
-        while (!isLocked() && dirtyFields.has(key)) {
+        if (sessionExpired) return false;
+        while (!sessionExpired && !isLocked() && dirtyFields.has(key)) {
           clearFieldRetry(key);
           const valueToSave = dirtyFields.get(key);
           const ok = await saveFieldValue(fieldId, valueToSave);
           if (!ok) {
-            scheduleFieldRetry(fieldId);
+            if (sessionExpired) showSessionOverlay({ message: t('session.expired.message', 'session.expired.message') });
+            else scheduleFieldRetry(fieldId);
             return false;
           }
           retryAttempts.delete(key);
@@ -1805,6 +1885,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (isLocked()) return Promise.resolve(true);
     const key = String(fieldId);
     dirtyFields.set(key, String(valueText ?? ''));
+    if (sessionExpired) {
+      showSessionOverlay({ message: t('session.expired.message', 'session.expired.message') });
+      return Promise.resolve(false);
+    }
 
     if (pendingTimers.has(key)) {
       clearTimeout(pendingTimers.get(key).timer);

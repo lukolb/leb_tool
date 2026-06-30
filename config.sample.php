@@ -12,6 +12,9 @@ return [
   ],
   'app' => [
     'session_name' => 'legtool_sess',
+    // Automatische Abmeldung nach Inaktivität in Sekunden. Heartbeat-/Statuschecks verlängern diese Frist nicht.
+    // 0 deaktiviert den anwendungsseitigen Timeout und überlässt das Aufräumen PHP.
+    'session_idle_timeout_seconds' => 3600,
     'password_pepper' => '',
     // Schul-Zeitzone (IANA, z.B. "Europe/Berlin") für alle Zeitstempel im UI
     'timezone' => 'America/New_York',
@@ -86,6 +89,17 @@ return [
     'base_url' => 'https://api.openai.com',
     'model' => 'gpt-4o-mini',
     'timeout_seconds' => 60,
+  ],
+  'text_check' => [
+    // Abschließende serverseitige KI-Textprüfung. Standardmäßig deaktiviert.
+    'enabled' => false,
+    'provider' => 'disabled', // ai|disabled
+    'model' => 'gpt-4o-mini',
+    'max_chars_per_request' => 12000,
+    'max_fields_per_batch' => 8,
+    'daily_limit_per_user' => 5,
+    'daily_limit_total' => 50,
+    'cache_ttl' => 604800,
   ],
   'mail' => [
     // Wenn leer -> PHP mail()

@@ -369,6 +369,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $cfg['ai']['provider'] = $aiProvider === '' ? 'openai' : $aiProvider;
       $cfg['ai']['base_url'] = rtrim($aiBaseUrl === '' ? 'https://api.openai.com' : $aiBaseUrl, '/');
       $cfg['ai']['model'] = $aiModel === '' ? 'gpt-4o-mini' : $aiModel;
+
+      if (!isset($cfg['text_check']) || !is_array($cfg['text_check'])) $cfg['text_check'] = [];
+      $textCheckProvider = trim((string)($_POST['text_check_provider'] ?? ($cfg['text_check']['provider'] ?? 'disabled')));
+      if (!in_array($textCheckProvider, ['ai','disabled'], true)) $textCheckProvider = 'disabled';
+      $cfg['text_check']['enabled'] = isset($_POST['text_check_enabled']);
+      $cfg['text_check']['provider'] = $textCheckProvider;
+      $cfg['text_check']['model'] = trim((string)($_POST['text_check_model'] ?? '')) ?: ($cfg['ai']['model'] ?? 'gpt-4o-mini');
+      $cfg['text_check']['max_chars_per_request'] = max(1000, (int)($_POST['text_check_max_chars_per_request'] ?? 12000));
+      $cfg['text_check']['max_fields_per_batch'] = max(1, (int)($_POST['text_check_max_fields_per_batch'] ?? 8));
+      $cfg['text_check']['daily_limit_per_user'] = max(0, (int)($_POST['text_check_daily_limit_per_user'] ?? 5));
+      $cfg['text_check']['daily_limit_total'] = max(0, (int)($_POST['text_check_daily_limit_total'] ?? 50));
+      $cfg['text_check']['cache_ttl'] = max(0, (int)($_POST['text_check_cache_ttl'] ?? 604800));
     }
 
     // ---- Student wizard settings ----
@@ -549,6 +561,15 @@ $aiStudentEnabled = array_key_exists('student_enabled', $ai) ? (bool)$ai['studen
 $aiProvider = $ai['provider'] ?? 'openai';
 $aiBaseUrl = $ai['base_url'] ?? 'https://api.openai.com';
 $aiModel = $ai['model'] ?? 'gpt-4o-mini';
+$textCheckCfg = $cfg['text_check'] ?? [];
+$textCheckEnabled = (bool)($textCheckCfg['enabled'] ?? false);
+$textCheckProvider = (string)($textCheckCfg['provider'] ?? 'disabled');
+$textCheckModel = (string)($textCheckCfg['model'] ?? $aiModel);
+$textCheckMaxChars = (int)($textCheckCfg['max_chars_per_request'] ?? 12000);
+$textCheckMaxFields = (int)($textCheckCfg['max_fields_per_batch'] ?? 8);
+$textCheckDailyUser = (int)($textCheckCfg['daily_limit_per_user'] ?? 5);
+$textCheckDailyTotal = (int)($textCheckCfg['daily_limit_total'] ?? 50);
+$textCheckCacheTtl = (int)($textCheckCfg['cache_ttl'] ?? 604800);
 
 $delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 $teacherAllowAbsenceEdit = (bool)($teacherCfg['allow_absence_edit'] ?? false);
@@ -925,6 +946,31 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     <label><?=h(t('admin.settings.ai.model_label', 'Modell'))?></label>
     <input name="ai_model" value="<?=h((string)$aiModel)?>" placeholder="<?=h(t('admin.settings.ai.model_placeholder', 'z.B. gpt-4o-mini'))?>">
     <p class="muted"><?=h(t('admin.settings.ai.model_hint', 'Bezeichnung muss zu deinem Provider passen.'))?></p>
+
+    <hr style="margin:18px 0; border:0; border-top:1px solid var(--border);">
+    <h3><?=h(t('admin.settings.text_check.title', 'KI-Textprüfung'))?></h3>
+    <p class="muted"><?=h(t('admin.settings.text_check.desc', 'Nutzt die oben konfigurierten KI-Zugangsdaten für die abschließende Freitextprüfung.'))?></p>
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="text_check_enabled" value="1" <?=$textCheckEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.text_check.enable', 'Textprüfung aktivieren'))?></span>
+      </label>
+    </div>
+    <label><?=h(t('admin.settings.text_check.provider', 'Textprüfungs-Provider'))?></label>
+    <select name="text_check_provider">
+      <option value="disabled" <?=$textCheckProvider==='disabled' ? 'selected' : ''?>><?=h(t('admin.settings.text_check.provider_disabled', 'Deaktiviert'))?></option>
+      <option value="ai" <?=$textCheckProvider==='ai' ? 'selected' : ''?>><?=h(t('admin.settings.text_check.provider_ai', 'Bestehende KI-Einstellungen verwenden'))?></option>
+    </select>
+    <label><?=h(t('admin.settings.text_check.model', 'Modell'))?></label>
+    <input name="text_check_model" value="<?=h($textCheckModel)?>" placeholder="<?=h((string)$aiModel)?>">
+    <div class="row" style="gap:10px; flex-wrap:wrap;">
+      <div><label><?=h(t('admin.settings.text_check.max_chars', 'Max. Zeichen pro Anfrage'))?></label><input type="number" name="text_check_max_chars_per_request" min="1000" value="<?=h((string)$textCheckMaxChars)?>"></div>
+      <div><label><?=h(t('admin.settings.text_check.max_fields', 'Max. Felder pro Batch'))?></label><input type="number" name="text_check_max_fields_per_batch" min="1" value="<?=h((string)$textCheckMaxFields)?>"></div>
+      <div><label><?=h(t('admin.settings.text_check.limit_user', 'Tageslimit pro Nutzer'))?></label><input type="number" name="text_check_daily_limit_per_user" min="0" value="<?=h((string)$textCheckDailyUser)?>"></div>
+      <div><label><?=h(t('admin.settings.text_check.limit_total', 'Tageslimit gesamt'))?></label><input type="number" name="text_check_daily_limit_total" min="0" value="<?=h((string)$textCheckDailyTotal)?>"></div>
+      <div><label><?=h(t('admin.settings.text_check.cache_ttl', 'Cache-TTL (Sek.)'))?></label><input type="number" name="text_check_cache_ttl" min="0" value="<?=h((string)$textCheckCacheTtl)?>"></div>
+    </div>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

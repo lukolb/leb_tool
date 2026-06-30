@@ -1497,6 +1497,15 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
         }
       }
     } catch (e) {}
+    try {
+      const af = cb?.acroField;
+      if (af && typeof af.getWidgets === 'function') {
+        for (const widget of (af.getWidgets() || [])) {
+          const on = getWidgetOnName(widget, PDFName, PDFDict);
+          if (on) return on;
+        }
+      }
+    } catch (e) {}
     return '';
   };
 
@@ -1516,15 +1525,64 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
   const setText = (f, v) => { try { if (typeof f?.setText === 'function') f.setText(norm(v)); } catch(e) {} };
   const setSelect = (f, v) => { try { if (v !== '') f.select(pickOption(f, v)); } catch(e) {} };
 
-  const setCheckGroupByOnValue = (checkboxes, desired) => {
+  const isPdfCheckboxChecked = (storedValue) => {
+    if (storedValue === true) return true;
+    if (storedValue === false || storedValue === null || storedValue === undefined) return false;
+    const v = normLoose(storedValue);
+    if (!v) return false;
+    return ['1', 'true', 'on', 'yes', 'ja', 'checked', 'check', 'x'].includes(v);
+  };
+
+  const isPdfCheckboxUnchecked = (storedValue) => {
+    if (storedValue === false || storedValue === null || storedValue === undefined) return true;
+    const v = normLoose(storedValue);
+    return v === '' || ['0', 'false', 'off', 'no', 'nein', 'unchecked'].includes(v);
+  };
+
+  const setCheckboxAppearanceState = (cb, checked) => {
+    const onName = getOnValue(cb) || 'Yes';
+    const stateName = checked ? onName : 'Off';
+    try {
+      if (checked && typeof cb?.check === 'function') cb.check();
+      if (!checked && typeof cb?.uncheck === 'function') cb.uncheck();
+    } catch (e) {}
+    try {
+      cb?.acroField?.dict?.set?.(PDFName.of('V'), PDFName.of(stateName));
+      cb?.acroField?.dict?.set?.(PDFName.of('DV'), PDFName.of(stateName));
+    } catch (e) {}
+    try {
+      const widgets = cb?.acroField?.getWidgets?.() || [];
+      for (const widget of widgets) {
+        const widgetOn = getWidgetOnName(widget, PDFName, PDFDict) || onName;
+        widget.dict?.set?.(PDFName.of('AS'), PDFName.of(checked ? widgetOn : 'Off'));
+      }
+    } catch (e) {}
+    return onName;
+  };
+
+  const setCheckGroupByOnValue = (checkboxes, desired, fieldName) => {
     const d = norm(desired);
     const dL = normLoose(d);
+    const explicitOff = isPdfCheckboxUnchecked(desired);
+    const booleanChecked = isPdfCheckboxChecked(desired);
+    const onValues = checkboxes.map(cb => getOnValue(cb)).filter(Boolean);
+    const hasOnValueMatch = !!dL && onValues.some(on => normLoose(on) === dL);
     for (const cb of checkboxes){
       const on = getOnValue(cb);
       const onL = normLoose(on);
+      const checked = hasOnValueMatch ? (on && onL === dL) : (!explicitOff && booleanChecked);
       try {
-        if (on && onL === dL) cb.check();
-        else cb.uncheck();
+        const writtenOn = setCheckboxAppearanceState(cb, checked);
+        if (DEBUG_PDF) {
+          console.log('[PDF DEBUG] Checkbox export state', {
+            field_name: fieldName || '',
+            stored_value: d,
+            interpreted_checked: checked,
+            pdf_on_state: writtenOn || on || '',
+            written_V: checked ? (writtenOn || on || 'Yes') : 'Off',
+            written_AS: checked ? (writtenOn || on || 'Yes') : 'Off',
+          });
+        }
       } catch(e) {}
     }
   };
@@ -1555,7 +1613,7 @@ async function fillPdfForStudent(templateBytes, student, fieldMetaMap){
     const checkboxes = list.filter(isCheckBox);
     if (checkboxes.length) {
       const v = norm(raw);
-      setCheckGroupByOnValue(checkboxes, v);
+      setCheckGroupByOnValue(checkboxes, v, key);
       continue;
     }
 

@@ -1318,6 +1318,23 @@ render_teacher_header($pageTitle);
   </div>
 </div>
 
+<div id="textReviewModal" class="modal" style="display:none;">
+  <div class="modal-backdrop" data-text-review-close="1"></div>
+  <div class="modal-card" style="max-width:900px;">
+    <div class="row" style="align-items:center; justify-content:space-between; gap:10px;">
+      <h3 style="margin:0;"><?=h(t('teacher.text_review.title', 'Textprüfung'))?></h3>
+      <button class="btn secondary" type="button" data-text-review-close="1">×</button>
+    </div>
+    <div id="textReviewStatus" class="alert" style="margin-top:10px;"></div>
+    <div id="textReviewSummary" class="muted" style="margin-top:10px;"></div>
+    <div id="textReviewResults" style="margin-top:12px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+      <button class="btn primary" type="button" id="btnTextReviewStart"><?=h(t('teacher.text_review.start', 'Prüfung starten'))?></button>
+      <button class="btn secondary" type="button" data-text-review-close="1"><?=h(t('teacher.delegations.modal.close', 'Schließen'))?></button>
+    </div>
+  </div>
+</div>
+
 <?php if ($delegatedMode): ?>
 <div id="dlgDelegationDone" class="modal" style="display:none;">
   <div class="modal-backdrop" data-close="1"></div>
@@ -1516,6 +1533,13 @@ render_teacher_header($pageTitle);
 
   <!-- Student view -->
   <div id="viewStudent" style="display:none;">
+    <div class="card" id="textReviewTopBar" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div>
+        <h2 style="margin:0; font-size:18px;"><?=h(t('teacher.entry.student_fields.title'))?></h2>
+        <div class="muted"><?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?></div>
+      </div>
+      <button class="btn secondary" type="button" id="btnTextReview" disabled title="<?=h(t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'))?>"><?=h(t('teacher.text_review.review_all', 'Alle Freitexte prüfen'))?></button>
+    </div>
     <div id="studentViewGrid" style="display:grid; grid-template-columns: 300px 1fr; gap:12px; align-items:start;">
       <div style="top:14px; align-self:start;">
         <div style="display:flex; gap:8px; align-items:center;">
@@ -1731,6 +1755,12 @@ render_teacher_header($pageTitle);
   .srow{ border:1px solid var(--border); border-radius:14px; padding:10px; background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; }
   .srow:hover{ background: rgba(0,0,0,0.02); }
   .srow.active{ outline:2px solid rgba(11,87,208,0.18); background: rgba(11,87,208,0.06); }
+  .srow.delegation-review{ border-color:#f59e0b; background:#fff7ed; box-shadow: inset 4px 0 0 #f59e0b; }
+  .srow.delegation-review.active{ outline:2px solid rgba(245,158,11,0.35); background:#ffedd5; }
+  .delegation-review-pill{ display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:2px 7px; border-radius:999px; background:#f59e0b; color:#111827; font-size:11px; font-weight:800; }
+  .delegation-review-note{ display:block; margin-top:4px; color:#9a3412; font-weight:700; font-size:12px; }
+  .delegation-review-field{ outline:2px solid rgba(245,158,11,0.75); background:#fff7ed; border-radius:12px; padding:4px; box-shadow: inset 4px 0 0 #f59e0b; }
+  .delegation-review-field-pill{ display:inline-flex; align-items:center; gap:4px; margin-left:8px; padding:2px 7px; border-radius:999px; background:#fed7aa; color:#9a3412; font-size:12px; font-weight:800; }
   .smeta{ display:flex; flex-direction:column; gap:2px; min-width:0; width:100%; }
   .smeta .n{ font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .smeta .sub{ color:var(--muted); font-size:12px; }
@@ -1832,6 +1862,8 @@ render_teacher_header($pageTitle);
   .combined-inline{ margin-top:8px; padding:10px; border:1px dashed var(--border); border-radius:10px; background:#fafafa; }
   .combined-inline-label{ font-size:12px; text-transform:uppercase; letter-spacing:.02em; color:#6b6b6b; margin-bottom:4px; }
   .combined-inline-text{ font-size:14px; line-height:1.5; }
+  .combined-inline-entry{ padding:6px 0; border-top:1px solid var(--border); }
+  .combined-inline-entry:first-child{ border-top:0; padding-top:0; }
   .combined-inline-text .delegate-part,
   .combined-tip-bubble .delegate-part{
     background: rgba(255, 193, 7, 0.25);
@@ -1873,6 +1905,7 @@ render_teacher_header($pageTitle);
   .show-child .cellChild{ display:block; }
 
   .missing{ outline:2px solid rgba(200,20,20,0.5); background: rgba(200,20,20,0.2); border-radius:12px; padding:4px; }
+  .optional-empty{ outline:2px solid rgba(245,158,11,0.45); background: rgba(245,158,11,0.16); border-radius:12px; padding:4px; }
   .missing:not(.field){ width: fit-content; }
 
   .modal{ position:fixed; inset:0; z-index:9999; }
@@ -2053,6 +2086,14 @@ render_teacher_header($pageTitle);
     'ajax_invalid_json' => t('teacher.entry.ajax.invalid_json'),
     'ajax_timeout' => t('teacher.entry.ajax.timeout'),
     'ajax_request_failed' => t('teacher.entry.ajax.request_failed'),
+    'session_expired_title' => t('session.expired.title'),
+    'session_unsaved' => t('session.unsaved.message'),
+    'session_relogin' => t('session.relogin.message'),
+    'session_check' => t('session.check_again'),
+    'session_save_now' => t('session.save_now'),
+    'session_reload' => t('session.reload_page'),
+    'session_restored' => t('session.restored'),
+    'session_save_resuming' => t('session.save_resuming'),
     'error_save' => t('teacher.entry.error_save'),
     'error_unlock' => t('teacher.entry.error_unlock'),
     'error_update' => t('teacher.entry.error_update'),
@@ -2082,7 +2123,42 @@ render_teacher_header($pageTitle);
     'ai_require_options_start' => t('teacher.entry.ai.require_options_start'),
     'delegated_badge' => t('teacher.entry.delegated_badge'),
     'delegated_badge_done' => t('teacher.entry.delegated_badge_done'),
+    'delegation_review_field' => t('teacher.entry.delegation_review_field', 'Rückläufer prüfen'),
     'readonly_badge' => t('teacher.entry.readonly_badge'),
+    'text_review_available_when_complete' => t('teacher.text_review.available_when_complete', 'Verfügbar, sobald alle Pflichtfelder abgeschlossen sind'),
+    'text_review_unavailable' => t('teacher.text_review.unavailable', 'Textprüfung ist derzeit nicht verfügbar'),
+    'text_review_ready' => t('teacher.text_review.ready', 'Textprüfung bereit'),
+    'text_review_summary' => t('teacher.text_review.summary', '{students} Schüler:innen · {fields} Freitextfelder · ca. {chars} Zeichen'),
+    'text_review_cost_hint' => t('teacher.text_review.cost_hint', 'Die Prüfung kann kostenpflichtige KI-Anfragen verursachen.'),
+    'text_review_no_suggestions' => t('teacher.text_review.no_suggestions', 'Keine Verbesserungen gefunden'),
+    'text_review_suggestions' => t('teacher.text_review.suggestions', 'Empfehlungen'),
+    'text_review_fields_checked' => t('teacher.text_review.fields_checked', 'Felder geprüft'),
+    'text_review_running' => t('teacher.text_review.running', 'Prüfung läuft…'),
+    'text_review_accept_all' => t('teacher.text_review.accept_all', 'Ganz übernehmen'),
+    'text_review_accept_partial' => t('teacher.text_review.accept_partial', 'Teilweise übernehmen'),
+    'text_review_reject' => t('teacher.text_review.reject', 'Nicht übernehmen'),
+    'text_review_edit_suggestion' => t('teacher.text_review.edit_suggestion', 'Vorschlag bearbeiten'),
+    'text_review_apply' => t('teacher.text_review.apply', 'Übernehmen'),
+    'text_review_stale' => t('teacher.text_review.stale', 'Nicht mehr aktuell'),
+    'text_review_changed' => t('teacher.text_review.changed', 'Text wurde seit der Prüfung geändert'),
+    'text_review_diagnostics' => t('teacher.text_review.diagnostics', 'Diagnose'),
+    'text_review_provider' => t('teacher.text_review.provider', 'Provider'),
+    'text_review_model' => t('teacher.text_review.model', 'Modell'),
+    'text_review_ai_requests' => t('teacher.text_review.ai_requests', 'KI-Anfragen'),
+    'text_review_skipped' => t('teacher.text_review.skipped', 'Übersprungen'),
+    'text_review_current' => t('teacher.text_review.current', 'Aktueller Text'),
+    'text_review_suggestion' => t('teacher.text_review.suggestion', 'Vorschlag'),
+    'text_review_explanation' => t('teacher.text_review.explanation', 'Begründung'),
+    'text_review_applied' => t('teacher.text_review.applied', 'Übernommen'),
+    'text_review_ignored' => t('teacher.text_review.ignored', 'Ignoriert'),
+    'text_review_snippets_ignored' => t('teacher.text_review.snippets_ignored', 'Textbausteinbereiche wurden vor der Prüfung ausgelassen.'),
+    'text_review_snippet_blocked' => t('teacher.text_review.snippet_blocked', 'Textbaustein kann nicht automatisch geändert werden'),
+    'text_review_snippet_only' => t('teacher.text_review.snippet_only', 'Reine Textbaustein-Felder übersprungen'),
+    'text_review_snippet_chars_removed' => t('teacher.text_review.snippet_chars_removed', 'Textbaustein-Zeichen ausgelassen'),
+    'text_review_free_chars_sent' => t('teacher.text_review.free_chars_sent', 'Freitext-Zeichen geprüft'),
+    'text_review_dropped_identical' => t('teacher.text_review.dropped_identical', 'Identische Vorschläge verworfen'),
+    'text_review_replacement' => t('teacher.text_review.replacement', 'Vorgeschlagene Änderung'),
+    'text_review_result' => t('teacher.text_review.result', 'Neuer Text nach Übernahme'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
@@ -2110,12 +2186,15 @@ render_teacher_header($pageTitle);
 
   const btnDelegationsTop = document.getElementById('btnDelegationsTop');
   const apiUrl = <?=json_encode(url('teacher/ajax/entry_api.php'))?>;
+  const textReviewApiUrl = <?=json_encode(url('teacher/ajax/text_review_api.php'))?>;
+  const sessionStatusUrl = <?=json_encode(url('ajax/session_status.php'))?>;
+  const loginUrl = <?=json_encode(url('login.php'))?>;
   const CHILD_MODE = <?=json_encode($childMode ? 1 : 0)?>;
   const CHILD_EDIT_OVERRIDE = <?=json_encode($childEditOverride ? 1 : 0)?>;
   const CHILD_CLEAR_CONFIRM = <?=json_encode(t('teacher.child_entry.clear_confirm'))?>;
   const CHILD_CLEAR_LABEL = <?=json_encode(t('teacher.child_entry.clear'))?>;
   const TEMPLATE_CONFLICT_CONFIRM_FALLBACK = <?=json_encode(t('teacher.entry.template_conflict.message'))?>;
-  const csrf = <?=json_encode(csrf_token())?>;
+  let csrf = <?=json_encode(csrf_token())?>;
   const DEBUG = (new URLSearchParams(location.search).get('debug') === '1');
   const MEETING_MODE = (<?=json_encode($meetingMode ? 1 : 0)?> === 1);
 
@@ -2275,6 +2354,13 @@ render_teacher_header($pageTitle);
   const studentForm = document.getElementById('studentForm');
   const studentBadge = document.getElementById('studentBadge');
   const btnPdfEntry = document.getElementById('btnPdfEntry');
+  const btnTextReview = document.getElementById('btnTextReview');
+  const textReviewTopBar = document.getElementById('textReviewTopBar');
+  const textReviewModal = document.getElementById('textReviewModal');
+  const textReviewStatus = document.getElementById('textReviewStatus');
+  const textReviewSummary = document.getElementById('textReviewSummary');
+  const textReviewResults = document.getElementById('textReviewResults');
+  const btnTextReviewStart = document.getElementById('btnTextReviewStart');
   const delegationOtherFieldsToggle = document.getElementById('toggleDelegationOtherFields');
   const btnPrevStudent = document.getElementById('btnPrevStudent');
   const btnNextStudent = document.getElementById('btnNextStudent');
@@ -2425,6 +2511,10 @@ render_teacher_header($pageTitle);
 
   const AI_ICON = '<svg class="ai-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3l1.4 4.2L14.6 9 10.4 10.8 9 15l-1.4-4.2L3 9l4.6-1.8L9 3zm8-1l1.05 3.15L21.2 6.2 18.05 7.25 17 10.4 15.95 7.25 12.8 6.2l3.15-1.05L17 2zm-2 10l.9 2.7L18.6 16l-2.7.9L15 19.6l-.9-2.7L11.4 16l2.7-.9.9-2.7z"></path></svg>';
 
+  if (textReviewTopBar && (DELEGATED_MODE || CHILD_MODE)) textReviewTopBar.style.display = 'none';
+  if (btnTextReview) btnTextReview.addEventListener('click', openTextReviewModal);
+  if (textReviewModal) textReviewModal.querySelectorAll('[data-text-review-close]').forEach(el => el.addEventListener('click', closeTextReviewModal));
+
   if (btnPdfEntry) {
     btnPdfEntry.addEventListener('click', () => {
       const sid = Number(btnPdfEntry.dataset.studentId || 0);
@@ -2504,16 +2594,48 @@ render_teacher_header($pageTitle);
     return groupEditable && fieldEditable;
   }
 
+  function isRequiredField(field){
+    return Number(field?.is_required || 0) === 1;
+  }
+
+  function fieldStatusClass(field, value){
+    const empty = String(value ?? '').trim() === '';
+    if (!empty) return '';
+    return isRequiredField(field) ? 'missing' : 'optional-empty';
+  }
+
   function activeProgressFieldIds(reportId){
     const ids = [];
     const groups = CHILD_MODE ? activeGroupsForReport(reportId) : activeGroups();
     groups.forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         ids.push(Number(f.id));
       });
     });
     return ids;
+  }
+
+  function revokedDelegationFieldIdsForStudent(student){
+    if (!student || DELEGATED_MODE || CHILD_MODE) return [];
+    const ids = Array.isArray(student.revoked_delegation_comment_field_ids)
+      ? student.revoked_delegation_comment_field_ids.map(x => Number(x)).filter(x => x > 0)
+      : [];
+    return [...new Set(ids)];
+  }
+
+  function revokedDelegationReviewCount(student){
+    const ids = revokedDelegationFieldIdsForStudent(student);
+    if (ids.length) return ids.length;
+    return (!DELEGATED_MODE && !CHILD_MODE) ? Number(student?.revoked_delegation_comments_count || 0) : 0;
+  }
+
+  function fieldHasRevokedDelegationReview(reportId, fieldId){
+    if (DELEGATED_MODE || CHILD_MODE) return false;
+    const st = findStudentByReportId(reportId);
+    if (!st) return false;
+    return revokedDelegationFieldIdsForStudent(st).includes(Number(fieldId));
   }
 
   function activeProgressForStudent(reportId){
@@ -2531,7 +2653,7 @@ render_teacher_header($pageTitle);
   function studentHasActiveMissing(student){
     const rid = Number(student?.report_instance_id || 0);
     if (!rid) return false;
-    return activeProgressForStudent(rid).missing > 0;
+    return activeProgressForStudent(rid).missing > 0 || revokedDelegationReviewCount(student) > 0;
   }
 
   function filterStudentsForMissing(list){
@@ -2540,6 +2662,8 @@ render_teacher_header($pageTitle);
   }
 
   function isTeacherFieldMissing(reportId, fieldId){
+    const f = state.fieldMap?.[String(fieldId)];
+    if (f && !isRequiredField(f)) return false;
     return String(teacherEditVal(reportId, fieldId) ?? '').trim() === '';
   }
 
@@ -2550,6 +2674,7 @@ render_teacher_header($pageTitle);
     (state.groups || []).forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         const type = String(f.field_type || '');
         const hasOptions = Array.isArray(f.options) && f.options.length > 0;
         if (!hasOptions) return;
@@ -2659,6 +2784,9 @@ render_teacher_header($pageTitle);
   }
 
   function isActiveFieldMissing(reportId, fieldId){
+    if (fieldHasRevokedDelegationReview(reportId, fieldId)) return true;
+    const f = state.fieldMap?.[String(fieldId)];
+    if (f && !isRequiredField(f)) return false;
     if (isChildFieldLocked(reportId, fieldId)) return false;
     return String(activeFieldValue(reportId, fieldId) ?? '').trim() === '';
   }
@@ -2964,6 +3092,84 @@ render_teacher_header($pageTitle);
     return delays[Math.min(Math.max(0, attempt - 1), delays.length - 1)];
   }
 
+  function isSessionError(err){
+    const code = String(err?.code || err?.error || '').toLowerCase();
+    const status = Number(err?.status || 0);
+    return code === 'session_expired' || code === 'csrf_failed' || code === 'login_required' || status === 401 || (status === 403 && code !== 'forbidden');
+  }
+
+  function looksLikeLoginHtml(text){
+    const s = String(text || '').slice(0, 800).toLowerCase();
+    return s.includes('<!doctype html') || s.includes('<html') || s.includes('<form') && (s.includes('login') || s.includes('password') || s.includes('csrf'));
+  }
+
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+  }
+
+  let sessionExpired = false;
+  let sessionOverlay = null;
+
+  function ensureSessionOverlay(){
+    if (sessionOverlay) return sessionOverlay;
+    const overlay = document.createElement('div');
+    overlay.id = 'sessionExpiredOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
+    overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(tEntry('session_expired_title'))}</h2><p>${escapeHtml(tEntry('session_unsaved'))}</p><p>${escapeHtml(tEntry('session_relogin'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(tEntry('session_relogin'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(tEntry('session_check'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(tEntry('session_save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(tEntry('session_reload'))}</button></div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
+    overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
+      const ok = await checkSessionNow(true);
+      if (ok) {
+        setSaveStatus('saving', tEntry('session_save_resuming'));
+        void flushPendingSavesBlocking();
+      }
+    });
+    overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => window.location.reload());
+    sessionOverlay = overlay;
+    return overlay;
+  }
+
+  function showSessionOverlay(err){
+    sessionExpired = true;
+    ui.sessionExpired = true;
+    ui.retryTimers.forEach((timer) => clearTimeout(timer));
+    ui.retryTimers.clear();
+    const overlay = ensureSessionOverlay();
+    overlay.style.display = 'flex';
+    showErr(String(err?.message || tEntry('ajax_session_expired')));
+    setSaveStatus('failed_permanent', tEntry('ajax_session_expired'));
+  }
+
+  function hideSessionOverlay(){
+    sessionExpired = false;
+    ui.sessionExpired = false;
+    if (sessionOverlay) sessionOverlay.style.display = 'none';
+    clearErr();
+    setSaveStatus('ok', tEntry('session_restored'));
+  }
+
+  async function checkSessionNow(showFeedback = false){
+    try {
+      const res = await fetch(sessionStatusUrl, { credentials:'same-origin', headers:{ 'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest' }, cache:'no-store' });
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+      if (!res.ok || !json || json.ok === false || json.authenticated === false) throw new Error(json?.message || tEntry('ajax_session_expired'));
+      if (json.csrf_token) csrf = String(json.csrf_token);
+      hideSessionOverlay();
+      if (hasPendingSaves()) void flushPendingSavesBlocking();
+      return true;
+    } catch (e) {
+      if (showFeedback) showSessionOverlay(e);
+      return false;
+    }
+  }
+
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    void checkSessionNow(false);
+  }, 180000);
+
   async function apiFetchJson(url, payload, options = {}){
     const controller = new AbortController();
     const timeoutMs = Number(options.timeoutMs || 30000);
@@ -2994,10 +3200,10 @@ render_teacher_header($pageTitle);
       }
       if (!json) {
         const err = new Error(tEntry('ajax_non_json'));
-        err.code = 'non_json';
+        err.code = looksLikeLoginHtml(text) ? 'session_expired' : 'non_json';
         err.status = res.status;
         err.bodySnippet = text.slice(0, 300);
-        err.retryable = res.status >= 500 || res.status === 0 || res.status === 200;
+        err.retryable = err.code === 'session_expired' ? false : (res.status >= 500 || res.status === 0 || res.status === 200);
         throw err;
       }
       if (!res.ok || json.ok === false) {
@@ -3008,6 +3214,7 @@ render_teacher_header($pageTitle);
         err.retryable = typeof json.retryable === 'boolean' ? !!json.retryable : isRetryableSaveError(err);
         throw err;
       }
+      if (json.csrf_token) csrf = String(json.csrf_token);
       return json;
     } catch (err) {
       if (err && err.name === 'AbortError') {
@@ -3022,6 +3229,7 @@ render_teacher_header($pageTitle);
         err.message = tEntry('save_connection_interrupted');
       }
       console.warn('entry api request failed', { code: err.code, status: err.status || 0, body: err.bodySnippet || '' });
+      if (isSessionError(err)) showSessionOverlay(err);
       throw err;
     } finally {
       window.clearTimeout(timeout);
@@ -3074,6 +3282,7 @@ render_teacher_header($pageTitle);
   }
 
   function scheduleSaveRetry(key){
+    if (sessionExpired || ui.sessionExpired) return;
     if (!ui.pendingPayloads.has(key) || ui.retryTimers.has(key)) return;
     const attempt = (ui.retryAttempts.get(key) || 0) + 1;
     ui.retryAttempts.set(key, attempt);
@@ -3091,6 +3300,7 @@ render_teacher_header($pageTitle);
     if (ui.saveChains.has(key)) return ui.saveChains.get(key);
     const chain = (async () => {
       try {
+        if (sessionExpired || ui.sessionExpired) return false;
         while (ui.pendingPayloads.has(key)) {
           clearSaveRetry(key);
           const info = ui.pendingPayloads.get(key);
@@ -3109,7 +3319,10 @@ render_teacher_header($pageTitle);
           } catch (e) {
             if (!ui.pendingPayloads.has(key)) ui.pendingPayloads.set(key, info);
             const msg = friendlyFetchError(e, true);
-            if (isRetryableSaveError(e)) {
+            if (isSessionError(e)) {
+              showSessionOverlay(e);
+              setSaveStatus('failed_permanent', tEntry('ajax_session_expired'));
+            } else if (isRetryableSaveError(e)) {
               showErr(tEntry('save_retry_failed_auto'));
               setSaveStatus('retrying', tEntry('save_retry_failed_auto'));
               scheduleSaveRetry(key);
@@ -3136,6 +3349,10 @@ render_teacher_header($pageTitle);
     if (ui.saveTimers.has(key)) clearTimeout(ui.saveTimers.get(key));
     ui.pendingPayloads.set(key, { action, payload, onSuccess });
     markSaveDirty();
+    if (sessionExpired || ui.sessionExpired) {
+      showSessionOverlay({ message: tEntry('ajax_session_expired') });
+      return;
+    }
     ui.saveTimers.set(key, setTimeout(() => {
       ui.saveTimers.delete(key);
       void runQueuedSave(key);
@@ -3381,8 +3598,8 @@ render_teacher_header($pageTitle);
       ? f._delegated_user_ids.map(x => Number(x)).filter(x => x > 0)
       : [];
     if (!delegatedUserIds.length) return null;
-    const isDelegate = delegatedUserIds.includes(CURRENT_USER_ID) && !state.is_class_teacher;
-    return isDelegate ? 'delegate' : 'class';
+    const isDelegate = delegatedUserIds.includes(CURRENT_USER_ID);
+    return (DELEGATED_MODE && isDelegate) ? 'delegate' : 'class';
   }
 
   function setTeacherFreeTextPart(reportId, fieldId, value){
@@ -3400,10 +3617,18 @@ render_teacher_header($pageTitle);
     const next = {
       class_text: existing.class_text ?? '',
       delegate_text: existing.delegate_text ?? '',
+      delegate_texts: (existing.delegate_texts && typeof existing.delegate_texts === 'object') ? { ...existing.delegate_texts } : {},
       delegate_user_id: delegatedUserId,
     };
-    if (part === 'delegate') next.delegate_text = String(value ?? '');
-    else next.class_text = String(value ?? '');
+    if (part === 'delegate') {
+      next.delegate_texts[String(CURRENT_USER_ID)] = String(value ?? '');
+      next.delegate_text = Object.values(next.delegate_texts)
+        .map(x => String(x ?? '').trim())
+        .filter(x => x !== '')
+        .join('\n\n');
+    } else {
+      next.class_text = String(value ?? '');
+    }
     state.values_teacher_parts[ridKey][fidKey] = next;
 
     if (!state.values_teacher_own[ridKey]) state.values_teacher_own[ridKey] = {};
@@ -3420,6 +3645,37 @@ render_teacher_header($pageTitle);
     return Number(f.is_multiline || 0) === 1;
   }
 
+  function namedTextParts(parts, includeCurrentDelegate){
+    if (!parts || typeof parts !== 'object') return [];
+    const entries = [];
+    const classText = String(parts.class_text ?? '').trim();
+    if (classText !== '') entries.push({ label: 'Klassenlehrkraft', text: classText, kind: 'class' });
+    const delegateTexts = (parts.delegate_texts && typeof parts.delegate_texts === 'object') ? parts.delegate_texts : {};
+    const userNameById = new Map((state.delegation_users || []).map(u => [String(u.id), String(u.name || `Nutzer #${u.id}`)]));
+    Object.entries(delegateTexts).forEach(([uid, txt]) => {
+      if (!includeCurrentDelegate && String(uid) === String(CURRENT_USER_ID)) return;
+      const text = String(txt ?? '').trim();
+      if (text === '') return;
+      entries.push({ label: userNameById.get(String(uid)) || `Nutzer #${uid}`, text, kind: 'delegate' });
+    });
+    return entries;
+  }
+
+  function namedTextPartsHtml(parts, includeCurrentDelegate){
+    const entries = namedTextParts(parts, includeCurrentDelegate);
+    if (!entries.length) return '<span class="muted">Noch keine Eingaben von Kolleg:innen vorhanden.</span>';
+    return entries.map(item => `<div class="combined-inline-entry"><strong>${esc(item.label)}</strong><br>${esc(item.text).replace(/\n/g, '<br>')}</div>`).join('');
+  }
+
+  function delegatedPeerInputsHtml(parts){
+    return `
+      <div class="combined-inline">
+        <div class="combined-inline-label">Eingaben der Kolleg:innen</div>
+        <div class="combined-inline-text">${namedTextPartsHtml(parts, false)}</div>
+      </div>
+    `;
+  }
+
   function combinedPreviewHtml(reportId, field){
     if (!field) return '';
     if (!isFreeTextField(field)) return '';
@@ -3434,18 +3690,13 @@ render_teacher_header($pageTitle);
     const hasParts = !!parts;
     const highlightDelegate = !DELEGATED_MODE && !!(state.is_class_teacher);
     const html = hasParts
-      ? combineTextPartsHtml(parts.class_text ?? '', parts.delegate_text ?? '', highlightDelegate)
+      ? namedTextPartsHtml(parts, true)
       : (() => {
           const combined = teacherVal(reportId, field.id);
           return combined ? esc(String(combined)).replace(/\n/g, '<br>') : '<span class="muted">—</span>';
         })();
     if (DELEGATED_MODE) {
-      return `
-        <div class="combined-inline">
-          <div class="combined-inline-label">Gesamtwert</div>
-          <div class="combined-inline-text">${html}</div>
-        </div>
-      `;
+      return delegatedPeerInputsHtml(parts || {});
     }
     return `
       <span class="combined-tip" data-tip="1">
@@ -3673,7 +3924,13 @@ render_teacher_header($pageTitle);
     const wrap = inp.closest('.cellWrap') || inp.closest('.field');
     if (!wrap) return;
     const missing = String(value ?? '').trim() === '';
-    wrap.classList.toggle('missing', missing);
+    const fieldId = inp.dataset?.fieldId || inp.getAttribute('data-field-id');
+    const reportId = inp.dataset?.reportId || inp.getAttribute('data-report-id');
+    const fDef = state.fieldMap?.[String(fieldId)];
+    const hasDelegationReview = fieldHasRevokedDelegationReview(Number(reportId || 0), Number(fieldId || 0));
+    wrap.classList.toggle('delegation-review-field', hasDelegationReview);
+    wrap.classList.toggle('missing', !hasDelegationReview && missing && (!fDef || isRequiredField(fDef)));
+    wrap.classList.toggle('optional-empty', !hasDelegationReview && missing && fDef && !isRequiredField(fDef));
   }
 
   // --- progress helpers ---
@@ -3682,6 +3939,7 @@ render_teacher_header($pageTitle);
     activeGroups().forEach(g => {
       (g.fields || []).forEach(f => {
         if (!isEditableField(f, g)) return;
+        if (!isRequiredField(f)) return;
         ids.push(Number(f.id));
       });
     });
@@ -3725,13 +3983,14 @@ render_teacher_header($pageTitle);
     const cTotal = DELEGATED_MODE ? 0 : Number(student.progress_child_total || 0);
     const cDone  = DELEGATED_MODE ? 0 : Number(student.progress_child_done || 0);
 
-    const overallTotal = tTotal + cTotal;
+    const revokedMissing = revokedDelegationReviewCount(student);
+    const overallTotal = tTotal + cTotal + revokedMissing;
     const overallDone  = tDone + cDone;
     const overallMissing = Math.max(0, overallTotal - overallDone);
 
-    student.progress_teacher_total = tTotal;
+    student.progress_teacher_total = tTotal + revokedMissing;
     student.progress_teacher_done = tDone;
-    student.progress_teacher_missing = Math.max(0, tTotal - tDone);
+    student.progress_teacher_missing = Math.max(0, tTotal - tDone) + revokedMissing;
 
     student.progress_child_total = cTotal;
     student.progress_child_done = cDone;
@@ -3837,6 +4096,7 @@ render_teacher_header($pageTitle);
       const delegatedToOthers = delegatedUsers.length > 0
         && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
       (g.fields || []).forEach(f => {
+        if (!isRequiredField(f)) return;
         const raw = delegatedToOthers ? teacherVal(reportId, f.id) : teacherEditVal(reportId, f.id);
         const missing = String(raw ?? '').trim() === '';
         if (!delegatedToOthers && isEditableField(f, g)) {
@@ -3851,6 +4111,9 @@ render_teacher_header($pageTitle);
     const childTotal = Number(student.progress_child_total || 0);
     const childDone = Math.min(childTotal, Math.max(0, Number(student.progress_child_done || 0)));
     const childMissing = Math.max(0, Number(student.progress_child_missing ?? (childTotal - childDone)));
+    const revokedMissing = revokedDelegationReviewCount(student);
+    ownMissing += revokedMissing;
+    ownTotal += revokedMissing;
     const totalMissing = ownMissing + delegatedMissing + childMissing;
     const totalFields = ownTotal + delegatedTotal + childTotal;
     const ownDone = Math.max(0, ownTotal - ownMissing);
@@ -3901,7 +4164,12 @@ render_teacher_header($pageTitle);
           ownTotal: breakdown.ownTotal,
         })
         : '';
-      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}`;
+      const revokedCount = DELEGATED_MODE ? 0 : Number(student.revoked_delegation_comments_count || 0);
+      const revokedNoteHtml = revokedCount > 0
+        ? `<span class="delegation-review-note">⚠ Delegationsrückläufer prüfen</span>`
+        : '';
+      row.classList.toggle('delegation-review', revokedCount > 0);
+      sub.innerHTML = `${esc(statusLine)}${breakdownText ? ` <span class="muted js-srow-breakdown">${esc(breakdownText)}</span>` : ''}${revokedNoteHtml}`;
     }
 
     const bar = row.querySelector('.js-prog-bar');
@@ -3951,6 +4219,9 @@ render_teacher_header($pageTitle);
     const cTotal = Number(s.progress_child_total || 0);
     const chk = s.progress_is_complete ? '✓' : '';
     const breakdown = shouldShowOpenBreakdown() ? progressBreakdownForStudent(s) : null;
+    const revokedSuffix = (!DELEGATED_MODE && Number(s.revoked_delegation_comments_count || 0) > 0)
+      ? ` · ⚠ zurückgezogene Delegationstexte prüfen`
+      : '';
     studentBadge.textContent = tfmtEntry('student_badge_both', {
       name: s.name,
       childDone: breakdown?.childDone ?? Math.max(0, cDone),
@@ -3960,7 +4231,181 @@ render_teacher_header($pageTitle);
       ownDone: breakdown?.ownDone ?? Math.max(0, tDone),
       ownTotal: breakdown?.ownTotal ?? tTotal,
       check: chk,
-    }).trim();
+    }).trim() + revokedSuffix;
+  }
+
+  async function textReviewApi(action, payload = {}){
+    return apiFetchJson(textReviewApiUrl, { action, csrf_token: csrf, class_id: state.class_id, ...payload });
+  }
+  async function refreshTextReviewStatus(){
+    if (!btnTextReview || !state.class_id || DELEGATED_MODE || CHILD_MODE) return;
+    try { const j = await textReviewApi('status'); btnTextReview.disabled = !j.available; btnTextReview.title = j.available ? tEntry('text_review_ready') : (j.message || tEntry('text_review_available_when_complete')); }
+    catch(e){ btnTextReview.disabled = true; btnTextReview.title = friendlyFetchError(e, true) || tEntry('text_review_unavailable'); }
+  }
+  function closeTextReviewModal(){ if (textReviewModal) textReviewModal.style.display='none'; }
+  function renderTextReviewDiagnostics(diag = {}, prep = {}){
+    const rows = [
+      [tEntry('text_review_provider'), diag.provider || prep.provider || '—'],
+      [tEntry('text_review_model'), diag.model || prep.model || '—'],
+      [tEntry('text_review_fields_checked'), `${Number(diag.checked || 0)} / ${Number(diag.prepared || (prep.items || []).length || 0)}`],
+      [tEntry('text_review_skipped'), String(Number(diag.skipped_empty || 0) + Number(diag.skipped_snippet_only || 0) + Number(diag.skipped_too_long || 0))],
+      [tEntry('text_review_snippet_only'), String(Number(diag.skipped_snippet_only || 0))],
+      [tEntry('text_review_snippet_chars_removed'), String(Number(diag.snippet_chars_removed || 0))],
+      [tEntry('text_review_free_chars_sent'), `${Number(diag.free_text_chars_sent || 0)} / ${Number(diag.original_chars_total || 0)}`],
+      [tEntry('text_review_ai_requests'), String(Number(diag.ai_requests || 0))],
+      [tEntry('text_review_dropped_identical'), String(Number(diag.dropped_identical_suggestions || 0))],
+      [tEntry('text_review_suggestions'), String(Number(diag.suggestions || 0))],
+    ];
+    const snippetNote = Number(diag.snippet_chars_removed || 0) > 0 || Number(diag.skipped_snippet_only || 0) > 0
+      ? `<div class="alert info" style="margin-top:8px;">${esc(tEntry('text_review_snippets_ignored'))}</div>`
+      : '';
+    return `<div class="card" style="margin:10px 0;padding:10px;"><strong>${esc(tEntry('text_review_diagnostics'))}</strong><dl style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0 0;">${rows.map(([k,v]) => `<dt class="muted">${esc(k)}</dt><dd style="margin:0;">${esc(v)}</dd>`).join('')}</dl>${snippetNote}</div>`;
+  }
+
+  function currentTextReviewFieldText(suggestion){
+    return teacherEditVal(Number(suggestion.report_id || 0), Number(suggestion.field_id || 0));
+  }
+
+  function normalizeReviewText(value){
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function visibleTextReviewSuggestions(suggestions, diag = null){
+    let dropped = 0;
+    const list = (suggestions || []).filter(s => {
+      const current = normalizeReviewText(s.original_excerpt || s.check_text || s.original_text || '');
+      const replacement = normalizeReviewText(s.replacement_text || s.suggested_text || '');
+      const full = normalizeReviewText(s.suggested_full_text || '');
+      const sameReplacement = replacement && current && replacement === current;
+      const sameFull = full && normalizeReviewText(s.check_text || s.original_text || '') === full;
+      if (!replacement && !full) { dropped++; return false; }
+      if (sameReplacement || sameFull) { dropped++; return false; }
+      return true;
+    });
+    if (diag && dropped > 0) diag.dropped_identical_suggestions = Number(diag.dropped_identical_suggestions || 0) + dropped;
+    return list;
+  }
+
+  function applyTextReviewSuggestion(suggestion, replacement, mode, box){
+    const reportId = Number(suggestion.report_id || 0);
+    const fieldId = Number(suggestion.field_id || 0);
+    const current = currentTextReviewFieldText(suggestion);
+    if (normalizeReviewText(current) !== normalizeReviewText(suggestion.original_text || '')) {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_changed');
+      return false;
+    }
+    const excerpt = String(suggestion.original_excerpt || '');
+    const snippetRanges = Array.isArray(suggestion.snippet_ranges) ? suggestion.snippet_ranges : [];
+    const touchesSnippet = excerpt && snippetRanges.some(r => String(r?.text || '').includes(excerpt));
+    const replacementText = String(replacement || suggestion.replacement_text || suggestion.suggested_text || '');
+    const fullText = String(suggestion.suggested_full_text || '');
+    if (touchesSnippet || (!excerpt && snippetRanges.length > 0)) {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_snippet_blocked');
+      return false;
+    }
+    let nextText = '';
+    if (excerpt && current.includes(excerpt)) {
+      nextText = current.replace(excerpt, replacementText);
+    } else if (fullText && confirm(tEntry('text_review_changed') + ' / ' + tEntry('text_review_apply') + '?')) {
+      nextText = fullText;
+    } else {
+      box.classList.add('text-review-stale');
+      box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_changed');
+      return false;
+    }
+    scheduleSave(reportId, fieldId, nextText);
+    box.dataset.status = mode;
+    box.querySelector('[data-text-review-state]').textContent = mode === 'partially_accepted' ? tEntry('text_review_accept_partial') : tEntry('text_review_applied');
+    box.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; });
+    return true;
+  }
+
+  function renderTextReviewSuggestions(suggestions){
+    if (!suggestions.length) return `<div class="alert success">${esc(tEntry('text_review_no_suggestions'))}</div>`;
+    return `<h4>${esc(tEntry('text_review_suggestions'))}</h4>` + suggestions.map((s, idx) => `
+      <div class="card text-review-suggestion" data-suggestion-index="${idx}" style="margin:10px 0;padding:12px;">
+        <div><strong>${esc(s.student_name || '')}</strong> · ${esc(s.field_label || s.field_name || '')} · <span class="pill">${esc(s.type || 'style')}</span></div>
+        <p class="muted" style="margin:6px 0;"><strong>${esc(tEntry('text_review_explanation'))}:</strong> ${esc(s.explanation || '')}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><strong>${esc(tEntry('text_review_current'))}</strong><div class="history-box">${esc(s.original_excerpt || s.check_text || '').replace(/\n/g,'<br>')}</div></div>
+          <div><strong>${esc(tEntry('text_review_replacement'))}</strong><div class="history-box">${esc(s.replacement_text || s.suggested_text || '').replace(/\n/g,'<br>')}</div></div>
+        </div>
+        ${s.suggested_full_text ? `<div style="margin-top:8px;"><strong>${esc(tEntry('text_review_result'))}</strong><div class="history-box">${esc(s.suggested_full_text).replace(/\n/g,'<br>')}</div></div>` : ''}
+        <div data-text-review-state class="muted" style="margin-top:6px;"></div>
+        <div data-partial-box style="display:none;margin-top:8px;"><label>${esc(tEntry('text_review_edit_suggestion'))}</label><textarea rows="4" style="width:100%;">${esc(s.replacement_text || s.suggested_text || s.suggested_full_text || '')}</textarea><button type="button" class="btn primary" data-action="apply-partial">${esc(tEntry('text_review_apply'))}</button></div>
+        <div class="actions" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn primary" data-action="accept">${esc(tEntry('text_review_accept_all'))}</button>
+          <button type="button" class="btn secondary" data-action="partial">${esc(tEntry('text_review_accept_partial'))}</button>
+          <button type="button" class="btn secondary" data-action="ignore">${esc(tEntry('text_review_reject'))}</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function bindTextReviewSuggestionActions(suggestions){
+    textReviewResults.querySelectorAll('[data-suggestion-index]').forEach(box => {
+      const suggestion = suggestions[Number(box.dataset.suggestionIndex || 0)];
+      box.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        if (action === 'accept') applyTextReviewSuggestion(suggestion, suggestion.replacement_text || suggestion.suggested_text || suggestion.suggested_full_text || '', 'accepted', box);
+        if (action === 'partial') box.querySelector('[data-partial-box]').style.display = 'block';
+        if (action === 'apply-partial') applyTextReviewSuggestion(suggestion, box.querySelector('[data-partial-box] textarea').value, 'partially_accepted', box);
+        if (action === 'ignore') { box.dataset.status = 'ignored'; box.querySelector('[data-text-review-state]').textContent = tEntry('text_review_ignored'); box.querySelectorAll('button, textarea').forEach(el => { el.disabled = true; }); }
+      });
+    });
+  }
+
+  async function openTextReviewModal(){
+    if (!textReviewModal) return;
+    textReviewModal.style.display='block'; textReviewResults.innerHTML=''; textReviewSummary.textContent=''; textReviewStatus.textContent=tEntry('text_review_available_when_complete'); btnTextReviewStart.disabled=true;
+    try {
+      const prep = await textReviewApi('prepare');
+      btnTextReviewStart.disabled = !prep.available;
+      textReviewStatus.textContent = prep.message || (prep.available ? tEntry('text_review_ready') : tEntry('text_review_unavailable'));
+      textReviewSummary.textContent = tfmtEntry('text_review_summary', { students: prep.students_total || 0, fields: (prep.items || []).length, chars: prep.estimated_chars || 0 }) + ' · ' + tEntry('text_review_cost_hint');
+      textReviewResults.innerHTML = renderTextReviewDiagnostics({ prepared:(prep.items || []).length, checked:0, suggestions:0, ai_requests:0, provider:prep.provider, model:prep.model }, prep);
+      btnTextReviewStart.onclick = async () => {
+        btnTextReviewStart.disabled=true;
+        textReviewStatus.textContent = tEntry('text_review_running');
+        try {
+          const items = Array.isArray(prep.items) ? prep.items : [];
+          const batchSize = Math.max(1, Number(prep.max_fields_per_batch || 8));
+          const allSuggestions = [];
+          const prepDiag = prep.snippet_diagnostics || {};
+          const aggregate = { prepared: items.length, checked: 0, skipped_empty: 0, skipped_too_long: 0, skipped_snippet_only: 0, fields_with_snippet_parts: Number(prepDiag.fields_with_snippet_parts || 0), snippet_chars_removed: 0, free_text_chars_sent: 0, original_chars_total: 0, dropped_identical_suggestions: 0, ai_requests: 0, suggestions: 0, provider: prep.provider, model: prep.model };
+          for (let offset = 0; offset < items.length; offset += batchSize) {
+            const run = await textReviewApi('run_batch', { items: items.slice(offset, offset + batchSize) });
+            const diag = run.diagnostics || {};
+            aggregate.checked += Number(diag.checked || 0);
+            aggregate.skipped_empty += Number(diag.skipped_empty || 0);
+            aggregate.skipped_too_long += Number(diag.skipped_too_long || 0);
+            aggregate.skipped_snippet_only += Number(diag.skipped_snippet_only || 0);
+            aggregate.snippet_chars_removed += Number(diag.snippet_chars_removed || 0);
+            aggregate.free_text_chars_sent += Number(diag.free_text_chars_sent || 0);
+            aggregate.original_chars_total += Number(diag.original_chars_total || 0);
+            aggregate.ai_requests += Number(diag.ai_requests || 0);
+            aggregate.dropped_identical_suggestions += Number(diag.dropped_identical_suggestions || 0);
+            aggregate.provider = diag.provider || aggregate.provider;
+            aggregate.model = diag.model || aggregate.model;
+            const batchSuggestions = visibleTextReviewSuggestions(Array.isArray(run.suggestions) ? run.suggestions : [], aggregate);
+            allSuggestions.push(...batchSuggestions);
+            aggregate.suggestions = allSuggestions.length;
+            textReviewStatus.textContent = `${aggregate.checked} / ${items.length} ${tEntry('text_review_fields_checked')}`;
+            textReviewResults.innerHTML = renderTextReviewDiagnostics(aggregate, prep);
+          }
+          textReviewStatus.textContent = allSuggestions.length ? `${allSuggestions.length} ${tEntry('text_review_suggestions')}` : tEntry('text_review_no_suggestions');
+          textReviewResults.innerHTML = renderTextReviewDiagnostics(aggregate, prep) + renderTextReviewSuggestions(allSuggestions);
+          bindTextReviewSuggestionActions(allSuggestions);
+        } catch(e) {
+          textReviewStatus.textContent = friendlyFetchError(e, true) || tEntry('text_review_unavailable');
+          textReviewResults.innerHTML = renderTextReviewDiagnostics({ prepared:(prep.items || []).length, checked:0, suggestions:0, ai_requests:0, provider:prep.provider, model:prep.model }, prep) + `<div class="alert error">${esc(friendlyFetchError(e, true) || e.message || tEntry('text_review_unavailable'))}</div>`;
+        }
+      };
+    }
+    catch(e){ textReviewStatus.textContent = friendlyFetchError(e); textReviewResults.innerHTML = `<div class="alert error">${esc(friendlyFetchError(e, true) || e.message || tEntry('text_review_unavailable'))}</div>`; }
   }
 
   function updatePdfEntryButton(student){
@@ -3970,6 +4415,21 @@ render_teacher_header($pageTitle);
     const active = !!sid && !!cid;
     btnPdfEntry.disabled = !active;
     btnPdfEntry.dataset.studentId = active ? String(sid) : '';
+  }
+
+
+  function applyRevokedDelegationComments(reportId, payload){
+    if (DELEGATED_MODE || !payload || typeof payload !== 'object') return;
+    const st = findStudentByReportId(reportId);
+    if (!st) return;
+    st.revoked_delegation_comments_count = Number(payload.count || 0);
+    st.revoked_delegation_comment_names = Array.isArray(payload.names) ? payload.names : [];
+    st.revoked_delegation_comment_field_ids = Array.isArray(payload.field_ids) ? payload.field_ids.map(x => Number(x)).filter(x => x > 0) : [];
+    recomputeStudentProgress(st);
+    recomputeFormsSummary();
+    updateFormsProgressUI();
+    updateStudentRowUI(st);
+    if (activeStudent()?.id === st.id) updateActiveStudentBadge();
   }
 
   function onTeacherValueChanged(reportId, fieldId){
@@ -4002,7 +4462,8 @@ render_teacher_header($pageTitle);
       key,
       'save',
       { report_instance_id: reportId, template_field_id: fieldId, value_text: value },
-      () => {
+      (res) => {
+        applyRevokedDelegationComments(reportId, res?.revoked_delegation_comments);
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(reportId, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
@@ -4061,7 +4522,8 @@ render_teacher_header($pageTitle);
       key,
       'save_class',
       { class_id: state.class_id, report_instance_id: rid, template_field_id: fieldId, value_text: value },
-      () => {
+      (res) => {
+        applyRevokedDelegationComments(rid, res?.revoked_delegation_comments);
         const fDef = state.fieldMap?.[String(fieldId)];
         const combinedValue = teacherVal(rid, fieldId);
         const displayVal = fDef ? teacherDisplay(fDef, combinedValue) : String(combinedValue ?? '');
@@ -4566,6 +5028,7 @@ render_teacher_header($pageTitle);
     const start = typeof el.selectionStart === 'number' ? el.selectionStart : (el.value || '').length;
     const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
     const val = String(el.value || '');
+    // TODO: persist report_field_text_segments (report_id, field_id, source_type='snippet', source_id, start_offset, length, text_hash, created_by_user_id, created_at) once the save API accepts snippet segment metadata.
     el.value = val.slice(0, start) + snippet + val.slice(end);
     const pos = start + snippet.length;
     if (typeof el.setSelectionRange === 'function') {
@@ -5330,7 +5793,11 @@ render_teacher_header($pageTitle);
       const childInfo = CHILD_MODE ? '' : childInfoHtml(f, reportId);
       const lbl = resolveLabelTemplate(String(f.label || f.field_name || tEntry('field_label')));
       const help = resolveLabelTemplate(String(f.help_text || ''));
-      const missingCls = (v === '') ? 'missing' : '';
+      const hasDelegationReview = fieldHasRevokedDelegationReview(reportId, f.id);
+      const missingCls = hasDelegationReview ? 'delegation-review-field' : fieldStatusClass(f, v);
+      const delegationReviewFieldPill = hasDelegationReview
+        ? `<span class="delegation-review-field-pill">⚠ ${esc(tEntry('delegation_review_field'))}</span>`
+        : '';
       const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
       const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
       const clearBtn = (CHILD_MODE && !DELEGATED_MODE)
@@ -5341,8 +5808,8 @@ render_teacher_header($pageTitle);
         : '';
         const helpDisp = MEETING_MODE ? '' : `<div class="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>`;
       html += `
-        <div class="field ${missingCls}" data-fieldwrap="1" data-field-id="${esc(f.id)}">
-          <div class="lbl">${esc(lbl)}</div>
+        <div class="field ${missingCls}" data-fieldwrap="1" data-report-id="${esc(reportId)}" data-field-id="${esc(f.id)}">
+          <div class="lbl">${esc(lbl)}${delegationReviewFieldPill}</div>
           ${helpDisp}
           ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
           ${actionsHtml}
@@ -5381,14 +5848,18 @@ render_teacher_header($pageTitle);
       const lbl = String(f.label_resolved || f.label || f.field_name || '');
       const help = String(f.help_text_resolved || f.help_text || '');
       const canEditField = (Number(f.can_edit || 0) === 1);
+      const hasDelegationReview = fieldHasRevokedDelegationReview(rid, fid);
+      const delegationReviewFieldPill = hasDelegationReview
+        ? `<span class="delegation-review-field-pill">⚠ ${esc(tEntry('delegation_review_field'))}</span>`
+        : '';
       const combinedHtml = combinedPreviewHtml(rid, f);
       const historyHtml = renderHistoryHtml(rid, fid);
       const actionsHtml = (combinedHtml || historyHtml)
         ? `<div class="field-actions">${combinedHtml}${historyHtml}</div>`
         : '';
       return `
-        <div class="field" data-fieldwrap="1" data-field-id="${esc(fid)}">
-          <div class="lbl" data-dyn="label">${esc(lbl)}</div>
+        <div class="field ${hasDelegationReview ? 'delegation-review-field' : ''}" data-fieldwrap="1" data-report-id="${esc(rid)}" data-field-id="${esc(fid)}">
+          <div class="lbl" data-dyn="label">${esc(lbl)}${delegationReviewFieldPill}</div>
           <div class="help" data-dyn="help" style="${help.trim() ? '' : 'display:none;'}">${esc(help)}</div>
           ${renderInputHtml(f, rid, v, locked, canEditField)}
           ${actionsHtml}
@@ -5464,7 +5935,10 @@ render_teacher_header($pageTitle);
     studentList.innerHTML = '';
     list.forEach((s, idx) => {
       const div = document.createElement('div');
-      div.className = 'srow' + (idx === ui.activeStudentIndex ? ' active' : '');
+      const revokedCount = DELEGATED_MODE ? 0 : Number(s.revoked_delegation_comments_count || 0);
+      div.className = 'srow'
+        + (idx === ui.activeStudentIndex ? ' active' : '')
+        + (revokedCount > 0 ? ' delegation-review' : '');
       const status = String(s.status || 'draft');
       const statusLbl = (status === 'locked')
         ? tEntry('status_locked')
@@ -5489,12 +5963,24 @@ render_teacher_header($pageTitle);
             ownTotal: breakdown.ownTotal,
           }))}</span>`
         : '';
+      const revokedNames = Array.isArray(s.revoked_delegation_comment_names)
+        ? s.revoked_delegation_comment_names.filter(x => String(x).trim() !== '')
+        : [];
+      const revokedTitle = revokedNames.length
+        ? `Zurückgezogene Delegations-Kommentare von ${revokedNames.join(', ')}`
+        : 'Zurückgezogene Delegations-Kommentare prüfen';
+      const revokedHtml = revokedCount > 0
+        ? ` <span class="delegation-review-pill" title="${esc(revokedTitle)}">⚠ Prüfen</span>`
+        : '';
+      const revokedNoteHtml = revokedCount > 0
+        ? `<span class="delegation-review-note">⚠ Delegationsrückläufer prüfen</span>`
+        : '';
 
       div.id = `srow-${s.id}`;
       div.innerHTML = `
         <div class="smeta">
-          <div class="n">${esc(s.name)}</div>
-          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}</div>
+          <div class="n">${esc(s.name)}${revokedHtml}</div>
+          <div class="sub js-srow-sub" data-statuslbl="${esc(statusLbl)}">${esc(tfmtEntry('progress_status_line', { status: statusLbl }))}${breakdownHtml}${revokedNoteHtml}</div>
           <div style="margin-top:6px;">
             <div class="progress sm"><div class="progress-bar js-prog-bar${complete ? ' ok' : ''}" style="width:${pct}%;"></div></div>
           </div>
@@ -5578,9 +6064,9 @@ render_teacher_header($pageTitle);
     activeGroupsForReport(reportId).forEach(g => {
       if (groupFilter.groupKey !== 'ALL' && String(g.key) !== String(groupFilter.groupKey)) return;
       let fields = filterFieldsBySubgroup((g.fields || []), groupFilter.subgroup);
-      const progressFields = fields.filter(f => isEditableField(f, g));
+      const progressFields = fields.filter(f => isEditableField(f, g) && isRequiredField(f));
       if (ui.studentMissingOnly) {
-        fields = progressFields.filter(f => isActiveFieldMissing(reportId, f.id));
+        fields = fields.filter(f => isActiveFieldMissing(reportId, f.id));
       }
 
       if (!fields.length) return;
@@ -5664,7 +6150,12 @@ render_teacher_header($pageTitle);
         const val = (current ?? '');
         const wrap = btn.closest('.field') || btn.closest('.cellWrap');
         if (wrap) {
-          wrap.classList.toggle('missing', String(val).trim() === '');
+          const fDef = state.fieldMap?.[String(fid)];
+          const isEmpty = String(val).trim() === '';
+          const hasDelegationReview = fieldHasRevokedDelegationReview(rid, fid);
+          wrap.classList.toggle('delegation-review-field', hasDelegationReview);
+          wrap.classList.toggle('missing', !hasDelegationReview && isEmpty && (!fDef || isRequiredField(fDef)));
+          wrap.classList.toggle('optional-empty', !hasDelegationReview && isEmpty && fDef && !isRequiredField(fDef));
           const input = wrap.querySelector('[data-child-input="1"]');
           if (input) {
             if (input.dataset.combo === '1') {
@@ -6010,7 +6501,7 @@ render_teacher_header($pageTitle);
           const v = activeFieldValue(reportId, f.id);
           const canEditField = (Number(f.can_edit || 0) === 1);
 
-          const missingCls = (v === '') ? 'missing' : '';
+          const missingCls = fieldStatusClass(f, v);
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
           const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
@@ -6098,7 +6589,7 @@ render_teacher_header($pageTitle);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
-        const missingCls = (v === '') ? 'missing' : '';
+        const missingCls = fieldStatusClass(f, v);
         td.innerHTML = `
           <div class="cellWrap ${missingCls}">
             ${renderActiveInputHtml(f, reportId, v, locked, canEditField)}
@@ -6180,7 +6671,7 @@ render_teacher_header($pageTitle);
         const v = activeFieldValue(reportId, f.id);
         const canEditField = (Number(f.can_edit || 0) === 1);
 
-        const missingCls = (v === '') ? 'missing' : '';
+        const missingCls = fieldStatusClass(f, v);
           const combinedHtml = CHILD_MODE ? '' : combinedPreviewHtml(reportId, f);
           const historyHtml = CHILD_MODE ? '' : renderHistoryHtml(reportId, f.id);
           const actionsHtml = (combinedHtml || historyHtml)
@@ -6259,6 +6750,7 @@ render_teacher_header($pageTitle);
       aiCache = new Map();
       aiCurrentStudent = null;
       ui.mergeDecisions = new Map();
+      void refreshTextReviewStatus();
       const savedDecisions = readMergeMemory();
       Object.entries(savedDecisions).forEach(([k, v]) => {
         if (!v || typeof v !== 'object') return;
