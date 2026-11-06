@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
+require_once __DIR__ . '/shared/mail.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
 if (!defined('APP_CONFIG_PATH')) define('APP_CONFIG_PATH', $configPath);
@@ -2285,19 +2286,29 @@ function report_instance_ag_text(PDO $pdo, int $reportInstanceId): string {
 }
 
 // --------------------
-// Mail (simple PHP mail wrapper)
+// Mail
 // --------------------
 function send_email(string $to, string $subject, string $htmlBody): bool {
   $cfg = app_config();
-  $fromEmail = $cfg['mail']['from_email'] ?? 'no-reply@example.org';
-  $fromName  = $cfg['mail']['from_name'] ?? 'LEG Tool';
+  try {
+    $message = leb_build_mail_message((array)($cfg['mail'] ?? []), $to, $subject, $htmlBody);
+  } catch (Throwable $e) {
+    error_log('LEB mail could not be built: ' . $e->getMessage());
+    return false;
+  }
 
-  $headers = [];
-  $headers[] = 'MIME-Version: 1.0';
-  $headers[] = 'Content-type: text/html; charset=utf-8';
-  $headers[] = 'From: ' . mb_encode_mimeheader($fromName, 'UTF-8') . " <{$fromEmail}>";
-
-  return @mail($to, $subject, $htmlBody, implode("\r\n", $headers));
+  // Align the envelope sender with the visible From address. SPF and DMARC
+  // evaluate this address; a Return-Path header alone cannot set it.
+  $additionalParams = '-f' . escapeshellarg($message['envelope_sender']);
+  $sent = mail(
+    $message['to'],
+    $message['subject'],
+    $message['body'],
+    $message['headers'],
+    $additionalParams
+  );
+  if (!$sent) error_log('LEB mail was rejected by the local mail transport for recipient ' . $message['to']);
+  return $sent;
 }
 
 // --------------------

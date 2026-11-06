@@ -102,11 +102,12 @@ return [
     'cache_ttl' => 604800,
   ],
   'mail' => [
-    // Wenn leer -> PHP mail()
-    // Optional: Später erweiterbar auf SMTP ohne externe Libraries (über fsockopen),
-    // aber erstmal bewusst einfach gehalten.
+    // Der technische Envelope-Absender wird standardmäßig an from_email
+    // angeglichen. Das ist für SPF/DMARC wichtig.
     'from_email' => 'no-reply@example.org',
-    'from_name'  => 'LEG Tool',
+    'from_name' => 'LEB Tool',
+    // Optional; ohne Angabe wird from_email verwendet.
+    // 'reply_to' => 'support@example.org',
   ],
   'delegation' => [
     // Wenn aktiviert, sehen Delegierte alle übrigen Felder schreibgeschützt.
