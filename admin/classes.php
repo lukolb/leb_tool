@@ -673,6 +673,11 @@ foreach ($periodOverview as $row) {
     break;
   }
 }
+if ($currentActiveKey === '' && $periodOverview) {
+  $fallbackPeriod = $periodOverview[count($periodOverview) - 1];
+  $currentActiveKey = trim((string)($fallbackPeriod['school_year'] ?? '')) . '|' .
+    normalize_period_label((string)($fallbackPeriod['period_label'] ?? 'Standard'));
+}
 
 // Group by school_year
 $grouped = [];

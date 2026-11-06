@@ -921,6 +921,29 @@ function ensure_schema(PDO $pdo): void {
            LIMIT 1"
         );
         $activeClassPeriod = $stActiveClassPeriod->fetch(PDO::FETCH_ASSOC);
+        if (!$activeClassPeriod) {
+          $defaultSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
+          if ($defaultSchoolYear !== '') {
+            $pdo->prepare(
+              "INSERT IGNORE INTO school_periods (school_year, period_label, is_active)
+               VALUES (?, 'Standard', 0)"
+            )->execute([$defaultSchoolYear]);
+            $activeClassPeriod = [
+              'school_year' => $defaultSchoolYear,
+              'period_label' => 'Standard',
+            ];
+          } else {
+            $stLatestPeriod = $pdo->query(
+              "SELECT school_year, period_label
+               FROM school_periods
+               ORDER BY school_year DESC,
+                        CASE period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
+                        id DESC
+               LIMIT 1"
+            );
+            $activeClassPeriod = $stLatestPeriod->fetch(PDO::FETCH_ASSOC) ?: null;
+          }
+        }
         if ($activeClassPeriod) {
           $pdo->prepare(
             "UPDATE school_periods
