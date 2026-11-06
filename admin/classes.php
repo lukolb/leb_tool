@@ -58,6 +58,67 @@ function mark_school_period_active(PDO $pdo, string $schoolYear, string $periodL
      SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END"
   )->execute([$schoolYear, $periodLabel]);
 }
+function school_period_dependency_counts(PDO $pdo, string $schoolYear, string $periodLabel): array {
+  $schoolYear = normalize_school_year($schoolYear);
+  $periodLabel = normalize_period_label($periodLabel);
+  $counts = [];
+
+  $directChecks = [
+    'classes' => 'classes',
+    'reports' => 'report_instances',
+    'deadlines' => 'submission_deadlines',
+    'absences' => 'student_period_absences',
+    'ag_terms' => 'ag_catalog_semester',
+    'ag_assignments' => 'student_ag_assignments',
+    'delegations' => 'class_group_delegations',
+    'student_unlocks' => 'class_child_group_unlocks',
+    'legacy_ag_entries' => 'ag_catalog',
+  ];
+  foreach ($directChecks as $key => $table) {
+    if (!db_has_table($pdo, $table) || !db_has_column($pdo, $table, 'school_year') || !db_has_column($pdo, $table, 'period_label')) {
+      $counts[$key] = 0;
+      continue;
+    }
+    $st = $pdo->prepare("SELECT COUNT(*) FROM `{$table}` WHERE school_year=? AND period_label=?");
+    $st->execute([$schoolYear, $periodLabel]);
+    $counts[$key] = (int)$st->fetchColumn();
+  }
+
+  $counts['parent_feedback'] = 0;
+  if (
+    db_has_table($pdo, 'parent_meeting_feedback') &&
+    db_has_column($pdo, 'parent_meeting_feedback', 'school_year') &&
+    db_has_column($pdo, 'parent_meeting_feedback', 'class_id')
+  ) {
+    $st = $pdo->prepare(
+      "SELECT COUNT(*)
+       FROM parent_meeting_feedback pmf
+       INNER JOIN classes c ON c.id=pmf.class_id
+       WHERE pmf.school_year=? AND c.school_year=? AND c.period_label=?"
+    );
+    $st->execute([$schoolYear, $schoolYear, $periodLabel]);
+    $counts['parent_feedback'] = (int)$st->fetchColumn();
+  }
+
+  return $counts;
+}
+function school_period_dependency_labels(): array {
+  return [
+    'classes' => t('admin.classes.period_delete.dep.classes', 'Klassen'),
+    'reports' => t('admin.classes.period_delete.dep.reports', 'Berichte'),
+    'deadlines' => t('admin.classes.period_delete.dep.deadlines', 'Fristen'),
+    'absences' => t('admin.classes.period_delete.dep.absences', 'Fehlzeiten'),
+    'ag_terms' => t('admin.classes.period_delete.dep.ag_terms', 'AG-Aktivierungen'),
+    'ag_assignments' => t('admin.classes.period_delete.dep.ag_assignments', 'AG-Zuordnungen'),
+    'delegations' => t('admin.classes.period_delete.dep.delegations', 'Delegationen'),
+    'student_unlocks' => t('admin.classes.period_delete.dep.student_unlocks', 'Schülerfreigaben'),
+    'legacy_ag_entries' => t('admin.classes.period_delete.dep.legacy_ag_entries', 'Ältere AG-Einträge'),
+    'parent_feedback' => t('admin.classes.period_delete.dep.parent_feedback', 'Eltern-Feedbacks'),
+  ];
+}
+function school_period_blockers(array $counts): array {
+  return array_filter($counts, static fn($count): bool => (int)$count > 0);
+}
 function computed_name(?int $grade, string $label): string {
   $label = normalize_label($label);
   if ($grade === null || $grade <= 0 || $label === '') return trim((string)$grade . $label);
@@ -211,6 +272,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             '{period}' => period_label_options()[$periodLabel] ?? $periodLabel,
           ])
         : t('admin.classes.period_create.exists', 'Dieses Schulhalbjahr ist bereits angelegt.');
+    }
+
+    elseif ($action === 'delete_period') {
+      $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
+      $confirmation = trim((string)($_POST['confirm_text'] ?? ''));
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      if ($confirmation !== 'DELETE') {
+        throw new RuntimeException(t('admin.classes.period_delete.confirm_failed', 'Bitte zur Bestätigung exakt „DELETE“ eingeben.'));
+      }
+
+      $pdo->beginTransaction();
+      $stPeriod = $pdo->prepare(
+        "SELECT id, is_active
+         FROM school_periods
+         WHERE school_year=? AND period_label=?
+         LIMIT 1
+         FOR UPDATE"
+      );
+      $stPeriod->execute([$schoolYear, $periodLabel]);
+      $periodRow = $stPeriod->fetch(PDO::FETCH_ASSOC);
+      if (!$periodRow) {
+        throw new RuntimeException(t('admin.classes.period_delete.not_found', 'Schulhalbjahr nicht gefunden.'));
+      }
+      if ((int)($periodRow['is_active'] ?? 0) === 1) {
+        throw new RuntimeException(t('admin.classes.period_delete.active_blocked', 'Das aktive Schulhalbjahr kann nicht gelöscht werden.'));
+      }
+
+      $dependencyCounts = school_period_dependency_counts($pdo, $schoolYear, $periodLabel);
+      $blockers = school_period_blockers($dependencyCounts);
+      if ($blockers) {
+        $labels = school_period_dependency_labels();
+        $details = [];
+        foreach ($blockers as $key => $count) {
+          $details[] = ($labels[$key] ?? (string)$key) . ': ' . (int)$count;
+        }
+        throw new RuntimeException(str_replace(
+          '{details}',
+          implode(', ', $details),
+          t('admin.classes.period_delete.dependencies_blocked', 'Löschen blockiert, weil noch Daten vorhanden sind: {details}.')
+        ));
+      }
+
+      $stDelete = $pdo->prepare("DELETE FROM school_periods WHERE id=? AND is_active=0");
+      $stDelete->execute([(int)$periodRow['id']]);
+      if ($stDelete->rowCount() !== 1) {
+        throw new RuntimeException(t('admin.classes.period_delete.failed', 'Das Schulhalbjahr konnte nicht sicher gelöscht werden.'));
+      }
+      $pdo->commit();
+
+      audit('admin_school_period_delete', $userId, [
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'dependency_counts' => $dependencyCounts,
+      ]);
+      $ok = strtr(t('admin.classes.period_delete.ok', 'Leeres Schulhalbjahr entfernt: {year} · {period}.'), [
+        '{year}' => $schoolYear,
+        '{period}' => period_label_options()[$periodLabel] ?? $periodLabel,
+      ]);
     }
 
     elseif ($action === 'create_single') {
@@ -678,6 +798,17 @@ if ($currentActiveKey === '' && $periodOverview) {
   $currentActiveKey = trim((string)($fallbackPeriod['school_year'] ?? '')) . '|' .
     normalize_period_label((string)($fallbackPeriod['period_label'] ?? 'Standard'));
 }
+$periodDeletionChecks = [];
+foreach ($periodOverview as $row) {
+  $schoolYear = trim((string)($row['school_year'] ?? ''));
+  $periodLabel = normalize_period_label((string)($row['period_label'] ?? 'Standard'));
+  $key = $schoolYear . '|' . $periodLabel;
+  $counts = school_period_dependency_counts($pdo, $schoolYear, $periodLabel);
+  $periodDeletionChecks[$key] = [
+    'counts' => $counts,
+    'blockers' => school_period_blockers($counts),
+  ];
+}
 
 // Group by school_year
 $grouped = [];
@@ -961,6 +1092,77 @@ render_admin_header(t('admin.classes.title'));
       <button class="btn primary" type="submit" <?=!$periodOverview ? 'disabled' : ''?>><?=h(t('admin.classes.active_period.apply', 'Als aktiv setzen'))?></button>
     </div>
   </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.period_delete.heading', 'Leere Schulhalbjahre entfernen'))?></h2>
+  <p class="muted"><?=h(t('admin.classes.period_delete.desc', 'Ein Schulhalbjahr kann nur entfernt werden, wenn es nicht aktiv ist und keinerlei abhängige Daten enthält. Es werden niemals Klassen, Berichte oder andere Inhalte automatisch mitgelöscht.'))?></p>
+
+  <?php if (!$periodOverview): ?>
+    <div class="alert"><?=h(t('admin.classes.period_delete.none', 'Keine Schulhalbjahre vorhanden.'))?></div>
+  <?php else: ?>
+    <?php $dependencyLabels = school_period_dependency_labels(); ?>
+    <table class="table">
+      <thead>
+        <tr>
+          <th><?=h(t('admin.classes.active_period.select', 'Schuljahr/Halbjahr'))?></th>
+          <th><?=h(t('admin.classes.period_delete.status', 'Schutzprüfung'))?></th>
+          <th><?=h(t('admin.classes.period_delete.action', 'Entfernen'))?></th>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($periodOverview as $row): ?>
+        <?php
+          $schoolYear = trim((string)($row['school_year'] ?? ''));
+          $periodLabel = normalize_period_label((string)($row['period_label'] ?? 'Standard'));
+          $periodKey = $schoolYear . '|' . $periodLabel;
+          $isActivePeriod = (int)($row['period_is_active'] ?? 0) === 1;
+          $blockers = $periodDeletionChecks[$periodKey]['blockers'] ?? [];
+          $blockerParts = [];
+          foreach ($blockers as $dependencyKey => $count) {
+            $blockerParts[] = ($dependencyLabels[$dependencyKey] ?? (string)$dependencyKey) . ': ' . (int)$count;
+          }
+          $canDeletePeriod = !$isActivePeriod && !$blockers;
+        ?>
+        <tr>
+          <td>
+            <strong><?=h($schoolYear)?> · <?=h(period_label_options()[$periodLabel] ?? $periodLabel)?></strong>
+            <?php if ($isActivePeriod): ?>
+              <span class="badge"><?=h(t('teacher.classes.status.active', 'Aktiv'))?></span>
+            <?php endif; ?>
+          </td>
+          <td>
+            <?php if ($isActivePeriod): ?>
+              <span class="muted"><?=h(t('admin.classes.period_delete.active_blocked', 'Das aktive Schulhalbjahr kann nicht gelöscht werden.'))?></span>
+            <?php elseif ($blockerParts): ?>
+              <span class="muted"><?=h(str_replace(
+                '{details}',
+                implode(', ', $blockerParts),
+                t('admin.classes.period_delete.dependencies_short', 'Geschützt durch vorhandene Daten: {details}.')
+              ))?></span>
+            <?php else: ?>
+              <span class="badge"><?=h(t('admin.classes.period_delete.safe', 'Leer – kann sicher entfernt werden'))?></span>
+            <?php endif; ?>
+          </td>
+          <td>
+            <?php if ($canDeletePeriod): ?>
+              <form method="post" class="row" style="gap:8px; align-items:center; flex-wrap:wrap;" onsubmit="return confirm(<?=h(json_encode(t('admin.classes.period_delete.confirm_modal', 'Dieses leere Schulhalbjahr wirklich entfernen?'), JSON_UNESCAPED_UNICODE))?>);">
+                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                <input type="hidden" name="action" value="delete_period">
+                <input type="hidden" name="school_year" value="<?=h($schoolYear)?>">
+                <input type="hidden" name="period_label" value="<?=h($periodLabel)?>">
+                <input name="confirm_text" type="text" placeholder="DELETE" aria-label="<?=h(t('admin.classes.period_delete.confirm_label', 'Zur Bestätigung DELETE eingeben'))?>" required style="max-width:130px;">
+                <button class="btn danger" type="submit"><?=h(t('admin.classes.period_delete.button', 'Leeres Halbjahr entfernen'))?></button>
+              </form>
+            <?php else: ?>
+              <span class="muted">—</span>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  <?php endif; ?>
 </div>
 
 <div class="card">
