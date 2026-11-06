@@ -660,6 +660,19 @@ CREATE TABLE IF NOT EXISTS `text_snippets` (
   KEY `idx_text_snippets_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `school_periods` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
+  `is_active` tinyint(1) NOT NULL DEFAULT '0',
+  `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_school_periods_scope` (`school_year`,`period_label`),
+  KEY `idx_school_periods_active` (`is_active`,`school_year`,`period_label`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `classes` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,

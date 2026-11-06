@@ -580,6 +580,7 @@ function absence_upload_status(PDO $pdo, string $schoolYear, string $periodLabel
 
 $classesStmt = $pdo->query("SELECT id, school_year, period_label, grade_level, label, name, template_id FROM classes WHERE is_active=1 ORDER BY school_year DESC, grade_level DESC, label ASC, name ASC");
 $classes = $classesStmt->fetchAll();
+$activePeriod = active_school_period($pdo);
 
 $progressByClass = build_progress($pdo, $classes);
 $overall = [
@@ -627,6 +628,10 @@ if ($selectedClassId !== 0 && isset($progressByClass[$selectedClassId]['class'])
     $deadlineScopeLabel .= ' · ' . period_label_display_admin($classRow['period_label'] ?? 'Standard');
   }
 }
+if ($deadlineSchoolYear === '' && $selectedClassId === 0 && $activePeriod) {
+  $deadlineSchoolYear = (string)$activePeriod['school_year'];
+  $deadlinePeriodLabel = normalize_class_period_label($activePeriod['period_label'] ?? 'Standard');
+}
 if ($deadlineSchoolYear === '') {
   $years = array_values(array_unique(array_filter(array_map(
     static fn($c) => trim((string)($c['school_year'] ?? '')),
@@ -638,7 +643,7 @@ if ($deadlineSchoolYear === '') {
   $deadlineSchoolYear = (string)((app_config()['app']['default_school_year'] ?? ''));
 }
 $deadlinePeriodLabel = normalize_class_period_label($deadlinePeriodLabel);
-if ($deadlineSchoolYear !== '' && $selectedClassId === 0) {
+if ($deadlineSchoolYear !== '' && $selectedClassId === 0 && !$activePeriod) {
   $periods = array_values(array_unique(array_filter(array_map(
     static fn($c) => ((string)($c['school_year'] ?? '') === $deadlineSchoolYear)
       ? normalize_class_period_label($c['period_label'] ?? 'Standard')

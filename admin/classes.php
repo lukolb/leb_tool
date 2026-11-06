@@ -32,6 +32,32 @@ function period_label_options(): array {
     'H2' => t('admin.classes.period.h2', '2. Halbjahr'),
   ];
 }
+function ensure_school_period(PDO $pdo, string $schoolYear, string $periodLabel, int $createdByUserId = 0): bool {
+  $schoolYear = normalize_school_year($schoolYear);
+  $periodLabel = normalize_period_label($periodLabel);
+  if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+
+  $st = $pdo->prepare(
+    "INSERT IGNORE INTO school_periods (school_year, period_label, is_active, created_by_user_id)
+     VALUES (?, ?, 0, ?)"
+  );
+  $st->execute([$schoolYear, $periodLabel, $createdByUserId > 0 ? $createdByUserId : null]);
+  $created = $st->rowCount() > 0;
+
+  $hasActivePeriod = (int)$pdo->query("SELECT COUNT(*) FROM school_periods WHERE is_active=1")->fetchColumn() > 0;
+  if (!$hasActivePeriod) {
+    $pdo->prepare("UPDATE school_periods SET is_active=1 WHERE school_year=? AND period_label=?")
+      ->execute([$schoolYear, $periodLabel]);
+  }
+  return $created;
+}
+function mark_school_period_active(PDO $pdo, string $schoolYear, string $periodLabel, int $createdByUserId = 0): void {
+  ensure_school_period($pdo, $schoolYear, $periodLabel, $createdByUserId);
+  $pdo->prepare(
+    "UPDATE school_periods
+     SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END"
+  )->execute([$schoolYear, $periodLabel]);
+}
 function computed_name(?int $grade, string $label): string {
   $label = normalize_label($label);
   if ($grade === null || $grade <= 0 || $label === '') return trim((string)$grade . $label);
@@ -162,15 +188,32 @@ $templates = $pdo->query(
    ORDER BY is_active DESC, template_version DESC, id DESC"
 )->fetchAll(PDO::FETCH_ASSOC);
 
-$years = $pdo->query("SELECT DISTINCT school_year FROM classes ORDER BY school_year DESC")->fetchAll(PDO::FETCH_COLUMN);
-
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
   $action = (string)($_POST['action'] ?? '');
 
   try {
-    if ($action === 'create_single') {
+    if ($action === 'create_period') {
+      $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
+      $periodLabel = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
+      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+
+      $created = ensure_school_period($pdo, $schoolYear, $periodLabel, $userId);
+      audit('admin_school_period_create', $userId, [
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'created' => $created,
+      ]);
+      $ok = $created
+        ? strtr(t('admin.classes.period_create.ok', 'Schulhalbjahr angelegt: {year} · {period}.'), [
+            '{year}' => $schoolYear,
+            '{period}' => period_label_options()[$periodLabel] ?? $periodLabel,
+          ])
+        : t('admin.classes.period_create.exists', 'Dieses Schulhalbjahr ist bereits angelegt.');
+    }
+
+    elseif ($action === 'create_single') {
       $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $gradeLevel = (int)($_POST['grade_level'] ?? 0);
       $label = normalize_label((string)($_POST['label'] ?? ''));
@@ -178,6 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
       if ($gradeLevel <= 0) throw new RuntimeException(t('admin.classes.error.grade_missing'));
       if ($label === '') throw new RuntimeException(t('admin.classes.error.label_missing'));
+      ensure_school_period($pdo, $schoolYear, $periodLabel, $userId);
 
       $name = computed_name($gradeLevel, $label);
 
@@ -225,6 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($gradeTo < $gradeFrom) [$gradeFrom, $gradeTo] = [$gradeTo, $gradeFrom];
       $labels = parse_labels($labelsRaw);
       if (!$labels) throw new RuntimeException(t('admin.classes.error.labels_missing'));
+      ensure_school_period($pdo, $schoolYear, $periodLabel, $userId);
 
       $teacherIds = $_POST['teacher_ids'] ?? [];
       if (!is_array($teacherIds)) $teacherIds = [];
@@ -291,6 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $templateOverride = $templateOverrideRaw > 0 ? assert_template_selectable($pdo, $templateOverrideRaw, null) : null;
 
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      ensure_school_period($pdo, $schoolYear, $targetPeriod, $userId);
 
       $stClasses = $pdo->prepare(
         "SELECT id, school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled
@@ -413,6 +459,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $archived++;
       }
 
+      mark_school_period_active($pdo, $schoolYear, $targetPeriod, $userId);
+
       $pdo->commit();
 
       audit('admin_classes_switch_period', $userId, [
@@ -440,6 +488,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
 
       $pdo->beginTransaction();
+      mark_school_period_active($pdo, $schoolYear, $periodLabel, $userId);
       $pdo->prepare(
         "UPDATE classes
          SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END,
@@ -449,9 +498,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $stCount = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE school_year=? AND period_label=?");
       $stCount->execute([$schoolYear, $periodLabel]);
       $targetCount = (int)$stCount->fetchColumn();
-      if ($targetCount <= 0) {
-        throw new RuntimeException(t('admin.classes.switch.no_active', 'Keine aktiven Klassen für dieses Schuljahr.'));
-      }
       $pdo->commit();
 
       audit('admin_classes_set_active_period', $userId, [
@@ -490,6 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
       if ($gradeLevel <= 0) throw new RuntimeException(t('admin.classes.error.grade_missing'));
       if ($label === '') throw new RuntimeException(t('admin.classes.error.label_missing'));
+      ensure_school_period($pdo, $schoolYear, $periodLabel, $userId);
 
       $name = computed_name($gradeLevel, $label);
 
@@ -565,6 +612,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
+$years = $pdo->query("SELECT school_year FROM school_periods GROUP BY school_year ORDER BY school_year DESC")
+  ->fetchAll(PDO::FETCH_COLUMN);
+
 // View options
 $showInactive = (int)($_GET['show_inactive'] ?? 0) === 1;
 
@@ -603,19 +653,22 @@ $classes = $pdo->query(
 )->fetchAll(PDO::FETCH_ASSOC);
 
 $periodOverview = $pdo->query(
-  "SELECT school_year, period_label, COUNT(*) AS total_count,
-          SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) AS active_count
-   FROM classes
-   GROUP BY school_year, period_label
-   ORDER BY school_year ASC,
-            CASE period_label
+  "SELECT sp.school_year, sp.period_label, sp.is_active AS period_is_active,
+          COUNT(c.id) AS total_count,
+          SUM(CASE WHEN c.is_active=1 THEN 1 ELSE 0 END) AS active_count
+   FROM school_periods sp
+   LEFT JOIN classes c
+     ON c.school_year=sp.school_year AND c.period_label=sp.period_label
+   GROUP BY sp.id, sp.school_year, sp.period_label, sp.is_active
+   ORDER BY sp.school_year ASC,
+            CASE sp.period_label
               WHEN 'H2' THEN 2
               ELSE 1
             END ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $currentActiveKey = '';
 foreach ($periodOverview as $row) {
-  if ((int)($row['active_count'] ?? 0) > 0) {
+  if ((int)($row['period_is_active'] ?? 0) === 1) {
     $currentActiveKey = trim((string)$row['school_year']) . '|' . normalize_period_label((string)($row['period_label'] ?? 'Standard'));
     break;
   }
@@ -644,6 +697,32 @@ render_admin_header(t('admin.classes.title'));
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+
+<div class="card">
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.period_create.heading', 'Schulhalbjahr anlegen'))?></h2>
+  <p class="muted"><?=h(t('admin.classes.period_create.desc', 'Legt ein Schulhalbjahr unabhängig von Klassen an. Klassen können später einzeln erstellt oder aus einem anderen Halbjahr übertragen werden.'))?></p>
+
+  <form method="post" class="row" style="gap:10px; align-items:flex-end;">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="create_period">
+
+    <div>
+      <label><?=h(t('admin.classes.school_year_label'))?></label>
+      <input name="school_year" type="text" value="<?=h($defaultSchoolYear)?>" placeholder="<?=h(t('admin.classes.school_year_placeholder'))?>" required>
+    </div>
+    <div>
+      <label><?=h(t('admin.classes.period_label', 'Halbjahr'))?></label>
+      <select name="period_label">
+        <?php foreach (period_label_options() as $val => $lbl): ?>
+          <option value="<?=h($val)?>"><?=h($lbl)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div class="actions" style="justify-content:flex-start;">
+      <button class="btn primary" type="submit"><?=h(t('admin.classes.period_create.button', 'Schulhalbjahr anlegen'))?></button>
+    </div>
+  </form>
+</div>
 
 <div class="card">
   <h2 style="margin-top:0;"><?=h(t('admin.classes.create_heading'))?></h2>
@@ -856,6 +935,9 @@ render_admin_header(t('admin.classes.title'));
     <div>
       <label><?=h(t('admin.classes.active_period.select', 'Schuljahr/Halbjahr'))?></label>
       <select name="active_key" class="input" onchange="(function(sel){ const v=String(sel.value||''); const p=v.split('|'); const f=sel.form; if (f){ f.school_year.value=p[0]||''; f.period_label.value=p[1]||'Standard'; } })(this)">
+        <?php if (!$periodOverview): ?>
+          <option value=""><?=h(t('admin.classes.active_period.none', '— Noch kein Schulhalbjahr angelegt —'))?></option>
+        <?php endif; ?>
         <?php foreach ($periodOverview as $row):
           $sy = trim((string)($row['school_year'] ?? ''));
           $pl = normalize_period_label((string)($row['period_label'] ?? 'Standard'));
@@ -871,7 +953,7 @@ render_admin_header(t('admin.classes.title'));
     </div>
 
     <div class="actions" style="justify-content:flex-start;">
-      <button class="btn primary" type="submit"><?=h(t('admin.classes.active_period.apply', 'Als aktiv setzen'))?></button>
+      <button class="btn primary" type="submit" <?=!$periodOverview ? 'disabled' : ''?>><?=h(t('admin.classes.active_period.apply', 'Als aktiv setzen'))?></button>
     </div>
   </form>
 </div>

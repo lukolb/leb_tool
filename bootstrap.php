@@ -128,6 +128,27 @@ function normalize_class_period_label(?string $s): string {
   return $s !== '' ? $s : 'Standard';
 }
 
+function active_school_period(PDO $pdo): ?array {
+  if (!db_has_table($pdo, 'school_periods')) return null;
+  $st = $pdo->query(
+    "SELECT school_year, period_label
+     FROM school_periods
+     WHERE is_active=1
+     ORDER BY school_year DESC,
+              CASE period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
+              id DESC
+     LIMIT 1"
+  );
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) return null;
+  $schoolYear = trim((string)($row['school_year'] ?? ''));
+  if ($schoolYear === '') return null;
+  return [
+    'school_year' => $schoolYear,
+    'period_label' => normalize_class_period_label($row['period_label'] ?? 'Standard'),
+  ];
+}
+
 function class_report_period_label(int $classId, ?string $periodLabel = null): string {
   $periodLabel = normalize_class_period_label($periodLabel);
   if ($periodLabel === 'Standard') return '__class__:' . $classId;
@@ -858,6 +879,58 @@ function ensure_schema(PDO $pdo): void {
     }
     if (!db_has_index($pdo, 'classes', 'idx_classes_active_year')) {
       $pdo->exec("CREATE INDEX idx_classes_active_year ON classes (is_active, school_year)");
+    }
+
+    // --- school_periods: school years/terms must also exist without classes
+    if (!db_has_table($pdo, 'school_periods')) {
+      $pdo->exec(
+        "CREATE TABLE school_periods (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
+        "  is_active TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_school_periods_scope (school_year, period_label),\n" .
+        "  KEY idx_school_periods_active (is_active, school_year, period_label)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+    if (db_has_table($pdo, 'school_periods')) {
+      $pdo->exec(
+        "INSERT IGNORE INTO school_periods (school_year, period_label, is_active)\n" .
+        "SELECT TRIM(school_year),\n" .
+        "       CASE WHEN COALESCE(TRIM(period_label), '')='' THEN 'Standard' ELSE period_label END,\n" .
+        "       0\n" .
+        "FROM classes\n" .
+        "WHERE COALESCE(TRIM(school_year), '')<>''\n" .
+        "GROUP BY TRIM(school_year), CASE WHEN COALESCE(TRIM(period_label), '')='' THEN 'Standard' ELSE period_label END"
+      );
+
+      $hasActivePeriod = (int)$pdo->query("SELECT COUNT(*) FROM school_periods WHERE is_active=1")->fetchColumn() > 0;
+      if (!$hasActivePeriod) {
+        $stActiveClassPeriod = $pdo->query(
+          "SELECT school_year, period_label
+           FROM classes
+           WHERE is_active=1 AND COALESCE(TRIM(school_year), '')<>''
+           GROUP BY school_year, period_label
+           ORDER BY school_year DESC,
+                    CASE period_label WHEN 'H2' THEN 2 ELSE 1 END DESC
+           LIMIT 1"
+        );
+        $activeClassPeriod = $stActiveClassPeriod->fetch(PDO::FETCH_ASSOC);
+        if ($activeClassPeriod) {
+          $pdo->prepare(
+            "UPDATE school_periods
+             SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END"
+          )->execute([
+            trim((string)$activeClassPeriod['school_year']),
+            normalize_class_period_label($activeClassPeriod['period_label'] ?? 'Standard'),
+          ]);
+        }
+      }
     }
 
     // --- students: add qr_token + login_code for QR and manual login
