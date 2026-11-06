@@ -1759,6 +1759,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const positionMenu = () => {
     if (!currentButton) return;
+    // Set this inline as well so an older cached stylesheet cannot leave the
+    // portalled menu absolutely positioned against the document.
+    menu.style.position = 'fixed';
     const rect = currentButton.getBoundingClientRect();
     const viewportWidth = document.documentElement.clientWidth;
     const viewportHeight = document.documentElement.clientHeight;

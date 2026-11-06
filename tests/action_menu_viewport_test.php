@@ -19,6 +19,7 @@ menu_assert(strpos($cssSource, 'position:fixed') !== false, 'action menu must be
 menu_assert(strpos($cssSource, 'overflow-y:auto') !== false, 'oversized action menus must remain scrollable');
 menu_assert(strpos($phpSource, 'const spaceBelow') !== false, 'available space below the button must be measured');
 menu_assert(strpos($phpSource, 'const spaceAbove') !== false, 'available space above the button must be measured');
+menu_assert(strpos($phpSource, "menu.style.position = 'fixed'") !== false, 'inline positioning must override an older cached stylesheet');
 menu_assert(strpos($phpSource, "menu.dataset.placement = openUpward ? 'top' : 'bottom'") !== false, 'bottom-row menus must open upward');
 menu_assert(strpos($phpSource, 'viewportHeight - margin - renderedHeight') !== false, 'menu bottom edge must be clamped to the viewport');
 
