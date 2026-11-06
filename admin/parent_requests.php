@@ -72,11 +72,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $expiresAt = end_of_day_after_days($days);
       $sql = "UPDATE parent_portal_links ppl\n"
         . "JOIN students s ON s.id=ppl.student_id\n"
+        . "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n"
+        . "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n"
+        . "JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label\n"
         . "SET ppl.status='approved', ppl.approved_by_user_id=?, ppl.approved_at=NOW(), ppl.published_at=NOW(), ppl.expires_at=?, ppl.updated_at=NOW()\n"
         . "WHERE ppl.status='requested'";
       $params = [$userId, $expiresAt];
       if ($targetClassId > 0) {
-        $sql .= " AND s.class_id=?";
+        $sql .= " AND sca.class_id=?";
         $params[] = $targetClassId;
       }
       $upd = $pdo->prepare($sql);
@@ -90,9 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($linkId <= 0) throw new RuntimeException(t('admin.parent_requests.error.link_id_missing', 'Link-ID fehlt.'));
 
     $stLink = $pdo->prepare(
-      "SELECT ppl.*, s.class_id\n" .
+      "SELECT ppl.*, sca.class_id\n" .
       "FROM parent_portal_links ppl\n" .
       "JOIN students s ON s.id=ppl.student_id\n" .
+      "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n" .
+      "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n" .
+      "JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label\n" .
       "WHERE ppl.id=? LIMIT 1"
     );
     $stLink->execute([$linkId]);
@@ -163,7 +169,9 @@ $sql =
   "       (SELECT COUNT(*) FROM parent_feedback pf WHERE pf.link_id=ppl.id AND pf.is_reviewed=0) AS pending_feedback\n" .
   "FROM parent_portal_links ppl\n" .
   "JOIN students s ON s.id=ppl.student_id\n" .
-  "JOIN classes c ON c.id=s.class_id\n" .
+  "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n" .
+  "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n" .
+  "JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label\n" .
   "LEFT JOIN users req ON req.id=ppl.requested_by_user_id\n" .
   "LEFT JOIN users appr ON appr.id=ppl.approved_by_user_id\n" .
   ($where ? $where . "\n" : '') .

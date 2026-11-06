@@ -17,7 +17,14 @@ $token = (string)($_GET['token'] ?? '');
 
 if ($token !== '') {
   try {
-    $st = $pdo->prepare("SELECT id FROM students WHERE qr_token=? AND is_active=1 LIMIT 1");
+    $st = $pdo->prepare(
+      "SELECT DISTINCT s.id
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id AND sca.is_active=1
+       INNER JOIN classes c ON c.id=sca.class_id AND c.is_active=1
+       WHERE s.qr_token=? AND s.is_active=1
+       LIMIT 1"
+    );
     $st->execute([$token]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException(t('student.login.error.invalid_qr', 'Ungültiger QR-Code.'));
@@ -35,7 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $code = preg_replace('/\s+/', '', $code);
     if ($code === '') throw new RuntimeException(t('student.login.error.missing_code', 'Code fehlt.'));
 
-    $st = $pdo->prepare("SELECT id FROM students WHERE login_code=? AND is_active=1 LIMIT 1");
+    $st = $pdo->prepare(
+      "SELECT DISTINCT s.id
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id AND sca.is_active=1
+       INNER JOIN classes c ON c.id=sca.class_id AND c.is_active=1
+       WHERE s.login_code=? AND s.is_active=1
+       LIMIT 1"
+    );
     $st->execute([$code]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException(t('student.login.error.not_found', 'Code nicht gefunden.'));

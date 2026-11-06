@@ -16,9 +16,11 @@ if ($reportId <= 0) {
 }
 
 $st = $pdo->prepare(
-  "SELECT ri.id, ri.template_id, s.class_id, t.pdf_storage_path, t.pdf_original_filename
+  "SELECT ri.id, ri.template_id, sca.class_id, t.pdf_storage_path, t.pdf_original_filename
    FROM report_instances ri
    JOIN students s ON s.id=ri.student_id
+   JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+   JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
    JOIN templates t ON t.id=ri.template_id
    WHERE ri.id=? AND ri.student_id IS NOT NULL
    LIMIT 1"

@@ -19,10 +19,11 @@ $class = $cls->fetch(PDO::FETCH_ASSOC);
 if (!$class) { http_response_code(404); echo t('teacher.qr_print.error.class_not_found'); exit; }
 
 $st = $pdo->prepare(
-  "SELECT id, first_name, last_name, login_code, qr_token
-   FROM students
-   WHERE class_id=? AND is_active=1
-   ORDER BY last_name ASC, first_name ASC"
+  "SELECT s.id, s.first_name, s.last_name, s.login_code, s.qr_token
+   FROM students s
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   WHERE sca.class_id=? AND sca.is_active=1
+   ORDER BY s.last_name ASC, s.first_name ASC"
 );
 $st->execute([$classId]);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);

@@ -37,13 +37,14 @@ function parent_class_display(array $c): string {
 
 function latest_report_for_student(PDO $pdo, int $studentId): ?array {
   $st = $pdo->prepare(
-    "SELECT id, template_id, student_id, school_year, period_label, status\n" .
-    "FROM report_instances\n" .
-    "WHERE student_id=?\n" .
-    "ORDER BY updated_at DESC, id DESC\n" .
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label, ri.status\n" .
+    "FROM report_instances ri\n" .
+    "INNER JOIN students s ON s.id=ri.student_id\n" .
+    "WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id)=?\n" .
+    "ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC\n" .
     "LIMIT 1"
   );
-  $st->execute([$studentId]);
+  $st->execute([$studentId, $studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
   return $row ?: null;
 }
@@ -344,10 +345,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $studentId = $mailForm['student_id'];
         if ($studentId <= 0) throw new RuntimeException(t('teacher.parents.error.student_missing', 'Schüler fehlt.'));
         $stStudent = $pdo->prepare(
-          "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
-          "FROM students WHERE id=? LIMIT 1"
+          "SELECT s.id, sca.class_id, s.first_name, s.last_name, s.email_parent1, s.email_parent2\n" .
+          "FROM students s JOIN student_class_assignments sca ON sca.student_id=s.id\n" .
+          "WHERE s.id=? ORDER BY (sca.class_id=?) DESC, sca.is_active DESC LIMIT 1"
         );
-        $stStudent->execute([$studentId]);
+        $stStudent->execute([$studentId, (int)($mailForm['class_id'] ?? 0)]);
         $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
         if (!$studentRow) throw new RuntimeException(t('teacher.parents.error.student_not_found', 'Schüler nicht gefunden.'));
         $studentClassId = (int)($studentRow['class_id'] ?? 0);
@@ -372,9 +374,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$classIds) throw new RuntimeException(t('teacher.parents.error.classes_missing', 'Keine Klassen verfügbar.'));
         $in = implode(',', array_fill(0, count($classIds), '?'));
         $stStudents = $pdo->prepare(
-          "SELECT id, class_id, first_name, last_name, email_parent1, email_parent2\n" .
-          "FROM students WHERE class_id IN ($in) AND is_active=1\n" .
-          "ORDER BY last_name ASC, first_name ASC"
+          "SELECT s.id, sca.class_id, s.first_name, s.last_name, s.email_parent1, s.email_parent2\n" .
+          "FROM students s JOIN student_class_assignments sca ON sca.student_id=s.id\n" .
+          "WHERE sca.class_id IN ($in) AND sca.is_active=1\n" .
+          "ORDER BY s.last_name ASC, s.first_name ASC"
         );
         $stStudents->execute($classIds);
         $studentsToSend = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -485,7 +488,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $approvedAt = $parentAutoApprove ? (new DateTimeImmutable('now'))->format('Y-m-d H:i:s') : null;
       $publishedAt = $parentAutoApprove ? $approvedAt : null;
 
-      $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name ASC, first_name ASC");
+      $stStudents = $pdo->prepare(
+        "SELECT s.id FROM students s
+         JOIN student_class_assignments sca ON sca.student_id=s.id
+         WHERE sca.class_id=? AND sca.is_active=1
+         ORDER BY s.last_name ASC, s.first_name ASC"
+      );
       $stStudents->execute([$targetClassId]);
       $created = 0; $skippedReport = 0; $skippedActive = 0;
       $stLatestLink = $pdo->prepare("SELECT status, expires_at FROM parent_portal_links WHERE student_id=? ORDER BY updated_at DESC, id DESC LIMIT 1");
@@ -544,8 +552,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         throw new RuntimeException(t('teacher.parents.error.student_missing', 'Schüler fehlt.'));
       }
 
-      $stStudent = $pdo->prepare("SELECT id, class_id, first_name, last_name FROM students WHERE id=? LIMIT 1");
-      $stStudent->execute([$studentId]);
+      $stStudent = $pdo->prepare(
+        "SELECT s.id, sca.class_id, s.first_name, s.last_name
+         FROM students s
+         JOIN student_class_assignments sca ON sca.student_id=s.id
+         WHERE s.id=? AND sca.class_id=?
+         LIMIT 1"
+      );
+      $stStudent->execute([$studentId, $classId]);
       $studentRow = $stStudent->fetch(PDO::FETCH_ASSOC);
       if (!$studentRow) {
         throw new RuntimeException(t('teacher.parents.error.student_not_found', 'Schüler nicht gefunden.'));
@@ -638,8 +652,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           "UPDATE parent_feedback pf\n" .
           "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
           "JOIN students s ON s.id=ppl.student_id\n" .
+          "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n" .
           "SET pf.is_reviewed=1, pf.reviewed_by_user_id=?, pf.reviewed_at=NOW()\n" .
-          "WHERE pf.id=? AND s.class_id=?"
+          "WHERE pf.id=? AND sca.class_id=?"
         );
         $upd->execute([$userId, $feedbackId, $studentClassId]);
         $alerts[] = t('teacher.parents.feedback_reviewed', 'Feedback wurde als geprüft markiert.');
@@ -664,10 +679,11 @@ $linkIds = [];
 if ($classId > 0) {
   $stStu = $pdo->prepare(
     "SELECT s.*, c.school_year, c.grade_level, c.label, c.name,\n" .
-    "  (SELECT id FROM parent_portal_links ppl WHERE ppl.student_id=s.id ORDER BY ppl.updated_at DESC, ppl.id DESC LIMIT 1) AS parent_link_id\n" .
+    "  (SELECT ppl.id FROM parent_portal_links ppl JOIN students pls ON pls.id=ppl.student_id WHERE COALESCE(NULLIF(pls.master_student_id, 0), pls.id)=s.id ORDER BY ppl.updated_at DESC, ppl.id DESC LIMIT 1) AS parent_link_id\n" .
     "FROM students s\n" .
-    "JOIN classes c ON c.id=s.class_id\n" .
-    "WHERE s.class_id=? AND s.is_active=1\n" .
+    "JOIN student_class_assignments sca ON sca.student_id=s.id\n" .
+    "JOIN classes c ON c.id=sca.class_id\n" .
+    "WHERE sca.class_id=? AND sca.is_active=1\n" .
     "ORDER BY s.last_name ASC, s.first_name ASC"
   );
   $stStu->execute([$classId]);
@@ -724,7 +740,8 @@ $stFb = $pdo->prepare(
     "FROM parent_feedback pf\n" .
     "JOIN parent_portal_links ppl ON ppl.id=pf.link_id\n" .
     "JOIN students s ON s.id=ppl.student_id\n" .
-    "WHERE s.class_id=? AND pf.feedback_type='question'\n" .
+    "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n" .
+    "WHERE sca.class_id=? AND pf.feedback_type='question'\n" .
     "ORDER BY pf.is_reviewed ASC, pf.created_at DESC\n" .
     "LIMIT 40"
   );

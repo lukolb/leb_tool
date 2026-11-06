@@ -165,6 +165,98 @@ function class_id_from_report_period_label(?string $label): int {
   return $id > 0 ? $id : 0;
 }
 
+function app_canonical_student_id(PDO $pdo, int $studentId): int {
+  if ($studentId <= 0) return 0;
+  $st = $pdo->prepare("SELECT id, master_student_id FROM students WHERE id=? LIMIT 1");
+  $st->execute([$studentId]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) return 0;
+  $masterId = (int)($row['master_student_id'] ?? 0);
+  return $masterId > 0 ? $masterId : (int)$row['id'];
+}
+
+function student_identity_hash(string $firstName, string $lastName, string $dateOfBirth): string {
+  $normalize = static function(string $value): string {
+    $value = trim(preg_replace('/\s+/u', ' ', $value) ?? '');
+    return mb_strtolower($value, 'UTF-8');
+  };
+  return hash('sha256', $normalize($firstName) . "\n" . $normalize($lastName) . "\n" . trim($dateOfBirth));
+}
+
+function find_student_by_identity(PDO $pdo, string $firstName, string $lastName, string $dateOfBirth): int {
+  $hash = student_identity_hash($firstName, $lastName, $dateOfBirth);
+  $st = $pdo->prepare("SELECT id FROM students WHERE identity_hash=? LIMIT 1");
+  $st->execute([$hash]);
+  $studentId = (int)($st->fetchColumn() ?: 0);
+  if ($studentId > 0) return $studentId;
+
+  $st = $pdo->prepare(
+    "SELECT id, master_student_id, first_name, last_name, date_of_birth
+     FROM students
+     WHERE date_of_birth=?
+     ORDER BY id ASC"
+  );
+  $st->execute([$dateOfBirth]);
+  $matches = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+    $candidateHash = student_identity_hash(
+      (string)($row['first_name'] ?? ''),
+      (string)($row['last_name'] ?? ''),
+      (string)($row['date_of_birth'] ?? '')
+    );
+    if (!hash_equals($hash, $candidateHash)) continue;
+    $matches[] = (int)(($row['master_student_id'] ?? 0) ?: ($row['id'] ?? 0));
+  }
+  $matches = array_values(array_unique(array_filter($matches, static fn(int $id): bool => $id > 0)));
+  if (count($matches) > 1) {
+    throw new RuntimeException('Mehrere unabhängige Schüler haben denselben Namen und dasselbe Geburtsdatum. Bitte Dublette prüfen und Zuordnung bestätigen.');
+  }
+  return $matches[0] ?? 0;
+}
+
+function assign_student_to_class(PDO $pdo, int $studentId, int $classId, bool $isActive = true): void {
+  $studentId = app_canonical_student_id($pdo, $studentId);
+  if ($studentId <= 0 || $classId <= 0) throw new InvalidArgumentException('Invalid student/class assignment.');
+  $pdo->prepare(
+    "INSERT INTO student_class_assignments (student_id, class_id, is_active)
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE is_active=VALUES(is_active), updated_at=CURRENT_TIMESTAMP"
+  )->execute([$studentId, $classId, $isActive ? 1 : 0]);
+}
+
+function student_is_assigned_to_class(PDO $pdo, int $studentId, int $classId, bool $activeOnly = false): bool {
+  $studentId = app_canonical_student_id($pdo, $studentId);
+  if ($studentId <= 0 || $classId <= 0) return false;
+  $sql = "SELECT 1 FROM student_class_assignments WHERE student_id=? AND class_id=?";
+  if ($activeOnly) $sql .= " AND is_active=1";
+  $sql .= " LIMIT 1";
+  $st = $pdo->prepare($sql);
+  $st->execute([$studentId, $classId]);
+  return (bool)$st->fetchColumn();
+}
+
+function unassign_student_from_class(PDO $pdo, int $studentId, int $classId): void {
+  $studentId = app_canonical_student_id($pdo, $studentId);
+  if ($studentId <= 0 || $classId <= 0) return;
+  $pdo->prepare("DELETE FROM student_class_assignments WHERE student_id=? AND class_id=?")
+    ->execute([$studentId, $classId]);
+}
+
+function primary_student_class_id(PDO $pdo, int $studentId, bool $activeOnly = false): int {
+  $studentId = app_canonical_student_id($pdo, $studentId);
+  if ($studentId <= 0) return 0;
+  $sql =
+    "SELECT sca.class_id
+     FROM student_class_assignments sca
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE sca.student_id=?";
+  if ($activeOnly) $sql .= " AND sca.is_active=1 AND c.is_active=1";
+  $sql .= " ORDER BY c.is_active DESC, c.school_year DESC, CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC LIMIT 1";
+  $st = $pdo->prepare($sql);
+  $st->execute([$studentId]);
+  return (int)($st->fetchColumn() ?: 0);
+}
+
 // One-shot: allow switching language via ?lang=de|en
 if (isset($_GET['lang'])) {
   ui_lang_set((string)$_GET['lang']);
@@ -868,6 +960,79 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE INDEX idx_students_master ON students (master_student_id)");
     }
 
+    // Canonical student identity: first name + last name + date of birth.
+    // Legacy semester copies remain available for historical foreign keys, but
+    // only the canonical row receives an identity hash and class assignments.
+    $identityMigrationNeeded = !db_has_column($pdo, 'students', 'identity_hash');
+    if ($identityMigrationNeeded) {
+      $pdo->exec("ALTER TABLE students ADD COLUMN identity_hash CHAR(64) NULL AFTER master_student_id");
+    }
+    $identityMigrationNeeded = $identityMigrationNeeded || !db_has_index($pdo, 'students', 'uq_students_identity_hash');
+    if ($identityMigrationNeeded) {
+      $identityRows = $pdo->query(
+        "SELECT id, master_student_id, first_name, last_name, date_of_birth
+         FROM students
+         ORDER BY id ASC"
+      )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+      $rowsById = [];
+      foreach ($identityRows as $identityRow) $rowsById[(int)$identityRow['id']] = $identityRow;
+
+      // Existing master links are explicit identity decisions. Equal data in
+      // independent rows is a conflict and must not be merged automatically.
+      $canonicalHashes = [];
+      foreach ($identityRows as $identityRow) {
+        $studentId = (int)($identityRow['id'] ?? 0);
+        $masterId = (int)($identityRow['master_student_id'] ?? 0);
+        $canonicalId = $masterId > 0 && isset($rowsById[$masterId]) ? $masterId : $studentId;
+        if (isset($canonicalHashes[$canonicalId])) continue;
+        $canonicalRow = $rowsById[$canonicalId] ?? $identityRow;
+        $canonicalHashes[$canonicalId] = student_identity_hash(
+          (string)($canonicalRow['first_name'] ?? ''),
+          (string)($canonicalRow['last_name'] ?? ''),
+          (string)($canonicalRow['date_of_birth'] ?? '')
+        );
+      }
+
+      $canonicalIdsByHash = [];
+      foreach ($canonicalHashes as $canonicalId => $identityHash) {
+        $canonicalIdsByHash[$identityHash][] = (int)$canonicalId;
+      }
+      $pdo->exec("UPDATE students SET identity_hash=NULL WHERE identity_hash IS NOT NULL");
+      $setCanonicalIdentity = $pdo->prepare("UPDATE students SET identity_hash=? WHERE id=?");
+      foreach ($canonicalIdsByHash as $identityHash => $canonicalIds) {
+        if (count($canonicalIds) !== 1) continue;
+        $setCanonicalIdentity->execute([$identityHash, $canonicalIds[0]]);
+      }
+    }
+    if (!db_has_index($pdo, 'students', 'uq_students_identity_hash')) {
+      $pdo->exec("CREATE UNIQUE INDEX uq_students_identity_hash ON students (identity_hash)");
+    }
+
+    // Students are stored once and linked to one or more classes here.
+    if (!db_has_table($pdo, 'student_class_assignments')) {
+      $pdo->exec(
+        "CREATE TABLE student_class_assignments (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  student_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  class_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  is_active TINYINT(1) NOT NULL DEFAULT 1,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_student_class_assignment (student_id, class_id),\n" .
+        "  KEY idx_student_class_lookup (class_id, is_active, student_id),\n" .
+        "  KEY idx_student_assignment_lookup (student_id, is_active, class_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+    $pdo->exec(
+      "INSERT INTO student_class_assignments (student_id, class_id, is_active)\n" .
+      "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id), s.class_id, s.is_active\n" .
+      "FROM students s\n" .
+      "WHERE s.class_id IS NOT NULL AND s.class_id>0\n" .
+      "ON DUPLICATE KEY UPDATE is_active=GREATEST(student_class_assignments.is_active, VALUES(is_active))"
+    );
+
     // --- classes: add is_active + inactive_at for archiving/hiding old school years
     if (!db_has_column($pdo, 'classes', 'is_active')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER name");
@@ -983,6 +1148,11 @@ function ensure_schema(PDO $pdo): void {
     // --- report_instances: normalize invalid rows and remove duplicates by canonical student + semester
     cleanup_report_instances_missing_period($pdo);
     cleanup_duplicate_student_report_instances($pdo);
+
+    // The many-to-many assignment table is authoritative from this point on.
+    // Clear the former one-class pointer so removed assignments cannot be
+    // recreated by the legacy migration on a later request.
+    $pdo->exec("UPDATE students SET class_id=NULL WHERE class_id IS NOT NULL");
 
     // --- report_instances: prevent duplicate reports for the same student+semester
     if (!db_has_index($pdo, 'report_instances', 'uq_report_student_period')) {
@@ -2107,7 +2277,14 @@ function class_report_field_value_map(PDO $pdo, int $templateId, int $classId, s
 function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   $ri = $pdo->prepare(
     "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label,
-            s.first_name, s.last_name, s.date_of_birth, s.class_id
+            s.first_name, s.last_name, s.date_of_birth,
+            (SELECT sca.class_id
+               FROM student_class_assignments sca
+               INNER JOIN classes cm ON cm.id=sca.class_id
+              WHERE sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+                AND cm.school_year=ri.school_year AND cm.period_label=ri.period_label
+              ORDER BY cm.is_active DESC, cm.id DESC
+              LIMIT 1) AS class_id
      FROM report_instances ri
      LEFT JOIN students s ON s.id=ri.student_id
      WHERE ri.id=? LIMIT 1"
@@ -2355,15 +2532,19 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
   $taskOpenMap = [];
   if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
     $tSt = $pdo->prepare(
-      "SELECT s.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 0 ELSE 1 END) AS open
+      "SELECT sca.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 0 ELSE 1 END) AS open
 "
       . "FROM report_instances ri
 "
       . "JOIN students s ON s.id=ri.student_id
 "
-      . "WHERE s.class_id IN ($in)
+      . "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
 "
-      . "GROUP BY s.class_id"
+      . "JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+"
+      . "WHERE sca.class_id IN ($in)
+"
+      . "GROUP BY sca.class_id"
     );
     $tSt->execute($classIds);
     foreach ($tSt->fetchAll(PDO::FETCH_ASSOC) as $r) {

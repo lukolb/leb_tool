@@ -35,14 +35,15 @@ if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $cla
 }
 
 $st = $pdo->prepare(
-  "SELECT s.id, s.first_name, s.last_name, s.class_id,
+  "SELECT s.id, s.first_name, s.last_name, sca.class_id,
           c.school_year, c.period_label, c.grade_level, c.label, c.name
    FROM students s
-   JOIN classes c ON c.id=s.class_id
-   WHERE s.id=?
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   INNER JOIN classes c ON c.id=sca.class_id
+   WHERE s.id=? AND sca.class_id=?
    LIMIT 1"
 );
-$st->execute([$studentId]);
+$st->execute([$studentId, $classId]);
 $student = $st->fetch(PDO::FETCH_ASSOC);
 if (!$student || (int)($student['class_id'] ?? 0) !== $classId) {
   render_teacher_header(t('teacher.pdf_entry.title'));

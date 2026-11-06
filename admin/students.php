@@ -263,6 +263,9 @@ function delete_students_cascade(PDO $pdo, array $studentIds): array {
     $reportsDeleted = count($reportIds);
   }
 
+  if (db_has_table($pdo, 'student_class_assignments')) {
+    $pdo->prepare("DELETE FROM student_class_assignments WHERE student_id IN ($in)")->execute($studentIds);
+  }
   $pdo->prepare("DELETE FROM students WHERE id IN ($in)")->execute($studentIds);
 
   $pdo->commit();
@@ -662,12 +665,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          VALUES (?, ?, ?, ?, ?, NULL, 'groups', 1)"
       );
 
-      $checkStudent = $pdo->prepare(
-        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? AND class_id=? LIMIT 1"
-      );
       $insertStudent = $pdo->prepare(
-        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (master_student_id, identity_hash, class_id, first_name, last_name, date_of_birth, is_active)
+         VALUES (NULL, ?, NULL, ?, ?, ?, 1)"
       );
       $setSelfMaster = $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?");
 
@@ -777,54 +777,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
           }
 
-          $checkStudent->execute([$first, $last, $dob, $classId]);
-          $existingId = $checkStudent->fetchColumn();
+          $existingId = find_student_by_identity($pdo, $first, $last, $dob);
           if ($existingId) {
-            $updates = [];
-            $params = [];
-            if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
-            if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
-            if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
-            if ($updates) {
-              $params[] = (int)$existingId;
-              $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
-              $updatedStudents++;
-              $importSummary['classes'][$classId]['students_updated']++;
-              $importSummary['students'][] = [
-                'class_id' => $classId,
-                'name' => trim($first . ' ' . $last),
-                'status' => t('admin.students.import.status.updated'),
-              ];
-            } else {
-              $skipped++;
-              $detail = [
-                'name' => trim($first . ' ' . $last),
-                'reason' => t('admin.students.import.reason.exists'),
-              ];
-              $importSkippedDetails[] = $detail;
-              $importSummary['classes'][$classId]['students_skipped']++;
-              $importSummary['skipped'][] = $detail;
-            }
+            $skipped++;
+            $detail = [
+              'name' => trim($first . ' ' . $last),
+              'reason' => t('admin.students.import.reason.duplicate_confirmation', 'Dublette erkannt. Bitte bestehenden Schüler prüfen und die Klassenzuordnung ausdrücklich bestätigen.'),
+            ];
+            $importSkippedDetails[] = $detail;
+            $importSummary['classes'][$classId]['students_skipped']++;
+            $importSummary['skipped'][] = $detail;
             continue;
           }
 
-          $master = find_master_student_id($pdo, $first, $last, $dob);
-          $insertStudent->execute([$master, $classId, $first, $last, $dob]);
+          $identityHash = student_identity_hash($first, $last, $dob);
+          $insertStudent->execute([$identityHash, $first, $last, $dob]);
           $newId = (int)$pdo->lastInsertId();
-          if (!$master) {
-            $setSelfMaster->execute([$newId, $newId]);
-          }
+          $setSelfMaster->execute([$newId, $newId]);
+          assign_student_to_class($pdo, $newId, $classId, true);
           if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
             $pdo->prepare(
               "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
             )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
           }
-          if ($master) {
-            $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
-            if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
-          } else {
-            save_student_custom_values($pdo, $newId, [], true);
-          }
+          save_student_custom_values($pdo, $newId, [], true);
           $createdStudents++;
           $importSummary['classes'][$classId]['students_created']++;
           $importSummary['students'][] = [
@@ -884,47 +860,31 @@ $orderSql = match($sort) {
 
 $params = [];
 $where = "WHERE 1=1";
-$subParams = [];
-$whereSub = "WHERE 1=1";
 if ($q !== '') {
   $where .= " AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.external_ref LIKE ?)";
   $params[] = "%{$q}%"; $params[] = "%{$q}%"; $params[] = "%{$q}%";
-  $whereSub .= " AND (s2.first_name LIKE ? OR s2.last_name LIKE ? OR s2.external_ref LIKE ?)";
-  $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%"; $subParams[] = "%{$q}%";
 }
 if ($schoolYear !== '') {
   $where .= " AND c.school_year = ?";
   $params[] = $schoolYear;
-  $whereSub .= " AND c2.school_year = ?";
-  $subParams[] = $schoolYear;
 }
 if ($classId > 0) {
-  $where .= " AND s.class_id = ?";
+  $where .= " AND sca.class_id = ?";
   $params[] = $classId;
-  $whereSub .= " AND s2.class_id = ?";
-  $subParams[] = $classId;
 }
 
-$paramsSql = array_merge($subParams, $params);
-
 $st = $pdo->prepare(
-  "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.external_ref, s.is_active,
+  "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.external_ref, sca.is_active,
           s.created_at,
           c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.is_active AS class_active
    FROM students s
-   INNER JOIN (
-     SELECT MAX(s2.id) AS id
-     FROM students s2
-     LEFT JOIN classes c2 ON c2.id=s2.class_id
-     $whereSub
-     GROUP BY CASE WHEN s2.master_student_id IS NULL OR s2.master_student_id=0 THEN s2.id ELSE s2.master_student_id END
-   ) sm ON sm.id = s.id
-   LEFT JOIN classes c ON c.id=s.class_id
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   INNER JOIN classes c ON c.id=sca.class_id
    $where
    ORDER BY $orderSql
    LIMIT 500"
 );
-$st->execute($paramsSql);
+$st->execute($params);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $masterIds = [];

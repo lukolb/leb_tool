@@ -89,7 +89,7 @@ function admin_settings_student_has_other_usage(PDO $pdo, int $studentId): bool 
   $st = $pdo->prepare("SELECT 1 FROM report_instances WHERE student_id=? LIMIT 1");
   $st->execute([$studentId]);
   if ($st->fetchColumn()) return true;
-  $st = $pdo->prepare("SELECT class_id FROM students WHERE id=? LIMIT 1");
+  $st = $pdo->prepare("SELECT class_id FROM student_class_assignments WHERE student_id=? LIMIT 1");
   $st->execute([$studentId]);
   $classId = (int)($st->fetchColumn() ?: 0);
   return $classId > 0;
@@ -100,12 +100,14 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId, string $s
 
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
-    "SELECT s.id, s.class_id, c.school_year, c.period_label
+    "SELECT s.id, sca.class_id, c.school_year, c.period_label
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     WHERE s.id=? LIMIT 1"
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=? AND c.school_year=? AND c.period_label=?
+     LIMIT 1"
   );
-  $st->execute([$studentId]);
+  $st->execute([$studentId, $schoolYear, $periodLabel]);
   $student = $st->fetch(PDO::FETCH_ASSOC);
   if (!$student) throw new RuntimeException(t('admin.settings.purge.student_not_found', 'Schüler nicht gefunden.'));
   $studentClassId = (int)($student['class_id'] ?? 0);
@@ -118,7 +120,13 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId, string $s
   $ownsTx = !$pdo->inTransaction();
   if ($ownsTx) $pdo->beginTransaction();
   try {
-    $stRi = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=? AND school_year=? AND period_label=?");
+    $stRi = $pdo->prepare(
+      "SELECT ri.id
+       FROM report_instances ri
+       INNER JOIN students rs ON rs.id=ri.student_id
+       WHERE COALESCE(NULLIF(rs.master_student_id, 0), rs.id)=?
+         AND ri.school_year=? AND ri.period_label=?"
+    );
     $stRi->execute([$studentId, $schoolYear, $periodLabel]);
     $reportIds = array_values(array_filter(array_map('intval', $stRi->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
 
@@ -154,11 +162,22 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId, string $s
       $pdo->prepare("UPDATE field_value_history SET updated_by_student_id=NULL WHERE updated_by_student_id=?")->execute([$studentId]);
     }
 
-    $stRemain = $pdo->prepare("SELECT 1 FROM report_instances WHERE student_id=? LIMIT 1");
+    unassign_student_from_class($pdo, $studentId, $studentClassId);
+
+    $stRemain = $pdo->prepare(
+      "SELECT 1
+       FROM report_instances ri
+       INNER JOIN students rs ON rs.id=ri.student_id
+       WHERE COALESCE(NULLIF(rs.master_student_id, 0), rs.id)=?
+       LIMIT 1"
+    );
     $stRemain->execute([$studentId]);
     $hasReportsRemaining = (bool)$stRemain->fetchColumn();
+    $stAssignments = $pdo->prepare("SELECT 1 FROM student_class_assignments WHERE student_id=? LIMIT 1");
+    $stAssignments->execute([$studentId]);
+    $hasAssignmentsRemaining = (bool)$stAssignments->fetchColumn();
 
-    if (!$hasReportsRemaining) {
+    if (!$hasReportsRemaining && !$hasAssignmentsRemaining) {
       if (db_has_table($pdo, 'student_field_values')) {
         $pdo->prepare("DELETE FROM student_field_values WHERE student_id=?")->execute([$studentId]);
       }
@@ -166,9 +185,6 @@ function admin_settings_delete_student_fully(PDO $pdo, int $studentId, string $s
       $studentDeleted = true;
     } else {
       $studentDeleted = false;
-      if ($studentClassId > 0) {
-        $pdo->prepare("UPDATE students SET class_id=NULL WHERE id=? AND class_id=?")->execute([$studentId, $studentClassId]);
-      }
     }
     if ($ownsTx) $pdo->commit();
     return ['reports_deleted' => count($reportIds), 'student_deleted' => $studentDeleted];
@@ -190,7 +206,7 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId, string $schoo
     throw new RuntimeException(t('admin.settings.purge.scope_mismatch_class', 'Klasse gehört nicht zum gewählten Schulhalbjahr.'));
   }
 
-  $stStudents = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $stStudents = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE class_id=?");
   $stStudents->execute([$classId]);
   $studentIds = array_values(array_filter(array_map('intval', $stStudents->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
 
@@ -620,10 +636,11 @@ $purgeClasses = $pdo->query(
             grade_level ASC, label ASC, name ASC"
 )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $purgeStudents = $pdo->query(
-  "SELECT s.id, s.first_name, s.last_name, s.date_of_birth, s.class_id,
+  "SELECT s.id, s.first_name, s.last_name, s.date_of_birth, sca.class_id,
           c.school_year, c.period_label, c.grade_level, c.label, c.name
    FROM students s
-   LEFT JOIN classes c ON c.id=s.class_id
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   INNER JOIN classes c ON c.id=sca.class_id
    ORDER BY s.last_name ASC, s.first_name ASC,
             c.school_year ASC,
             c.period_label ASC,

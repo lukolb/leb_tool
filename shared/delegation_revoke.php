@@ -56,9 +56,10 @@ function annotate_revoked_delegation_texts(PDO $pdo, ?array $scopes = null): int
         "SELECT ri.id
          FROM report_instances ri
          LEFT JOIN students s ON s.id=ri.student_id
+         LEFT JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
          WHERE ri.school_year=?
            AND (
-             (s.class_id=? AND ri.period_label=?)
+             (sca.class_id=? AND ri.period_label=?)
              OR (ri.student_id IS NULL AND ri.template_id=? AND ri.period_label=?)
            )"
       );

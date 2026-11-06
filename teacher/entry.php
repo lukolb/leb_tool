@@ -430,7 +430,8 @@ if ($classId > 0) {
     "SELECT DISTINCT ri.school_year, ri.period_label
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
-     WHERE s.class_id=?
+     JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+     WHERE sca.class_id=?
      ORDER BY ri.school_year DESC, ri.period_label DESC"
   );
   $stPeriods->execute([$classId]);
@@ -493,7 +494,13 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 
             [$subjectFields] = finalmarks_subject_fields($pdo, $templateId);
 
-            $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+            $st = $pdo->prepare(
+              "SELECT s.id, s.first_name, s.last_name
+               FROM students s
+               INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+               WHERE sca.class_id=? AND sca.is_active=1
+               ORDER BY s.last_name, s.first_name"
+            );
             $st->execute([$classId]);
             $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
             $classMap = [];
@@ -520,7 +527,13 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
               }
             }
             if ($needsGlobal) {
-              $stGlobal = $pdo->query("SELECT id, class_id, first_name, last_name FROM students WHERE is_active=1 ORDER BY last_name, first_name");
+              $stGlobal = $pdo->query(
+                "SELECT s.id, MIN(sca.class_id) AS class_id, s.first_name, s.last_name
+                 FROM students s
+                 INNER JOIN student_class_assignments sca ON sca.student_id=s.id AND sca.is_active=1
+                 GROUP BY s.id, s.first_name, s.last_name
+                 ORDER BY s.last_name, s.first_name"
+              );
               $allStudents = $stGlobal->fetchAll(PDO::FETCH_ASSOC);
               $globalMap = [];
               foreach ($allStudents as $student) {
@@ -754,7 +767,13 @@ if ($isTeacherRole && !$childMode && (string)($_SERVER['REQUEST_METHOD'] ?? '') 
 
     if (!$finalmarksErrors) {
       [$subjectFields] = finalmarks_subject_fields($pdo, $templateId);
-      $st = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? AND is_active=1 ORDER BY last_name, first_name");
+      $st = $pdo->prepare(
+        "SELECT s.id, s.first_name, s.last_name
+         FROM students s
+         INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+         WHERE sca.class_id=? AND sca.is_active=1
+         ORDER BY s.last_name, s.first_name"
+      );
       $st->execute([$classId]);
       $classStudents = $st->fetchAll(PDO::FETCH_ASSOC);
       $classMap = [];

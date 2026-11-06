@@ -94,7 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $selectedClass) {
     $posted = $_POST['ag'] ?? [];
     if (!is_array($posted)) $posted = [];
 
-    $students = $pdo->prepare("SELECT id FROM students WHERE class_id=? ORDER BY last_name, first_name");
+    $students = $pdo->prepare(
+      "SELECT s.id
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+       WHERE sca.class_id=?
+       ORDER BY s.last_name, s.first_name"
+    );
     $students->execute([$classId]);
     $studentIds = array_map('intval', $students->fetchAll(PDO::FETCH_COLUMN) ?: []);
 
@@ -147,7 +153,13 @@ if ($selectedClass) {
     $schoolYear = (string)$selectedClass['school_year'];
     $periodLabel = normalize_class_period_label((string)$selectedClass['period_label']);
 
-    $stStudents = $pdo->prepare("SELECT id, first_name, last_name FROM students WHERE class_id=? ORDER BY last_name ASC, first_name ASC");
+    $stStudents = $pdo->prepare(
+      "SELECT s.id, s.first_name, s.last_name
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+       WHERE sca.class_id=?
+       ORDER BY s.last_name ASC, s.first_name ASC"
+    );
     $stStudents->execute([$classId]);
     $students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 

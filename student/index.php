@@ -14,11 +14,15 @@ $pdo = db();
 $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
-  "SELECT s.id, s.first_name, s.last_name, s.class_id, s.is_active,
+  "SELECT s.id, s.first_name, s.last_name, sca.class_id, sca.is_active,
           c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
    FROM students s
-   LEFT JOIN classes c ON c.id=s.class_id
-   WHERE s.id=? LIMIT 1"
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   INNER JOIN classes c ON c.id=sca.class_id
+   WHERE s.id=?
+   ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC,
+            CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC
+   LIMIT 1"
 );
 $st->execute([$studentId]);
 $me = $st->fetch(PDO::FETCH_ASSOC);

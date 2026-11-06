@@ -205,38 +205,21 @@ function assert_template_selectable(PDO $pdo, ?int $newTemplateId, ?int $current
 }
 
 function delete_class_with_all_data(PDO $pdo, int $classId): array {
-  // gather students
-  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $st = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
-  $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  $studentIds = array_map(fn($r)=>(int)$r['student_id'], $st->fetchAll(PDO::FETCH_ASSOC));
 
   $pdo->beginTransaction();
 
-  // remove assignments
+  // Remove class relationships, never the central student profiles or their
+  // historical reports. A student may belong to additional classes.
   $pdo->prepare("DELETE FROM user_class_assignments WHERE class_id=?")->execute([$classId]);
-
-  if ($studentIds) {
-    $in = implode(',', array_fill(0, count($studentIds), '?'));
-
-    // report instances for these students
-    $ri = $pdo->prepare("SELECT id FROM report_instances WHERE student_id IN ($in)");
-    $ri->execute($studentIds);
-    $reportIds = array_map(fn($r)=>(int)$r['id'], $ri->fetchAll(PDO::FETCH_ASSOC));
-
-    if ($reportIds) {
-      $in2 = implode(',', array_fill(0, count($reportIds), '?'));
-      $pdo->prepare("DELETE FROM field_values WHERE report_instance_id IN ($in2)")->execute($reportIds);
-      $pdo->prepare("DELETE FROM report_instances WHERE id IN ($in2)")->execute($reportIds);
-    }
-
-    $pdo->prepare("DELETE FROM students WHERE id IN ($in)")->execute($studentIds);
-  }
-
+  $pdo->prepare("DELETE FROM student_class_assignments WHERE class_id=?")->execute([$classId]);
   $pdo->prepare("DELETE FROM classes WHERE id=?")->execute([$classId]);
 
   $pdo->commit();
 
-  return ['students_deleted' => count($studentIds)];
+  return ['students_deleted' => 0, 'students_unassigned' => count($studentIds)];
 }
 
 // Teachers list
@@ -450,35 +433,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     elseif ($action === 'switch_period') {
-      $schoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
+      $sourceSchoolYear = normalize_school_year((string)($_POST['source_school_year'] ?? ''));
+      $targetSchoolYear = normalize_school_year((string)($_POST['school_year'] ?? ''));
       $targetPeriod = normalize_period_label((string)($_POST['period_label'] ?? 'Standard'));
+      $selectedClassIds = $_POST['class_ids'] ?? [];
+      if (!is_array($selectedClassIds)) $selectedClassIds = [];
+      $selectedClassIds = array_values(array_unique(array_filter(
+        array_map('intval', $selectedClassIds),
+        static fn(int $id): bool => $id > 0
+      )));
       $templateOverrideRaw = (int)($_POST['template_id'] ?? 0);
       $templateOverride = $templateOverrideRaw > 0 ? assert_template_selectable($pdo, $templateOverrideRaw, null) : null;
 
-      if ($schoolYear === '') throw new RuntimeException(t('admin.classes.error.school_year_missing'));
-      ensure_school_period($pdo, $schoolYear, $targetPeriod, $userId);
+      if ($sourceSchoolYear === '' || $targetSchoolYear === '') {
+        throw new RuntimeException(t('admin.classes.error.school_year_missing'));
+      }
+      if (!$selectedClassIds) {
+        throw new RuntimeException(t('admin.classes.switch.selection_required', 'Bitte mindestens eine Quellklasse auswählen.'));
+      }
 
+      $pdo->beginTransaction();
+      ensure_school_period($pdo, $targetSchoolYear, $targetPeriod, $userId);
+
+      $classPlaceholders = implode(',', array_fill(0, count($selectedClassIds), '?'));
       $stClasses = $pdo->prepare(
         "SELECT id, school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled
          FROM classes
-         WHERE school_year=? AND is_active=1"
+         WHERE school_year=?
+           AND NOT (school_year=? AND period_label=?)
+           AND id IN ($classPlaceholders)
+         FOR UPDATE"
       );
-      $stClasses->execute([$schoolYear]);
+      $stClasses->execute(array_merge([$sourceSchoolYear, $targetSchoolYear, $targetPeriod], $selectedClassIds));
       $classesToSwitch = $stClasses->fetchAll(PDO::FETCH_ASSOC);
-      if (!$classesToSwitch) throw new RuntimeException(t('admin.classes.switch.no_active', 'Keine aktiven Klassen für dieses Schuljahr.'));
+      if (count($classesToSwitch) !== count($selectedClassIds)) {
+        throw new RuntimeException(t('admin.classes.switch.selection_invalid', 'Mindestens eine ausgewählte Quellklasse ist ungültig oder gehört bereits zum Zielhalbjahr.'));
+      }
 
       $created = 0;
       $updated = 0;
       $archived = 0;
-      $skipped = 0;
       $studentsCopied = 0;
       $teachersCopied = 0;
-
-      $pdo->beginTransaction();
+      $gradeIncrement = $sourceSchoolYear !== $targetSchoolYear ? 1 : 0;
 
       foreach ($classesToSwitch as $c) {
-        $sourcePeriod = normalize_period_label((string)($c['period_label'] ?? 'Standard'));
-        if ($sourcePeriod === $targetPeriod) { $skipped++; continue; }
+        $sourceGradeLevel = (int)($c['grade_level'] ?? 0);
+        $targetGradeLevel = $sourceGradeLevel > 0 ? $sourceGradeLevel + $gradeIncrement : $sourceGradeLevel;
+        $classLabel = (string)($c['label'] ?? '');
+        $targetName = ($targetGradeLevel > 0 && $classLabel !== '')
+          ? computed_name($targetGradeLevel, $classLabel)
+          : (string)($c['name'] ?? '');
 
         $stExisting = $pdo->prepare(
           "SELECT id, template_id
@@ -487,10 +492,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            LIMIT 1"
         );
         $stExisting->execute([
-          $schoolYear,
+          $targetSchoolYear,
           $targetPeriod,
-          (int)($c['grade_level'] ?? 0),
-          (string)($c['label'] ?? ''),
+          $targetGradeLevel,
+          $classLabel,
         ]);
         $target = $stExisting->fetch(PDO::FETCH_ASSOC);
 
@@ -509,11 +514,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled, is_active)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
           )->execute([
-            $schoolYear,
+            $targetSchoolYear,
             $targetPeriod,
-            (int)($c['grade_level'] ?? 0),
-            (string)($c['label'] ?? ''),
-            (string)($c['name'] ?? ''),
+            $targetGradeLevel,
+            $classLabel,
+            $targetName,
             $newTemplateId > 0 ? $newTemplateId : null,
             (string)($c['student_wizard_display'] ?? 'groups'),
             $c['student_intro_html'] ?? null,
@@ -529,73 +534,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $teacherIds = array_map(fn($r)=>(int)$r['user_id'], $stTeachers->fetchAll(PDO::FETCH_ASSOC));
         foreach ($teacherIds as $tid) {
           if ($tid <= 0) continue;
-          $pdo->prepare("INSERT IGNORE INTO user_class_assignments (user_id, class_id) VALUES (?, ?)")
-              ->execute([$tid, $targetClassId]);
-          $teachersCopied++;
+          $insertTeacher = $pdo->prepare("INSERT IGNORE INTO user_class_assignments (user_id, class_id) VALUES (?, ?)");
+          $insertTeacher->execute([$tid, $targetClassId]);
+          if ($insertTeacher->rowCount() > 0) $teachersCopied++;
         }
 
-        // Copy students
+        // Link the existing canonical students to the target class. No student
+        // profile is copied or created during a term transfer.
         $stStudents = $pdo->prepare(
-          "SELECT id, master_student_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active
-           FROM students
+          "SELECT student_id, is_active
+           FROM student_class_assignments
            WHERE class_id=?"
         );
         $stStudents->execute([(int)$c['id']]);
         $students = $stStudents->fetchAll(PDO::FETCH_ASSOC);
 
-        $insStudent = $pdo->prepare(
-          "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        $insAssignment = $pdo->prepare(
+          "INSERT INTO student_class_assignments (student_id, class_id, is_active)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE is_active=VALUES(is_active), updated_at=CURRENT_TIMESTAMP"
         );
 
         foreach ($students as $s) {
-          $sid = (int)($s['id'] ?? 0);
+          $sid = (int)($s['student_id'] ?? 0);
           if ($sid <= 0) continue;
-          $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
-          if ($master <= 0) $master = ensure_master_id($pdo, $sid);
-
-          $chk = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
-          $chk->execute([$targetClassId, $master]);
-          if ($chk->fetch()) continue;
-
-          $insStudent->execute([
-            $master,
-            $targetClassId,
-            (string)($s['first_name'] ?? ''),
-            (string)($s['last_name'] ?? ''),
-            (string)($s['date_of_birth'] ?? ''),
-            $s['email_student'] ?? null,
-            $s['email_parent1'] ?? null,
-            $s['email_parent2'] ?? null,
-            (int)($s['is_active'] ?? 1),
-          ]);
-          $newStudentId = (int)$pdo->lastInsertId();
-          $copiedCustom = copy_student_custom_values($pdo, $sid, $newStudentId);
-          if (!$copiedCustom) save_student_custom_values($pdo, $newStudentId, [], true);
-          $studentsCopied++;
+          $insAssignment->execute([$sid, $targetClassId, (int)($s['is_active'] ?? 1)]);
+          if ($insAssignment->rowCount() > 0) $studentsCopied++;
         }
 
         $pdo->prepare("UPDATE classes SET is_active=0, inactive_at=NOW() WHERE id=?")->execute([(int)$c['id']]);
         $archived++;
       }
 
-      mark_school_period_active($pdo, $schoolYear, $targetPeriod, $userId);
+      mark_school_period_active($pdo, $targetSchoolYear, $targetPeriod, $userId);
 
       $pdo->commit();
 
       audit('admin_classes_switch_period', $userId, [
-        'school_year' => $schoolYear,
+        'source_school_year' => $sourceSchoolYear,
+        'target_school_year' => $targetSchoolYear,
         'target_period' => $targetPeriod,
+        'grade_increment' => $gradeIncrement,
+        'source_class_ids' => $selectedClassIds,
+        'selected' => count($selectedClassIds),
         'template_id' => $templateOverride,
         'created' => $created,
         'updated' => $updated,
         'archived' => $archived,
-        'skipped' => $skipped,
         'students_copied' => $studentsCopied,
         'teachers_copied' => $teachersCopied,
       ]);
 
-      $ok = strtr(t('admin.classes.switch.ok', 'Halbjahr gewechselt: {created} neu, {updated} aktualisiert, {archived} archiviert.'), [
+      $ok = strtr(t('admin.classes.switch.ok', 'Übertragung abgeschlossen: {selected} ausgewählt, {created} neu, {updated} aktualisiert, {archived} archiviert.'), [
+        '{selected}' => (string)count($selectedClassIds),
         '{created}' => (string)$created,
         '{updated}' => (string)$updated,
         '{archived}' => (string)$archived,
@@ -721,7 +712,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       audit('admin_class_delete', $userId, ['class_id'=>$classId] + $stats);
       $ok = str_replace(
         '{count}',
-        (string)$stats['students_deleted'],
+        (string)$stats['students_unassigned'],
         t('admin.classes.ok.deleted')
       );
     }
@@ -757,7 +748,7 @@ if ($editId > 0) {
 $where = $showInactive ? "" : "WHERE c.is_active=1";
 $classes = $pdo->query(
   "SELECT c.*,
-          (SELECT COUNT(*) FROM students s WHERE s.class_id=c.id) AS student_count,
+          (SELECT COUNT(*) FROM student_class_assignments sca WHERE sca.class_id=c.id) AS student_count,
           GROUP_CONCAT(DISTINCT u.display_name ORDER BY u.display_name SEPARATOR ', ') AS teacher_names,
           GROUP_CONCAT(DISTINCT u.id ORDER BY u.id SEPARATOR ',') AS teacher_ids,
           t.name AS template_name,
@@ -771,6 +762,23 @@ $classes = $pdo->query(
    GROUP BY c.id
    ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
 )->fetchAll(PDO::FETCH_ASSOC);
+
+// All source classes are eligible for selective transfer, including classes
+// that are currently inactive. The target-period filter is applied in the UI
+// and repeated authoritatively in the POST handler.
+$switchableClasses = $pdo->query(
+  "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.is_active,
+          (SELECT COUNT(*) FROM student_class_assignments sca WHERE sca.class_id=c.id) AS student_count
+   FROM classes c
+   ORDER BY c.school_year DESC,
+            CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
+            c.grade_level DESC, c.label ASC, c.name ASC"
+)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$sourceSchoolYears = [];
+foreach ($switchableClasses as $switchableClass) {
+  $year = trim((string)($switchableClass['school_year'] ?? ''));
+  if ($year !== '' && !in_array($year, $sourceSchoolYears, true)) $sourceSchoolYears[] = $year;
+}
 
 $periodOverview = $pdo->query(
   "SELECT sp.school_year, sp.period_label, sp.is_active AS period_is_active,
@@ -1012,21 +1020,32 @@ render_admin_header(t('admin.classes.title'));
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0;"><?=h(t('admin.classes.switch_heading', 'Halbjahr wechseln'))?></h2>
-  <p class="muted"><?=h(t('admin.classes.switch_desc', 'Archiviert das aktuelle Halbjahr (setzt Klassen inaktiv) und legt die nächste Periode mit denselben Schülern & Lehrkräften an.'))?></p>
+  <h2 style="margin-top:0;"><?=h(t('admin.classes.switch_heading', 'Klassen ins nächste Halbjahr übertragen'))?></h2>
+  <p class="muted"><?=h(t('admin.classes.switch_desc', 'Überträgt nur die ausgewählten aktiven oder inaktiven Klassen mit ihren Schülern und Lehrkräften. Nicht ausgewählte Klassen bleiben unverändert.'))?></p>
 
-  <form method="post" class="grid" style="grid-template-columns: 1fr 160px 1fr auto; gap:12px; align-items:end;">
+  <form method="post" class="grid" id="selectivePeriodTransferForm" style="grid-template-columns: 1fr 1fr 160px 1fr; gap:12px; align-items:end;">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="switch_period">
 
     <div>
-      <label><?=h(t('admin.classes.switch_school_year', 'Schuljahr'))?></label>
-      <select name="school_year" required>
+      <label><?=h(t('admin.classes.switch_source_school_year', 'Quellschuljahr'))?></label>
+      <select name="source_school_year" required>
         <option value=""><?=h(t('admin.classes.switch_school_year_placeholder', '— Schuljahr wählen —'))?></option>
+        <?php foreach ($sourceSchoolYears as $y): ?>
+          <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+
+    <div>
+      <label><?=h(t('admin.classes.switch_target_school_year', 'Zielschuljahr'))?></label>
+      <select name="school_year" required>
+        <option value=""><?=h(t('admin.classes.switch_target_school_year_placeholder', '— Zielschuljahr wählen —'))?></option>
         <?php foreach ($years as $y): ?>
           <option value="<?=h((string)$y)?>"><?=h((string)$y)?></option>
         <?php endforeach; ?>
       </select>
+      <div class="muted"><?=h(t('admin.classes.switch_target_school_year_hint', 'Bei einem anderen Zielschuljahr wird die Klassenstufe automatisch um eins erhöht.'))?></div>
     </div>
 
     <div>
@@ -1054,8 +1073,36 @@ render_admin_header(t('admin.classes.title'));
       <div class="muted"><?=h(t('admin.classes.switch_template_hint', 'Optional: kann später pro Klasse angepasst werden.'))?></div>
     </div>
 
-    <div class="actions" style="justify-content:flex-start;">
-      <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('admin.classes.switch_confirm', 'Halbjahr jetzt für alle aktiven Klassen des Schuljahres wechseln?'))?>');"><?=h(t('admin.classes.switch_button', 'Halbjahr wechseln'))?></button>
+    <fieldset style="grid-column:1/-1; border:1px solid var(--border); border-radius:10px; padding:12px;">
+      <legend style="font-weight:700; padding:0 6px;"><?=h(t('admin.classes.switch.classes_label', 'Quellklassen auswählen'))?></legend>
+      <p class="muted" style="margin-top:0;"><?=h(t('admin.classes.switch.classes_hint', 'Aktive und inaktive Klassen können übertragen werden. Klassen aus dem gewählten Zielhalbjahr werden nicht angeboten.'))?></p>
+
+      <div class="actions" style="justify-content:flex-start; margin-bottom:10px;">
+        <button class="btn secondary" type="button" id="selectAllTransferClasses"><?=h(t('admin.classes.switch.select_all', 'Alle sichtbaren auswählen'))?></button>
+        <button class="btn secondary" type="button" id="clearTransferClasses"><?=h(t('admin.classes.switch.clear', 'Auswahl aufheben'))?></button>
+      </div>
+
+      <div id="transferClassChooseYear" class="muted"><?=h(t('admin.classes.switch.choose_year', 'Bitte zuerst ein Schuljahr auswählen.'))?></div>
+      <div id="transferClassEmpty" class="muted" hidden><?=h(t('admin.classes.switch.no_classes', 'Für diese Auswahl sind keine Quellklassen vorhanden.'))?></div>
+      <div id="transferClassList" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px; max-height:280px; overflow:auto;">
+        <?php foreach ($switchableClasses as $sourceClass): ?>
+          <?php
+            $sourcePeriod = normalize_period_label((string)($sourceClass['period_label'] ?? 'Standard'));
+            $sourceActive = (int)($sourceClass['is_active'] ?? 0) === 1;
+          ?>
+          <label class="transfer-class-option" data-school-year="<?=h((string)$sourceClass['school_year'])?>" data-period-label="<?=h($sourcePeriod)?>" hidden style="border:1px solid var(--border); border-radius:8px; padding:9px 10px; cursor:pointer;">
+            <input type="checkbox" name="class_ids[]" value="<?=h((string)$sourceClass['id'])?>" disabled>
+            <strong><?=h(class_display($sourceClass))?></strong>
+            <span class="muted"> · <?=h(period_label_options()[$sourcePeriod] ?? $sourcePeriod)?></span>
+            <span class="badge"><?=h($sourceActive ? t('teacher.classes.status.active', 'Aktiv') : t('teacher.classes.status.inactive', 'Inaktiv'))?></span>
+            <span class="muted"> · <?=h((string)($sourceClass['student_count'] ?? 0))?> <?=h(t('admin.classes.table.students', 'Schüler'))?></span>
+          </label>
+        <?php endforeach; ?>
+      </div>
+    </fieldset>
+
+    <div class="actions" style="grid-column:1/-1; justify-content:flex-start;">
+      <button class="btn primary" type="submit"><?=h(t('admin.classes.switch_button', 'Ausgewählte Klassen übertragen'))?></button>
     </div>
   </form>
 </div>
@@ -1370,6 +1417,80 @@ render_admin_header(t('admin.classes.title'));
     </form>
   </div>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('selectivePeriodTransferForm');
+  if (!form) return;
+
+  const sourceYear = form.querySelector('select[name="source_school_year"]');
+  const targetYear = form.querySelector('select[name="school_year"]');
+  const targetPeriod = form.querySelector('select[name="period_label"]');
+  const options = Array.from(form.querySelectorAll('.transfer-class-option'));
+  const chooseYear = document.getElementById('transferClassChooseYear');
+  const empty = document.getElementById('transferClassEmpty');
+  const selectAll = document.getElementById('selectAllTransferClasses');
+  const clear = document.getElementById('clearTransferClasses');
+  const selectionRequired = <?=json_encode(t('admin.classes.switch.selection_required', 'Bitte mindestens eine Quellklasse auswählen.'), JSON_UNESCAPED_UNICODE)?>;
+  const confirmation = <?=json_encode(t('admin.classes.switch_confirm', 'Die ausgewählten Klassen jetzt übertragen?'), JSON_UNESCAPED_UNICODE)?>;
+
+  const refreshOptions = () => {
+    const source = String(sourceYear ? sourceYear.value : '');
+    const target = String(targetYear ? targetYear.value : '');
+    const period = String(targetPeriod ? targetPeriod.value : 'Standard');
+    let visible = 0;
+
+    options.forEach((row) => {
+      const input = row.querySelector('input[type="checkbox"]');
+      const sameSourceYear = source !== '' && row.dataset.schoolYear === source;
+      const alreadyInTarget = target !== '' && source === target && row.dataset.periodLabel === period;
+      const eligible = sameSourceYear && !alreadyInTarget;
+      row.hidden = !eligible;
+      if (input) {
+        input.disabled = !eligible;
+        if (!eligible) input.checked = false;
+      }
+      if (eligible) visible++;
+    });
+
+    if (chooseYear) chooseYear.hidden = source !== '';
+    if (empty) empty.hidden = source === '' || visible > 0;
+    if (selectAll) selectAll.disabled = visible === 0;
+    if (clear) clear.disabled = visible === 0;
+  };
+
+  [sourceYear, targetYear, targetPeriod].forEach((element) => {
+    if (element) element.addEventListener('change', refreshOptions);
+  });
+  if (selectAll) {
+    selectAll.addEventListener('click', () => {
+      options.forEach((row) => {
+        const input = row.querySelector('input[type="checkbox"]');
+        if (input && !input.disabled) input.checked = true;
+      });
+    });
+  }
+  if (clear) {
+    clear.addEventListener('click', () => {
+      options.forEach((row) => {
+        const input = row.querySelector('input[type="checkbox"]');
+        if (input) input.checked = false;
+      });
+    });
+  }
+  form.addEventListener('submit', function (event) {
+    const selected = form.querySelectorAll('input[name="class_ids[]"]:checked:not(:disabled)').length;
+    if (selected < 1) {
+      event.preventDefault();
+      window.alert(selectionRequired);
+      return;
+    }
+    if (!window.confirm(confirmation)) event.preventDefault();
+  });
+
+  refreshOptions();
+});
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {

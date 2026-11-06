@@ -31,10 +31,11 @@ try {
   }
 
   $st = $pdo->prepare(
-    "SELECT id, first_name, last_name, date_of_birth
-     FROM students
-     WHERE class_id=? AND is_active=1
-     ORDER BY last_name ASC, first_name ASC"
+    "SELECT s.id, s.first_name, s.last_name, s.date_of_birth
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=? AND sca.is_active=1
+     ORDER BY s.last_name ASC, s.first_name ASC"
   );
   $st->execute([$sourceClassId]);
   $students = $st->fetchAll(PDO::FETCH_ASSOC);

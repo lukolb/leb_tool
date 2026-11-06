@@ -109,10 +109,12 @@ function ai_chat_completion(array $messages, array $aiCfg, string $lang): string
 
 function student_context(PDO $pdo, int $studentId, string $lang): array {
   $st = $pdo->prepare(
-    "SELECT s.id, s.class_id, c.template_id, c.grade_level\n" .
+    "SELECT s.id, sca.class_id, c.template_id, c.grade_level\n" .
     "FROM students s\n" .
-    "LEFT JOIN classes c ON c.id=s.class_id\n" .
-    "WHERE s.id=? LIMIT 1"
+    "INNER JOIN student_class_assignments sca ON sca.student_id=s.id\n" .
+    "INNER JOIN classes c ON c.id=sca.class_id\n" .
+    "WHERE s.id=?\n" .
+    "ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC, c.id DESC LIMIT 1"
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);

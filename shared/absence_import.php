@@ -117,10 +117,11 @@ function read_absence_csv_rows(string $path, ?string &$delimiterOut = null): arr
 
 function absence_import_student_index(PDO $pdo, string $schoolYear, string $periodLabel): array {
   $st = $pdo->prepare(
-    "SELECT s.id, s.first_name, s.last_name, s.class_id
+    "SELECT s.id, s.first_name, s.last_name, sca.class_id
      FROM students s
-     INNER JOIN classes c ON c.id=s.class_id
-     WHERE c.school_year=? AND c.period_label=? AND s.is_active=1"
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE c.school_year=? AND c.period_label=? AND sca.is_active=1"
   );
   $st->execute([$schoolYear, $periodLabel]);
   $byClass = [];

@@ -293,7 +293,11 @@ function build_ai_class_feedback_prompt(PDO $pdo, int $classId, int $userId, str
   $gradeLevel = $gradeLevel !== false ? (int)$gradeLevel : null;
 
   $stStudents = $pdo->prepare(
-    "SELECT id FROM students WHERE class_id=? AND is_active=1 ORDER BY id ASC"
+    "SELECT s.id
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=? AND sca.is_active=1
+     ORDER BY s.id ASC"
   );
   $stStudents->execute([$classId]);
   $studentIds = array_map(fn($r) => (int)$r['id'], $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: []);
@@ -1593,8 +1597,8 @@ function find_current_report_instance_for_student_period(PDO $pdo, int $studentI
     "SELECT ri.id, ri.status, ri.template_id
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
-     WHERE s.class_id=?
-       AND COALESCE(s.master_student_id, s.id)=?
+     JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id) AND sca.class_id=?
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id)=?
        AND ri.school_year=?
        AND ri.period_label=?
        AND ri.template_id=?
@@ -1615,10 +1619,10 @@ function find_mismatch_report_instance_for_student_period(PDO $pdo, int $student
             s.first_name, s.last_name
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
+     JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id) AND sca.class_id=?
      LEFT JOIN templates old_t ON old_t.id=ri.template_id
      LEFT JOIN templates cur_t ON cur_t.id=?
-     WHERE s.class_id=?
-       AND COALESCE(s.master_student_id, s.id)=?
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id)=?
        AND ri.school_year=?
        AND ri.period_label=?
        AND ri.template_id IS NOT NULL
@@ -1626,7 +1630,7 @@ function find_mismatch_report_instance_for_student_period(PDO $pdo, int $student
      ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st->execute([$currentTemplateId, $classId, $canonicalId, $schoolYear, $periodLabel, $currentTemplateId, $studentId]);
+  $st->execute([$classId, $currentTemplateId, $canonicalId, $schoolYear, $periodLabel, $currentTemplateId, $studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
   return $row ?: null;
 }
@@ -1663,13 +1667,14 @@ function delete_report_instance_and_values(PDO $pdo, int $reportId): void {
 function find_or_create_report_instance_for_student(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel, int $userId, bool $allowTemplateReplace = false): array {
   $periodLabel = normalize_class_period_label($periodLabel);
   $studentClass = $pdo->prepare(
-    "SELECT s.class_id, c.template_id
+    "SELECT sca.class_id, c.template_id
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     WHERE s.id=?
+     INNER JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=? AND c.school_year=? AND c.period_label=? AND c.template_id=?
      LIMIT 1"
   );
-  $studentClass->execute([$studentId]);
+  $studentClass->execute([$studentId, $schoolYear, $periodLabel, $templateId]);
   $studentClassRow = $studentClass->fetch(PDO::FETCH_ASSOC);
   $studentClassId = (int)($studentClassRow['class_id'] ?? 0);
   $classTemplateId = (int)($studentClassRow['template_id'] ?? 0);
@@ -2089,10 +2094,11 @@ try {
 
     // students in class
     $st = $pdo->prepare(
-      "SELECT id, first_name, last_name
-       FROM students
-       WHERE class_id=? AND is_active=1
-       ORDER BY last_name ASC, first_name ASC, id ASC"
+      "SELECT s.id, s.first_name, s.last_name
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+       WHERE sca.class_id=? AND sca.is_active=1
+       ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC"
     );
     $st->execute([$classId]);
     $studentsRaw = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -2627,8 +2633,14 @@ try {
       throw new RuntimeException('Keine Berechtigung.');
     }
 
-    $stStu = $pdo->prepare("SELECT id, first_name, last_name, class_id FROM students WHERE id=? LIMIT 1");
-    $stStu->execute([$studentId]);
+    $stStu = $pdo->prepare(
+      "SELECT s.id, s.first_name, s.last_name, sca.class_id
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+       WHERE s.id=? AND sca.class_id=?
+       LIMIT 1"
+    );
+    $stStu->execute([$studentId, $classId]);
     $stu = $stStu->fetch(PDO::FETCH_ASSOC);
     if (!$stu || (int)($stu['class_id'] ?? 0) !== $classId) {
       throw new RuntimeException('Schüler gehört nicht zur Klasse.');
@@ -2642,10 +2654,11 @@ try {
       'total' => null,
     ];
     $stNav = $pdo->prepare(
-      "SELECT id, first_name, last_name
-       FROM students
-       WHERE class_id=? AND is_active=1
-       ORDER BY last_name ASC, first_name ASC"
+      "SELECT s.id, s.first_name, s.last_name
+       FROM students s
+       INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+       WHERE sca.class_id=? AND sca.is_active=1
+       ORDER BY s.last_name ASC, s.first_name ASC"
     );
     $stNav->execute([$classId]);
     $navRows = $stNav->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -2995,14 +3008,15 @@ try {
     }
 
     $stInfo = $pdo->prepare(
-      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, s.class_id, c.grade_level
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, sca.class_id, c.grade_level
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-       JOIN classes c ON c.id=s.class_id
-       WHERE ri.id=?
+       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+       WHERE ri.id=? AND sca.class_id=?
        LIMIT 1"
     );
-    $stInfo->execute([$reportId]);
+    $stInfo->execute([$reportId, $classId]);
     $info = $stInfo->fetch(PDO::FETCH_ASSOC);
     if (!$info) throw new RuntimeException('Bericht nicht gefunden.');
     if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
@@ -3149,14 +3163,15 @@ try {
 
     // Load report instance & student meta (ensure report belongs to class)
     $stInfo = $pdo->prepare(
-      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, s.class_id, c.grade_level
+      "SELECT ri.template_id, ri.student_id, ri.school_year, s.first_name, s.date_of_birth, sca.class_id, c.grade_level
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-       JOIN classes c ON c.id=s.class_id
-       WHERE ri.id=?
+       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+       WHERE ri.id=? AND sca.class_id=?
        LIMIT 1"
     );
-    $stInfo->execute([$reportId]);
+    $stInfo->execute([$reportId, $classId]);
     $info = $stInfo->fetch(PDO::FETCH_ASSOC);
     if (!$info) throw new RuntimeException('Bericht nicht gefunden.');
     if ((int)$info['class_id'] !== $classId) throw new RuntimeException('Bericht gehört nicht zur Klasse.');
@@ -3683,10 +3698,11 @@ if ($action === 'delegations_save') {
     $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
 
     $st = $pdo->prepare(
-      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
+      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, sca.class_id, c.template_id AS class_template_id
        FROM report_instances ri
        INNER JOIN students s ON s.id=ri.student_id
-       INNER JOIN classes c ON c.id=s.class_id
+       INNER JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       INNER JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
        WHERE ri.id=? LIMIT 1"
     );
     $st->execute([$reportId]);
@@ -3818,11 +3834,12 @@ if ($action === 'delegations_save') {
     }
 
     $st = $pdo->prepare(
-      "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id,
+      "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, sca.class_id, c.template_id AS class_template_id,
               tf.field_type, tf.meta_json
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-       JOIN classes c ON c.id=s.class_id
+       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
        JOIN template_fields tf ON tf.id=? AND tf.template_id=ri.template_id AND tf.can_child_edit=1
        WHERE ri.id=?
        LIMIT 1"
@@ -3909,10 +3926,11 @@ if ($action === 'delegations_save') {
     }
 
     $st = $pdo->prepare(
-      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, s.class_id, c.template_id AS class_template_id
+      "SELECT ri.id, ri.status, ri.template_id, ri.school_year, ri.period_label, sca.class_id, c.template_id AS class_template_id
        FROM report_instances ri
        INNER JOIN students s ON s.id=ri.student_id
-       INNER JOIN classes c ON c.id=s.class_id
+       INNER JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       INNER JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
        WHERE ri.id=?
        LIMIT 1"
     );

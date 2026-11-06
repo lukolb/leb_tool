@@ -145,8 +145,11 @@ function get_student_preview_map(PDO $pdo, int $studentId, int $templateId = 0):
     "SELECT s.id, s.first_name, s.last_name, s.date_of_birth,
             c.id AS class_id, c.school_year AS class_school_year, c.period_label AS class_period_label, c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     WHERE s.id=? LIMIT 1"
+     LEFT JOIN student_class_assignments sca ON sca.student_id=s.id
+     LEFT JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=?
+     ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC, c.id DESC
+     LIMIT 1"
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -156,13 +159,14 @@ function get_student_preview_map(PDO $pdo, int $studentId, int $templateId = 0):
 
   if ($templateId > 0) {
     $ri = $pdo->prepare(
-      "SELECT id
-       FROM report_instances
-       WHERE student_id=? AND template_id=?
-       ORDER BY updated_at DESC, id DESC
+      "SELECT ri.id
+       FROM report_instances ri
+       INNER JOIN students rs ON rs.id=ri.student_id
+       WHERE COALESCE(NULLIF(rs.master_student_id, 0), rs.id)=? AND ri.template_id=?
+       ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
        LIMIT 1"
     );
-    $ri->execute([$studentId, $templateId]);
+    $ri->execute([$studentId, $templateId, $studentId]);
     $riId = (int)($ri->fetchColumn() ?: 0);
     if ($riId > 0) {
       $row['field_values'] = report_instance_field_value_map($pdo, $riId);
@@ -469,7 +473,8 @@ if ($template) {
   $stStudentsForPreview = $pdo->prepare(
     "SELECT s.id, s.first_name, s.last_name, c.school_year, c.name AS class_name
      FROM students s
-     INNER JOIN classes c ON c.id=s.class_id
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
      WHERE c.template_id=? AND c.school_year=? AND c.period_label=?
      ORDER BY s.last_name ASC, s.first_name ASC"
   );

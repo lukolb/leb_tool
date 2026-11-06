@@ -327,7 +327,7 @@ function build_progress(PDO $pdo, array $classes): array {
   // total forms per class equals active students in class
   $stStudents = $pdo->prepare(
     "SELECT class_id, COUNT(*) AS c
-       FROM students
+       FROM student_class_assignments
       WHERE class_id IN ($inClass)
         AND is_active=1
       GROUP BY class_id"
@@ -338,12 +338,14 @@ function build_progress(PDO $pdo, array $classes): array {
     if (isset($progress[$cid])) $progress[$cid]['forms_total'] = (int)$r['c'];
   }
   $stReports = $pdo->prepare(
-    "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, s.class_id
+    "SELECT ri.id, ri.template_id, ri.created_at, ri.updated_at, sca.class_id
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-       JOIN classes c ON c.id=s.class_id
+       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       JOIN classes c ON c.id=sca.class_id
       WHERE ri.period_label=c.period_label
-        AND s.class_id IN ($inClass)"
+        AND ri.school_year=c.school_year
+        AND sca.class_id IN ($inClass)"
   );
   $stReports->execute($classIds);
   $reports = [];

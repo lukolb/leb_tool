@@ -226,13 +226,14 @@ try {
   }
 
   $stStu = $pdo->prepare(
-    "SELECT s.id, s.class_id, s.first_name, s.date_of_birth, c.grade_level
+    "SELECT s.id, sca.class_id, s.first_name, s.date_of_birth, c.grade_level
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     WHERE s.id=?
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=? AND sca.class_id=?
      LIMIT 1"
   );
-  $stStu->execute([$studentId]);
+  $stStu->execute([$studentId, $classId]);
   $stu = $stStu->fetch(PDO::FETCH_ASSOC);
   if (!$stu) throw new RuntimeException(t('teacher.ai.error.student_not_found'));
   if ((int)$stu['class_id'] !== $classId && ($u['role'] ?? '') !== 'admin') {

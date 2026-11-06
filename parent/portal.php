@@ -329,7 +329,8 @@ $st = $pdo->prepare(
   "FROM parent_portal_links ppl\n" .
   "JOIN students s ON s.id=ppl.student_id\n" .
   "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n" .
-  "JOIN classes c ON c.id=s.class_id\n" .
+  "JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)\n" .
+  "JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label\n" .
   "WHERE ppl.token=?\n" .
   "LIMIT 1"
 );

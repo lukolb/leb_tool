@@ -302,6 +302,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 CREATE TABLE IF NOT EXISTS `students` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `master_student_id` bigint UNSIGNED DEFAULT NULL,
+  `identity_hash` char(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `class_id` bigint UNSIGNED DEFAULT NULL,
   `first_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -317,6 +318,7 @@ CREATE TABLE IF NOT EXISTS `students` (
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_students_qr_token` (`qr_token`),
+  UNIQUE KEY `uq_students_identity_hash` (`identity_hash`),
   KEY `idx_students_class` (`class_id`),
   KEY `idx_students_name` (`last_name`,`first_name`),
   KEY `idx_students_master` (`master_student_id`),
@@ -695,6 +697,19 @@ CREATE TABLE IF NOT EXISTS `classes` (
   KEY `idx_classes_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `student_class_assignments` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `student_id` bigint UNSIGNED NOT NULL,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_student_class_assignment` (`student_id`,`class_id`),
+  KEY `idx_student_class_lookup` (`class_id`,`is_active`,`student_id`),
+  KEY `idx_student_assignment_lookup` (`student_id`,`is_active`,`class_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `class_id` bigint UNSIGNED NOT NULL,
@@ -736,6 +751,10 @@ ALTER TABLE `classes`
 ALTER TABLE `students`
   ADD CONSTRAINT `fk_students_master_student` FOREIGN KEY (`master_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_students_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `student_class_assignments`
+  ADD CONSTRAINT `fk_student_class_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_student_class_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `student_field_values`
   ADD CONSTRAINT `fk_sfv_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

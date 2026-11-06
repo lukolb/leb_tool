@@ -44,8 +44,13 @@ function admin_template_report_class_label(array $r): string {
 function admin_template_delete_dependencies(PDO $pdo, int $templateId): array {
   $classSt = $pdo->prepare(
     "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name,
-            (SELECT COUNT(*) FROM students s WHERE s.class_id=c.id) AS student_count,
-            (SELECT COUNT(*) FROM report_instances ri JOIN students rs ON rs.id=ri.student_id WHERE ri.template_id=? AND rs.class_id=c.id) AS report_count
+            (SELECT COUNT(*) FROM student_class_assignments sca WHERE sca.class_id=c.id) AS student_count,
+            (SELECT COUNT(*)
+               FROM report_instances ri
+               JOIN students rs ON rs.id=ri.student_id
+               JOIN student_class_assignments rsca ON rsca.student_id=COALESCE(NULLIF(rs.master_student_id, 0), rs.id)
+              WHERE ri.template_id=? AND rsca.class_id=c.id
+                AND ri.school_year=c.school_year AND ri.period_label=c.period_label) AS report_count
      FROM classes c
      WHERE c.template_id=?
      ORDER BY c.school_year DESC, c.grade_level ASC, c.label ASC, c.name ASC, c.id ASC"
@@ -55,12 +60,13 @@ function admin_template_delete_dependencies(PDO $pdo, int $templateId): array {
 
   $reportSt = $pdo->prepare(
     "SELECT ri.id, ri.student_id, ri.school_year, ri.period_label, ri.status,
-            s.first_name, s.last_name, s.class_id,
+            s.first_name, s.last_name, c.id AS class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level AS class_grade_level, c.label AS class_label, c.name AS class_name
      FROM report_instances ri
      LEFT JOIN students s ON s.id=ri.student_id
-     LEFT JOIN classes c ON c.id=s.class_id
+     LEFT JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+     LEFT JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
      WHERE ri.template_id=?
      ORDER BY ri.school_year DESC, ri.period_label ASC, ri.id ASC"
   );

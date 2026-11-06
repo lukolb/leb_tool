@@ -62,20 +62,22 @@ $userId = (int)($u['id'] ?? 0);
 
 if ($isAdmin) {
   $stStudents = $pdo->query(
-    "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.is_active, s.class_id,
+    "SELECT s.id, s.master_student_id, s.first_name, s.last_name, sca.is_active, sca.class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level, c.label, c.name
      FROM students s
-     JOIN classes c ON c.id=s.class_id
+     JOIN student_class_assignments sca ON sca.student_id=s.id
+     JOIN classes c ON c.id=sca.class_id
      ORDER BY s.last_name ASC, s.first_name ASC"
   );
 } else {
   $stStudents = $pdo->prepare(
-    "SELECT DISTINCT s.id, s.master_student_id, s.first_name, s.last_name, s.is_active, s.class_id,
+    "SELECT DISTINCT s.id, s.master_student_id, s.first_name, s.last_name, sca.is_active, sca.class_id,
             c.school_year AS class_school_year, c.period_label AS class_period_label,
             c.grade_level, c.label, c.name
      FROM students s
-     JOIN classes c ON c.id=s.class_id
+     JOIN student_class_assignments sca ON sca.student_id=s.id
+     JOIN classes c ON c.id=sca.class_id
      JOIN user_class_assignments uca ON uca.class_id=c.id
      WHERE uca.user_id=?
      ORDER BY s.last_name ASC, s.first_name ASC"
@@ -200,7 +202,9 @@ if ($isAdmin) {
     "SELECT DISTINCT ri.school_year, ri.period_label
      FROM report_instances ri
      JOIN students s ON s.id=ri.student_id
-     JOIN user_class_assignments uca ON uca.class_id=s.class_id
+     JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+     JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+     JOIN user_class_assignments uca ON uca.class_id=sca.class_id
      WHERE uca.user_id=?
      ORDER BY ri.school_year DESC, ri.period_label DESC"
   );
@@ -277,12 +281,13 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
     $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
     $stRi = $pdo->prepare(
       "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
-              s.first_name, s.last_name, s.class_id,
+              s.first_name, s.last_name, sca.class_id,
               c.grade_level, c.label, c.name,
               ri.updated_at
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
-       JOIN classes c ON c.id=s.class_id
+       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+       JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
        WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
        ORDER BY ri.updated_at DESC, ri.id DESC"
     );
@@ -428,11 +433,12 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
       $stBase = $pdo->prepare(
         "SELECT s.*, c.*, c.id AS class_id
          FROM students s
-         JOIN classes c ON c.id=s.class_id
+         JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+         JOIN classes c ON c.id=sca.class_id
          WHERE s.id IN ($in)
          ORDER BY
            (CASE WHEN c.school_year=? AND c.period_label=? THEN 0 ELSE 1 END) ASC,
-           s.is_active DESC,
+           sca.is_active DESC,
            s.updated_at DESC,
            s.id DESC
          LIMIT 1"

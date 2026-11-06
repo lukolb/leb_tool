@@ -224,14 +224,18 @@ function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, st
 
 function get_student_and_class(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
-    "SELECT s.id, s.first_name, s.last_name, s.class_id,
+    "SELECT s.id, s.first_name, s.last_name, sca.class_id,
             c.school_year, c.grade_level, c.label, c.name AS class_name,
             c.template_id AS class_template_id,
             c.student_wizard_display AS student_wizard_display,
             c.student_intro_html AS student_intro_html
      FROM students s
-     LEFT JOIN classes c ON c.id=s.class_id
-     WHERE s.id=? LIMIT 1"
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=?
+     ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC,
+              CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC
+     LIMIT 1"
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -290,9 +294,13 @@ function template_for_student(PDO $pdo, int $studentId): array {
   $st = $pdo->prepare(
     "SELECT c.id AS class_id, c.template_id, c.period_label, t.id AS tid, t.name, t.template_version, t.is_active
      FROM students s
-     INNER JOIN classes c ON c.id=s.class_id
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
      LEFT JOIN templates t ON t.id=c.template_id
-     WHERE s.id=? LIMIT 1"
+     WHERE s.id=?
+     ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC,
+              CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC
+     LIMIT 1"
   );
   $st->execute([$studentId]);
   $row = $st->fetch(PDO::FETCH_ASSOC);

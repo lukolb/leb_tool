@@ -125,12 +125,16 @@ function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int 
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, id AS report_instance_id
-     FROM report_instances
-     WHERE student_id IN ($in)
-       AND template_id=?
-       AND school_year=?
-       AND period_label=?";
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
+            r.id AS report_instance_id
+     FROM report_instances r
+     INNER JOIN students s ON s.id=r.student_id
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+       AND r.template_id=?
+       AND r.school_year=?
+       AND r.period_label=?
+     ORDER BY (r.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)) DESC,
+              r.updated_at DESC, r.id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge($studentIds, [$templateId, $schoolYear, $periodLabel]));
 
@@ -138,7 +142,7 @@ function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int 
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
     $sid = (int)$r['student_id'];
     if ($sid <= 0) continue;
-    $map[$sid] = (int)($r['report_instance_id'] ?? 0);
+    if (!isset($map[$sid])) $map[$sid] = (int)($r['report_instance_id'] ?? 0);
   }
   return $map;
 }
@@ -341,14 +345,16 @@ if (!$class) {
 $err = '';
 $ok = '';
 $importSkippedDetails = [];
+$pendingDuplicateAssignments = [];
 $periodLabel = normalize_class_period_label($class['period_label'] ?? 'Standard');
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && (string)($_GET['action'] ?? '') === 'student_progress') {
   $progressStudentsSt = $pdo->prepare(
-    "SELECT id, first_name, last_name
-     FROM students
-     WHERE class_id=?
-     ORDER BY last_name ASC, first_name ASC"
+    "SELECT s.id, s.first_name, s.last_name
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=?
+     ORDER BY s.last_name ASC, s.first_name ASC"
   );
   $progressStudentsSt->execute([$classId]);
   $progressStudents = $progressStudentsSt->fetchAll(PDO::FETCH_ASSOC);
@@ -387,6 +393,30 @@ $addFormValues = [
   'email_parent2' => '',
   'custom' => [],
 ];
+
+function queue_student_assignment_confirmation(int $classId, int $studentId): string {
+  $pending = $_SESSION['pending_student_assignment_confirmations'] ?? [];
+  if (!is_array($pending)) $pending = [];
+  $now = time();
+  foreach ($pending as $token => $row) {
+    if (!is_array($row) || (int)($row['expires_at'] ?? 0) < $now) {
+      unset($pending[$token]);
+      continue;
+    }
+    if ((int)($row['class_id'] ?? 0) === $classId && (int)($row['student_id'] ?? 0) === $studentId) {
+      $_SESSION['pending_student_assignment_confirmations'] = $pending;
+      return (string)$token;
+    }
+  }
+  $token = bin2hex(random_bytes(24));
+  $pending[$token] = [
+    'class_id' => $classId,
+    'student_id' => $studentId,
+    'expires_at' => $now + 1800,
+  ];
+  $_SESSION['pending_student_assignment_confirmations'] = $pending;
+  return $token;
+}
 
 function ai_provider_enabled(): bool {
   $cfg = app_config();
@@ -596,17 +626,9 @@ function find_existing_student_id(PDO $pdo, string $first, string $last, ?string
   if ($first === '' || $last === '') return null;
   if ($dob === null || $dob === '') return null;
 
-  $sql = "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=?";
-  $params = [$first, $last, $dob];
-  if ($excludeId !== null && $excludeId > 0) {
-    $sql .= " AND id<>?";
-    $params[] = $excludeId;
-  }
-  $sql .= " LIMIT 1";
-  $q = $pdo->prepare($sql);
-  $q->execute($params);
-  $id = $q->fetchColumn();
-  return $id !== false ? (int)$id : null;
+  $id = find_student_by_identity($pdo, $first, $last, $dob);
+  if ($id <= 0 || ($excludeId !== null && $id === app_canonical_student_id($pdo, $excludeId))) return null;
+  return $id;
 }
 
 function ensure_master_id(PDO $pdo, int $studentId): int {
@@ -745,7 +767,7 @@ function delete_report_with_values(PDO $pdo, int $reportId): void {
 
 function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, bool $allowDeleteReports = false): int {
   $periodLabel = normalize_class_period_label($periodLabel);
-  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND is_active=1");
+  $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=? AND is_active=1");
   $st->execute([$classId]);
   $ids = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   if (!$ids) return 0;
@@ -799,7 +821,7 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
   $periodLabel = normalize_class_period_label($periodLabel);
   // mode: 'lock' => draft -> locked, keep submitted untouched
   // mode: 'unlock' => locked -> draft, keep submitted untouched
-  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
   $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   if (!$studentIds) return 0;
@@ -808,19 +830,21 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
 
   if ($mode === 'lock') {
     $sql =
-      "UPDATE report_instances
-       SET status='locked', locked_by_user_id=?, locked_at=NOW()
-       WHERE template_id=? AND school_year=? AND period_label=?
-         AND student_id IN ($in)
-         AND status='draft'";
+      "UPDATE report_instances ri
+       INNER JOIN students s ON s.id=ri.student_id
+       SET ri.status='locked', ri.locked_by_user_id=?, ri.locked_at=NOW()
+       WHERE ri.template_id=? AND ri.school_year=? AND ri.period_label=?
+         AND COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+         AND ri.status='draft'";
     $params = array_merge([$userId, $templateId, $schoolYear, $periodLabel], $studentIds);
   } else {
     $sql =
-      "UPDATE report_instances
-       SET status='draft', locked_by_user_id=NULL, locked_at=NULL
-       WHERE template_id=? AND school_year=? AND period_label=?
-         AND student_id IN ($in)
-         AND status='locked'";
+      "UPDATE report_instances ri
+       INNER JOIN students s ON s.id=ri.student_id
+       SET ri.status='draft', ri.locked_by_user_id=NULL, ri.locked_at=NULL
+       WHERE ri.template_id=? AND ri.school_year=? AND ri.period_label=?
+         AND COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+         AND ri.status='locked'";
     $params = array_merge([$templateId, $schoolYear, $periodLabel], $studentIds);
   }
 
@@ -831,7 +855,7 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
 
 function class_child_status_counts(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): array {
   $periodLabel = normalize_class_period_label($periodLabel);
-  $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+  $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
   $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   $total = count($studentIds);
@@ -858,21 +882,23 @@ function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel,
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $params = array_merge($studentIds, [$periodLabel]);
-  $filters = "student_id IN ($in) AND period_label=?";
+  $filters = "COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in) AND r.period_label=?";
   if ($templateId > 0) {
-    $filters .= " AND template_id=?";
+    $filters .= " AND r.template_id=?";
     $params[] = $templateId;
   }
   $schoolYear = trim($schoolYear);
   if ($schoolYear !== '') {
-    $filters .= " AND school_year=?";
+    $filters .= " AND r.school_year=?";
     $params[] = $schoolYear;
   }
   $sql =
-    "SELECT student_id, status, created_at, updated_at, id
-     FROM report_instances
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
+            r.status, r.created_at, r.updated_at, r.id
+     FROM report_instances r
+     INNER JOIN students s ON s.id=r.student_id
      WHERE $filters
-     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
+     ORDER BY IFNULL(r.updated_at, r.created_at) DESC, r.id DESC";
   $q = $pdo->prepare($sql);
   $q->execute($params);
 
@@ -896,11 +922,13 @@ function load_report_instance_map(PDO $pdo, array $studentIds, string $periodLab
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT student_id, id AS report_instance_id, status, created_at, updated_at
-     FROM report_instances
-     WHERE student_id IN ($in)
-       AND period_label=?
-     ORDER BY IFNULL(updated_at, created_at) DESC, id DESC";
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
+            r.id AS report_instance_id, r.status, r.created_at, r.updated_at
+     FROM report_instances r
+     INNER JOIN students s ON s.id=r.student_id
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+       AND r.period_label=?
+     ORDER BY IFNULL(r.updated_at, r.created_at) DESC, r.id DESC";
   $q = $pdo->prepare($sql);
   $q->execute(array_merge($studentIds, [$periodLabel]));
 
@@ -922,15 +950,16 @@ function load_student_form_value_counts(PDO $pdo, array $studentIds): array {
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
   $sql =
-    "SELECT r.student_id,
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
             SUM(CASE
                   WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
                   ELSE 0
                 END) AS value_count
      FROM report_instances r
+     INNER JOIN students s ON s.id=r.student_id
      LEFT JOIN field_values fv ON fv.report_instance_id = r.id
-     WHERE r.student_id IN ($in)
-     GROUP BY r.student_id";
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+     GROUP BY COALESCE(NULLIF(s.master_student_id, 0), s.id)";
   $q = $pdo->prepare($sql);
   $q->execute($studentIds);
 
@@ -1084,7 +1113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $input = $_POST['absences'] ?? [];
       if (!is_array($input)) $input = [];
 
-      $st = $pdo->prepare("SELECT id FROM students WHERE class_id=?");
+      $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=?");
       $st->execute([$classId]);
       $validIds = array_fill_keys(array_map(static fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC)), true);
 
@@ -1134,18 +1163,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if ($first === '' || $last === '') throw new RuntimeException(t('teacher.students.error_name_required', 'Vorname und Nachname sind erforderlich.'));
       if ($dob === null) throw new RuntimeException(t('teacher.students.error_dob_required', 'Geburtsdatum ist erforderlich.'));
-      if (find_existing_student_id($pdo, $first, $last, $dob) !== null) {
-        throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Schüler mit gleichem Namen und Geburtsdatum existiert bereits.'));
+      $existingStudentId = find_existing_student_id($pdo, $first, $last, $dob);
+      if ($existingStudentId !== null) {
+        if (student_is_assigned_to_class($pdo, $existingStudentId, $classId)) {
+          throw new RuntimeException(t('teacher.students.error_duplicate_already_assigned', 'Dieser Schüler ist der Klasse bereits zugeordnet. Es wurde kein neues Profil angelegt.'));
+        }
+        queue_student_assignment_confirmation($classId, $existingStudentId);
+        throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Dublette erkannt: Ein Schüler mit gleichem Vorname, Nachname und Geburtsdatum existiert bereits. Bitte bestehendes Profil prüfen und die Zuordnung ausdrücklich bestätigen.'));
       }
 
       $ins = $pdo->prepare(
-        "INSERT INTO students (class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (master_student_id, identity_hash, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
+         VALUES (NULL, ?, NULL, ?, ?, ?, ?, ?, ?, 1)"
       );
-      $ins->execute([$classId, $first, $last, $dob, $emailStudent, $emailParent1, $emailParent2]);
+      $ins->execute([student_identity_hash($first, $last, $dob), $first, $last, $dob, $emailStudent, $emailParent1, $emailParent2]);
       $newId = (int)$pdo->lastInsertId();
-      // master_student_id defaults to NULL; set to itself
       $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$newId, $newId]);
+      assign_student_to_class($pdo, $newId, $classId, true);
 
       save_student_custom_values($pdo, $newId, $customInput, true);
 
@@ -1162,17 +1196,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
     }
 
+    elseif ($action === 'confirm_duplicate_assignment') {
+      $token = trim((string)($_POST['confirmation_token'] ?? ''));
+      $pending = $_SESSION['pending_student_assignment_confirmations'] ?? [];
+      $confirmation = is_array($pending) && isset($pending[$token]) && is_array($pending[$token])
+        ? $pending[$token]
+        : null;
+      if (is_array($pending)) {
+        unset($pending[$token]);
+        $_SESSION['pending_student_assignment_confirmations'] = $pending;
+      }
+      if (!$confirmation || (int)($confirmation['expires_at'] ?? 0) < time()) {
+        throw new RuntimeException(t('teacher.students.error_duplicate_confirmation_expired', 'Die Bestätigung ist abgelaufen. Bitte die Dublettenprüfung erneut auslösen.'));
+      }
+      if ((int)($confirmation['class_id'] ?? 0) !== $classId) {
+        throw new RuntimeException(t('teacher.students.error_duplicate_confirmation_invalid', 'Die Bestätigung gehört nicht zu dieser Klasse.'));
+      }
+      $existingStudentId = app_canonical_student_id($pdo, (int)($confirmation['student_id'] ?? 0));
+      if ($existingStudentId <= 0) {
+        throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
+      }
+      assign_student_to_class($pdo, $existingStudentId, $classId, true);
+      audit('teacher_student_duplicate_assignment_confirmed', $userId, [
+        'class_id' => $classId,
+        'student_id' => $existingStudentId,
+      ]);
+      $ok = t('teacher.students.ok_duplicate_assigned', 'Das bestehende Schülerprofil wurde nach ausdrücklicher Bestätigung der Klasse zugeordnet.');
+    }
+
     elseif ($action === 'toggle_active') {
       $studentId = (int)($_POST['student_id'] ?? 0);
       if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
 
-      $q = $pdo->prepare("SELECT is_active FROM students WHERE id=? AND class_id=? LIMIT 1");
+      $q = $pdo->prepare("SELECT is_active FROM student_class_assignments WHERE student_id=? AND class_id=? LIMIT 1");
       $q->execute([$studentId, $classId]);
       $row = $q->fetch();
       if (!$row) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
       $new = ((int)$row['is_active'] === 1) ? 0 : 1;
-      $pdo->prepare("UPDATE students SET is_active=? WHERE id=?")->execute([$new, $studentId]);
+      $pdo->prepare("UPDATE student_class_assignments SET is_active=? WHERE student_id=? AND class_id=?")
+        ->execute([$new, $studentId, $classId]);
       audit('teacher_student_toggle_active', $userId, ['class_id'=>$classId,'student_id'=>$studentId,'is_active'=>$new]);
       $ok = $new
           ? t('teacher.students.ok_reactivated', 'Schüler wurde reaktiviert.')
@@ -1183,36 +1246,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $studentId = (int)($_POST['student_id'] ?? 0);
       if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
 
-      $q = $pdo->prepare("SELECT id FROM students WHERE id=? AND class_id=? LIMIT 1");
+      $q = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE student_id=? AND class_id=? LIMIT 1");
       $q->execute([$studentId, $classId]);
       if (!$q->fetch()) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
-      $q = $pdo->prepare(
-        "SELECT SUM(CASE
-                      WHEN fv.id IS NOT NULL AND (fv.source IS NULL OR fv.source <> 'system') THEN 1
-                      ELSE 0
-                    END) AS value_count
-         FROM report_instances r
-         LEFT JOIN field_values fv ON fv.report_instance_id = r.id
-         WHERE r.student_id=?"
-      );
-      $q->execute([$studentId]);
-      $valueCount = (int)($q->fetch(PDO::FETCH_ASSOC)['value_count'] ?? 0);
-      if ($valueCount > 0) {
-        throw new RuntimeException(t('teacher.students.error_delete_has_data', 'Schüler kann nicht gelöscht werden, da bereits Formular-Daten gespeichert sind. Bitte an den Admin wenden.'));
-      }
-
-      $pdo->beginTransaction();
-      $st = $pdo->prepare("SELECT id FROM report_instances WHERE student_id=?");
-      $st->execute([$studentId]);
-      $reportIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
-      if ($reportIds) {
-        $in = implode(',', array_fill(0, count($reportIds), '?'));
-        $pdo->prepare("DELETE FROM field_values WHERE report_instance_id IN ($in)")->execute($reportIds);
-        $pdo->prepare("DELETE FROM report_instances WHERE id IN ($in)")->execute($reportIds);
-      }
-      $pdo->prepare("DELETE FROM students WHERE id=? AND class_id=?")->execute([$studentId, $classId]);
-      $pdo->commit();
+      unassign_student_from_class($pdo, $studentId, $classId);
+      $reportIds = [];
 
       audit('teacher_student_delete', $userId, [
         'class_id' => $classId,
@@ -1221,7 +1260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'values_deleted' => 0,
       ]);
 
-      $ok = t('teacher.students.ok_deleted', 'Schüler wurde gelöscht.');
+      $ok = t('teacher.students.ok_deleted', 'Schüler wurde aus der Klasse entfernt. Das zentrale Profil und vorhandene Berichte bleiben erhalten.');
     }
 
     elseif ($action === 'import_csv') {
@@ -1246,12 +1285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $pdo->beginTransaction();
 
-      $check = $pdo->prepare(
-        "SELECT id FROM students WHERE first_name=? AND last_name=? AND date_of_birth=? AND class_id=? LIMIT 1"
-      );
       $ins = $pdo->prepare(
-        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, is_active)
-         VALUES (?, ?, ?, ?, ?, 1)"
+        "INSERT INTO students (master_student_id, identity_hash, class_id, first_name, last_name, date_of_birth, is_active)
+         VALUES (NULL, ?, NULL, ?, ?, ?, 1)"
       );
       $setSelfMaster = $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?");
 
@@ -1287,49 +1323,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           continue;
         }
 
-        $check->execute([$first, $last, $dob, $classId]);
-        $existingId = $check->fetchColumn();
+        $existingId = find_student_by_identity($pdo, $first, $last, $dob);
         if ($existingId) {
-          $updates = [];
-          $params = [];
-          if ($emailStudent !== null) { $updates[] = "email_student=?"; $params[] = $emailStudent; }
-          if ($emailParent1 !== null) { $updates[] = "email_parent1=?"; $params[] = $emailParent1; }
-          if ($emailParent2 !== null) { $updates[] = "email_parent2=?"; $params[] = $emailParent2; }
-          if ($updates) {
-            $params[] = (int)$existingId;
-            $pdo->prepare("UPDATE students SET " . implode(', ', $updates) . " WHERE id=?")->execute($params);
-            $updated++;
-          } else {
-            $skipped++;
-            $importSkippedDetails[] = [
-              'name' => trim($first . ' ' . $last),
-              'reason' => t('teacher.students.import_duplicate', 'Schüler existiert bereits.'),
-            ];
+          $alreadyAssigned = student_is_assigned_to_class($pdo, $existingId, $classId);
+          if (!$alreadyAssigned) {
+            queue_student_assignment_confirmation($classId, $existingId);
           }
+          $skipped++;
+          $importSkippedDetails[] = [
+            'name' => trim($first . ' ' . $last),
+            'reason' => $alreadyAssigned
+              ? t('teacher.students.import_duplicate_already_assigned', 'Dieser Schüler ist der Klasse bereits zugeordnet.')
+              : t('teacher.students.import_duplicate_confirmation', 'Dublette erkannt. Bitte bestehendes Profil prüfen und die Klassenzuordnung ausdrücklich bestätigen.'),
+          ];
           continue;
         }
 
-        $master = find_master_student_id($pdo, $first, $last, $dob);
-        $ins->execute([$master, $classId, $first, $last, $dob]);
+        $ins->execute([student_identity_hash($first, $last, $dob), $first, $last, $dob]);
         $newId = (int)$pdo->lastInsertId();
-        if (!$master) {
-          $setSelfMaster->execute([$newId, $newId]);
-        }
+        $setSelfMaster->execute([$newId, $newId]);
+        assign_student_to_class($pdo, $newId, $classId, true);
         if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
           $pdo->prepare(
             "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
           )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
         }
-        if ($master) {
-          $copiedCustom = copy_student_custom_values($pdo, $master, $newId);
-          if ($customInput) {
-            save_student_custom_values($pdo, $newId, $customInput, false);
-          } elseif (!$copiedCustom) {
-            save_student_custom_values($pdo, $newId, [], true);
-          }
-        } else {
-          save_student_custom_values($pdo, $newId, $customInput, true);
-        }
+        save_student_custom_values($pdo, $newId, $customInput, true);
         $created++;
       }
 
@@ -1347,10 +1366,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $regen = (int)($_POST['regen'] ?? 0) === 1;
 
       $st = $pdo->prepare(
-        "SELECT id, qr_token, login_code
-         FROM students
-         WHERE class_id=? AND is_active=1
-         ORDER BY last_name ASC, first_name ASC"
+        "SELECT s.id, s.qr_token, s.login_code
+         FROM students s
+         INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+         WHERE sca.class_id=? AND sca.is_active=1
+         ORDER BY s.last_name ASC, s.first_name ASC"
       );
       $st->execute([$classId]);
         $students = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -1428,10 +1448,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
 
       $st = $pdo->prepare(
-        "SELECT id, master_student_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2
-         FROM students
-         WHERE class_id=? AND is_active=1
-         ORDER BY last_name ASC, first_name ASC"
+        "SELECT s.id, s.master_student_id, s.first_name, s.last_name, s.date_of_birth, s.email_student, s.email_parent1, s.email_parent2
+         FROM students s
+         INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+         WHERE sca.class_id=? AND sca.is_active=1
+         ORDER BY s.last_name ASC, s.first_name ASC"
       );
       $st->execute([$sourceClassId]);
       $src = $st->fetchAll();
@@ -1440,15 +1461,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $excludeMap = array_flip($excludeIds);
 
       $pdo->beginTransaction();
-      $ins = $pdo->prepare(
-        "INSERT INTO students (master_student_id, class_id, first_name, last_name, date_of_birth, email_student, email_parent1, email_parent2, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
-      );
-      $checkByMaster = $pdo->prepare("SELECT id FROM students WHERE class_id=? AND master_student_id=? LIMIT 1");
-      $checkByIdentity = $pdo->prepare(
-        "SELECT id FROM students
-         WHERE class_id=? AND first_name=? AND last_name=? AND date_of_birth=?
-         LIMIT 1"
+      $checkAssignment = $pdo->prepare("SELECT 1 FROM student_class_assignments WHERE class_id=? AND student_id=? LIMIT 1");
+      $insertAssignment = $pdo->prepare(
+        "INSERT INTO student_class_assignments (student_id, class_id, is_active)
+         VALUES (?, ?, 1)"
       );
 
       $sourceCount = count($src);
@@ -1467,39 +1483,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           continue;
         }
 
-        $master = $s['master_student_id'] !== null ? (int)$s['master_student_id'] : 0;
-        if ($master <= 0) $master = ensure_master_id($pdo, $sid);
-
-        $checkByMaster->execute([$classId, $master]);
-        if ($checkByMaster->fetch()) {
+        $canonicalId = app_canonical_student_id($pdo, $sid);
+        $checkAssignment->execute([$classId, $canonicalId]);
+        if ($checkAssignment->fetchColumn()) {
           $skippedExisting++;
           continue;
         }
-
-        $checkByIdentity->execute([
-          $classId,
-          (string)$s['first_name'],
-          (string)$s['last_name'],
-          (string)$s['date_of_birth'],
-        ]);
-        if ($checkByIdentity->fetch()) {
-          $skippedExisting++;
-          continue;
-        }
-
-        $ins->execute([
-          $master,
-          $classId,
-          $s['first_name'],
-          $s['last_name'],
-          $s['date_of_birth'],
-          $s['email_student'] ?? null,
-          $s['email_parent1'] ?? null,
-          $s['email_parent2'] ?? null,
-        ]);
-        $newId = (int)$pdo->lastInsertId();
-        $copiedCustom = copy_student_custom_values($pdo, $sid, $newId);
-        if (!$copiedCustom) save_student_custom_values($pdo, $newId, [], true);
+        $insertAssignment->execute([$canonicalId, $classId]);
         $copied++;
       }
       $pdo->commit();
@@ -1533,7 +1523,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $studentId = (int)($_POST['student_id'] ?? 0);
       if ($studentId <= 0) throw new RuntimeException(t('teacher.students.error_invalid_student', 'Ungültige student_id.'));
 
-      $q = $pdo->prepare("SELECT id FROM students WHERE id=? AND class_id=? LIMIT 1");
+      $q = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE student_id=? AND class_id=? LIMIT 1");
       $q->execute([$studentId, $classId]);
       if (!$q->fetch()) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
@@ -1553,10 +1543,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       $upd = $pdo->prepare(
         "UPDATE students
-         SET first_name=?, last_name=?, date_of_birth=?, email_student=?, email_parent1=?, email_parent2=?
+         SET first_name=?, last_name=?, date_of_birth=?, identity_hash=?, email_student=?, email_parent1=?, email_parent2=?
          WHERE id=?"
       );
-      $upd->execute([$first, $last, $dob, $emailStudent, $emailParent1, $emailParent2, $studentId]);
+      $upd->execute([$first, $last, $dob, student_identity_hash($first, $last, $dob), $emailStudent, $emailParent1, $emailParent2, $studentId]);
       save_student_custom_values($pdo, $studentId, $customInput, false);
 
       audit('teacher_student_update', $userId, ['class_id'=>$classId,'student_id'=>$studentId]);
@@ -1569,12 +1559,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
+$pendingSession = $_SESSION['pending_student_assignment_confirmations'] ?? [];
+if (!is_array($pendingSession)) $pendingSession = [];
+$now = time();
+foreach ($pendingSession as $token => $pendingRow) {
+  if (!is_array($pendingRow) || (int)($pendingRow['expires_at'] ?? 0) < $now) {
+    unset($pendingSession[$token]);
+    continue;
+  }
+  if ((int)($pendingRow['class_id'] ?? 0) !== $classId) continue;
+  $pendingStudentId = app_canonical_student_id($pdo, (int)($pendingRow['student_id'] ?? 0));
+  if ($pendingStudentId <= 0 || student_is_assigned_to_class($pdo, $pendingStudentId, $classId)) {
+    unset($pendingSession[$token]);
+    continue;
+  }
+  $stPendingStudent = $pdo->prepare("SELECT first_name, last_name, date_of_birth FROM students WHERE id=? LIMIT 1");
+  $stPendingStudent->execute([$pendingStudentId]);
+  $pendingStudent = $stPendingStudent->fetch(PDO::FETCH_ASSOC);
+  if (!$pendingStudent) {
+    unset($pendingSession[$token]);
+    continue;
+  }
+  $pendingDuplicateAssignments[] = [
+    'token' => (string)$token,
+    'student_id' => $pendingStudentId,
+    'name' => trim((string)$pendingStudent['first_name'] . ' ' . (string)$pendingStudent['last_name']),
+    'date_of_birth' => (string)($pendingStudent['date_of_birth'] ?? ''),
+  ];
+}
+$_SESSION['pending_student_assignment_confirmations'] = $pendingSession;
+
 // Load students in this class
 $st = $pdo->prepare(
-  "SELECT id, first_name, last_name, date_of_birth, is_active, email_student, email_parent1, email_parent2
-   FROM students
-   WHERE class_id=?
-   ORDER BY last_name ASC, first_name ASC"
+  "SELECT s.id, s.first_name, s.last_name, s.date_of_birth, sca.is_active,
+          s.email_student, s.email_parent1, s.email_parent2
+   FROM students s
+   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+   WHERE sca.class_id=?
+   ORDER BY s.last_name ASC, s.first_name ASC"
 );
 $st->execute([$classId]);
 $students = $st->fetchAll();
@@ -1668,6 +1690,22 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
 <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+<?php if ($pendingDuplicateAssignments): ?>
+  <div class="alert">
+    <strong><?=h(t('teacher.students.duplicate_confirmation_heading', 'Dublette gefunden – Zuordnung bestätigen'))?></strong>
+    <p><?=h(t('teacher.students.duplicate_confirmation_hint', 'Es wurde kein neues Profil angelegt. Prüfe den vorhandenen Schüler und bestätige nur dann die Zuordnung zu dieser Klasse.'))?></p>
+    <?php foreach ($pendingDuplicateAssignments as $pendingDuplicate): ?>
+      <form method="post" class="actions" style="justify-content:flex-start; margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="confirm_duplicate_assignment">
+        <input type="hidden" name="confirmation_token" value="<?=h((string)$pendingDuplicate['token'])?>">
+        <span><strong><?=h((string)$pendingDuplicate['name'])?></strong> · <?=h((string)$pendingDuplicate['date_of_birth'])?></span>
+        <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('teacher.students.duplicate_confirmation_confirm', 'Bestehendes Profil wirklich dieser Klasse zuordnen?'))?>');"><?=h(t('teacher.students.duplicate_confirmation_button', 'Bestehendes Profil zuordnen'))?></button>
+      </form>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
 <?php if ($importSkippedDetails): ?>
   <div class="alert">
     <strong><?=h(t('teacher.students.import_skipped_title', 'Übersprungene Einträge:'))?></strong>

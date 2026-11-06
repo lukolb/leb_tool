@@ -77,25 +77,29 @@ function template_for_class(PDO $pdo, int $classId): array {
 function find_report_instance(PDO $pdo, int $templateId, int $studentId, string $schoolYear, string $periodLabel): ?array {
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
-    "SELECT id, template_id, student_id, school_year, period_label, status
-     FROM report_instances
-     WHERE template_id=? AND student_id=? AND school_year=? AND period_label=?
-     ORDER BY updated_at DESC, id DESC
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label, ri.status
+     FROM report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     WHERE ri.template_id=?
+       AND COALESCE(NULLIF(s.master_student_id, 0), s.id)=?
+       AND ri.school_year=? AND ri.period_label=?
+     ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel]);
+  $st->execute([$templateId, $studentId, $schoolYear, $periodLabel, $studentId]);
   $ri = $st->fetch(PDO::FETCH_ASSOC);
   if ($ri) return $ri;
 
   // fallback: newest instance regardless of period/year (just in case)
   $st2 = $pdo->prepare(
-    "SELECT id, template_id, student_id, school_year, period_label, status
-     FROM report_instances
-     WHERE template_id=? AND student_id=?
-     ORDER BY updated_at DESC, id DESC
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label, ri.status
+     FROM report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     WHERE ri.template_id=? AND COALESCE(NULLIF(s.master_student_id, 0), s.id)=?
+     ORDER BY (ri.student_id=?) DESC, ri.updated_at DESC, ri.id DESC
      LIMIT 1"
   );
-  $st2->execute([$templateId, $studentId]);
+  $st2->execute([$templateId, $studentId, $studentId]);
   $ri2 = $st2->fetch(PDO::FETCH_ASSOC);
   return $ri2 ?: null;
 }
@@ -409,7 +413,7 @@ function load_class_values(PDO $pdo, int $classReportInstanceId): array {
   return load_values_for_report($pdo, $classReportInstanceId);
 }
 
-function missing_fields_for_student(array $templateFields, array $values, array &$nonEditableOut = null, array $lockedFieldNames = []): array {
+function missing_fields_for_student(array $templateFields, array $values, ?array &$nonEditableOut = null, array $lockedFieldNames = []): array {
   // IMPORTANT: warn only on required fields
   $missing = [];
   $nonEditable = [];
@@ -481,12 +485,20 @@ function load_students_for_export(PDO $pdo, int $classId, int $templateId, strin
   $sql =
     "SELECT s.id, s.first_name, s.last_name, ri.status AS report_status
      FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
      LEFT JOIN report_instances ri
-       ON ri.student_id=s.id
-      AND ri.template_id=?
-      AND ri.school_year=?
-      AND ri.period_label=?
-     WHERE s.class_id=? AND s.is_active=1
+       ON ri.id=(
+         SELECT ri2.id
+         FROM report_instances ri2
+         INNER JOIN students rs ON rs.id=ri2.student_id
+         WHERE COALESCE(NULLIF(rs.master_student_id, 0), rs.id)=s.id
+           AND ri2.template_id=?
+           AND ri2.school_year=?
+           AND ri2.period_label=?
+         ORDER BY (ri2.student_id=s.id) DESC, ri2.updated_at DESC, ri2.id DESC
+         LIMIT 1
+       )
+     WHERE sca.class_id=? AND sca.is_active=1
      $whereStudent
      $whereSubmitted
      ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC";
