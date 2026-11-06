@@ -1760,12 +1760,30 @@ document.addEventListener('DOMContentLoaded', function () {
   const positionMenu = () => {
     if (!currentButton) return;
     const rect = currentButton.getBoundingClientRect();
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-    const maxLeft = scrollX + document.documentElement.clientWidth - menu.offsetWidth - 8;
-    const left = Math.max(scrollX + 8, Math.min(rect.right + scrollX - menu.offsetWidth, maxLeft));
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const margin = 8;
+    const gap = 6;
+
+    menu.style.maxHeight = '';
+    menu.style.overflowY = 'auto';
+    const fullHeight = menu.scrollHeight;
+    const spaceBelow = Math.max(0, viewportHeight - rect.bottom - gap - margin);
+    const spaceAbove = Math.max(0, rect.top - gap - margin);
+    const openUpward = spaceBelow < fullHeight && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(80, openUpward ? spaceAbove : spaceBelow);
+    const renderedHeight = Math.min(fullHeight, availableHeight);
+
+    menu.style.maxHeight = `${availableHeight}px`;
+    menu.dataset.placement = openUpward ? 'top' : 'bottom';
+
+    const maxLeft = viewportWidth - menu.offsetWidth - margin;
+    const left = Math.max(margin, Math.min(rect.right - menu.offsetWidth, maxLeft));
+    const top = openUpward
+      ? Math.max(margin, rect.top - gap - renderedHeight)
+      : Math.min(rect.bottom + gap, viewportHeight - margin - renderedHeight);
     menu.style.left = `${left}px`;
-    menu.style.top = `${rect.bottom + scrollY}px`;
+    menu.style.top = `${top}px`;
   };
 
   const openMenu = (button, template) => {
