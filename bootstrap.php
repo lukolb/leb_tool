@@ -1622,8 +1622,11 @@ function ensure_schema(PDO $pdo): void {
       if (!db_has_column($pdo, 'competencies', 'display_type')) {
         $pdo->exec("ALTER TABLE competencies ADD COLUMN display_type VARCHAR(32) NOT NULL DEFAULT 'rated' AFTER text_en");
       }
-      if (!db_has_index($pdo, 'competencies', 'uq_competencies_code')) {
+      if (!db_has_unique_index($pdo, 'competencies', 'uq_competencies_code')) {
         deduplicate_competency_codes($pdo);
+        if (db_has_index($pdo, 'competencies', 'uq_competencies_code')) {
+          $pdo->exec("ALTER TABLE competencies DROP INDEX uq_competencies_code");
+        }
         $pdo->exec("ALTER TABLE competencies ADD UNIQUE KEY uq_competencies_code (code)");
       }
     }
@@ -1650,6 +1653,12 @@ function db_has_column(PDO $pdo, string $table, string $column): bool {
 
 function db_has_index(PDO $pdo, string $table, string $index): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?");
+  $stmt->execute([$table, $index]);
+  return (int)($stmt->fetch()['c'] ?? 0) > 0;
+}
+
+function db_has_unique_index(PDO $pdo, string $table, string $index): bool {
+  $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=? AND NON_UNIQUE=0");
   $stmt->execute([$table, $index]);
   return (int)($stmt->fetch()['c'] ?? 0) > 0;
 }

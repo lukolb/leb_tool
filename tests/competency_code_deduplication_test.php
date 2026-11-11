@@ -37,4 +37,8 @@ competency_dedup_assert(
     'no duplicate competency codes may remain'
 );
 
+$bootstrap = (string)file_get_contents(dirname(__DIR__) . '/bootstrap.php');
+competency_dedup_assert(str_contains($bootstrap, "db_has_unique_index(\$pdo, 'competencies', 'uq_competencies_code')"), 'the migration must verify that the database index is actually unique');
+competency_dedup_assert(str_contains($bootstrap, 'DROP INDEX uq_competencies_code'), 'a same-named non-unique legacy index must be replaced');
+
 fwrite(STDOUT, "competency_code_deduplication_test: OK\n");
