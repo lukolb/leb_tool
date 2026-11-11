@@ -1606,7 +1606,7 @@ function ensure_schema(PDO $pdo): void {
       $pdo->exec("CREATE TABLE competency_subcategories (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, category_id BIGINT UNSIGNED NOT NULL, name_de VARCHAR(255) NOT NULL, name_en VARCHAR(255) DEFAULT '', sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY idx_comp_sub_cat (category_id,sort_order,id)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
     if (!db_has_table($pdo, 'competencies')) {
-      $pdo->exec("CREATE TABLE competencies (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, category_id BIGINT UNSIGNED DEFAULT NULL, subcategory_id BIGINT UNSIGNED DEFAULT NULL, code VARCHAR(80) DEFAULT NULL, text_de TEXT NOT NULL, text_en TEXT, display_type VARCHAR(32) NOT NULL DEFAULT 'rated', is_required TINYINT(1) NOT NULL DEFAULT 0, is_active TINYINT(1) NOT NULL DEFAULT 1, sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY idx_comp_cat_sort (category_id,sort_order,id), KEY idx_comp_sub_sort (subcategory_id,sort_order,id), KEY idx_comp_active (is_active)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+      $pdo->exec("CREATE TABLE competencies (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, category_id BIGINT UNSIGNED DEFAULT NULL, subcategory_id BIGINT UNSIGNED DEFAULT NULL, code VARCHAR(80) DEFAULT NULL, text_de TEXT NOT NULL, text_en TEXT, display_type VARCHAR(32) NOT NULL DEFAULT 'rated', is_required TINYINT(1) NOT NULL DEFAULT 0, is_active TINYINT(1) NOT NULL DEFAULT 1, sort_order INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY uq_competencies_code (code), KEY idx_comp_cat_sort (category_id,sort_order,id), KEY idx_comp_sub_sort (subcategory_id,sort_order,id), KEY idx_comp_active (is_active)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
 
     if (db_has_table($pdo, 'competencies')) {
@@ -1620,6 +1620,12 @@ function ensure_schema(PDO $pdo): void {
       }
       if (!db_has_column($pdo, 'competencies', 'display_type')) {
         $pdo->exec("ALTER TABLE competencies ADD COLUMN display_type VARCHAR(32) NOT NULL DEFAULT 'rated' AFTER text_en");
+      }
+      if (!db_has_index($pdo, 'competencies', 'uq_competencies_code')) {
+        $duplicates = $pdo->query("SELECT code FROM competencies WHERE code IS NOT NULL GROUP BY code HAVING COUNT(*)>1 LIMIT 1")->fetchColumn();
+        if ($duplicates === false) {
+          $pdo->exec("ALTER TABLE competencies ADD UNIQUE KEY uq_competencies_code (code)");
+        }
       }
     }
 

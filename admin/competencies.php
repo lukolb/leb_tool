@@ -2,13 +2,13 @@
 declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/competency_codes.php';
 require_admin();
 $pdo = db();
 $gradeOptions = [1,2,3,4];
 
 function json_out(array $d, int $code=200): never { http_response_code($code); header('Content-Type: application/json; charset=utf-8'); echo json_encode($d, JSON_UNESCAPED_UNICODE); exit; }
 function bad(string $m, int $c=400): never { json_out(['ok'=>false,'error'=>$m],$c); }
-function next_comp_code(PDO $pdo, int $categoryId, string $catDe): string { $prefix=strtoupper(preg_replace('/[^A-Za-z0-9]/','',substr($catDe,0,4))?:('CAT'.$categoryId)); $st=$pdo->prepare("SELECT code FROM competencies WHERE category_id=? ORDER BY sort_order DESC,id DESC LIMIT 1"); $st->execute([$categoryId]); $last=(string)($st->fetchColumn()?:''); $n=1; if(preg_match('/-(\d+)$/',$last,$m)) $n=((int)$m[1])+1; return $prefix.'-'.str_pad((string)$n,3,'0',STR_PAD_LEFT);} 
 
 function max_sort(PDO $pdo, string $table, string $where='1=1', array $params=[]): int { $st=$pdo->prepare("SELECT COALESCE(MAX(sort_order),0) FROM {$table} WHERE {$where}"); $st->execute($params); return (int)$st->fetchColumn(); }
 function normalize_order(PDO $pdo, string $table, string $where='1=1', array $params=[]): void { $st=$pdo->prepare("SELECT id FROM {$table} WHERE {$where} ORDER BY sort_order,id"); $st->execute($params); $ids=$st->fetchAll(PDO::FETCH_COLUMN)?:[]; $u=$pdo->prepare("UPDATE {$table} SET sort_order=? WHERE id=?"); foreach($ids as $i=>$id){$u->execute([$i+1,(int)$id]);}}
@@ -116,11 +116,12 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
         $so=max_sort($pdo,'competency_subcategories','category_id=?',[$cat])+1; $pdo->prepare("INSERT INTO competency_subcategories(category_id,name_de,name_en,sort_order) VALUES (?,?,?,?)")->execute([$cat,$de,$en,$so]);
       } elseif($type==='competency'){
         $subRaw=(string)($_POST['parent_id']??''); $sub=(int)$subRaw; $cat=(int)($_POST['target_category_id']??0); $catName='';
-        if($sub>0){ $st=$pdo->prepare("SELECT category_id,name_de FROM competency_subcategories WHERE id=?");$st->execute([$sub]);$sr=$st->fetch(PDO::FETCH_ASSOC); if(!$sr) bad('Unterkategorie nicht gefunden'); $cat=(int)$sr['category_id']; $catName=(string)$sr['name_de']; }
+        if($sub>0){ $st=$pdo->prepare("SELECT s.category_id,c.name_de FROM competency_subcategories s INNER JOIN competency_categories c ON c.id=s.category_id WHERE s.id=?");$st->execute([$sub]);$sr=$st->fetch(PDO::FETCH_ASSOC); if(!$sr) bad('Unterkategorie nicht gefunden'); $cat=(int)$sr['category_id']; $catName=(string)$sr['name_de']; }
         else { if($cat<=0) bad('Kategorie erforderlich'); $st=$pdo->prepare("SELECT name_de FROM competency_categories WHERE id=?");$st->execute([$cat]); $catName=(string)($st->fetchColumn()?:'CAT'); }
         $de=trim((string)($_POST['text_de']??'')); $en=trim((string)($_POST['text_en']??'')); if($de===''&&$en==='') bad('Kompetenztext DE oder EN erforderlich');
         $displayType=(string)($_POST['display_type']??'rated'); if(!in_array($displayType,['rated','info'],true)) $displayType='rated';
         $code=trim((string)($_POST['code']??'')); if($code==='') $code=next_comp_code($pdo,$cat,$catName);
+        if(competency_code_exists($pdo,$code)) bad('Dieser Kompetenz-Code wird bereits verwendet.');
         $so=$sub>0 ? max_sort($pdo,'competencies','subcategory_id=?',[$sub])+1 : max_sort($pdo,'competencies','category_id=? AND subcategory_id IS NULL',[$cat])+1;
         $pdo->prepare("INSERT INTO competencies(category_id,subcategory_id,code,text_de,text_en,display_type,is_required,sort_order) VALUES (?,?,?,?,?,?,?,?)")->execute([$cat,$sub>0?$sub:null,$code,$de,$en,$displayType,isset($_POST['is_required'])?1:0,$so]);
         $id=(int)$pdo->lastInsertId();
@@ -134,7 +135,7 @@ if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SERVER['HTTP_X_REQUESTED_WITH'
       $type=(string)($_POST['type']??''); $id=(int)($_POST['id']??0); if($id<=0) bad('Ungültige ID');
       if($type==='category'){ $de=trim((string)($_POST['name_de']??'')); $en=trim((string)($_POST['name_en']??'')); if($de===''||$en==='') bad('Name DE/EN erforderlich'); $pdo->prepare("UPDATE competency_categories SET name_de=?,name_en=? WHERE id=?")->execute([$de,$en,$id]); }
       elseif($type==='subcategory'){ $de=trim((string)($_POST['name_de']??'')); $en=trim((string)($_POST['name_en']??'')); if($de===''||$en==='') bad('Name DE/EN erforderlich'); $pdo->prepare("UPDATE competency_subcategories SET name_de=?,name_en=? WHERE id=?")->execute([$de,$en,$id]); }
-      elseif($type==='competency'){ $code=trim((string)($_POST['code']??'')); $de=trim((string)($_POST['text_de']??'')); $en=trim((string)($_POST['text_en']??'')); if($code===''||($de===''&&$en==='')) bad('Code und Texte erforderlich (DE oder EN).'); $displayType=(string)($_POST['display_type']??'rated'); if(!in_array($displayType,['rated','info'],true)) $displayType='rated'; $pdo->prepare("UPDATE competencies SET code=?,text_de=?,text_en=?,display_type=?,is_required=? WHERE id=?")->execute([$code,$de,$en,$displayType,isset($_POST['is_required'])?1:0,$id]); $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]); foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g;if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$id,$gi]);} }
+      elseif($type==='competency'){ $code=trim((string)($_POST['code']??'')); $de=trim((string)($_POST['text_de']??'')); $en=trim((string)($_POST['text_en']??'')); if($code===''||($de===''&&$en==='')) bad('Code und Texte erforderlich (DE oder EN).'); if(competency_code_exists($pdo,$code,$id)) bad('Dieser Kompetenz-Code wird bereits verwendet.'); $displayType=(string)($_POST['display_type']??'rated'); if(!in_array($displayType,['rated','info'],true)) $displayType='rated'; $pdo->prepare("UPDATE competencies SET code=?,text_de=?,text_en=?,display_type=?,is_required=? WHERE id=?")->execute([$code,$de,$en,$displayType,isset($_POST['is_required'])?1:0,$id]); $pdo->prepare("DELETE FROM competency_grade_levels WHERE competency_id=?")->execute([$id]); foreach((array)($_POST['grades']??[]) as $g){$gi=(int)$g;if($gi>=1&&$gi<=4)$pdo->prepare("INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (?,?)")->execute([$id,$gi]);} }
       else bad('Ungültiger Typ');
       json_out(['ok'=>true,'tree'=>fetch_tree($pdo)]);
     }
