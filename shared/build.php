@@ -394,7 +394,7 @@ if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    $selectedSkills = latex_visible_selected_competency_codes(
+    $selectedSkills = latex_visible_selected_competency_ids(
         $pdo,
         $selectedSkills,
         $selectedGrade,
@@ -438,10 +438,10 @@ if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     }
     if (!empty($disabledClauses) && !empty($selectedSkills)) {
         $inSkills = implode(',', array_fill(0, count($selectedSkills), '?'));
-        $sql = "SELECT code FROM competencies c WHERE c.code IN ($inSkills) AND (" . implode(' OR ', $disabledClauses) . ")";
+        $sql = "SELECT id FROM competencies c WHERE c.id IN ($inSkills) AND (" . implode(' OR ', $disabledClauses) . ")";
         $stDisabled = $pdo->prepare($sql);
         $stDisabled->execute(array_merge($selectedSkills, $disabledParams));
-        $blocked = array_map('strval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        $blocked = array_map('intval', $stDisabled->fetchAll(PDO::FETCH_COLUMN) ?: []);
         if (!empty($blocked)) {
             $selectedSkills = array_values(array_diff($selectedSkills, $blocked));
         }
@@ -1068,23 +1068,23 @@ function latex_escape_with_inline_placeholders(string $t, string $fieldPrefix = 
     return $out;
 }
 
-function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCategoryIds = [], int $gradeLevel = 1, array $gradeFieldCategoryIds = [], bool $enableStudentTeacherRatings = false): string {
+function generate_db_data_tex(PDO $pdo, array $selectedIds, array $pagebreakCategoryIds = [], int $gradeLevel = 1, array $gradeFieldCategoryIds = [], bool $enableStudentTeacherRatings = false): string {
     if ($gradeLevel < 1 || $gradeLevel > 4) { $gradeLevel = 1; }
-    if (!$selectedCodes) {
+    if (!$selectedIds) {
         return "\\newcommand{\\GradeLevel}{" . $gradeLevel . "}\n\\newcommand{\\AllSkillSections}{}\n";
     }
 
-    $in = implode(',', array_fill(0, count($selectedCodes), '?'));
+    $in = implode(',', array_fill(0, count($selectedIds), '?'));
     $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en "
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
          . "INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id "
-         . "WHERE cgl.grade_level=? AND c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
+         . "WHERE cgl.grade_level=? AND c.id IN ($in) AND c.is_active=1 "
          . "ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
 
     $st = $pdo->prepare($sql);
-    $st->execute(array_merge([$gradeLevel], $selectedCodes));
+    $st->execute(array_merge([$gradeLevel], $selectedIds));
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $sections = [];
@@ -1129,9 +1129,6 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
             }
             foreach (($subData['items'] ?? []) as $it) {
                 $code = trim((string)($it['code'] ?? ''));
-                if ($code === '') {
-                    continue;
-                }
                 $fieldPrefix = 'skillcb-cid-' . (string)($it['id'] ?? '');
                 $displayType = (string)($it['display_type'] ?? 'rated');
                 if ($displayType === 'info') {
@@ -1151,7 +1148,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
                     }
 
                     $macroBody .= "  \\" . $infoSkillMacro . "{" . $infoText . "}\n";
-                } else {
+                } elseif ($code !== '') {
                     $macroBody .= "  \\" . $skillRowMacro . "{" . latex_escape($code) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)$it['text_de'], $fieldPrefix) . "}%\n";
                     $macroBody .= "    {" . latex_escape_with_inline_placeholders((string)($it['text_en'] ?? ''), $fieldPrefix) . "}\n";
@@ -1204,7 +1201,7 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
     return $out;
 }
 
-function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1, bool $enableStudentTeacherRatings = false, array $gradeFieldCategoryIds = []): array {
+function generate_rcff_data(PDO $pdo, array $selectedIds, int $gradeLevel = 1, bool $enableStudentTeacherRatings = false, array $gradeFieldCategoryIds = []): array {
     $gradeLevel = max(1, min(4, $gradeLevel));
     $rcff = [
         'format' => 'rcff',
@@ -1215,16 +1212,15 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
         'student_teacher_ratings' => $enableStudentTeacherRatings,
         'fields' => [],
     ];
-    if (!$selectedCodes) return $rcff;
-    $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE cgl.grade_level=? AND c.code IN ($in) AND c.is_active=1";
+    if (!$selectedIds) return $rcff;
+    $in = implode(',', array_fill(0, count($selectedIds), '?'));
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE cgl.grade_level=? AND c.id IN ($in) AND c.is_active=1";
     $st = $pdo->prepare($sql);
-    $st->execute(array_merge([$gradeLevel], $selectedCodes));
+    $st->execute(array_merge([$gradeLevel], $selectedIds));
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $gradeMap = array_fill_keys(array_map('intval', $gradeFieldCategoryIds), true);
     foreach ($rows as $it) {
         $code = trim((string)($it['code'] ?? ''));
-        if ($code === '') continue;
         $catId = (int)($it['category_id'] ?? 0);
         $base = [
             'label_de' => (string)($it['text_de'] ?? ''),
@@ -1259,6 +1255,7 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
             foreach (collect_inline_field_metadata((string)($it['text_en'] ?? ''), $prefix, $base) as $f) $rcff['fields'][] = $f;
             continue;
         }
+        if ($code === '') continue;
         if ($enableStudentTeacherRatings) {
             $rcff['fields'][] = $base + ['field_name' => $code . '-T', 'type' => 'rating', 'role' => 'teacher', 'rating_values' => ['na','be','pr','st','ma']];
             $rcff['fields'][] = $base + ['field_name' => $code . '-S', 'type' => 'rating', 'role' => 'student', 'rating_values' => ['be','pr','st','ma']];

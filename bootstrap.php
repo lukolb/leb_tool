@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
 require_once __DIR__ . '/shared/mail.php';
+require_once __DIR__ . '/shared/competency_codes.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
 if (!defined('APP_CONFIG_PATH')) define('APP_CONFIG_PATH', $configPath);
@@ -1622,10 +1623,8 @@ function ensure_schema(PDO $pdo): void {
         $pdo->exec("ALTER TABLE competencies ADD COLUMN display_type VARCHAR(32) NOT NULL DEFAULT 'rated' AFTER text_en");
       }
       if (!db_has_index($pdo, 'competencies', 'uq_competencies_code')) {
-        $duplicates = $pdo->query("SELECT code FROM competencies WHERE code IS NOT NULL GROUP BY code HAVING COUNT(*)>1 LIMIT 1")->fetchColumn();
-        if ($duplicates === false) {
-          $pdo->exec("ALTER TABLE competencies ADD UNIQUE KEY uq_competencies_code (code)");
-        }
+        deduplicate_competency_codes($pdo);
+        $pdo->exec("ALTER TABLE competencies ADD UNIQUE KEY uq_competencies_code (code)");
       }
     }
 

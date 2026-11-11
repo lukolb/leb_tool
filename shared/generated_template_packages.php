@@ -109,12 +109,12 @@ function generated_template_package_categories(PDO $pdo, array $categoryIds): ar
     }, $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
 }
 
-function generated_template_package_competencies(PDO $pdo, array $codes): array {
-    $codes = array_values(array_unique(array_filter(array_map('strval', $codes), static fn(string $v): bool => trim($v) !== '')));
-    if (!$codes) return [];
-    $in = implode(',', array_fill(0, count($codes), '?'));
-    $st = $pdo->prepare("SELECT id, code, text_de, text_en, COALESCE(display_type,'rated') AS display_type FROM competencies WHERE code IN ($in) ORDER BY sort_order, id");
-    $st->execute($codes);
+function generated_template_package_competencies(PDO $pdo, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $v): bool => $v > 0)));
+    if (!$ids) return [];
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare("SELECT id, code, text_de, text_en, COALESCE(display_type,'rated') AS display_type FROM competencies WHERE id IN ($in) ORDER BY sort_order, id");
+    $st->execute($ids);
     return array_map(static function (array $r): array {
         return [
             'id' => (int)($r['id'] ?? 0),

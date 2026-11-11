@@ -25,31 +25,36 @@ $pdo->exec("INSERT INTO competencies(id,category_id,subcategory_id,code,is_activ
     (4,NULL,20,'G1-SUB-HIDDEN',1,4),
     (5,2,NULL,'G1-CAT-HIDDEN',1,5),
     (6,1,NULL,'G2-WRONG-GRADE',1,6),
-    (7,1,NULL,'G1-INACTIVE',0,7)");
-$pdo->exec('INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (1,1),(2,1),(3,1),(4,1),(5,1),(6,2),(7,1)');
+    (7,1,NULL,'G1-INACTIVE',0,7),
+    (8,1,NULL,'G1-DIRECT',1,8)");
+$pdo->exec('INSERT INTO competency_grade_levels(competency_id,grade_level) VALUES (1,1),(2,1),(3,1),(4,1),(5,1),(6,2),(7,1),(8,1)');
 
 $submitted = [
-    'G1-DIRECT',
-    'G1-SUB-VISIBLE',
-    'G1-SUB-HIDDEN',
-    'G1-CAT-HIDDEN',
-    'G2-WRONG-GRADE',
-    'G1-INACTIVE',
-    'G1-DIRECT',
+    1,
+    2,
+    4,
+    5,
+    6,
+    7,
+    1,
 ];
-$actual = latex_visible_selected_competency_codes($pdo, $submitted, 1, [1], [10]);
+$actual = latex_visible_selected_competency_ids($pdo, $submitted, 1, [1], [10]);
 
 latex_selection_assert(
-    $actual === ['G1-DIRECT', 'G1-SUB-VISIBLE'],
-    'only selected, active, grade-matching competencies in visible categories and subcategories may remain'
+    $actual === [1, 2],
+    'only the exact selected, active, grade-matching competency IDs in visible sections may remain'
 );
 latex_selection_assert(
-    latex_visible_selected_competency_codes($pdo, [], 1, [1], [10]) === [],
+    latex_visible_selected_competency_ids($pdo, [], 1, [1], [10]) === [],
     'an empty selection must remain empty'
 );
 latex_selection_assert(
-    latex_visible_selected_competency_codes($pdo, ['G1-DIRECT'], 1, [], [10]) === [],
+    latex_visible_selected_competency_ids($pdo, [1], 1, [], [10]) === [],
     'competencies from inactive categories must not remain visible'
+);
+latex_selection_assert(
+    latex_visible_selected_competency_ids($pdo, [1], 1, [1], [10]) === [1],
+    'a different competency with the same code must not be selected implicitly'
 );
 
 fwrite(STDOUT, "latex_competency_selection_test: OK\n");

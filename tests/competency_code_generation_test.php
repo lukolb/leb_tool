@@ -33,5 +33,10 @@ competency_code_assert(
 );
 competency_code_assert(competency_code_exists($pdo, 'sozi-012'), 'duplicate detection must be case-insensitive');
 competency_code_assert(!competency_code_exists($pdo, 'SOZI-012', 1), 'the current competency must be excluded while editing');
+competency_code_assert(str_contains(competency_code_duplicate_message(), 'eindeutigen Code'), 'duplicate codes need a clear validation message');
+competency_code_assert(
+    competency_code_unique_constraint_failed(new PDOException('Duplicate entry for key uq_competencies_code', 23000)),
+    'database uniqueness violations must be converted into the validation message'
+);
 
 fwrite(STDOUT, "competency_code_generation_test: OK\n");

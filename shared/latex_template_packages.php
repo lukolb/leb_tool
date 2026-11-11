@@ -179,7 +179,22 @@ function latex_template_package_strip_latex_comments(string $content): string {
 
 function latex_template_package_main_includes_data(string $content): bool {
     $withoutComments = latex_template_package_strip_latex_comments($content);
-    return (bool)preg_match('/\\\\(?:input|include)\s*\{\s*data(?:\.tex)?\s*\}/i', $withoutComments);
+    if (preg_match('/\\\\(?:input|include)\s*\{\s*data(?:\.tex)?\s*\}/i', $withoutComments)) {
+        return true;
+    }
+    if (!preg_match_all('/\\\\(?:providecommand|newcommand|renewcommand)\s*\{?\\\\([A-Za-z@]+)\}?\s*(?:\[[^\]]*\])?\s*\{\s*data(?:\.tex)?\s*\}/i', $withoutComments, $matches)) {
+        return false;
+    }
+    foreach ($matches[1] as $macroName) {
+        if (preg_match('/\\\\(?:input|include)\s*\{\s*\\\\' . preg_quote((string)$macroName, '/') . '\s*\}/i', $withoutComments)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function latex_template_package_missing_data_warning(): string {
+    return 'Hinweis: In der Hauptdatei wurde keine Einbindung der data.tex gefunden. Die systemgenerierten Daten erscheinen nur, wenn data.tex eingebunden wird.';
 }
 
 function latex_template_package_import_zip(PDO $pdo, array $file, array $options): array {
@@ -279,7 +294,7 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
         throw new RuntimeException('Hauptdatei wurde im ZIP nicht gefunden: ' . $mainFile);
     }
     $hasDataInput = latex_template_package_main_includes_data($mainContent);
-    if (!$hasDataInput) $warnings[] = 'Hinweis: In der Hauptdatei wurde kein \\input{data.tex} oder \\include{data.tex} gefunden. Die systemgenerierten Daten erscheinen nur, wenn data.tex eingebunden wird.';
+    if (!$hasDataInput) $warnings[] = latex_template_package_missing_data_warning();
     if ($ignoredFiles) $warnings[] = count($ignoredFiles) . ' nicht unterstützte Dateien wurden ignoriert.';
 
     $manifest = [
@@ -307,10 +322,42 @@ function latex_template_package_import_zip(PDO $pdo, array $file, array $options
 
 function get_latex_template_packages(PDO $pdo, bool $activeOnly = false): array {
     ensure_latex_template_packages_table($pdo);
+    latex_template_package_refresh_data_input_manifests($pdo);
     $sql = "SELECT p.*, u.display_name AS created_by_name, u.email AS created_by_email FROM latex_template_packages p LEFT JOIN users u ON u.id=p.created_by_user_id WHERE p.deleted_at IS NULL";
     if ($activeOnly) $sql .= " AND p.status='active'";
     $sql .= " ORDER BY p.is_default DESC, p.created_at DESC, p.id DESC";
     return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function latex_template_package_refresh_data_input_manifests(PDO $pdo): void {
+    $rows = $pdo->query("SELECT id, main_file, storage_path, manifest_json FROM latex_template_packages WHERE deleted_at IS NULL")
+        ->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $update = $pdo->prepare('UPDATE latex_template_packages SET manifest_json=?, updated_at=NOW() WHERE id=?');
+    foreach ($rows as $row) {
+        $manifest = json_decode((string)($row['manifest_json'] ?? '{}'), true);
+        if (!is_array($manifest) || ($manifest['has_data_input'] ?? false) === true) continue;
+
+        try {
+            $mainFile = latex_template_package_normalize_path((string)($row['main_file'] ?? $manifest['main_file'] ?? 'main.tex'));
+            $dir = latex_template_package_abs_dir((string)($row['storage_path'] ?? ''));
+            $mainPath = realpath($dir . '/' . $mainFile);
+            $dirPath = realpath($dir);
+            if ($mainPath === false || $dirPath === false || !is_file($mainPath)) continue;
+            $dirPrefix = rtrim(str_replace('\\', '/', $dirPath), '/') . '/';
+            if (strncmp(str_replace('\\', '/', $mainPath), $dirPrefix, strlen($dirPrefix)) !== 0) continue;
+            if (!latex_template_package_main_includes_data((string)file_get_contents($mainPath))) continue;
+        } catch (Throwable $e) {
+            continue;
+        }
+
+        $manifest['has_data_input'] = true;
+        $manifest['warnings'] = array_values(array_filter(
+            is_array($manifest['warnings'] ?? null) ? $manifest['warnings'] : [],
+            static fn($warning): bool => !str_starts_with((string)$warning, 'Hinweis: In der Hauptdatei wurde kein')
+                && !str_starts_with((string)$warning, 'Hinweis: In der Hauptdatei wurde keine Einbindung der data.tex')
+        ));
+        $update->execute([latex_template_package_json($manifest), (int)$row['id']]);
+    }
 }
 
 function find_latex_template_package(PDO $pdo, int $id, bool $activeOnly = false): ?array {

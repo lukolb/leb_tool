@@ -202,8 +202,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <summary><strong><?= h(t('latex.without_subcategory')) ?></strong></summary>
         <?php foreach ($section['direct'] as $item): ?>
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['id']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['id']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
             <?php [$skillPrimary, $skillSecondary] = latex_display_pair($item['text_de'] ?? '', $item['text_en'] ?? ''); ?>
             <?= render_competency_placeholder_html_with_space($skillPrimary) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
             <?php if ($skillSecondary !== '' && $skillSecondary !== $skillPrimary): ?><br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space($skillSecondary) ?></span><?php endif; ?>
@@ -231,8 +231,8 @@ $sectionsDb = db_competency_sections($pdo, $selectedGrade);
         <div class="subcategory-body" data-sub-body="<?= h((string)$subId) ?>">
         <?php foreach (($sub['items'] ?? []) as $item): ?>
           <label class="<?= ((int)($item['is_required'] ?? 0) === 1) ? 'required-skill-row' : '' ?>" style="display:block; margin:8px 0 8px 18px;" title="<?= ((int)($item['is_required'] ?? 0) === 1) ? h(t('latex.required_skill_title')) : '' ?>">
-            <input type="checkbox" name="skills[]" value="<?= h((string)$item['code']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
-            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['code']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
+            <input type="checkbox" name="skills[]" value="<?= h((string)$item['id']) ?>" <?= ((int)($item['is_required'] ?? 0) === 1) ? 'checked disabled data-required-skill="1"' : 'checked' ?> <?= ((int)($item['is_required'] ?? 0) === 1) ? 'aria-disabled="true"' : '' ?>>
+            <?php if ((int)($item['is_required'] ?? 0) === 1): ?><input type="hidden" name="skills[]" value="<?= h((string)$item['id']) ?>" data-required-hidden="1"><span class="required-badge"><?= h(t('latex.required_badge')) ?></span><?php endif; ?>
             <?php [$skillPrimary, $skillSecondary] = latex_display_pair($item['text_de'] ?? '', $item['text_en'] ?? ''); ?>
             <?= render_competency_placeholder_html_with_space($skillPrimary) ?><?php if(((string)($item['display_type'] ?? 'rated'))==='info'): ?> <span class="info-row-badge"><?= h(t('latex.info_row_badge')) ?></span><?php endif; ?>
             <?php if ($skillSecondary !== '' && $skillSecondary !== $skillPrimary): ?><br><span style="font-style:italic;color:#666;"><?= render_competency_placeholder_html_with_space($skillSecondary) ?></span><?php endif; ?>
