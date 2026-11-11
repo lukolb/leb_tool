@@ -13,6 +13,7 @@ require_once __DIR__ . '/latex_template_packages.php';
 require_once __DIR__ . '/generated_template_packages.php';
 require_once __DIR__ . '/template_package_notifications.php';
 require_once __DIR__ . '/pdf_form_postprocess.php';
+require_once __DIR__ . '/latex_competency_selection.php';
 
 function readTextFileOrFail(string $path): string {
     if (!is_file($path)) {
@@ -380,7 +381,7 @@ if (!is_array($pagebreaks)) {
     $pagebreaks = [];
 }
 
-$selectedSkills = array_values(array_unique(array_filter(array_map('strval', $selectedSkills), static fn($v) => trim((string)$v) !== '')));
+$selectedSkills = latex_normalize_competency_codes($selectedSkills);
 $pagebreaks = array_values(array_unique(array_map('strval', $pagebreaks)));
 $allCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_ids'] ?? [])), static fn($v) => $v > 0)));
 $activeCatIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['cat_active'] ?? [])), static fn($v) => $v > 0)));
@@ -388,38 +389,21 @@ $disabledCatIds = array_values(array_diff($allCatIds, $activeCatIds));
 $allSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_ids'] ?? [])), static fn($v) => $v > 0)));
 $activeSubcategoryIds = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['sub_active'] ?? [])), static fn($v) => $v > 0)));
 $disabledSubcategoryIds = array_values(array_diff($allSubcategoryIds, $activeSubcategoryIds));
+$selectedGrade = (int)($_POST['grade_level'] ?? 1);
+if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 
 if ((string)($_POST['source'] ?? '') === 'db' && function_exists('db')) {
     $pdo = db();
-    $selectedGrade = (int)($_POST['grade_level'] ?? 1);
-    if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
-    $reqSql = "SELECT c.code FROM competencies c INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE c.is_active=1 AND c.is_required=1 AND cgl.grade_level=?";
-    $reqParams = [$selectedGrade];
-    if (!empty($disabledCatIds)) {
-        $in = implode(',', array_fill(0, count($disabledCatIds), '?'));
-        $reqSql .= " AND COALESCE(c.category_id, (SELECT cs.category_id FROM competency_subcategories cs WHERE cs.id=c.subcategory_id)) NOT IN ($in)";
-        $reqParams = array_merge($reqParams, $disabledCatIds);
-    }
-    if (!empty($disabledSubcategoryIds)) {
-        $in = implode(',', array_fill(0, count($disabledSubcategoryIds), '?'));
-        $reqSql .= " AND (c.subcategory_id IS NULL OR c.subcategory_id=0 OR c.subcategory_id NOT IN ($in))";
-        $reqParams = array_merge($reqParams, $disabledSubcategoryIds);
-    }
-    $stReq = $pdo->prepare($reqSql);
-    $stReq->execute($reqParams);
-    $reqRows = $stReq->fetchAll(PDO::FETCH_COLUMN) ?: [];
-    foreach ($reqRows as $code) {
-        $c = trim((string)$code);
-        if ($c !== '') {
-            $selectedSkills[] = $c;
-        }
-    }
-    $selectedSkills = array_values(array_unique(array_filter($selectedSkills, static fn($v) => trim((string)$v) !== '')));
+    $selectedSkills = latex_visible_selected_competency_codes(
+        $pdo,
+        $selectedSkills,
+        $selectedGrade,
+        $activeCatIds,
+        $activeSubcategoryIds
+    );
 }
 
 
-$selectedGrade = (int)($_POST['grade_level'] ?? 1);
-if ($selectedGrade < 1 || $selectedGrade > 4) $selectedGrade = 1;
 $showSel = ((string)($_POST['show_sel'] ?? '1') === '1');
 $showAg = ((string)($_POST['show_ag'] ?? '1') === '1');
 $enableStudentTeacherRatings = ((string)($_POST['enable_student_teacher_ratings'] ?? '0') === '1');
@@ -1095,11 +1079,12 @@ function generate_db_data_tex(PDO $pdo, array $selectedCodes, array $pagebreakCa
          . "FROM competencies c "
          . "LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id "
          . "LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) "
-         . "WHERE c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
+         . "INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id "
+         . "WHERE cgl.grade_level=? AND c.code IN ($in) AND c.is_active=1 AND c.code IS NOT NULL AND c.code <> '' "
          . "ORDER BY cat.sort_order, cat.id, CASE WHEN c.subcategory_id IS NULL OR c.subcategory_id=0 THEN 0 ELSE 1 END, s.sort_order, s.id, c.sort_order, c.id";
 
     $st = $pdo->prepare($sql);
-    $st->execute($selectedCodes);
+    $st->execute(array_merge([$gradeLevel], $selectedCodes));
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
     $sections = [];
@@ -1232,9 +1217,9 @@ function generate_rcff_data(PDO $pdo, array $selectedCodes, int $gradeLevel = 1,
     ];
     if (!$selectedCodes) return $rcff;
     $in = implode(',', array_fill(0, count($selectedCodes), '?'));
-    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) WHERE c.code IN ($in) AND c.is_active=1";
+    $sql = "SELECT c.id, c.code, c.text_de, c.text_en, COALESCE(c.display_type,'rated') AS display_type, COALESCE(c.category_id, s.category_id) AS category_id, c.subcategory_id, s.name_de AS sub_de, s.name_en AS sub_en, cat.name_de AS cat_de, cat.name_en AS cat_en FROM competencies c LEFT JOIN competency_subcategories s ON s.id=c.subcategory_id LEFT JOIN competency_categories cat ON cat.id=COALESCE(c.category_id,s.category_id) INNER JOIN competency_grade_levels cgl ON cgl.competency_id=c.id WHERE cgl.grade_level=? AND c.code IN ($in) AND c.is_active=1";
     $st = $pdo->prepare($sql);
-    $st->execute($selectedCodes);
+    $st->execute(array_merge([$gradeLevel], $selectedCodes));
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
     $gradeMap = array_fill_keys(array_map('intval', $gradeFieldCategoryIds), true);
     foreach ($rows as $it) {
