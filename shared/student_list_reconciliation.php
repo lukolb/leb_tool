@@ -102,6 +102,24 @@ function student_list_diff(array $existing, array $uploaded, array $fieldLabels)
 }
 
 /**
+ * Returns the changed fields whose uploaded value was selected. Missing form
+ * values intentionally default to the uploaded value, matching the visible
+ * default in the reconciliation table.
+ */
+function student_list_selected_uploaded_fields(array $differences, mixed $choices): array {
+  $choices = is_array($choices) ? $choices : [];
+  $selected = [];
+  foreach ($differences as $difference) {
+    $field = (string)($difference['field'] ?? '');
+    if ($field === '') continue;
+    if ((string)($choices[$field] ?? 'uploaded') === 'uploaded') {
+      $selected[] = $field;
+    }
+  }
+  return array_values(array_unique($selected));
+}
+
+/**
  * Returns matched, new and missing students. A weaker matching rule is used
  * only when it identifies exactly one still-unmatched class member.
  */

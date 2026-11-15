@@ -42,6 +42,11 @@ $katherineDiffFields = array_column($plan['matched'][1]['diff'], 'field');
 reconciliation_assert(in_array('date_of_birth', $katherineDiffFields, true), 'changed birth date should match by unique name and be reported');
 reconciliation_assert(in_array('is_active', $katherineDiffFields, true), 'inactive assignment should be reported as a change');
 
+$selectedByDefault = student_list_selected_uploaded_fields($adaDiff, []);
+reconciliation_assert($selectedByDefault === ['email_student', 'custom:bus'], 'every changed field must default to the uploaded value');
+$selectedIndividually = student_list_selected_uploaded_fields($adaDiff, ['email_student'=>'existing', 'custom:bus'=>'uploaded']);
+reconciliation_assert($selectedIndividually === ['custom:bus'], 'changed fields must be independently selectable');
+
 reconciliation_assert(student_list_period_is_at_or_after('2025/26', 'Standard', '2025/26', 'Standard'), 'current half-year should be included');
 reconciliation_assert(student_list_period_is_at_or_after('2025/26', 'H2', '2025/26', 'Standard'), 'later half-year in same school year should be included');
 reconciliation_assert(student_list_period_is_at_or_after('2026/27', 'Standard', '2025/26', 'H2'), 'future school year should be included');
@@ -53,5 +58,23 @@ reconciliation_assert(is_string($teacherSource), 'teacher students source must b
 reconciliation_assert(strpos($teacherSource, 'COALESCE(NULLIF(s.master_student_id, 0), s.id)=s.id') !== false, 'import preview must compare against all canonical database students');
 reconciliation_assert(strpos($teacherSource, 'student_list_remove_assignments_from_period') !== false, 'removal must be scoped from the current half-year onward');
 reconciliation_assert(strpos($teacherSource, "'assignments_removed'") !== false, 'removed assignments must be audited separately');
+reconciliation_assert(strpos($teacherSource, 'student_list_selected_uploaded_fields') !== false, 'changed data must be applied field by field');
+reconciliation_assert(strpos($teacherSource, 'name="field_choice[') !== false, 'each changed field must expose its own direct choice');
+reconciliation_assert(strpos($teacherSource, 'value="uploaded" checked') !== false, 'the uploaded value must be preselected for every changed field');
+reconciliation_assert(strpos($teacherSource, 'student-field-choice:has(input:checked)') !== false, 'selected values must be visibly marked without a separate option control');
+reconciliation_assert(strpos($teacherSource, "scrollIntoView({behavior: 'smooth', block: 'start'})") !== false, 'page must scroll to the reconciliation preview after upload');
+reconciliation_assert(strpos($teacherSource, "ui_lang() === 'en' ? 'm/d/Y' : 'd.m.Y'") !== false, 'birth dates must use localized display formats');
+
+$adminSource = file_get_contents(__DIR__ . '/../admin/students.php');
+reconciliation_assert(is_string($adminSource), 'admin students source must be readable');
+reconciliation_assert(strpos($adminSource, 'admin_build_multi_class_student_preview') !== false, 'admin must preview multiple uploaded class lists');
+reconciliation_assert(strpos($adminSource, 'COALESCE(NULLIF(master_student_id, 0), id)=id') !== false, 'admin preview must compare against all canonical database students');
+reconciliation_assert(strpos($adminSource, 'apply_admin_student_list_class') !== false, 'admin imports must be applied class by class');
+reconciliation_assert(strpos($adminSource, 'skip_admin_student_list_class') !== false, 'admin must be able to skip one class without cancelling the workflow');
+reconciliation_assert(strpos($adminSource, 'admin_remove_student_assignments_from_period') !== false, 'admin removal must preserve past assignments');
+reconciliation_assert(strpos($adminSource, 'name="field_choice[') !== false, 'admin must select changed values per field');
+reconciliation_assert(strpos($adminSource, 'value="uploaded" checked') !== false, 'admin uploaded field values must be preselected');
+reconciliation_assert(strpos($adminSource, "scrollIntoView({behavior:'smooth',block:'start'})") !== false, 'admin page must scroll to the class previews after upload');
+reconciliation_assert(strpos($adminSource, "ui_lang() === 'en' ? 'm/d/Y' : 'd.m.Y'") !== false, 'admin birth dates must use localized display formats');
 
 echo "student_list_reconciliation_test: ok\n";

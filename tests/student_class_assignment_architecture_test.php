@@ -36,8 +36,10 @@ foreach ([$teacherStudents, $adminStudents] as $studentSource) {
   architecture_assert(strpos($studentSource, 'find_student_by_identity') !== false, 'student creation/import must check canonical identity');
   architecture_assert(strpos($studentSource, 'student_identity_hash') !== false, 'new students must store the identity hash');
   architecture_assert(strpos($studentSource, 'assign_student_to_class') !== false, 'new students must be assigned through the junction table');
-  architecture_assert(strpos($studentSource, 'duplicate_confirmation') !== false, 'duplicates must be refused pending explicit confirmation');
 }
+architecture_assert(strpos($teacherStudents, 'duplicate_confirmation') !== false, 'teacher duplicates must be refused pending explicit confirmation');
+architecture_assert(strpos($adminStudents, 'existing_profile_id') !== false, 'admin imports must identify and reuse an existing canonical profile');
+architecture_assert(strpos($adminStudents, 'confirm_reconciliation') !== false, 'admin profile assignments must require explicit reconciliation confirmation');
 architecture_assert(strpos($teacherStudents, "confirm_duplicate_assignment") !== false, 'duplicate assignment must require a separate confirmation action');
 architecture_assert(strpos($teacherStudents, "pending_student_assignment_confirmations") !== false, 'duplicate confirmations must be scoped and short-lived');
 

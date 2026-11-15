@@ -458,6 +458,22 @@ function normalize_date(?string $s): ?string {
   throw new RuntimeException(t('teacher.students.error_dob_format', 'Geburtsdatum Format: YYYY-MM-DD oder DD.MM.YYYY'));
 }
 
+function student_birth_date_display(?string $iso): string {
+  $iso = trim((string)$iso);
+  if ($iso === '') return '—';
+  $date = DateTimeImmutable::createFromFormat('!Y-m-d', $iso);
+  if (!$date || $date->format('Y-m-d') !== $iso) return $iso;
+  return $date->format(ui_lang() === 'en' ? 'm/d/Y' : 'd.m.Y');
+}
+
+function student_list_difference_display(array $difference, string $side): string {
+  $value = (string)($difference[$side] ?? '');
+  if ((string)($difference['field'] ?? '') === 'date_of_birth') {
+    return student_birth_date_display($value);
+  }
+  return $value !== '' ? $value : '—';
+}
+
 function read_email_input(?string $value, string $label): ?string {
   $email = trim((string)$value);
   if ($email === '') return null;
@@ -585,7 +601,7 @@ function student_list_uploaded_value(array $row, ?string $header): string {
   return $header !== null ? trim((string)($row[$header] ?? '')) : '';
 }
 
-function student_list_update_profile(PDO $pdo, int $studentId, array $uploaded): void {
+function student_list_update_profile(PDO $pdo, int $studentId, array $uploaded, ?array $selectedFields = null): void {
   $st = $pdo->prepare(
     "SELECT first_name, last_name, date_of_birth, external_ref, email_student, email_parent1, email_parent2
      FROM students WHERE id=? LIMIT 1"
@@ -595,8 +611,13 @@ function student_list_update_profile(PDO $pdo, int $studentId, array $uploaded):
   if (!$current) throw new RuntimeException(t('teacher.students.error_student_not_found', 'Schüler nicht gefunden.'));
 
   $present = array_fill_keys(array_map('strval', (array)($uploaded['present_fields'] ?? [])), true);
-  $read = static function(string $field) use ($uploaded, $current, $present): ?string {
-    if (!isset($present[$field])) return $current[$field] !== null ? (string)$current[$field] : null;
+  $selected = $selectedFields === null
+    ? $present
+    : array_fill_keys(array_map('strval', $selectedFields), true);
+  $read = static function(string $field) use ($uploaded, $current, $present, $selected): ?string {
+    if (!isset($present[$field]) || !isset($selected[$field])) {
+      return $current[$field] !== null ? (string)$current[$field] : null;
+    }
     $value = trim((string)($uploaded[$field] ?? ''));
     return $value !== '' ? $value : null;
   };
@@ -626,7 +647,11 @@ function student_list_update_profile(PDO $pdo, int $studentId, array $uploaded):
     $read('email_parent2'),
     $studentId,
   ]);
-  save_student_custom_values($pdo, $studentId, (array)($uploaded['custom'] ?? []), false);
+  $customValues = [];
+  foreach ((array)($uploaded['custom'] ?? []) as $key => $value) {
+    if (isset($selected['custom:' . (string)$key])) $customValues[(string)$key] = $value;
+  }
+  save_student_custom_values($pdo, $studentId, $customValues, false);
 }
 
 function student_list_field_labels(): array {
@@ -857,8 +882,8 @@ function student_list_remove_assignments_from_period(PDO $pdo, int $studentId, i
 
 function apply_teacher_student_list_preview(PDO $pdo, array $preview, array $post, int $classId): array {
   $plan = is_array($preview['plan'] ?? null) ? $preview['plan'] : [];
-  $changeActions = is_array($post['change_action'] ?? null) ? $post['change_action'] : [];
-  $newProfileActions = is_array($post['new_profile_action'] ?? null) ? $post['new_profile_action'] : [];
+  $fieldChoices = is_array($post['field_choice'] ?? null) ? $post['field_choice'] : [];
+  $newProfileFieldChoices = is_array($post['new_profile_field'] ?? null) ? $post['new_profile_field'] : [];
   $addNew = is_array($post['add_new'] ?? null) ? $post['add_new'] : [];
   $removeStudents = is_array($post['remove_student'] ?? null) ? $post['remove_student'] : [];
   $stats = ['created'=>0, 'assigned'=>0, 'updated'=>0, 'kept'=>0, 'removed'=>0, 'assignments_removed'=>0];
@@ -871,12 +896,19 @@ function apply_teacher_student_list_preview(PDO $pdo, array $preview, array $pos
       if (!student_is_assigned_to_class($pdo, $studentId, $classId)) {
         throw new RuntimeException(t('teacher.students.error_import_data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Liste erneut hoch.'));
       }
-      if ((string)($changeActions[$studentId] ?? 'keep') !== 'overwrite') {
+      $selectedFields = student_list_selected_uploaded_fields(
+        (array)($matchedStudent['diff'] ?? []),
+        $fieldChoices[$studentId] ?? []
+      );
+      if (!$selectedFields) {
         $stats['kept']++;
         continue;
       }
-      student_list_update_profile($pdo, $studentId, (array)($matchedStudent['uploaded'] ?? []));
-      assign_student_to_class($pdo, $studentId, $classId, true);
+      $profileFields = array_values(array_diff($selectedFields, ['is_active']));
+      if ($profileFields) {
+        student_list_update_profile($pdo, $studentId, (array)($matchedStudent['uploaded'] ?? []), $profileFields);
+      }
+      if (in_array('is_active', $selectedFields, true)) assign_student_to_class($pdo, $studentId, $classId, true);
       $stats['updated']++;
     }
 
@@ -885,8 +917,13 @@ function apply_teacher_student_list_preview(PDO $pdo, array $preview, array $pos
       if ($rowKey === '' || !isset($addNew[$rowKey])) continue;
       $existingProfileId = (int)($newStudent['existing_profile_id'] ?? 0);
       if ($existingProfileId > 0) {
-        if ((string)($newProfileActions[$rowKey] ?? 'keep') === 'overwrite') {
-          student_list_update_profile($pdo, $existingProfileId, $newStudent);
+        $selectedFields = student_list_selected_uploaded_fields(
+          (array)($newStudent['profile_diff'] ?? []),
+          $newProfileFieldChoices[$rowKey] ?? []
+        );
+        $profileFields = array_values(array_diff($selectedFields, ['is_active']));
+        if ($profileFields) {
+          student_list_update_profile($pdo, $existingProfileId, $newStudent, $profileFields);
           $stats['updated']++;
         }
         assign_student_to_class($pdo, $existingProfileId, $classId, true);
@@ -2049,7 +2086,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
         <input type="hidden" name="action" value="confirm_duplicate_assignment">
         <input type="hidden" name="confirmation_token" value="<?=h((string)$pendingDuplicate['token'])?>">
-        <span><strong><?=h((string)$pendingDuplicate['name'])?></strong> · <?=h((string)$pendingDuplicate['date_of_birth'])?></span>
+        <span><strong><?=h((string)$pendingDuplicate['name'])?></strong> · <?=h(student_birth_date_display((string)$pendingDuplicate['date_of_birth']))?></span>
         <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('teacher.students.duplicate_confirmation_confirm', 'Bestehendes Profil wirklich dieser Klasse zuordnen?'))?>');"><?=h(t('teacher.students.duplicate_confirmation_button', 'Bestehendes Profil zuordnen'))?></button>
       </form>
     <?php endforeach; ?>
@@ -2359,7 +2396,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           ?>
           <tr>
             <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
-            <td><?=h((string)((new DateTime($s['date_of_birth']))->format('d.m.Y') ?? ''))?></td>
+            <td><?=h(student_birth_date_display((string)($s['date_of_birth'] ?? '')))?></td>
             <td><?=((int)$s['is_active']===1)?'<span class="badge success">'.h(t('teacher.students.status_active', 'aktiv')).'</span>':'<span class="badge warn">'.h(t('teacher.students.status_inactive', 'inaktiv')).'</span>'?></td>
             <td>
               <?php if (!$tplIdForUi): ?>
@@ -3150,6 +3187,14 @@ aiSupportLoading = true;
     $previewUnchanged = array_values(array_filter($previewMatches, static fn($row): bool => empty($row['diff'])));
   ?>
   <div class="card" id="student-list-preview" style="border:2px solid var(--primary, #2563eb);">
+    <style>
+      .student-field-choice{display:block;position:relative;padding:10px 12px;border:2px solid transparent;border-radius:8px;cursor:pointer;min-width:150px}
+      .student-field-choice input{position:absolute;opacity:0;pointer-events:none}
+      .student-field-choice:has(input:checked){border-color:var(--primary,#2563eb);background:rgba(37,99,235,.10);box-shadow:0 0 0 1px rgba(37,99,235,.14)}
+      .student-field-choice:has(input:focus-visible){outline:3px solid rgba(37,99,235,.35);outline-offset:2px}
+      .student-field-choice .choice-mark{display:none;margin-left:6px;font-weight:700}
+      .student-field-choice:has(input:checked) .choice-mark{display:inline}
+    </style>
     <h2 style="margin-top:0;"><?=h(t('teacher.students.reconcile_heading', 'Schülerliste abgleichen'))?></h2>
     <p class="muted">
       <?=h(strtr(t('teacher.students.reconcile_source', 'Vorschau für „{file}“. Es wurde noch nichts gespeichert.'), [
@@ -3189,18 +3234,40 @@ aiSupportLoading = true;
                 <tr>
                   <td><input type="checkbox" name="add_new[<?=h($rowKey)?>]" value="1" checked aria-label="<?=h(t('teacher.students.reconcile_apply', 'Übernehmen'))?>"></td>
                   <td><strong><?=h(trim((string)($newStudent['first_name'] ?? '') . ' ' . (string)($newStudent['last_name'] ?? '')))?></strong></td>
-                  <td><?=h((string)($newStudent['date_of_birth'] ?? ''))?></td>
+                  <td><?=h(student_birth_date_display((string)($newStudent['date_of_birth'] ?? '')))?></td>
                   <td>
                     <?php if (!empty($newStudent['existing_profile_id'])): ?>
                       <span class="badge blue"><?=h(t('teacher.students.reconcile_existing_profile', 'Neu in der Klasse · Profil vorhanden'))?></span>
                       <?php if (!empty($newStudent['profile_diff'])): ?>
-                        <div style="margin-top:8px;">
-                          <?php foreach ((array)$newStudent['profile_diff'] as $difference): ?>
-                            <div><strong><?=h((string)($difference['label'] ?? ''))?>:</strong> <?=h((string)($difference['current'] ?? '') ?: '—')?> → <?=h((string)($difference['uploaded'] ?? '') ?: '—')?></div>
-                          <?php endforeach; ?>
+                        <div style="overflow:auto; margin-top:10px;">
+                          <table style="min-width:520px; margin:0;">
+                            <thead><tr>
+                              <th><?=h(t('teacher.students.reconcile_field', 'Feld'))?></th>
+                              <th><span class="badge blue"><?=h(t('teacher.students.reconcile_existing', 'Bestehend'))?></span></th>
+                              <th><span class="badge success"><?=h(t('teacher.students.reconcile_uploaded', 'Neue Liste'))?></span></th>
+                            </tr></thead>
+                            <tbody>
+                              <?php foreach ((array)$newStudent['profile_diff'] as $difference): ?>
+                                <?php $differenceField = (string)($difference['field'] ?? ''); ?>
+                                <tr>
+                                  <td><strong><?=h((string)($difference['label'] ?? ''))?></strong></td>
+                                  <td>
+                                    <label class="student-field-choice">
+                                      <input type="radio" name="new_profile_field[<?=h($rowKey)?>][<?=h($differenceField)?>]" value="existing" aria-label="<?=h(t('teacher.students.reconcile_keep_this_value', 'Diesen bestehenden Wert beibehalten'))?>">
+                                      <?=h(student_list_difference_display((array)$difference, 'current'))?><span class="choice-mark" aria-hidden="true">✓</span>
+                                    </label>
+                                  </td>
+                                  <td>
+                                    <label class="student-field-choice">
+                                      <input type="radio" name="new_profile_field[<?=h($rowKey)?>][<?=h($differenceField)?>]" value="uploaded" checked aria-label="<?=h(t('teacher.students.reconcile_use_this_value', 'Diesen Wert aus der neuen Liste übernehmen'))?>">
+                                      <strong><?=h(student_list_difference_display((array)$difference, 'uploaded'))?></strong><span class="choice-mark" aria-hidden="true">✓</span>
+                                    </label>
+                                  </td>
+                                </tr>
+                              <?php endforeach; ?>
+                            </tbody>
+                          </table>
                         </div>
-                        <label style="display:inline-flex; gap:6px; align-items:center; margin-top:8px;"><input type="radio" name="new_profile_action[<?=h($rowKey)?>]" value="keep" checked> <?=h(t('teacher.students.reconcile_keep', 'Vorhandene Daten beibehalten'))?></label>
-                        <label style="display:inline-flex; gap:6px; align-items:center; margin:8px 0 0 12px;"><input type="radio" name="new_profile_action[<?=h($rowKey)?>]" value="overwrite"> <?=h(t('teacher.students.reconcile_overwrite', 'Mit Listendaten überschreiben'))?></label>
                       <?php endif; ?>
                     <?php else: ?>
                       <span class="badge success"><?=h(t('teacher.students.reconcile_completely_new', 'Komplett neu'))?></span>
@@ -3215,13 +3282,12 @@ aiSupportLoading = true;
 
       <?php if ($previewChanged): ?>
         <h3 style="margin-top:22px;"><?=h(t('teacher.students.reconcile_changed_heading', 'Veränderte Daten'))?></h3>
-        <p class="muted"><?=h(t('teacher.students.reconcile_changed_hint', 'Entscheide für jeden Schüler, ob die Daten aus der neuen Liste übernommen oder die vorhandenen Daten beibehalten werden sollen.'))?></p>
+        <p class="muted"><?=h(t('teacher.students.reconcile_changed_hint', 'Klicke bei jeder Änderung direkt auf den Wert, der gelten soll. Die neue Liste ist standardmäßig ausgewählt.'))?></p>
         <div style="overflow:auto;">
           <table>
             <thead><tr>
               <th><?=h(t('teacher.students.col_name', 'Name'))?></th>
               <th><?=h(t('teacher.students.reconcile_differences', 'Unterschiede (vorhanden → neue Liste)'))?></th>
-              <th><?=h(t('teacher.students.reconcile_decision', 'Entscheidung'))?></th>
             </tr></thead>
             <tbody>
               <?php foreach ($previewChanged as $match): ?>
@@ -3229,13 +3295,35 @@ aiSupportLoading = true;
                 <tr>
                   <td><strong><?=h((string)($match['name'] ?? ''))?></strong></td>
                   <td>
-                    <?php foreach ((array)($match['diff'] ?? []) as $difference): ?>
-                      <div><strong><?=h((string)($difference['label'] ?? ''))?>:</strong> <?=h((string)($difference['current'] ?? '') ?: '—')?> → <?=h((string)($difference['uploaded'] ?? '') ?: '—')?></div>
-                    <?php endforeach; ?>
-                  </td>
-                  <td>
-                    <label style="display:flex; gap:6px; align-items:center;"><input type="radio" name="change_action[<?=h((string)$studentId)?>]" value="keep" checked> <?=h(t('teacher.students.reconcile_keep', 'Vorhandene Daten beibehalten'))?></label>
-                    <label style="display:flex; gap:6px; align-items:center; margin-top:8px;"><input type="radio" name="change_action[<?=h((string)$studentId)?>]" value="overwrite"> <?=h(t('teacher.students.reconcile_overwrite', 'Mit Listendaten überschreiben'))?></label>
+                    <div style="overflow:auto;">
+                      <table style="min-width:520px; margin:0;">
+                        <thead><tr>
+                          <th><?=h(t('teacher.students.reconcile_field', 'Feld'))?></th>
+                          <th><span class="badge blue"><?=h(t('teacher.students.reconcile_existing', 'Bestehend'))?></span></th>
+                          <th><span class="badge success"><?=h(t('teacher.students.reconcile_uploaded', 'Neue Liste'))?></span></th>
+                        </tr></thead>
+                        <tbody>
+                          <?php foreach ((array)($match['diff'] ?? []) as $difference): ?>
+                            <?php $differenceField = (string)($difference['field'] ?? ''); ?>
+                            <tr>
+                              <td><strong><?=h((string)($difference['label'] ?? ''))?></strong></td>
+                              <td>
+                                <label class="student-field-choice">
+                                  <input type="radio" name="field_choice[<?=h((string)$studentId)?>][<?=h($differenceField)?>]" value="existing" aria-label="<?=h(t('teacher.students.reconcile_keep_this_value', 'Diesen bestehenden Wert beibehalten'))?>">
+                                  <?=h(student_list_difference_display((array)$difference, 'current'))?><span class="choice-mark" aria-hidden="true">✓</span>
+                                </label>
+                              </td>
+                              <td>
+                                <label class="student-field-choice">
+                                  <input type="radio" name="field_choice[<?=h((string)$studentId)?>][<?=h($differenceField)?>]" value="uploaded" checked aria-label="<?=h(t('teacher.students.reconcile_use_this_value', 'Diesen Wert aus der neuen Liste übernehmen'))?>">
+                                  <strong><?=h(student_list_difference_display((array)$difference, 'uploaded'))?></strong><span class="choice-mark" aria-hidden="true">✓</span>
+                                </label>
+                              </td>
+                            </tr>
+                          <?php endforeach; ?>
+                        </tbody>
+                      </table>
+                    </div>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -3252,7 +3340,7 @@ aiSupportLoading = true;
             <?php $missingId = (int)($missingStudent['id'] ?? 0); ?>
             <label style="display:flex; gap:10px; align-items:center;">
               <input type="checkbox" name="remove_student[<?=h((string)$missingId)?>]" value="1">
-              <span><strong><?=h(trim((string)($missingStudent['first_name'] ?? '') . ' ' . (string)($missingStudent['last_name'] ?? '')))?></strong> · <?=h((string)($missingStudent['date_of_birth'] ?? ''))?></span>
+              <span><strong><?=h(trim((string)($missingStudent['first_name'] ?? '') . ' ' . (string)($missingStudent['last_name'] ?? '')))?></strong> · <?=h(student_birth_date_display((string)($missingStudent['date_of_birth'] ?? '')))?></span>
               <span class="badge danger"><?=h(t('teacher.students.reconcile_remove_from_class', 'Aus Klasse entfernen'))?></span>
             </label>
           <?php endforeach; ?>
@@ -3290,6 +3378,15 @@ aiSupportLoading = true;
       </div>
     </form>
   </div>
+  <?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'import_csv'): ?>
+    <script>
+      window.addEventListener('load', () => {
+        window.requestAnimationFrame(() => {
+          document.getElementById('student-list-preview')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+        });
+      });
+    </script>
+  <?php endif; ?>
 <?php endif; ?>
 
 <div class="card">
@@ -3338,6 +3435,16 @@ aiSupportLoading = true;
       const excludeBox = document.getElementById('excludeBox');
       const btnNone = document.getElementById('btnSelectNone');
       const btnAll = document.getElementById('btnSelectAll');
+      const studentDateLocale = <?=json_encode(ui_lang() === 'en' ? 'en-US' : 'de-DE')?>;
+
+      function formatStudentBirthDate(iso){
+        const match = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return String(iso || '');
+        const parts = studentDateLocale === 'en-US'
+          ? [match[2], match[3], match[1]]
+          : [match[3], match[2], match[1]];
+        return parts.join(studentDateLocale === 'en-US' ? '/' : '.');
+      }
 
       function setAllChecked(checked){
         excludeBox.querySelectorAll('input[type="checkbox"]').forEach(cb=>{ cb.checked = checked; });
@@ -3373,7 +3480,7 @@ aiSupportLoading = true;
           cb.name = 'exclude_ids[]';
           cb.value = String(id);
           const txt = document.createElement('div');
-          txt.textContent = (s.last_name || '') + ', ' + (s.first_name || '') + (s.date_of_birth ? (' (' + s.date_of_birth + ')') : '');
+          txt.textContent = (s.last_name || '') + ', ' + (s.first_name || '') + (s.date_of_birth ? (' (' + formatStudentBirthDate(s.date_of_birth) + ')') : '');
           line.appendChild(cb);
           line.appendChild(txt);
           excludeBox.appendChild(line);

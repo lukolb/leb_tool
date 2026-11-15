@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_once __DIR__ . '/../shared/absence_import.php';
+require_once __DIR__ . '/../shared/student_list_reconciliation.php';
 require_admin();
 
 $pdo = db();
@@ -24,6 +25,19 @@ if ($importSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 $absenceImportSummary = $_SESSION['admin_absence_import_summary'] ?? null;
 if ($absenceImportSummary && $_SERVER['REQUEST_METHOD'] !== 'POST') {
   unset($_SESSION['admin_absence_import_summary']);
+}
+$adminStudentListPreview = null;
+$adminPreviewSession = $_SESSION['admin_student_list_import_previews'] ?? [];
+if (!is_array($adminPreviewSession)) $adminPreviewSession = [];
+foreach ($adminPreviewSession as $previewToken => $previewData) {
+  if (!is_array($previewData) || (int)($previewData['created_at'] ?? 0) < time() - 3600) {
+    unset($adminPreviewSession[$previewToken]);
+  }
+}
+$_SESSION['admin_student_list_import_previews'] = $adminPreviewSession;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $adminPreviewSession) {
+  $latestPreview = end($adminPreviewSession);
+  if (is_array($latestPreview)) $adminStudentListPreview = $latestPreview;
 }
 
 function period_label_display_admin(?string $raw): string {
@@ -205,6 +219,513 @@ function read_csv_assoc(string $path): array {
   }
   fclose($tmp);
   return $rows;
+}
+
+function admin_student_field_label(array $field): string {
+  $labelEn = trim((string)($field['label_en'] ?? ''));
+  if (ui_lang() === 'en' && $labelEn !== '') return $labelEn;
+  return (string)($field['label'] ?? $field['field_key'] ?? '');
+}
+
+function admin_student_list_header(array $header, array $aliases): ?string {
+  foreach ($aliases as $alias) {
+    if (in_array($alias, $header, true)) return $alias;
+  }
+  return null;
+}
+
+function admin_student_list_value(array $row, ?string $header): string {
+  return $header !== null ? trim((string)($row[$header] ?? '')) : '';
+}
+
+function admin_student_birth_date_display(?string $iso): string {
+  $iso = trim((string)$iso);
+  if ($iso === '') return '—';
+  $date = DateTimeImmutable::createFromFormat('!Y-m-d', $iso);
+  if (!$date || $date->format('Y-m-d') !== $iso) return $iso;
+  return $date->format(ui_lang() === 'en' ? 'm/d/Y' : 'd.m.Y');
+}
+
+function admin_student_difference_display(array $difference, string $side): string {
+  $value = (string)($difference[$side] ?? '');
+  if ((string)($difference['field'] ?? '') === 'date_of_birth') {
+    return admin_student_birth_date_display($value);
+  }
+  return $value !== '' ? $value : '—';
+}
+
+function admin_map_custom_headers(array $header, array $customFields): array {
+  $map = [];
+  foreach ($header as $headerRaw) {
+    $headerValue = mb_strtolower(trim((string)$headerRaw), 'UTF-8');
+    $withoutPrefix = preg_replace('/^custom[:\s-]+/iu', '', $headerValue);
+    foreach ($customFields as $field) {
+      $key = mb_strtolower(trim((string)($field['field_key'] ?? '')), 'UTF-8');
+      $labelDe = mb_strtolower(trim((string)($field['label'] ?? '')), 'UTF-8');
+      $labelEn = mb_strtolower(trim((string)($field['label_en'] ?? '')), 'UTF-8');
+      if ($key === '') continue;
+      if (in_array($headerValue, array_filter([$key, $labelDe, $labelEn]), true)
+          || ($withoutPrefix !== $headerValue && in_array($withoutPrefix, array_filter([$key, $labelDe, $labelEn]), true))) {
+        $map[$headerRaw] = (string)$field['field_key'];
+        break;
+      }
+    }
+  }
+  return $map;
+}
+
+function admin_student_list_field_labels(): array {
+  return [
+    'first_name' => t('teacher.students.label_first_name', 'Vorname'),
+    'last_name' => t('teacher.students.label_last_name', 'Nachname'),
+    'date_of_birth' => t('teacher.students.label_dob', 'Geburtsdatum'),
+    'external_ref' => t('teacher.students.label_external_ref', 'Externe ID'),
+    'email_student' => t('teacher.students.label_email_student', 'E-Mail Kind'),
+    'email_parent1' => t('teacher.students.label_email_parent1', 'E-Mail Parent 1'),
+    'email_parent2' => t('teacher.students.label_email_parent2', 'E-Mail Parent 2'),
+    'is_active' => t('teacher.students.col_status', 'Status'),
+    'status_active' => t('teacher.students.status_active', 'aktiv'),
+    'status_inactive' => t('teacher.students.status_inactive', 'inaktiv'),
+  ];
+}
+
+function admin_student_list_update_profile(PDO $pdo, int $studentId, array $uploaded, ?array $selectedFields = null): void {
+  $st = $pdo->prepare(
+    "SELECT first_name, last_name, date_of_birth, external_ref, email_student, email_parent1, email_parent2
+     FROM students WHERE id=? LIMIT 1"
+  );
+  $st->execute([$studentId]);
+  $current = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$current) throw new RuntimeException(t('admin.students.error.not_found'));
+
+  $present = array_fill_keys(array_map('strval', (array)($uploaded['present_fields'] ?? [])), true);
+  $selected = $selectedFields === null
+    ? $present
+    : array_fill_keys(array_map('strval', $selectedFields), true);
+  $read = static function(string $field) use ($uploaded, $current, $present, $selected): ?string {
+    if (!isset($present[$field]) || !isset($selected[$field])) {
+      return $current[$field] !== null ? (string)$current[$field] : null;
+    }
+    $value = trim((string)($uploaded[$field] ?? ''));
+    return $value !== '' ? $value : null;
+  };
+  $first = (string)($read('first_name') ?? '');
+  $last = (string)($read('last_name') ?? '');
+  $dob = (string)($read('date_of_birth') ?? '');
+  if ($first === '' || $last === '' || $dob === '') {
+    throw new RuntimeException(t('teacher.students.error_import_required_data', 'Vorname, Nachname und Geburtsdatum dürfen beim Überschreiben nicht leer sein.'));
+  }
+  $collisionId = find_student_by_identity($pdo, $first, $last, $dob);
+  if ($collisionId > 0 && app_canonical_student_id($pdo, $collisionId) !== app_canonical_student_id($pdo, $studentId)) {
+    throw new RuntimeException(t('teacher.students.error_duplicate_student', 'Schüler mit gleichem Namen und Geburtsdatum existiert bereits.'));
+  }
+  $pdo->prepare(
+    "UPDATE students
+     SET first_name=?, last_name=?, date_of_birth=?, identity_hash=?, external_ref=?,
+         email_student=?, email_parent1=?, email_parent2=?
+     WHERE id=?"
+  )->execute([
+    $first, $last, $dob, student_identity_hash($first, $last, $dob),
+    $read('external_ref'), $read('email_student'), $read('email_parent1'), $read('email_parent2'), $studentId,
+  ]);
+  $customValues = [];
+  foreach ((array)($uploaded['custom'] ?? []) as $key => $value) {
+    if (isset($selected['custom:' . (string)$key])) $customValues[(string)$key] = $value;
+  }
+  save_student_custom_values($pdo, $studentId, $customValues, false);
+}
+
+function admin_remove_student_assignments_from_period(PDO $pdo, int $studentId, int $currentClassId): array {
+  $stCurrent = $pdo->prepare("SELECT school_year, period_label FROM classes WHERE id=? LIMIT 1");
+  $stCurrent->execute([$currentClassId]);
+  $current = $stCurrent->fetch(PDO::FETCH_ASSOC);
+  if (!$current) throw new RuntimeException(t('admin.students.error.class_not_found', 'Klasse nicht gefunden.'));
+  $stAssignments = $pdo->prepare(
+    "SELECT sca.class_id, c.school_year, c.period_label
+     FROM student_class_assignments sca
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE sca.student_id=?"
+  );
+  $stAssignments->execute([app_canonical_student_id($pdo, $studentId)]);
+  $removedClassIds = [];
+  foreach ($stAssignments->fetchAll(PDO::FETCH_ASSOC) as $assignment) {
+    $assignedClassId = (int)($assignment['class_id'] ?? 0);
+    if ($assignedClassId <= 0) continue;
+    $shouldRemove = $assignedClassId === $currentClassId
+      || student_list_period_is_at_or_after(
+        (string)($assignment['school_year'] ?? ''),
+        (string)($assignment['period_label'] ?? ''),
+        (string)($current['school_year'] ?? ''),
+        (string)($current['period_label'] ?? '')
+      );
+    if (!$shouldRemove) continue;
+    unassign_student_from_class($pdo, $studentId, $assignedClassId);
+    $removedClassIds[] = $assignedClassId;
+  }
+  return array_values(array_unique($removedClassIds));
+}
+
+function admin_build_multi_class_student_preview(
+  PDO $pdo,
+  array $tmpNames,
+  array $fileNames,
+  string $schoolYear,
+  string $periodLabel,
+  int $userId
+): array {
+  $customFields = list_student_custom_fields($pdo);
+  $customLabels = [];
+  foreach ($customFields as $field) {
+    $key = (string)($field['field_key'] ?? '');
+    if ($key !== '') $customLabels[$key] = admin_student_field_label($field);
+  }
+  $groups = [];
+  $files = [];
+  $skipped = [];
+  $seenIdentities = [];
+
+  foreach ($tmpNames as $fileIndex => $tmpPathRaw) {
+    $tmpPath = (string)$tmpPathRaw;
+    $fileLabel = (string)($fileNames[$fileIndex] ?? ('CSV ' . ($fileIndex + 1)));
+    if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
+      $skipped[] = ['name'=>$fileLabel, 'reason'=>t('admin.students.import.reason.upload_failed')];
+      continue;
+    }
+    $rows = read_csv_assoc($tmpPath);
+    if (!$rows) {
+      $skipped[] = ['name'=>$fileLabel, 'reason'=>t('admin.students.import.reason.empty_csv')];
+      continue;
+    }
+    $files[] = $fileLabel;
+    $header = array_keys(reset($rows));
+    $headers = [
+      'grade' => admin_student_list_header($header, ['Grade', 'Klasse', 'Stufe']),
+      'label' => admin_student_list_header($header, ['Parallelklasse', 'Parallelklasse/Gruppe', 'Class Section', 'Parallel Class']),
+      'first_name' => admin_student_list_header($header, ['Student First Name', 'First Name', 'Student Firstname']),
+      'last_name' => admin_student_list_header($header, ['Student Last Name', 'Last Name', 'Student Lastname']),
+      'date_of_birth' => admin_student_list_header($header, ['Birth Date', 'DOB', 'Date of Birth']),
+      'external_ref' => admin_student_list_header($header, ['Student ID', 'Student Id', 'User ID', 'External ID', 'External Ref']),
+      'email_student' => admin_student_list_header($header, ['Student Email', 'E-Mail Student', 'E-Mail Schüler', 'Email Student']),
+      'email_parent1' => admin_student_list_header($header, ['E-Mail Parent 1', 'Parent 1 Email', 'Parent Email 1', 'Email Parent 1']),
+      'email_parent2' => admin_student_list_header($header, ['E-Mail Parent 2', 'Parent 2 Email', 'Parent Email 2', 'Email Parent 2']),
+    ];
+    $customHeaderMap = admin_map_custom_headers($header, $customFields);
+    foreach ($rows as $rowIndex => $row) {
+      $grade = parse_grade_level(admin_student_list_value($row, $headers['grade']));
+      $label = normalize_label(admin_student_list_value($row, $headers['label']));
+      $first = normalize_name(admin_student_list_value($row, $headers['first_name']));
+      $last = normalize_name(admin_student_list_value($row, $headers['last_name']));
+      $dob = parse_blackbaud_date(admin_student_list_value($row, $headers['date_of_birth']));
+      $displayName = trim($first . ' ' . $last) ?: t('admin.students.import.unknown_name');
+      if ($first === '' && $last === '') continue;
+      if ($grade === null || $label === '') {
+        $skipped[] = ['name'=>$displayName, 'reason'=>t('admin.students.import.reason.class_missing')];
+        continue;
+      }
+      if ($first === '' || $last === '') {
+        $skipped[] = ['name'=>$displayName, 'reason'=>t('admin.students.import.reason.name_missing')];
+        continue;
+      }
+      if ($dob === null) {
+        $skipped[] = ['name'=>$displayName, 'reason'=>t('admin.students.import.reason.dob_missing')];
+        continue;
+      }
+      $emailValues = [];
+      $invalidEmail = null;
+      foreach (['email_student', 'email_parent1', 'email_parent2'] as $emailField) {
+        $rawEmail = admin_student_list_value($row, $headers[$emailField]);
+        $emailValues[$emailField] = sanitize_import_email($rawEmail);
+        if ($rawEmail !== '' && $emailValues[$emailField] === null) $invalidEmail = $rawEmail;
+      }
+      if ($invalidEmail !== null) {
+        $skipped[] = ['name'=>$displayName, 'reason'=>strtr(t('teacher.students.import_invalid_email', 'Ungültige E-Mail-Adresse: {email}'), ['{email}'=>$invalidEmail])];
+        continue;
+      }
+      $identity = student_identity_hash($first, $last, $dob);
+      if (isset($seenIdentities[$identity])) {
+        $skipped[] = ['name'=>$displayName, 'reason'=>t('teacher.students.import_duplicate_row', 'Dieser Schüler kommt in den hochgeladenen Listen mehrfach vor.')];
+        continue;
+      }
+      $seenIdentities[$identity] = true;
+      $presentFields = ['first_name', 'last_name', 'date_of_birth'];
+      foreach (['external_ref', 'email_student', 'email_parent1', 'email_parent2'] as $optionalField) {
+        if ($headers[$optionalField] !== null) $presentFields[] = $optionalField;
+      }
+      $custom = [];
+      foreach ($customHeaderMap as $column => $fieldKey) {
+        $custom[$fieldKey] = trim((string)($row[$column] ?? ''));
+        $presentFields[] = 'custom:' . $fieldKey;
+      }
+      $groupKey = $grade . ':' . $label;
+      if (!isset($groups[$groupKey])) {
+        $groups[$groupKey] = [
+          'group_key'=>$groupKey, 'grade_level'=>$grade, 'label'=>$label,
+          'name'=>computed_class_name($grade, $label), 'uploaded'=>[],
+        ];
+      }
+      $groups[$groupKey]['uploaded'][] = [
+        'row_key'=>$fileIndex . '-' . $rowIndex,
+        'first_name'=>$first, 'last_name'=>$last, 'date_of_birth'=>$dob,
+        'external_ref'=>admin_student_list_value($row, $headers['external_ref']),
+        'email_student'=>$emailValues['email_student'], 'email_parent1'=>$emailValues['email_parent1'], 'email_parent2'=>$emailValues['email_parent2'],
+        'custom'=>$custom, 'custom_labels'=>$customLabels, 'present_fields'=>$presentFields,
+      ];
+    }
+  }
+  if (!$groups) throw new RuntimeException(t('teacher.students.error_no_valid_import_rows', 'Die Dateien enthalten keine gültigen Schülerdatensätze.'));
+
+  $stClasses = $pdo->prepare(
+    "SELECT id, grade_level, label, name FROM classes WHERE school_year=? AND period_label=?"
+  );
+  $stClasses->execute([$schoolYear, $periodLabel]);
+  $classMap = [];
+  foreach ($stClasses->fetchAll(PDO::FETCH_ASSOC) as $classRow) {
+    $classMap[(int)$classRow['grade_level'] . ':' . normalize_label((string)$classRow['label'])] = $classRow;
+  }
+  $allStudents = $pdo->query(
+    "SELECT id, first_name, last_name, date_of_birth, external_ref, email_student, email_parent1, email_parent2
+     FROM students
+     WHERE COALESCE(NULLIF(master_student_id, 0), id)=id
+     ORDER BY last_name ASC, first_name ASC, id ASC"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($allStudents as $index => $student) {
+    $allStudents[$index]['is_active'] = 1;
+    $allStudents[$index]['custom'] = [];
+  }
+
+  $labels = admin_student_list_field_labels();
+  $aggregate = ['new'=>0, 'changed'=>0, 'unchanged'=>0, 'missing'=>0, 'skipped'=>count($skipped)];
+  foreach ($groups as $groupKey => $group) {
+    $classRow = $classMap[$groupKey] ?? null;
+    $classId = (int)($classRow['id'] ?? 0);
+    $currentStudents = [];
+    $activeMap = [];
+    if ($classId > 0) {
+      $stAssigned = $pdo->prepare("SELECT student_id, is_active FROM student_class_assignments WHERE class_id=?");
+      $stAssigned->execute([$classId]);
+      foreach ($stAssigned->fetchAll(PDO::FETCH_ASSOC) as $assignment) {
+        $activeMap[(int)$assignment['student_id']] = (int)$assignment['is_active'];
+      }
+    }
+    $profilesForClass = $allStudents;
+    foreach ($profilesForClass as $index => $profile) {
+      $studentId = (int)$profile['id'];
+      if (array_key_exists($studentId, $activeMap)) {
+        $profilesForClass[$index]['is_active'] = $activeMap[$studentId];
+        $currentStudents[$studentId] = $profilesForClass[$index];
+      }
+    }
+    $databasePlan = build_student_list_reconciliation($profilesForClass, (array)$group['uploaded'], $labels);
+    $plan = ['matched'=>[], 'new'=>[], 'missing'=>[]];
+    $matchedCurrent = [];
+    foreach ((array)$databasePlan['matched'] as $match) {
+      $studentId = (int)($match['student_id'] ?? 0);
+      $match['existing']['custom'] = student_custom_value_map($pdo, $studentId);
+      $match['diff'] = student_list_diff((array)$match['existing'], (array)$match['uploaded'], $labels);
+      if (isset($currentStudents[$studentId])) {
+        $plan['matched'][] = $match;
+        $matchedCurrent[$studentId] = true;
+      } else {
+        $incoming = (array)$match['uploaded'];
+        $incoming['existing_profile_id'] = $studentId;
+        $incoming['existing_profile'] = (array)$match['existing'];
+        $incoming['profile_diff'] = (array)$match['diff'];
+        $plan['new'][] = $incoming;
+      }
+    }
+    foreach ((array)$databasePlan['new'] as $incoming) $plan['new'][] = $incoming;
+    foreach ($currentStudents as $studentId => $student) {
+      if (!isset($matchedCurrent[$studentId])) $plan['missing'][] = $student;
+    }
+    $changed = count(array_filter($plan['matched'], static fn($row): bool => !empty($row['diff'])));
+    $unchanged = count($plan['matched']) - $changed;
+    $groups[$groupKey]['class_id'] = $classId;
+    $groups[$groupKey]['is_new_class'] = $classId <= 0;
+    $groups[$groupKey]['plan'] = $plan;
+    $groups[$groupKey]['stats'] = ['new'=>count($plan['new']), 'changed'=>$changed, 'unchanged'=>$unchanged, 'missing'=>count($plan['missing'])];
+    foreach ($groups[$groupKey]['stats'] as $statKey => $statValue) $aggregate[$statKey] += $statValue;
+    unset($groups[$groupKey]['uploaded']);
+  }
+
+  return [
+    'token'=>bin2hex(random_bytes(20)), 'user_id'=>$userId, 'created_at'=>time(),
+    'school_year'=>$schoolYear, 'period_label'=>$periodLabel, 'files'=>$files,
+    'classes'=>array_values($groups), 'skipped'=>$skipped, 'stats'=>$aggregate,
+  ];
+}
+
+function admin_student_list_preview_without_class(array $preview, string $groupKey): array {
+  $preview['classes'] = array_values(array_filter(
+    (array)($preview['classes'] ?? []),
+    static fn($class): bool => (string)($class['group_key'] ?? '') !== $groupKey
+  ));
+  $stats = ['new'=>0, 'changed'=>0, 'unchanged'=>0, 'missing'=>0, 'skipped'=>count((array)($preview['skipped'] ?? []))];
+  foreach ($preview['classes'] as $class) {
+    foreach (['new', 'changed', 'unchanged', 'missing'] as $key) {
+      $stats[$key] += (int)($class['stats'][$key] ?? 0);
+    }
+  }
+  $preview['stats'] = $stats;
+  return $preview;
+}
+
+function admin_apply_student_list_class_preview(PDO $pdo, array $preview, array $classPreview, array $post): array {
+  $schoolYear = (string)($preview['school_year'] ?? '');
+  $periodLabel = normalize_class_period_label((string)($preview['period_label'] ?? 'H1'));
+  $grade = (int)($classPreview['grade_level'] ?? 0);
+  $label = normalize_label((string)($classPreview['label'] ?? ''));
+  $classId = (int)($classPreview['class_id'] ?? 0);
+  $plan = (array)($classPreview['plan'] ?? []);
+  $fieldChoices = is_array($post['field_choice'] ?? null) ? $post['field_choice'] : [];
+  $newProfileFieldChoices = is_array($post['new_profile_field'] ?? null) ? $post['new_profile_field'] : [];
+  $addNew = is_array($post['add_new'] ?? null) ? $post['add_new'] : [];
+  $removeStudents = is_array($post['remove_student'] ?? null) ? $post['remove_student'] : [];
+  $stats = [
+    'class_created'=>0, 'created'=>0, 'assigned'=>0, 'updated'=>0, 'kept'=>0,
+    'removed'=>0, 'assignments_removed'=>0, 'skipped'=>0,
+  ];
+  $studentSummary = [];
+
+  $pdo->beginTransaction();
+  try {
+    $stClass = $pdo->prepare(
+      "SELECT id FROM classes WHERE school_year=? AND period_label=? AND grade_level=? AND label=? LIMIT 1"
+    );
+    $stClass->execute([$schoolYear, $periodLabel, $grade, $label]);
+    $currentClassId = (int)($stClass->fetchColumn() ?: 0);
+    if ($classId > 0 && $currentClassId !== $classId) {
+      throw new RuntimeException(t('admin.students.reconcile.data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Listen erneut hoch.'));
+    }
+    if ($classId <= 0) {
+      if ($currentClassId > 0) {
+        throw new RuntimeException(t('admin.students.reconcile.data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Listen erneut hoch.'));
+      }
+      $className = computed_class_name($grade, $label);
+      $pdo->prepare(
+        "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active)
+         VALUES (?, ?, ?, ?, ?, NULL, 'groups', 1)"
+      )->execute([$schoolYear, $periodLabel, $grade, $label, $className]);
+      $classId = (int)$pdo->lastInsertId();
+      $stats['class_created'] = 1;
+    }
+
+    foreach ((array)($plan['matched'] ?? []) as $matchedStudent) {
+      $studentId = (int)($matchedStudent['student_id'] ?? 0);
+      if ($studentId <= 0 || empty($matchedStudent['diff'])) continue;
+      if (!student_is_assigned_to_class($pdo, $studentId, $classId)) {
+        throw new RuntimeException(t('admin.students.reconcile.data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Listen erneut hoch.'));
+      }
+      $selectedFields = student_list_selected_uploaded_fields(
+        (array)($matchedStudent['diff'] ?? []),
+        $fieldChoices[$studentId] ?? []
+      );
+      if (!$selectedFields) {
+        $stats['kept']++;
+        continue;
+      }
+      $profileFields = array_values(array_diff($selectedFields, ['is_active']));
+      if ($profileFields) {
+        admin_student_list_update_profile($pdo, $studentId, (array)($matchedStudent['uploaded'] ?? []), $profileFields);
+      }
+      if (in_array('is_active', $selectedFields, true)) assign_student_to_class($pdo, $studentId, $classId, true);
+      $stats['updated']++;
+      $studentSummary[] = [
+        'class_id'=>$classId,
+        'name'=>(string)($matchedStudent['name'] ?? ''),
+        'status'=>t('admin.students.import.status.updated', 'Aktualisiert'),
+      ];
+    }
+
+    foreach ((array)($plan['new'] ?? []) as $newStudent) {
+      $rowKey = (string)($newStudent['row_key'] ?? '');
+      if ($rowKey === '' || !isset($addNew[$rowKey])) {
+        $stats['skipped']++;
+        continue;
+      }
+      $existingProfileId = (int)($newStudent['existing_profile_id'] ?? 0);
+      $studentName = trim((string)($newStudent['first_name'] ?? '') . ' ' . (string)($newStudent['last_name'] ?? ''));
+      if ($existingProfileId > 0) {
+        $stProfile = $pdo->prepare("SELECT id FROM students WHERE id=? AND COALESCE(NULLIF(master_student_id, 0), id)=id LIMIT 1");
+        $stProfile->execute([$existingProfileId]);
+        if (!(int)($stProfile->fetchColumn() ?: 0)) {
+          throw new RuntimeException(t('admin.students.reconcile.data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Listen erneut hoch.'));
+        }
+        $selectedFields = student_list_selected_uploaded_fields(
+          (array)($newStudent['profile_diff'] ?? []),
+          $newProfileFieldChoices[$rowKey] ?? []
+        );
+        $profileFields = array_values(array_diff($selectedFields, ['is_active']));
+        if ($profileFields) {
+          admin_student_list_update_profile($pdo, $existingProfileId, $newStudent, $profileFields);
+          $stats['updated']++;
+        }
+        assign_student_to_class($pdo, $existingProfileId, $classId, true);
+        $stats['assigned']++;
+        $studentSummary[] = [
+          'class_id'=>$classId, 'name'=>$studentName,
+          'status'=>t('admin.students.import.status.assigned', 'Vorhandenes Profil zugeordnet'),
+        ];
+        continue;
+      }
+
+      $first = (string)($newStudent['first_name'] ?? '');
+      $last = (string)($newStudent['last_name'] ?? '');
+      $dob = (string)($newStudent['date_of_birth'] ?? '');
+      if (find_student_by_identity($pdo, $first, $last, $dob) > 0) {
+        throw new RuntimeException(t('admin.students.reconcile.data_changed', 'Die Klassendaten wurden seit der Vorschau geändert. Bitte lade die Listen erneut hoch.'));
+      }
+      $pdo->prepare(
+        "INSERT INTO students
+         (master_student_id, identity_hash, class_id, first_name, last_name, date_of_birth, external_ref,
+          email_student, email_parent1, email_parent2, is_active)
+         VALUES (NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 1)"
+      )->execute([
+        student_identity_hash($first, $last, $dob), $first, $last, $dob,
+        trim((string)($newStudent['external_ref'] ?? '')) ?: null,
+        trim((string)($newStudent['email_student'] ?? '')) ?: null,
+        trim((string)($newStudent['email_parent1'] ?? '')) ?: null,
+        trim((string)($newStudent['email_parent2'] ?? '')) ?: null,
+      ]);
+      $newId = (int)$pdo->lastInsertId();
+      $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?")->execute([$newId, $newId]);
+      assign_student_to_class($pdo, $newId, $classId, true);
+      save_student_custom_values($pdo, $newId, (array)($newStudent['custom'] ?? []), true);
+      $stats['created']++;
+      $studentSummary[] = [
+        'class_id'=>$classId, 'name'=>$studentName,
+        'status'=>t('admin.students.import.status.created', 'Angelegt'),
+      ];
+    }
+
+    $missingIds = [];
+    foreach ((array)($plan['missing'] ?? []) as $missingStudent) {
+      $missingId = (int)($missingStudent['id'] ?? 0);
+      if ($missingId > 0) $missingIds[$missingId] = true;
+    }
+    foreach ($removeStudents as $studentIdRaw => $checked) {
+      $studentId = (int)$studentIdRaw;
+      if ($studentId <= 0 || !isset($missingIds[$studentId])) continue;
+      if (!student_is_assigned_to_class($pdo, $studentId, $classId)) continue;
+      $removedClassIds = admin_remove_student_assignments_from_period($pdo, $studentId, $classId);
+      $stats['assignments_removed'] += count($removedClassIds);
+      $stats['removed']++;
+    }
+    $pdo->commit();
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+
+  return [
+    'class_id'=>$classId,
+    'stats'=>$stats,
+    'students'=>$studentSummary,
+    'class'=>[
+      'class_id'=>$classId, 'school_year'=>$schoolYear, 'grade_level'=>$grade, 'label'=>$label,
+      'name'=>computed_class_name($grade, $label), 'students_created'=>$stats['created'],
+      'students_updated'=>$stats['updated'], 'students_skipped'=>$stats['skipped'],
+    ],
+  ];
 }
 
 function find_master_student_id(PDO $pdo, string $first, string $last, ?string $dob): ?int {
@@ -630,211 +1151,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $schoolYear = trim((string)($_POST['school_year'] ?? ''));
       if ($schoolYear === '') $schoolYear = $defaultSchoolYear;
       if ($schoolYear === '') throw new RuntimeException(t('admin.students.error.school_year_missing'));
-
-      $createdClasses = 0;
-      $createdStudents = 0;
-      $updatedStudents = 0;
-      $skipped = 0;
-      $importSkippedDetails = [];
-      $importSummary = [
-        'files' => [],
-        'classes' => [],
-        'students' => [],
-        'skipped' => [],
-        'stats' => [
-          'files' => 0,
-          'classes_created' => 0,
-          'students_created' => 0,
-          'students_updated' => 0,
-          'skipped' => 0,
-        ],
-      ];
-
-      $pdo->beginTransaction();
-
-      $periodLabel = 'Standard';
       $stPeriod = $pdo->prepare("SELECT period_label FROM classes WHERE school_year=? AND is_active=1 ORDER BY id DESC LIMIT 1");
       $stPeriod->execute([$schoolYear]);
       $periodLabel = normalize_class_period_label((string)($stPeriod->fetchColumn() ?: 'Standard'));
-
-      $classLookup = $pdo->prepare(
-        "SELECT id FROM classes WHERE school_year=? AND period_label=? AND grade_level=? AND label=? LIMIT 1"
+      $adminStudentListPreview = admin_build_multi_class_student_preview(
+        $pdo, $csvTmpNames, $csvNames, $schoolYear, $periodLabel, $userId
       );
-      $classInsert = $pdo->prepare(
-        "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, is_active)
-         VALUES (?, ?, ?, ?, ?, NULL, 'groups', 1)"
-      );
+      $previewToken = (string)$adminStudentListPreview['token'];
+      $_SESSION['admin_student_list_import_previews'] = [$previewToken=>$adminStudentListPreview];
+      unset($_SESSION['admin_import_summary']);
+      $importSummary = null;
+      $previewStats = (array)($adminStudentListPreview['stats'] ?? []);
+      audit('admin_students_import_preview', $userId, [
+        'school_year'=>$schoolYear,
+        'period_label'=>$periodLabel,
+        'classes'=>count((array)($adminStudentListPreview['classes'] ?? [])),
+        'new'=>(int)($previewStats['new'] ?? 0),
+        'changed'=>(int)($previewStats['changed'] ?? 0),
+        'unchanged'=>(int)($previewStats['unchanged'] ?? 0),
+        'missing'=>(int)($previewStats['missing'] ?? 0),
+        'skipped'=>(int)($previewStats['skipped'] ?? 0),
+      ]);
+    }
 
-      $insertStudent = $pdo->prepare(
-        "INSERT INTO students (master_student_id, identity_hash, class_id, first_name, last_name, date_of_birth, is_active)
-         VALUES (NULL, ?, NULL, ?, ?, ?, 1)"
-      );
-      $setSelfMaster = $pdo->prepare("UPDATE students SET master_student_id=? WHERE id=?");
-
-      foreach ($csvTmpNames as $index => $tmpPathRaw) {
-        $tmpPath = (string)$tmpPathRaw;
-        $csvLabel = $csvNames[$index] ?? ('CSV ' . ($index + 1));
-        if ($tmpPath === '' || !is_uploaded_file($tmpPath)) {
-          $detail = [
-            'name' => $csvLabel,
-            'reason' => t('admin.students.import.reason.upload_failed'),
-          ];
-          $importSkippedDetails[] = $detail;
-          $importSummary['skipped'][] = $detail;
-          $skipped++;
-          continue;
-        }
-
-        $rows = read_csv_assoc($tmpPath);
-        if (!$rows) {
-          $detail = [
-            'name' => $csvLabel,
-            'reason' => t('admin.students.import.reason.empty_csv'),
-          ];
-          $importSkippedDetails[] = $detail;
-          $importSummary['skipped'][] = $detail;
-          $skipped++;
-          continue;
-        }
-
-        $importSummary['files'][] = $csvLabel;
-
-        foreach ($rows as $r) {
-          $gradeRaw = $r['Grade'] ?? $r['Klasse'] ?? $r['Stufe'] ?? null;
-          $labelRaw = $r['Parallelklasse'] ?? $r['Parallelklasse/Gruppe'] ?? $r['Class Section'] ?? $r['Parallel Class'] ?? null;
-          $grade = parse_grade_level($gradeRaw);
-          $label = normalize_label((string)$labelRaw);
-
-          $first = normalize_name((string)($r['Student First Name'] ?? $r['First Name'] ?? $r['Student Firstname'] ?? ''));
-          $last  = normalize_name((string)($r['Student Last Name'] ?? $r['Last Name'] ?? $r['Student Lastname'] ?? ''));
-          $dob   = parse_blackbaud_date($r['Birth Date'] ?? $r['DOB'] ?? $r['Date of Birth'] ?? null);
-          $emailStudent = sanitize_import_email($r['Student Email'] ?? $r['E-Mail Student'] ?? $r['E-Mail Schüler'] ?? $r['Email Student'] ?? null);
-          $emailParent1 = sanitize_import_email($r['E-Mail Parent 1'] ?? $r['Parent 1 Email'] ?? $r['Parent Email 1'] ?? $r['Email Parent 1'] ?? null);
-          $emailParent2 = sanitize_import_email($r['E-Mail Parent 2'] ?? $r['Parent 2 Email'] ?? $r['Parent Email 2'] ?? $r['Email Parent 2'] ?? null);
-
-          if ($first === '' && $last === '') continue;
-          if ($grade === null || $label === '') {
-            $skipped++;
-            $detail = [
-              'name' => trim($first . ' ' . $last) ?: t('admin.students.import.unknown_name'),
-              'reason' => t('admin.students.import.reason.class_missing'),
-            ];
-            $importSkippedDetails[] = $detail;
-            $importSummary['skipped'][] = $detail;
-            continue;
-          }
-          if ($first === '' || $last === '') {
-            $skipped++;
-            $detail = [
-              'name' => trim($first . ' ' . $last) ?: t('admin.students.import.unknown_name'),
-              'reason' => t('admin.students.import.reason.name_missing'),
-            ];
-            $importSkippedDetails[] = $detail;
-            $importSummary['skipped'][] = $detail;
-            continue;
-          }
-          if ($dob === null) {
-            $skipped++;
-            $detail = [
-              'name' => trim($first . ' ' . $last),
-              'reason' => t('admin.students.import.reason.dob_missing'),
-            ];
-            $importSkippedDetails[] = $detail;
-            $importSummary['skipped'][] = $detail;
-            continue;
-          }
-
-          $classLookup->execute([$schoolYear, $periodLabel, $grade, $label]);
-          $classId = $classLookup->fetchColumn();
-          if (!$classId) {
-            $name = computed_class_name($grade, $label);
-            $classInsert->execute([$schoolYear, $periodLabel, $grade, $label, $name]);
-            $classId = (int)$pdo->lastInsertId();
-            $createdClasses++;
-            $importSummary['classes'][$classId] = [
-              'class_id' => $classId,
-              'school_year' => $schoolYear,
-              'grade_level' => $grade,
-              'label' => $label,
-              'name' => $name,
-              'students_created' => 0,
-              'students_updated' => 0,
-              'students_skipped' => 0,
-            ];
-          } else {
-            $classId = (int)$classId;
-            if (!isset($importSummary['classes'][$classId])) {
-              $importSummary['classes'][$classId] = [
-                'class_id' => $classId,
-                'school_year' => $schoolYear,
-                'grade_level' => $grade,
-                'label' => $label,
-                'name' => computed_class_name($grade, $label),
-                'students_created' => 0,
-                'students_updated' => 0,
-                'students_skipped' => 0,
-              ];
-            }
-          }
-
-          $existingId = find_student_by_identity($pdo, $first, $last, $dob);
-          if ($existingId) {
-            $skipped++;
-            $detail = [
-              'name' => trim($first . ' ' . $last),
-              'reason' => t('admin.students.import.reason.duplicate_confirmation', 'Dublette erkannt. Bitte bestehenden Schüler prüfen und die Klassenzuordnung ausdrücklich bestätigen.'),
-            ];
-            $importSkippedDetails[] = $detail;
-            $importSummary['classes'][$classId]['students_skipped']++;
-            $importSummary['skipped'][] = $detail;
-            continue;
-          }
-
-          $identityHash = student_identity_hash($first, $last, $dob);
-          $insertStudent->execute([$identityHash, $first, $last, $dob]);
-          $newId = (int)$pdo->lastInsertId();
-          $setSelfMaster->execute([$newId, $newId]);
-          assign_student_to_class($pdo, $newId, $classId, true);
-          if ($emailStudent !== null || $emailParent1 !== null || $emailParent2 !== null) {
-            $pdo->prepare(
-              "UPDATE students SET email_student=?, email_parent1=?, email_parent2=? WHERE id=?"
-            )->execute([$emailStudent, $emailParent1, $emailParent2, $newId]);
-          }
-          save_student_custom_values($pdo, $newId, [], true);
-          $createdStudents++;
-          $importSummary['classes'][$classId]['students_created']++;
-          $importSummary['students'][] = [
-            'class_id' => $classId,
-            'name' => trim($first . ' ' . $last),
-            'status' => t('admin.students.import.status.created'),
-          ];
+    elseif ($action === 'apply_admin_student_list_class' || $action === 'skip_admin_student_list_class') {
+      $previewToken = trim((string)($_POST['preview_token'] ?? ''));
+      $groupKey = trim((string)($_POST['class_key'] ?? ''));
+      $preview = $_SESSION['admin_student_list_import_previews'][$previewToken] ?? null;
+      if (!is_array($preview)
+          || (int)($preview['user_id'] ?? 0) !== $userId
+          || (int)($preview['created_at'] ?? 0) < time() - 3600) {
+        throw new RuntimeException(t('admin.students.reconcile.expired', 'Die Abgleich-Vorschau ist abgelaufen. Bitte lade die Listen erneut hoch.'));
+      }
+      $adminStudentListPreview = $preview;
+      $classPreview = null;
+      foreach ((array)($preview['classes'] ?? []) as $candidate) {
+        if ((string)($candidate['group_key'] ?? '') === $groupKey) {
+          $classPreview = $candidate;
+          break;
         }
       }
+      if (!is_array($classPreview)) {
+        throw new RuntimeException(t('admin.students.reconcile.class_missing', 'Diese Klasse ist in der Vorschau nicht mehr verfügbar.'));
+      }
+      $classLabel = (string)($classPreview['name'] ?? computed_class_name((int)($classPreview['grade_level'] ?? 0), (string)($classPreview['label'] ?? '')));
 
-      $pdo->commit();
+      if ($action === 'skip_admin_student_list_class') {
+        $updatedPreview = admin_student_list_preview_without_class($preview, $groupKey);
+        if ($updatedPreview['classes']) {
+          $_SESSION['admin_student_list_import_previews'][$previewToken] = $updatedPreview;
+          $adminStudentListPreview = $updatedPreview;
+        } else {
+          unset($_SESSION['admin_student_list_import_previews'][$previewToken]);
+          $adminStudentListPreview = null;
+        }
+        audit('admin_students_import_class_skipped', $userId, [
+          'school_year'=>(string)($preview['school_year'] ?? ''),
+          'period_label'=>(string)($preview['period_label'] ?? ''),
+          'class'=>$classLabel,
+        ]);
+        $ok = strtr(t('admin.students.reconcile.class_skipped', 'Klasse {class} wurde übersprungen. Die übrigen Klassen können weiterhin geprüft werden.'), ['{class}'=>$classLabel]);
+      } else {
+        if ((int)($_POST['confirm_reconciliation'] ?? 0) !== 1) {
+          throw new RuntimeException(t('admin.students.reconcile.confirm_required', 'Bitte bestätige den Abgleich dieser Klasse vor der Übernahme.'));
+        }
+        $result = admin_apply_student_list_class_preview($pdo, $preview, $classPreview, $_POST);
+        $resultStats = (array)($result['stats'] ?? []);
+        $updatedPreview = admin_student_list_preview_without_class($preview, $groupKey);
+        if ($updatedPreview['classes']) {
+          $_SESSION['admin_student_list_import_previews'][$previewToken] = $updatedPreview;
+          $adminStudentListPreview = $updatedPreview;
+        } else {
+          unset($_SESSION['admin_student_list_import_previews'][$previewToken]);
+          $adminStudentListPreview = null;
+        }
 
-      $importSummary['stats'] = [
-        'files' => count($importSummary['files']),
-        'classes_created' => $createdClasses,
-        'students_created' => $createdStudents,
-        'students_updated' => $updatedStudents,
-        'skipped' => $skipped,
-      ];
-      $importSummary['classes'] = array_values($importSummary['classes']);
-      $_SESSION['admin_import_summary'] = $importSummary;
-
-      audit('admin_students_import_csv', $userId, [
-        'school_year' => $schoolYear,
-        'classes_created' => $createdClasses,
-        'students_created' => $createdStudents,
-        'students_updated' => $updatedStudents,
-        'skipped' => $skipped
-      ]);
-      $ok = str_replace(
-        ['{classes}', '{created}', '{updated}', '{skipped}'],
-        [(string)$createdClasses, (string)$createdStudents, (string)$updatedStudents, (string)$skipped],
-        t('admin.students.status.import_summary')
-      );
+        $importSummary = is_array($_SESSION['admin_import_summary'] ?? null)
+          ? (array)$_SESSION['admin_import_summary']
+          : ['files'=>[], 'classes'=>[], 'students'=>[], 'skipped'=>[], 'stats'=>[]];
+        $importSummary['files'] = array_values(array_unique(array_merge(
+          (array)($importSummary['files'] ?? []),
+          (array)($preview['files'] ?? [])
+        )));
+        $summaryClasses = [];
+        foreach ((array)($importSummary['classes'] ?? []) as $summaryClass) {
+          $summaryClassId = (int)($summaryClass['class_id'] ?? 0);
+          if ($summaryClassId > 0) $summaryClasses[$summaryClassId] = $summaryClass;
+        }
+        $resultClass = (array)($result['class'] ?? []);
+        $resultClassId = (int)($resultClass['class_id'] ?? 0);
+        if ($resultClassId > 0) $summaryClasses[$resultClassId] = $resultClass;
+        $importSummary['classes'] = array_values($summaryClasses);
+        $importSummary['students'] = array_merge(
+          (array)($importSummary['students'] ?? []),
+          (array)($result['students'] ?? [])
+        );
+        $previousStats = (array)($importSummary['stats'] ?? []);
+        $importSummary['stats'] = [
+          'files'=>count($importSummary['files']),
+          'classes_created'=>(int)($previousStats['classes_created'] ?? 0) + (int)($resultStats['class_created'] ?? 0),
+          'students_created'=>(int)($previousStats['students_created'] ?? 0) + (int)($resultStats['created'] ?? 0),
+          'students_updated'=>(int)($previousStats['students_updated'] ?? 0) + (int)($resultStats['updated'] ?? 0),
+          'skipped'=>(int)($previousStats['skipped'] ?? 0) + (int)($resultStats['skipped'] ?? 0),
+        ];
+        $_SESSION['admin_import_summary'] = $importSummary;
+        audit('admin_students_import_csv_class', $userId, [
+          'school_year'=>(string)($preview['school_year'] ?? ''),
+          'period_label'=>(string)($preview['period_label'] ?? ''),
+          'class_id'=>(int)($result['class_id'] ?? 0),
+          'class_created'=>(int)($resultStats['class_created'] ?? 0),
+          'students_created'=>(int)($resultStats['created'] ?? 0),
+          'assigned_existing'=>(int)($resultStats['assigned'] ?? 0),
+          'updated'=>(int)($resultStats['updated'] ?? 0),
+          'kept'=>(int)($resultStats['kept'] ?? 0),
+          'removed_from_class'=>(int)($resultStats['removed'] ?? 0),
+          'assignments_removed'=>(int)($resultStats['assignments_removed'] ?? 0),
+          'skipped'=>(int)($resultStats['skipped'] ?? 0),
+        ]);
+        $ok = strtr(t('admin.students.reconcile.class_imported', 'Klasse {class} übernommen: {created} neu, {assigned} vorhandene Profile zugeordnet, {updated} aktualisiert, {removed} ab diesem Halbjahr entfernt.'), [
+          '{class}'=>$classLabel,
+          '{created}'=>(string)($resultStats['created'] ?? 0),
+          '{assigned}'=>(string)($resultStats['assigned'] ?? 0),
+          '{updated}'=>(string)($resultStats['updated'] ?? 0),
+          '{removed}'=>(string)($resultStats['removed'] ?? 0),
+        ]);
+      }
     }
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -1251,10 +1692,208 @@ render_admin_header(t('admin.students.title'));
       <input type="file" name="csv_file[]" accept=".csv,text/csv" multiple required>
     </div>
     <div class="actions" style="justify-content:flex-start;">
-      <button class="btn" type="submit"><?=h(t('admin.students.import.start'))?></button>
+      <button class="btn" type="submit"><?=h(t('admin.students.reconcile.review_button', 'Listen prüfen'))?></button>
     </div>
   </form>
 </div>
+
+<?php if (is_array($adminStudentListPreview)): ?>
+  <div class="card" id="admin-student-list-preview" style="border:2px solid var(--primary,#2563eb);">
+    <style>
+      .admin-student-field-choice{display:block;position:relative;padding:10px 12px;border:2px solid transparent;border-radius:8px;cursor:pointer;min-width:150px}
+      .admin-student-field-choice input{position:absolute;opacity:0;pointer-events:none}
+      .admin-student-field-choice:has(input:checked){border-color:var(--primary,#2563eb);background:rgba(37,99,235,.10);box-shadow:0 0 0 1px rgba(37,99,235,.14)}
+      .admin-student-field-choice:has(input:focus-visible){outline:3px solid rgba(37,99,235,.35);outline-offset:2px}
+      .admin-student-field-choice .choice-mark{display:none;margin-left:6px;font-weight:700}
+      .admin-student-field-choice:has(input:checked) .choice-mark{display:inline}
+    </style>
+    <h2 style="margin-top:0;"><?=h(t('admin.students.reconcile.heading', 'Schülerlisten klassenweise abgleichen'))?></h2>
+    <p class="muted"><?=h(strtr(t('admin.students.reconcile.source', 'Vorschau für {files} Datei(en), Schuljahr {year}, {period}. Es wurde noch nichts gespeichert.'), [
+      '{files}'=>(string)count((array)($adminStudentListPreview['files'] ?? [])),
+      '{year}'=>(string)($adminStudentListPreview['school_year'] ?? ''),
+      '{period}'=>period_label_display_admin((string)($adminStudentListPreview['period_label'] ?? 'H1')),
+    ]))?></p>
+    <p class="muted"><?=h(t('admin.students.reconcile.classwise_hint', 'Prüfe und importiere jede Klasse einzeln. Eine Klasse kann übersprungen werden, ohne die übrigen Importe abzubrechen. Klicke bei geänderten Daten direkt auf den Wert, der gelten soll; die neue Liste ist vorausgewählt.'))?></p>
+
+    <?php if (!empty($adminStudentListPreview['skipped'])): ?>
+      <details style="margin:14px 0;">
+        <summary class="btn secondary" style="display:inline-block;cursor:pointer;"><?=h(strtr(
+          t('teacher.students.reconcile_skipped_heading', 'Nicht auswertbare Zeilen anzeigen ({count})'),
+          ['{count}'=>(string)count((array)$adminStudentListPreview['skipped'])]
+        ))?></summary>
+        <ul>
+          <?php foreach ((array)$adminStudentListPreview['skipped'] as $skippedRow): ?>
+            <li><strong><?=h((string)($skippedRow['name'] ?? ''))?>:</strong> <?=h((string)($skippedRow['reason'] ?? ''))?></li>
+          <?php endforeach; ?>
+        </ul>
+      </details>
+    <?php endif; ?>
+
+    <?php foreach ((array)($adminStudentListPreview['classes'] ?? []) as $classPreview): ?>
+      <?php
+        $classPlan = (array)($classPreview['plan'] ?? []);
+        $classStats = (array)($classPreview['stats'] ?? []);
+        $classMatches = (array)($classPlan['matched'] ?? []);
+        $classChanged = array_values(array_filter($classMatches, static fn($row): bool => !empty($row['diff'])));
+        $classUnchanged = array_values(array_filter($classMatches, static fn($row): bool => empty($row['diff'])));
+        $classNew = (array)($classPlan['new'] ?? []);
+        $classMissing = (array)($classPlan['missing'] ?? []);
+        $classKey = (string)($classPreview['group_key'] ?? '');
+        $className = (string)($classPreview['name'] ?? '');
+      ?>
+      <section class="panel" style="margin-top:18px;border:1px solid rgba(127,127,127,.35);padding:18px;">
+        <div class="row" style="justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+          <h3 style="margin:0;"><?=h(strtr(t('admin.students.reconcile.class_heading', 'Klasse {class}'), ['{class}'=>$className]))?></h3>
+          <?php if (!empty($classPreview['is_new_class'])): ?><span class="badge success"><?=h(t('admin.students.reconcile.new_class', 'Neue Klasse'))?></span><?php endif; ?>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin:12px 0 18px;">
+          <span class="badge success"><?=h(strtr(t('teacher.students.reconcile_count_new', 'Neu: {count}'), ['{count}'=>(string)($classStats['new'] ?? 0)]))?></span>
+          <span class="badge warn"><?=h(strtr(t('teacher.students.reconcile_count_changed', 'Geändert: {count}'), ['{count}'=>(string)($classStats['changed'] ?? 0)]))?></span>
+          <span class="badge blue"><?=h(strtr(t('teacher.students.reconcile_count_unchanged', 'Unverändert: {count}'), ['{count}'=>(string)($classStats['unchanged'] ?? 0)]))?></span>
+          <span class="badge danger"><?=h(strtr(t('teacher.students.reconcile_count_missing', 'Nicht mehr in der Liste: {count}'), ['{count}'=>(string)($classStats['missing'] ?? 0)]))?></span>
+        </div>
+
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="preview_token" value="<?=h((string)($adminStudentListPreview['token'] ?? ''))?>">
+          <input type="hidden" name="class_key" value="<?=h($classKey)?>">
+
+          <?php if ($classNew): ?>
+            <h4><?=h(t('teacher.students.reconcile_new_heading', 'Neue Schüler'))?></h4>
+            <p class="muted"><?=h(t('teacher.students.reconcile_new_hint', 'Diese Schüler werden neu angelegt oder – falls bereits ein zentrales Profil vorhanden ist – dieser Klasse zugeordnet.'))?></p>
+            <div style="overflow:auto;">
+              <table>
+                <thead><tr>
+                  <th><?=h(t('teacher.students.reconcile_apply', 'Übernehmen'))?></th>
+                  <th><?=h(t('admin.students.import.table.name', 'Name'))?></th>
+                  <th><?=h(t('teacher.students.label_dob', 'Geburtsdatum'))?></th>
+                  <th><?=h(t('teacher.students.reconcile_result', 'Einordnung'))?></th>
+                </tr></thead>
+                <tbody>
+                  <?php foreach ($classNew as $newStudent): ?>
+                    <?php $rowKey = (string)($newStudent['row_key'] ?? ''); ?>
+                    <tr>
+                      <td><input type="checkbox" name="add_new[<?=h($rowKey)?>]" value="1" checked aria-label="<?=h(t('teacher.students.reconcile_apply', 'Übernehmen'))?>"></td>
+                      <td><strong><?=h(trim((string)($newStudent['first_name'] ?? '') . ' ' . (string)($newStudent['last_name'] ?? '')))?></strong></td>
+                      <td><?=h(admin_student_birth_date_display((string)($newStudent['date_of_birth'] ?? '')))?></td>
+                      <td>
+                        <?php if (!empty($newStudent['existing_profile_id'])): ?>
+                          <span class="badge blue"><?=h(t('teacher.students.reconcile_existing_profile', 'Neu in der Klasse · Profil vorhanden'))?></span>
+                          <?php if (!empty($newStudent['profile_diff'])): ?>
+                            <div style="overflow:auto;margin-top:10px;">
+                              <table style="min-width:520px;margin:0;">
+                                <thead><tr>
+                                  <th><?=h(t('teacher.students.reconcile_field', 'Feld'))?></th>
+                                  <th><span class="badge blue"><?=h(t('teacher.students.reconcile_existing', 'Bestehend'))?></span></th>
+                                  <th><span class="badge success"><?=h(t('teacher.students.reconcile_uploaded', 'Neue Liste'))?></span></th>
+                                </tr></thead>
+                                <tbody>
+                                  <?php foreach ((array)$newStudent['profile_diff'] as $difference): ?>
+                                    <?php $differenceField = (string)($difference['field'] ?? ''); ?>
+                                    <tr>
+                                      <td><strong><?=h((string)($difference['label'] ?? ''))?></strong></td>
+                                      <td><label class="admin-student-field-choice"><input type="radio" name="new_profile_field[<?=h($rowKey)?>][<?=h($differenceField)?>]" value="existing" aria-label="<?=h(t('teacher.students.reconcile_keep_this_value', 'Diesen bestehenden Wert beibehalten'))?>"><?=h(admin_student_difference_display((array)$difference, 'current'))?><span class="choice-mark" aria-hidden="true">✓</span></label></td>
+                                      <td><label class="admin-student-field-choice"><input type="radio" name="new_profile_field[<?=h($rowKey)?>][<?=h($differenceField)?>]" value="uploaded" checked aria-label="<?=h(t('teacher.students.reconcile_use_this_value', 'Diesen Wert aus der neuen Liste übernehmen'))?>"><strong><?=h(admin_student_difference_display((array)$difference, 'uploaded'))?></strong><span class="choice-mark" aria-hidden="true">✓</span></label></td>
+                                    </tr>
+                                  <?php endforeach; ?>
+                                </tbody>
+                              </table>
+                            </div>
+                          <?php endif; ?>
+                        <?php else: ?>
+                          <span class="badge success"><?=h(t('teacher.students.reconcile_completely_new', 'Komplett neu'))?></span>
+                        <?php endif; ?>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
+
+          <?php if ($classChanged): ?>
+            <h4 style="margin-top:22px;"><?=h(t('teacher.students.reconcile_changed_heading', 'Veränderte Daten'))?></h4>
+            <p class="muted"><?=h(t('teacher.students.reconcile_changed_hint', 'Klicke bei jeder Änderung direkt auf den Wert, der gelten soll. Die neue Liste ist standardmäßig ausgewählt.'))?></p>
+            <div style="overflow:auto;">
+              <table>
+                <thead><tr><th><?=h(t('admin.students.import.table.name', 'Name'))?></th><th><?=h(t('teacher.students.reconcile_differences', 'Unterschiede'))?></th></tr></thead>
+                <tbody>
+                  <?php foreach ($classChanged as $match): ?>
+                    <?php $studentId = (int)($match['student_id'] ?? 0); ?>
+                    <tr>
+                      <td><strong><?=h((string)($match['name'] ?? ''))?></strong></td>
+                      <td>
+                        <div style="overflow:auto;">
+                          <table style="min-width:520px;margin:0;">
+                            <thead><tr>
+                              <th><?=h(t('teacher.students.reconcile_field', 'Feld'))?></th>
+                              <th><span class="badge blue"><?=h(t('teacher.students.reconcile_existing', 'Bestehend'))?></span></th>
+                              <th><span class="badge success"><?=h(t('teacher.students.reconcile_uploaded', 'Neue Liste'))?></span></th>
+                            </tr></thead>
+                            <tbody>
+                              <?php foreach ((array)($match['diff'] ?? []) as $difference): ?>
+                                <?php $differenceField = (string)($difference['field'] ?? ''); ?>
+                                <tr>
+                                  <td><strong><?=h((string)($difference['label'] ?? ''))?></strong></td>
+                                  <td><label class="admin-student-field-choice"><input type="radio" name="field_choice[<?=h((string)$studentId)?>][<?=h($differenceField)?>]" value="existing" aria-label="<?=h(t('teacher.students.reconcile_keep_this_value', 'Diesen bestehenden Wert beibehalten'))?>"><?=h(admin_student_difference_display((array)$difference, 'current'))?><span class="choice-mark" aria-hidden="true">✓</span></label></td>
+                                  <td><label class="admin-student-field-choice"><input type="radio" name="field_choice[<?=h((string)$studentId)?>][<?=h($differenceField)?>]" value="uploaded" checked aria-label="<?=h(t('teacher.students.reconcile_use_this_value', 'Diesen Wert aus der neuen Liste übernehmen'))?>"><strong><?=h(admin_student_difference_display((array)$difference, 'uploaded'))?></strong><span class="choice-mark" aria-hidden="true">✓</span></label></td>
+                                </tr>
+                              <?php endforeach; ?>
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+          <?php endif; ?>
+
+          <?php if ($classMissing): ?>
+            <h4 style="margin-top:22px;"><?=h(t('teacher.students.reconcile_missing_heading', 'Nicht mehr in der neuen Liste'))?></h4>
+            <p class="muted"><?=h(t('teacher.students.reconcile_missing_hint', 'Wähle ausdrücklich aus, welche Schüler ab diesem Schulhalbjahr aus ihren Klassenzuordnungen entfernt werden sollen. Frühere Zuordnungen, das zentrale Profil und vorhandene Berichte bleiben erhalten.'))?></p>
+            <div class="panel" style="display:grid;gap:8px;">
+              <?php foreach ($classMissing as $missingStudent): ?>
+                <?php $missingId = (int)($missingStudent['id'] ?? 0); ?>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input type="checkbox" name="remove_student[<?=h((string)$missingId)?>]" value="1">
+                  <span><strong><?=h(trim((string)($missingStudent['first_name'] ?? '') . ' ' . (string)($missingStudent['last_name'] ?? '')))?></strong> · <?=h(admin_student_birth_date_display((string)($missingStudent['date_of_birth'] ?? '')))?></span>
+                  <span class="badge danger"><?=h(t('teacher.students.reconcile_remove_from_class', 'Ab diesem Halbjahr entfernen'))?></span>
+                </label>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+
+          <?php if ($classUnchanged): ?>
+            <details style="margin-top:18px;">
+              <summary class="btn secondary" style="display:inline-block;cursor:pointer;"><?=h(strtr(t('teacher.students.reconcile_unchanged_heading', 'Unveränderte Schüler anzeigen ({count})'), ['{count}'=>(string)count($classUnchanged)]))?></summary>
+              <ul><?php foreach ($classUnchanged as $match): ?><li><?=h((string)($match['name'] ?? ''))?></li><?php endforeach; ?></ul>
+            </details>
+          <?php endif; ?>
+
+          <label style="display:flex;gap:8px;align-items:flex-start;margin-top:20px;">
+            <input type="checkbox" name="confirm_reconciliation" value="1">
+            <span><?=h(t('admin.students.reconcile.confirm', 'Ich habe den Abgleich dieser Klasse geprüft.'))?></span>
+          </label>
+          <div class="actions" style="justify-content:flex-start;margin-top:14px;gap:10px;">
+            <button class="btn primary" type="submit" name="action" value="apply_admin_student_list_class"><?=h(t('admin.students.reconcile.import_class', 'Diese Klasse importieren'))?></button>
+            <button class="btn secondary" type="submit" name="action" value="skip_admin_student_list_class"><?=h(t('admin.students.reconcile.skip_class', 'Klasse überspringen'))?></button>
+          </div>
+        </form>
+      </section>
+    <?php endforeach; ?>
+  </div>
+  <?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'import_blackbaud_csv'): ?>
+    <script>
+      window.addEventListener('load', () => {
+        window.requestAnimationFrame(() => {
+          document.getElementById('admin-student-list-preview')?.scrollIntoView({behavior:'smooth',block:'start'});
+        });
+      });
+    </script>
+  <?php endif; ?>
+<?php endif; ?>
 
 <div class="card">
   <form method="get" class="grid" style="grid-template-columns: 1fr 160px 240px 160px auto; gap:12px; align-items:end;" id="student-filter-form">
@@ -1384,7 +2023,7 @@ render_admin_header(t('admin.students.title'));
       <?php foreach ($students as $s): ?>
         <tr>
           <td><?=h((string)$s['last_name'])?>, <?=h((string)$s['first_name'])?></td>
-          <td><?=h((string)($s['date_of_birth'] ?? ''))?></td>
+          <td><?=h(admin_student_birth_date_display((string)($s['date_of_birth'] ?? '')))?></td>
           <td><?=h(class_display($s))?></td>
           <td><?=h((string)($s['school_year'] ?? t('admin.students.table.no_year')))?></td>
           <td>
