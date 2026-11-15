@@ -23,6 +23,16 @@ report_preview_assert(strpos($preview, 'apply_system_bindings') === false, 'open
 report_preview_assert(strpos($preview, "CASE fv.source WHEN 'teacher' THEN 30 WHEN 'child' THEN 20 WHEN 'system' THEN 10") !== false, 'stored values must use deterministic source precedence');
 report_preview_assert(strpos($preview, 'array_key_exists($fieldName, $valuesByName)') !== false, 'lower-priority values must not overwrite the selected stored value');
 report_preview_assert(strpos($preview, "class_report_period_label(\$selectedClassId, \$selectedPeriodLabel)") !== false, 'class-scoped values must use the class belonging to the selected report period');
+report_preview_assert(strpos($preview, 'name="q"') !== false && strpos($preview, 'name="class_id"') !== false, 'the student list must support name search and current-class filtering');
+report_preview_assert(strpos($preview, "'class_id'=>\$selectedClassFilter") !== false && strpos($preview, "'q'=>\$studentSearch") !== false, 'report and student navigation must retain active filters');
+report_preview_assert(strpos($preview, "teacher.report_preview.active_students_group") !== false, 'current students must be presented as a distinct group');
+report_preview_assert(strpos($preview, "teacher.report_preview.archived_students_group") !== false, 'archived students must be presented as a distinct group');
+report_preview_assert(strpos($preview, '$filteredArchivedStudents = $isAdmin ?') !== false, 'fully archived students must only be exposed to administrators');
+report_preview_assert(strpos($preview, 'c.id=sca.class_id AND c.is_active=1') !== false && strpos($preview, 'sca.is_active=1 AND uca.user_id=?') !== false, 'teachers must only receive students from active assignments in active classes');
+report_preview_assert(strpos($preview, 'id="rpDownload"') !== false && strpos($preview, "new Blob([renderedBytes], { type: 'application/pdf' })") !== false, 'the exact rendered report must be exportable as a PDF');
+report_preview_assert(strpos($preview, 'name="confirm_ack"') !== false && strpos($preview, "hash_equals(\$mustMatch, \$confirmText)") !== false, 'report deletion must require both an acknowledgement and exact confirmation text');
+report_preview_assert(strpos($preview, 'admin_report_delete') !== false && strpos($preview, 'DELETE FROM report_instances WHERE id=? AND student_id IS NOT NULL') !== false, 'an administrator must be able to delete exactly one student report with an audit record');
+report_preview_assert(strpos($preview, 'DELETE FROM students') === false, 'deleting a report must never delete the student profile');
 
 $mainQueryStart = strpos($teacherFile, 'SELECT ri.id, ri.template_id, ri.school_year, ri.period_label');
 $permissionQueryStart = strpos($teacherFile, 'SELECT c.id', $mainQueryStart !== false ? $mainQueryStart : 0);

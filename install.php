@@ -442,7 +442,7 @@ CREATE TABLE IF NOT EXISTS `report_instances` (
   `student_id` bigint UNSIGNED DEFAULT NULL,
   `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `status` enum('draft','submitted','locked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
+  `status` enum('draft','submitted','locked','final') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
   `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `locked_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `locked_at` datetime DEFAULT NULL,

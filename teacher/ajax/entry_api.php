@@ -2718,11 +2718,15 @@ try {
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $periodLabel, $userId);
     $reportId = (int)($ri['id'] ?? 0);
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear, $periodLabel);
-    if ($reportId > 0) {
+    if ($reportId > 0 && (string)($ri['status'] ?? '') !== 'final') {
       apply_system_bindings($pdo, $reportId);
     }
     if ($classReportInstanceId > 0) {
-      apply_system_bindings($pdo, $classReportInstanceId);
+      $stClassReportStatus = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
+      $stClassReportStatus->execute([$classReportInstanceId]);
+      if ((string)($stClassReportStatus->fetchColumn() ?: '') !== 'final') {
+        apply_system_bindings($pdo, $classReportInstanceId);
+      }
     }
 
     $teacherFields = load_teacher_fields($pdo, $templateId, true);
@@ -3583,6 +3587,7 @@ if ($action === 'delegations_save') {
     $st->execute([$reportId]);
     $ri = $st->fetch(PDO::FETCH_ASSOC);
     if (!$ri) throw new RuntimeException('Report nicht gefunden.');
+    if ((string)($ri['status'] ?? '') === 'final') throw new RuntimeException('Der Bericht ist abgeschlossen und kann nicht mehr geändert werden.');
 
     if ((int)($ri['template_id'] ?? 0) !== $templateId) throw new RuntimeException('Vorlagenkonflikt.');
     if ($ri['student_id'] !== null) throw new RuntimeException('Kein Klassen-Report.');
@@ -3708,6 +3713,7 @@ if ($action === 'delegations_save') {
     $st->execute([$reportId]);
     $ri = $st->fetch(PDO::FETCH_ASSOC);
     if (!$ri) throw new RuntimeException('Report nicht gefunden.');
+    if ((string)($ri['status'] ?? '') === 'final') throw new RuntimeException('Der Bericht ist abgeschlossen und kann nicht mehr geändert werden.');
 
     $classId = (int)($ri['class_id'] ?? 0);
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
@@ -3834,7 +3840,7 @@ if ($action === 'delegations_save') {
     }
 
     $st = $pdo->prepare(
-      "SELECT ri.template_id AS report_template_id, ri.school_year, ri.period_label, sca.class_id, c.template_id AS class_template_id,
+      "SELECT ri.template_id AS report_template_id, ri.status AS report_status, ri.school_year, ri.period_label, sca.class_id, c.template_id AS class_template_id,
               tf.field_type, tf.meta_json
        FROM report_instances ri
        JOIN students s ON s.id=ri.student_id
@@ -3847,6 +3853,7 @@ if ($action === 'delegations_save') {
     $st->execute([$fieldId, $reportId]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException('Schülerfeld nicht gefunden oder nicht freigegeben.');
+    if ((string)($row['report_status'] ?? '') === 'final') throw new RuntimeException('Der Bericht ist abgeschlossen und kann nicht mehr geändert werden.');
 
     $classId = (int)($row['class_id'] ?? 0);
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
@@ -3947,6 +3954,7 @@ if ($action === 'delegations_save') {
     }
 
     $status = (string)($ri['status'] ?? 'draft');
+    if ($status === 'final') throw new RuntimeException('Der Bericht ist abgeschlossen und kann nicht wieder geöffnet werden.');
     if ($status === 'draft') {
       json_out(['ok' => true, 'status' => 'draft', 'changed' => false]);
     }

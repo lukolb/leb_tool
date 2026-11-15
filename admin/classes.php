@@ -670,6 +670,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $created = 0;
       $updated = 0;
       $archived = 0;
+      $reportsFinalized = 0;
       $studentsCopied = 0;
       $teachersCopied = 0;
       $gradeIncrement = $sourceSchoolYear !== $targetSchoolYear ? 1 : 0;
@@ -760,6 +761,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $pdo->prepare("UPDATE classes SET is_active=0, inactive_at=NOW() WHERE id=?")->execute([(int)$c['id']]);
+        $reportsFinalized += finalize_reports_for_class($pdo, (int)$c['id'], $userId);
         $archived++;
       }
 
@@ -778,6 +780,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'created' => $created,
         'updated' => $updated,
         'archived' => $archived,
+        'reports_finalized' => $reportsFinalized,
         'students_copied' => $studentsCopied,
         'teachers_copied' => $teachersCopied,
       ]);
@@ -787,6 +790,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         '{created}' => (string)$created,
         '{updated}' => (string)$updated,
         '{archived}' => (string)$archived,
+        '{reports}' => (string)$reportsFinalized,
       ]);
     }
 
@@ -802,6 +806,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
          SET is_active = CASE WHEN school_year=? AND period_label=? THEN 1 ELSE 0 END,
              inactive_at = CASE WHEN school_year=? AND period_label=? THEN NULL ELSE COALESCE(inactive_at, NOW()) END"
       )->execute([$schoolYear, $periodLabel, $schoolYear, $periodLabel]);
+      $reportsFinalized = finalize_reports_for_archived_classes($pdo, $userId);
 
       $stCount = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE school_year=? AND period_label=?");
       $stCount->execute([$schoolYear, $periodLabel]);
@@ -812,6 +817,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'school_year' => $schoolYear,
         'period_label' => $periodLabel,
         'active_classes' => $targetCount,
+        'reports_finalized' => $reportsFinalized,
       ]);
 
       $ok = strtr(
@@ -820,6 +826,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           '{year}' => $schoolYear,
           '{period}' => period_label_options()[$periodLabel] ?? $periodLabel,
           '{count}' => (string)$targetCount,
+          '{reports}' => (string)$reportsFinalized,
         ]
       );
     }
@@ -855,15 +862,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       // NEW: student wizard display per class (editable)
       $wizardDisplay = normalize_wizard_display((string)($_POST['student_wizard_display'] ?? 'groups'));
 
+      $pdo->beginTransaction();
       $pdo->prepare("UPDATE classes SET school_year=?, period_label=?, grade_level=?, label=?, name=?, template_id=?, student_wizard_display=?, is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
           ->execute([$schoolYear, $periodLabel, $gradeLevel, $label, $name, $templateId, $wizardDisplay, $isActive, $isActive, $classId]);
+      $reportsFinalized = $isActive === 0 ? finalize_reports_for_class($pdo, $classId, $userId) : 0;
 
       // Update assignments
       $teacherIds = $_POST['teacher_ids'] ?? [];
       if (!is_array($teacherIds)) $teacherIds = [];
       $teacherIds = array_values(array_filter(array_map('intval', $teacherIds), fn($x)=>$x>0));
 
-      $pdo->beginTransaction();
       $pdo->prepare("DELETE FROM user_class_assignments WHERE class_id=?")->execute([$classId]);
       foreach ($teacherIds as $tid) {
         $pdo->prepare("INSERT IGNORE INTO user_class_assignments (user_id, class_id) VALUES (?, ?)")->execute([$tid, $classId]);
@@ -876,7 +884,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'teacher_ids'=>$teacherIds,
         'template_id'=>$templateId,
         'student_wizard_display'=>$wizardDisplay,
-        'period_label'=>$periodLabel
+        'period_label'=>$periodLabel,
+        'reports_finalized'=>$reportsFinalized,
       ]);
       $ok = t('admin.classes.ok.updated');
     }
@@ -889,10 +898,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $row = $st->fetch();
       if (!$row) throw new RuntimeException(t('admin.classes.error.class_not_found'));
       $new = ((int)$row['is_active']===1) ? 0 : 1;
+      $pdo->beginTransaction();
       $pdo->prepare("UPDATE classes SET is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
           ->execute([$new, $new, $classId]);
-      audit('admin_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
-      $ok = $new ? t('admin.classes.ok.activated') : t('admin.classes.ok.deactivated');
+      $reportsFinalized = $new === 0 ? finalize_reports_for_class($pdo, $classId, $userId) : 0;
+      $pdo->commit();
+      audit('admin_class_toggle_active', $userId, [
+        'class_id'=>$classId,
+        'is_active'=>$new,
+        'reports_finalized'=>$reportsFinalized,
+      ]);
+      $ok = $new
+        ? t('admin.classes.ok.activated')
+        : str_replace(
+            '{count}',
+            (string)$reportsFinalized,
+            t('admin.classes.ok.deactivated_reports', 'Klasse archiviert; {count} Berichte wurden abgeschlossen.')
+          );
     }
 
     elseif ($action === 'delete_class') {

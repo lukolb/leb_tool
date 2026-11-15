@@ -2193,6 +2193,7 @@ render_teacher_header($pageTitle);
     'no_class_available' => t('teacher.entry.no_class_available'),
     'status_locked' => t('teacher.entry.status.locked'),
     'status_submitted' => t('teacher.entry.status.submitted'),
+    'status_final' => t('teacher.entry.status.final'),
     'status_draft' => t('teacher.entry.status.draft'),
     'meta_top' => t('teacher.entry.meta_top'),
     'template_fallback' => t('teacher.entry.template_fallback'),
@@ -5644,11 +5645,13 @@ render_teacher_header($pageTitle);
   }
 
   function isStudentInputLocked(status){
-    return String(status || 'draft') === 'locked';
+    return ['locked', 'final'].includes(String(status || 'draft'));
   }
 
   function isTeacherInputLocked(status){
-    return CHILD_MODE ? (!CHILD_EDIT_OVERRIDE && isStudentInputLocked(status)) : false;
+    const normalized = String(status || 'draft');
+    if (normalized === 'final') return true;
+    return CHILD_MODE ? (!CHILD_EDIT_OVERRIDE && isStudentInputLocked(normalized)) : false;
   }
 
   function currentStudents(){
@@ -5959,7 +5962,9 @@ render_teacher_header($pageTitle);
         + (idx === ui.activeStudentIndex ? ' active' : '')
         + (revokedCount > 0 ? ' delegation-review' : '');
       const status = String(s.status || 'draft');
-      const statusLbl = (status === 'locked')
+      const statusLbl = (status === 'final')
+        ? tEntry('status_final')
+        : (status === 'locked')
         ? tEntry('status_locked')
         : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
       const reportId = Number(s.report_instance_id || 0);
@@ -6040,7 +6045,7 @@ render_teacher_header($pageTitle);
         });
       });
     }
-    const unlockBtn = DELEGATED_MODE
+    const unlockBtn = DELEGATED_MODE || status === 'final'
       ? ''
       : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
 
@@ -6335,7 +6340,7 @@ render_teacher_header($pageTitle);
     let html = '';
     if (!MEETING_MODE) {
       let childMissingFields = Array.isArray(s.child_missing_fields) ? s.child_missing_fields.filter(x => String(x).trim() !== '') : [];
-      const unlockBtn = DELEGATED_MODE
+      const unlockBtn = DELEGATED_MODE || status === 'final'
         ? ''
         : `<div style="margin-top:8px;"><button class="btn secondary" type="button" data-unlock-child="${esc(reportId)}">${esc(tEntry('unlock_child'))}</button></div>`;
 
@@ -6494,7 +6499,9 @@ render_teacher_header($pageTitle);
       sCols.forEach(s => {
         const th = document.createElement('th');
         const status = String(s.status || 'draft');
-        const statusLbl = (status === 'locked')
+        const statusLbl = (status === 'final')
+          ? tEntry('status_final')
+          : (status === 'locked')
           ? tEntry('status_locked')
           : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
         th.innerHTML = `<div style="font-weight:800;">${esc(s.name)}</div><div class="muted" style="font-size:12px;">${esc(statusLbl)}</div>`;
@@ -6595,7 +6602,9 @@ render_teacher_header($pageTitle);
       const tdName = document.createElement('td');
       tdName.className = 'sticky';
       const status = String(s.status || 'draft');
-      const statusLbl = (status === 'locked')
+      const statusLbl = (status === 'final')
+        ? tEntry('status_final')
+        : (status === 'locked')
         ? tEntry('status_locked')
         : (status === 'submitted' ? tEntry('status_submitted') : tEntry('status_draft'));
       tdName.innerHTML = `<div style="font-weight:800;">${esc(s.name)}</div><div class="muted" style="font-size:12px;">${esc(statusLbl)}</div>`;

@@ -480,7 +480,7 @@ function load_students_for_export(PDO $pdo, int $classId, int $templateId, strin
   if ($onlyStudentId && $onlyStudentId > 0) $whereStudent = " AND s.id=? ";
 
   // onlySubmitted filter based on latest status join (LEFT JOIN report_instances)
-  $whereSubmitted = $onlySubmitted ? " AND ri.status='submitted' " : "";
+  $whereSubmitted = $onlySubmitted ? " AND ri.status IN ('submitted','final') " : "";
 
   $sql =
     "SELECT s.id, s.first_name, s.last_name, ri.status AS report_status
@@ -561,7 +561,10 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   if ($includeValues && $classFieldNames) {
     $classRiId = find_class_report_instance($pdo, $templateId, $classId, $schoolYear, (string)($row['period_label'] ?? 'Standard'));
     if ($classRiId) {
-      if (function_exists('apply_system_bindings')) {
+      $stClassStatus = $pdo->prepare("SELECT status FROM report_instances WHERE id=? LIMIT 1");
+      $stClassStatus->execute([(int)$classRiId]);
+      $classReportStatus = (string)($stClassStatus->fetchColumn() ?: '');
+      if ($classReportStatus !== 'final' && function_exists('apply_system_bindings')) {
         apply_system_bindings($pdo, (int)$classRiId);
       }
       $classValues = load_class_values($pdo, (int)$classRiId);
@@ -586,7 +589,7 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
 
     if ($includeValues && $ri) {
       // Keep existing system bindings behavior
-      if (function_exists('apply_system_bindings')) {
+      if ((string)($ri['status'] ?? '') !== 'final' && function_exists('apply_system_bindings')) {
         apply_system_bindings($pdo, (int)$ri['id']);
       }
       $values = load_values_for_report($pdo, (int)$ri['id']);

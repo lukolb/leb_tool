@@ -53,11 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$row) throw new RuntimeException('Klasse nicht gefunden.');
 
       $new = ((int)$row['is_active'] === 1) ? 0 : 1;
+      $pdo->beginTransaction();
       $pdo->prepare("UPDATE classes SET is_active=?, inactive_at=IF(?, NULL, COALESCE(inactive_at, NOW())) WHERE id=?")
-          ->execute([$new, $new, $classId]);
+        ->execute([$new, $new, $classId]);
+      $reportsFinalized = $new === 0 ? finalize_reports_for_class($pdo, $classId, $userId) : 0;
+      $pdo->commit();
 
-      audit('teacher_class_toggle_active', $userId, ['class_id'=>$classId,'is_active'=>$new]);
-      $ok = $new ? t('teacher.classes.alert_ok_active', 'Klasse aktiviert.') : t('teacher.classes.alert_ok_inactive', 'Klasse inaktiv gesetzt.');
+      audit('teacher_class_toggle_active', $userId, [
+        'class_id'=>$classId,
+        'is_active'=>$new,
+        'reports_finalized'=>$reportsFinalized,
+      ]);
+      $ok = $new
+        ? t('teacher.classes.alert_ok_active', 'Klasse aktiviert.')
+        : str_replace(
+            '{count}',
+            (string)$reportsFinalized,
+            t('teacher.classes.alert_ok_inactive_reports', 'Klasse archiviert; {count} Berichte wurden abgeschlossen.')
+          );
     }
 
     elseif ($action === 'toggle_tts') {
@@ -105,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
   } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     $err = $e->getMessage();
   }
 }

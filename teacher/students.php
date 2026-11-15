@@ -1283,6 +1283,7 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
 
   $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
   foreach ($statusMap as $status) {
+    if ($status === 'final') $status = 'submitted';
     if (!isset($counts[$status])) continue;
     $counts[$status]++;
   }
@@ -1392,7 +1393,7 @@ function load_student_form_value_counts(PDO $pdo, array $studentIds): array {
 function child_status_label_key(?string $status, ?string $progressStatus = null): string {
   $status = (string)$status;
   $progressStatus = (string)$progressStatus;
-  if ($status === 'submitted') return 'teacher.students.child_status_submitted';
+  if ($status === 'submitted' || $status === 'final') return 'teacher.students.child_status_submitted';
   if ($status === 'draft') {
     return $progressStatus === 'in_progress' || $progressStatus === 'complete'
       ? 'teacher.students.child_status_in_progress'
@@ -2619,7 +2620,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
     function childStatusView(status, progressStatus) {
       const rawStatus = String(status || '');
       const rawProgress = String(progressStatus || '');
-      if (rawStatus === 'submitted') return { key: 'submitted', badge: 'success' };
+      if (rawStatus === 'submitted' || rawStatus === 'final') return { key: 'submitted', badge: 'success' };
       if (rawStatus === 'draft') {
         if (rawProgress === 'in_progress' || rawProgress === 'complete') return { key: 'in_progress', badge: 'blue' };
         return { key: 'not_started', badge: 'warn' };

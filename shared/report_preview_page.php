@@ -93,7 +93,83 @@ function report_preview_report_label(array $report): string {
   return $label;
 }
 
+function report_preview_page_url(bool $isAdmin, array $params = []): string {
+  $clean = [];
+  foreach ($params as $key => $value) {
+    if ($value === null || $value === '' || $value === 0 || $value === '0') continue;
+    $clean[$key] = $value;
+  }
+  $path = ($isAdmin ? 'admin' : 'teacher') . '/report_preview.php';
+  return url($path . ($clean ? ('?' . http_build_query($clean)) : ''));
+}
+
 $userId = (int)($u['id'] ?? 0);
+$pageError = '';
+$pageOk = ((int)($_GET['deleted'] ?? 0) === 1)
+  ? t('teacher.report_preview.delete_success', 'Der Bericht wurde vollständig gelöscht.')
+  : '';
+
+if ((string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+  try {
+    csrf_verify();
+    $action = (string)($_POST['action'] ?? '');
+    if ($action !== 'delete_report') throw new RuntimeException(t('teacher.report_preview.delete_invalid', 'Ungültige Berichtsaktion.'));
+    if (!$isAdmin) throw new RuntimeException(t('teacher.report_preview.delete_admin_only', 'Nur Administratoren dürfen Berichte löschen.'));
+
+    $deleteReportId = max(0, (int)($_POST['report_id'] ?? 0));
+    $confirmAck = (int)($_POST['confirm_ack'] ?? 0) === 1;
+    $confirmText = trim((string)($_POST['confirm_text'] ?? ''));
+    $mustMatch = 'BERICHT-' . $deleteReportId;
+    if ($deleteReportId <= 0 || !$confirmAck || !hash_equals($mustMatch, $confirmText)) {
+      throw new RuntimeException(str_replace('{value}', $mustMatch, t('teacher.report_preview.delete_confirmation_failed', 'Sicherheitsprüfung fehlgeschlagen. Geben Sie exakt {value} ein.')));
+    }
+
+    $stDeleteReport = $pdo->prepare(
+      "SELECT ri.id, COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+              ri.school_year, ri.period_label, ri.template_id
+       FROM report_instances ri
+       INNER JOIN students s ON s.id=ri.student_id
+       WHERE ri.id=? AND ri.student_id IS NOT NULL
+       LIMIT 1"
+    );
+    $stDeleteReport->execute([$deleteReportId]);
+    $deleteReport = $stDeleteReport->fetch(PDO::FETCH_ASSOC);
+    if (!$deleteReport) throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
+
+    $canonicalStudentId = (int)($deleteReport['canonical_student_id'] ?? 0);
+    $pdo->beginTransaction();
+    if (db_has_table($pdo, 'parent_portal_links')) {
+      $pdo->prepare("DELETE FROM parent_portal_links WHERE report_instance_id=?")->execute([$deleteReportId]);
+    }
+    if (db_has_table($pdo, 'field_value_history')) {
+      $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$deleteReportId]);
+    }
+    $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$deleteReportId]);
+    $stDelete = $pdo->prepare("DELETE FROM report_instances WHERE id=? AND student_id IS NOT NULL");
+    $stDelete->execute([$deleteReportId]);
+    if ($stDelete->rowCount() !== 1) {
+      throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
+    }
+    audit('admin_report_delete', $userId, [
+      'deleted_report_instance_id' => $deleteReportId,
+      'student_id' => $canonicalStudentId,
+      'school_year' => (string)($deleteReport['school_year'] ?? ''),
+      'period_label' => (string)($deleteReport['period_label'] ?? ''),
+      'template_id' => (int)($deleteReport['template_id'] ?? 0),
+    ]);
+    $pdo->commit();
+    header('Location: ' . report_preview_page_url(true, [
+      'student_id' => $canonicalStudentId,
+      'class_id' => max(0, (int)($_GET['class_id'] ?? 0)),
+      'q' => trim((string)($_GET['q'] ?? '')),
+      'deleted' => 1,
+    ]));
+    exit;
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    $pageError = $e->getMessage();
+  }
+}
 
 $studentSql =
   "SELECT s.id AS canonical_student_id, s.first_name, s.last_name, s.is_active
@@ -105,8 +181,9 @@ if (!$isAdmin) {
     " AND EXISTS (
         SELECT 1
         FROM student_class_assignments sca
+        INNER JOIN classes c ON c.id=sca.class_id AND c.is_active=1
         INNER JOIN user_class_assignments uca ON uca.class_id=sca.class_id
-        WHERE sca.student_id=s.id AND uca.user_id=?
+        WHERE sca.student_id=s.id AND sca.is_active=1 AND uca.user_id=?
       )";
   $studentParams[] = $userId;
 }
@@ -119,11 +196,13 @@ $studentsByCanonical = [];
 foreach ($studentChoices as &$studentChoice) {
   $canonicalId = (int)($studentChoice['canonical_student_id'] ?? 0);
   $studentChoice['class_labels'] = [];
+  $studentChoice['current_class_ids'] = [];
   $studentChoice['has_active_assignment'] = false;
   if ($canonicalId > 0) $studentsByCanonical[$canonicalId] = &$studentChoice;
 }
 unset($studentChoice);
 
+$currentClassOptions = [];
 if ($studentsByCanonical) {
   $canonicalIds = array_keys($studentsByCanonical);
   $in = implode(',', array_fill(0, count($canonicalIds), '?'));
@@ -153,9 +232,15 @@ if ($studentsByCanonical) {
     }
     if ((int)($assignment['is_active'] ?? 0) === 1 && (int)($assignment['class_is_active'] ?? 0) === 1) {
       $studentsByCanonical[$sid]['has_active_assignment'] = true;
+      $currentClassId = (int)($assignment['class_id'] ?? 0);
+      if ($currentClassId > 0) {
+        $studentsByCanonical[$sid]['current_class_ids'][$currentClassId] = $currentClassId;
+        $currentClassOptions[$currentClassId] = $classLabel;
+      }
     }
   }
 }
+natcasesort($currentClassOptions);
 
 $requestedReportId = max(0, (int)($_GET['report_id'] ?? 0));
 $requestedStudentId = max(0, (int)($_GET['student_id'] ?? 0));
@@ -188,12 +273,63 @@ if ($requestedReportId > 0) {
   }
 }
 
-$selectedStudentId = $requestedStudentId;
-if ($selectedStudentId <= 0 || !isset($studentsByCanonical[$selectedStudentId])) {
-  $selectedStudentId = $studentChoices ? (int)($studentChoices[0]['canonical_student_id'] ?? 0) : 0;
+$selectedClassFilter = max(0, (int)($_GET['class_id'] ?? 0));
+if ($selectedClassFilter > 0 && !isset($currentClassOptions[$selectedClassFilter])) $selectedClassFilter = 0;
+$studentSearch = trim((string)($_GET['q'] ?? ''));
+$studentSearchNormalized = mb_strtolower(preg_replace('/\s+/u', ' ', $studentSearch) ?? $studentSearch, 'UTF-8');
+$filteredStudentChoices = array_values(array_filter(
+  $studentChoices,
+  static function(array $student) use ($selectedClassFilter, $studentSearchNormalized): bool {
+    $currentClassIds = is_array($student['current_class_ids'] ?? null) ? $student['current_class_ids'] : [];
+    if ($selectedClassFilter > 0 && !isset($currentClassIds[$selectedClassFilter])) return false;
+    if ($studentSearchNormalized === '') return true;
+    $first = trim((string)($student['first_name'] ?? ''));
+    $last = trim((string)($student['last_name'] ?? ''));
+    $haystack = mb_strtolower($first . ' ' . $last . ' ' . $last . ' ' . $first, 'UTF-8');
+    return mb_strpos($haystack, $studentSearchNormalized, 0, 'UTF-8') !== false;
+  }
+));
+
+if ($requestedReportId > 0 && $requestedStudentId > 0) {
+  $requestedStudentVisible = false;
+  foreach ($filteredStudentChoices as $studentChoice) {
+    if ((int)($studentChoice['canonical_student_id'] ?? 0) === $requestedStudentId) {
+      $requestedStudentVisible = true;
+      break;
+    }
+  }
+  if (!$requestedStudentVisible) {
+    $selectedClassFilter = 0;
+    $studentSearch = '';
+    $studentSearchNormalized = '';
+    $filteredStudentChoices = $studentChoices;
+  }
 }
 
-$studentOrderIds = array_values(array_map(static fn(array $r): int => (int)($r['canonical_student_id'] ?? 0), $studentChoices));
+$filteredActiveStudents = array_values(array_filter(
+  $filteredStudentChoices,
+  static fn(array $student): bool => (bool)($student['has_active_assignment'] ?? false)
+));
+$filteredArchivedStudents = $isAdmin ? array_values(array_filter(
+  $filteredStudentChoices,
+  static fn(array $student): bool => !(bool)($student['has_active_assignment'] ?? false)
+)) : [];
+$studentSelectGroups = [];
+if ($filteredActiveStudents) {
+  $studentSelectGroups[t('teacher.report_preview.active_students_group', 'Aktuelle Schüler')] = $filteredActiveStudents;
+}
+if ($filteredArchivedStudents) {
+  $studentSelectGroups[t('teacher.report_preview.archived_students_group', 'Archivierte Schüler')] = $filteredArchivedStudents;
+}
+$groupedStudentChoices = array_merge($filteredActiveStudents, $filteredArchivedStudents);
+
+$selectedStudentId = $requestedStudentId;
+$filteredStudentIds = array_values(array_map(static fn(array $r): int => (int)($r['canonical_student_id'] ?? 0), $groupedStudentChoices));
+if ($selectedStudentId <= 0 || !in_array($selectedStudentId, $filteredStudentIds, true)) {
+  $selectedStudentId = $groupedStudentChoices ? (int)($groupedStudentChoices[0]['canonical_student_id'] ?? 0) : 0;
+}
+
+$studentOrderIds = $filteredStudentIds;
 $selectedStudentPos = array_search($selectedStudentId, $studentOrderIds, true);
 if ($selectedStudentPos === false) $selectedStudentPos = 0;
 $prevStudentId = ($selectedStudentPos > 0) ? (int)$studentOrderIds[$selectedStudentPos - 1] : 0;
@@ -266,6 +402,7 @@ $previewValues = [];
 $previewFieldMeta = [];
 $previewTemplateName = '';
 $previewClassLabel = '';
+$previewExportFilename = '';
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -305,6 +442,10 @@ if ($ri) {
       $previewTemplateName .= ($previewTemplateName !== '' ? ' ' : '') . 'v' . (int)$ri['template_version'];
     }
     $previewClassLabel = trim((string)($ri['class_label'] ?? ''));
+    $filenameBase = trim($previewStudentName . '-' . $selectedSchoolYear . '-' . $selectedPeriodLabel . '-Bericht-' . $previewReportId);
+    $filenameBase = preg_replace('/[^\p{L}\p{N}._-]+/u', '-', $filenameBase) ?? '';
+    $filenameBase = trim($filenameBase, '-_.');
+    $previewExportFilename = ($filenameBase !== '' ? $filenameBase : ('Bericht-' . $previewReportId)) . '.pdf';
     $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
 
     $stVals = $pdo->prepare(
@@ -403,6 +544,9 @@ if ($ri) {
 
 <style>
   .rp-browser{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
+  .rp-filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 16px;padding:12px;background:#f8fafc;border:1px solid var(--border);border-radius:10px}
+  .rp-filters .rp-search{min-width:220px;flex:1 1 260px}
+  .rp-filters .rp-class-filter{min-width:190px;flex:0 1 260px}
   .rp-student-panel{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:16px}
   .rp-student-panel .input{width:100%}
   .rp-class-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
@@ -423,21 +567,52 @@ if ($ri) {
   <h1 style="margin:0 0 6px;"><?=h(t('teacher.report_preview.title', 'Berichtsvorschau'))?></h1>
   <p class="muted" style="margin:0 0 18px;"><?=h(t('teacher.report_preview.intro', 'Wählen Sie einen Schüler und anschließend einen seiner gespeicherten Berichte. Die Berichte werden unabhängig von der aktuellen Klassenzuordnung geladen.'))?></p>
 
+  <?php if ($pageError !== ''): ?><div class="alert danger" style="margin-bottom:14px;"><?=h($pageError)?></div><?php endif; ?>
+  <?php if ($pageOk !== ''): ?><div class="alert success" style="margin-bottom:14px;"><?=h($pageOk)?></div><?php endif; ?>
+
+  <form method="get" class="rp-filters">
+    <div class="rp-search">
+      <label class="label" for="rpStudentSearch"><?=h(t('teacher.report_preview.search_label', 'Schüler suchen'))?></label>
+      <input id="rpStudentSearch" class="input" type="search" name="q" value="<?=h($studentSearch)?>" placeholder="<?=h(t('teacher.report_preview.search_placeholder', 'Vor- oder Nachname'))?>">
+    </div>
+    <div class="rp-class-filter">
+      <label class="label" for="rpClassFilter"><?=h(t('teacher.report_preview.current_class_filter', 'Aktuelle Klasse'))?></label>
+      <select id="rpClassFilter" class="input" name="class_id">
+        <option value="0"><?=h(t('teacher.report_preview.all_current_classes', 'Alle aktuellen Klassen'))?></option>
+        <?php foreach ($currentClassOptions as $classId => $classLabel): ?>
+          <option value="<?=h((string)$classId)?>" <?= (int)$classId === $selectedClassFilter ? 'selected' : '' ?>><?=h($classLabel)?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <button class="btn" type="submit"><?=h(t('teacher.report_preview.apply_filter', 'Filtern'))?></button>
+    <?php if ($studentSearch !== '' || $selectedClassFilter > 0): ?>
+      <a class="btn secondary" href="<?=h(report_preview_page_url($isAdmin))?>"><?=h(t('teacher.report_preview.reset_filter', 'Filter zurücksetzen'))?></a>
+    <?php endif; ?>
+    <span class="muted" style="margin-left:auto;align-self:center;"><?=h(str_replace('{count}', (string)count($filteredStudentChoices), t('teacher.report_preview.filter_count', '{count} Schüler')))?></span>
+  </form>
+
   <div class="rp-browser">
     <section class="rp-student-panel">
       <form method="get">
         <label class="label" for="rpStudent"><?=h(t('teacher.report_preview.student', 'Schüler'))?></label>
-        <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()">
-          <?php foreach ($studentChoices as $s):
-            $sid = (int)($s['canonical_student_id'] ?? 0);
-            $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
-            $active = (bool)($s['has_active_assignment'] ?? false);
-            $classes = array_values($s['class_labels'] ?? []);
-            $classSuffix = $classes ? (' · ' . implode(', ', array_slice($classes, 0, 2))) : '';
-            ?>
-            <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
-              <?=h($nm . $classSuffix . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
-            </option>
+        <input type="hidden" name="class_id" value="<?=h((string)$selectedClassFilter)?>">
+        <input type="hidden" name="q" value="<?=h($studentSearch)?>">
+        <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()" <?= !$filteredStudentChoices ? 'disabled' : '' ?>>
+          <?php if (!$filteredStudentChoices): ?><option><?=h(t('teacher.report_preview.no_students_match', 'Keine passenden Schüler gefunden'))?></option><?php endif; ?>
+          <?php foreach ($studentSelectGroups as $groupLabel => $groupStudents): ?>
+            <optgroup label="<?=h($groupLabel)?>">
+              <?php foreach ($groupStudents as $s):
+                $sid = (int)($s['canonical_student_id'] ?? 0);
+                $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
+                $active = (bool)($s['has_active_assignment'] ?? false);
+                $classes = array_values($s['class_labels'] ?? []);
+                $classSuffix = $classes ? (' · ' . implode(', ', array_slice($classes, 0, 2))) : '';
+                ?>
+                <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
+                  <?=h($nm . $classSuffix . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
+                </option>
+              <?php endforeach; ?>
+            </optgroup>
           <?php endforeach; ?>
         </select>
         <noscript><button class="btn" type="submit" style="margin-top:8px;"><?=h(t('ui.save', 'Anzeigen'))?></button></noscript>
@@ -457,8 +632,8 @@ if ($ri) {
 
       <div class="actions" style="justify-content:space-between;gap:8px;margin-top:16px;">
         <?php
-          $prevUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$prevStudentId);
-          $nextUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$nextStudentId);
+          $prevUrl = report_preview_page_url($isAdmin, ['student_id'=>$prevStudentId, 'class_id'=>$selectedClassFilter, 'q'=>$studentSearch]);
+          $nextUrl = report_preview_page_url($isAdmin, ['student_id'=>$nextStudentId, 'class_id'=>$selectedClassFilter, 'q'=>$studentSearch]);
         ?>
         <button class="btn secondary" type="button"
           <?= $prevStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($prevUrl)) . '"' : 'disabled aria-disabled="true"' ?>
@@ -482,7 +657,7 @@ if ($ri) {
             $statusLabel = $statusMap[$status] ?? ($status !== '' ? strtoupper($status) : '—');
             $templateLabel = trim((string)($report['template_name'] ?? ''));
             if ((int)($report['template_version'] ?? 0) > 0) $templateLabel .= ($templateLabel !== '' ? ' ' : '') . 'v' . (int)$report['template_version'];
-            $reportUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $selectedStudentId . '&report_id=' . $rid);
+            $reportUrl = report_preview_page_url($isAdmin, ['student_id'=>$selectedStudentId, 'report_id'=>$rid, 'class_id'=>$selectedClassFilter, 'q'=>$studentSearch]);
             $updatedFormat = ui_lang() === 'en' ? 'm/d/Y g:i A' : 'd.m.Y H:i';
             ?>
             <a class="rp-report-item <?= $rid === $selectedReportId ? 'active' : '' ?>" href="<?=h($reportUrl)?>" <?= $rid === $selectedReportId ? 'aria-current="true"' : '' ?>>
@@ -511,6 +686,36 @@ if ($ri) {
       <?php if ($previewClassLabel !== ''): ?><span><?=h(t('teacher.report_preview.class_context', 'Klasse des Berichts'))?>: <?=h($previewClassLabel)?></span><?php endif; ?>
       <span><?=h(t('teacher.report_preview.status', 'Status'))?>: <strong><?=h($previewStatusLabel)?></strong></span>
     </div>
+    <div class="actions" style="justify-content:flex-start;align-items:flex-start;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <button id="rpDownload" class="btn" type="button" disabled><?=h(t('teacher.report_preview.export_pdf', 'Diesen Bericht als PDF exportieren'))?></button>
+      <?php if ($isAdmin):
+        $deleteConfirmationValue = 'BERICHT-' . $previewReportId;
+        $deleteActionUrl = report_preview_page_url(true, [
+          'student_id'=>$selectedStudentId,
+          'report_id'=>$previewReportId,
+          'class_id'=>$selectedClassFilter,
+          'q'=>$studentSearch,
+        ]);
+        ?>
+        <details style="max-width:620px;">
+          <summary class="btn danger" style="cursor:pointer;list-style:none;"><?=h(t('teacher.report_preview.delete_open', 'Bericht löschen…'))?></summary>
+          <form method="post" action="<?=h($deleteActionUrl)?>" class="card" style="margin-top:8px;border-color:#dc2626;background:#fff7f7;">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="action" value="delete_report">
+            <input type="hidden" name="report_id" value="<?=h((string)$previewReportId)?>">
+            <strong><?=h(t('teacher.report_preview.delete_heading', 'Sicherheitsprüfung vor dem Löschen'))?></strong>
+            <p style="margin:8px 0;"><?=h(t('teacher.report_preview.delete_warning', 'Nur dieser Bericht wird einschließlich seiner Feldwerte, Änderungshistorie und Elternfreigaben endgültig gelöscht. Der Schüler und andere Berichte bleiben erhalten.'))?></p>
+            <label style="display:flex;gap:8px;align-items:flex-start;margin:8px 0;">
+              <input type="checkbox" name="confirm_ack" value="1" required>
+              <span><?=h(t('teacher.report_preview.delete_ack', 'Ich habe geprüft, dass genau der angezeigte Bericht gelöscht werden soll.'))?></span>
+            </label>
+            <label class="label" for="rpDeleteConfirm"><?=h(str_replace('{value}', $deleteConfirmationValue, t('teacher.report_preview.delete_type', 'Zur Bestätigung exakt {value} eingeben:')))?></label>
+            <input id="rpDeleteConfirm" class="input" name="confirm_text" autocomplete="off" required pattern="<?=h($deleteConfirmationValue)?>">
+            <button class="btn danger" type="submit" style="margin-top:10px;"><?=h(t('teacher.report_preview.delete_confirm', 'Diesen Bericht endgültig löschen'))?></button>
+          </form>
+        </details>
+      <?php endif; ?>
+    </div>
   <?php endif; ?>
 </div>
 
@@ -538,11 +743,17 @@ if ($ri) {
   const prevStudentId = <?= json_encode($prevStudentId) ?>;
   const nextStudentId = <?= json_encode($nextStudentId) ?>;
   const previewBasePath = <?= json_encode(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php')) ?>;
+  const selectedClassFilter = <?= json_encode($selectedClassFilter) ?>;
+  const studentSearch = <?= json_encode($studentSearch) ?>;
+  const exportFilename = <?= json_encode($previewExportFilename) ?>;
+  const downloadButton = document.getElementById('rpDownload');
 
   function goToStudent(studentId){
     if (!studentId) return;
     const u = new URL(previewBasePath, window.location.origin);
     u.searchParams.set('student_id', String(studentId));
+    if (Number(selectedClassFilter) > 0) u.searchParams.set('class_id', String(selectedClassFilter));
+    if (String(studentSearch).trim() !== '') u.searchParams.set('q', String(studentSearch));
     window.location.href = u.toString();
   }
 
@@ -1080,6 +1291,21 @@ if ($ri) {
       await updateFieldAppearancesWithFonts(form, editable, defaultFont || undefined);
       applyRadioCrossAppearances(editable, form);
       const renderedBytes = await editable.save();
+
+      if (downloadButton) {
+        downloadButton.disabled = false;
+        downloadButton.addEventListener('click', () => {
+          const blob = new Blob([renderedBytes], { type: 'application/pdf' });
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = exportFilename || 'Bericht.pdf';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        }, { once: true });
+      }
 
       const pdf = await pdfjsLib.getDocument({ data: renderedBytes }).promise;
       preview.innerHTML = '';

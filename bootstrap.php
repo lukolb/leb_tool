@@ -743,6 +743,153 @@ function cleanup_duplicate_student_report_instances(PDO $pdo): void {
   report_cleanup_delete_instances($pdo, $deleteIds);
 }
 
+function report_status_supports_final(PDO $pdo): bool {
+  if (!db_has_table($pdo, 'report_instances') || !db_has_column($pdo, 'report_instances', 'status')) return false;
+  $st = $pdo->prepare(
+    "SELECT COLUMN_TYPE
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='report_instances' AND COLUMN_NAME='status'
+     LIMIT 1"
+  );
+  $st->execute();
+  $columnType = strtolower((string)($st->fetchColumn() ?: ''));
+  return $columnType !== '' && strpos($columnType, "'final'") !== false;
+}
+
+function ensure_report_final_status(PDO $pdo): bool {
+  if (report_status_supports_final($pdo)) return true;
+  try {
+    $pdo->exec(
+      "ALTER TABLE report_instances
+       MODIFY COLUMN status ENUM('draft','submitted','locked','final')
+       COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft'"
+    );
+  } catch (Throwable $e) {
+    return false;
+  }
+  return report_status_supports_final($pdo);
+}
+
+function finalize_reports_for_class(PDO $pdo, int $classId, int $finalizedByUserId = 0): int {
+  if ($classId <= 0 || !report_status_supports_final($pdo)) return 0;
+  $stClass = $pdo->prepare(
+    "SELECT id, school_year, period_label
+     FROM classes
+     WHERE id=?
+     LIMIT 1"
+  );
+  $stClass->execute([$classId]);
+  $class = $stClass->fetch(PDO::FETCH_ASSOC);
+  if (!$class) return 0;
+
+  $schoolYear = trim((string)($class['school_year'] ?? ''));
+  $periodLabel = normalize_class_period_label((string)($class['period_label'] ?? 'Standard'));
+  if ($schoolYear === '') return 0;
+
+  $stStudents = $pdo->prepare(
+    "UPDATE report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     INNER JOIN student_class_assignments sca
+       ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id) AND sca.class_id=?
+     SET ri.status='final',
+         ri.locked_by_user_id=IF(? > 0, ?, ri.locked_by_user_id),
+         ri.locked_at=COALESCE(ri.locked_at, NOW()),
+         ri.updated_at=ri.updated_at
+     WHERE ri.school_year=? AND ri.period_label=? AND ri.status<>'final'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM student_class_assignments active_sca
+         INNER JOIN classes active_c
+           ON active_c.id=active_sca.class_id
+          AND active_c.is_active=1
+          AND active_c.school_year=ri.school_year
+          AND active_c.period_label=ri.period_label
+         LEFT JOIN school_periods active_sp
+           ON active_sp.school_year=active_c.school_year
+          AND active_sp.period_label=active_c.period_label
+         WHERE active_sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+           AND active_sca.is_active=1
+           AND (active_sp.id IS NULL OR active_sp.is_active=1)
+       )"
+  );
+  $stStudents->execute([$classId, $finalizedByUserId, $finalizedByUserId, $schoolYear, $periodLabel]);
+  $changed = $stStudents->rowCount();
+
+  $stClassReport = $pdo->prepare(
+    "UPDATE report_instances
+     SET status='final',
+         locked_by_user_id=IF(? > 0, ?, locked_by_user_id),
+         locked_at=COALESCE(locked_at, NOW()),
+         updated_at=updated_at
+     WHERE student_id IS NULL AND school_year=? AND period_label=? AND status<>'final'"
+  );
+  $stClassReport->execute([
+    $finalizedByUserId,
+    $finalizedByUserId,
+    $schoolYear,
+    class_report_period_label($classId, $periodLabel),
+  ]);
+
+  return $changed + $stClassReport->rowCount();
+}
+
+function finalize_reports_for_archived_classes(PDO $pdo, int $finalizedByUserId = 0): int {
+  if (!report_status_supports_final($pdo)) return 0;
+  $st = $pdo->query(
+    "SELECT DISTINCT c.id
+     FROM classes c
+     LEFT JOIN school_periods sp
+       ON sp.school_year=c.school_year AND sp.period_label=c.period_label
+     WHERE (c.is_active=0 OR (sp.id IS NOT NULL AND sp.is_active=0))
+       AND (
+         EXISTS (
+           SELECT 1
+           FROM student_class_assignments sca
+           INNER JOIN students s
+             ON COALESCE(NULLIF(s.master_student_id, 0), s.id)=sca.student_id
+           INNER JOIN report_instances ri
+             ON ri.student_id=s.id
+            AND ri.school_year=c.school_year
+            AND ri.period_label=c.period_label
+            AND ri.status<>'final'
+           WHERE sca.class_id=c.id
+             AND NOT EXISTS (
+               SELECT 1
+               FROM student_class_assignments active_sca
+               INNER JOIN classes active_c
+                 ON active_c.id=active_sca.class_id
+                AND active_c.is_active=1
+                AND active_c.school_year=ri.school_year
+                AND active_c.period_label=ri.period_label
+               LEFT JOIN school_periods active_sp
+                 ON active_sp.school_year=active_c.school_year
+                AND active_sp.period_label=active_c.period_label
+               WHERE active_sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+                 AND active_sca.is_active=1
+                 AND (active_sp.id IS NULL OR active_sp.is_active=1)
+             )
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM report_instances class_ri
+           WHERE class_ri.student_id IS NULL
+             AND class_ri.school_year=c.school_year
+             AND class_ri.status<>'final'
+             AND class_ri.period_label IN (
+               CONCAT('__class__:', c.id),
+               CONCAT('__class__:', c.id, ':', c.period_label)
+             )
+         )
+       )
+     ORDER BY c.id ASC"
+  );
+  $changed = 0;
+  foreach ($st->fetchAll(PDO::FETCH_COLUMN) ?: [] as $classId) {
+    $changed += finalize_reports_for_class($pdo, (int)$classId, $finalizedByUserId);
+  }
+  return $changed;
+}
+
 // --------------------
 // Schema (additive migrations)
 // --------------------
@@ -1144,6 +1291,12 @@ function ensure_schema(PDO $pdo): void {
     }
     if (!db_has_index($pdo, 'students', 'idx_students_login_code')) {
       $pdo->exec("CREATE INDEX idx_students_login_code ON students (login_code)");
+    }
+
+    // --- report_instances: completed reports for archived classes/terms
+    // Add the final state first, then bring older archived data up to date.
+    if (ensure_report_final_status($pdo)) {
+      finalize_reports_for_archived_classes($pdo);
     }
 
     // --- report_instances: normalize invalid rows and remove duplicates by canonical student + semester
@@ -2546,7 +2699,7 @@ function teacher_notification_summary(PDO $pdo, int $userId): array {
   $taskOpenMap = [];
   if (db_has_table($pdo, 'report_instances') && db_has_column($pdo, 'report_instances', 'status')) {
     $tSt = $pdo->prepare(
-      "SELECT sca.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status='locked' THEN 0 ELSE 1 END) AS open
+      "SELECT sca.class_id, COUNT(*) AS total, SUM(CASE WHEN ri.status IN ('locked','final') THEN 0 ELSE 1 END) AS open
 "
       . "FROM report_instances ri
 "

@@ -325,7 +325,7 @@ if ($token === '') {
 
 $st = $pdo->prepare(
   "SELECT ppl.*, s.first_name, s.last_name, c.id AS class_id, c.school_year, c.grade_level, c.label, c.name,\n" .
-  "       ri.template_id, ri.period_label, ri.school_year AS report_school_year\n" .
+  "       ri.template_id, ri.period_label, ri.school_year AS report_school_year, ri.status AS report_status\n" .
   "FROM parent_portal_links ppl\n" .
   "JOIN students s ON s.id=ppl.student_id\n" .
   "JOIN report_instances ri ON ri.id=ppl.report_instance_id\n" .
@@ -379,7 +379,7 @@ $meetingForm = [
   'message' => '',
 ];
 
-if ($canPreview) {
+if ($canPreview && (string)($link['report_status'] ?? '') !== 'final') {
   apply_system_bindings($pdo, (int)$link['report_instance_id']);
 }
 
