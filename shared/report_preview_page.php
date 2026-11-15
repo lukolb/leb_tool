@@ -195,7 +195,9 @@ $studentChoices = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $studentsByCanonical = [];
 foreach ($studentChoices as &$studentChoice) {
   $canonicalId = (int)($studentChoice['canonical_student_id'] ?? 0);
-  $studentChoice['class_labels'] = [];
+  $studentChoice['current_class_label'] = '';
+  $studentChoice['latest_class_label'] = '';
+  $studentChoice['display_class_label'] = '';
   $studentChoice['current_class_ids'] = [];
   $studentChoice['has_active_assignment'] = false;
   if ($canonicalId > 0) $studentsByCanonical[$canonicalId] = &$studentChoice;
@@ -218,7 +220,7 @@ if ($studentsByCanonical) {
   }
   $assignmentSql .=
     " WHERE sca.student_id IN ($in)
-      ORDER BY c.is_active DESC, c.school_year DESC,
+      ORDER BY c.school_year DESC,
                CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC";
   $assignmentParams = array_merge($assignmentParams, $canonicalIds);
   $stAssignments = $pdo->prepare($assignmentSql);
@@ -227,11 +229,14 @@ if ($studentsByCanonical) {
     $sid = (int)($assignment['student_id'] ?? 0);
     if (!isset($studentsByCanonical[$sid])) continue;
     $classLabel = report_preview_class_display($assignment);
-    if ($classLabel !== '' && !in_array($classLabel, $studentsByCanonical[$sid]['class_labels'], true)) {
-      $studentsByCanonical[$sid]['class_labels'][] = $classLabel;
+    if ($classLabel !== '' && $studentsByCanonical[$sid]['latest_class_label'] === '') {
+      $studentsByCanonical[$sid]['latest_class_label'] = $classLabel;
     }
     if ((int)($assignment['is_active'] ?? 0) === 1 && (int)($assignment['class_is_active'] ?? 0) === 1) {
       $studentsByCanonical[$sid]['has_active_assignment'] = true;
+      if ($classLabel !== '' && $studentsByCanonical[$sid]['current_class_label'] === '') {
+        $studentsByCanonical[$sid]['current_class_label'] = $classLabel;
+      }
       $currentClassId = (int)($assignment['class_id'] ?? 0);
       if ($currentClassId > 0) {
         $studentsByCanonical[$sid]['current_class_ids'][$currentClassId] = $currentClassId;
@@ -240,6 +245,10 @@ if ($studentsByCanonical) {
     }
   }
 }
+foreach ($studentChoices as &$studentChoice) {
+  $studentChoice['display_class_label'] = (string)($studentChoice['current_class_label'] ?: $studentChoice['latest_class_label']);
+}
+unset($studentChoice);
 natcasesort($currentClassOptions);
 
 $requestedReportId = max(0, (int)($_GET['report_id'] ?? 0));
@@ -605,8 +614,8 @@ if ($ri) {
                 $sid = (int)($s['canonical_student_id'] ?? 0);
                 $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
                 $active = (bool)($s['has_active_assignment'] ?? false);
-                $classes = array_values($s['class_labels'] ?? []);
-                $classSuffix = $classes ? (' · ' . implode(', ', array_slice($classes, 0, 2))) : '';
+                $displayClassLabel = trim((string)($s['display_class_label'] ?? ''));
+                $classSuffix = $displayClassLabel !== '' ? (' · ' . $displayClassLabel) : '';
                 ?>
                 <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
                   <?=h($nm . $classSuffix . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
@@ -620,12 +629,11 @@ if ($ri) {
 
       <?php $selectedStudent = $studentsByCanonical[$selectedStudentId] ?? null; ?>
       <?php if ($selectedStudent): ?>
-        <div class="rp-class-tags" aria-label="<?=h(t('teacher.report_preview.class_assignments', 'Klassenzuordnungen'))?>">
-          <?php foreach (array_values($selectedStudent['class_labels'] ?? []) as $classLabel): ?>
-            <span class="rp-class-tag"><?=h($classLabel)?></span>
-          <?php endforeach; ?>
-          <?php if (empty($selectedStudent['class_labels'])): ?>
-            <span class="muted"><?=h(t('teacher.report_preview.no_class_assignment', 'Keine aktuelle Klassenzuordnung'))?></span>
+        <div class="rp-class-tags" aria-label="<?=h(t('teacher.report_preview.class_assignments', 'Klassenzuordnung'))?>">
+          <?php if (trim((string)($selectedStudent['display_class_label'] ?? '')) !== ''): ?>
+            <span class="rp-class-tag"><?=h((string)$selectedStudent['display_class_label'])?></span>
+          <?php else: ?>
+            <span class="muted"><?=h(t('teacher.report_preview.no_class_assignment', 'Keine Klassenzuordnung'))?></span>
           <?php endif; ?>
         </div>
       <?php endif; ?>
