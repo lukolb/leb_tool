@@ -16,12 +16,12 @@ if ($reportId <= 0) {
 }
 
 $st = $pdo->prepare(
-  "SELECT ri.id, ri.template_id, sca.class_id, t.pdf_storage_path, t.pdf_original_filename
+  "SELECT ri.id, ri.template_id, ri.school_year, ri.period_label,
+          COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+          t.pdf_storage_path, t.pdf_original_filename
    FROM report_instances ri
-   JOIN students s ON s.id=ri.student_id
-   JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
-   JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-   JOIN templates t ON t.id=ri.template_id
+   INNER JOIN students s ON s.id=ri.student_id
+   INNER JOIN templates t ON t.id=ri.template_id
    WHERE ri.id=? AND ri.student_id IS NOT NULL
    LIMIT 1"
 );
@@ -33,11 +33,30 @@ if (!$row) {
   exit;
 }
 
-$classId = (int)($row['class_id'] ?? 0);
-if ($role !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-  http_response_code(403);
-  echo 'Keine Berechtigung';
-  exit;
+$classId = 0;
+if ($role !== 'admin') {
+  $stClass = $pdo->prepare(
+    "SELECT c.id
+     FROM student_class_assignments sca
+     INNER JOIN classes c ON c.id=sca.class_id
+     INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
+     WHERE sca.student_id=? AND c.school_year=? AND c.period_label=?
+     ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
+     LIMIT 1"
+  );
+  $stClass->execute([
+    $userId,
+    (int)($row['canonical_student_id'] ?? 0),
+    (string)($row['school_year'] ?? ''),
+    (string)($row['period_label'] ?? 'H1'),
+    (int)($row['template_id'] ?? 0),
+  ]);
+  $classId = (int)($stClass->fetchColumn() ?: 0);
+  if ($classId <= 0) {
+    http_response_code(403);
+    echo 'Keine Berechtigung';
+    exit;
+  }
 }
 
 $rel = (string)($row['pdf_storage_path'] ?? '');

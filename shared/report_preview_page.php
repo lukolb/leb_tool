@@ -14,7 +14,7 @@ function report_preview_period_label_display(string $raw): string {
 
 function report_preview_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
-  $grade = $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
+  $grade = array_key_exists('grade_level', $c) && $c['grade_level'] !== null ? (int)$c['grade_level'] : null;
   $name = (string)($c['name'] ?? '');
   $id = (int)($c['class_id'] ?? ($c['id'] ?? 0));
   return ($grade !== null && $label !== '') ? ($grade . $label) : ($name !== '' ? $name : ('#' . $id));
@@ -57,115 +57,138 @@ function report_preview_resolve_value(PDO $pdo, int $fieldId, ?string $valueText
   return $txt;
 }
 
-$role = (string)($u['role'] ?? '');
+function report_preview_class_for_report(
+  PDO $pdo,
+  int $canonicalStudentId,
+  int $templateId,
+  string $schoolYear,
+  string $periodLabel,
+  ?int $teacherUserId = null
+): ?array {
+  if ($canonicalStudentId <= 0 || $schoolYear === '') return null;
+  $sql =
+    "SELECT c.id AS class_id, c.grade_level, c.label, c.name, c.school_year, c.period_label, sca.is_active
+     FROM student_class_assignments sca
+     INNER JOIN classes c ON c.id=sca.class_id";
+  $params = [];
+  if ($teacherUserId !== null) {
+    $sql .= " INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?";
+    $params[] = $teacherUserId;
+  }
+  $sql .=
+    " WHERE sca.student_id=? AND c.school_year=? AND c.period_label=?
+      ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
+      LIMIT 1";
+  array_push($params, $canonicalStudentId, $schoolYear, $periodLabel, $templateId);
+  $st = $pdo->prepare($sql);
+  $st->execute($params);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  return $row ?: null;
+}
+
+function report_preview_report_label(array $report): string {
+  $label = trim((string)($report['school_year'] ?? ''));
+  if ($label !== '') $label .= ' · ';
+  $label .= report_preview_period_label_display((string)($report['period_label'] ?? 'H1'));
+  return $label;
+}
+
 $userId = (int)($u['id'] ?? 0);
 
-if ($isAdmin) {
-  $stStudents = $pdo->query(
-    "SELECT s.id, s.master_student_id, s.first_name, s.last_name, sca.is_active, sca.class_id,
-            c.school_year AS class_school_year, c.period_label AS class_period_label,
-            c.grade_level, c.label, c.name
-     FROM students s
-     JOIN student_class_assignments sca ON sca.student_id=s.id
-     JOIN classes c ON c.id=sca.class_id
-     ORDER BY s.last_name ASC, s.first_name ASC"
-  );
-} else {
-  $stStudents = $pdo->prepare(
-    "SELECT DISTINCT s.id, s.master_student_id, s.first_name, s.last_name, sca.is_active, sca.class_id,
-            c.school_year AS class_school_year, c.period_label AS class_period_label,
-            c.grade_level, c.label, c.name
-     FROM students s
-     JOIN student_class_assignments sca ON sca.student_id=s.id
-     JOIN classes c ON c.id=sca.class_id
-     JOIN user_class_assignments uca ON uca.class_id=c.id
-     WHERE uca.user_id=?
-     ORDER BY s.last_name ASC, s.first_name ASC"
-  );
-  $stStudents->execute([$userId]);
+$studentSql =
+  "SELECT s.id AS canonical_student_id, s.first_name, s.last_name, s.is_active
+   FROM students s
+   WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id)=s.id";
+$studentParams = [];
+if (!$isAdmin) {
+  $studentSql .=
+    " AND EXISTS (
+        SELECT 1
+        FROM student_class_assignments sca
+        INNER JOIN user_class_assignments uca ON uca.class_id=sca.class_id
+        WHERE sca.student_id=s.id AND uca.user_id=?
+      )";
+  $studentParams[] = $userId;
 }
-$students = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
+$studentSql .= " ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC";
+$stStudents = $pdo->prepare($studentSql);
+$stStudents->execute($studentParams);
+$studentChoices = $stStudents->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-$activeSchoolYear = '';
-$activePeriodLabel = 'H1';
-if ($isAdmin) {
-  $stActivePeriod = $pdo->query(
-    "SELECT school_year, period_label
-     FROM classes
-     WHERE is_active=1
-     GROUP BY school_year, period_label
-     ORDER BY COUNT(*) DESC, school_year DESC,
-              CASE period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
-     LIMIT 1"
-  );
-} else {
-  $stActivePeriod = $pdo->prepare(
-    "SELECT c.school_year, c.period_label
-     FROM classes c
-     JOIN user_class_assignments uca ON uca.class_id=c.id
-     WHERE c.is_active=1 AND uca.user_id=?
-     GROUP BY c.school_year, c.period_label
-     ORDER BY COUNT(*) DESC, c.school_year DESC,
-              CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END ASC
-     LIMIT 1"
-  );
-  $stActivePeriod->execute([$userId]);
-}
-$activePeriod = $stActivePeriod->fetch(PDO::FETCH_ASSOC) ?: null;
-if ($activePeriod) {
-  $activeSchoolYear = trim((string)($activePeriod['school_year'] ?? ''));
-  $activePeriodLabel = normalize_class_period_label((string)($activePeriod['period_label'] ?? 'H1'));
-}
-if ($activeSchoolYear === '') {
-  $activeSchoolYear = trim((string)(app_config()['app']['default_school_year'] ?? ''));
-}
-
-$studentsById = [];
 $studentsByCanonical = [];
-$studentAliasIdsByCanonical = [];
-foreach ($students as $s) {
-  $sid = (int)($s['id'] ?? 0);
-  if ($sid <= 0) continue;
-  $studentsById[$sid] = $s;
-  $canonicalId = (int)($s['master_student_id'] ?? 0);
-  if ($canonicalId <= 0) $canonicalId = $sid;
-  if (!isset($studentAliasIdsByCanonical[$canonicalId])) $studentAliasIdsByCanonical[$canonicalId] = [];
-  $studentAliasIdsByCanonical[$canonicalId][$sid] = $sid;
-  if (!isset($studentsByCanonical[$canonicalId])) {
-    $studentsByCanonical[$canonicalId] = $s;
-    $studentsByCanonical[$canonicalId]['canonical_student_id'] = $canonicalId;
-  } else {
-    $existingActive = (int)($studentsByCanonical[$canonicalId]['is_active'] ?? 0) === 1;
-    $candidateActive = (int)($s['is_active'] ?? 0) === 1;
-    if (!$existingActive && $candidateActive) {
-      $studentsByCanonical[$canonicalId] = $s;
-      $studentsByCanonical[$canonicalId]['canonical_student_id'] = $canonicalId;
+foreach ($studentChoices as &$studentChoice) {
+  $canonicalId = (int)($studentChoice['canonical_student_id'] ?? 0);
+  $studentChoice['class_labels'] = [];
+  $studentChoice['has_active_assignment'] = false;
+  if ($canonicalId > 0) $studentsByCanonical[$canonicalId] = &$studentChoice;
+}
+unset($studentChoice);
+
+if ($studentsByCanonical) {
+  $canonicalIds = array_keys($studentsByCanonical);
+  $in = implode(',', array_fill(0, count($canonicalIds), '?'));
+  $assignmentSql =
+    "SELECT sca.student_id, sca.is_active, c.is_active AS class_is_active,
+            c.id AS class_id, c.grade_level, c.label, c.name, c.school_year, c.period_label
+     FROM student_class_assignments sca
+     INNER JOIN classes c ON c.id=sca.class_id";
+  $assignmentParams = [];
+  if (!$isAdmin) {
+    $assignmentSql .= " INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?";
+    $assignmentParams[] = $userId;
+  }
+  $assignmentSql .=
+    " WHERE sca.student_id IN ($in)
+      ORDER BY c.is_active DESC, c.school_year DESC,
+               CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC";
+  $assignmentParams = array_merge($assignmentParams, $canonicalIds);
+  $stAssignments = $pdo->prepare($assignmentSql);
+  $stAssignments->execute($assignmentParams);
+  foreach ($stAssignments->fetchAll(PDO::FETCH_ASSOC) ?: [] as $assignment) {
+    $sid = (int)($assignment['student_id'] ?? 0);
+    if (!isset($studentsByCanonical[$sid])) continue;
+    $classLabel = report_preview_class_display($assignment);
+    if ($classLabel !== '' && !in_array($classLabel, $studentsByCanonical[$sid]['class_labels'], true)) {
+      $studentsByCanonical[$sid]['class_labels'][] = $classLabel;
+    }
+    if ((int)($assignment['is_active'] ?? 0) === 1 && (int)($assignment['class_is_active'] ?? 0) === 1) {
+      $studentsByCanonical[$sid]['has_active_assignment'] = true;
     }
   }
 }
-$studentChoices = array_values($studentsByCanonical);
-usort($studentChoices, static function(array $a, array $b): int {
-  $ca = mb_strtolower(report_preview_class_display($a), 'UTF-8');
-  $cb = mb_strtolower(report_preview_class_display($b), 'UTF-8');
-  if ($ca !== $cb) return $ca <=> $cb;
 
-  $la = mb_strtolower(trim((string)($a['last_name'] ?? '')), 'UTF-8');
-  $lb = mb_strtolower(trim((string)($b['last_name'] ?? '')), 'UTF-8');
-  if ($la !== $lb) return $la <=> $lb;
-  $fa = mb_strtolower(trim((string)($a['first_name'] ?? '')), 'UTF-8');
-  $fb = mb_strtolower(trim((string)($b['first_name'] ?? '')), 'UTF-8');
-  if ($fa !== $fb) return $fa <=> $fb;
-  return ((int)($a['canonical_student_id'] ?? 0)) <=> ((int)($b['canonical_student_id'] ?? 0));
-});
-$studentChoiceGroups = [];
-foreach ($studentChoices as $choice) {
-  $classLabel = report_preview_class_display($choice);
-  if (!isset($studentChoiceGroups[$classLabel])) $studentChoiceGroups[$classLabel] = [];
-  $studentChoiceGroups[$classLabel][] = $choice;
+$requestedReportId = max(0, (int)($_GET['report_id'] ?? 0));
+$requestedStudentId = max(0, (int)($_GET['student_id'] ?? 0));
+if ($requestedReportId > 0) {
+  $reportOwnerSql =
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id)
+     FROM report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     WHERE ri.id=?";
+  $reportOwnerParams = [$requestedReportId];
+  if (!$isAdmin) {
+    $reportOwnerSql .=
+      " AND EXISTS (
+          SELECT 1
+          FROM student_class_assignments sca
+          INNER JOIN classes c ON c.id=sca.class_id
+          INNER JOIN user_class_assignments uca ON uca.class_id=c.id
+          WHERE sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+            AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+            AND uca.user_id=?
+        )";
+    $reportOwnerParams[] = $userId;
+  }
+  $reportOwnerSql .= " LIMIT 1";
+  $stReportOwner = $pdo->prepare($reportOwnerSql);
+  $stReportOwner->execute($reportOwnerParams);
+  $reportOwnerId = (int)($stReportOwner->fetchColumn() ?: 0);
+  if ($reportOwnerId > 0 && isset($studentsByCanonical[$reportOwnerId])) {
+    $requestedStudentId = $reportOwnerId;
+  }
 }
 
-
-$selectedStudentId = (int)($_GET['student_id'] ?? 0);
+$selectedStudentId = $requestedStudentId;
 if ($selectedStudentId <= 0 || !isset($studentsByCanonical[$selectedStudentId])) {
   $selectedStudentId = $studentChoices ? (int)($studentChoices[0]['canonical_student_id'] ?? 0) : 0;
 }
@@ -189,71 +212,49 @@ if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) $radioCrossCol
 $radioCrossColorHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
 if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorHex)) $radioCrossColorHex = '#0b57d0';
 
-$periodOptions = [];
-if ($isAdmin) {
-  $stPeriods = $pdo->query(
-    "SELECT DISTINCT school_year, period_label
-     FROM report_instances
-     WHERE student_id IS NOT NULL
-     ORDER BY school_year DESC, period_label DESC"
-  );
-} else {
-  $stPeriods = $pdo->prepare(
-    "SELECT DISTINCT ri.school_year, ri.period_label
+$studentReports = [];
+if ($selectedStudentId > 0) {
+  $reportSql =
+    "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label, ri.status,
+            ri.created_at, ri.updated_at, t.name AS template_name, t.template_version
      FROM report_instances ri
-     JOIN students s ON s.id=ri.student_id
-     JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
-     JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-     JOIN user_class_assignments uca ON uca.class_id=sca.class_id
-     WHERE uca.user_id=?
-     ORDER BY ri.school_year DESC, ri.period_label DESC"
-  );
-  $stPeriods->execute([$userId]);
-}
-foreach (($stPeriods->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
-  $sy = trim((string)($row['school_year'] ?? ''));
-  if ($sy === '') continue;
-  $pl = normalize_class_period_label((string)($row['period_label'] ?? 'Standard'));
-  $key = $sy . '|' . $pl;
-  $periodOptions[$key] = ['school_year' => $sy, 'period_label' => $pl];
-}
-
-if ($selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
-  $s = $studentsByCanonical[$selectedStudentId];
-  $sy = trim((string)($s['class_school_year'] ?? ''));
-  $pl = normalize_class_period_label((string)($s['class_period_label'] ?? 'Standard'));
-  if ($sy !== '') {
-    $k = $sy . '|' . $pl;
-    if (!isset($periodOptions[$k])) $periodOptions[$k] = ['school_year' => $sy, 'period_label' => $pl];
+     INNER JOIN students s ON s.id=ri.student_id
+     LEFT JOIN templates t ON t.id=ri.template_id
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id)=?";
+  $reportParams = [$selectedStudentId];
+  if (!$isAdmin) {
+    $reportSql .=
+      " AND EXISTS (
+          SELECT 1
+          FROM student_class_assignments sca
+          INNER JOIN classes c ON c.id=sca.class_id
+          INNER JOIN user_class_assignments uca ON uca.class_id=c.id
+          WHERE sca.student_id=?
+            AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+            AND uca.user_id=?
+        )";
+    array_push($reportParams, $selectedStudentId, $userId);
   }
-}
-
-$selectedPeriodKey = (string)($_GET['period'] ?? '');
-if ($selectedPeriodKey === '' || !isset($periodOptions[$selectedPeriodKey])) {
-  $currentSchoolYear = $activeSchoolYear;
-  $currentPeriodLabel = $activePeriodLabel;
-  $currentKey = ($currentSchoolYear !== '') ? ($currentSchoolYear . '|' . $currentPeriodLabel) : '';
-  if ($currentKey !== '' && isset($periodOptions[$currentKey])) {
-    $selectedPeriodKey = $currentKey;
+  $reportSql .=
+    " ORDER BY ri.school_year DESC,
+              CASE ri.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
+              ri.updated_at DESC, ri.id DESC";
+  $stReports = $pdo->prepare($reportSql);
+  $stReports->execute($reportParams);
+  $studentReports = $stReports->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($studentReports as &$reportRow) {
+    $reportClass = report_preview_class_for_report(
+      $pdo,
+      $selectedStudentId,
+      (int)($reportRow['template_id'] ?? 0),
+      (string)($reportRow['school_year'] ?? ''),
+      (string)($reportRow['period_label'] ?? 'H1'),
+      $isAdmin ? null : $userId
+    );
+    $reportRow['class_id'] = (int)($reportClass['class_id'] ?? 0);
+    $reportRow['class_label'] = $reportClass ? report_preview_class_display($reportClass) : '';
   }
-  if ($selectedPeriodKey === '' && $selectedStudentId > 0 && isset($studentsByCanonical[$selectedStudentId])) {
-    $sy = trim((string)($studentsByCanonical[$selectedStudentId]['class_school_year'] ?? ''));
-    $pl = normalize_class_period_label((string)($studentsByCanonical[$selectedStudentId]['class_period_label'] ?? 'Standard'));
-    $studentDefaultKey = $sy !== '' ? ($sy . '|' . $pl) : '';
-    if ($studentDefaultKey !== '' && isset($periodOptions[$studentDefaultKey])) {
-      $selectedPeriodKey = $studentDefaultKey;
-    }
-  }
-  if ($selectedPeriodKey === '' && $periodOptions) {
-    $selectedPeriodKey = (string)array_key_first($periodOptions);
-  }
-}
-
-$selectedSchoolYear = '';
-$selectedPeriodLabel = 'H1';
-if ($selectedPeriodKey !== '' && isset($periodOptions[$selectedPeriodKey])) {
-  $selectedSchoolYear = (string)$periodOptions[$selectedPeriodKey]['school_year'];
-  $selectedPeriodLabel = (string)$periodOptions[$selectedPeriodKey]['period_label'];
+  unset($reportRow);
 }
 
 $previewStatus = '';
@@ -263,7 +264,8 @@ $previewTemplateUrl = '';
 $previewStudentName = '';
 $previewValues = [];
 $previewFieldMeta = [];
-$previewWarnings = [];
+$previewTemplateName = '';
+$previewClassLabel = '';
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -273,60 +275,47 @@ $statusMap = [
   'final' => t('teacher.report_preview.status_final', 'Final'),
 ];
 
-if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
-  $aliasIds = array_values(array_map('intval', $studentAliasIdsByCanonical[$selectedStudentId] ?? []));
-  $ri = null;
-  if ($aliasIds) {
-    $in = implode(',', array_fill(0, count($aliasIds), '?'));
-    $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
-    $stRi = $pdo->prepare(
-      "SELECT ri.id, ri.template_id, ri.status, ri.school_year, ri.period_label,
-              s.first_name, s.last_name, sca.class_id,
-              c.grade_level, c.label, c.name,
-              ri.updated_at
-       FROM report_instances ri
-       JOIN students s ON s.id=ri.student_id
-       JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
-       JOIN classes c ON c.id=sca.class_id AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-       WHERE ri.student_id IN ($in) AND ri.school_year=? AND ri.period_label=?
-       ORDER BY ri.updated_at DESC, ri.id DESC"
-    );
-    $stRi->execute($params);
-    $riRows = $stRi->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    if ($riRows) {
-      $ri = $riRows[0];
-      if (count($riRows) > 1) {
-        $previewWarnings[] = str_replace(
-          ['{count}', '{student_id}', '{period}'],
-          [
-            (string)count($riRows),
-            (string)$selectedStudentId,
-            $selectedSchoolYear . ' · ' . report_preview_period_label_display($selectedPeriodLabel),
-          ],
-          t('teacher.report_preview.warning.multiple_reports', 'Mehrere Berichte ({count}) für Schüler {student_id} und Zeitraum {period} gefunden. Der neueste Bericht wird angezeigt.')
-        );
-      }
-    }
+$selectedReportId = 0;
+$ri = null;
+foreach ($studentReports as $reportRow) {
+  $rid = (int)($reportRow['id'] ?? 0);
+  if ($rid <= 0) continue;
+  if ($selectedReportId === 0) {
+    $selectedReportId = $rid;
+    $ri = $reportRow;
   }
-  if ($ri) {
+  if ($requestedReportId > 0 && $rid === $requestedReportId) {
+    $selectedReportId = $rid;
+    $ri = $reportRow;
+    break;
+  }
+}
+
+$selectedSchoolYear = (string)($ri['school_year'] ?? '');
+$selectedPeriodLabel = normalize_class_period_label((string)($ri['period_label'] ?? 'H1'));
+
+if ($ri) {
     $previewReportId = (int)$ri['id'];
-    if ($previewReportId > 0) {
-      try {
-        apply_system_bindings($pdo, $previewReportId);
-      } catch (Throwable $e) {
-        // ignore preview-only binding refresh failures
-      }
-    }
     $previewStatus = (string)($ri['status'] ?? '');
     $previewStatusLabel = $statusMap[$previewStatus] ?? ($previewStatus !== '' ? strtoupper($previewStatus) : '—');
-    $previewStudentName = trim((string)($ri['first_name'] ?? '') . ' ' . (string)($ri['last_name'] ?? ''));
+    $selectedStudent = $studentsByCanonical[$selectedStudentId] ?? [];
+    $previewStudentName = trim((string)($selectedStudent['first_name'] ?? '') . ' ' . (string)($selectedStudent['last_name'] ?? ''));
+    $previewTemplateName = trim((string)($ri['template_name'] ?? ''));
+    if ((int)($ri['template_version'] ?? 0) > 0) {
+      $previewTemplateName .= ($previewTemplateName !== '' ? ' ' : '') . 'v' . (int)$ri['template_version'];
+    }
+    $previewClassLabel = trim((string)($ri['class_label'] ?? ''));
     $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
 
     $stVals = $pdo->prepare(
-      "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name, tf.field_type
+      "SELECT fv.id, fv.template_field_id, fv.value_text, fv.value_json, fv.source, fv.updated_at,
+              tf.field_name, tf.field_type
        FROM field_values fv
        JOIN template_fields tf ON tf.id=fv.template_field_id
-       WHERE fv.report_instance_id=?"
+       WHERE fv.report_instance_id=?
+       ORDER BY fv.template_field_id ASC,
+                CASE fv.source WHEN 'teacher' THEN 30 WHEN 'child' THEN 20 WHEN 'system' THEN 10 ELSE 0 END DESC,
+                fv.updated_at DESC, fv.id DESC"
     );
     $stVals->execute([$previewReportId]);
     $valuesByField = [];
@@ -340,12 +329,10 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         $vRow['value_text'] !== null ? (string)$vRow['value_text'] : '',
         $vRow['value_json'] !== null ? (string)$vRow['value_json'] : null
       );
-      if (strtolower((string)($vRow['field_type'] ?? '')) === 'ag') {
-        $resolved = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $previewReportId), $resolved);
-      }
-      $valuesByField[$fid] = $resolved;
       $fieldName = trim((string)($vRow['field_name'] ?? ''));
-      if ($fieldName !== '') $valuesByName[$fieldName] = $resolved;
+      if ($fieldName === '' || array_key_exists($fieldName, $valuesByName)) continue;
+      $valuesByField[$fid] = $resolved;
+      $valuesByName[$fieldName] = $resolved;
     }
 
     $stFields = $pdo->prepare(
@@ -370,19 +357,8 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
         $classFieldNames[(string)($fRow['field_name'] ?? '')] = true;
       }
     }
-
-
-    // Ensure AG fields are always auto-filled, even if no field_values row exists yet.
-    $agText = report_instance_ag_text($pdo, $previewReportId);
-    foreach ($fieldsRows as $fRow) {
-      if (strtolower((string)($fRow['field_type'] ?? '')) !== 'ag') continue;
-      $fname = trim((string)($fRow['field_name'] ?? ''));
-      if ($fname === '') continue;
-      $existing = (string)($valuesByName[$fname] ?? '');
-      $valuesByName[$fname] = ag_merge_generated_with_manual($agText, $existing);
-    }
-
-    if ($classFieldNames) {
+    $selectedClassId = (int)($ri['class_id'] ?? 0);
+    if ($classFieldNames && $selectedClassId > 0) {
       $stClassRi = $pdo->prepare(
         "SELECT id
          FROM report_instances
@@ -390,187 +366,152 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
          ORDER BY updated_at DESC, id DESC
          LIMIT 1"
       );
-      $stClassRi->execute([(int)$ri['template_id'], $selectedSchoolYear, class_report_period_label((int)$ri['class_id'], $selectedPeriodLabel)]);
+      $stClassRi->execute([(int)$ri['template_id'], $selectedSchoolYear, class_report_period_label($selectedClassId, $selectedPeriodLabel)]);
       $classRiId = (int)($stClassRi->fetchColumn() ?: 0);
       if ($classRiId > 0) {
-        try {
-          apply_system_bindings($pdo, $classRiId);
-        } catch (Throwable $e) {
-          // ignore preview-only binding refresh failures
-        }
         $stClassVals = $pdo->prepare(
-          "SELECT fv.template_field_id, fv.value_text, fv.value_json, tf.field_name, tf.field_type
+          "SELECT fv.id, fv.template_field_id, fv.value_text, fv.value_json, fv.source, fv.updated_at,
+                  tf.field_name, tf.field_type
            FROM field_values fv
            JOIN template_fields tf ON tf.id=fv.template_field_id
-           WHERE fv.report_instance_id=?"
+           WHERE fv.report_instance_id=?
+           ORDER BY fv.template_field_id ASC,
+                    CASE fv.source WHEN 'teacher' THEN 30 WHEN 'child' THEN 20 WHEN 'system' THEN 10 ELSE 0 END DESC,
+                    fv.updated_at DESC, fv.id DESC"
         );
         $stClassVals->execute([$classRiId]);
+        $loadedClassFields = [];
         foreach (($stClassVals->fetchAll(PDO::FETCH_ASSOC) ?: []) as $cv) {
           $fname = (string)($cv['field_name'] ?? '');
-          if (!isset($classFieldNames[$fname])) continue;
+          if (!isset($classFieldNames[$fname]) || isset($loadedClassFields[$fname])) continue;
           $fid = (int)($cv['template_field_id'] ?? 0);
           if ($fid <= 0) continue;
+          $loadedClassFields[$fname] = true;
           $valuesByField[$fid] = report_preview_resolve_value(
             $pdo,
             $fid,
             $cv['value_text'] !== null ? (string)$cv['value_text'] : '',
             $cv['value_json'] !== null ? (string)$cv['value_json'] : null
           );
-          if (strtolower((string)($cv['field_type'] ?? '')) === 'ag') {
-            $valuesByField[$fid] = ag_merge_generated_with_manual(report_instance_ag_text($pdo, $previewReportId), (string)$valuesByField[$fid]);
-          }
           if ($fname !== '') $valuesByName[$fname] = (string)$valuesByField[$fid];
         }
       }
     }
     $previewValues = $valuesByName;
-  } else {
-    $aliasIds = array_values(array_map('intval', $studentAliasIdsByCanonical[$selectedStudentId] ?? []));
-    $sc = null;
-    if ($aliasIds) {
-      $in = implode(',', array_fill(0, count($aliasIds), '?'));
-      $params = array_merge($aliasIds, [$selectedSchoolYear, $selectedPeriodLabel]);
-      $stBase = $pdo->prepare(
-        "SELECT s.*, c.*, c.id AS class_id
-         FROM students s
-         JOIN student_class_assignments sca ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
-         JOIN classes c ON c.id=sca.class_id
-         WHERE s.id IN ($in)
-         ORDER BY
-           (CASE WHEN c.school_year=? AND c.period_label=? THEN 0 ELSE 1 END) ASC,
-           sca.is_active DESC,
-           s.updated_at DESC,
-           s.id DESC
-         LIMIT 1"
-      );
-      $stBase->execute($params);
-      $sc = $stBase->fetch(PDO::FETCH_ASSOC) ?: null;
-    }
-    if ($sc) {
-      $previewStudentName = trim((string)($sc['first_name'] ?? '') . ' ' . (string)($sc['last_name'] ?? ''));
-      $previewStatusLabel = t('teacher.report_preview.status_missing', 'Noch nicht erstellt');
-      $previewStatus = 'missing';
-      $classIdForTemplate = (int)($sc['class_id'] ?? 0);
-      if ($classIdForTemplate > 0) {
-        $previewTemplateUrl = url('template_file.php?class_id=' . $classIdForTemplate);
-      }
-
-      $templateId = (int)($sc['template_id'] ?? 0);
-      if ($templateId > 0) {
-        $stFields = $pdo->prepare(
-          "SELECT field_name, field_type, meta_json
-           FROM template_fields
-           WHERE template_id=?
-           ORDER BY sort_order ASC, id ASC"
-        );
-        $stFields->execute([$templateId]);
-        $valuesByName = [];
-        foreach (($stFields->fetchAll(PDO::FETCH_ASSOC) ?: []) as $row) {
-          $fname = trim((string)($row['field_name'] ?? ''));
-          if ($fname === '') continue;
-          $meta = report_preview_meta_read($row['meta_json'] ?? null);
-          $fieldType = (string)($row['field_type'] ?? 'text');
-          $df = report_preview_extract_date_format($meta);
-          $entry = ['field_type' => $fieldType];
-          if ($df !== '') $entry['date_format'] = $df;
-          $previewFieldMeta[$fname] = $entry;
-
-          $tpl = trim((string)($meta['system_binding_tpl'] ?? ($meta['system_binding_template'] ?? '')));
-          $binding = trim((string)($meta['system_binding'] ?? ''));
-          $val = null;
-          if ($tpl !== '') {
-            $val = resolve_system_binding_template($tpl, $sc, $sc, $meta, $fieldType);
-          } elseif ($binding !== '') {
-            $val = resolve_system_binding_value($binding, $sc, $sc);
-          }
-          if ($val !== null && trim((string)$val) !== '') {
-            $valuesByName[$fname] = (string)$val;
-          }
-        }
-        $previewValues = $valuesByName;
-      }
-    }
-  }
 }
 ?>
 
-<div class="card">
-  <h1 style="margin-top:0;"><?=h(t('teacher.report_preview.title', 'Berichtsvorschau'))?></h1>
-  <form method="get" class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap;">
-    <div>
-      <label class="label" for="rpStudent"><?=h(t('teacher.report_preview.student', 'Schüler'))?></label>
-      <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()">
-        <?php foreach ($studentChoiceGroups as $classLabel => $classStudents): ?>
-          <optgroup label="<?=h($classLabel)?>">
-            <?php foreach ($classStudents as $s):
-              $sid = (int)($s['canonical_student_id'] ?? 0);
-              $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
-              $active = (int)($s['is_active'] ?? 1) === 1;
-              ?>
-              <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
-                <?=h($nm . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
-              </option>
-            <?php endforeach; ?>
-          </optgroup>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div>
-      <label class="label" for="rpPeriod"><?=h(t('teacher.report_preview.school_period', 'Schuljahr/Halbjahr'))?></label>
-      <select id="rpPeriod" name="period" class="input" onchange="this.form.submit()">
-        <?php foreach ($periodOptions as $key => $opt): ?>
-          <option value="<?=h($key)?>" <?= $key === $selectedPeriodKey ? 'selected' : '' ?>>
-            <?=h((string)$opt['school_year'] . ' · ' . report_preview_period_label_display((string)$opt['period_label']))?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <noscript><button class="btn" type="submit"><?=h(t('ui.save', 'Anzeigen'))?></button></noscript>
-  </form>
+<style>
+  .rp-browser{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
+  .rp-student-panel{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:16px}
+  .rp-student-panel .input{width:100%}
+  .rp-class-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .rp-class-tag{display:inline-flex;align-items:center;border:1px solid #cbd5e1;border-radius:999px;background:#fff;padding:3px 9px;font-size:12px;color:#475569}
+  .rp-report-list{display:grid;gap:8px}
+  .rp-report-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 14px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:#fff;color:inherit;text-decoration:none;transition:border-color .15s,box-shadow .15s,background .15s}
+  .rp-report-item:hover{border-color:#94a3b8;box-shadow:0 2px 8px rgba(15,23,42,.08)}
+  .rp-report-item.active{border-color:#3157c8;background:#eef3ff;box-shadow:0 0 0 2px rgba(49,87,200,.12)}
+  .rp-report-title{font-weight:750;color:#0f172a}
+  .rp-report-meta{grid-column:1/-1;color:#64748b;font-size:13px}
+  .rp-status{align-self:start;border-radius:999px;background:#e2e8f0;padding:3px 8px;font-size:12px;font-weight:650;white-space:nowrap}
+  .rp-report-item.active .rp-status{background:#dbe6ff;color:#1e3a8a}
+  .rp-current-meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);color:#475569;font-size:14px}
+  @media (max-width:800px){.rp-browser{grid-template-columns:1fr}}
+</style>
 
-  <?php if ($selectedPeriodKey !== ''): ?>
-    <div class="actions" style="justify-content:flex-start; gap:8px; margin-top:8px; flex-wrap:wrap;">
-      <?php
-        $prevUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$prevStudentId . '&period=' . urlencode($selectedPeriodKey));
-        $nextUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$nextStudentId . '&period=' . urlencode($selectedPeriodKey));
-      ?>
-      <button
-        class="btn secondary"
-        type="button"
-        <?= $prevStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($prevUrl)) . '"' : 'disabled aria-disabled="true"' ?>>
-        ← <?=h(t('teacher.pdf_entry.prev_student', 'Vorheriger Schüler'))?>
-        <small class="muted" style="display:block; line-height:1.2;"><?=h($prevStudentName !== '' ? $prevStudentName : '—')?></small>
-      </button>
-      <button
-        class="btn secondary"
-        type="button"
-        <?= $nextStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($nextUrl)) . '"' : 'disabled aria-disabled="true"' ?>>
-        <?=h(t('teacher.pdf_entry.next_student', 'Nächster Schüler'))?> →
-        <small class="muted" style="display:block; line-height:1.2;"><?=h($nextStudentName !== '' ? $nextStudentName : '—')?></small>
-      </button>
-    </div>
-  <?php endif; ?>
+<div class="card">
+  <h1 style="margin:0 0 6px;"><?=h(t('teacher.report_preview.title', 'Berichtsvorschau'))?></h1>
+  <p class="muted" style="margin:0 0 18px;"><?=h(t('teacher.report_preview.intro', 'Wählen Sie einen Schüler und anschließend einen seiner gespeicherten Berichte. Die Berichte werden unabhängig von der aktuellen Klassenzuordnung geladen.'))?></p>
+
+  <div class="rp-browser">
+    <section class="rp-student-panel">
+      <form method="get">
+        <label class="label" for="rpStudent"><?=h(t('teacher.report_preview.student', 'Schüler'))?></label>
+        <select id="rpStudent" name="student_id" class="input" onchange="this.form.submit()">
+          <?php foreach ($studentChoices as $s):
+            $sid = (int)($s['canonical_student_id'] ?? 0);
+            $nm = trim((string)($s['last_name'] ?? '') . ', ' . (string)($s['first_name'] ?? ''));
+            $active = (bool)($s['has_active_assignment'] ?? false);
+            $classes = array_values($s['class_labels'] ?? []);
+            $classSuffix = $classes ? (' · ' . implode(', ', array_slice($classes, 0, 2))) : '';
+            ?>
+            <option value="<?=h((string)$sid)?>" <?= $sid === $selectedStudentId ? 'selected' : '' ?>>
+              <?=h($nm . $classSuffix . ($active ? '' : ' (' . t('teacher.report_preview.student_archived', 'archiviert') . ')'))?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <noscript><button class="btn" type="submit" style="margin-top:8px;"><?=h(t('ui.save', 'Anzeigen'))?></button></noscript>
+      </form>
+
+      <?php $selectedStudent = $studentsByCanonical[$selectedStudentId] ?? null; ?>
+      <?php if ($selectedStudent): ?>
+        <div class="rp-class-tags" aria-label="<?=h(t('teacher.report_preview.class_assignments', 'Klassenzuordnungen'))?>">
+          <?php foreach (array_values($selectedStudent['class_labels'] ?? []) as $classLabel): ?>
+            <span class="rp-class-tag"><?=h($classLabel)?></span>
+          <?php endforeach; ?>
+          <?php if (empty($selectedStudent['class_labels'])): ?>
+            <span class="muted"><?=h(t('teacher.report_preview.no_class_assignment', 'Keine aktuelle Klassenzuordnung'))?></span>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
+
+      <div class="actions" style="justify-content:space-between;gap:8px;margin-top:16px;">
+        <?php
+          $prevUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$prevStudentId);
+          $nextUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . (int)$nextStudentId);
+        ?>
+        <button class="btn secondary" type="button"
+          <?= $prevStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($prevUrl)) . '"' : 'disabled aria-disabled="true"' ?>
+          title="<?=h($prevStudentName !== '' ? $prevStudentName : '—')?>">← <?=h(t('teacher.pdf_entry.prev_student', 'Vorheriger Schüler'))?></button>
+        <button class="btn secondary" type="button"
+          <?= $nextStudentId > 0 ? 'onclick="window.location.href=' . h(json_encode($nextUrl)) . '"' : 'disabled aria-disabled="true"' ?>
+          title="<?=h($nextStudentName !== '' ? $nextStudentName : '—')?>"><?=h(t('teacher.pdf_entry.next_student', 'Nächster Schüler'))?> →</button>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:0 0 10px;font-size:18px;">
+        <?=h(t('teacher.report_preview.reports', 'Gespeicherte Berichte'))?>
+        <span class="muted" style="font-weight:400;">(<?=h((string)count($studentReports))?>)</span>
+      </h2>
+      <?php if ($studentReports): ?>
+        <div class="rp-report-list">
+          <?php foreach ($studentReports as $report):
+            $rid = (int)($report['id'] ?? 0);
+            $status = (string)($report['status'] ?? '');
+            $statusLabel = $statusMap[$status] ?? ($status !== '' ? strtoupper($status) : '—');
+            $templateLabel = trim((string)($report['template_name'] ?? ''));
+            if ((int)($report['template_version'] ?? 0) > 0) $templateLabel .= ($templateLabel !== '' ? ' ' : '') . 'v' . (int)$report['template_version'];
+            $reportUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?student_id=' . $selectedStudentId . '&report_id=' . $rid);
+            $updatedFormat = ui_lang() === 'en' ? 'm/d/Y g:i A' : 'd.m.Y H:i';
+            ?>
+            <a class="rp-report-item <?= $rid === $selectedReportId ? 'active' : '' ?>" href="<?=h($reportUrl)?>" <?= $rid === $selectedReportId ? 'aria-current="true"' : '' ?>>
+              <span class="rp-report-title"><?=h(report_preview_report_label($report))?></span>
+              <span class="rp-status"><?=h($statusLabel)?></span>
+              <span class="rp-report-meta">
+                <?=h($templateLabel !== '' ? $templateLabel : ('#' . (int)($report['template_id'] ?? 0)))?>
+                <?php if (trim((string)($report['class_label'] ?? '')) !== ''): ?> · <?=h((string)$report['class_label'])?><?php endif; ?>
+                · <?=h(t('teacher.report_preview.updated', 'Aktualisiert'))?> <?=render_local_datetime((string)($report['updated_at'] ?? ''), $updatedFormat)?>
+                · #<?=h((string)$rid)?>
+              </span>
+            </a>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <div class="alert"><?=h(t('teacher.report_preview.no_reports_for_student', 'Für diesen Schüler sind keine gespeicherten Berichte vorhanden.'))?></div>
+      <?php endif; ?>
+    </section>
+  </div>
 
   <?php if ($previewTemplateUrl !== ''): ?>
-    <div class="muted" style="margin-top:10px;">
-      <?=h($previewStudentName)?> · <?=h($selectedSchoolYear)?> · <?=h(report_preview_period_label_display($selectedPeriodLabel))?> ·
-      <?=h(t('teacher.report_preview.status', 'Status'))?>: <strong><?=h($previewStatusLabel)?></strong>
-      <?php if ($previewStatus !== ''): ?><span class="muted">(<?=h($previewStatus)?>)</span><?php endif; ?>
-    </div>
-  <?php else: ?>
-    <div class="alert" style="margin-top:10px;"><?=h(t('teacher.report_preview.not_found', 'Für diese Auswahl wurde kein Bericht gefunden.'))?></div>
-  <?php endif; ?>
-
-  <?php if ($previewWarnings): ?>
-    <div class="alert warn" style="margin-top:10px;">
-      <ul style="margin:0 0 0 18px;">
-        <?php foreach ($previewWarnings as $warn): ?>
-          <li><?=h($warn)?></li>
-        <?php endforeach; ?>
-      </ul>
+    <div class="rp-current-meta">
+      <span><strong><?=h($previewStudentName)?></strong></span>
+      <span><?=h(report_preview_report_label($ri ?: []))?></span>
+      <?php if ($previewTemplateName !== ''): ?><span><?=h($previewTemplateName)?></span><?php endif; ?>
+      <?php if ($previewClassLabel !== ''): ?><span><?=h(t('teacher.report_preview.class_context', 'Klasse des Berichts'))?>: <?=h($previewClassLabel)?></span><?php endif; ?>
+      <span><?=h(t('teacher.report_preview.status', 'Status'))?>: <strong><?=h($previewStatusLabel)?></strong></span>
     </div>
   <?php endif; ?>
-
 </div>
 
 <div id="rpPreview" class="card" style="background:#f8f9fb; border:1px solid var(--border); min-height:120px;">
@@ -596,14 +537,12 @@ if ($selectedStudentId > 0 && $selectedSchoolYear !== '') {
   const fieldMeta = <?=json_encode($previewFieldMeta, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)?>;
   const prevStudentId = <?= json_encode($prevStudentId) ?>;
   const nextStudentId = <?= json_encode($nextStudentId) ?>;
-  const selectedPeriodKey = <?= json_encode($selectedPeriodKey) ?>;
   const previewBasePath = <?= json_encode(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php')) ?>;
 
   function goToStudent(studentId){
-    if (!studentId || !selectedPeriodKey) return;
+    if (!studentId) return;
     const u = new URL(previewBasePath, window.location.origin);
     u.searchParams.set('student_id', String(studentId));
-    u.searchParams.set('period', String(selectedPeriodKey));
     window.location.href = u.toString();
   }
 
