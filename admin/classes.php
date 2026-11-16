@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/tts_audio_cache.php';
 require_admin();
 
 $pdo = db();
@@ -226,8 +227,8 @@ function load_selected_transfer_classes(
   $placeholders = implode(',', array_fill(0, count($selectedClassIds), '?'));
   $sql =
     "SELECT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name,
-            c.template_id, c.student_wizard_display, c.student_intro_html,
-            c.tts_enabled, c.is_active,
+            c.template_id, c.student_wizard_display, c.student_intro_html, c.student_intro_html_en,
+            c.tts_enabled, c.syllable_coloring_enabled, c.is_active,
             (SELECT COUNT(*) FROM student_class_assignments sca WHERE sca.class_id=c.id) AS student_count
      FROM classes c
      WHERE c.school_year=?
@@ -337,6 +338,12 @@ function delete_class_with_all_data(PDO $pdo, int $classId): array {
   $st = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
   $studentIds = array_map(fn($r)=>(int)$r['student_id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  $audioIds = [];
+  if (db_has_table($pdo, 'tts_audio_class_links')) {
+    $stAudio = $pdo->prepare('SELECT audio_id FROM tts_audio_class_links WHERE class_id=?');
+    $stAudio->execute([$classId]);
+    $audioIds = array_map('intval', $stAudio->fetchAll(PDO::FETCH_COLUMN));
+  }
 
   $pdo->beginTransaction();
 
@@ -348,12 +355,16 @@ function delete_class_with_all_data(PDO $pdo, int $classId): array {
   if (db_has_table($pdo, 'class_child_group_unlocks')) {
     $pdo->prepare("DELETE FROM class_child_group_unlocks WHERE class_id=?")->execute([$classId]);
   }
+  if (db_has_table($pdo, 'tts_audio_class_links')) {
+    $pdo->prepare('DELETE FROM tts_audio_class_links WHERE class_id=?')->execute([$classId]);
+  }
   $pdo->prepare("UPDATE students SET class_id=NULL WHERE class_id=?")->execute([$classId]);
   $pdo->prepare("DELETE FROM user_class_assignments WHERE class_id=?")->execute([$classId]);
   $pdo->prepare("DELETE FROM student_class_assignments WHERE class_id=?")->execute([$classId]);
   $pdo->prepare("DELETE FROM classes WHERE id=?")->execute([$classId]);
 
   $pdo->commit();
+  if ($audioIds) tts_audio_remove_orphan_files($pdo, $audioIds);
 
   return ['students_deleted' => 0, 'students_unassigned' => count($studentIds)];
 }
@@ -709,8 +720,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $updated++;
         } else {
           $pdo->prepare(
-            "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, tts_enabled, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+            "INSERT INTO classes (school_year, period_label, grade_level, label, name, template_id, student_wizard_display, student_intro_html, student_intro_html_en, tts_enabled, syllable_coloring_enabled, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
           )->execute([
             $targetSchoolYear,
             $targetPeriod,
@@ -720,7 +731,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newTemplateId > 0 ? $newTemplateId : null,
             (string)($c['student_wizard_display'] ?? 'groups'),
             $c['student_intro_html'] ?? null,
+            $c['student_intro_html_en'] ?? null,
             (int)($c['tts_enabled'] ?? 0),
+            (int)($c['syllable_coloring_enabled'] ?? 0),
           ]);
           $targetClassId = (int)$pdo->lastInsertId();
           $created++;

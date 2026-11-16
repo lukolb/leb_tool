@@ -682,7 +682,7 @@ $downloadFilename = t('parent.portal.download_filename_prefix') . '_' .
       </div>
       <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria'))?>">
         <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de'))?>">🇩🇪</a>
-        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en'))?>">🇬🇧</a>
+        <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en'))?>">🇺🇸</a>
       </div>
     </div>
   </div>

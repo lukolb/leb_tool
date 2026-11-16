@@ -15,7 +15,8 @@ $studentId = (int)($_SESSION['student']['id'] ?? 0);
 
 $st = $pdo->prepare(
   "SELECT s.id, s.first_name, s.last_name, sca.class_id, sca.is_active,
-          c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id, c.tts_enabled
+          c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id,
+          c.tts_enabled, c.syllable_coloring_enabled
    FROM students s
    INNER JOIN student_class_assignments sca ON sca.student_id=s.id
    INNER JOIN classes c ON c.id=sca.class_id
@@ -62,6 +63,7 @@ $showStudentDeadlineInline = $showStudentDeadline && !empty($studentDeadline['du
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
 $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
+$syllableColoringEnabled = (int)($me['syllable_coloring_enabled'] ?? 0) === 1;
 $isActive = (int)($me['is_active'] ?? 0) === 1;
 
 $reportStatus = 'draft';
@@ -312,6 +314,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     .tts-bar{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px; border:1px dashed var(--border); border-radius:12px; margin-bottom:10px; background: rgba(0,0,0,0.02); }
     .tts-title{ font-weight:800; }
     .tts-status{ color: var(--muted); font-size:12px; }
+    .syllable-blue{ color:#0b57d0; }
+    .syllable-red{ color:#c62828; }
+    .syllable-blue,.syllable-red{ font-weight:800; }
     .locked-overlay{ border:1px solid rgba(176,0,32,0.25); background: rgba(176,0,32,0.05); padding:12px; border-radius:14px; margin-bottom: 10px; }
     .locked-overlay strong{ color: rgba(176,0,32,0.95); }
 
@@ -454,7 +459,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
             <?php $lang = ui_lang(); ?>
             <div class="lang-switch" aria-label="<?=h(t('student.lang_switch_aria', 'Sprache wechseln'))?>" style="margin-right:8px;">
               <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
-              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇬🇧</a>
+              <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇺🇸</a>
               </div>
             <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
           </div>
@@ -549,6 +554,17 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     </div>
   </div>
 
+  <div class="ai-modal" id="languageChoiceModal" role="dialog" aria-modal="true" aria-labelledby="languageChoiceTitle">
+    <div class="ai-modal-card" style="max-width:520px; text-align:center;">
+      <h2 id="languageChoiceTitle"><?=h(t('student.language_choice.title', 'Welche Sprache möchtest du verwenden?'))?></h2>
+      <p class="muted"><?=h(t('student.language_choice.hint', 'Du kannst die Sprache später oben jederzeit ändern.'))?></p>
+      <div class="actions" style="justify-content:center; gap:18px; margin-top:18px;">
+        <button class="btn primary" type="button" data-student-language="de" style="font-size:20px; padding:14px 22px;">🇩🇪 Deutsch</button>
+        <button class="btn primary" type="button" data-student-language="en" style="font-size:20px; padding:14px 22px;">🇺🇸 English</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 (function(){
   const apiUrl = <?=json_encode(url('student/ajax/wizard_api.php'))?>;
@@ -556,11 +572,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const loginUrl = <?=json_encode(url('student/login.php'))?>;
   const aiApiUrl = <?=json_encode(url('student/ajax/ai_explain_api.php'))?>;
   const ORG_NAME = <?= json_encode($orgName) ?>;
+  const STUDENT_LANGUAGE_KEY = <?=json_encode('leb_student_language_' . substr(hash('sha256', (string)$studentId), 0, 20))?>;
   let csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const STUDENT_ACTIVE = <?=json_encode($isActive)?>;
   const REPORT_STATUS = <?=json_encode($reportStatus)?>;
   const TTS_ALLOWED = <?=json_encode($ttsEnabled)?>;
+  const SYLLABLE_COLORING = <?=json_encode($syllableColoringEnabled)?>;
   const TTS_RATE_DE = Number(<?=json_encode($ttsRateDe)?>) || 1;
   const TTS_RATE_EN = Number(<?=json_encode($ttsRateEn)?>) || 1;
   function ttsRateForLang(){
@@ -569,6 +587,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const TTS_VOICE_PREF_DE = <?=json_encode($ttsVoicePrefDe)?>;
   const TTS_VOICE_PREF_EN = <?=json_encode($ttsVoicePrefEn)?>;
   const VITS_MODULE_URL = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
+  const TTS_CACHE_URL = <?=json_encode(url('student/ajax/tts_audio_cache_api.php'))?>;
+  let currentLang = <?= json_encode(ui_lang()) ?>;
   const placeholderIcon = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#f3f4f6"/><path d="M18 40c6-10 12-14 18-12s10 8 10 8" fill="none" stroke="#9ca3af" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="26" r="4" fill="#9ca3af"/></svg>');
 
   const elMeta = document.getElementById('metaLine');
@@ -602,6 +622,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const aiModal = document.getElementById('aiModal');
   const aiModalText = document.getElementById('aiModalText');
   const aiModalClose = document.getElementById('aiModalClose');
+  const languageChoiceModal = document.getElementById('languageChoiceModal');
 
   let state = {
     ok: false,
@@ -642,6 +663,48 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+  function splitWordIntoSyllables(word){
+    const raw = String(word || '');
+    if (!raw) return [];
+    const lower = raw.toLocaleLowerCase(currentLang === 'en' ? 'en-US' : 'de-DE');
+    const nuclei = [];
+    const vowelPattern = /[aeiouyäöü]+/gu;
+    let match;
+    while ((match = vowelPattern.exec(lower)) !== null) nuclei.push({ start:match.index, end:match.index + match[0].length });
+    if (nuclei.length < 2) return [raw];
+    const boundaries = [];
+    for (let i = 1; i < nuclei.length; i++) {
+      const between = lower.slice(nuclei[i - 1].end, nuclei[i].start);
+      let keep = 1;
+      if (/(sch)$/.test(between)) keep = 3;
+      else if (/(ch|ck|ph|th)$/.test(between)) keep = 2;
+      const boundary = Math.max(nuclei[i - 1].end, nuclei[i].start - Math.min(keep, between.length));
+      if (boundary > 0 && boundary < raw.length && boundary > (boundaries.at(-1) || 0)) boundaries.push(boundary);
+    }
+    if (!boundaries.length) return [raw];
+    const parts = [];
+    let start = 0;
+    for (const boundary of boundaries) { parts.push(raw.slice(start, boundary)); start = boundary; }
+    parts.push(raw.slice(start));
+    return parts.filter(Boolean);
+  }
+
+  function syllableTextHtml(text){
+    if (!SYLLABLE_COLORING) return esc(text);
+    return String(text ?? '').split(/([\p{L}]+)/gu).map(part => {
+      if (!/^[\p{L}]+$/u.test(part)) return esc(part);
+      return splitWordIntoSyllables(part).map((syllable, index) =>
+        `<span class="${index % 2 === 0 ? 'syllable-blue' : 'syllable-red'}">${esc(syllable)}</span>`
+      ).join('');
+    }).join('');
+  }
+
+  function setSyllableText(element, text){
+    if (!element) return;
+    if (SYLLABLE_COLORING) element.innerHTML = syllableTextHtml(text);
+    else element.textContent = String(text ?? '');
+  }
+
   function playPling(){
     if (!isBeginnerMode) return;
     try{
@@ -678,6 +741,34 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!aiModal) return;
     aiModal.classList.remove('open');
   }
+
+  function rememberedStudentLanguage(){
+    try { return localStorage.getItem(STUDENT_LANGUAGE_KEY); } catch (error) { return null; }
+  }
+
+  function rememberStudentLanguage(language){
+    try { localStorage.setItem(STUDENT_LANGUAGE_KEY, language); } catch (error) {}
+  }
+
+  const rememberedLanguage = rememberedStudentLanguage();
+  if (!rememberedLanguage && languageChoiceModal) {
+    languageChoiceModal.classList.add('open');
+  } else if (['de', 'en'].includes(rememberedLanguage) && rememberedLanguage !== currentLang) {
+    const rememberedLink = document.querySelector(`.lang-switch a[data-lang="${rememberedLanguage}"]`);
+    if (rememberedLink?.href) window.location.replace(rememberedLink.href);
+  }
+  document.querySelectorAll('[data-student-language]').forEach(button => {
+    button.addEventListener('click', () => {
+      const language = String(button.dataset.studentLanguage || 'de');
+      rememberStudentLanguage(language);
+      if (language === currentLang) {
+        languageChoiceModal?.classList.remove('open');
+        return;
+      }
+      const link = document.querySelector(`.lang-switch a[data-lang="${language}"]`);
+      window.location.href = link?.href || window.location.href;
+    });
+  });
 
   // -------- Vorlese-Funktion (vits-web + Web Speech API Fallback) --------
   const webSpeechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
@@ -894,6 +985,90 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
+  function normalizedTtsText(text){
+    return String(text ?? '').replace(/[\s\u00a0]+/gu, ' ').trim();
+  }
+
+  async function ttsCacheKey(text, language, voiceId){
+    if (!window.crypto?.subtle || typeof TextEncoder === 'undefined') return '';
+    const normalized = normalizedTtsText(text);
+    const bytes = new TextEncoder().encode(`${voiceId}\n${language}\n${normalized}`);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function playTtsBlob(blob){
+    if (!blob || !blob.size) return false;
+    stopTts();
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    audio._ttsObjectUrl = objectUrl;
+    audio.playbackRate = ttsRateForLang();
+    audio.onended = () => {
+      URL.revokeObjectURL(objectUrl);
+      updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
+      vitsAudio = null;
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
+      vitsAudio = null;
+    };
+    vitsAudio = audio;
+    updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
+    try {
+      await audio.play();
+      updateTtsUi();
+      return true;
+    } catch (error) {
+      URL.revokeObjectURL(objectUrl);
+      vitsAudio = null;
+      return false;
+    }
+  }
+
+  async function speakWithCachedAudio(text){
+    const normalized = normalizedTtsText(text);
+    if (!normalized) return false;
+    const language = currentLang === 'en' ? 'en' : 'de';
+    const voiceId = vitsVoiceIdForLang();
+    try {
+      const key = await ttsCacheKey(normalized, language, voiceId);
+      if (!key) return false;
+      const res = await fetch(`${TTS_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+        credentials:'same-origin',
+        cache:'force-cache'
+      });
+      if (!res.ok) return false;
+      return await playTtsBlob(await res.blob());
+    } catch (error) {
+      console.warn('TTS cache lookup failed', error);
+      return false;
+    }
+  }
+
+  async function uploadGeneratedTts(text, voiceId, blob){
+    try {
+      const normalized = normalizedTtsText(text);
+      const language = currentLang === 'en' ? 'en' : 'de';
+      const key = await ttsCacheKey(normalized, language, voiceId);
+      if (!key) return;
+      const form = new FormData();
+      form.set('csrf_token', csrf);
+      form.set('cache_key', key);
+      form.set('text', normalized);
+      form.set('language', language);
+      form.set('voice_id', voiceId);
+      form.set('audio', blob, key + '.wav');
+      const res = await fetch(TTS_CACHE_URL, { method:'POST', body:form, credentials:'same-origin' });
+      const data = await res.json().catch(() => null);
+      if (data?.csrf_token) csrf = String(data.csrf_token);
+      if (!res.ok || !data?.ok) console.warn('TTS cache upload failed', data?.message || res.status);
+    } catch (error) {
+      console.warn('TTS cache upload failed', error);
+    }
+  }
+
   async function speakWithVits(text){
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
@@ -904,6 +1079,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       stopTts();
       updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
       const blob = await session.predict(normalized);
+      void uploadGeneratedTts(normalized, voiceId, blob);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.playbackRate = ttsRateForLang();
@@ -964,6 +1140,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
       return;
     }
+    const cached = await speakWithCachedAudio(normalizedText);
+    if (cached) return;
     const ok = await speakWithVits(normalizedText);
     if (!ok) {
       speakWithWebSpeech(normalizedText);
@@ -974,6 +1152,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!ttsSupported) return false;
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
+    const cached = await speakWithCachedAudio(normalized);
+    if (cached) return true;
     const ok = await speakWithVits(normalized);
     if (!ok) {
       return speakWithWebSpeech(normalized);
@@ -1151,8 +1331,6 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
   // ---------- Language switch without page reload ----------
   const langLinks = document.querySelectorAll('.lang-switch a.lang');
-  let currentLang = <?= json_encode(ui_lang()) ?>;
-
   function setActiveLangUI(next){
     document.querySelectorAll('.lang-switch a.lang').forEach(a=>{
       a.classList.toggle('active', (a.dataset.lang || '') === next);
@@ -1299,6 +1477,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (!nextLang || nextLang === currentLang) return;
 
       try{
+        rememberStudentLanguage(nextLang);
         a.style.pointerEvents = 'none';
         await switchLangNoReload(a.href, nextLang);
       } catch(err){
@@ -1396,7 +1575,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const help = resolveTextTemplate(String(f.help || ''), idx);
 
       const lblEl = wrap.querySelector('[data-dyn="label"]');
-      if (lblEl) lblEl.textContent = lbl;
+      if (lblEl) setSyllableText(lblEl, lbl);
 
       const helpEl = wrap.querySelector('[data-dyn="help"]');
       if (helpEl) {
@@ -2041,8 +2220,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       ? `<button class="ai-help-btn" type="button" data-ai-help="1" data-field-id="${fid}" aria-label="${esc(t('student.ai.button', 'Kurze Erklärung'))}">?</button>`
       : '';
     const labelHtml = showLabel
-      ? (aiBtn ? `<div class="ai-help-row"><div class="lbl" data-dyn="label">${esc(label)}</div>${aiBtn}</div>` : `<div class="lbl" data-dyn="label">${esc(label)}</div>`)
-      : `<div class="lbl" data-dyn="label" style="display:none;">${esc(label)}</div>`;
+      ? (aiBtn ? `<div class="ai-help-row"><div class="lbl" data-dyn="label">${syllableTextHtml(label)}</div>${aiBtn}</div>` : `<div class="lbl" data-dyn="label">${syllableTextHtml(label)}</div>`)
+      : `<div class="lbl" data-dyn="label" style="display:none;">${syllableTextHtml(label)}</div>`;
 
     if (['radio','select','grade'].includes(type) || type === 'checkbox') {
       let opts = [];
@@ -2503,7 +2682,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const idx = buildFieldNameIndex();
       const fieldLabel = resolveTextTemplate(String(f.label || f.name || tfmt('student.js.question_label', 'Frage {index}', { index: 1 })), idx);
       const sectionLabel = cur.subgroupTitle ? sectionTitle(cur.groupTitle || cur.group, { title: cur.subgroupTitle }) : (cur.groupTitle || cur.group || t('student.js.section', 'Abschnitt'));
-      elTitle.textContent = isBeginnerMode ? fieldLabel : sectionLabel;
+      if (isBeginnerMode) setSyllableText(elTitle, fieldLabel);
+      else elTitle.textContent = sectionLabel;
       elSub.textContent = isBeginnerMode
         ? sectionLabel
         : t('student.js.field_sub', 'Eine Frage nach der anderen. Du kannst jederzeit zurückspringen.');

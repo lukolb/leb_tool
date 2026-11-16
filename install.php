@@ -741,7 +741,9 @@ CREATE TABLE IF NOT EXISTS `classes` (
   `template_id` bigint UNSIGNED DEFAULT NULL,
   `student_wizard_display` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'groups',
   `student_intro_html` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `student_intro_html_en` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `tts_enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `syllable_coloring_enabled` tinyint(1) NOT NULL DEFAULT '0',
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `inactive_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -764,6 +766,35 @@ CREATE TABLE IF NOT EXISTS `student_class_assignments` (
   UNIQUE KEY `uq_student_class_assignment` (`student_id`,`class_id`),
   KEY `idx_student_class_lookup` (`class_id`,`is_active`,`student_id`),
   KEY `idx_student_assignment_lookup` (`student_id`,`is_active`,`class_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tts_audio_files` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `cache_key` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `language` varchar(8) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `voice_id` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `text_content` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `storage_path` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mime_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `file_size` bigint UNSIGNED NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_tts_audio_cache_key` (`cache_key`),
+  KEY `idx_tts_audio_language` (`language`,`voice_id`),
+  KEY `idx_tts_audio_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `tts_audio_class_links` (
+  `class_id` bigint UNSIGNED NOT NULL,
+  `audio_id` bigint UNSIGNED NOT NULL,
+  `source_type` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'runtime',
+  `source_key` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `source_label` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`class_id`,`audio_id`),
+  KEY `idx_tts_audio_link_audio` (`audio_id`),
+  KEY `idx_tts_audio_link_source` (`class_id`,`source_type`,`source_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `class_group_delegations` (

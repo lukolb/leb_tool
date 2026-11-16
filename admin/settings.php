@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/tts_audio_cache.php';
 require_admin();
 
 $pdo = db();
@@ -14,11 +15,12 @@ $cfg = app_config();
 $err = '';
 $ok  = '';
 
-function child_intro_file_abs(): string {
+function child_intro_file_abs(string $lang = 'de'): string {
   $cfg = app_config();
   $uploadsRel = (string)($cfg['app']['uploads_dir'] ?? 'uploads');
   $rootAbs = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
-  return rtrim($rootAbs, '/\\') . '/' . trim($uploadsRel, '/\\') . '/child_intro.html';
+  $filename = strtolower($lang) === 'en' ? 'child_intro_en.html' : 'child_intro.html';
+  return rtrim($rootAbs, '/\\') . '/' . trim($uploadsRel, '/\\') . '/' . $filename;
 }
 
 function sanitize_intro_html(string $html): string {
@@ -209,6 +211,12 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId, string $schoo
   $stStudents = $pdo->prepare("SELECT student_id FROM student_class_assignments WHERE class_id=?");
   $stStudents->execute([$classId]);
   $studentIds = array_values(array_filter(array_map('intval', $stStudents->fetchAll(PDO::FETCH_COLUMN) ?: []), static fn(int $v): bool => $v > 0));
+  $audioIds = [];
+  if (db_has_table($pdo, 'tts_audio_class_links')) {
+    $stAudio = $pdo->prepare('SELECT audio_id FROM tts_audio_class_links WHERE class_id=?');
+    $stAudio->execute([$classId]);
+    $audioIds = array_map('intval', $stAudio->fetchAll(PDO::FETCH_COLUMN));
+  }
 
   $pdo->beginTransaction();
   try {
@@ -235,6 +243,9 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId, string $schoo
     if (db_has_table($pdo, 'parent_meeting_feedback')) {
       $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE class_id=?")->execute([$classId]);
     }
+    if (db_has_table($pdo, 'tts_audio_class_links')) {
+      $pdo->prepare('DELETE FROM tts_audio_class_links WHERE class_id=?')->execute([$classId]);
+    }
 
     $pdo->prepare("DELETE FROM classes WHERE id=?")->execute([$classId]);
     $pdo->commit();
@@ -242,6 +253,7 @@ function admin_settings_delete_class_fully(PDO $pdo, int $classId, string $schoo
     if ($pdo->inTransaction()) $pdo->rollBack();
     throw $e;
   }
+  if ($audioIds) tts_audio_remove_orphan_files($pdo, $audioIds);
 
   return [
     'students_total' => count($studentIds),
@@ -504,12 +516,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_student_intro') {
       $html = (string)($_POST['student_intro_html'] ?? '');
       $html = sanitize_intro_html($html);
+      $htmlEn = sanitize_intro_html((string)($_POST['student_intro_html_en'] ?? ''));
 
-      $abs = child_intro_file_abs();
+      $abs = child_intro_file_abs('de');
       $dir = dirname($abs);
       if (!is_dir($dir)) @mkdir($dir, 0755, true);
 
       if (file_put_contents($abs, $html, LOCK_EX) === false) {
+        throw new RuntimeException(t('admin.settings.error.intro_save_failed', 'Konnte Intro-Datei nicht speichern (Rechte?).'));
+      }
+      if (file_put_contents(child_intro_file_abs('en'), $htmlEn, LOCK_EX) === false) {
         throw new RuntimeException(t('admin.settings.error.intro_save_failed', 'Konnte Intro-Datei nicht speichern (Rechte?).'));
       }
     }
@@ -622,11 +638,13 @@ $vitsVoiceIds = load_vits_voice_ids();
 $vitsVoiceIdsDe = filter_vits_voice_ids($vitsVoiceIds, ['de_DE-']);
 $vitsVoiceIdsEn = filter_vits_voice_ids($vitsVoiceIds, ['en_GB-', 'en_US-']);
 
-$introAbs = child_intro_file_abs();
+$introAbs = child_intro_file_abs('de');
 $introHtml = '';
 if (is_file($introAbs)) {
   $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
 }
+$introAbsEn = child_intro_file_abs('en');
+$introHtmlEn = is_file($introAbsEn) ? sanitize_intro_html((string)file_get_contents($introAbsEn)) : '';
 
 $purgeClasses = $pdo->query(
   "SELECT id, school_year, period_label, grade_level, label, name
@@ -1506,17 +1524,21 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <!-- Quill (external) -->
   <link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet">
   <style>
-    #quillEditor{ background:#fff; border-radius:14px; overflow:hidden; }
-    #quillEditor .ql-toolbar{ border-top-left-radius:14px; border-top-right-radius:14px; }
-    #quillEditor .ql-container{ border-bottom-left-radius:14px; border-bottom-right-radius:14px; min-height:220px; }
+    .student-intro-editor{ background:#fff; border-radius:14px; overflow:hidden; }
+    .student-intro-editor .ql-toolbar{ border-top-left-radius:14px; border-top-right-radius:14px; }
+    .student-intro-editor .ql-container{ border-bottom-left-radius:14px; border-bottom-right-radius:14px; min-height:220px; }
   </style>
 
   <form method="post" id="studentIntroForm">
     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
     <input type="hidden" name="action" value="save_student_intro">
     <input type="hidden" name="student_intro_html" id="studentIntroHtml">
+    <input type="hidden" name="student_intro_html_en" id="studentIntroHtmlEn">
 
-    <div id="quillEditor"></div>
+    <h3>🇩🇪 <?=h(t('teacher.class_intro.german', 'Deutsch'))?></h3>
+    <div id="quillEditorDe" class="student-intro-editor"></div>
+    <h3 style="margin-top:18px;">🇺🇸 <?=h(t('teacher.class_intro.english', 'Englisch'))?></h3>
+    <div id="quillEditorEn" class="student-intro-editor"></div>
 
     <div class="actions" style="margin-top:12px;">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.student_intro.save', 'Intro speichern'))?></button>
@@ -1527,8 +1549,9 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
   <script>
   (function(){
     const initialHtml = <?=json_encode($introHtml)?>;
+    const initialHtmlEn = <?=json_encode($introHtmlEn)?>;
 
-    const quill = new Quill('#quillEditor', {
+    const quillOptions = {
       theme: 'snow',
       modules: {
         toolbar: [
@@ -1539,15 +1562,23 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
           ['clean']
         ]
       }
-    });
+    };
+    const quillDe = new Quill('#quillEditorDe', quillOptions);
+    const quillEn = new Quill('#quillEditorEn', quillOptions);
+    let activeQuill = quillDe;
+    quillDe.root.addEventListener('focus', () => { activeQuill = quillDe; });
+    quillEn.root.addEventListener('focus', () => { activeQuill = quillEn; });
 
-    quill.root.innerHTML = initialHtml || <?=json_encode(t('admin.settings.student_intro.default_html', '<p><strong>Hallo {{first_name}}!</strong></p><p>Bitte fülle den Bericht Schritt für Schritt aus.</p>'))?>;
+    quillDe.root.innerHTML = initialHtml || <?=json_encode(t('admin.settings.student_intro.default_html', '<p><strong>Hallo {{first_name}}!</strong></p><p>Bitte fülle den Bericht Schritt für Schritt aus.</p>'))?>;
+    quillEn.root.innerHTML = initialHtmlEn || <?=json_encode(t('admin.settings.student_intro.default_html_en', '<p><strong>Hello {{first_name}}!</strong></p><p>Please complete your report step by step.</p>'))?>;
 
     const hidden = document.getElementById('studentIntroHtml');
+    const hiddenEn = document.getElementById('studentIntroHtmlEn');
     const form = document.getElementById('studentIntroForm');
 
     form.addEventListener('submit', () => {
-      hidden.value = quill.root.innerHTML || '';
+      hidden.value = quillDe.root.innerHTML || '';
+      hiddenEn.value = quillEn.root.innerHTML || '';
     });
 
     const sel = document.getElementById('phSelect');
@@ -1555,11 +1586,11 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
     btn.addEventListener('click', () => {
       const token = sel.value || '';
       if (!token) return;
-      const range = quill.getSelection(true);
-      const pos = range ? range.index : quill.getLength();
-      quill.insertText(pos, token, 'user');
-      quill.setSelection(pos + token.length, 0, 'user');
-      quill.focus();
+      const range = activeQuill.getSelection(true);
+      const pos = range ? range.index : activeQuill.getLength();
+      activeQuill.insertText(pos, token, 'user');
+      activeQuill.setSelection(pos + token.length, 0, 'user');
+      activeQuill.focus();
     });
   })();
   </script>

@@ -1244,11 +1244,54 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_column($pdo, 'classes', 'tts_enabled')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN tts_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER template_id");
     }
+    if (!db_has_column($pdo, 'classes', 'student_intro_html_en')) {
+      $pdo->exec("ALTER TABLE classes ADD COLUMN student_intro_html_en TEXT NULL AFTER student_intro_html");
+    }
+    if (!db_has_column($pdo, 'classes', 'syllable_coloring_enabled')) {
+      $pdo->exec("ALTER TABLE classes ADD COLUMN syllable_coloring_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER tts_enabled");
+    }
     if (!db_has_column($pdo, 'classes', 'inactive_at')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN inactive_at DATETIME NULL AFTER is_active");
     }
     if (!db_has_index($pdo, 'classes', 'idx_classes_active_year')) {
       $pdo->exec("CREATE INDEX idx_classes_active_year ON classes (is_active, school_year)");
+    }
+
+    // Browser-generated TTS audio is cached on the server and linked to classes.
+    if (!db_has_table($pdo, 'tts_audio_files')) {
+      $pdo->exec(
+        "CREATE TABLE tts_audio_files (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  cache_key CHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  language VARCHAR(8) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  voice_id VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  text_content MEDIUMTEXT COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  storage_path VARCHAR(500) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  mime_type VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_tts_audio_cache_key (cache_key),\n" .
+        "  KEY idx_tts_audio_language (language, voice_id),\n" .
+        "  KEY idx_tts_audio_created (created_at)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+    if (!db_has_table($pdo, 'tts_audio_class_links')) {
+      $pdo->exec(
+        "CREATE TABLE tts_audio_class_links (\n" .
+        "  class_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  audio_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  source_type VARCHAR(40) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'runtime',\n" .
+        "  source_key VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',\n" .
+        "  source_label VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (class_id, audio_id),\n" .
+        "  KEY idx_tts_audio_link_audio (audio_id),\n" .
+        "  KEY idx_tts_audio_link_source (class_id, source_type, source_key)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
     }
 
     // --- school_periods: school years/terms must also exist without classes

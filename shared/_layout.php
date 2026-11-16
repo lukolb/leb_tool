@@ -42,8 +42,9 @@ function nav_items_for_role(string $role): array {
       ]],
 
       // Master data
-      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php'], 'children'=>[
+      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php', 'tts_audio.php'], 'children'=>[
         ['label'=>t('nav.settings'),  'href'=>'admin/settings.php',  'files'=>['settings.php']],
+        ['label'=>t('nav.tts_audio', 'Vorlese-Audios'), 'href'=>'admin/tts_audio.php', 'files'=>['tts_audio.php']],
         ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
         ['label'=>t('nav.log'), 'href'=>'admin/log.php', 'files'=>['log.php']],
         ['label'=>t('nav.backup'), 'href'=>'admin/backup.php', 'files'=>['backup.php']],
@@ -121,7 +122,7 @@ function render_role_header(string $title): void {
 
           <div class="lang-switch" aria-label="<?=h(t('ui.lang_switch_aria'))?>">
             <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('ui.lang_de'))?>">🇩🇪</a>
-            <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('ui.lang_en'))?>">🇬🇧</a>
+            <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('ui.lang_en'))?>">🇺🇸</a>
             <?php if ($canSwitchRole): ?>
               <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
                 <?=h($switchIcon)?>

@@ -228,7 +228,8 @@ function get_student_and_class(PDO $pdo, int $studentId): array {
             c.school_year, c.grade_level, c.label, c.name AS class_name,
             c.template_id AS class_template_id,
             c.student_wizard_display AS student_wizard_display,
-            c.student_intro_html AS student_intro_html
+            c.student_intro_html AS student_intro_html,
+            c.student_intro_html_en AS student_intro_html_en
      FROM students s
      INNER JOIN student_class_assignments sca ON sca.student_id=s.id
      INNER JOIN classes c ON c.id=sca.class_id
@@ -251,11 +252,12 @@ function class_display(array $row): string {
   return $name !== '' ? $name : '—';
 }
 
-function child_intro_file_abs(): string {
+function child_intro_file_abs(string $lang = 'de'): string {
   $cfg = app_config();
   $uploadsRel = (string)($cfg['app']['uploads_dir'] ?? 'uploads');
   $rootAbs = realpath(__DIR__ . '/../..') ?: (__DIR__ . '/../..');
-  return rtrim($rootAbs, '/\\') . '/' . trim($uploadsRel, '/\\') . '/child_intro.html';
+  $filename = strtolower($lang) === 'en' ? 'child_intro_en.html' : 'child_intro.html';
+  return rtrim($rootAbs, '/\\') . '/' . trim($uploadsRel, '/\\') . '/' . $filename;
 }
 
 function sanitize_intro_html(string $html): string {
@@ -650,11 +652,18 @@ try {
 
   if ($action === 'bootstrap') {
     $introHtml = '';
-    $classIntro = trim((string)($studentRow['student_intro_html'] ?? ''));
+    $lang = ui_lang();
+    $classIntro = $lang === 'en'
+      ? trim((string)($studentRow['student_intro_html_en'] ?? ''))
+      : trim((string)($studentRow['student_intro_html'] ?? ''));
+    if ($classIntro === '' && $lang === 'en') {
+      $classIntro = trim((string)($studentRow['student_intro_html'] ?? ''));
+    }
     if ($classIntro !== '') {
       $introHtml = render_intro_placeholders(sanitize_intro_html($classIntro), $studentRow);
     } else {
-      $introAbs = child_intro_file_abs();
+      $introAbs = child_intro_file_abs($lang);
+      if (!is_file($introAbs) && $lang === 'en') $introAbs = child_intro_file_abs('de');
       if (is_file($introAbs)) {
         $introHtml = sanitize_intro_html((string)file_get_contents($introAbs));
         $introHtml = render_intro_placeholders($introHtml, $studentRow);

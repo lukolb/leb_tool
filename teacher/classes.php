@@ -6,12 +6,18 @@ require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
 require_teacher();
 
+if (!headers_sent()) {
+  header('Cross-Origin-Opener-Policy: same-origin');
+  header('Cross-Origin-Embedder-Policy: require-corp');
+}
+
 $pdo = db();
 $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
 $err = '';
 $ok = '';
+$ttsGenerationClassId = 0;
 
 function class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -93,6 +99,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = $new
         ? t('teacher.classes.alert_ok_tts_on', 'Vorlesefunktion aktiviert.')
         : t('teacher.classes.alert_ok_tts_off', 'Vorlesefunktion deaktiviert.');
+      if ($new === 1) $ttsGenerationClassId = $classId;
+    }
+
+    elseif ($action === 'prepare_tts') {
+      $classId = (int)($_POST['class_id'] ?? 0);
+      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+      $st = $pdo->prepare('SELECT tts_enabled FROM classes WHERE id=? LIMIT 1');
+      $st->execute([$classId]);
+      if ((int)($st->fetchColumn() ?: 0) !== 1) {
+        throw new RuntimeException(t('teacher.classes.tts.enable_first', 'Bitte aktiviere Vorlesen zuerst.'));
+      }
+      $ttsGenerationClassId = $classId;
+      $ok = t('teacher.classes.tts.preparing', 'Die Audio-Vorbereitung wurde gestartet.');
+    }
+
+    elseif ($action === 'toggle_syllable_coloring') {
+      $classId = (int)($_POST['class_id'] ?? 0);
+      if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
+      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+        throw new RuntimeException('Keine Berechtigung.');
+      }
+      $new = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1 ? 1 : 0;
+      $pdo->prepare('UPDATE classes SET syllable_coloring_enabled=? WHERE id=?')->execute([$new, $classId]);
+      audit('class_toggle_syllable_coloring', $userId, [
+        'class_id' => $classId,
+        'syllable_coloring_enabled' => $new,
+      ]);
+      $ok = $new
+        ? t('teacher.classes.syllables.on', 'Silbenschrift aktiviert.')
+        : t('teacher.classes.syllables.off', 'Silbenschrift deaktiviert.');
     }
 
     // NEW: teacher/admin can set per-class wizard display
@@ -166,6 +205,93 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
   <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
   <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
 
+<?php if ($ttsGenerationClassId > 0): ?>
+  <div class="card" id="ttsPreparationCard">
+    <h2><?=h(t('teacher.classes.tts.preparation_heading', 'Vorlese-Audios vorbereiten'))?></h2>
+    <p class="muted" id="ttsPreparationStatus"><?=h(t('teacher.classes.tts.loading_plan', 'Kompetenztexte werden geprüft …'))?></p>
+    <div style="height:12px; border-radius:999px; overflow:hidden; background:#e5e7eb;">
+      <div id="ttsPreparationBar" style="height:100%; width:0; background:var(--primary); transition:width .2s;"></div>
+    </div>
+    <p class="muted" id="ttsPreparationDetail"></p>
+  </div>
+  <script type="importmap">
+    {"imports":{"onnxruntime-web":<?=json_encode(url('assets/vits-web/dist/onnxruntime-web.js'))?>}}
+  </script>
+  <script type="module">
+  const apiUrl = <?=json_encode(url('teacher/ajax/tts_audio_cache_api.php'))?>;
+  const moduleUrl = <?=json_encode(url('assets/vits-web/dist/vits-web.js'))?>;
+  const classId = <?=json_encode($ttsGenerationClassId)?>;
+  let csrf = <?=json_encode(csrf_token())?>;
+  const statusEl = document.getElementById('ttsPreparationStatus');
+  const detailEl = document.getElementById('ttsPreparationDetail');
+  const barEl = document.getElementById('ttsPreparationBar');
+  const text = {
+    generating: <?=json_encode(t('teacher.classes.tts.generating', 'Audiodatei {done} von {total} wird erzeugt …'))?>,
+    done: <?=json_encode(t('teacher.classes.tts.done', 'Audio-Vorbereitung abgeschlossen.'))?>,
+    failed: <?=json_encode(t('teacher.classes.tts.failed', 'Einige Audiodateien konnten nicht erzeugt werden.'))?>,
+    cached: <?=json_encode(t('teacher.classes.tts.cached_detail', '{cached} bereits vorhanden · {created} neu erzeugt · {failed} fehlgeschlagen'))?>,
+  };
+  const fmt = (value, replacements) => Object.entries(replacements).reduce((out, [key, val]) => out.replaceAll('{' + key + '}', String(val)), value);
+  async function postForm(form){
+    const res = await fetch(apiUrl, { method:'POST', body:form, credentials:'same-origin' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.ok) throw new Error(data?.message || 'Audio-API error');
+    if (data.csrf_token) csrf = data.csrf_token;
+    return data;
+  }
+  async function run(){
+    try {
+      const planForm = new FormData();
+      planForm.set('action', 'plan'); planForm.set('class_id', String(classId)); planForm.set('csrf_token', csrf);
+      const plan = await postForm(planForm);
+      const pending = (plan.items || []).filter(item => !item.cached);
+      let created = 0, failed = 0, processed = 0;
+      if (!pending.length) {
+        barEl.style.width = '100%';
+        statusEl.textContent = text.done;
+        detailEl.textContent = fmt(text.cached, { cached: plan.cached || 0, created: 0, failed: 0 });
+        return;
+      }
+      const modRaw = await import(moduleUrl);
+      const mod = modRaw?.TtsSession ? modRaw : modRaw?.default;
+      if (!mod?.TtsSession) throw new Error('vits-web could not be loaded');
+      const sessions = new Map();
+      for (const item of pending) {
+        processed++;
+        statusEl.textContent = fmt(text.generating, { done: processed, total: pending.length });
+        try {
+          let session = sessions.get(item.voice_id);
+          if (!session) {
+            session = await mod.TtsSession.create({ voiceId:item.voice_id });
+            sessions.set(item.voice_id, session);
+          }
+          const blob = await session.predict(item.text);
+          const upload = new FormData();
+          upload.set('action', 'upload'); upload.set('class_id', String(classId)); upload.set('csrf_token', csrf);
+          upload.set('cache_key', item.cache_key); upload.set('text', item.text);
+          upload.set('language', item.language); upload.set('voice_id', item.voice_id);
+          upload.set('source_type', item.source_type); upload.set('source_key', item.source_key);
+          upload.set('source_label', item.source_label); upload.set('audio', blob, item.cache_key + '.wav');
+          await postForm(upload);
+          created++;
+        } catch (error) {
+          console.warn('TTS pre-generation failed', item.cache_key, error);
+          failed++;
+        }
+        barEl.style.width = Math.round(processed / pending.length * 100) + '%';
+        detailEl.textContent = fmt(text.cached, { cached: plan.cached || 0, created, failed });
+      }
+      statusEl.textContent = failed ? text.failed : text.done;
+    } catch (error) {
+      console.error(error);
+      statusEl.textContent = text.failed;
+      detailEl.textContent = error?.message || String(error);
+    }
+  }
+  run();
+  </script>
+<?php endif; ?>
+
 <div class="card">
   <div class="actions" style="justify-content:flex-start;">
     <?php if ($showInactive): ?>
@@ -189,6 +315,7 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
               <th><?=h(t('teacher.classes.table.status', 'Status'))?></th>
               <th><?=h(t('teacher.classes.table.wizard', 'Wizard'))?></th>
               <th><?=h(t('teacher.classes.table.tts', 'Vorlesen'))?></th>
+              <th><?=h(t('teacher.classes.table.syllables', 'Silbenschrift'))?></th>
               <th><?=h(t('teacher.classes.table.actions', 'Aktion'))?></th>
             </tr>
           </thead>
@@ -225,6 +352,26 @@ render_teacher_header(t('teacher.classes.title', 'Klassen'));
                   <span class="muted" style="font-size:12px;">
                     <?= $ttsEnabled ? h(t('teacher.classes.tts.status_on', 'Aktiv')) : h(t('teacher.classes.tts.status_off', 'Deaktiviert')) ?>
                   </span>
+                </form>
+                <?php if ($ttsEnabled): ?>
+                  <form method="post" style="margin:6px 0 0;">
+                    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                    <input type="hidden" name="action" value="prepare_tts">
+                    <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                    <button class="btn secondary" type="submit"><?=h(t('teacher.classes.tts.prepare', 'Audios vorbereiten'))?></button>
+                  </form>
+                <?php endif; ?>
+              </td>
+
+              <td>
+                <?php $syllablesEnabled = (int)($c['syllable_coloring_enabled'] ?? 0) === 1; ?>
+                <form method="post" style="display:flex; gap:8px; align-items:center; margin:0;">
+                  <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                  <input type="hidden" name="action" value="toggle_syllable_coloring">
+                  <input type="hidden" name="class_id" value="<?=h((string)$c['id'])?>">
+                  <input type="hidden" name="syllable_coloring_enabled" value="<?=$syllablesEnabled ? '0' : '1'?>">
+                  <button class="btn secondary" type="submit"><?=$syllablesEnabled ? h(t('teacher.classes.syllables.disable', 'Deaktivieren')) : h(t('teacher.classes.syllables.enable', 'Aktivieren'))?></button>
+                  <span class="muted" style="font-size:12px;"><?=$syllablesEnabled ? h(t('teacher.classes.tts.status_on', 'Aktiv')) : h(t('teacher.classes.tts.status_off', 'Deaktiviert'))?></span>
                 </form>
               </td>
 
