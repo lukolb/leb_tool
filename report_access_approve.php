@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/shared/report_request_notifications.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Referrer-Policy: no-referrer');
@@ -57,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->prepare("UPDATE report_access_approval_tokens SET used_at=NOW() WHERE request_id=? AND used_at IS NULL")
       ->execute([$requestId]);
     $pdo->commit();
+    notify_requester_about_report_access_decision($pdo, $requestId, 'approved');
     audit('report_access_request_approve_email', $reviewerId, [
       'request_id' => $requestId,
       'class_id' => $classId,

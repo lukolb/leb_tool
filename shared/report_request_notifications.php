@@ -99,3 +99,66 @@ function notify_reviewers_about_report_access_request(PDO $pdo, array $request):
     error_log('[report access request mail] ' . $e->getMessage());
   }
 }
+
+function notify_requester_about_report_access_decision(PDO $pdo, int $requestId, string $decision): void {
+  if ($requestId <= 0 || !in_array($decision, ['approved', 'rejected'], true)) return;
+  try {
+    $st = $pdo->prepare(
+      "SELECT rar.scope_type, rar.reason, rar.expires_at,
+              requester.email AS requester_email, requester.display_name AS requester_name,
+              c.school_year, c.period_label, c.grade_level, c.label, c.name,
+              s.first_name AS student_first_name, s.last_name AS student_last_name
+       FROM report_access_requests rar
+       INNER JOIN users requester ON requester.id=rar.requester_user_id
+       INNER JOIN classes c ON c.id=rar.class_id
+       LEFT JOIN students s ON s.id=rar.student_id
+       WHERE rar.id=? AND rar.status=?
+       LIMIT 1"
+    );
+    $st->execute([$requestId, $decision]);
+    $request = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$request) return;
+
+    $grade = $request['grade_level'] !== null ? (int)$request['grade_level'] : null;
+    $classLabel = trim((string)($request['label'] ?? ''));
+    $className = trim((string)($request['name'] ?? ''));
+    $classBase = ($grade !== null && $classLabel !== '')
+      ? ($grade . $classLabel)
+      : ($className !== '' ? $className : t('report_requests.mail.class', 'Klasse'));
+    $period = normalize_class_period_label((string)($request['period_label'] ?? 'H1')) === 'H2'
+      ? t('admin.classes.period.h2', '2. Halbjahr')
+      : t('admin.classes.period.h1', '1. Halbjahr');
+    $fullClassLabel = $classBase . ' · ' . (string)($request['school_year'] ?? '') . ' · ' . $period;
+    $scopeLabel = (string)($request['scope_type'] ?? '') === 'class'
+      ? t('report_requests.scope.whole_class', 'Gesamte Klasse')
+      : trim((string)($request['student_first_name'] ?? '') . ' ' . (string)($request['student_last_name'] ?? ''));
+    $approved = $decision === 'approved';
+    $subject = $approved
+      ? t('report_requests.mail.decision_approved_subject', 'LEB Tool – Berichteinsicht freigegeben')
+      : t('report_requests.mail.decision_rejected_subject', 'LEB Tool – Anfrage auf Berichteinsicht abgelehnt');
+    $statusLabel = $approved
+      ? t('report_requests.status.approved', 'freigegeben')
+      : t('report_requests.status.rejected', 'abgelehnt');
+    $rows = [
+      t('report_requests.mail.scope', 'Umfang') => $scopeLabel,
+      t('report_requests.mail.class', 'Klasse') => $fullClassLabel,
+      t('report_requests.status', 'Status') => $statusLabel,
+    ];
+    if ($approved) {
+      $rows[t('report_requests.expires', 'Gültig bis')] = !empty($request['expires_at'])
+        ? (db_datetime_to_user_local((string)$request['expires_at'], null, ui_lang() === 'en' ? 'm/d/Y g:i A' : 'd.m.Y H:i') ?? (string)$request['expires_at'])
+        : t('report_requests.unlimited', 'Unbegrenzt');
+    }
+    $rows[t('report_requests.mail.reason', 'Begründung')] = (string)($request['reason'] ?? '');
+    $html = report_request_mail_html(
+      $subject,
+      $rows,
+      absolute_url('teacher/report_requests.php'),
+      t('report_requests.mail.open_own_requests', 'Eigene Anfragen öffnen')
+    );
+    $sent = report_request_send_notifications([['email' => (string)($request['requester_email'] ?? '')]], $subject, $html);
+    if ($sent < 1) error_log('[report access decision mail] No message sent for request ' . $requestId);
+  } catch (Throwable $e) {
+    error_log('[report access decision mail] ' . $e->getMessage());
+  }
+}

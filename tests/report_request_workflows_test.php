@@ -50,6 +50,9 @@ report_request_assert(strpos($source['notifications'], 'approve_7') !== false &&
 report_request_assert(strpos($source['email_approve'], 'window.location.hash') !== false, 'the raw email token must stay in the URL fragment and out of server logs');
 report_request_assert(strpos($source['email_approve'], "Cache-Control: no-store") !== false && strpos($source['email_approve'], "Referrer-Policy: no-referrer") !== false, 'email approvals must not be cached or leaked through referrers');
 report_request_assert(strpos($source['email_approve'], 'used_at=NOW()') !== false, 'email approval tokens must be invalidated after use');
+report_request_assert(strpos($source['notifications'], 'notify_requester_about_report_access_decision') !== false && strpos($source['notifications'], 'requester.email AS requester_email') !== false, 'the requester decision notification must resolve the original requester email');
+report_request_assert(substr_count($source['access_page'], 'notify_requester_about_report_access_decision') >= 1, 'web approvals and rejections must notify the requester');
+report_request_assert(strpos($source['email_approve'], "notify_requester_about_report_access_decision(\$pdo, \$requestId, 'approved')") !== false, 'one-click email approvals must also notify the requester');
 report_request_assert(strpos($source['layout'], "nav.report_requests") !== false, 'request management must be reachable from teacher and admin navigation');
 report_request_assert(strpos($source['access_page'], 'parent_portal_links') === false, 'teacher-to-teacher access grants must remain separate from parent access');
 

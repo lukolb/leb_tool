@@ -148,6 +148,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['action'] 
         $pdo->prepare("UPDATE report_access_approval_tokens SET used_at=NOW() WHERE request_id=? AND used_at IS NULL")->execute([$requestId]);
       }
       $pdo->commit();
+      if (in_array($action, ['approve_access','reject_access'], true)) {
+        notify_requester_about_report_access_decision(
+          $pdo,
+          $requestId,
+          $action === 'approve_access' ? 'approved' : 'rejected'
+        );
+      }
       audit('report_access_request_' . $action, $accessUserId, ['request_id'=>$requestId,'class_id'=>(int)$requestRow['class_id']]);
     }
   } catch (Throwable $e) {
