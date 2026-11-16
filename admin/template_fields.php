@@ -608,14 +608,17 @@ render_admin_header(t('admin.template_fields.title'));
 import * as pdfjsLib from <?= json_encode(url('assets/pdfjs/pdf.min.mjs')) ?>;
 pdfjsLib.GlobalWorkerOptions.workerSrc = <?= json_encode(url('assets/pdfjs/pdf.worker.min.mjs')) ?>;
 
-const csrf = "<?=h(csrf_token())?>";
+let csrf = <?=json_encode(csrf_token())?>;
 const templateId = <?= (int)$templateId ?>;
+const currentUserId = <?= (int)(current_user()['id'] ?? 0) ?>;
 
 const apiUrl = "<?=h(url('admin/ajax/template_fields_api.php'))?>";
 const textSnippetsApiUrl = "<?=h(url('admin/ajax/text_snippets_api.php'))?>";
 const optionListsApiUrl = "<?=h(url('admin/ajax/option_lists_api.php'))?>";
 const replacePdfUrl = "<?=h(url('admin/ajax/templates_replace_pdf.php'))?>";
 const importFieldsUrl = "<?=h(url('admin/ajax/import_fields.php'))?>";
+const sessionStatusUrl = <?=json_encode(url('ajax/session_status.php'))?>;
+const loginUrl = <?=json_encode(url('login.php'))?>;
 const I18N = <?=json_encode([
   'option_unassigned' => t('admin.template_fields.option_unassigned'),
   'split_notice_title' => t('admin.template_fields.split_notice_title'),
@@ -688,6 +691,18 @@ const I18N = <?=json_encode([
   'new_field_name' => t('admin.template_fields.new_field_name', 'Feldname (technisch):'),
   'new_field_label' => t('admin.template_fields.new_field_label', 'Label:'),
   'new_field_added' => t('admin.template_fields.new_field_added', 'Neues Mapping-Feld hinzugefügt.'),
+  'draft_restored' => t('admin.template_fields.draft_restored', 'Ungespeicherte Änderungen wurden aus der lokalen Sicherung wiederhergestellt.'),
+  'session_expired_title' => t('session.expired.title'),
+  'session_expired_message' => t('session.expired.message'),
+  'session_unsaved' => t('session.unsaved.message'),
+  'session_relogin' => t('session.relogin.message'),
+  'session_relogin_short' => t('session.relogin.short'),
+  'session_check' => t('session.check_again'),
+  'session_save_now' => t('session.save_now'),
+  'session_reload' => t('session.reload_page'),
+  'session_restored' => t('session.restored'),
+  'session_save_resuming' => t('session.save_resuming'),
+  'session_forbidden' => t('session.forbidden.message'),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
 const tAdmin = (key) => I18N[key] ?? key;
 const tfmtAdmin = (key, vars = {}) => {
@@ -807,6 +822,204 @@ let lastDragClientY = 0;
 let modalFieldId = null;
 
 const IGN_SPLIT_LS_KEY = `template_fields_ignored_split_v1:${templateId}`;
+const DRAFT_STORAGE_KEY = `template_fields_draft_v1:${templateId}:${currentUserId}`;
+const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+let draftWriteTimer = 0;
+let sessionExpired = false;
+let sessionOverlay = null;
+
+function fieldUpdatePayload(field){
+  return {
+    id: Number(field?.id || 0),
+    name: String(field?.name || ''),
+    type: String(field?.type || 'text'),
+    label: String(field?.label ?? ''),
+    label_en: String(field?.label_en ?? ''),
+    help_text: String(field?.help_text ?? ''),
+    multiline: Number(field?.multiline || 0) === 1 ? 1 : 0,
+    required: Number(field?.required || 0) === 1 ? 1 : 0,
+    can_child_edit: Number(field?.can_child_edit || 0) === 1 ? 1 : 0,
+    can_teacher_edit: Number(field?.can_teacher_edit || 0) === 1 ? 1 : 0,
+    sort_order: Number(field?.sort_order || 0),
+    options: field?.options ?? null,
+    meta: field?.meta ?? null
+  };
+}
+
+function dirtyUpdates(){
+  return fields.filter(field => dirty.has(field.id)).map(fieldUpdatePayload);
+}
+
+function persistDraftNow(){
+  if (draftWriteTimer) {
+    clearTimeout(draftWriteTimer);
+    draftWriteTimer = 0;
+  }
+  if (!dirty.size) return;
+  const updates = dirtyUpdates();
+  if (!updates.length) return;
+  try {
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      template_id: templateId,
+      saved_at: Date.now(),
+      updates
+    }));
+  } catch (e) {}
+}
+
+function scheduleDraftPersist(){
+  if (draftWriteTimer) clearTimeout(draftWriteTimer);
+  draftWriteTimer = window.setTimeout(persistDraftNow, 120);
+}
+
+function clearLocalDraft(){
+  if (draftWriteTimer) {
+    clearTimeout(draftWriteTimer);
+    draftWriteTimer = 0;
+  }
+  try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (e) {}
+}
+
+function readLocalDraft(){
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    const savedAt = Number(draft?.saved_at || 0);
+    if (Number(draft?.template_id || 0) !== templateId || !Array.isArray(draft?.updates) || !savedAt || (Date.now() - savedAt) > DRAFT_MAX_AGE_MS) {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      return null;
+    }
+    return draft;
+  } catch (e) {
+    try { localStorage.removeItem(DRAFT_STORAGE_KEY); } catch (ignored) {}
+    return null;
+  }
+}
+
+function restoreLocalDraft(){
+  const draft = readLocalDraft();
+  if (!draft) return 0;
+
+  let restored = 0;
+  for (const raw of draft.updates) {
+    if (!raw || typeof raw !== 'object') continue;
+    const draftId = Number(raw.id || 0);
+    const draftName = String(raw.name || '').trim();
+    if (!draftName) continue;
+
+    let target = draftId > 0 ? fields.find(field => Number(field.id) === draftId) : null;
+    if (!target) target = fields.find(field => String(field.name || '') === draftName) || null;
+    if (!target && draftId > 0) continue;
+
+    const safe = fieldUpdatePayload(raw);
+    if (target) {
+      safe.id = target.id;
+      Object.assign(target, safe);
+      dirty.add(target.id);
+    } else {
+      safe.id = draftId < 0 ? draftId : nextTempFieldId();
+      while (fields.some(field => Number(field.id) === safe.id)) safe.id--;
+      fields.push(safe);
+      dirty.add(safe.id);
+    }
+    restored++;
+  }
+
+  if (restored) persistDraftNow();
+  return restored;
+}
+
+function isSessionFailure(resp, payload){
+  const code = String(payload?.error || payload?.code || '').toLowerCase();
+  return resp?.status === 401 || payload?.requires_login === true || code === 'session_expired' || code === 'csrf_failed' || code === 'login_required';
+}
+
+function ensureSessionOverlay(){
+  if (sessionOverlay) return sessionOverlay;
+  const overlay = document.createElement('div');
+  overlay.id = 'templateFieldsSessionExpiredOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(tAdmin('session_expired_title'))}</h2><p>${escapeHtml(tAdmin('session_unsaved'))}</p><p>${escapeHtml(tAdmin('session_relogin'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(tAdmin('session_relogin_short'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(tAdmin('session_check'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(tAdmin('session_save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(tAdmin('session_reload'))}</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
+  overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
+    const ok = await checkSessionNow(true);
+    if (!ok) return;
+    saveHint.textContent = tAdmin('session_save_resuming');
+    try { await save(); } catch (e) { saveHint.textContent = String(e?.message || e); }
+  });
+  overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => {
+    persistDraftNow();
+    window.location.reload();
+  });
+  sessionOverlay = overlay;
+  return overlay;
+}
+
+function showSessionOverlay(error){
+  sessionExpired = true;
+  persistDraftNow();
+  const overlay = ensureSessionOverlay();
+  overlay.style.display = 'flex';
+  saveHint.textContent = String(error?.message || tAdmin('session_expired_message'));
+}
+
+function hideSessionOverlay(){
+  if (!sessionExpired) return;
+  sessionExpired = false;
+  if (sessionOverlay) sessionOverlay.style.display = 'none';
+  saveHint.textContent = tAdmin('session_restored');
+}
+
+function assertApiSuccess(resp, payload, fallbackMessage){
+  if (isSessionFailure(resp, payload)) {
+    const error = new Error(payload?.message || tAdmin('session_expired_message'));
+    error.code = String(payload?.error || 'session_expired');
+    error.status = resp?.status || 0;
+    showSessionOverlay(error);
+    throw error;
+  }
+  if (!resp?.ok || !payload?.ok) throw new Error(payload?.message || payload?.error || fallbackMessage);
+  return payload;
+}
+
+async function checkSessionNow(showFeedback = false){
+  try {
+    const resp = await fetch(sessionStatusUrl, {
+      credentials: 'same-origin',
+      headers: { 'Accept':'application/json', 'X-Requested-With':'XMLHttpRequest' },
+      cache: 'no-store'
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (isSessionFailure(resp, payload) || !resp.ok || payload?.authenticated === false) {
+      const error = new Error(payload?.message || tAdmin('session_expired_message'));
+      error.code = String(payload?.error || 'session_expired');
+      throw error;
+    }
+    if (String(payload?.role || '') !== 'admin') {
+      saveHint.textContent = tAdmin('session_forbidden');
+      return false;
+    }
+    if (payload.csrf_token) csrf = String(payload.csrf_token);
+    hideSessionOverlay();
+    return true;
+  } catch (error) {
+    const code = String(error?.code || '').toLowerCase();
+    if (showFeedback || code === 'session_expired' || code === 'csrf_failed' || code === 'login_required') showSessionOverlay(error);
+    return false;
+  }
+}
+
+setInterval(() => {
+  if (document.visibilityState === 'hidden' || !dirty.size) return;
+  void checkSessionNow(false);
+}, 180000);
+
+window.addEventListener('focus', () => {
+  if (sessionExpired) void checkSessionNow(false);
+});
 
 function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
 
@@ -878,6 +1091,7 @@ window.addEventListener('dragend', ()=>{
 
 window.addEventListener('beforeunload', (event)=>{
   if (!dirty.size) return;
+  persistDraftNow();
   event.preventDefault();
   event.returnValue = '';
 });
@@ -1067,6 +1281,7 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
 
   const resp = await fetch(importFieldsUrl, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-CSRF-Token': csrf
@@ -1075,7 +1290,7 @@ async function importNewFieldsFromPdf(newNames, pdfInfo){
   });
 
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data.ok) throw new Error(data.error || tfmtAdmin('import_failed', { status: String(resp.status) }));
+  assertApiSuccess(resp, data, tfmtAdmin('import_failed', { status: String(resp.status) }));
 
   return data.imported || 0;
 }
@@ -1097,11 +1312,12 @@ async function deleteFieldsByName(names){
   const payload = { action:'delete_by_names', template_id: templateId, names, csrf_token: csrf };
   const resp = await fetch(apiUrl, {
     method:'POST',
+    credentials:'same-origin',
     headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify(payload)
   });
   const data = await resp.json().catch(()=>({}));
-  if (!resp.ok || !data.ok) throw new Error(data.error || tfmtAdmin('delete_failed', { status: String(resp.status) }));
+  assertApiSuccess(resp, data, tfmtAdmin('delete_failed', { status: String(resp.status) }));
   return data.deleted || 0;
 }
 
@@ -1330,6 +1546,7 @@ function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
   updateDirtyUI();
+  scheduleDraftPersist();
 }
 
 /* ---- Split hint ("DE | EN") ---- */
@@ -1921,9 +2138,11 @@ function renderTable(){
     tdSubEn.appendChild(inpSubEn);
 
     // Untergruppe (EN) – wird in meta gespeichert und auf alle Felder derselben Untergruppe angewendet
+    let subgroupTitleEnChanged = false;
     inpSubEn.addEventListener('click', (e)=>e.stopPropagation());
     inpSubEn.addEventListener('input', (e)=>{
       e.stopPropagation();
+      subgroupTitleEnChanged = true;
       fields[idx].meta = fields[idx].meta || {};
       const v = inpSubEn.value;
       if (String(v).trim()) fields[idx].meta.subgroup_title_en = String(v).trim();
@@ -1932,6 +2151,9 @@ function renderTable(){
     });
     inpSubEn.addEventListener('blur', (e)=>{
       e.stopPropagation();
+      // Ein bloßer Fokuswechsel darf vorhandene Übersetzungen der Untergruppe nicht leeren.
+      if (!subgroupTitleEnChanged) return;
+      subgroupTitleEnChanged = false;
       const v = String(inpSubEn.value || '').trim();
       const sgCur = getSubgroupMatchKey(fields[idx]);
       if (!sgCur) return;
@@ -1956,9 +2178,11 @@ function renderTable(){
     inpGE.type = 'text';
     inpGE.placeholder = 'z. B. Language Arts';
     inpGE.value = (f.meta && f.meta.group_title_en) ? String(f.meta.group_title_en) : '';
+    let groupTitleEnChanged = false;
     inpGE.addEventListener('click', (e)=>e.stopPropagation());
     inpGE.addEventListener('input', (e)=>{
       e.stopPropagation();
+      groupTitleEnChanged = true;
       fields[idx].meta = fields[idx].meta || {};
       const v = inpGE.value;
       if (String(v).trim()) fields[idx].meta.group_title_en = String(v).trim();
@@ -1969,6 +2193,9 @@ function renderTable(){
     inpGE.addEventListener('blur', (e)=>{
       // Beim Verlassen einmalig auf die gesamte Gruppe übertragen (ohne Re-Render während der Eingabe)
       e.stopPropagation();
+      // Ein bloßer Fokuswechsel darf vorhandene Übersetzungen der Gruppe nicht leeren.
+      if (!groupTitleEnChanged) return;
+      groupTitleEnChanged = false;
       const v = String(inpGE.value || '').trim();
       const gCur = getGroupKey(fields[idx]);
       for (let i=0; i<fields.length; i++){
@@ -2269,23 +2496,23 @@ function reorderByDrag(srcId, dstId){
 async function apiPost(payload){
   const resp = await fetch(apiUrl, {
     method:'POST',
+    credentials:'same-origin',
     headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ csrf_token: csrf, template_id: templateId, ...payload })
   });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('api_error'));
-  return j;
+  return assertApiSuccess(resp, j, tAdmin('api_error'));
 }
 
 async function textSnippetsPost(payload){
   const resp = await fetch(textSnippetsApiUrl, {
     method:'POST',
+    credentials:'same-origin',
     headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ csrf_token: csrf, ...payload })
   });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || 'Textbaustein-API Fehler');
-  return j;
+  return assertApiSuccess(resp, j, 'Textbaustein-API Fehler');
 }
 
 async function fetchSnippetCategories(){
@@ -2306,12 +2533,12 @@ async function fetchSnippetCategories(){
 async function optionListsPost(payload){
   const resp = await fetch(optionListsApiUrl, {
     method:'POST',
+    credentials:'same-origin',
     headers:{ 'Content-Type':'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ csrf_token: csrf, ...payload })
   });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('option_api_error'));
-  return j;
+  return assertApiSuccess(resp, j, tAdmin('option_api_error'));
 }
 
 async function loadOptionTemplates(){
@@ -2540,6 +2767,7 @@ function addVirtualField(){
     meta: { virtual_only: 1 }
   });
   dirty.add(tempId);
+  scheduleDraftPersist();
   rebuildGroupDatalist();
   renderGroupsBar();
   renderTable();
@@ -2552,25 +2780,11 @@ function addVirtualField(){
 async function save(){
   if (!dirty.size) { saveHint.textContent = 'Nichts zu speichern.'; return; }
 
-  const updates = fields
-    .filter(f => dirty.has(f.id))
-    .map(f => ({
-      id: f.id,
-      name: f.name,
-      type: f.type,
-      label: f.label,
-      label_en: (f.label_en ?? ''),
-      help_text: f.help_text,
-      multiline: f.multiline,
-      required: f.required,
-      can_child_edit: f.can_child_edit,
-      can_teacher_edit: f.can_teacher_edit,
-      sort_order: f.sort_order ?? 0,
-      options: f.options ?? null,
-      meta: f.meta ?? null
-    }));
+  persistDraftNow();
+  const updates = dirtyUpdates();
 
   const j = await apiPost({ action:'save', updates });
+  clearLocalDraft();
   saveHint.textContent = `Gespeichert: ${j.saved}`;
   await load();
 }
@@ -2922,9 +3136,12 @@ if (btnAddVirtualField) {
 
 /* ---------- Load ---------- */
 async function load(){
-  const resp = await fetch(apiUrl + "?action=list&template_id=" + encodeURIComponent(templateId), { headers:{ 'X-CSRF-Token': csrf }});
+  const resp = await fetch(apiUrl + "?action=list&template_id=" + encodeURIComponent(templateId), {
+    credentials:'same-origin',
+    headers:{ 'X-CSRF-Token': csrf }
+  });
   const j = await resp.json().catch(()=>({}));
-  if (!resp.ok || !j.ok) throw new Error(j.error || tAdmin('load_fields_error'));
+  assertApiSuccess(resp, j, tAdmin('load_fields_error'));
 
   template = j.template;
   fields = j.fields || [];
@@ -2942,6 +3159,7 @@ async function load(){
 
   selected = new Set();
   dirty = new Set();
+  const restoredDraftCount = restoreLocalDraft();
   rebuildGroupDatalist();
   updateDirtyUI();
 
@@ -2951,6 +3169,7 @@ async function load(){
   renderTable();
   updateMeta();
   scanForSplitCandidate();
+  if (restoredDraftCount) saveHint.textContent = tAdmin('draft_restored');
   await loadPdf();
 }
 
