@@ -18,12 +18,15 @@ declare(strict_types=1);
 if (!isset($exportApiUrl, $backUrl, $pageTitle, $classId, $classes, $csrf, $debugPdf)) {
   throw new RuntimeException('shared/export_page.php missing required variables.');
 }
+$groupExportClassesByArchive = (bool)($groupExportClassesByArchive ?? false);
 
 $tx = [
   'no_classes' => t('teacher.export.no_classes', 'Keine Klassen gefunden.'),
   'no_classes_hint' => t('teacher.export.no_classes_hint', 'Für Lehrkräfte heißt das meistens: Es sind noch keine Klassen zugeordnet (<code>user_class_assignments</code>).'),
   'class_label' => t('teacher.export.class_label', 'Klasse'),
   'class_hint' => t('teacher.export.class_hint', 'Exportiert die der Klasse zugeordnete Vorlage.'),
+  'classes_active' => t('teacher.export.classes_active', 'Aktuelle Klassen'),
+  'classes_archived' => t('teacher.export.classes_archived', 'Archivierte Klassen'),
   'mode_label' => t('teacher.export.mode_label', 'Export-Variante'),
   'mode.zip' => t('teacher.export.mode.zip', 'ZIP-Export'),
   'mode.zip_sub' => t('teacher.export.mode.zip_sub', 'eine PDF pro Schüler'),
@@ -122,6 +125,15 @@ function export_period_label_display(?string $raw): string {
     ? t('admin.classes.period.h2', '2. Halbjahr')
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
+
+$exportClassGroups = [['label'=>'', 'classes'=>$classes]];
+if ($groupExportClassesByArchive) {
+  $activeExportClasses = array_values(array_filter($classes, static fn(array $c): bool => (int)($c['is_active'] ?? 0) === 1));
+  $archivedExportClasses = array_values(array_filter($classes, static fn(array $c): bool => (int)($c['is_active'] ?? 0) !== 1));
+  $exportClassGroups = [];
+  if ($activeExportClasses) $exportClassGroups[] = ['label'=>$tx['classes_active'], 'classes'=>$activeExportClasses];
+  if ($archivedExportClasses) $exportClassGroups[] = ['label'=>$tx['classes_archived'], 'classes'=>$archivedExportClasses];
+}
 ?>
 
 <style>
@@ -154,10 +166,14 @@ function export_period_label_display(?string $raw): string {
     <div style="min-width:260px;">
       <label for="classId" class="export-title"><?=h($tx['class_label'])?></label>
       <select id="classId" class="input" style="width:100%;">
-        <?php foreach ($classes as $c): ?>
-          <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
-            <?=h((string)$c['school_year'])?> · <?=h(export_period_label_display($c['period_label'] ?? 'Standard'))?> · <?=h(export_class_display($c))?>
-          </option>
+        <?php foreach ($exportClassGroups as $classGroup): ?>
+          <?php if ((string)$classGroup['label'] !== ''): ?><optgroup label="<?=h((string)$classGroup['label'])?>"><?php endif; ?>
+          <?php foreach ($classGroup['classes'] as $c): ?>
+            <option value="<?= (int)$c['id'] ?>" <?= ((int)$c['id'] === (int)$classId) ? 'selected' : '' ?>>
+              <?=h((string)$c['school_year'])?> · <?=h(export_period_label_display($c['period_label'] ?? 'Standard'))?> · <?=h(export_class_display($c))?>
+            </option>
+          <?php endforeach; ?>
+          <?php if ((string)$classGroup['label'] !== ''): ?></optgroup><?php endif; ?>
         <?php endforeach; ?>
       </select>
       <div class="muted" style="margin-top:4px;"><?=h($tx['class_hint'])?></div>
@@ -304,6 +320,10 @@ const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
 const RADIO_CROSS_COLOR_MODE = <?= json_encode($radioCrossColorMode) ?>;
 const RADIO_CROSS_COLOR_HEX = <?= json_encode($radioCrossColorHex) ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
+const INITIAL_STUDENT_ID = (() => {
+  const raw = new URLSearchParams(window.location.search).get('student_id') || '';
+  return /^\d+$/.test(raw) ? raw : '';
+})();
 
 function t(key, fallback){
   return (I18N && Object.prototype.hasOwnProperty.call(I18N, key)) ? I18N[key] : (fallback || key);
@@ -535,7 +555,7 @@ let __refiningSinglePreview = false;
 async function check(){
   if (!elClass) return null;
   const classId = Number(elClass.value||0);
-  const keepStudentId = elStudent?.value;
+  const keepStudentId = elStudent?.value || INITIAL_STUDENT_ID;
 
   setInfo('');
   setStatus(t('status_checking'));
@@ -544,8 +564,11 @@ async function check(){
   try {
     const mode = currentMode();
 
-    // 1) FULL PREVIEW (immer ohne student_id) -> füllt Dropdown korrekt
-    const full = await apiFetch({ action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() });
+    // A direct single-student link must never load or expose the rest of the class.
+    const initialStudentId = modeNeedsStudent(mode) ? Number(INITIAL_STUDENT_ID || 0) : 0;
+    const previewRequest = { action: 'preview', class_id: classId, only_submitted: onlySubmittedFlag() };
+    if (initialStudentId > 0) previewRequest.student_id = initialStudentId;
+    const full = await apiFetch(previewRequest);
     showProgress(t('status_checking'), 2, 3);
 
     // ✅ cache complete list
@@ -559,7 +582,7 @@ async function check(){
     // 2) Single: warnings_summary für ausgewählten Schüler nachziehen, ohne Liste zu zerstören
     let merged = full;
 
-    if (modeNeedsStudent(mode) && elStudent && elStudent.value && !__refiningSinglePreview) {
+    if (modeNeedsStudent(mode) && elStudent && elStudent.value && !__refiningSinglePreview && initialStudentId <= 0) {
       const sid = Number(elStudent.value || 0);
       if (sid > 0) {
         __refiningSinglePreview = true;

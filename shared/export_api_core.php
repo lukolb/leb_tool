@@ -44,17 +44,39 @@ function class_period_label_display(array $c): string {
     : t('admin.classes.period.h1', '1. Halbjahr');
 }
 
-function enforce_class_access(PDO $pdo, int $classId, bool $enforce, int $userId): void {
+function enforce_class_access(PDO $pdo, int $classId, ?int $studentId, bool $enforce, int $userId): void {
   if (!$enforce) return;
   $u = current_user();
   if (($u['role'] ?? '') === 'admin') return;
   if ($userId <= 0) throw new RuntimeException(t('export.api.error.forbidden', 'Keine Berechtigung.'));
-  if (!user_can_access_class($pdo, $userId, $classId)) throw new RuntimeException(t('export.api.error.forbidden', 'Keine Berechtigung.'));
+  if (user_can_access_class($pdo, $userId, $classId)) return;
+
+  if ($studentId !== null && $studentId > 0) {
+    $st = $pdo->prepare(
+      "SELECT c.school_year, c.period_label
+       FROM classes c
+       INNER JOIN student_class_assignments sca ON sca.class_id=c.id AND sca.student_id=?
+       WHERE c.id=?
+       LIMIT 1"
+    );
+    $st->execute([$studentId, $classId]);
+    $class = $st->fetch(PDO::FETCH_ASSOC);
+    if ($class && user_can_view_student_report(
+      $pdo,
+      $userId,
+      $studentId,
+      (string)($class['school_year'] ?? ''),
+      (string)($class['period_label'] ?? 'H1')
+    )) return;
+  }
+
+  throw new RuntimeException(t('export.api.error.forbidden', 'Keine Berechtigung.'));
 }
 
 function template_for_class(PDO $pdo, int $classId): array {
   $st = $pdo->prepare(
     "SELECT c.id AS class_id, c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name,
+            c.is_active AS class_is_active,
             t.id AS template_id, t.name AS template_name, t.template_version
      FROM classes c
      LEFT JOIN templates t ON t.id=c.template_id
@@ -474,10 +496,11 @@ function missing_fields_for_student(array $templateFields, array $values, ?array
   return $missing;
 }
 
-function load_students_for_export(PDO $pdo, int $classId, int $templateId, string $schoolYear, string $periodLabel, ?int $onlyStudentId, bool $onlySubmitted): array {
+function load_students_for_export(PDO $pdo, int $classId, int $templateId, string $schoolYear, string $periodLabel, ?int $onlyStudentId, bool $onlySubmitted, bool $includeInactiveAssignments = false): array {
   $periodLabel = normalize_class_period_label($periodLabel);
   $whereStudent = '';
   if ($onlyStudentId && $onlyStudentId > 0) $whereStudent = " AND s.id=? ";
+  $whereActiveAssignment = ($includeInactiveAssignments || ($onlyStudentId && $onlyStudentId > 0)) ? '' : ' AND sca.is_active=1 ';
 
   // onlySubmitted filter based on latest status join (LEFT JOIN report_instances)
   $whereSubmitted = $onlySubmitted ? " AND ri.status IN ('submitted','final') " : "";
@@ -498,7 +521,8 @@ function load_students_for_export(PDO $pdo, int $classId, int $templateId, strin
          ORDER BY (ri2.student_id=s.id) DESC, ri2.updated_at DESC, ri2.id DESC
          LIMIT 1
        )
-     WHERE sca.class_id=? AND sca.is_active=1
+     WHERE sca.class_id=?
+     $whereActiveAssignment
      $whereStudent
      $whereSubmitted
      ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC";
@@ -511,7 +535,7 @@ function load_students_for_export(PDO $pdo, int $classId, int $templateId, strin
 }
 
 function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, bool $includeValues, bool $onlySubmitted, bool $enforceAccess, int $userId): array {
-  enforce_class_access($pdo, $classId, $enforceAccess, $userId);
+  enforce_class_access($pdo, $classId, $onlyStudentId, $enforceAccess, $userId);
 
   $row = template_for_class($pdo, $classId);
   $templateId = (int)$row['template_id'];
@@ -540,7 +564,16 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
     'version' => (string)($row['template_version'] ?? ''),
   ];
 
-  $students = load_students_for_export($pdo, $classId, $templateId, $schoolYear, (string)($row['period_label'] ?? 'Standard'), $onlyStudentId, $onlySubmitted);
+  $students = load_students_for_export(
+    $pdo,
+    $classId,
+    $templateId,
+    $schoolYear,
+    (string)($row['period_label'] ?? 'Standard'),
+    $onlyStudentId,
+    $onlySubmitted,
+    (int)($row['class_is_active'] ?? 0) !== 1
+  );
   $tf = load_template_fields($pdo, $templateId);
 
   // ✅ NEW: Provide field meta to frontend (date formats etc.)
@@ -636,7 +669,10 @@ function compute_export_payload(PDO $pdo, int $classId, ?int $onlyStudentId, boo
   return [
     'class' => $class,
     'template' => $template,
-    'pdf_url' => url('template_file.php?class_id=' . (int)$classId),
+    'pdf_url' => url('template_file.php?' . http_build_query(array_filter([
+      'class_id' => (int)$classId,
+      'student_id' => ($onlyStudentId !== null && $onlyStudentId > 0) ? (int)$onlyStudentId : null,
+    ], static fn($value): bool => $value !== null))),
     'students' => $outStudents,
     'only_submitted' => $onlySubmitted,
 

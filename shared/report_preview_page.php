@@ -596,7 +596,7 @@ $previewValues = [];
 $previewFieldMeta = [];
 $previewTemplateName = '';
 $previewClassLabel = '';
-$previewExportFilename = '';
+$previewExportUrl = '';
 
 $statusMap = [
   'draft' => t('teacher.report_preview.status_draft', 'In Bearbeitung'),
@@ -636,11 +636,16 @@ if ($ri) {
       $previewTemplateName .= ($previewTemplateName !== '' ? ' ' : '') . 'v' . (int)$ri['template_version'];
     }
     $previewClassLabel = trim((string)($ri['class_label'] ?? ''));
-    $filenameBase = trim($previewStudentName . '-' . $selectedSchoolYear . '-' . $selectedPeriodLabel . '-Bericht-' . $previewReportId);
-    $filenameBase = preg_replace('/[^\p{L}\p{N}._-]+/u', '-', $filenameBase) ?? '';
-    $filenameBase = trim($filenameBase, '-_.');
-    $previewExportFilename = ($filenameBase !== '' ? $filenameBase : ('Bericht-' . $previewReportId)) . '.pdf';
     $previewTemplateUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_template_file.php?report_id=' . $previewReportId);
+    $previewClassId = (int)($ri['class_id'] ?? 0);
+    if ($previewClassId > 0) {
+      $previewExportUrl = url(($isAdmin ? 'admin' : 'teacher') . '/export.php?' . http_build_query([
+        'class_id' => $previewClassId,
+        'mode' => 'single',
+        'student_id' => $selectedStudentId,
+        'report_id' => $previewReportId,
+      ]));
+    }
 
     $stVals = $pdo->prepare(
       "SELECT fv.id, fv.template_field_id, fv.value_text, fv.value_json, fv.source, fv.updated_at,
@@ -886,7 +891,7 @@ if (!$isAdmin && $previewReportId > 0) {
       <span><?=h(t('teacher.report_preview.status', 'Status'))?>: <strong><?=h($previewStatusLabel)?></strong></span>
     </div>
     <div class="actions" style="justify-content:flex-start;align-items:flex-start;gap:10px;margin-top:12px;flex-wrap:wrap;">
-      <button id="rpDownload" class="btn" type="button" disabled><?=h(t('teacher.report_preview.export_pdf', 'Diesen Bericht als PDF exportieren'))?></button>
+      <?php if ($previewExportUrl !== ''): ?><a id="rpDownload" class="btn" href="<?=h($previewExportUrl)?>"><?=h(t('teacher.report_preview.export_pdf', 'Diesen Bericht als PDF exportieren'))?></a><?php endif; ?>
       <?php if ($isAdmin):
         $deleteConfirmationValue = 'BERICHT-' . $previewReportId;
         $deleteActionUrl = report_preview_page_url(true, [
@@ -967,8 +972,6 @@ if (!$isAdmin && $previewReportId > 0) {
   const previewBasePath = <?= json_encode(url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php')) ?>;
   const selectedClassFilter = <?= json_encode($selectedClassFilter) ?>;
   const studentSearch = <?= json_encode($studentSearch) ?>;
-  const exportFilename = <?= json_encode($previewExportFilename) ?>;
-  const downloadButton = document.getElementById('rpDownload');
 
   function goToStudent(studentId){
     if (!studentId) return;
@@ -1513,21 +1516,6 @@ if (!$isAdmin && $previewReportId > 0) {
       await updateFieldAppearancesWithFonts(form, editable, defaultFont || undefined);
       applyRadioCrossAppearances(editable, form);
       const renderedBytes = await editable.save();
-
-      if (downloadButton) {
-        downloadButton.disabled = false;
-        downloadButton.addEventListener('click', () => {
-          const blob = new Blob([renderedBytes], { type: 'application/pdf' });
-          const objectUrl = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = objectUrl;
-          link.download = exportFilename || 'Bericht.pdf';
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-        }, { once: true });
-      }
 
       const pdf = await pdfjsLib.getDocument({ data: renderedBytes }).promise;
       preview.innerHTML = '';

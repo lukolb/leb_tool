@@ -11,6 +11,7 @@ $u = current_user();
 $userId = (int)($u['id'] ?? 0);
 
 $classId = (int)($_GET['class_id'] ?? 0);
+$studentId = max(0, (int)($_GET['student_id'] ?? 0));
 if ($classId <= 0) {
   http_response_code(400);
   echo "Bad Request";
@@ -18,9 +19,27 @@ if ($classId <= 0) {
 }
 
 if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
-  http_response_code(403);
-  echo "Forbidden";
-  exit;
+  $stGrant = $pdo->prepare(
+    "SELECT c.school_year, c.period_label
+     FROM classes c
+     INNER JOIN student_class_assignments sca ON sca.class_id=c.id AND sca.student_id=?
+     WHERE c.id=?
+     LIMIT 1"
+  );
+  $stGrant->execute([$studentId, $classId]);
+  $grantClass = $stGrant->fetch(PDO::FETCH_ASSOC);
+  $hasReportGrant = $studentId > 0 && $grantClass && user_can_view_student_report(
+    $pdo,
+    $userId,
+    $studentId,
+    (string)($grantClass['school_year'] ?? ''),
+    (string)($grantClass['period_label'] ?? 'H1')
+  );
+  if (!$hasReportGrant) {
+    http_response_code(403);
+    echo "Forbidden";
+    exit;
+  }
 }
 
 $st = $pdo->prepare(

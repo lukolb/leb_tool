@@ -8,11 +8,16 @@ require_admin();
 
 $pdo = db();
 
-$st = $pdo->query("SELECT c.* FROM classes c WHERE c.is_active=1 ORDER BY c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC");
+$classId = (int)($_GET['class_id'] ?? 0);
+$st = $pdo->query(
+  "SELECT c.*
+   FROM classes c
+   ORDER BY c.is_active DESC, c.school_year DESC, c.grade_level DESC, c.label ASC, c.name ASC"
+);
 $classes = $st->fetchAll(PDO::FETCH_ASSOC);
 
-$classId = (int)($_GET['class_id'] ?? 0);
 if ($classId <= 0 && $classes) $classId = (int)($classes[0]['id'] ?? 0);
+$groupExportClassesByArchive = true;
 
 $csrf = csrf_token();
 $debugPdf = (int)($_GET['debug_pdf'] ?? 0) === 1;
