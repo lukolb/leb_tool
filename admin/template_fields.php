@@ -1542,6 +1542,33 @@ function getSubgroupMatchKey(f){
   return `${parts.group}||${parts.subgroup}`;
 }
 
+function findExistingGroupTitleEn(group, excludeFieldId){
+  const groupKey = String(group || '').trim();
+  if (!groupKey) return '';
+  for (const field of fields) {
+    if (Number(field.id) === Number(excludeFieldId)) continue;
+    const parts = parseGroupParts(field?.meta?.group);
+    if (parts.group !== groupKey) continue;
+    const value = String(field?.meta?.group_title_en || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function findExistingSubgroupTitleEn(group, subgroup, excludeFieldId){
+  const groupKey = String(group || '').trim();
+  const subgroupKey = String(subgroup || '').trim();
+  if (!groupKey || !subgroupKey) return '';
+  for (const field of fields) {
+    if (Number(field.id) === Number(excludeFieldId)) continue;
+    const parts = parseGroupParts(field?.meta?.group);
+    if (parts.group !== groupKey || parts.subgroup !== subgroupKey) continue;
+    const value = String(field?.meta?.subgroup_title_en || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
 function markDirty(id){
   dirty.add(id);
   saveHint.textContent = dirty.size ? `Ungespeicherte Änderungen: ${dirty.size}` : ' ';
@@ -2111,12 +2138,26 @@ function renderTable(){
     inpSubEn.value = (f.meta && f.meta.subgroup_title_en) ? String(f.meta.subgroup_title_en) : '';
 
     function syncGroupMeta(){
+      const previousParts = parseGroupParts(fields[idx]?.meta?.group);
       const groupVal = inpG.value.trim();
       const subVal = inpSub.value.trim();
       const merged = buildGroupPath(groupVal, subVal);
+      const groupChanged = previousParts.group !== groupVal;
+      const subgroupChanged = groupChanged || previousParts.subgroup !== subVal;
       fields[idx].meta = fields[idx].meta || {};
       if (merged) fields[idx].meta.group = merged;
       else delete fields[idx].meta.group;
+
+      const existingGroupTitleEn = findExistingGroupTitleEn(groupVal, f.id);
+      if (existingGroupTitleEn) fields[idx].meta.group_title_en = existingGroupTitleEn;
+      else if (groupChanged || !groupVal) delete fields[idx].meta.group_title_en;
+
+      const existingSubgroupTitleEn = findExistingSubgroupTitleEn(groupVal, subVal, f.id);
+      if (existingSubgroupTitleEn) fields[idx].meta.subgroup_title_en = existingSubgroupTitleEn;
+      else if (subgroupChanged || !subVal) delete fields[idx].meta.subgroup_title_en;
+
+      inpGE.value = String(fields[idx].meta.group_title_en || '');
+      inpSubEn.value = String(fields[idx].meta.subgroup_title_en || '');
       markDirty(f.id);
       rebuildGroupDatalist();
       renderGroupsBar();

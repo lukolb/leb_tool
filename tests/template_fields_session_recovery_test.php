@@ -72,6 +72,13 @@ template_fields_recovery_assert(
   'leaving an unchanged empty English group field must not clear translations on sibling fields'
 );
 template_fields_recovery_assert(
+  strpos($editor, 'function findExistingGroupTitleEn(group, excludeFieldId)') !== false
+    && strpos($editor, 'function findExistingSubgroupTitleEn(group, subgroup, excludeFieldId)') !== false
+    && strpos($editor, 'fields[idx].meta.group_title_en = existingGroupTitleEn;') !== false
+    && strpos($editor, 'fields[idx].meta.subgroup_title_en = existingSubgroupTitleEn;') !== false,
+  'assigning an existing group or subgroup must adopt its available English title'
+);
+template_fields_recovery_assert(
   substr_count($source['translations'], "'admin.template_fields.draft_restored'") === 2,
   'draft restoration feedback must be translated in German and English'
 );
