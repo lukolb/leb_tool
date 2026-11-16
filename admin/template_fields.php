@@ -126,8 +126,9 @@ render_admin_header(t('admin.template_fields.title'));
     border-radius: 12px;
   }
   #fieldsTbl{
-    width: 100%;
-    min-width: 2000px;
+    width: max-content;
+    min-width: 100%;
+    table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
   }
@@ -140,6 +141,7 @@ render_admin_header(t('admin.template_fields.title'));
     position: sticky;
     top: 0;
     z-index: 6;
+    padding-right: 16px;
   }
   #fieldsTbl input[type="text"], #fieldsTbl select, #fieldsTbl textarea{
     width: 100%;
@@ -148,8 +150,76 @@ render_admin_header(t('admin.template_fields.title'));
 
   /* sticky reference columns (checkbox + field name) */
   .sticky-col-0{ position: sticky; left: 0; z-index: 100; background: var(--card, #fff); }
-  .sticky-col-1{ position: sticky; left: 45px; z-index: 100; background: var(--card, #fff); }
+  .sticky-col-1{ position: sticky; left: var(--sticky-select-width, 46px); z-index: 100; background: var(--card, #fff); }
   #fieldsTbl thead .sticky-col-0, #fieldsTbl thead .sticky-col-1{ z-index: 200; }
+  #fieldsTbl .column-hidden{ display:none !important; }
+  #fieldsTbl col.column-hidden-col{ visibility:collapse; width:0 !important; }
+
+  .table-column-resizer{
+    position:absolute;
+    top:0;
+    right:-4px;
+    width:9px;
+    height:100%;
+    cursor:col-resize;
+    touch-action:none;
+    z-index:4;
+  }
+  .table-column-resizer::after{
+    content:"";
+    position:absolute;
+    top:20%;
+    bottom:20%;
+    left:4px;
+    width:1px;
+    background:var(--border);
+  }
+  .table-column-resizer:hover::after,
+  .table-column-resizer:focus::after{
+    width:2px;
+    background:#b00020;
+  }
+  body.table-column-resizing,
+  body.table-column-resizing *{
+    cursor:col-resize !important;
+    user-select:none !important;
+  }
+
+  .column-controls{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:12px;
+  }
+  .column-controls details{ position:relative; }
+  .column-controls summary{ list-style:none; cursor:pointer; }
+  .column-controls summary::-webkit-details-marker{ display:none; }
+  .column-controls-panel{
+    position:absolute;
+    left:0;
+    top:calc(100% + 6px);
+    z-index:260;
+    width:min(620px, calc(100vw - 48px));
+    padding:14px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--card, #fff);
+    box-shadow:0 16px 40px rgba(0,0,0,0.18);
+  }
+  .column-list{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:8px 14px;
+    margin:12px 0;
+  }
+  .column-list label{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:0;
+    font-weight:400;
+  }
   
   td:has(> input[type='checkbox']) {
       text-align: center;
@@ -548,26 +618,42 @@ render_admin_header(t('admin.template_fields.title'));
         </div>
     </div>
 
+    <div class="column-controls">
+      <details id="columnSettings">
+        <summary class="btn secondary"><?=h(t('admin.template_fields.columns_title'))?></summary>
+        <div class="column-controls-panel">
+          <strong><?=h(t('admin.template_fields.columns_title'))?></strong>
+          <div class="muted2" style="margin-top:4px;"><?=h(t('admin.template_fields.columns_hint'))?></div>
+          <div class="column-list" id="columnList"></div>
+          <div class="actions" style="justify-content:flex-start;">
+            <button class="btn secondary" type="button" id="btnShowAllColumns"><?=h(t('admin.template_fields.columns_show_all'))?></button>
+            <button class="btn secondary" type="button" id="btnResetColumns"><?=h(t('admin.template_fields.columns_reset'))?></button>
+          </div>
+        </div>
+      </details>
+      <span class="muted2"><?=h(t('admin.template_fields.columns_hint'))?></span>
+    </div>
+
     <div class="table-scroll" id="tableScroll" style="margin-top:12px;">
       <table id="fieldsTbl">
         <thead>
           <tr>
-            <th class="sticky-col-0" style="width:46px;"><?=h(t('admin.template_fields.table.select'))?></th>
-            <th class="sticky-col-1"><?=h(t('admin.template_fields.table.field_name'))?></th>
-            <th style="min-width:200px;"><?=h(t('admin.template_fields.table.group'))?></th>
-            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
-            <th style="min-width:200px;"><?=h(t('admin.template_fields.table.subgroup'))?></th>
-            <th style="min-width:220px;"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
-            <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label'))?></th>
-            <th style="min-width:260px;"><?=h(t('admin.template_fields.table.label_en'))?></th>
-            <th style="min-width:420px;"><?=h(t('admin.template_fields.table.help'))?></th>
-            <th style="min-width:240px;"><?=h(t('admin.template_fields.table.base_field'))?></th>
-            <th style="min-width:160px;"><?=h(t('admin.template_fields.table.type'))?></th>
-            <th><?=h(t('admin.template_fields.table.child'))?></th>
-            <th><?=h(t('admin.template_fields.table.teacher'))?></th>
-            <th><?=h(t('admin.template_fields.table.class_field'))?></th>
-            <th><?=h(t('admin.template_fields.table.optional'))?></th>
-            <th style="min-width:420px;"><?=h(t('admin.template_fields.table.extras'))?></th>
+            <th class="sticky-col-0" data-column-key="select"><?=h(t('admin.template_fields.table.select'))?></th>
+            <th class="sticky-col-1" data-column-key="field_name"><?=h(t('admin.template_fields.table.field_name'))?></th>
+            <th data-column-key="group"><?=h(t('admin.template_fields.table.group'))?></th>
+            <th data-column-key="group_title_en"><?=h(t('admin.template_fields.table.group_title_en'))?></th>
+            <th data-column-key="subgroup"><?=h(t('admin.template_fields.table.subgroup'))?></th>
+            <th data-column-key="subgroup_title_en"><?=h(t('admin.template_fields.table.subgroup_en'))?></th>
+            <th data-column-key="label"><?=h(t('admin.template_fields.table.label'))?></th>
+            <th data-column-key="label_en"><?=h(t('admin.template_fields.table.label_en'))?></th>
+            <th data-column-key="help"><?=h(t('admin.template_fields.table.help'))?></th>
+            <th data-column-key="base_field"><?=h(t('admin.template_fields.table.base_field'))?></th>
+            <th data-column-key="type"><?=h(t('admin.template_fields.table.type'))?></th>
+            <th data-column-key="child"><?=h(t('admin.template_fields.table.child'))?></th>
+            <th data-column-key="teacher"><?=h(t('admin.template_fields.table.teacher'))?></th>
+            <th data-column-key="class_field"><?=h(t('admin.template_fields.table.class_field'))?></th>
+            <th data-column-key="optional"><?=h(t('admin.template_fields.table.optional'))?></th>
+            <th data-column-key="extras"><?=h(t('admin.template_fields.table.extras'))?></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -692,6 +778,9 @@ const I18N = <?=json_encode([
   'new_field_label' => t('admin.template_fields.new_field_label', 'Label:'),
   'new_field_added' => t('admin.template_fields.new_field_added', 'Neues Mapping-Feld hinzugefügt.'),
   'draft_restored' => t('admin.template_fields.draft_restored', 'Ungespeicherte Änderungen wurden aus der lokalen Sicherung wiederhergestellt.'),
+  'columns_selection' => t('admin.template_fields.columns_selection', 'Auswahl'),
+  'columns_minimum' => t('admin.template_fields.columns_minimum', 'Mindestens eine Spalte muss sichtbar bleiben.'),
+  'columns_resize_title' => t('admin.template_fields.columns_resize_title', 'Ziehen, um die Spaltenbreite zu ändern.'),
   'session_expired_title' => t('session.expired.title'),
   'session_expired_message' => t('session.expired.message'),
   'session_unsaved' => t('session.unsaved.message'),
@@ -754,6 +843,32 @@ const btnAutoGroupPrefix = document.getElementById('btnAutoGroupPrefix');
 const btnAutoGroupPage = document.getElementById('btnAutoGroupPage');
 
 const tableScroll = document.getElementById('tableScroll');
+const fieldsTable = document.getElementById('fieldsTbl');
+const columnList = document.getElementById('columnList');
+const btnShowAllColumns = document.getElementById('btnShowAllColumns');
+const btnResetColumns = document.getElementById('btnResetColumns');
+
+const TABLE_COLUMNS = [
+  { key:'select', defaultWidth:52, minWidth:44, maxWidth:120 },
+  { key:'field_name', defaultWidth:230, minWidth:130, maxWidth:520 },
+  { key:'group', defaultWidth:200, minWidth:110, maxWidth:520 },
+  { key:'group_title_en', defaultWidth:220, minWidth:120, maxWidth:520 },
+  { key:'subgroup', defaultWidth:220, minWidth:110, maxWidth:560 },
+  { key:'subgroup_title_en', defaultWidth:230, minWidth:120, maxWidth:560 },
+  { key:'label', defaultWidth:280, minWidth:140, maxWidth:720 },
+  { key:'label_en', defaultWidth:280, minWidth:140, maxWidth:720 },
+  { key:'help', defaultWidth:420, minWidth:160, maxWidth:900 },
+  { key:'base_field', defaultWidth:240, minWidth:140, maxWidth:520 },
+  { key:'type', defaultWidth:160, minWidth:100, maxWidth:300 },
+  { key:'child', defaultWidth:90, minWidth:68, maxWidth:180 },
+  { key:'teacher', defaultWidth:90, minWidth:68, maxWidth:180 },
+  { key:'class_field', defaultWidth:110, minWidth:78, maxWidth:220 },
+  { key:'optional', defaultWidth:100, minWidth:72, maxWidth:200 },
+  { key:'extras', defaultWidth:420, minWidth:180, maxWidth:900 },
+];
+const COLUMN_LAYOUT_STORAGE_KEY = `template_fields_columns_v1:${currentUserId}`;
+let hiddenColumns = new Set();
+let columnWidths = Object.fromEntries(TABLE_COLUMNS.map(column => [column.key, column.defaultWidth]));
 
 const btnTogglePreview = document.getElementById('btnTogglePreview');
 const layout2 = document.getElementById('layout2');
@@ -929,6 +1044,225 @@ function restoreLocalDraft(){
 
   if (restored) persistDraftNow();
   return restored;
+}
+
+function clampColumnWidth(column, value){
+  const width = Number(value);
+  if (!column || !Number.isFinite(width)) return column?.defaultWidth || 120;
+  return Math.round(Math.max(column.minWidth, Math.min(column.maxWidth, width)));
+}
+
+function loadColumnLayout(){
+  try {
+    const raw = localStorage.getItem(COLUMN_LAYOUT_STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    const validKeys = new Set(TABLE_COLUMNS.map(column => column.key));
+    const savedHidden = Array.isArray(saved?.hidden) ? saved.hidden.filter(key => validKeys.has(key)) : [];
+    if (savedHidden.length < TABLE_COLUMNS.length) hiddenColumns = new Set(savedHidden);
+    if (saved?.widths && typeof saved.widths === 'object') {
+      for (const column of TABLE_COLUMNS) {
+        if (Object.prototype.hasOwnProperty.call(saved.widths, column.key)) {
+          columnWidths[column.key] = clampColumnWidth(column, saved.widths[column.key]);
+        }
+      }
+    }
+  } catch (e) {}
+}
+
+function persistColumnLayout(){
+  try {
+    localStorage.setItem(COLUMN_LAYOUT_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      hidden: [...hiddenColumns],
+      widths: columnWidths
+    }));
+  } catch (e) {}
+}
+
+function visibleColumnCount(){
+  return TABLE_COLUMNS.reduce((count, column) => count + (hiddenColumns.has(column.key) ? 0 : 1), 0);
+}
+
+function ensureColumnGroup(){
+  let colgroup = fieldsTable.querySelector('colgroup[data-column-layout]');
+  if (colgroup) return colgroup;
+  colgroup = document.createElement('colgroup');
+  colgroup.dataset.columnLayout = '1';
+  for (const column of TABLE_COLUMNS) {
+    const col = document.createElement('col');
+    col.dataset.columnKey = column.key;
+    colgroup.appendChild(col);
+  }
+  fieldsTable.insertBefore(colgroup, fieldsTable.firstChild);
+  return colgroup;
+}
+
+function updateTableWidth(){
+  const visibleWidth = TABLE_COLUMNS.reduce((sum, column) => {
+    if (hiddenColumns.has(column.key)) return sum;
+    return sum + clampColumnWidth(column, columnWidths[column.key]);
+  }, 0);
+  const viewportWidth = Math.max(0, Number(tableScroll?.clientWidth || 0) - 2);
+  fieldsTable.style.width = `${Math.max(visibleWidth, viewportWidth)}px`;
+}
+
+function applyColumnWidths(){
+  const colgroup = ensureColumnGroup();
+  for (const column of TABLE_COLUMNS) {
+    const width = clampColumnWidth(column, columnWidths[column.key]);
+    columnWidths[column.key] = width;
+    const col = colgroup.querySelector(`col[data-column-key="${CSS.escape(column.key)}"]`);
+    if (col) col.style.width = `${width}px`;
+    const handle = fieldsTable.querySelector(`thead th[data-column-key="${CSS.escape(column.key)}"] .table-column-resizer`);
+    if (handle) {
+      handle.setAttribute('aria-valuemin', String(column.minWidth));
+      handle.setAttribute('aria-valuemax', String(column.maxWidth));
+      handle.setAttribute('aria-valuenow', String(width));
+      handle.setAttribute('aria-valuetext', `${width} px`);
+    }
+  }
+  const stickySelectWidth = hiddenColumns.has('select') ? 0 : columnWidths.select;
+  fieldsTable.style.setProperty('--sticky-select-width', `${stickySelectWidth}px`);
+  updateTableWidth();
+}
+
+function applyColumnVisibility(){
+  const colgroup = ensureColumnGroup();
+  for (const column of TABLE_COLUMNS) {
+    const hidden = hiddenColumns.has(column.key);
+    const selector = `[data-column-key="${CSS.escape(column.key)}"]`;
+    fieldsTable.querySelectorAll(selector).forEach(element => {
+      element.classList.toggle(element.tagName === 'COL' ? 'column-hidden-col' : 'column-hidden', hidden);
+    });
+    const col = colgroup.querySelector(`col${selector}`);
+    if (col) col.classList.toggle('column-hidden-col', hidden);
+  }
+  const visibleCount = Math.max(1, visibleColumnCount());
+  tbody.querySelectorAll('tr.group-row td.group-sticky').forEach(cell => {
+    cell.colSpan = visibleCount;
+  });
+}
+
+function applyColumnLayout(){
+  applyColumnVisibility();
+  applyColumnWidths();
+}
+
+function setColumnCell(cell, key){
+  cell.dataset.columnKey = key;
+  cell.classList.toggle('column-hidden', hiddenColumns.has(key));
+}
+
+function renderColumnControls(){
+  columnList.innerHTML = '';
+  for (const column of TABLE_COLUMNS) {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !hiddenColumns.has(column.key);
+    checkbox.addEventListener('change', ()=>{
+      if (!checkbox.checked && visibleColumnCount() <= 1) {
+        checkbox.checked = true;
+        alert(tAdmin('columns_minimum'));
+        return;
+      }
+      if (checkbox.checked) hiddenColumns.delete(column.key);
+      else hiddenColumns.add(column.key);
+      persistColumnLayout();
+      applyColumnLayout();
+    });
+    const text = document.createElement('span');
+    text.textContent = column.label || column.key;
+    label.append(checkbox, text);
+    columnList.appendChild(label);
+  }
+}
+
+function installColumnResizers(){
+  for (const column of TABLE_COLUMNS) {
+    const header = fieldsTable.querySelector(`thead th[data-column-key="${CSS.escape(column.key)}"]`);
+    if (!header || header.querySelector('.table-column-resizer')) continue;
+    const handle = document.createElement('span');
+    handle.className = 'table-column-resizer';
+    handle.tabIndex = 0;
+    handle.setAttribute('role', 'separator');
+    handle.setAttribute('aria-orientation', 'vertical');
+    handle.setAttribute('aria-label', `${column.label}: ${tAdmin('columns_resize_title')}`);
+    handle.title = tAdmin('columns_resize_title');
+
+    handle.addEventListener('pointerdown', (event)=>{
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startWidth = columnWidths[column.key];
+      document.body.classList.add('table-column-resizing');
+      handle.setPointerCapture?.(event.pointerId);
+
+      const onMove = (moveEvent)=>{
+        columnWidths[column.key] = clampColumnWidth(column, startWidth + moveEvent.clientX - startX);
+        applyColumnWidths();
+      };
+      const onUp = ()=>{
+        document.body.classList.remove('table-column-resizing');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        persistColumnLayout();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+
+    handle.addEventListener('keydown', (event)=>{
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const step = event.shiftKey ? 40 : 12;
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      columnWidths[column.key] = clampColumnWidth(column, columnWidths[column.key] + direction * step);
+      applyColumnWidths();
+      persistColumnLayout();
+    });
+
+    handle.addEventListener('dblclick', (event)=>{
+      event.preventDefault();
+      event.stopPropagation();
+      columnWidths[column.key] = column.defaultWidth;
+      applyColumnWidths();
+      persistColumnLayout();
+    });
+    header.appendChild(handle);
+  }
+}
+
+function initColumnLayout(){
+  for (const column of TABLE_COLUMNS) {
+    const header = fieldsTable.querySelector(`thead th[data-column-key="${CSS.escape(column.key)}"]`);
+    const headerText = String(header?.textContent || '').trim();
+    column.label = column.key === 'select' ? tAdmin('columns_selection') : (headerText || column.key);
+  }
+  loadColumnLayout();
+  ensureColumnGroup();
+  installColumnResizers();
+  renderColumnControls();
+  applyColumnLayout();
+
+  btnShowAllColumns.addEventListener('click', ()=>{
+    hiddenColumns.clear();
+    persistColumnLayout();
+    renderColumnControls();
+    applyColumnLayout();
+  });
+  btnResetColumns.addEventListener('click', ()=>{
+    hiddenColumns.clear();
+    columnWidths = Object.fromEntries(TABLE_COLUMNS.map(column => [column.key, column.defaultWidth]));
+    persistColumnLayout();
+    renderColumnControls();
+    applyColumnLayout();
+  });
+  window.addEventListener('resize', applyColumnWidths);
 }
 
 function isSessionFailure(resp, payload){
@@ -1977,16 +2311,10 @@ function renderTable(){
           </div>
         `;
 
-        // Linke, sticky Zelle: deckt ✓ + Feldname + Gruppenspalten ab
-        const tdLeft = document.createElement('td');
-        tdLeft.className = 'group-sticky';
-        tdLeft.colSpan = 6;
-        tdLeft.innerHTML = html;
-
-        // Rechte Zelle: füllt Rest (damit Row optisch über volle Breite geht)
-        const tdRight = document.createElement('td');
-        tdRight.colSpan = 10;
-        tdRight.innerHTML = '&nbsp;'; // nur Fläche
+        const tdGroup = document.createElement('td');
+        tdGroup.className = 'group-sticky';
+        tdGroup.colSpan = Math.max(1, visibleColumnCount());
+        tdGroup.innerHTML = html;
 
         // Klick-Handling auf der ganzen Zeile (nicht nur links)
         gr.addEventListener('click', (e)=>{
@@ -2007,7 +2335,7 @@ function renderTable(){
           scanForSplitCandidate();
         });
 
-        gr.append(tdLeft, tdRight);
+        gr.appendChild(tdGroup);
         tbody.appendChild(gr);
     }
 
@@ -2479,10 +2807,31 @@ function renderTable(){
 
     tdX.appendChild(wrap);
 
+    const columnCells = [
+      [tdS, 'select'],
+      [tdN, 'field_name'],
+      [tdG, 'group'],
+      [tdGE, 'group_title_en'],
+      [tdSub, 'subgroup'],
+      [tdSubEn, 'subgroup_title_en'],
+      [tdL, 'label'],
+      [tdLE, 'label_en'],
+      [tdH, 'help'],
+      [tdB, 'base_field'],
+      [tdT, 'type'],
+      [tdC, 'child'],
+      [tdTe, 'teacher'],
+      [tdK, 'class_field'],
+      [tdR, 'optional'],
+      [tdX, 'extras'],
+    ];
+    columnCells.forEach(([cell, key]) => setColumnCell(cell, key));
+
     // ✓ | Feldname | Gruppe | Gruppentitel EN | Untergruppe | Untergruppe EN | Label | Label EN | Help | Stammfeld | Typ | Kind | Lehrer | Klassenfeld | Req | Extras
     tr.append(tdS, tdN, tdG, tdGE, tdSub, tdSubEn, tdL, tdLE, tdH, tdB, tdT, tdC, tdTe, tdK, tdR, tdX);
     tbody.appendChild(tr);
   }
+  applyColumnLayout();
 }
 
 function syncGroupTitleEnDom(groupKey, value){
@@ -2973,6 +3322,7 @@ function applyPreviewRatio(ratio){
   const r = clamp(Number(ratio)||0.45, 0.22, 0.70);
   layout2.style.gridTemplateColumns = `${(1-r).toFixed(4)}fr 10px ${r.toFixed(4)}fr`;
   try { localStorage.setItem(LS_KEY, String(r)); } catch(e) {}
+  setTimeout(applyColumnWidths, 0);
   if (!layout2.classList.contains('hide-preview')) setTimeout(()=>renderPage(), 60);
 }
 
@@ -2984,6 +3334,7 @@ function applyPreviewHidden(hidden, persist = true){
   if (persist) {
     try { localStorage.setItem(LS_PREVIEW_HIDDEN_KEY, hidden ? '1' : '0'); } catch(e) {}
   }
+  setTimeout(applyColumnWidths, 0);
   if (!hidden) setTimeout(()=>renderPage(), 80);
 }
 
@@ -3405,6 +3756,7 @@ pdfCanvas.addEventListener('click', async (ev) => {
   }
 });
 
+initColumnLayout();
 load().catch(err=>{ metaLine.textContent = tAdmin('error_prefix') + ' ' + (err?.message || err); });
 </script>
 
