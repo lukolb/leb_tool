@@ -29,6 +29,8 @@ report_preview_assert(strpos($preview, "teacher.report_preview.active_students_g
 report_preview_assert(strpos($preview, "teacher.report_preview.archived_students_group") !== false, 'archived students must be presented as a distinct group');
 report_preview_assert(strpos($preview, '$filteredArchivedStudents = $isAdmin ?') !== false, 'fully archived students must only be exposed to administrators by default');
 report_preview_assert(strpos($preview, '$filteredGrantedArchivedStudents = !$isAdmin ?') !== false, 'an explicit approved teacher grant may expose an archived student');
+report_preview_assert(strpos($preview, 'student_grant.student_id=?') !== false, 'an approved student grant must expose reports from every historical class period');
+report_preview_assert(strpos($preview, "class_grant.scope_type='class'") !== false, 'an approved class grant must remain limited to reports from the granted class period');
 report_preview_assert(strpos($preview, 'c.id=sca.class_id AND c.is_active=1') !== false && strpos($preview, 'sca.is_active=1 AND uca.user_id=?') !== false, 'teachers must only receive students from active assignments in active classes');
 report_preview_assert(strpos($preview, "\$studentChoice['display_class_label'] = (string)(\$studentChoice['current_class_label'] ?: \$studentChoice['latest_class_label']);") !== false, 'student options must prefer the active class and fall back to the latest assignment');
 report_preview_assert(strpos($preview, "\$selectedStudent['display_class_label']") !== false, 'the selected-student summary must show the same single preferred class');

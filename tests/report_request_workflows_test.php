@@ -41,6 +41,10 @@ report_request_assert(strpos($source['access_page'], 'user_can_review_report_acc
 report_request_assert(strpos($source['access_page'], "status='revoked'") !== false, 'approved access must be revocable');
 report_request_assert(strpos($source['access_page'], 'extend_access') !== false && strpos($source['access_page'], 'expires_at') !== false, 'approved access must support optional expiry and extension');
 report_request_assert(strpos($source['bootstrap'], "rar.expires_at IS NULL OR rar.expires_at>=NOW()") !== false, 'expired access grants must be rejected by authorization checks');
+report_request_assert(strpos($source['bootstrap'], "scope_type='student'\n       AND student_id=?") !== false, 'a student grant must authorize the student independently of the report class period');
+report_request_assert(strpos($source['preview'], 'student_grant.student_id=?') !== false && strpos($source['preview'], "class_grant.scope_type='class'") !== false, 'student grants must expose the full report history while class grants remain period-bound');
+report_request_assert(strpos($source['access_page'], "requester_user_id=? AND scope_type='student' AND student_id=?") !== false, 'duplicate student grants must be detected across classes');
+report_request_assert(strpos($source['access_page'], 'rar.requester_user_id=') !== false && strpos($source['access_page'], '$canReturnOwnGrant') !== false, 'requesters must see their own grants and be able to return them');
 report_request_assert(strpos($source['notifications'], 'report_access_approval_tokens') !== false && strpos($source['notifications'], "hash('sha256', \$rawToken)") !== false, 'each email reviewer must receive a hashed one-time approval token');
 report_request_assert(strpos($source['notifications'], 'approve_7') !== false && strpos($source['notifications'], 'approve_30') !== false && strpos($source['notifications'], 'approve_unlimited') !== false, 'approval emails must offer 7-day, 30-day, and unlimited grants');
 report_request_assert(strpos($source['email_approve'], 'window.location.hash') !== false, 'the raw email token must stay in the URL fragment and out of server logs');

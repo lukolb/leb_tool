@@ -61,14 +61,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['action'] 
       $stLockClass = $pdo->prepare("SELECT id FROM classes WHERE id=? LIMIT 1 FOR UPDATE");
       $stLockClass->execute([$classId]);
       if (!$stLockClass->fetchColumn()) throw new RuntimeException(t('report_requests.error.class_not_found', 'Klasse nicht gefunden.'));
-      $duplicateSql =
-        "SELECT id FROM report_access_requests
-         WHERE requester_user_id=? AND class_id=? AND scope_type=?
-           AND " . ($scopeType === 'student' ? 'student_id=?' : 'student_id IS NULL') . "
-           AND (status='pending' OR (status='approved' AND (expires_at IS NULL OR expires_at>=NOW())))
-         LIMIT 1";
-      $duplicateParams = [$accessUserId, $classId, $scopeType];
-      if ($scopeType === 'student') $duplicateParams[] = $studentId;
+      if ($scopeType === 'student') {
+        $stLockStudent = $pdo->prepare("SELECT id FROM students WHERE id=? LIMIT 1 FOR UPDATE");
+        $stLockStudent->execute([$studentId]);
+        if (!$stLockStudent->fetchColumn()) throw new RuntimeException(t('report_requests.error.student_not_in_class', 'Der Schüler ist dieser Klasse nicht zugeordnet.'));
+        $duplicateSql =
+          "SELECT id FROM report_access_requests
+           WHERE requester_user_id=? AND scope_type='student' AND student_id=?
+             AND (status='pending' OR (status='approved' AND (expires_at IS NULL OR expires_at>=NOW())))
+           LIMIT 1";
+        $duplicateParams = [$accessUserId, $studentId];
+      } else {
+        $duplicateSql =
+          "SELECT id FROM report_access_requests
+           WHERE requester_user_id=? AND class_id=? AND scope_type='class' AND student_id IS NULL
+             AND (status='pending' OR (status='approved' AND (expires_at IS NULL OR expires_at>=NOW())))
+           LIMIT 1";
+        $duplicateParams = [$accessUserId, $classId];
+      }
       $stDuplicate = $pdo->prepare($duplicateSql);
       $stDuplicate->execute($duplicateParams);
       if ($stDuplicate->fetchColumn()) throw new RuntimeException(t('report_requests.error.duplicate', 'Für diesen Umfang besteht bereits eine offene oder aktive Freigabe.'));
@@ -100,7 +110,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['action'] 
       $stRequest = $pdo->prepare("SELECT * FROM report_access_requests WHERE id=? LIMIT 1 FOR UPDATE");
       $stRequest->execute([$requestId]);
       $requestRow = $stRequest->fetch(PDO::FETCH_ASSOC);
-      if (!$requestRow || !user_can_review_report_access_request($pdo, $accessUserId, (int)$requestRow['class_id'])) {
+      if (!$requestRow) throw new RuntimeException(t('report_requests.error.not_found', 'Antrag nicht gefunden.'));
+      $canReviewRequest = user_can_review_report_access_request($pdo, $accessUserId, (int)$requestRow['class_id']);
+      $canReturnOwnGrant = $action === 'revoke_access' && (int)$requestRow['requester_user_id'] === $accessUserId;
+      if (!$canReviewRequest && !$canReturnOwnGrant) {
         throw new RuntimeException(t('session.forbidden.message', 'Keine Berechtigung.'));
       }
       if ($action === 'approve_access') {
@@ -181,12 +194,15 @@ $requestBaseSql =
    LEFT JOIN users reviewer ON reviewer.id=rar.reviewed_by_user_id
    INNER JOIN classes c ON c.id=rar.class_id
    LEFT JOIN students s ON s.id=rar.student_id";
-$pendingAccessRequests = $pdo->query($requestBaseSql . " WHERE rar.status='pending' AND ($reviewWhere) ORDER BY rar.created_at ASC, rar.id ASC")
+$visibleRequestWhere = $isAdmin
+  ? $reviewWhere
+  : "(($reviewWhere) OR rar.requester_user_id=" . (int)$accessUserId . ")";
+$pendingAccessRequests = $pdo->query($requestBaseSql . " WHERE rar.status='pending' AND ($visibleRequestWhere) ORDER BY rar.created_at ASC, rar.id ASC")
   ->fetchAll(PDO::FETCH_ASSOC) ?: [];
-$activeAccessGrants = $pdo->query($requestBaseSql . " WHERE rar.status='approved' AND ($reviewWhere) ORDER BY (rar.expires_at IS NULL) DESC, rar.expires_at DESC, rar.id DESC")
+$activeAccessGrants = $pdo->query($requestBaseSql . " WHERE rar.status='approved' AND ($visibleRequestWhere) ORDER BY (rar.expires_at IS NULL) DESC, rar.expires_at DESC, rar.id DESC")
   ->fetchAll(PDO::FETCH_ASSOC) ?: [];
 $ownAccessRequests = [];
-if ($isTeacherRequester) {
+if (!$isAdmin) {
   $stOwnRequests = $pdo->prepare($requestBaseSql . " WHERE rar.requester_user_id=? ORDER BY rar.created_at DESC, rar.id DESC LIMIT 100");
   $stOwnRequests->execute([$accessUserId]);
   $ownAccessRequests = $stOwnRequests->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -240,9 +256,11 @@ function report_access_scope_label(array $row): string {
   <h2 style="margin-top:0"><?=h(t('report_requests.pending.heading', 'Offene Einsichtsanfragen'))?> (<?=count($pendingAccessRequests)?>)</h2>
   <?php if (!$pendingAccessRequests): ?><p class="muted"><?=h(t('report_requests.pending.empty', 'Keine offenen Einsichtsanfragen.'))?></p><?php else: ?>
   <div class="table-wrap"><table><thead><tr><th><?=h(t('report_requests.requester', 'Antragsteller'))?></th><th><?=h(t('report_requests.scope.label', 'Umfang'))?></th><th><?=h(t('report_requests.class.label', 'Klasse'))?></th><th><?=h(t('report_requests.reason.label', 'Begründung'))?></th><th><?=h(t('report_requests.actions', 'Aktionen'))?></th></tr></thead><tbody>
-  <?php foreach ($pendingAccessRequests as $request): ?><tr><td><?=h((string)$request['requester_name'])?></td><td><?=h(report_access_scope_label($request))?></td><td><?=h(report_access_class_label($request))?></td><td><?=nl2br(h((string)$request['reason']))?></td><td>
-    <form method="post" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="approve_access"><input type="hidden" name="request_id" value="<?=h((string)$request['id'])?>"><select class="input" name="valid_days" style="width:auto"><option value="7">7 <?=h(t('deadline.unit.day_plural','Tage'))?></option><option value="30" selected>30 <?=h(t('deadline.unit.day_plural','Tage'))?></option><option value="0"><?=h(t('report_requests.unlimited','Unbegrenzt'))?></option></select><button class="btn" type="submit"><?=h(t('report_requests.approve','Freigeben'))?></button></form>
-    <form method="post" style="margin-top:6px"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="reject_access"><input type="hidden" name="request_id" value="<?=h((string)$request['id'])?>"><button class="btn secondary" type="submit"><?=h(t('report_requests.reject','Ablehnen'))?></button></form>
+  <?php foreach ($pendingAccessRequests as $request): $canReviewPending = user_can_review_report_access_request($pdo, $accessUserId, (int)$request['class_id']); ?><tr><td><?=h((string)$request['requester_name'])?></td><td><?=h(report_access_scope_label($request))?></td><td><?=h(report_access_class_label($request))?></td><td><?=nl2br(h((string)$request['reason']))?></td><td>
+    <?php if ($canReviewPending): ?>
+      <form method="post" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="approve_access"><input type="hidden" name="request_id" value="<?=h((string)$request['id'])?>"><select class="input" name="valid_days" style="width:auto"><option value="7">7 <?=h(t('deadline.unit.day_plural','Tage'))?></option><option value="30" selected>30 <?=h(t('deadline.unit.day_plural','Tage'))?></option><option value="0"><?=h(t('report_requests.unlimited','Unbegrenzt'))?></option></select><button class="btn" type="submit"><?=h(t('report_requests.approve','Freigeben'))?></button></form>
+      <form method="post" style="margin-top:6px"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="reject_access"><input type="hidden" name="request_id" value="<?=h((string)$request['id'])?>"><button class="btn secondary" type="submit"><?=h(t('report_requests.reject','Ablehnen'))?></button></form>
+    <?php else: ?><span class="muted"><?=h(t('report_requests.awaiting_approval','Wartet auf Freigabe'))?></span><?php endif; ?>
   </td></tr><?php endforeach; ?></tbody></table></div>
   <?php endif; ?>
 </section>
@@ -251,13 +269,17 @@ function report_access_scope_label(array $row): string {
   <h2 style="margin-top:0"><?=h(t('report_requests.active.heading', 'Freigegebene Berichteinsichten'))?> (<?=count($activeAccessGrants)?>)</h2>
   <?php if (!$activeAccessGrants): ?><p class="muted"><?=h(t('report_requests.active.empty', 'Keine erteilten Freigaben.'))?></p><?php else: ?>
   <div class="table-wrap"><table><thead><tr><th><?=h(t('report_requests.requester', 'Antragsteller'))?></th><th><?=h(t('report_requests.scope.label', 'Umfang'))?></th><th><?=h(t('report_requests.class.label', 'Klasse'))?></th><th><?=h(t('report_requests.expires', 'Gültig bis'))?></th><th><?=h(t('report_requests.actions', 'Aktionen'))?></th></tr></thead><tbody>
-  <?php foreach ($activeAccessGrants as $grant): $expired = !empty($grant['expires_at']) && strtotime((string)$grant['expires_at']) < time(); ?><tr><td><?=h((string)$grant['requester_name'])?></td><td><?=h(report_access_scope_label($grant))?></td><td><?=h(report_access_class_label($grant))?></td><td><?= $grant['expires_at'] ? render_local_datetime((string)$grant['expires_at'], ui_lang()==='en'?'m/d/Y g:i A':'d.m.Y H:i') : h(t('report_requests.unlimited','Unbegrenzt')) ?><?= $expired ? ' · ' . h(t('report_requests.expired','abgelaufen')) : '' ?></td><td>
-    <form method="post" style="display:flex;gap:6px;flex-wrap:wrap"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="extend_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><input class="input" type="number" name="extend_days" min="1" max="3650" value="30" style="width:90px"><button class="btn secondary" type="submit"><?=h(t('report_requests.extend','Verlängern'))?></button></form>
-    <form method="post" style="margin-top:6px" onsubmit="return confirm(<?=h(json_encode(t('report_requests.revoke_confirm','Freigabe wirklich zurückziehen?')))?>)"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="revoke_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><button class="btn danger" type="submit"><?=h(t('report_requests.revoke','Zurückziehen'))?></button></form>
+  <?php foreach ($activeAccessGrants as $grant):
+    $expired = !empty($grant['expires_at']) && strtotime((string)$grant['expires_at']) < time();
+    $canReviewGrant = user_can_review_report_access_request($pdo, $accessUserId, (int)$grant['class_id']);
+    $isOwnGrant = (int)$grant['requester_user_id'] === $accessUserId;
+  ?><tr><td><?=h((string)$grant['requester_name'])?></td><td><?=h(report_access_scope_label($grant))?></td><td><?=h(report_access_class_label($grant))?></td><td><?= $grant['expires_at'] ? render_local_datetime((string)$grant['expires_at'], ui_lang()==='en'?'m/d/Y g:i A':'d.m.Y H:i') : h(t('report_requests.unlimited','Unbegrenzt')) ?><?= $expired ? ' · ' . h(t('report_requests.expired','abgelaufen')) : '' ?></td><td>
+    <?php if ($canReviewGrant): ?><form method="post" style="display:flex;gap:6px;flex-wrap:wrap"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="extend_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><input class="input" type="number" name="extend_days" min="1" max="3650" value="30" style="width:90px"><button class="btn secondary" type="submit"><?=h(t('report_requests.extend','Verlängern'))?></button></form><?php endif; ?>
+    <?php if ($canReviewGrant || $isOwnGrant): ?><form method="post" style="margin-top:6px" onsubmit="return confirm(<?=h(json_encode(t('report_requests.revoke_confirm','Freigabe wirklich zurückziehen?')))?>)"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="revoke_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><button class="btn danger" type="submit"><?=h($canReviewGrant ? t('report_requests.revoke','Zurückziehen') : t('report_requests.return_access','Freigabe zurückgeben'))?></button></form><?php endif; ?>
   </td></tr><?php endforeach; ?></tbody></table></div>
   <?php endif; ?>
 </section>
 
-<?php if ($isTeacherRequester): ?>
+<?php if (!$isAdmin): ?>
 <section class="card"><h2 style="margin-top:0"><?=h(t('report_requests.own.heading', 'Meine Einsichtsanfragen'))?></h2><div class="table-wrap"><table><thead><tr><th><?=h(t('report_requests.scope.label','Umfang'))?></th><th><?=h(t('report_requests.class.label','Klasse'))?></th><th><?=h(t('report_requests.status','Status'))?></th><th><?=h(t('report_requests.created','Erstellt'))?></th></tr></thead><tbody><?php foreach ($ownAccessRequests as $request): ?><tr><td><?=h(report_access_scope_label($request))?></td><td><?=h(report_access_class_label($request))?></td><td><?=h(t('report_requests.status.' . (string)$request['status'], (string)$request['status']))?></td><td><?=render_local_datetime((string)$request['created_at'], ui_lang()==='en'?'m/d/Y g:i A':'d.m.Y H:i')?></td></tr><?php endforeach; ?></tbody></table></div></section>
 <?php endif; ?>

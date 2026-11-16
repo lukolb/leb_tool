@@ -2078,6 +2078,19 @@ function user_can_view_student_report(PDO $pdo, int $userId, int $canonicalStude
   if ($userId <= 0 || $canonicalStudentId <= 0) return false;
   $u = current_user();
   if (($u['role'] ?? '') === 'admin') return true;
+  $stStudentGrant = $pdo->prepare(
+    "SELECT 1
+     FROM report_access_requests
+     WHERE requester_user_id=?
+       AND scope_type='student'
+       AND student_id=?
+       AND status='approved'
+       AND (expires_at IS NULL OR expires_at>=NOW())
+     LIMIT 1"
+  );
+  $stStudentGrant->execute([$userId, $canonicalStudentId]);
+  if ($stStudentGrant->fetchColumn()) return true;
+
   $periodLabel = normalize_class_period_label($periodLabel);
   $st = $pdo->prepare(
     "SELECT 1
@@ -2094,17 +2107,14 @@ function user_can_view_student_report(PDO $pdo, int $userId, int $canonicalStude
            SELECT 1 FROM report_access_requests rar
            WHERE rar.class_id=c.id
              AND rar.requester_user_id=?
+             AND rar.scope_type='class'
              AND rar.status='approved'
              AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
-             AND (
-               rar.scope_type='class'
-               OR (rar.scope_type='student' AND rar.student_id=?)
-             )
          )
        )
      LIMIT 1"
   );
-  $st->execute([$canonicalStudentId, $schoolYear, $periodLabel, $userId, $userId, $canonicalStudentId]);
+  $st->execute([$canonicalStudentId, $schoolYear, $periodLabel, $userId, $userId]);
   return (bool)$st->fetchColumn();
 }
 

@@ -86,12 +86,20 @@ function report_preview_class_for_report(
             SELECT 1 FROM report_access_requests rar
             WHERE rar.class_id=c.id
               AND rar.requester_user_id=?
+              AND rar.scope_type='class'
               AND rar.status='approved'
               AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
-              AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=?))
+          )
+          OR EXISTS (
+            SELECT 1 FROM report_access_requests student_grant
+            WHERE student_grant.requester_user_id=?
+              AND student_grant.scope_type='student'
+              AND student_grant.student_id=?
+              AND student_grant.status='approved'
+              AND (student_grant.expires_at IS NULL OR student_grant.expires_at>=NOW())
           )
         )";
-    array_push($params, $teacherUserId, $teacherUserId, $canonicalStudentId);
+    array_push($params, $teacherUserId, $teacherUserId, $teacherUserId, $canonicalStudentId);
   }
   $sql .=
     " ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
@@ -337,12 +345,20 @@ if ($studentsByCanonical) {
             SELECT 1 FROM report_access_requests rar
             WHERE rar.class_id=c.id
               AND rar.requester_user_id=?
+              AND rar.scope_type='class'
               AND rar.status='approved'
               AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
-              AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=sca.student_id))
+          )
+          OR EXISTS (
+            SELECT 1 FROM report_access_requests student_grant
+            WHERE student_grant.requester_user_id=?
+              AND student_grant.scope_type='student'
+              AND student_grant.student_id=sca.student_id
+              AND student_grant.status='approved'
+              AND (student_grant.expires_at IS NULL OR student_grant.expires_at>=NOW())
           )
         )";
-    array_push($assignmentParams, $userId, $userId);
+    array_push($assignmentParams, $userId, $userId, $userId);
   }
   $assignmentSql .=
     " ORDER BY c.school_year DESC,
@@ -386,23 +402,35 @@ if ($requestedReportId > 0) {
   $reportOwnerParams = [$requestedReportId];
   if (!$isAdmin) {
     $reportOwnerSql .=
-      " AND EXISTS (
-          SELECT 1
-          FROM student_class_assignments sca
-          INNER JOIN classes c ON c.id=sca.class_id
-          WHERE sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
-            AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-            AND (
-              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
-              OR EXISTS (
-                SELECT 1 FROM report_access_requests rar
-                WHERE rar.class_id=c.id AND rar.requester_user_id=? AND rar.status='approved'
-                  AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
-                  AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)))
+      " AND (
+          EXISTS (
+            SELECT 1 FROM report_access_requests student_grant
+            WHERE student_grant.requester_user_id=?
+              AND student_grant.scope_type='student'
+              AND student_grant.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+              AND student_grant.status='approved'
+              AND (student_grant.expires_at IS NULL OR student_grant.expires_at>=NOW())
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM student_class_assignments sca
+            INNER JOIN classes c ON c.id=sca.class_id
+            WHERE sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+              AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+              AND (
+                EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
+                OR EXISTS (
+                  SELECT 1 FROM report_access_requests class_grant
+                  WHERE class_grant.class_id=c.id
+                    AND class_grant.requester_user_id=?
+                    AND class_grant.scope_type='class'
+                    AND class_grant.status='approved'
+                    AND (class_grant.expires_at IS NULL OR class_grant.expires_at>=NOW())
+                )
               )
-            )
+          )
         )";
-    array_push($reportOwnerParams, $userId, $userId);
+    array_push($reportOwnerParams, $userId, $userId, $userId);
   }
   $reportOwnerSql .= " LIMIT 1";
   $stReportOwner = $pdo->prepare($reportOwnerSql);
@@ -507,23 +535,35 @@ if ($selectedStudentId > 0) {
   $reportParams = [$selectedStudentId];
   if (!$isAdmin) {
     $reportSql .=
-      " AND EXISTS (
-          SELECT 1
-          FROM student_class_assignments sca
-          INNER JOIN classes c ON c.id=sca.class_id
-          WHERE sca.student_id=?
-            AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-            AND (
-              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
-              OR EXISTS (
-                SELECT 1 FROM report_access_requests rar
-                WHERE rar.class_id=c.id AND rar.requester_user_id=? AND rar.status='approved'
-                  AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
-                  AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=?))
+      " AND (
+          EXISTS (
+            SELECT 1 FROM report_access_requests student_grant
+            WHERE student_grant.requester_user_id=?
+              AND student_grant.scope_type='student'
+              AND student_grant.student_id=?
+              AND student_grant.status='approved'
+              AND (student_grant.expires_at IS NULL OR student_grant.expires_at>=NOW())
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM student_class_assignments sca
+            INNER JOIN classes c ON c.id=sca.class_id
+            WHERE sca.student_id=?
+              AND c.school_year=ri.school_year AND c.period_label=ri.period_label
+              AND (
+                EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
+                OR EXISTS (
+                  SELECT 1 FROM report_access_requests class_grant
+                  WHERE class_grant.class_id=c.id
+                    AND class_grant.requester_user_id=?
+                    AND class_grant.scope_type='class'
+                    AND class_grant.status='approved'
+                    AND (class_grant.expires_at IS NULL OR class_grant.expires_at>=NOW())
+                )
               )
-            )
+          )
         )";
-    array_push($reportParams, $selectedStudentId, $userId, $userId, $selectedStudentId);
+    array_push($reportParams, $userId, $selectedStudentId, $selectedStudentId, $userId, $userId);
   }
   $reportSql .=
     " ORDER BY ri.school_year DESC,
