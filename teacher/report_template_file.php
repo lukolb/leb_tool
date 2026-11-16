@@ -35,24 +35,13 @@ if (!$row) {
 
 $classId = 0;
 if ($role !== 'admin') {
-  $stClass = $pdo->prepare(
-    "SELECT c.id
-     FROM student_class_assignments sca
-     INNER JOIN classes c ON c.id=sca.class_id
-     INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
-     WHERE sca.student_id=? AND c.school_year=? AND c.period_label=?
-     ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
-     LIMIT 1"
-  );
-  $stClass->execute([
+  if (!user_can_view_student_report(
+    $pdo,
     $userId,
     (int)($row['canonical_student_id'] ?? 0),
     (string)($row['school_year'] ?? ''),
-    (string)($row['period_label'] ?? 'H1'),
-    (int)($row['template_id'] ?? 0),
-  ]);
-  $classId = (int)($stClass->fetchColumn() ?: 0);
-  if ($classId <= 0) {
+    (string)($row['period_label'] ?? 'H1')
+  )) {
     http_response_code(403);
     echo 'Keine Berechtigung';
     exit;

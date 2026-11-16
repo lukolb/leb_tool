@@ -487,6 +487,62 @@ CREATE TABLE IF NOT EXISTS `field_value_history` (
   KEY `idx_fvh_field` (`template_field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `report_deletion_requests` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `report_instance_id` bigint UNSIGNED DEFAULT NULL,
+  `report_id_snapshot` bigint UNSIGNED NOT NULL,
+  `student_id` bigint UNSIGNED DEFAULT NULL,
+  `student_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `template_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `requested_by_user_id` bigint UNSIGNED NOT NULL,
+  `reason` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('pending','approved','rejected','missing') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `reviewed_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_report_delete_request_status` (`status`,`created_at`),
+  KEY `idx_report_delete_request_report` (`report_instance_id`,`status`),
+  KEY `idx_report_delete_request_requester` (`requested_by_user_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `report_access_requests` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `requester_user_id` bigint UNSIGNED NOT NULL,
+  `class_id` bigint UNSIGNED NOT NULL,
+  `student_id` bigint UNSIGNED DEFAULT NULL,
+  `scope_type` enum('student','class') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `reason` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` enum('pending','approved','rejected','revoked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `reviewed_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `expires_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_report_access_request_status` (`status`,`created_at`),
+  KEY `idx_report_access_request_requester` (`requester_user_id`,`status`),
+  KEY `idx_report_access_request_class` (`class_id`,`status`),
+  KEY `idx_report_access_request_student` (`student_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `report_access_approval_tokens` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `request_id` bigint UNSIGNED NOT NULL,
+  `reviewer_user_id` bigint UNSIGNED NOT NULL,
+  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_report_access_approval_token` (`token_hash`),
+  KEY `idx_report_access_approval_request` (`request_id`,`used_at`),
+  KEY `idx_report_access_approval_reviewer` (`reviewer_user_id`,`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `parent_portal_links` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `student_id` bigint UNSIGNED NOT NULL,
@@ -787,6 +843,22 @@ ALTER TABLE `field_value_history`
   ADD CONSTRAINT `fk_fvh_template_field` FOREIGN KEY (`template_field_id`) REFERENCES `template_fields` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_fvh_updated_by_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_fvh_updated_by_student` FOREIGN KEY (`updated_by_student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `report_deletion_requests`
+  ADD CONSTRAINT `fk_rdr_report` FOREIGN KEY (`report_instance_id`) REFERENCES `report_instances` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rdr_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rdr_requested_by` FOREIGN KEY (`requested_by_user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rdr_reviewed_by` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `report_access_requests`
+  ADD CONSTRAINT `fk_rar_requester` FOREIGN KEY (`requester_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rar_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rar_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rar_reviewed_by` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE `report_access_approval_tokens`
+  ADD CONSTRAINT `fk_raat_request` FOREIGN KEY (`request_id`) REFERENCES `report_access_requests` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_raat_reviewer` FOREIGN KEY (`reviewer_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE `parent_portal_links`
   ADD CONSTRAINT `fk_parent_portal_links_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

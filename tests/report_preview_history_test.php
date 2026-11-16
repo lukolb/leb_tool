@@ -27,20 +27,19 @@ report_preview_assert(strpos($preview, 'name="q"') !== false && strpos($preview,
 report_preview_assert(strpos($preview, "'class_id'=>\$selectedClassFilter") !== false && strpos($preview, "'q'=>\$studentSearch") !== false, 'report and student navigation must retain active filters');
 report_preview_assert(strpos($preview, "teacher.report_preview.active_students_group") !== false, 'current students must be presented as a distinct group');
 report_preview_assert(strpos($preview, "teacher.report_preview.archived_students_group") !== false, 'archived students must be presented as a distinct group');
-report_preview_assert(strpos($preview, '$filteredArchivedStudents = $isAdmin ?') !== false, 'fully archived students must only be exposed to administrators');
+report_preview_assert(strpos($preview, '$filteredArchivedStudents = $isAdmin ?') !== false, 'fully archived students must only be exposed to administrators by default');
+report_preview_assert(strpos($preview, '$filteredGrantedArchivedStudents = !$isAdmin ?') !== false, 'an explicit approved teacher grant may expose an archived student');
 report_preview_assert(strpos($preview, 'c.id=sca.class_id AND c.is_active=1') !== false && strpos($preview, 'sca.is_active=1 AND uca.user_id=?') !== false, 'teachers must only receive students from active assignments in active classes');
 report_preview_assert(strpos($preview, "\$studentChoice['display_class_label'] = (string)(\$studentChoice['current_class_label'] ?: \$studentChoice['latest_class_label']);") !== false, 'student options must prefer the active class and fall back to the latest assignment');
 report_preview_assert(strpos($preview, "\$selectedStudent['display_class_label']") !== false, 'the selected-student summary must show the same single preferred class');
 report_preview_assert(strpos($preview, 'id="rpDownload"') !== false && strpos($preview, "new Blob([renderedBytes], { type: 'application/pdf' })") !== false, 'the exact rendered report must be exportable as a PDF');
 report_preview_assert(strpos($preview, 'name="confirm_ack"') !== false && strpos($preview, "hash_equals(\$mustMatch, \$confirmText)") !== false, 'report deletion must require both an acknowledgement and exact confirmation text');
-report_preview_assert(strpos($preview, 'admin_report_delete') !== false && strpos($preview, 'DELETE FROM report_instances WHERE id=? AND student_id IS NOT NULL') !== false, 'an administrator must be able to delete exactly one student report with an audit record');
+report_preview_assert(strpos($preview, 'admin_report_delete') !== false && strpos($preview, 'delete_student_report_permanently') !== false, 'an administrator must be able to delete exactly one student report with an audit record');
 report_preview_assert(strpos($preview, 'DELETE FROM students') === false, 'deleting a report must never delete the student profile');
 
 $mainQueryStart = strpos($teacherFile, 'SELECT ri.id, ri.template_id, ri.school_year, ri.period_label');
-$permissionQueryStart = strpos($teacherFile, 'SELECT c.id', $mainQueryStart !== false ? $mainQueryStart : 0);
-report_preview_assert($mainQueryStart !== false && $permissionQueryStart !== false && $permissionQueryStart > $mainQueryStart, 'teacher PDF access must load the exact report before resolving its historical class permission');
-$mainQuery = substr($teacherFile, $mainQueryStart, $permissionQueryStart - $mainQueryStart);
-report_preview_assert(strpos($mainQuery, 'student_class_assignments') === false, 'the exact report PDF lookup must not depend on a current class join');
-report_preview_assert(strpos($teacherFile, 'c.school_year=? AND c.period_label=?') !== false, 'teacher permission must be checked against the report period');
+report_preview_assert($mainQueryStart !== false, 'teacher PDF access must load the exact report first');
+report_preview_assert(strpos($teacherFile, 'user_can_view_student_report(') !== false, 'teacher PDF access must accept class ownership or an active approved grant');
+report_preview_assert(strpos($teacherFile, "(string)(\$row['school_year'] ?? '')") !== false && strpos($teacherFile, "(string)(\$row['period_label'] ?? 'H1')") !== false, 'teacher permission must be checked against the report period');
 
 fwrite(STDOUT, "report_preview_history_test: OK\n");

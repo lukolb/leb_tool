@@ -4,6 +4,7 @@ declare(strict_types=1);
 if (!isset($pdo, $u, $isAdmin)) {
   throw new RuntimeException('report_preview_page.php: context missing');
 }
+require_once __DIR__ . '/report_request_notifications.php';
 
 function report_preview_period_label_display(string $raw): string {
   $val = normalize_class_period_label($raw);
@@ -71,15 +72,31 @@ function report_preview_class_for_report(
      FROM student_class_assignments sca
      INNER JOIN classes c ON c.id=sca.class_id";
   $params = [];
+  $sql .=
+    " WHERE sca.student_id=? AND c.school_year=? AND c.period_label=?";
+  array_push($params, $canonicalStudentId, $schoolYear, $periodLabel);
   if ($teacherUserId !== null) {
-    $sql .= " INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?";
-    $params[] = $teacherUserId;
+    $sql .=
+      " AND (
+          EXISTS (
+            SELECT 1 FROM user_class_assignments uca
+            WHERE uca.class_id=c.id AND uca.user_id=?
+          )
+          OR EXISTS (
+            SELECT 1 FROM report_access_requests rar
+            WHERE rar.class_id=c.id
+              AND rar.requester_user_id=?
+              AND rar.status='approved'
+              AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+              AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=?))
+          )
+        )";
+    array_push($params, $teacherUserId, $teacherUserId, $canonicalStudentId);
   }
   $sql .=
-    " WHERE sca.student_id=? AND c.school_year=? AND c.period_label=?
-      ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
+    " ORDER BY (c.template_id=?) DESC, sca.is_active DESC, c.is_active DESC, c.id DESC
       LIMIT 1";
-  array_push($params, $canonicalStudentId, $schoolYear, $periodLabel, $templateId);
+  $params[] = $templateId;
   $st = $pdo->prepare($sql);
   $st->execute($params);
   $row = $st->fetch(PDO::FETCH_ASSOC);
@@ -105,18 +122,97 @@ function report_preview_page_url(bool $isAdmin, array $params = []): string {
 
 $userId = (int)($u['id'] ?? 0);
 $pageError = '';
-$pageOk = ((int)($_GET['deleted'] ?? 0) === 1)
-  ? t('teacher.report_preview.delete_success', 'Der Bericht wurde vollständig gelöscht.')
-  : '';
+$pageOk = '';
+if ((int)($_GET['deleted'] ?? 0) === 1) {
+  $pageOk = t('teacher.report_preview.delete_success', 'Der Bericht wurde vollständig gelöscht.');
+} elseif ((int)($_GET['delete_requested'] ?? 0) === 1) {
+  $pageOk = t('teacher.report_preview.delete_request_success', 'Die Löschung wurde beim Admin beantragt.');
+}
 
 if ((string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
   try {
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
+    $deleteReportId = max(0, (int)($_POST['report_id'] ?? 0));
+    if ($action === 'request_report_deletion') {
+      if ($isAdmin) throw new RuntimeException(t('teacher.report_preview.delete_invalid', 'Ungültige Berichtsaktion.'));
+      $reason = trim((string)($_POST['reason'] ?? ''));
+      if ($deleteReportId <= 0 || $reason === '') {
+        throw new RuntimeException(t('teacher.report_preview.delete_request_reason_required', 'Bitte geben Sie einen Grund für die Löschanfrage an.'));
+      }
+      $stRequestReport = $pdo->prepare(
+        "SELECT ri.id, ri.template_id, ri.school_year, ri.period_label,
+                COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+                s.first_name, s.last_name, t.name AS template_name
+         FROM report_instances ri
+         INNER JOIN students s ON s.id=ri.student_id
+         LEFT JOIN templates t ON t.id=ri.template_id
+         WHERE ri.id=? AND ri.student_id IS NOT NULL
+         LIMIT 1"
+      );
+      $stRequestReport->execute([$deleteReportId]);
+      $requestReport = $stRequestReport->fetch(PDO::FETCH_ASSOC);
+      if (!$requestReport) throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
+      $canonicalStudentId = (int)($requestReport['canonical_student_id'] ?? 0);
+      if (!user_can_view_student_report(
+        $pdo,
+        $userId,
+        $canonicalStudentId,
+        (string)($requestReport['school_year'] ?? ''),
+        (string)($requestReport['period_label'] ?? 'H1')
+      )) {
+        throw new RuntimeException(t('session.forbidden.message', 'Keine Berechtigung.'));
+      }
+      $pdo->beginTransaction();
+      $stLockReport = $pdo->prepare("SELECT id FROM report_instances WHERE id=? AND student_id IS NOT NULL LIMIT 1 FOR UPDATE");
+      $stLockReport->execute([$deleteReportId]);
+      if (!$stLockReport->fetchColumn()) throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
+      $stPending = $pdo->prepare("SELECT id FROM report_deletion_requests WHERE report_instance_id=? AND status='pending' LIMIT 1");
+      $stPending->execute([$deleteReportId]);
+      if ($stPending->fetchColumn()) {
+        throw new RuntimeException(t('teacher.report_preview.delete_request_pending', 'Für diesen Bericht liegt bereits eine Löschanfrage vor.'));
+      }
+      $studentName = trim((string)($requestReport['first_name'] ?? '') . ' ' . (string)($requestReport['last_name'] ?? ''));
+      $pdo->prepare(
+        "INSERT INTO report_deletion_requests
+          (report_instance_id, report_id_snapshot, student_id, student_name, school_year, period_label, template_name,
+           requested_by_user_id, reason, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())"
+      )->execute([
+        $deleteReportId,
+        $deleteReportId,
+        $canonicalStudentId,
+        $studentName,
+        (string)($requestReport['school_year'] ?? ''),
+        (string)($requestReport['period_label'] ?? ''),
+        (string)($requestReport['template_name'] ?? ''),
+        $userId,
+        $reason,
+      ]);
+      $pdo->commit();
+      audit('teacher_report_delete_request', $userId, [
+        'report_instance_id' => $deleteReportId,
+        'student_id' => $canonicalStudentId,
+      ]);
+      notify_admins_about_report_deletion_request($pdo, [
+        'requester_name' => (string)($u['display_name'] ?? $u['email'] ?? ''),
+        'student_name' => $studentName,
+        'school_year' => (string)($requestReport['school_year'] ?? ''),
+        'period_label' => (string)($requestReport['period_label'] ?? ''),
+        'reason' => $reason,
+      ]);
+      header('Location: ' . report_preview_page_url(false, [
+        'student_id' => $canonicalStudentId,
+        'report_id' => $deleteReportId,
+        'class_id' => max(0, (int)($_GET['class_id'] ?? 0)),
+        'q' => trim((string)($_GET['q'] ?? '')),
+        'delete_requested' => 1,
+      ]));
+      exit;
+    }
+
     if ($action !== 'delete_report') throw new RuntimeException(t('teacher.report_preview.delete_invalid', 'Ungültige Berichtsaktion.'));
     if (!$isAdmin) throw new RuntimeException(t('teacher.report_preview.delete_admin_only', 'Nur Administratoren dürfen Berichte löschen.'));
-
-    $deleteReportId = max(0, (int)($_POST['report_id'] ?? 0));
     $confirmAck = (int)($_POST['confirm_ack'] ?? 0) === 1;
     $confirmText = trim((string)($_POST['confirm_text'] ?? ''));
     $mustMatch = 'BERICHT-' . $deleteReportId;
@@ -124,32 +220,10 @@ if ((string)($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
       throw new RuntimeException(str_replace('{value}', $mustMatch, t('teacher.report_preview.delete_confirmation_failed', 'Sicherheitsprüfung fehlgeschlagen. Geben Sie exakt {value} ein.')));
     }
 
-    $stDeleteReport = $pdo->prepare(
-      "SELECT ri.id, COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
-              ri.school_year, ri.period_label, ri.template_id
-       FROM report_instances ri
-       INNER JOIN students s ON s.id=ri.student_id
-       WHERE ri.id=? AND ri.student_id IS NOT NULL
-       LIMIT 1"
-    );
-    $stDeleteReport->execute([$deleteReportId]);
-    $deleteReport = $stDeleteReport->fetch(PDO::FETCH_ASSOC);
-    if (!$deleteReport) throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
-
-    $canonicalStudentId = (int)($deleteReport['canonical_student_id'] ?? 0);
     $pdo->beginTransaction();
-    if (db_has_table($pdo, 'parent_portal_links')) {
-      $pdo->prepare("DELETE FROM parent_portal_links WHERE report_instance_id=?")->execute([$deleteReportId]);
-    }
-    if (db_has_table($pdo, 'field_value_history')) {
-      $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$deleteReportId]);
-    }
-    $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$deleteReportId]);
-    $stDelete = $pdo->prepare("DELETE FROM report_instances WHERE id=? AND student_id IS NOT NULL");
-    $stDelete->execute([$deleteReportId]);
-    if ($stDelete->rowCount() !== 1) {
-      throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
-    }
+    $deleteReport = delete_student_report_permanently($pdo, $deleteReportId, $userId);
+    if (!$deleteReport) throw new RuntimeException(t('teacher.report_preview.delete_not_found', 'Der Bericht wurde nicht gefunden.'));
+    $canonicalStudentId = (int)($deleteReport['canonical_student_id'] ?? 0);
     audit('admin_report_delete', $userId, [
       'deleted_report_instance_id' => $deleteReportId,
       'student_id' => $canonicalStudentId,
@@ -178,14 +252,29 @@ $studentSql =
 $studentParams = [];
 if (!$isAdmin) {
   $studentSql .=
-    " AND EXISTS (
-        SELECT 1
-        FROM student_class_assignments sca
-        INNER JOIN classes c ON c.id=sca.class_id AND c.is_active=1
-        INNER JOIN user_class_assignments uca ON uca.class_id=sca.class_id
-        WHERE sca.student_id=s.id AND sca.is_active=1 AND uca.user_id=?
+    " AND (
+        EXISTS (
+          SELECT 1
+          FROM student_class_assignments sca
+          INNER JOIN classes c ON c.id=sca.class_id AND c.is_active=1
+          INNER JOIN user_class_assignments uca ON uca.class_id=sca.class_id
+          WHERE sca.student_id=s.id AND sca.is_active=1 AND uca.user_id=?
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM report_access_requests rar
+          WHERE rar.requester_user_id=? AND rar.status='approved'
+            AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+            AND (
+              (rar.scope_type='student' AND rar.student_id=s.id)
+              OR (rar.scope_type='class' AND EXISTS (
+                SELECT 1 FROM student_class_assignments grant_sca
+                WHERE grant_sca.class_id=rar.class_id AND grant_sca.student_id=s.id
+              ))
+            )
+        )
       )";
-  $studentParams[] = $userId;
+  array_push($studentParams, $userId, $userId);
 }
 $studentSql .= " ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC";
 $stStudents = $pdo->prepare($studentSql);
@@ -200,9 +289,30 @@ foreach ($studentChoices as &$studentChoice) {
   $studentChoice['display_class_label'] = '';
   $studentChoice['current_class_ids'] = [];
   $studentChoice['has_active_assignment'] = false;
+  $studentChoice['has_access_grant'] = false;
   if ($canonicalId > 0) $studentsByCanonical[$canonicalId] = &$studentChoice;
 }
 unset($studentChoice);
+
+if (!$isAdmin && $studentsByCanonical) {
+  $stGrantedStudents = $pdo->prepare(
+    "SELECT student_id
+     FROM report_access_requests
+     WHERE requester_user_id=? AND status='approved' AND (expires_at IS NULL OR expires_at>=NOW())
+       AND scope_type='student' AND student_id IS NOT NULL
+     UNION
+     SELECT sca.student_id
+     FROM report_access_requests rar
+     INNER JOIN student_class_assignments sca ON sca.class_id=rar.class_id
+     WHERE rar.requester_user_id=? AND rar.status='approved'
+       AND (rar.expires_at IS NULL OR rar.expires_at>=NOW()) AND rar.scope_type='class'"
+  );
+  $stGrantedStudents->execute([$userId, $userId]);
+  foreach ($stGrantedStudents->fetchAll(PDO::FETCH_COLUMN) ?: [] as $grantedStudentId) {
+    $grantedStudentId = (int)$grantedStudentId;
+    if (isset($studentsByCanonical[$grantedStudentId])) $studentsByCanonical[$grantedStudentId]['has_access_grant'] = true;
+  }
+}
 
 $currentClassOptions = [];
 if ($studentsByCanonical) {
@@ -214,15 +324,29 @@ if ($studentsByCanonical) {
      FROM student_class_assignments sca
      INNER JOIN classes c ON c.id=sca.class_id";
   $assignmentParams = [];
+  $assignmentSql .= " WHERE sca.student_id IN ($in)";
+  $assignmentParams = array_merge($assignmentParams, $canonicalIds);
   if (!$isAdmin) {
-    $assignmentSql .= " INNER JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?";
-    $assignmentParams[] = $userId;
+    $assignmentSql .=
+      " AND (
+          EXISTS (
+            SELECT 1 FROM user_class_assignments uca
+            WHERE uca.class_id=c.id AND uca.user_id=?
+          )
+          OR EXISTS (
+            SELECT 1 FROM report_access_requests rar
+            WHERE rar.class_id=c.id
+              AND rar.requester_user_id=?
+              AND rar.status='approved'
+              AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+              AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=sca.student_id))
+          )
+        )";
+    array_push($assignmentParams, $userId, $userId);
   }
   $assignmentSql .=
-    " WHERE sca.student_id IN ($in)
-      ORDER BY c.school_year DESC,
+    " ORDER BY c.school_year DESC,
                CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC";
-  $assignmentParams = array_merge($assignmentParams, $canonicalIds);
   $stAssignments = $pdo->prepare($assignmentSql);
   $stAssignments->execute($assignmentParams);
   foreach ($stAssignments->fetchAll(PDO::FETCH_ASSOC) ?: [] as $assignment) {
@@ -266,12 +390,19 @@ if ($requestedReportId > 0) {
           SELECT 1
           FROM student_class_assignments sca
           INNER JOIN classes c ON c.id=sca.class_id
-          INNER JOIN user_class_assignments uca ON uca.class_id=c.id
           WHERE sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
             AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-            AND uca.user_id=?
+            AND (
+              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
+              OR EXISTS (
+                SELECT 1 FROM report_access_requests rar
+                WHERE rar.class_id=c.id AND rar.requester_user_id=? AND rar.status='approved'
+                  AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+                  AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)))
+              )
+            )
         )";
-    $reportOwnerParams[] = $userId;
+    array_push($reportOwnerParams, $userId, $userId);
   }
   $reportOwnerSql .= " LIMIT 1";
   $stReportOwner = $pdo->prepare($reportOwnerSql);
@@ -323,6 +454,10 @@ $filteredArchivedStudents = $isAdmin ? array_values(array_filter(
   $filteredStudentChoices,
   static fn(array $student): bool => !(bool)($student['has_active_assignment'] ?? false)
 )) : [];
+$filteredGrantedArchivedStudents = !$isAdmin ? array_values(array_filter(
+  $filteredStudentChoices,
+  static fn(array $student): bool => !(bool)($student['has_active_assignment'] ?? false) && (bool)($student['has_access_grant'] ?? false)
+)) : [];
 $studentSelectGroups = [];
 if ($filteredActiveStudents) {
   $studentSelectGroups[t('teacher.report_preview.active_students_group', 'Aktuelle Schüler')] = $filteredActiveStudents;
@@ -330,7 +465,10 @@ if ($filteredActiveStudents) {
 if ($filteredArchivedStudents) {
   $studentSelectGroups[t('teacher.report_preview.archived_students_group', 'Archivierte Schüler')] = $filteredArchivedStudents;
 }
-$groupedStudentChoices = array_merge($filteredActiveStudents, $filteredArchivedStudents);
+if ($filteredGrantedArchivedStudents) {
+  $studentSelectGroups[t('teacher.report_preview.granted_students_group', 'Freigegebene archivierte Schüler')] = $filteredGrantedArchivedStudents;
+}
+$groupedStudentChoices = array_merge($filteredActiveStudents, $filteredArchivedStudents, $filteredGrantedArchivedStudents);
 
 $selectedStudentId = $requestedStudentId;
 $filteredStudentIds = array_values(array_map(static fn(array $r): int => (int)($r['canonical_student_id'] ?? 0), $groupedStudentChoices));
@@ -373,12 +511,19 @@ if ($selectedStudentId > 0) {
           SELECT 1
           FROM student_class_assignments sca
           INNER JOIN classes c ON c.id=sca.class_id
-          INNER JOIN user_class_assignments uca ON uca.class_id=c.id
           WHERE sca.student_id=?
             AND c.school_year=ri.school_year AND c.period_label=ri.period_label
-            AND uca.user_id=?
+            AND (
+              EXISTS (SELECT 1 FROM user_class_assignments uca WHERE uca.class_id=c.id AND uca.user_id=?)
+              OR EXISTS (
+                SELECT 1 FROM report_access_requests rar
+                WHERE rar.class_id=c.id AND rar.requester_user_id=? AND rar.status='approved'
+                  AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+                  AND (rar.scope_type='class' OR (rar.scope_type='student' AND rar.student_id=?))
+              )
+            )
         )";
-    array_push($reportParams, $selectedStudentId, $userId);
+    array_push($reportParams, $selectedStudentId, $userId, $userId, $selectedStudentId);
   }
   $reportSql .=
     " ORDER BY ri.school_year DESC,
@@ -548,6 +693,12 @@ if ($ri) {
       }
     }
     $previewValues = $valuesByName;
+}
+$pendingDeleteRequest = false;
+if (!$isAdmin && $previewReportId > 0) {
+  $stPendingDelete = $pdo->prepare("SELECT 1 FROM report_deletion_requests WHERE report_instance_id=? AND status='pending' LIMIT 1");
+  $stPendingDelete->execute([$previewReportId]);
+  $pendingDeleteRequest = (bool)$stPendingDelete->fetchColumn();
 }
 ?>
 
@@ -720,6 +871,29 @@ if ($ri) {
             <label class="label" for="rpDeleteConfirm"><?=h(str_replace('{value}', $deleteConfirmationValue, t('teacher.report_preview.delete_type', 'Zur Bestätigung exakt {value} eingeben:')))?></label>
             <input id="rpDeleteConfirm" class="input" name="confirm_text" autocomplete="off" required pattern="<?=h($deleteConfirmationValue)?>">
             <button class="btn danger" type="submit" style="margin-top:10px;"><?=h(t('teacher.report_preview.delete_confirm', 'Diesen Bericht endgültig löschen'))?></button>
+          </form>
+        </details>
+        <a class="btn secondary" href="<?=h(url('admin/report_requests.php#deletion-requests'))?>"><?=h(t('teacher.report_preview.delete_requests_manage', 'Löschanfragen verwalten'))?></a>
+      <?php elseif ($pendingDeleteRequest): ?>
+        <span class="alert info" style="margin:0;padding:9px 12px;"><?=h(t('teacher.report_preview.delete_request_pending', 'Für diesen Bericht liegt bereits eine Löschanfrage vor.'))?></span>
+      <?php else:
+        $deleteRequestUrl = report_preview_page_url(false, [
+          'student_id'=>$selectedStudentId,
+          'report_id'=>$previewReportId,
+          'class_id'=>$selectedClassFilter,
+          'q'=>$studentSearch,
+        ]);
+        ?>
+        <details style="max-width:620px;">
+          <summary class="btn secondary" style="cursor:pointer;list-style:none;"><?=h(t('teacher.report_preview.delete_request_open', 'Löschung beantragen…'))?></summary>
+          <form method="post" action="<?=h($deleteRequestUrl)?>" class="card" style="margin-top:8px;">
+            <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+            <input type="hidden" name="action" value="request_report_deletion">
+            <input type="hidden" name="report_id" value="<?=h((string)$previewReportId)?>">
+            <p style="margin-top:0"><?=h(t('teacher.report_preview.delete_request_hint', 'Der Bericht wird nicht sofort gelöscht. Ein Admin prüft und bestätigt die Anfrage.'))?></p>
+            <label class="label" for="rpDeleteRequestReason"><?=h(t('teacher.report_preview.delete_request_reason', 'Begründung'))?></label>
+            <textarea id="rpDeleteRequestReason" class="input" name="reason" rows="3" maxlength="2000" required></textarea>
+            <button class="btn" type="submit" style="margin-top:10px;"><?=h(t('teacher.report_preview.delete_request_submit', 'Löschanfrage senden'))?></button>
           </form>
         </details>
       <?php endif; ?>

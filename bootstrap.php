@@ -890,6 +890,62 @@ function finalize_reports_for_archived_classes(PDO $pdo, int $finalizedByUserId 
   return $changed;
 }
 
+function delete_student_report_permanently(PDO $pdo, int $reportId, int $reviewedByUserId = 0): ?array {
+  if ($reportId <= 0) return null;
+  $stReport = $pdo->prepare(
+    "SELECT ri.id, ri.template_id, ri.school_year, ri.period_label,
+            COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+            s.first_name, s.last_name, t.name AS template_name
+     FROM report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     LEFT JOIN templates t ON t.id=ri.template_id
+     WHERE ri.id=? AND ri.student_id IS NOT NULL
+     LIMIT 1"
+  );
+  $stReport->execute([$reportId]);
+  $report = $stReport->fetch(PDO::FETCH_ASSOC);
+  if (!$report) return null;
+
+  if (db_has_table($pdo, 'report_deletion_requests')) {
+    $pdo->prepare(
+      "UPDATE report_deletion_requests
+       SET reviewed_by_user_id=CASE WHEN status='pending' AND ? > 0 THEN ? ELSE reviewed_by_user_id END,
+           reviewed_at=CASE WHEN status='pending' THEN NOW() ELSE reviewed_at END,
+           status=CASE WHEN status='pending' THEN 'approved' ELSE status END,
+           report_instance_id=NULL,
+           updated_at=NOW()
+       WHERE report_instance_id=?"
+    )->execute([$reviewedByUserId, $reviewedByUserId, $reportId]);
+  }
+
+  $linkIds = [];
+  if (db_has_table($pdo, 'parent_portal_links')) {
+    $stLinks = $pdo->prepare("SELECT id FROM parent_portal_links WHERE report_instance_id=?");
+    $stLinks->execute([$reportId]);
+    $linkIds = array_values(array_filter(array_map('intval', $stLinks->fetchAll(PDO::FETCH_COLUMN) ?: []), fn($id) => $id > 0));
+  }
+  if ($linkIds) {
+    $in = implode(',', array_fill(0, count($linkIds), '?'));
+    if (db_has_table($pdo, 'parent_feedback')) {
+      $pdo->prepare("DELETE FROM parent_feedback WHERE link_id IN ($in)")->execute($linkIds);
+    }
+    if (db_has_table($pdo, 'parent_meeting_feedback') && db_has_column($pdo, 'parent_meeting_feedback', 'link_id')) {
+      $pdo->prepare("DELETE FROM parent_meeting_feedback WHERE link_id IN ($in)")->execute($linkIds);
+    }
+  }
+  if (db_has_table($pdo, 'parent_portal_links')) {
+    $pdo->prepare("DELETE FROM parent_portal_links WHERE report_instance_id=?")->execute([$reportId]);
+  }
+  if (db_has_table($pdo, 'field_value_history')) {
+    $pdo->prepare("DELETE FROM field_value_history WHERE report_instance_id=?")->execute([$reportId]);
+  }
+  $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=?")->execute([$reportId]);
+  $stDelete = $pdo->prepare("DELETE FROM report_instances WHERE id=? AND student_id IS NOT NULL");
+  $stDelete->execute([$reportId]);
+  if ($stDelete->rowCount() !== 1) return null;
+  return $report;
+}
+
 // --------------------
 // Schema (additive migrations)
 // --------------------
@@ -1297,6 +1353,90 @@ function ensure_schema(PDO $pdo): void {
     // Add the final state first, then bring older archived data up to date.
     if (ensure_report_final_status($pdo)) {
       finalize_reports_for_archived_classes($pdo);
+    }
+
+    if (!db_has_table($pdo, 'report_deletion_requests')) {
+      $pdo->exec(
+        "CREATE TABLE report_deletion_requests (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          report_instance_id BIGINT UNSIGNED DEFAULT NULL,
+          report_id_snapshot BIGINT UNSIGNED NOT NULL,
+          student_id BIGINT UNSIGNED DEFAULT NULL,
+          student_name VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+          school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+          period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+          template_name VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+          requested_by_user_id BIGINT UNSIGNED NOT NULL,
+          reason TEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+          status ENUM('pending','approved','rejected','missing') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+          reviewed_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+          reviewed_at DATETIME DEFAULT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY idx_report_delete_request_status (status, created_at),
+          KEY idx_report_delete_request_report (report_instance_id, status),
+          KEY idx_report_delete_request_requester (requested_by_user_id, created_at)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+    if (!db_has_table($pdo, 'report_access_requests')) {
+      $pdo->exec(
+        "CREATE TABLE report_access_requests (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          requester_user_id BIGINT UNSIGNED NOT NULL,
+          class_id BIGINT UNSIGNED NOT NULL,
+          student_id BIGINT UNSIGNED DEFAULT NULL,
+          scope_type ENUM('student','class') COLLATE utf8mb4_unicode_ci NOT NULL,
+          reason TEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+          status ENUM('pending','approved','rejected','revoked') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+          reviewed_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+          reviewed_at DATETIME DEFAULT NULL,
+          expires_at DATETIME DEFAULT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY idx_report_access_request_status (status, created_at),
+          KEY idx_report_access_request_requester (requester_user_id, status),
+          KEY idx_report_access_request_class (class_id, status),
+          KEY idx_report_access_request_student (student_id, status)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
+    if (db_has_table($pdo, 'report_access_requests') && !db_has_column($pdo, 'report_access_requests', 'expires_at')) {
+      $pdo->exec("ALTER TABLE report_access_requests ADD COLUMN expires_at DATETIME DEFAULT NULL AFTER reviewed_at");
+    }
+    if (db_has_table($pdo, 'report_access_requests') && db_has_column($pdo, 'report_access_requests', 'status')) {
+      $stAccessStatusType = $pdo->prepare(
+        "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='report_access_requests' AND COLUMN_NAME='status' LIMIT 1"
+      );
+      $stAccessStatusType->execute();
+      $accessStatusType = strtolower((string)($stAccessStatusType->fetchColumn() ?: ''));
+      if ($accessStatusType !== '' && strpos($accessStatusType, "'revoked'") === false) {
+        $pdo->exec(
+          "ALTER TABLE report_access_requests
+           MODIFY COLUMN status ENUM('pending','approved','rejected','revoked')
+           COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending'"
+        );
+      }
+    }
+    if (!db_has_table($pdo, 'report_access_approval_tokens')) {
+      $pdo->exec(
+        "CREATE TABLE report_access_approval_tokens (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          request_id BIGINT UNSIGNED NOT NULL,
+          reviewer_user_id BIGINT UNSIGNED NOT NULL,
+          token_hash CHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+          expires_at DATETIME NOT NULL,
+          used_at DATETIME DEFAULT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uq_report_access_approval_token (token_hash),
+          KEY idx_report_access_approval_request (request_id, used_at),
+          KEY idx_report_access_approval_reviewer (reviewer_user_id, expires_at)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
     }
 
     // --- report_instances: normalize invalid rows and remove duplicates by canonical student + semester
@@ -1932,6 +2072,49 @@ function user_can_access_class(PDO $pdo, int $userId, int $classId): bool {
   }
 
   return false;
+}
+
+function user_can_view_student_report(PDO $pdo, int $userId, int $canonicalStudentId, string $schoolYear, string $periodLabel): bool {
+  if ($userId <= 0 || $canonicalStudentId <= 0) return false;
+  $u = current_user();
+  if (($u['role'] ?? '') === 'admin') return true;
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT 1
+     FROM classes c
+     INNER JOIN student_class_assignments sca
+       ON sca.class_id=c.id AND sca.student_id=?
+     WHERE c.school_year=? AND c.period_label=?
+       AND (
+         EXISTS (
+           SELECT 1 FROM user_class_assignments uca
+           WHERE uca.class_id=c.id AND uca.user_id=?
+         )
+         OR EXISTS (
+           SELECT 1 FROM report_access_requests rar
+           WHERE rar.class_id=c.id
+             AND rar.requester_user_id=?
+             AND rar.status='approved'
+             AND (rar.expires_at IS NULL OR rar.expires_at>=NOW())
+             AND (
+               rar.scope_type='class'
+               OR (rar.scope_type='student' AND rar.student_id=?)
+             )
+         )
+       )
+     LIMIT 1"
+  );
+  $st->execute([$canonicalStudentId, $schoolYear, $periodLabel, $userId, $userId, $canonicalStudentId]);
+  return (bool)$st->fetchColumn();
+}
+
+function user_can_review_report_access_request(PDO $pdo, int $userId, int $classId): bool {
+  if ($userId <= 0 || $classId <= 0) return false;
+  $u = current_user();
+  if (($u['role'] ?? '') === 'admin') return true;
+  $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+  $st->execute([$userId, $classId]);
+  return (bool)$st->fetchColumn();
 }
 
 // --------------------

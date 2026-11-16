@@ -31,8 +31,9 @@ function nav_items_for_role(string $role): array {
 
       // Reports
       ['label'=>t('nav.final_reports'), 'href'=>'admin/report_preview.php', 'files'=>[
-        'export.php','parent_requests.php','report_preview.php','latex_templates.php','template_packages.php'], 'children'=>[
+        'export.php','parent_requests.php','report_preview.php','report_requests.php','latex_templates.php','template_packages.php'], 'children'=>[
         ['label'=>t('nav.report_preview'), 'href'=>'admin/report_preview.php', 'files'=>['report_preview.php']],
+        ['label'=>t('nav.report_requests', 'Berichtsanfragen'), 'href'=>'admin/report_requests.php', 'files'=>['report_requests.php']],
         ['label'=>t('nav.export'), 'href'=>'admin/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_requests'), 'href'=>'admin/parent_requests.php', 'files'=>['parent_requests.php']],
         ['label'=>t('nav.competencies'), 'href'=>'admin/competencies.php', 'files'=>['competencies.php']],
@@ -63,8 +64,9 @@ function nav_items_for_role(string $role): array {
 
     // Reports
     ['label'=>t('nav.final_reports'), 'href'=>'teacher/report_preview.php', 'files'=>[
-      'export.php','parents.php','report_preview.php','latex_templates.php'], 'children'=>[
+      'export.php','parents.php','report_preview.php','report_requests.php','latex_templates.php'], 'children'=>[
         ['label'=>t('nav.report_preview'), 'href'=>'teacher/report_preview.php', 'files'=>['report_preview.php']],
+        ['label'=>t('nav.report_requests', 'Berichtsanfragen'), 'href'=>'teacher/report_requests.php', 'files'=>['report_requests.php']],
         ['label'=>t('nav.export'), 'href'=>'teacher/export.php', 'files'=>['export.php']],
         ['label'=>t('nav.parent_links'), 'href'=>'teacher/parents.php', 'files'=>['parents.php']],
         ['label'=>t('nav.competency_requests'), 'href'=>'teacher/competency_requests.php', 'files'=>['competency_requests.php']],
