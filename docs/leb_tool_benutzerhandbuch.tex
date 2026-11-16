@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{15.11.2026}
+\newcommand{\HandbuchStand}{16.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -94,7 +94,7 @@
 
 \setlist[itemize]{noitemsep, topsep=2pt}
 \setlist[enumerate]{noitemsep, topsep=2pt}
-\setcounter{tocdepth}{2}
+\setcounter{tocdepth}{3}
 
 \makeindex
 
@@ -106,7 +106,7 @@
 \begin{center}
   \LEBTitleIcon\\[1cm]
   {\Huge \textbf{LEB Tool \textendash{} Benutzerhandbuch}}\\[0.3cm]
-  {\Large Schritt-für-Schritt Anleitung für Admins und Lehrkräfte}\\[0.5cm]
+  {\Large Ausführliche Schritt-für-Schritt-Anleitung und Bedienreferenz}\\[0.5cm]
   \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.4cm]
   {\large Lernentwicklungsberichte digital verwalten}\\[0.2cm]
   {\large Zielgruppe: Grundschule · Kollegium · Administration}\\[0.2cm]
@@ -134,6 +134,19 @@ Dieses Handbuch richtet sich an Admins, Lehrkräfte und (wo vorgesehen) Schüler
   \item \textbf{Nicht enthalten:} Quellcode-Details, juristische Datenschutzvorgaben, individuelle Schul-IT-Spezifika.
   \item \textbf{Versionierung:} Bei jeder funktionsrelevanten Veröffentlichung werden Quelle, PDF, Screenshots und Versionsdatum geprüft und gemeinsam aktualisiert. Ältere Fassungen werden archiviert.
 \end{itemize}
+
+\subsection{So benutzen Sie dieses Handbuch}
+Jedes Bedienkapitel folgt derselben Logik: Zuerst wird der Zweck der Seite erklärt, anschließend der genaue Arbeitsweg, danach die Bedeutung der sichtbaren Felder und Schaltflächen. Kontrollpunkte beschreiben, woran ein erfolgreicher Schritt erkennbar ist. Warnhinweise kennzeichnen Aktionen, die Daten verändern oder nicht ohne Weiteres rückgängig gemacht werden können.
+
+\begin{itemize}
+  \item \textbf{Navigation:} Menüpfade werden mit \(\rightarrow\) dargestellt, zum Beispiel \enquote{Schule \(\rightarrow\) Klassen}.
+  \item \textbf{Schaltflächen:} Beschriftungen stehen in Anführungszeichen, zum Beispiel \enquote{Speichern}.
+  \item \textbf{Auswahlfelder:} Bei jeder Auswahl wird erläutert, was die einzelnen Werte bewirken und wann sie verwendet werden.
+  \item \textbf{Screenshots:} Die Abbildungen dienen der Orientierung. Welche Klassen, Schüler, Vorlagen und Zusatzfunktionen sichtbar sind, hängt von Rolle, Schulhalbjahr und Systemeinstellung ab.
+  \item \textbf{Datumsdarstellung:} In der deutschen Oberfläche erscheinen Geburtsdaten als \texttt{TT.MM.JJJJ}, in der englischen Oberfläche als \texttt{MM/TT/JJJJ}.
+\end{itemize}
+
+\HintBox{Arbeiten Sie bei längeren Abläufen die nummerierten Schritte vollständig ab. Prüfen Sie danach den jeweils genannten Kontrollpunkt, bevor Sie zur nächsten Seite wechseln.}
 
 \section{Überblick: Was ist das LEB Tool?}
 Das \textbf{LEB Tool} unterstützt Schulen bei der strukturierten Erstellung, Freigabe, Archivierung und Ausgabe von Lernentwicklungsberichten (LEB). Berichte können auf einer hochgeladenen PDF-Formularvorlage oder auf einer im System erzeugten LaTeX-Vorlage beruhen. Formularfelder, Kompetenzen, Optionslisten und gespeicherte Eingaben werden zu einer druckfertigen PDF zusammengeführt.
@@ -172,6 +185,120 @@ Schüler & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 
 \HintBox{Schüler haben keinen allgemeinen Zugriff auf fremde Daten. Ob eine Schülerfreigabe zeitlich begrenzt wird, richtet sich nach dem vorgesehenen Arbeitsfenster; sie wird bewusst von der zuständigen Lehrkraft gesteuert und anschließend wieder geschlossen.}
 
+\section{Navigation: jeder Menüpunkt im Überblick}\label{sec:navigation}
+Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
+
+\subsection{Admin-Menü vollständig erklärt}
+\small
+\begin{longtable}{|p{0.24\textwidth}|p{0.67\textwidth}|}
+\hline
+\textbf{Menüpunkt} & \textbf{Zweck und typische Verwendung}\\
+\hline
+Dashboard & Zeigt Fristen, Fehlzeiten-Uploadstatus, Delegationen, den Gesamt-Bearbeitungsstand und Schnellzugriffe. Dies ist die tägliche Kontrollseite des Admins.\\
+\hline
+Schule \(\rightarrow\) Klassen & Schulhalbjahre anlegen, Klassen einzeln oder gesammelt erstellen, Lehrkräfte und Vorlagen zuordnen, Klassen übertragen, aktivieren, archivieren, bearbeiten oder geschützt löschen.\\
+\hline
+Schule \(\rightarrow\) Schüler & Zentrale, klassenunabhängige Schülerprofile suchen und verwalten; Klassenzuordnungen prüfen; mehrere CSV-Klassenlisten klassenweise abgleichen; Fehlzeiten importieren; archivierte Schüler einsehen.\\
+\hline
+Berichte \(\rightarrow\) Templates & PDF-Vorlagen hochladen, aktivieren, Felder extrahieren, Feldkonfiguration öffnen, Mapping bearbeiten, Vorlagen umbenennen oder geschützt löschen.\\
+\hline
+Berichte \(\rightarrow\) Schriftarten & In Vorlagen verwendete Schriften prüfen und fehlende Schriftdateien hochladen, damit Vorschau und Export gleich aussehen.\\
+\hline
+Berichte \(\rightarrow\) Optionslisten & Bewertungs- und Auswahllisten sowie die zugehörige Symbolbibliothek pflegen. Technische Values bleiben stabil; Labels und Symbole bestimmen die Anzeige.\\
+\hline
+Berichte \(\rightarrow\) Schüler-Felder & Zusätzliche Stammdatenfelder mit Schlüssel, deutscher und englischer Beschriftung, Sortierung und Standardwert anlegen.\\
+\hline
+Berichte \(\rightarrow\) Textbausteine & Wiederverwendbare Textbausteine und Kategorien erstellen, bearbeiten, gruppieren oder löschen.\\
+\hline
+Berichte \(\rightarrow\) AGs & AG-Katalog verwalten, Angebote je Schulhalbjahr aktivieren und Verfügbarkeit aus einem früheren Halbjahr übernehmen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Berichtsvorschau & Schüler suchen, nach aktueller Klasse filtern, alle Berichte eines Schülers öffnen, historische Berichte exportieren und als Admin einzelne Berichte nach Sicherheitsprüfung löschen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Berichtsanfragen & Löschanfragen und zusätzliche Berichtseinsichten prüfen, einzeln oder gesammelt genehmigen beziehungsweise ablehnen, Freigaben verlängern oder zurückziehen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Export & Einzel-, ZIP-, Gesamt- und Broschürenexport für aktive und archivierte Klassen ausführen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Elternfreigaben & Offene, aktive, abgelaufene und beendete Elternzugänge filtern, freigeben, verlängern, reaktivieren oder beenden; Feedback auswerten.\\
+\hline
+Fertige Berichte \(\rightarrow\) Kompetenzen & Kompetenzbaum, Klassenstufen, Pflichtstatus, Darstellung und zweisprachige Texte pflegen sowie Kompetenzanträge bearbeiten.\\
+\hline
+Fertige Berichte \(\rightarrow\) PDF-Vorlagen & LaTeX-Pakete und Layouts importieren, aktivieren, als Standard setzen oder löschen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Template-Pakete & Vorbereitete PDF-/RCFF-Pakete prüfen, importieren, erneut anwenden oder löschen.\\
+\hline
+Einstellungen \(\rightarrow\) Einstellungen & Branding, Zeitzone, Fristen, E-Mail, KI, Elternmodus, Export, Delegationen, Lehrkraftrechte, Vorlesen, Intros, Logo und endgültige Datenlöschung konfigurieren.\\
+\hline
+Einstellungen \(\rightarrow\) Vorlese-Audios & Gespeicherte Audiodateien filtern, anhören, einzeln löschen oder für ein ganzes Schulhalbjahr entfernen.\\
+\hline
+Einstellungen \(\rightarrow\) Nutzer & Admin- und Lehrkraftkonten einzeln oder per CSV anlegen, Rollen ändern, Konten deaktivieren, Einladungslinks senden oder Konten löschen.\\
+\hline
+Einstellungen \(\rightarrow\) Audit-Log & Änderungen nach Zeitraum, Ereignis, Nutzer und Freitext durchsuchen; technische Details bei Bedarf einblenden.\\
+\hline
+Einstellungen \(\rightarrow\) Backup & Geschützte Sicherung exportieren oder eine Sicherungsdatei analysiert und selektiv wiederherstellen.\\
+\hline
+Abmelden & Beendet die aktuelle Sitzung. Auf gemeinsam genutzten Geräten immer verwenden und danach das Browserfenster schließen.\\
+\hline
+\end{longtable}
+\normalsize
+
+\subsection{Lehrkraft-Menü vollständig erklärt}
+\small
+\begin{longtable}{|p{0.24\textwidth}|p{0.67\textwidth}|}
+\hline
+\textbf{Menüpunkt} & \textbf{Zweck und typische Verwendung}\\
+\hline
+Dashboard & Zeigt Fristen, Bearbeitungsstand, Benachrichtigungen, eigene Klassen und Schnellzugriffe. Die Klasse kann als Register gewählt werden.\\
+\hline
+Klassen & Klassenstatus, Wizard-Darstellung, Vorlesen, vorbereitete Audios, Silbenschrift und Aktive/Inaktive verwalten; über das Aktionsmenü Schüler, Eingaben und Klassenintro öffnen.\\
+\hline
+Eingaben \(\rightarrow\) Eingaben & Klassenfelder und individuelle Schülerberichte bearbeiten; Ansichten wechseln; Textbausteine, Delegationen, Gesprächsansicht, PDF-Formular und optionale KI-Funktionen nutzen.\\
+\hline
+Eingaben \(\rightarrow\) AGs & Klasse auswählen und AG-Teilnahmen der Schüler zuordnen.\\
+\hline
+Delegationen & Empfangene und vergebene Fachbereichsdelegationen suchen, öffnen, bearbeiten, abschließen oder zurückgeben.\\
+\hline
+Fertige Berichte \(\rightarrow\) Berichtsvorschau & Aktuelle und historische Berichte berechtigter Schüler öffnen, nacheinander prüfen, exportieren oder eine Löschung beantragen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Berichtsanfragen & Einsicht für einen Schüler oder eine Klasse beantragen; offene Anträge bearbeiten, wenn die Lehrkraft Klassenbesitzer ist; aktive Freigaben öffnen oder zurückgeben.\\
+\hline
+Fertige Berichte \(\rightarrow\) Export & Berechtigte Klassen als ZIP, Gesamt-PDF, Einzel-PDF oder Broschüre exportieren; optional nur abgegebene Berichte berücksichtigen.\\
+\hline
+Fertige Berichte \(\rightarrow\) Elternzugänge & Elternzugänge beantragen und verwalten, Signatur erfassen, Links verlängern oder beenden, Serienmails senden und Feedback auswerten.\\
+\hline
+Fertige Berichte \(\rightarrow\) Kompetenzanträge & Neue deutsch/englische Kompetenzen mit Kategorie, Klassenstufe und Pflichtstatus zur Adminprüfung einreichen; Status eigener Anträge verfolgen.\\
+\hline
+Fertige Berichte \(\rightarrow\) PDF-Vorlagen & Bereitgestellte LaTeX-/PDF-Vorlagen im zulässigen Lehrkraftumfang verwenden und erzeugte Berichte prüfen.\\
+\hline
+Abmelden & Beendet die Sitzung. Auf Klassen-iPads oder fremden Rechnern immer ausdrücklich abmelden.\\
+\hline
+\end{longtable}
+\normalsize
+
+\subsection{Allgemeine Bedienelemente}
+\begin{tabularx}{\textwidth}{|p{0.25\textwidth}|X|}
+\hline
+\textbf{Element} & \textbf{Bedeutung}\\
+\hline
+Primäre Schaltfläche & Startet oder speichert die Hauptaktion der Seite, zum Beispiel \enquote{Export starten}.\\
+\hline
+Sekundäre Schaltfläche & Öffnet eine Zusatzfunktion, setzt einen Filter zurück oder bricht ohne Speichern ab.\\
+\hline
+Rote Schaltfläche & Kennzeichnet Sperren, Beenden oder Löschen. Vor dem Klick Ziel, Schulhalbjahr und Bestätigungstext prüfen.\\
+\hline
+Aktionsmenü & Bündelt Aktionen einer Tabellenzeile. Erst beim Öffnen werden Bearbeiten, Exportieren, Aktivieren oder Löschen sichtbar.\\
+\hline
+Auswahlliste & Legt Kontext oder Variante fest. Eine Änderung wird nur dann sofort übernommen, wenn die Seite automatisch neu lädt; andernfalls anschließend \enquote{Speichern} wählen.\\
+\hline
+Mehrfachauswahl & Mehrere Lehrkräfte oder Einträge mit \texttt{Strg}/\texttt{Cmd} beziehungsweise durch Antippen markieren.\\
+\hline
+Umschalter & Aktiviert oder deaktiviert eine Funktion. Der sichtbare Status nach dem Speichern ist maßgeblich.\\
+\hline
+Aufklappbereich & Blendet selten benötigte Detailfunktionen ein. Ein geschlossener Bereich bedeutet nicht, dass die Funktion deaktiviert ist.\\
+\hline
+Fortschrittsbalken & Zeigt Vollständigkeit der Pflichtfelder; er ersetzt nicht die inhaltliche Prüfung.\\
+\hline
+\end{tabularx}
+
 \section{Datenschutz \& Verantwortlichkeiten}
 Kurzer Leitfaden (nicht rechtsverbindlich):
 \begin{itemize}
@@ -184,6 +311,22 @@ Kurzer Leitfaden (nicht rechtsverbindlich):
 \end{itemize}
 
 \WarnBox{Zugangsdaten nicht per unsichere Kanäle teilen.}
+
+\subsection{Vor jeder Arbeitssitzung}
+\begin{enumerate}
+  \item Prüfen, ob die richtige Rolle, Klasse, das richtige Schuljahr und Halbjahr ausgewählt sind.
+  \item Auf gemeinsam genutzten Geräten sicherstellen, dass kein fremdes Konto angemeldet ist.
+  \item Berichtsdaten nur in den vorgesehenen Feldern erfassen; keine Schülerdaten in Dateinamen, Supporttexte oder ungeschützte Notizen kopieren.
+  \item Vor einem Export den vorgesehenen geschützten Ablageort öffnen.
+\end{enumerate}
+
+\subsection{Nach jeder Arbeitssitzung}
+\begin{enumerate}
+  \item Speicherstatus kontrollieren und offene Warnungen klären.
+  \item Nicht mehr benötigte Freigaben schließen.
+  \item Heruntergeladene Test-PDFs und CSV-Dateien aus ungeschützten Downloadordnern entfernen oder in die geschützte Ablage verschieben.
+  \item Über \enquote{Abmelden} die Sitzung beenden. Das bloße Schließen eines Tabs ist auf gemeinsam genutzten Geräten nicht ausreichend.
+\end{enumerate}
 
 \section{Installation \& Erstinbetriebnahme (Admin)}
 Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung mit Vorlage, Feldern, Optionslisten und Klassen.
@@ -198,13 +341,36 @@ Die Installation erfolgt einmalig. Anschließend folgt die fachliche Einrichtung
 
 \subsection{Installation Schritt für Schritt}
 \begin{enumerate}
-  \item Dateien hochladen: Projektordner per FTP in das Zielverzeichnis kopieren.
-  \item \texttt{install.php} aufrufen: Im Browser \texttt{.../install.php} öffnen.
-  \item Datenbank verbinden: Host, DB-Name, Nutzer, Passwort eintragen.
-  \item Admin anlegen: Admin-Login erstellen (starkes Passwort).
-  \item Login testen: Direkt danach im Adminbereich anmelden.
-  \item Sicherheit: \texttt{install.php} entfernen oder per Server-Regel sperren (sofern vorgesehen).
+  \item Projektdateien vollständig in das vorgesehene Webverzeichnis hochladen. Die Ordnerstruktur darf dabei nicht verändert werden.
+  \item Im Browser \texttt{.../install.php} öffnen. Erscheint eine Serverfehlermeldung, zuerst PHP-Version, Erweiterungen und Schreibrechte prüfen.
+  \item Datenbankhost, Datenbankname, Datenbanknutzer und Datenbankpasswort eintragen. Diese Werte stammen vom Hostinganbieter und sind nicht mit dem späteren LEB-Login identisch.
+  \item Verbindung prüfen und die Datenbanktabellen anlegen lassen. Eine Erfolgsmeldung abwarten; die Seite währenddessen nicht neu laden.
+  \item Ersten Admin mit E-Mail, Anzeigename und sicherem Passwort anlegen. Die E-Mail ist zugleich der spätere Loginname.
+  \item Installation abschließen und direkt über die angezeigte Loginseite anmelden.
+  \item Admin-Dashboard, \enquote{Einstellungen} und \enquote{Backup} einmal öffnen. Dadurch werden fehlende Rechte oder Datenbankprobleme früh sichtbar.
+  \item \texttt{install.php} anschließend entfernen oder durch die vorgesehene Serverregel sperren.
 \end{enumerate}
+
+\subsection{Felder der Installationsmaske}
+\begin{tabularx}{\textwidth}{|p{0.28\textwidth}|X|}
+\hline
+\textbf{Feld} & \textbf{Eingabe und Bedeutung}\\
+\hline
+Datenbank-Host & Servername der Datenbank, häufig \texttt{localhost} oder ein Hostname des Providers.\\
+\hline
+Datenbankname & Name der leeren oder vorgesehenen LEB-Datenbank. Nicht versehentlich eine andere Produktivdatenbank auswählen.\\
+\hline
+Datenbanknutzer / Passwort & Technische Zugangsdaten mit Rechten zum Erstellen und Ändern der LEB-Tabellen.\\
+\hline
+Admin-E-Mail & Eindeutiger Login des ersten Administrators und Empfänger für Systemnachrichten.\\
+\hline
+Admin-Name & Anzeigename in Protokollen, Anträgen und Benachrichtigungen.\\
+\hline
+Admin-Passwort & Starkes, nur für dieses Konto verwendetes Passwort. Nach der Installation nicht in Projektdateien dokumentieren.\\
+\hline
+Installieren / Abschließen & Schreibt Konfiguration und Schema. Nur einmal ausführen und die Erfolgsmeldung abwarten.\\
+\hline
+\end{tabularx}
 
 \textbf{Nach der Installation}
 \begin{itemize}
@@ -222,20 +388,52 @@ Die fachlich zwingende Reihenfolge muss eingehalten werden, damit alle abhängig
 
 \subsection{Vorlage (PDF) hochladen}
 \begin{enumerate}
-  \item Adminbereich \(\rightarrow\) Templates öffnen.
-  \item PDF hochladen und benennen.
-  \item Vorlage speichern und aktivieren.
+  \item \enquote{Berichte \(\rightarrow\) Templates} öffnen und im Abschnitt \enquote{Neue Vorlage hochladen} arbeiten.
+  \item Unter \enquote{Name} eine fachlich eindeutige Bezeichnung eintragen, etwa \enquote{LEB Grundschule 2026}.
+  \item Unter \enquote{Version} eine fortlaufende Version eintragen. Eine neue PDF-Ausgabe erhält eine neue Version, damit alte Berichte nachvollziehbar bleiben.
+  \item Über \enquote{PDF} ausschließlich die geprüfte Formular-PDF auswählen.
+  \item \enquote{Hochladen} wählen und die Erfolgsmeldung abwarten.
+  \item In der Vorlagenliste die neue Zeile suchen und bei Bedarf mit \enquote{Aktivieren} als verwendbar kennzeichnen.
+  \item Das Aktionsmenü öffnen und anschließend \enquote{Felder extrahieren} ausführen.
 \end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.27\textwidth}|X|}
+\hline
+\textbf{Feld/Aktion} & \textbf{Bedeutung}\\
+\hline
+Name & Lesbare Bezeichnung für Admins und Zuordnungen. Der Name darf fachlich beschreiben, für welche Stufe oder Ausgabe die Vorlage bestimmt ist.\\
+\hline
+Version & Kennzeichnet den Vorlagenstand. Sie ersetzt nicht die Berichts-ID; historische Berichte behalten ihre damalige Vorlagenzuordnung.\\
+\hline
+PDF-Datei & AcroForm-PDF mit Formularfeldern. Eine flache Scan-PDF ohne Felder kann nicht automatisch extrahiert werden.\\
+\hline
+Aktivieren oder deaktivieren & Nur aktive Vorlagen sollen neuen Klassen zugeordnet werden. Deaktivieren löscht weder Vorlage noch bestehende Berichte.\\
+\hline
+Bearbeiten & Öffnet Feldtypen, Gruppen, Rechte, Pflichtstatus, Optionslisten, Datumseinstellungen und Vorschau.\\
+\hline
+Mapping & Verknüpft Formularfelder und Systemplatzhalter für die Ausgabe.\\
+\hline
+Umbenennen & Ändert die sichtbare Bezeichnung, nicht die gespeicherten Berichtsinhalte.\\
+\hline
+Löschen & Ist geschützt, wenn Berichte die Vorlage verwenden. Vor einer bestätigten Löschung Abhängigkeiten und Historie prüfen.\\
+\hline
+\end{tabularx}
 
 \ScreenshotFigure{screenshots/admin_template.png}{Template-Upload}
 
 \subsection{Felder extrahieren (Formularfelder auslesen)}\index{Feldextraktion}
 \begin{enumerate}
-  \item Aktion \enquote{Felder extrahieren} starten.
-  \item Anzahl prüfen: passt sie zur Vorlage?
-  \item Bei wiederholten Feldnamen sicherstellen, dass alle Instanzen gefunden werden.
-  \item Seitenzuordnung stichprobenartig prüfen (Seite 1 Felder von Seite 1).
+  \item In der Vorlagenliste das Aktionsmenü der richtigen Version öffnen.
+  \item \enquote{Felder extrahieren} wählen. Die PDF wird analysiert; die Seite nicht schließen.
+  \item In der Importvorschau die Anzahl erkannter PDF-Felder, Gruppenhinweise und Warnungen lesen.
+  \item Mit \enquote{Kein Schülerfeld}, \enquote{Alle Schülerfelder}, \enquote{Kein Lehrkraftfeld} und \enquote{Alle Lehrkraftfelder} nur eine sinnvolle Vorauswahl setzen; die Einzelprüfung bleibt erforderlich.
+  \item In der PDF-Vorschau Seite für Seite navigieren. \enquote{Hervorhebungen} zeigt, welche Feldposition zur Tabellenzeile gehört.
+  \item Bei wiederholten Feldnamen sicherstellen, dass alle Instanzen und Seiten erkannt wurden.
+  \item Optional Konfiguration einer vorhandenen Vorlage kopieren. Mit den Checkboxen festlegen, ob Typ, Label, Hilfetext, Rechte und Metadaten übernommen werden.
+  \item \enquote{Importieren} wählen und anschließend direkt die Feldbearbeitung öffnen.
 \end{enumerate}
+
+\textbf{Erweiterte Parseroptionen:} \texttt{padLeft}, \texttt{yTol}, \texttt{yLineCluster} und \texttt{gapWord} verändern die Erkennung der PDF-Beschriftungen. Diese Werte nur ändern, wenn Feldnamen oder Zeilen sichtbar falsch gruppiert werden; vorher Ausgangswerte notieren und mit einer Testvorlage vergleichen.
 
 \HintBox{Vergleichen Sie die Feldanzahl mit der PDF: Abweichungen bedeuten oft, dass die Vorlage versteckte Felder oder nicht unterstützte Elemente enthält. Bei Dubletten hilft ein Export der Feldliste zum Abgleich.}
 
@@ -249,14 +447,56 @@ Beim Austausch einer PDF erkennt das System fehlende und neue Felder, damit Date
   \item Beim Klick auf Felder werden die zugehörigen Zeilen in der Liste hervorgehoben.
 \end{itemize}
 
+\begin{enumerate}
+  \item Unter \enquote{PDF ersetzen} die neue PDF und optional eine RCFF-Datei auswählen.
+  \item Die Liste \enquote{fehlend}, \enquote{neu} und \enquote{unverändert} vollständig prüfen.
+  \item Jedes fehlende alte Feld genau einem passenden neuen PDF-Feld zuordnen. Keine Zuordnung erzwingen, wenn Inhalt oder Bedeutung abweicht.
+  \item Nicht mehr benötigte Felder erst nach Sicherung und Testexport über \enquote{Fehlende löschen} entfernen.
+  \item Mapping speichern, Testklasse öffnen und mindestens einen historischen sowie einen aktuellen Bericht prüfen.
+\end{enumerate}
+
 \subsection{Felder gruppieren \& Reihenfolge festlegen}
 \begin{enumerate}
-  \item Hauptgruppen anlegen (z.\,B. Deutsch, Mathematik, Sozialverhalten).
-  \item Felder per Auswahl/Batch zuordnen.
-  \item Optional Untergruppen vergeben, um große Gruppen in Abschnitte zu gliedern.
-  \item Filter nutzen, um Varianten sauber zu trennen.
-  \item Reihenfolge speichern und in der Lehreransicht testen.
+  \item \enquote{Bearbeiten} an der Vorlage öffnen und zunächst den PDF-Vorschaubereich eingeblendet lassen.
+  \item Über die Gruppenübersicht eine Hauptgruppe wählen oder eine fachlich eindeutige Bezeichnung eintragen, zum Beispiel Deutsch, Mathematik oder Arbeitsverhalten.
+  \item Eine optionale Untergruppe setzen, wenn eine Hauptgruppe in sichtbare Schritte gegliedert werden soll.
+  \item Feldzeilen einzeln markieren oder nach Name/Seite filtern.
+  \item Im Batchbereich Feldtyp, Rechte, Pflichtstatus, Optionsliste und Datum nur für die markierten oder sichtbaren Zeilen anwenden.
+  \item Reihenfolge durch Sortierung beziehungsweise die vorgesehenen Positionsfelder festlegen.
+  \item \enquote{Speichern} wählen, anschließend Lehrkraft- und Schüleransicht einer Testklasse prüfen.
 \end{enumerate}
+
+\small
+\begin{longtable}{|p{0.23\textwidth}|p{0.68\textwidth}|}
+\hline
+\textbf{Feldoption} & \textbf{Wirkung}\\
+\hline
+Gruppe / Untergruppe & Bestimmt Navigation, Überschriften und Bearbeitungsreihenfolge. Eine leere Untergruppe lässt das Feld direkt in der Hauptgruppe erscheinen.\\
+\hline
+Typ & Legt fest, ob Text, längerer Text, Auswahl, Checkbox, Datum oder ein spezielles Mapping-Feld angezeigt wird. Der Typ muss zum PDF-Feld und zur fachlichen Eingabe passen.\\
+\hline
+Label Deutsch/Englisch & Sichtbare Beschriftung in der jeweiligen Sprache. Technischer PDF-Feldname und Label sind nicht dasselbe.\\
+\hline
+Hilfetext & Zusätzliche Erklärung unter oder am Feld. Er sollte kurz erklären, was einzugeben ist, nicht den Feldnamen wiederholen.\\
+\hline
+Schülerrecht & Bestimmt, ob das Feld in einer freigegebenen Schülerkategorie sichtbar und bearbeitbar ist.\\
+\hline
+Lehrkraftrecht & Bestimmt, ob Lehrkräfte das Feld bearbeiten dürfen. System- oder reine Ausgabefelder bleiben schreibgeschützt.\\
+\hline
+Pflicht/Optional & Pflichtfelder zählen zum Bearbeitungsstand und erzeugen vor Export Warnungen. Optional bedeutet nicht automatisch, dass das Feld für Schüler sichtbar ist.\\
+\hline
+Optionsliste & Stellt die Einträge einer zuvor angelegten Liste bereit. Ohne Zuordnung bleibt ein Auswahlfeld leer.\\
+\hline
+Datumsmodus / Format & Legt Quelle und Ausgabeformat fest. Ein benutzerdefiniertes Format nur verwenden, wenn Standardvorgaben nicht ausreichen.\\
+\hline
+Textbaustein-Kategorien & Begrenzen, welche Bausteine am Feld angeboten werden. So werden fachfremde Vorschläge vermieden.\\
+\hline
+Virtuelles Mapping-Feld & Besitzt kein eigenes PDF-Formularfeld und dient Platzhaltern, Systemwerten oder erzeugten Vorlagen.\\
+\hline
+Automatisch nach Präfix/Seite gruppieren & Erstellt eine erste Gruppierung anhand technischer Namen oder PDF-Seiten; Ergebnis immer fachlich nachprüfen.\\
+\hline
+\end{longtable}
+\normalsize
 
 \HintBox{Gruppen und Untergruppen bestimmen die UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften und Schülern, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
 
@@ -264,11 +504,30 @@ Beim Austausch einer PDF erkennt das System fehlende und neue Felder, damit Date
 
 \subsection{Optionslisten erstellen (Noten/Skalen)}\index{Optionsliste}
 \begin{enumerate}
-  \item Admin \(\rightarrow\) Optionslisten \(\rightarrow\) Neue Liste.
-  \item Name eindeutig wählen (z.\,B. \enquote{Skala 1--5}).
-  \item Einträge anlegen: technischer Value (stabil) + Label (Anzeige).
-  \item Speichern und testen.
+  \item \enquote{Berichte \(\rightarrow\) Optionslisten} öffnen und den Reiter für Listen wählen.
+  \item Unter \enquote{Neue Liste} einen eindeutigen Namen eintragen und die Liste anlegen.
+  \item Optional eine Beschreibung ergänzen, die Zweck und Einsatzbereich dokumentiert.
+  \item Für jede Zeile den technischen Value, das deutsche Label, das englische Label, ein optionales Symbol und die Reihenfolge eintragen.
+  \item \enquote{Eintrag hinzufügen} für weitere Werte verwenden und die Liste speichern.
+  \item Bei einer fast identischen Variante \enquote{Duplizieren} verwenden und die Kopie neu benennen.
+  \item Im Reiter \enquote{Symbole} fehlende Bilddateien hochladen; nicht mehr verwendete Symbole erst nach Prüfung löschen.
 \end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.25\textwidth}|X|}
+\hline
+Value & Technisch gespeicherter Wert. Nach Beginn produktiver Eingaben nicht verändern, sonst passen alte Auswahlwerte nicht mehr zuverlässig.\\
+\hline
+Label DE / EN & Sichtbarer Text je Sprache; darf sprachlich verbessert werden, solange die Bedeutung des Values gleich bleibt.\\
+\hline
+Symbol & Optionales Bild neben dem Label. Nur klar verständliche und einheitlich gestaltete Symbole verwenden.\\
+\hline
+Standard/aktiv & Legt fest, ob ein Eintrag vorausgewählt oder angeboten wird. Eine Vorauswahl kann Vollständigkeitsanzeigen beeinflussen und muss fachlich gewollt sein.\\
+\hline
+Reihenfolge & Bestimmt die Anzeige im Auswahlfeld oder als Optionskarten.\\
+\hline
+Duplizieren & Erstellt eine neue, unabhängige Liste als sichere Basis für inhaltliche Änderungen.\\
+\hline
+\end{tabularx}
 
 \HintBox{Noten-/Skalenfelder greifen ausschließlich auf Optionslisten zu. Wenn Auswertungen nach numerischen Noten erfolgen sollen, tragen Sie die Zahl als Value ein (z.\,B. \enquote{1}, \enquote{2}, \enquote{3}). Labels dürfen angepasst werden. Values bleiben stabil; bei inhaltlichen Änderungen bitte eine neue Optionsliste anlegen oder versionieren.}
 
@@ -276,9 +535,12 @@ Beim Austausch einer PDF erkennt das System fehlende und neue Felder, damit Date
 
 \subsection{Optionslisten den Feldern zuordnen}\index{Optionsliste}
 \begin{enumerate}
-  \item Feld öffnen und Feldtyp Option/Note/Skala setzen.
-  \item Passende Optionsliste auswählen.
-  \item Batch-Zuordnung nutzen, wenn mehrere Felder identisch sind.
+  \item \enquote{Templates \(\rightarrow\) Bearbeiten} öffnen und die betroffenen Feldzeilen suchen.
+  \item Feldtyp auf Auswahl/Option setzen.
+  \item Über \enquote{Optionsliste} die fachlich passende Liste wählen.
+  \item Bei mehreren gleichartigen Feldern die Zeilen markieren und Batch-Zuordnung verwenden.
+  \item Speichern und in der Lehrkraftansicht jede Option einmal auswählen.
+  \item Testexport öffnen und prüfen, ob Label, Symbol beziehungsweise Markierung an der richtigen PDF-Position erscheinen.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/admin_optionuse.png}{Zuordnung Optionsliste \(\rightarrow\) Feld}
@@ -304,12 +566,52 @@ Felder können in Abhängigkeit von anderen Feldern oder Gruppen gesteuert werde
 Vor der Klassenanlage muss das passende Schulhalbjahr existieren. Im Bereich \enquote{Klassen} können Schulhalbjahre unabhängig von Klassen angelegt und als aktiv gesetzt werden.
 \begin{enumerate}
   \item Admin \(\rightarrow\) Schule \(\rightarrow\) Klassen öffnen.
-  \item Falls nötig das Schuljahr und Halbjahr anlegen.
-  \item Einzelne Klasse oder mehrere Klassen per Bulk-Anlage erstellen.
-  \item Schuljahr, Stufe, Bezeichnung (z.\,B. 4a), Halbjahr und Vorlage eintragen.
-  \item Lehrkräfte zuordnen und die gewünschte Wizard-Darstellung wählen.
-  \item Das aktuell verwendete Schulhalbjahr im Abschnitt \enquote{Aktives Schuljahr/Halbjahr} festlegen.
+  \item Im Abschnitt \enquote{Schulhalbjahr anlegen} Schuljahr und 1. oder 2. Halbjahr wählen und anlegen.
+  \item Für eine Klasse \enquote{Einzelne Klasse} verwenden; für mehrere parallele Stufen die Bulk-Anlage wählen.
+  \item Schuljahr, Klassenstufe, Klassenbezeichnung, Halbjahr und Vorlage eintragen.
+  \item Wizard-Darstellung \enquote{Gruppen} oder \enquote{Items} festlegen.
+  \item Eine oder mehrere verantwortliche Lehrkräfte markieren.
+  \item Klasse anlegen und in der Klassenliste kontrollieren.
+  \item Das aktuell verwendete Schulhalbjahr im Abschnitt \enquote{Aktives Schuljahr/Halbjahr} auswählen und \enquote{Als aktiv setzen} wählen.
 \end{enumerate}
+
+\small
+\begin{longtable}{|p{0.24\textwidth}|p{0.67\textwidth}|}
+\hline
+\textbf{Feld/Aktion} & \textbf{Bedeutung und Auswahl}\\
+\hline
+Schuljahr & Schreibweise wie \enquote{2026/27}. Es ordnet Klasse, Fristen, Fehlzeiten, Berichte und Exporte zeitlich zu.\\
+\hline
+Halbjahr & \enquote{1. Halbjahr} entspricht intern Standard, \enquote{2. Halbjahr} H2. Immer den vorgesehenen Berichtszeitraum wählen.\\
+\hline
+Klassenstufe & Numerische Stufe. Sie steuert unter anderem sichtbare Kompetenzen und wird beim Wechsel in ein neues Schuljahr automatisch fortgeschrieben.\\
+\hline
+Bezeichnung / Labels & Buchstaben oder Namen der Parallelklassen, zum Beispiel a, b, grün. Bei Bulk-Anlage mehrere Bezeichnungen gemäß Eingabehinweis angeben.\\
+\hline
+Vorlage & Aktive PDF-/Berichtsvorlage für neue Berichtsinstanzen dieser Klasse. Nach Eingabebeginn nur nach Test und Sicherung wechseln.\\
+\hline
+Wizard: Gruppen & Schüler bearbeiten die freigegebenen Bereiche gruppenweise. Geeignet für fachlich gegliederte Formulare.\\
+\hline
+Wizard: Items & Schüler bearbeiten einzelne Kompetenzen/Einträge nacheinander. Geeignet für einen stark geführten Ablauf.\\
+\hline
+Lehrkräfte & Mehrfachauswahl der Klassenbesitzer. Diese Personen können Klasse, Berichte, Freigaben und Anträge im vorgesehenen Umfang verwalten.\\
+\hline
+Aktives Schulhalbjahr & Systemweiter Standardkontext für neue Vorgänge, Dashboards und Importe. Das Umschalten archiviert nicht automatisch alle alten Klassen; deren Status separat kontrollieren.\\
+\hline
+Inaktive anzeigen & Blendet archivierte Klassen ein. Dadurch werden keine Daten reaktiviert.\\
+\hline
+Aktionsmenü: Bearbeiten & Ändert Stammdaten, Status, Vorlage, Wizard und Lehrkräfte der gewählten Klasse.\\
+\hline
+Aktionsmenü: Schüler & Öffnet Schüler- und Zuordnungsverwaltung der Klasse.\\
+\hline
+Aktionsmenü: Export & Öffnet Export mit dieser Klasse vorausgewählt.\\
+\hline
+Aktivieren/Inaktiv setzen & Steuert, ob die Klasse im laufenden Betrieb erscheint. Beim Archivieren werden zugehörige Berichte als abgeschlossen markiert.\\
+\hline
+Klasse löschen & Entfernt die Klassenzuordnung nach exakter Sicherheitsbestätigung. Schülerprofile und historische Berichte bleiben erhalten.\\
+\hline
+\end{longtable}
+\normalsize
 
 \HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie daher neue Vorlagen zunächst an einer Testklasse, bevor Sie produktive Klassen umstellen.}
 
@@ -317,10 +619,13 @@ Vor der Klassenanlage muss das passende Schulhalbjahr existieren. Im Bereich \en
 
 \subsection*{Klassen ins nächste Halbjahr übertragen}
 \begin{enumerate}
-  \item Quell- und Zielschuljahr sowie Zielhalbjahr auswählen.
-  \item Nur die Klassen markieren, die tatsächlich übertragen werden sollen.
-  \item Vorschau prüfen: Schüler- und Lehrkraftzuordnungen sowie Zielklasse werden angezeigt.
-  \item Übertragung bestätigen. Nicht ausgewählte Klassen werden übersprungen.
+  \item \enquote{Quellschuljahr} auswählen. Es bestimmt, aus welchem Zeitraum Klassen angeboten werden.
+  \item \enquote{Zielschuljahr}, \enquote{Zielhalbjahr} und \enquote{Vorlage für neues Halbjahr} festlegen.
+  \item Nur die Klassen markieren, die tatsächlich übertragen werden sollen. \enquote{Alle sichtbaren auswählen} und \enquote{Auswahl aufheben} erleichtern große Listen.
+  \item \enquote{Auswahl prüfen} wählen. Zu diesem Zeitpunkt wurde noch nichts übertragen.
+  \item In der Vorschau Zielklasse, neue Stufe, Schüler- und Lehrkraftzuordnungen je Klasse prüfen.
+  \item Übertragung bestätigen. Nicht ausgewählte Klassen werden übersprungen; ein Abbruch verwirft die Vorschau.
+  \item Zielschulhalbjahr öffnen und stichprobenartig prüfen, dass keine Schülerprofile dupliziert wurden.
 \end{enumerate}
 
 Beim Wechsel in ein anderes Schuljahr wird die Klassenstufe automatisch angepasst. Schülerprofile werden nicht dupliziert; es entstehen neue Klassenzuordnungen. Ein leeres, inaktives Schulhalbjahr kann nur entfernt werden, wenn die Schutzprüfung keine abhängigen Klassen, Berichte, Fristen, Fehlzeiten oder Freigaben findet.
@@ -329,34 +634,122 @@ Beim Wechsel in ein anderes Schuljahr wird die Klassenstufe automatisch angepass
 
 \ScreenshotFigure{screenshots/admin_newclass.png}{Klasse anlegen}
 
+\subsection*{Leere Schulhalbjahre entfernen}
+Ein Schulhalbjahr wird nur als löschbar angeboten, wenn keine Klassen, Berichte, Fristen, Fehlzeiten, Freigaben oder andere abhängige Daten existieren. Lesen Sie die angezeigte Schutzprüfung. \enquote{Leeres Halbjahr entfernen} löscht nur den leeren Zeitraumseintrag. Sobald Abhängigkeiten genannt werden, diese nicht durch Umwege entfernen, sondern zuerst klären, ob der Zeitraum fachlich erhalten bleiben muss.
+
 \subsection{Lehrkräfte \& Schüler verwalten}
 \textbf{Lehrkräfte}
-\begin{itemize}
-  \item Lehrkraft anlegen (Name, Login, Passwort).
-  \item Lehrkraft den Klassen zuordnen.
-  \item Passwörter zurücksetzen oder ändern (z.\,B. bei Verlust oder nach Personalwechsel). Nutzen Sie sichere Übergabekanäle und dokumentieren Sie Rollenänderungen.
-\end{itemize}
+\begin{enumerate}
+  \item \enquote{Einstellungen \(\rightarrow\) Nutzer} öffnen und \enquote{Nutzer anlegen} wählen.
+  \item E-Mail, Anzeigename und Rolle \enquote{Lehrkraft} oder \enquote{Admin} eintragen.
+  \item Konto erstellen und den Einladungs-/Setzlink über den vorgesehenen Kanal senden.
+  \item Unter \enquote{Schule \(\rightarrow\) Klassen} die Klasse bearbeiten und die Lehrkraft in der Mehrfachauswahl markieren.
+  \item Nach Personalwechsel das Konto deaktivieren, Klassenzuordnungen prüfen und aktive Einsichtsfreigaben zurückziehen.
+\end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.25\textwidth}|X|}
+\hline
+E-Mail & Eindeutiger Login und Ziel für Einladungen, Resets und Benachrichtigungen.\\
+\hline
+Name & Sichtbarer Name in Zuordnungen, Delegationen, Anträgen und Audit-Log.\\
+\hline
+Rolle Admin & Vollzugriff auf Systemkonfiguration und schulweite Daten. Nur so vielen Personen wie nötig zuweisen.\\
+\hline
+Rolle Lehrkraft & Zugriff auf zugeordnete Klassen, Delegationen und genehmigte Einsichten.\\
+\hline
+Aktiv & Deaktivierte Konten können sich nicht anmelden; Daten und Protokolle bleiben erhalten.\\
+\hline
+Link senden & Versendet einen zeitlich begrenzten Link zum Setzen oder Zurücksetzen des Passworts.\\
+\hline
+CSV-Bulk-Anlage & Legt mehrere Konten aus der bereitgestellten Vorlage an. Vor Import E-Mail, Name und Rolle zeilenweise prüfen.\\
+\hline
+Löschen & Nur verwenden, wenn keine fachliche Nachvollziehbarkeit verloren geht. Deaktivieren ist bei ehemaligen Beschäftigten meist vorzuziehen.\\
+\hline
+\end{tabularx}
 
 \textbf{Schüler}
-\begin{itemize}
-  \item Schüler manuell anlegen oder aus einer CSV-Liste importieren.
-  \item Schüler-Login vergeben oder erzeugen; Login-Liste für die Klasse ausgeben.
-  \item Test-Logins getrennt von Echtdaten führen, damit Exporte und Statistiken sauber bleiben.
-  \item Geburtsdaten werden in der Oberfläche passend zur Sprache als \texttt{TT.MM.JJJJ} beziehungsweise \texttt{MM/TT/JJJJ} angezeigt.
-\end{itemize}
+\begin{enumerate}
+  \item Für eine Einzelkorrektur \enquote{Schule \(\rightarrow\) Schüler} öffnen, nach Name suchen und das Aktionsmenü verwenden.
+  \item Vor dem manuellen Anlegen immer nach Name, Geburtsdatum und archivierten Profilen suchen.
+  \item Vorname, Nachname, Geburtsdatum, optionale E-Mail-Adressen und zusätzliche Schülerfelder erfassen.
+  \item Die Klassenzuordnung für das richtige Schuljahr/Halbjahr wählen; das Profil selbst bleibt klassenunabhängig.
+  \item Für ganze Klassen die CSV-Abgleichsfunktion verwenden, nicht Schüler für Schüler neu anlegen.
+  \item Zugangscodes in der Klassenansicht erzeugen und geschützt ausgeben.
+\end{enumerate}
+
+Geburtsdaten werden in der Oberfläche passend zur Sprache als \texttt{TT.MM.JJJJ} beziehungsweise \texttt{MM/TT/JJJJ} angezeigt. Test-Logins getrennt von Echtdaten führen, damit Exporte und Statistiken sauber bleiben.
 
 \subsection*{Schülerlisten sicher abgleichen}
 Bei jedem Import wird gegen \textbf{alle Schülerprofile der Datenbank} geprüft, nicht nur gegen die gewählte Klasse. Name und Geburtsdatum sowie vorhandene externe Kennungen dienen der Zuordnung.
 
 \begin{enumerate}
-  \item CSV-Datei hochladen und die erkannte Zielklasse prüfen.
-  \item Die Prüfung unterscheidet klar zwischen \enquote{neu}, \enquote{unverändert}, \enquote{verändert} und \enquote{nicht mehr in der Liste}.
-  \item Bei veränderten Schülern jede Eigenschaft einzeln prüfen. Standardmäßig wird der neue Wert übernommen; durch Anklicken kann gezielt der bisherige Wert beibehalten werden.
-  \item Bei fehlenden Schülern entscheiden, ob nur deren Klassenzuordnung ab dem aktuellen Schulhalbjahr entfernt werden soll. Vergangene Zuordnungen, Berichte und das Schülerprofil bleiben erhalten.
-  \item Import bestätigen. Kehrt ein Schüler später zurück, wird das bestehende Profil wieder zugeordnet.
+  \item \enquote{Schule \(\rightarrow\) Schüler} öffnen, Zielschuljahr wählen und eine oder mehrere CSV-Dateien auswählen.
+  \item \enquote{Listen prüfen} wählen. Nach dem Upload springt die Seite automatisch zum Prüfabschnitt.
+  \item Für jede Datei kontrollieren, welche Zielklasse aus Dateiname beziehungsweise Inhalt erkannt wurde. Eine falsche Klasse nicht importieren.
+  \item Die Statusblöcke \enquote{Neue Schüler}, \enquote{Veränderte Daten}, \enquote{Nicht mehr in der neuen Liste} und den aufklappbaren Block \enquote{Unveränderte Schüler} prüfen.
+  \item Bei einem vermeintlich neuen Schüler die angebotenen Treffer aus der gesamten Datenbank vergleichen. Stimmt ein archiviertes Profil, dieses der Zielklasse zuordnen.
+  \item Bei veränderten Schülern jede Eigenschaft einzeln prüfen. Standardmäßig ist der Wert der neuen Liste markiert. Direkt den alten Wert anklicken, wenn genau diese Eigenschaft beibehalten werden soll.
+  \item Bei fehlenden Schülern die Checkbox nur dann setzen, wenn die Klassenzuordnung im aktuellen und in zukünftigen Schulhalbjahren entfernt werden soll.
+  \item Bestätigungscheckbox lesen und \enquote{Diese Klasse importieren} wählen. Eine noch ungeklärte Klasse mit \enquote{Klasse überspringen} auslassen; der Gesamtprozess läuft weiter.
+  \item Nach jeder Klasse die Zusammenfassung prüfen. Erst danach die nächste Klasse bearbeiten.
+  \item Abschließend nach einzelnen Namen suchen und kontrollieren, dass keine Doppelprofile entstanden sind.
 \end{enumerate}
 
 Admins können mehrere Klassendateien gleichzeitig hochladen. Prüfung und Import erfolgen anschließend \textbf{klassenweise}; eine Klasse kann übersprungen werden, ohne den gesamten Vorgang abzubrechen. Nach dem Upload springt die Seite automatisch zum Prüfabschnitt.
+
+\small
+\begin{longtable}{|p{0.25\textwidth}|p{0.66\textwidth}|}
+\hline
+\textbf{Status/Option} & \textbf{Bedeutung und richtige Entscheidung}\\
+\hline
+Neu & Kein ausreichend sicherer Treffer. Vor dem Anlegen globale Treffer prüfen. Nur bei tatsächlich neuer Person ein neues Profil erzeugen.\\
+\hline
+Bestehendes Profil zuordnen & Verwendet einen schon vorhandenen Schülerdatensatz und erstellt nur die neue Klassenzuordnung. Dies ist bei Rückkehr oder Klassenwechsel der Normalfall.\\
+\hline
+Verändert & Mindestens ein Stammdatenfeld weicht ab. Jede Zeile zeigt bisherigen und hochgeladenen Wert; die Auswahl gilt nur für dieses Feld.\\
+\hline
+Neuen Wert übernehmen & Standardauswahl. Schreibt den hochgeladenen Wert in das zentrale Profil und wirkt damit auch in anderen Kontexten dieses Schülers.\\
+\hline
+Bisherigen Wert behalten & Verwirft nur die Änderung dieser Eigenschaft. Andere markierte Änderungen desselben Schülers können trotzdem übernommen werden.\\
+\hline
+Nicht mehr in der Liste & Schüler ist der Zielklasse aktuell zugeordnet, fehlt aber in der neuen CSV. Das Profil wird niemals allein deshalb gelöscht.\\
+\hline
+Zuordnung entfernen & Beendet nur die Zuordnung dieses Schulhalbjahrs und zukünftige Zuordnungen. Frühere Klassen und Berichte bleiben erhalten.\\
+\hline
+Unverändert & Profil und Zuordnung passen. Der Block ist standardmäßig eingeklappt, damit echte Entscheidungen im Vordergrund stehen.\\
+\hline
+Nicht auswertbar / übersprungen & Zeile hat fehlende oder ungültige Pflichtwerte. CSV korrigieren und die Klasse erneut prüfen.\\
+\hline
+Klasse überspringen & Führt für diese Klasse keine Änderung aus und springt zur nächsten hochgeladenen Klassendatei.\\
+\hline
+\end{longtable}
+\normalsize
+
+\subsection*{Filter und Aktionen der zentralen Schülerliste}
+\begin{tabularx}{\textwidth}{|p{0.27\textwidth}|X|}
+\hline
+Suche & Findet Vor- und Nachnamen; für Doppelprüfungen möglichst vollständigen Namen verwenden.\\
+\hline
+Schuljahr / Klasse & Beschränkt die Liste auf eine Zuordnung. \enquote{Alle} zeigt auch Schüler ohne aktuelle Zuordnung entsprechend der Adminberechtigung.\\
+\hline
+Sortierung & Ordnet nach Name oder den angebotenen Kriterien; verändert keine Daten.\\
+\hline
+Archivierte Schüler & Schüler ohne aktive Klassenzuordnung erscheinen nur für Admins gebündelt. In der Berichtsvorschau wird die zuletzt zugeordnete Klasse gezeigt.\\
+\hline
+Verwalten & Öffnet Bearbeiten, Zuordnungen und gegebenenfalls endgültige Löschoptionen. Vor dem Löschen Berichte und Historie kontrollieren.\\
+\hline
+Filter zurücksetzen & Entfernt Suche und Auswahl und stellt die Standardliste wieder her.\\
+\hline
+\end{tabularx}
+
+\subsection*{Fehltage-Import}
+\begin{enumerate}
+  \item Schuljahr/Halbjahr auswählen und tab-getrennte CSV-Datei hochladen.
+  \item Erkannte Spalten für Klasse, Schüler, Fehltage gesamt und unentschuldigt prüfen.
+  \item Problematische Zeilen aufklappen und bei Bedarf einen vorgeschlagenen Schüler manuell zuordnen.
+  \item Import starten und Zusammenfassung aus importierten und übersprungenen Zeilen lesen.
+  \item In einer Beispielklasse die Werte kontrollieren. Manuelle Lehrkraftbearbeitung ist nur möglich, wenn sie in den Einstellungen erlaubt ist.
+\end{enumerate}
 
 \HintBox{Ein vermeintlich neuer Schüler kann bereits in einer archivierten Klasse vorhanden sein. Vor dem Anlegen immer den vorgeschlagenen Datenbanktreffer prüfen.}
 
@@ -369,54 +762,198 @@ Admins können mehrere Klassendateien gleichzeitig hochladen. Prüfung und Impor
 
 \subsection{Admin-Dashboard}
 Das Dashboard zeigt Systemstatus, Bearbeitungsstände und Schnellzugriffe.
-\begin{itemize}
-  \item Überblick über aktive Klassen, zuletzt bearbeitete Templates und offene Delegationen.
-  \item Hinweise auf fehlende Zuordnungen (z.\,B. Klasse ohne Template) oder offene Exporte.
-  \item Quicklinks zu häufigen Aufgaben wie Optionslisten, Klassenverwaltung oder Export.
-\end{itemize}
+\begin{enumerate}
+  \item Nach der Anmeldung zuerst den Fristenblock prüfen. Abgelaufene oder kurzfristige Schüler-, Delegations- und Lehrkraftfristen sind farblich hervorgehoben.
+  \item \enquote{Fehlzeiten-Uploadstatus} kontrollieren. Er zeigt, für welche Klassen beziehungsweise Zeiträume ein Import vorliegt oder fehlt.
+  \item Im Abschnitt \enquote{Delegationen verwalten} offene und überfällige Aufgaben prüfen. \enquote{Alle Delegationen beenden} ist eine schulweite Ausnahmeaktion und verlangt eine Bestätigung.
+  \item Im \enquote{Gesamt-Bearbeitungsstand} Klasse und Fortschritt vergleichen. Auffällige Klassen über den angebotenen Link öffnen.
+  \item Unter \enquote{Verwaltung} sowie \enquote{Vorlagen \& Exporte} die Schnellzugriffe für die nächste Aufgabe verwenden.
+\end{enumerate}
+
+\HintBox{Das Dashboard ist eine Zusammenfassung. Maßgeblich bleiben die Detailseiten: Ein hoher Prozentwert bestätigt nicht automatisch die inhaltliche Richtigkeit eines Berichts.}
 
 \subsection{Einstellungen}
 Systemweite Parameter werden hier gepflegt.
-\begin{itemize}
-  \item Branding, Sprachen, Schulzeitzone, Formatierungen und verfügbare Features aktivieren oder deaktivieren.
-  \item Fristen für Schüler, Delegationen und Lehrkräfte je Schuljahr/Halbjahr pflegen.
-  \item E-Mail-Absender, Benachrichtigungen und Sprache der Nachrichten konfigurieren.
-  \item Exportoptionen einschließlich PDF-Flattening, Markierungsfarben und Broschürenverarbeitung festlegen.
-  \item Elternmodus konfigurieren: automatische Freigabe, Download-Button in der Elternansicht, grafische Lehrkraft-Unterschrift (Master-Key) nach Bedarf aktivieren.
-  \item KI-Funktionen und KI-Textprüfung steuern; Vorschläge werden nicht automatisch gespeichert.
-  \item Deutsche und englische Standard-Intros sowie getrennte Stimmen und Geschwindigkeiten für die Vorlesefunktion hinterlegen.
-\end{itemize}
+Die Live-Preview oben zeigt Farben, Karten und den E-Mail-Absender, bevor gespeichert wird. \enquote{Alle Einstellungen speichern} übernimmt die geänderten Bereiche gemeinsam. Abschnitte mit eigener Upload- oder Löschaktion, etwa Logo oder Intro, werden über ihre jeweilige Schaltfläche bestätigt.
+
+\small
+\begin{longtable}{|p{0.27\textwidth}|p{0.64\textwidth}|}
+\hline
+\textbf{Einstellung} & \textbf{Bedeutung, Werte und Auswirkung}\\
+\hline
+Organisation / Schule & Name in Kopfzeile und Systemdarstellung. Eine Änderung wirkt sofort schulweit.\\
+\hline
+Default-Schuljahr & Vorauswahl für Bulk-Importe. Format wie \enquote{2026/27}; ersetzt nicht das aktive Halbjahr.\\
+\hline
+Schul-Zeitzone & IANA-Wert, zum Beispiel \texttt{America/New\_York} oder \texttt{Europe/Berlin}. Steuert Fristen, E-Mails und Protokollzeiten inklusive Sommerzeit.\\
+\hline
+Primär-/Sekundärfarbe & Hex-Farben für Schaltflächen und Akzente. Farbwähler und Textwert bleiben gekoppelt; Lesbarkeit in der Vorschau prüfen.\\
+\hline
+Fristen: Schuljahr/Halbjahr & Kontext, für den Schüler-, Delegations- und Lehrkraftfristen gelten. Leeres Datumsfeld entfernt die betreffende Frist.\\
+\hline
+Frist in Schüleransicht anzeigen & Zeigt die Schülerfrist kompakt auf der Startseite; im Leseanfänger-Modus bleibt sie ausgeblendet.\\
+\hline
+From E-Mail / From Name & Absender für Konto-, Antrag-, Freigabe- und Statusmails. Nur eine technisch zustellbare Schuladresse verwenden.\\
+\hline
+KI-Vorschläge Lehrkräfte & Blendet KI-Hilfen für Lehrkräfte ein. Ausgeschaltet werden keine externen Anfragen gesendet.\\
+\hline
+KI-Erklärungen Schüler & Unabhängiger Schalter für kurze Schülererklärungen. Nur aktivieren, wenn schulisch freigegeben.\\
+\hline
+Provider & \enquote{OpenAI} nutzt den Standardanbieter; \enquote{OpenAI-kompatibel} erlaubt eine eigene Basis-URL.\\
+\hline
+Basis-URL / API-Key / Modell & Technische Providerdaten. Schlüssel niemals in Screenshots, Supportnachrichten oder Handbuch übernehmen. Modellname muss beim Provider existieren.\\
+\hline
+Textprüfung aktivieren & Erlaubt abschließende Prüfung von Freitexten. Vorschläge werden einzeln angenommen, teilweise übernommen oder abgelehnt.\\
+\hline
+Textprüfungs-Provider / Modell & \enquote{Deaktiviert} unterbindet Prüfung; \enquote{bestehende KI-Einstellungen} verwendet die oben hinterlegte Verbindung.\\
+\hline
+Max. Zeichen / Felder pro Batch & Begrenzt die Größe einer Prüfanforderung. Kleinere Werte reduzieren einzelne Datenpakete, können aber mehr Anfragen erzeugen.\\
+\hline
+Tageslimit Nutzer / gesamt & \texttt{0} bedeutet gemäß Systemhinweis kein zusätzliches Limit; positive Werte begrenzen Kosten und Nutzung.\\
+\hline
+Cache-TTL & Dauer in Sekunden, wie lange gleiche Prüfergebnisse wiederverwendet werden. \texttt{0} deaktiviert die zeitliche Wiederverwendung.\\
+\hline
+Eltern: Download-Button & Erlaubt Download einer signierten, nicht bearbeitbaren PDF in der Elternansicht.\\
+\hline
+Eltern: automatisch freigeben & Aktiviert neue Elternzugänge ohne Adminprüfung. Nur verwenden, wenn dies dem Schulprozess entspricht.\\
+\hline
+Grafische Lehrkraft-Unterschrift & Erlaubt Lehrkräften eine handschriftliche Signatur für Eltern-PDFs. Master-Key geschützt aufbewahren; \enquote{Neu generieren} macht sorgfältige Folgeschritte erforderlich.\\
+\hline
+Feedbackbogen aktivieren & Zeigt Eltern nach dem Lernentwicklungsgespräch den Feedbackbogen.\\
+\hline
+Feedback verpflichtend & Sperrt Berichtseinsicht, bis der Bogen abgesendet wurde. Nur verfügbar beziehungsweise sinnvoll bei aktivem Feedback.\\
+\hline
+Feedback anonym & Entfernt den direkten Personenbezug in der Auswertung gemäß der angezeigten Funktion. Freitexte können trotzdem sensible Inhalte enthalten.\\
+\hline
+PDFs bearbeitbar lassen & Deaktiviert das standardmäßige Flattening. Für endgültige Ausgaben im Regelfall ausgeschaltet lassen.\\
+\hline
+Farbe für Radio-Kreuze & Wählt automatische/kontextbezogene oder feste Kreuzfarbe. Bei fester Farbe den Hexwert und den Testexport prüfen.\\
+\hline
+Delegationen überschreibbar & Regelt, ob delegierte Lehrkräfte in freigegebenen Fachbereichen bestehende Werte ändern dürfen. Andere Bereiche bleiben schreibgeschützt.\\
+\hline
+Lehrkräfte dürfen Fehltage bearbeiten & Aktiv: Bearbeitung in der Klassenansicht. Inaktiv: nur lesend; Änderungen erfolgen im Admin-Importbereich.\\
+\hline
+Stimme Deutsch / Englisch & Voice-ID je Sprache; \enquote{Automatisch} nutzt den Standard. Über die Vorleseprobe vor dem Speichern testen.\\
+\hline
+Geschwindigkeit Deutsch / Englisch & Bereich 0,5 langsam bis 1,5 schnell; 1,0 normal. Je Sprache getrennt festlegen.\\
+\hline
+Schüler-Intro DE / EN & Formatierter Einführungstext. Platzhalter über die Liste einfügen; aktive Sprache entscheidet, welche Fassung gezeigt wird.\\
+\hline
+Logo & PNG, JPG oder WEBP. Auswahl erzeugt erst eine Vorschau; gespeichert wird mit \enquote{Logo hochladen}. \enquote{Logo entfernen} wirkt schulweit.\\
+\hline
+Endgültig löschen: Schulhalbjahr & Filtert angebotene Schüler und Klassen. Die Auswahl begrenzt nicht automatisch alle abhängigen historischen Daten der Löschaktion.\\
+\hline
+Schüler/Klasse endgültig löschen & Löscht einschließlich abhängiger Berichte und Werte. Nur nach Backup, Vier-Augen-Prüfung und Eingabe \texttt{DELETE} ausführen.\\
+\hline
+\end{longtable}
+\normalsize
 
 \HintBox{Änderungen in den Einstellungen sollten dokumentiert und im Kollegium kommuniziert werden, damit Abläufe konsistent bleiben.}
 
 \subsection{Audit-Log}
 Zur Nachvollziehbarkeit wichtiger Aktionen.
-\begin{itemize}
-  \item Protokolliert relevante Änderungen (z.\,B. Template-Wechsel, Nutzeranlage, Exporte).
-  \item Filter- und Suchoptionen nutzen, um Ereignisse nach Datum oder Nutzer zu finden.
-  \item Bei sicherheitsrelevanten Vorfällen zeitnah sichern und auswerten.
-\end{itemize}
+\begin{enumerate}
+  \item \enquote{Einstellungen \(\rightarrow\) Audit-Log} öffnen und bei Bedarf \enquote{Filter} einblenden.
+  \item \enquote{Von} und \enquote{Bis} setzen, um den Zeitraum einzugrenzen.
+  \item Optional Ereignistyp und Benutzer wählen. Die Freitextsuche durchsucht Ereignis, Nutzer und Details.
+  \item Nur wenn technische Einträge benötigt werden, die entsprechende Zusatzoption aktivieren.
+  \item \enquote{Filtern} wählen, Seiten durchgehen und Detailzeilen aufklappen. \enquote{Zurücksetzen} stellt die ungefilterte Ansicht her.
+\end{enumerate}
+
+Der Audit-Log dokumentiert unter anderem Template-Wechsel, Nutzerverwaltung, Exporte und administrative Aktionen. Er ist eine Nachvollziehbarkeitshilfe, aber kein Ersatz für regelmäßige Backups oder schulinterne Freigabeprotokolle.
 
 \ScreenshotFigure{screenshots/admin_classedit.png}{Benutzer \& Zuordnungen}
 
 \subsection{Backup, Wiederherstellung \& Schriftarten}
 Der Bereich \enquote{Backup} erstellt eine geschützte Sicherung der Datenbankinhalte. Beim Import wird die Datei zunächst analysiert; Konflikte und betroffene Tabellen werden vor der Übernahme angezeigt. Tabellen oder Datengruppen können selektiv gewählt werden. Der aktuell angemeldete Adminzugang wird geschützt.
 
-\begin{itemize}
-  \item Backup-Dateien enthalten personenbezogene Daten und gehören in einen verschlüsselten, zugriffsbeschränkten Speicher.
-  \item Vor einer Wiederherstellung immer Analyse und Konfliktanzeige vollständig prüfen.
-  \item Unter \enquote{Schriftarten} können für PDF-Vorlagen benötigte Fonts geprüft und fehlende Dateien gezielt hochgeladen werden.
-\end{itemize}
+\subsubsection{Backup exportieren}
+\begin{enumerate}
+  \item \enquote{Einstellungen \(\rightarrow\) Backup} öffnen.
+  \item Gewünschte Sicherungsbestandteile markieren. System- und personenbezogene Daten nur gemeinsam sichern, wenn dies für die Wiederherstellung erforderlich ist.
+  \item \enquote{Backup exportieren} wählen und die ZIP-Datei unmittelbar in die geschützte Ablage verschieben.
+  \item Dateidatum, Größe und Ablageort dokumentieren. Die Sicherung nicht per unverschlüsselter E-Mail versenden.
+\end{enumerate}
+
+\subsubsection{Backup importieren}
+\begin{enumerate}
+  \item Zuerst ein aktuelles Backup des gegenwärtigen Stands erzeugen.
+  \item Sicherungs-ZIP auswählen und Analyse starten. Noch keine Übernahme erzwingen.
+  \item Version, enthaltene Tabellen, Konflikte und Warnungen vollständig lesen.
+  \item Nur die benötigten Datengruppen auswählen. Schutz des aktuell angemeldeten Admins aktiviert lassen.
+  \item Bestätigung setzen und Import ausführen. Danach Login, Schülerzahl, Klassen, Vorlagen und einen Beispielbericht prüfen.
+\end{enumerate}
+
+\subsubsection{Schriftarten prüfen und hochladen}
+\begin{enumerate}
+  \item \enquote{Berichte \(\rightarrow\) Schriftarten} öffnen und eine Vorlage auswählen.
+  \item \enquote{Schriften prüfen} wählen. Fehlende oder ersetzte Schriften werden aufgelistet.
+  \item Nur rechtmäßig nutzbare Schriftdateien im unterstützten Format auswählen und hochladen.
+  \item Prüfung wiederholen und anschließend Vorschau sowie Einzel-PDF vergleichen.
+\end{enumerate}
 
 \subsection{Kompetenzen, AGs \& erzeugte Vorlagen}
 Neben klassischen PDF-Formularvorlagen unterstützt das System kompetenzbasierte, per LaTeX erzeugte Berichte.
-\begin{itemize}
-  \item \textbf{Kompetenzen:} Kategorien, Unterkategorien und Kompetenzen werden in einer sortierbaren Baumstruktur gepflegt. Klassenstufen, Pflichtstatus, Anzeigeart und deutsch/englische Texte können festgelegt werden. Kompetenzcodes müssen eindeutig sein.
-  \item \textbf{Kompetenzanträge:} Lehrkräfte können Änderungen oder neue Kompetenzen beantragen. Admins prüfen, genehmigen oder lehnen ab; Statusänderungen werden per E-Mail gemeldet.
-  \item \textbf{LaTeX-Vorlagen:} Layoutpakete können hochgeladen, ausgewählt und sicher gelöscht werden. Bei der PDF-Erzeugung werden nur die für die gewählte Klassenstufe sichtbaren Kompetenzen übernommen.
-  \item \textbf{RCFF und Template-Pakete:} Kategorien, Bewertungsfelder und Optionslisten können zusammen mit einem Template exportiert beziehungsweise importiert werden. Vor der Übernahme ist die Zuordnungsvorschau zu prüfen.
-  \item \textbf{AGs:} Der Admin pflegt einen globalen AG-Katalog und aktiviert Angebote je Halbjahr. Lehrkräfte ordnen die Teilnahme der Schüler zu; die Werte können automatisch in Berichte einfließen.
-\end{itemize}
+
+\subsubsection{Kompetenzbaum pflegen}
+\begin{enumerate}
+  \item \enquote{Fertige Berichte \(\rightarrow\) Kompetenzen} öffnen und über die Stufenfilter 1--4 die gewünschte Sicht einstellen. \enquote{Alle} hebt den Stufenfilter auf.
+  \item Mit \enquote{+ Kategorie} eine deutsch/englische Hauptkategorie anlegen.
+  \item Über das Plus an einer Kategorie eine Unterkategorie und über das Plus an einer Unterkategorie eine Kompetenz anlegen.
+  \item Code, deutschen und englischen Text, Darstellung, Pflichtstatus und Klassenstufen festlegen.
+  \item \enquote{Normale Kompetenz mit Bewertung} für bewertbare Zeilen, \enquote{Infozeile ohne Bewertung} für reine Hinweise wählen.
+  \item Mit den Stufen-Chips genau die Klassenstufen markieren, in denen die Kompetenz erscheint.
+  \item Speichern und den Baum bei Bedarf per Ziehen sortieren. \enquote{Alle einklappen}/\enquote{Alle ausklappen} ändert nur die Ansicht.
+\end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.26\textwidth}|X|}
+\hline
+Code & Muss im gesamten Katalog eindeutig sein. Leer beim Neuanlegen erlaubt automatische Erzeugung; bestehende Codes nur mit besonderer Vorsicht ändern.\\
+\hline
+Deutsch / English & Sichtbarer Kompetenztext je Sprache. Platzhalter wie \texttt{[checkbox]}, \texttt{[vline]} oder \texttt{[space=5mm]} nur nach Vorlagenkonvention verwenden.\\
+\hline
+Darstellung & \enquote{bewertet} erzeugt Auswahl-/Bewertungslogik, \enquote{Infozeile} zeigt Text ohne Bewertung.\\
+\hline
+Pflichtkompetenz & Zählt zur Vollständigkeitsprüfung. Optional wird mit Stern gekennzeichnet.\\
+\hline
+Klassenstufen & Mehrfachauswahl 1--4; eine Kompetenz kann in mehreren Stufen erscheinen.\\
+\hline
+Stift / Papierkorb & Bearbeiten beziehungsweise löschen. Vor dem Löschen Verwendung in Vorlagen und Berichten prüfen.\\
+\hline
+CSV-Vorlage / Import & Ermöglicht Massenanlage. Vorlage herunterladen, Spalten unverändert lassen und nach Import Dubletten-/Fehlerhinweise prüfen.\\
+\hline
+\end{tabularx}
+
+\subsubsection{Kompetenzanträge bearbeiten}
+Offene Anträge zeigen Antragsteller, vorgeschlagene Kategorie, Texte, Klassenstufen und Pflichtstatus. Ein optionaler Admin-Kommentar wird mit der Entscheidung gespeichert. \enquote{Genehmigen} legt die Kompetenz an, \enquote{Ablehnen} verwirft den Vorschlag. Der Antragsteller erhält in beiden Fällen eine E-Mail. Bearbeitete Anträge stehen im aufklappbaren Archiv.
+
+\subsubsection{AGs verwalten}
+\begin{enumerate}
+  \item Schuljahr/Halbjahr auswählen; alle Änderungen beziehen sich auf diesen Zeitraum.
+  \item Unter \enquote{AG anlegen} einen eindeutigen Namen eingeben und speichern.
+  \item In \enquote{AGs und Verfügbarkeit} Namen ändern, Angebot aktivieren/deaktivieren oder nach Prüfung löschen.
+  \item Für einen neuen Zeitraum optional \enquote{Verfügbarkeit aus Vorhalbjahr übernehmen}; Quelle kontrollieren und erst dann übernehmen.
+  \item Die Übersicht aller Halbjahre verwenden, um versehentlich fehlende oder doppelte Angebote zu erkennen.
+\end{enumerate}
+
+\subsubsection{LaTeX-Pakete und Layouts}
+\begin{enumerate}
+  \item Unter \enquote{PDF-Vorlagen} zwischen Paketen und Layouts unterscheiden. Ein Paket enthält die vollständige Erzeugungsumgebung, ein Layout eine auswählbare \texttt{.tex}-Darstellung.
+  \item Für ein Paket Name, Beschreibung, Hauptdatei (meist \texttt{main.tex}) und ZIP auswählen. \enquote{Aktiv} macht es nutzbar; \enquote{Standard} wählt die Voreinstellung.
+  \item Für ein Layout Anzeigename und technischen Schlüssel angeben. Der Schlüssel darf nur Kleinbuchstaben, Ziffern, Unterstrich oder Bindestrich enthalten. Anschließend die \texttt{.tex}-Datei auswählen.
+  \item Nur aktive Pakete oder Layouts als Standard setzen. Ein Standard kann nicht deaktiviert werden, bevor ein anderer Standard festgelegt ist.
+  \item Vor dem Löschen erzeugte Berichte und Abhängigkeiten prüfen.
+\end{enumerate}
+
+\subsubsection{Template-Pakete und RCFF}
+\begin{enumerate}
+  \item Paketliste nach Status filtern und \enquote{Ansehen} öffnen.
+  \item PDF-Formularstruktur und Diagnostik lesen; Warnungen zu Feldern oder eingebetteten Ressourcen klären.
+  \item Beim Import Zielname, Kategorien und Bewertungs-/Optionslisten zuordnen.
+  \item Import bestätigen und über \enquote{Felder bearbeiten} die übernommene Struktur prüfen.
+  \item \enquote{RCFF erneut anwenden} nur verwenden, wenn Konfigurationswerte bewusst aus dem Paket zurückgespielt werden sollen.
+  \item Paket löschen entfernt das Paketobjekt; Abhängigkeiten und bereits importierte Vorlage vorher kontrollieren.
+\end{enumerate}
 
 \WarnBox{Vorlagen- oder Kompetenzpakete erst in einer Testklasse prüfen. Das Löschen verwendeter Vorlagen ist geschützt; dennoch müssen Abhängigkeiten und erzeugte PDFs vor Strukturänderungen kontrolliert werden.}
 
@@ -425,8 +962,13 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \subsection{Klasse auswählen \& Überblick}
 \begin{enumerate}
-  \item Anmelden im Lehrerbereich.
-  \item Klasse wählen und Status (Freigabe, Bearbeitungsstand, Export) prüfen.
+  \item Anmelden und auf dem Dashboard Fristen, Benachrichtigungen und den aktuellen Bearbeitungsstand lesen.
+  \item \enquote{Klassen} öffnen. \enquote{Inaktive anzeigen} nur verwenden, wenn eine frühere Klasse gesucht wird.
+  \item Das Schuljahr aufklappen und die richtige Klassenzeile anhand von Klasse und Status identifizieren.
+  \item Unter \enquote{Wizard} \enquote{Gruppen} oder \enquote{Items} auswählen und mit \enquote{Speichern} bestätigen.
+  \item \enquote{Vorlesen aktivieren/deaktivieren} und \enquote{Silbenschrift aktivieren/deaktivieren} nur nach dem vereinbarten Klassenkonzept ändern.
+  \item Nach Aktivierung von Vorlesen \enquote{Audios vorbereiten} wählen. Der oben sichtbare Vorbereitungsstatus zeigt Fortschritt und mögliche Fehler.
+  \item Das Aktionsmenü öffnen: \enquote{Schüler verwalten}, \enquote{Eingaben}, \enquote{Intro bearbeiten} oder \enquote{Inaktiv setzen/Aktivieren} wählen.
 \end{enumerate}
 
 \begin{tabularx}{\textwidth}{p{0.32\textwidth}X}
@@ -438,6 +980,26 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \ScreenshotFigure{screenshots/dashboard_teacher.png}{\textendash{} Lehrerbereich \textendash{} Übersicht}
 
+\ScreenshotFigure{screenshots/teacher_classes_manual.png}{Klassenübersicht mit Wizard, Vorlesen und Klassenaktionen}
+
+\begin{tabularx}{\textwidth}{|p{0.28\textwidth}|X|}
+\hline
+Gruppen & Der Schüler-Wizard führt fach- oder kategorieweise durch die freigegebenen Bereiche.\\
+\hline
+Items & Der Wizard zeigt einzelne Einträge nacheinander.\\
+\hline
+Vorlesen aktivieren & Schaltet TTS für die Klasse frei und startet die Grundlage für vorbereitete Audios.\\
+\hline
+Audios vorbereiten & Erzeugt die benötigten deutschen/englischen Kompetenztexte und Intros vorab. Fehlende Dateien werden beim Schülerabruf weiterhin live erzeugt.\\
+\hline
+Silbenschrift & Färbt erkannte deutsche Silben abwechselnd blau und rot; hat keinen Einfluss auf gespeicherte Berichtswerte.\\
+\hline
+Intro bearbeiten & Öffnet deutsche und englische Klasseneinführung. Fehlt Englisch, kann je nach Funktion die deutsche Fassung als Rückfall dienen.\\
+\hline
+Inaktiv setzen & Archiviert die Klasse und markiert ihre Berichte automatisch als abgeschlossen. Nicht als Ersatz für endgültige Löschung verwenden.\\
+\hline
+\end{tabularx}
+
 \subsection*{Bearbeitungsstand \& Statusanzeigen}
 \begin{itemize}
   \item Fortschrittsbalken oder Listen zeigen offene Pflichtfelder pro Gruppe; \enquote{unvollständig} bedeutet meist fehlende Pflichtfelder oder nicht gespeicherte Eingaben.
@@ -447,55 +1009,138 @@ Einstieg für Lehrkräfte: Klasse wählen, klassenweite Felder ausfüllen, Schü
 
 \subsection{Klassenweite Felder (einmal \textendash{} für alle)}\index{Klassenfeld}
 \begin{enumerate}
-  \item Bereich \enquote{Klassenfelder} öffnen.
-  \item Felder vollständig ausfüllen und speichern.
+  \item Über \enquote{Eingaben} die Klasse wählen. Die Auswahl \enquote{Klasse} legt den Arbeitskontext fest.
+  \item Im Abschnitt \enquote{Klassenfelder} die Fortschrittsanzeige lesen. Sie zeigt Anzahl, offene Felder und Prozentwert.
+  \item Jedes Feld entsprechend Label und Hilfetext ausfüllen. Klassenfelder gelten für alle Schüler dieser Berichtsinstanz.
+  \item Nach einer Eingabe den Autospeicherstatus abwarten. Ein separater Speichern-Button ist in der Regel nicht nötig.
+  \item Platzhalterbezüge wie \texttt{\{\{Feldname\}\}} nur verwenden, wenn sie in der Vorlage vorgesehen sind.
+  \item Nach 100 Prozent stichprobenartig kontrollieren, ob Inhalt und Rechtschreibung für die gesamte Klasse stimmen.
 \end{enumerate}
 
 \HintBox{Klassenweite Felder sollten früh ausgefüllt werden, da sie als Basis in individuellen Texten erscheinen können. Nutzen Sie Zwischenstände und speichern Sie nach jeder Gruppe.}
 
 \ScreenshotFigure{screenshots/teacher_classentry.png}{Lehrerbereich \textendash{} Klassenfelder}
 
+\ScreenshotFigure{screenshots/teacher_entries_manual.png}{Eingabeseite mit Klassenwahl, Ansicht und Klassenfeldern}
+
 \subsection{Schülerberichte (individuell)}
 \begin{enumerate}
-  \item Schüler auswählen.
-  \item Fach/Gruppe wählen (z.\,B. Deutsch).
-  \item Untergruppen nutzen, um innerhalb einer Gruppe schnell zu springen.
-  \item Textfelder ausfüllen, Optionsfelder setzen, speichern.
+  \item Im Feld \enquote{Ansicht} den geeigneten Arbeitsmodus wählen: Notenübersicht, Schüler oder Items.
+  \item Optional \enquote{Nur fehlende} aktivieren, um bereits ausgefüllte Einträge auszublenden.
+  \item \enquote{Optionen als Buttons} aktivieren, wenn Auswahlwerte als anklickbare Karten statt Dropdowns erscheinen sollen.
+  \item In der Schüleransicht Gruppe und Schüler wählen; mit \enquote{Vorheriger/Nächster Schüler} innerhalb der gefilterten Reihenfolge wechseln.
+  \item In der Items-Ansicht Gruppe wählen und denselben Eintrag nacheinander für mehrere Schüler bearbeiten.
+  \item Text-, Auswahl-, Checkbox- und Datumsfelder ausfüllen. Pflichtfelder sind für den Fortschritt maßgeblich.
+  \item Bei sichtbaren Schülerangaben entscheiden, ob diese nur angezeigt oder gemäß Berechtigung bearbeitet/zurückgesetzt werden dürfen.
+  \item Autospeicherstatus beobachten, bevor Schüler, Gruppe oder Seite gewechselt wird.
 \end{enumerate}
+
+\small
+\begin{longtable}{|p{0.27\textwidth}|p{0.64\textwidth}|}
+\hline
+\textbf{Ansicht/Option} & \textbf{Wirkung}\\
+\hline
+Notenübersicht & Tabellenansicht für bewertbare Felder. Gruppe und Tabellenorientierung bestimmen, ob Schüler in Zeilen oder Spalten stehen.\\
+\hline
+Schüler & Zeigt alle Felder eines gewählten Schülers innerhalb der Gruppe. Geeignet für zusammenhängende Texte und Abschlusskontrolle.\\
+\hline
+Items & Zeigt Felder/Kompetenzen als Arbeitsfokus über mehrere Schüler. Geeignet für fachweises Arbeiten.\\
+\hline
+Schülereingaben anzeigen & Blendet abgegebene Schülerwerte als Vergleich ein. Sie werden nicht automatisch zu Lehrkraftwerten.\\
+\hline
+Nur fehlende & Blendet abgeschlossene Felder aus. Für Endkontrolle wieder deaktivieren, damit bereits gespeicherte Inhalte sichtbar sind.\\
+\hline
+Optionen als Buttons & Ändert nur die Bedienform der Optionsliste, nicht die gespeicherten Values.\\
+\hline
+Suche & Filtert Schüler oder Items innerhalb der aktuellen Ansicht. Ein Filter verändert keine Werte.\\
+\hline
+Verlaufssymbol & Zeigt frühere Feldwerte beziehungsweise Änderungen, soweit vorhanden.\\
+\hline
+Gesamtwertsymbol & Zeigt zusammengefasste Werte für den aktuellen Eintrag, wenn die Funktion verfügbar ist.\\
+\hline
+PDF-Formular & Öffnet die direkte PDF-Feldansicht für den gewählten Schüler.\\
+\hline
+Textprüfung & Wird verfügbar, wenn notwendige Pflichtfelder abgeschlossen sind. Vorschläge müssen ausdrücklich übernommen werden.\\
+\hline
+Gesprächsansicht & Führt Schritt für Schritt durch einen Schülerbericht und unterstützt Vor-/Zurück-Navigation im Gespräch.\\
+\hline
+\end{longtable}
+\normalsize
 
 \HintBox{Zeit sparen durch Arbeiten \enquote{Fach für Fach}: pro Gruppe nacheinander alle Schüler ausfüllen, statt pro Kind den gesamten Bericht.}
 
 \ScreenshotFigure{screenshots/teacher_entrystudent.png}{Lehrerbereich \textendash{} Schülerbericht}
 
 \subsection*{Autospeicherung, Textbausteine \& Gesprächsansicht}
-\begin{itemize}
-  \item Änderungen werden automatisch gespeichert. Fehlgeschlagene Anfragen werden erneut versucht; der aktuelle Speicherstatus ist sichtbar.
-  \item Läuft die Sitzung ab, warnt die Eingabemaske vor nicht gespeicherten Änderungen und bietet erneute Anmeldung sowie einen weiteren Speicherversuch an.
-  \item Feldbezogene Textbausteine können über das Kontextmenü eingefügt und als Druckübersicht angezeigt werden.
-  \item Die optionale KI-Textprüfung markiert Vorschläge, speichert sie aber niemals automatisch. Textbausteine werden bei der Prüfung nicht fälschlich als eigener Schülertext bewertet.
-  \item Die Gesprächsansicht zeigt die Angaben eines Schülers schrittweise und kann im Vollbildmodus während eines Lernentwicklungsgesprächs verwendet werden.
-\end{itemize}
+\subsubsection{Autospeicherung}
+Änderungen werden automatisch gespeichert. Warten Sie nach längeren Texten auf die Statusmeldung. Bei einem Netzwerkfehler versucht die Seite erneut zu speichern. Läuft die Sitzung ab, erscheint ein Schutzdialog mit \enquote{Erneut anmelden}, \enquote{Sitzung prüfen}, \enquote{Jetzt speichern} und \enquote{Neu laden}. Zuerst in einem neuen Fenster anmelden, dann zur Eingabeseite zurückkehren und erneut speichern; \enquote{Neu laden} erst verwenden, wenn der Speicherstatus geklärt ist.
+
+\subsubsection{Textbausteine}
+\begin{enumerate}
+  \item Ein Textfeld fokussieren und das Textbausteinmenü öffnen.
+  \item Kategorie wählen und einen Baustein in das aktuelle Feld einsetzen.
+  \item Den eingefügten Text immer auf Schüler, Grammatik und Kontext anpassen.
+  \item Für einen neuen Baustein Titel, Kategorie und Inhalt erfassen und speichern.
+  \item \enquote{Textbausteine anzeigen} öffnet die Sammlung; die Druckübersicht dient nur als Arbeitsunterlage.
+\end{enumerate}
+
+\subsubsection{KI-Textprüfung}
+\begin{enumerate}
+  \item \enquote{Alle Freitexte prüfen} erst nach inhaltlicher Fertigstellung wählen.
+  \item Vorschläge einzeln lesen. \enquote{Vollständig übernehmen} ersetzt den betroffenen Text, \enquote{Teilweise} erlaubt eine bearbeitete Fassung, \enquote{Ablehnen} lässt den Originaltext stehen.
+  \item Nach jeder Übernahme Autospeicherstatus und den gesamten Satzkontext prüfen.
+\end{enumerate}
+
+\subsubsection{Gesprächsansicht}
+Schüler auswählen und \enquote{Gesprächsansicht} öffnen. \enquote{Vorheriger/Nächster Schritt} navigiert durch die Gruppen, die Schülernavigation wechselt die Person. Vollbild verbessert die Darstellung im Lernentwicklungsgespräch; \enquote{Gesprächsansicht verlassen} führt zurück zur Eingabe. Diese Ansicht ersetzt keine abschließende Vorschau des fertigen PDFs.
 
 \subsection*{Endnoten aus XSchool importieren}
-Wenn die Vorlage passende Notenfelder enthält, kann eine XSchool-Endnoten-PDF im Browser ausgewertet werden. Erkannte Schüler werden automatisch oder manuell zugeordnet. Vorhandene und importierte Werte werden gegenübergestellt; nur ausdrücklich markierte Treffer werden übernommen. Delegierte Lehrkräfte dürfen diesen Import nicht durchführen.
+Wenn die Vorlage passende Notenfelder enthält, kann eine XSchool-Endnoten-PDF im Browser ausgewertet werden.
+\begin{enumerate}
+  \item Endnotenbereich öffnen, PDF-Datei und Schuljahr/Halbjahr auswählen und \enquote{Auslesen} wählen.
+  \item Erkannte PDF-Seiten und automatisch zugeordnete Schüler kontrollieren.
+  \item Nicht eindeutige Seiten über die Schülerauswahl manuell zuordnen.
+  \item Vorhandene und importierte Werte Zeile für Zeile vergleichen. Nur die markierten Werte werden übernommen.
+  \item Import bestätigen und danach mindestens zwei Schüler in Eingabe und PDF-Vorschau prüfen.
+\end{enumerate}
+Delegierte Lehrkräfte dürfen diesen Import nicht durchführen.
 
 \subsection*{Delegationen und Teamarbeit}
-\begin{itemize}
-  \item Fachbereiche oder Gruppen können an Kollegen delegiert werden; delegierte Bereiche erscheinen im Posteingang der Empfängerin.
-  \item Delegationen können an mehrere Lehrkräfte vergeben werden.
-  \item Lehrkräfte mit Delegation können Eingaben überschreiben, falls dies freigegeben ist.
-  \item Statuspfad: offen \(\rightarrow\) in Bearbeitung \(\rightarrow\) abgeschlossen beziehungsweise zur Prüfung zurückgegeben. Offene Rückgaben zählen weiterhin zum Bearbeitungsstand.
-  \item Delegationen sind klassen- und gruppenbezogen, nicht schülerbezogen; sie entlasten beim arbeitsteiligen Schreiben.
-  \item Beiträge mehrerer Delegierter werden getrennt gespeichert und für die Klassenlehrkraft erkennbar hervorgehoben.
-  \item Der Admin kann im Ausnahmefall alle Delegationen beenden; vorhandene Ergänzungen werden dabei gekennzeichnet und nicht unbemerkt verworfen.
-\end{itemize}
+\begin{enumerate}
+  \item In der Eingabeseite \enquote{Delegieren} wählen.
+  \item Gruppe/Fachbereich auswählen und eine oder mehrere Lehrkräfte markieren.
+  \item Status \enquote{offen} verwenden und eine kurze Arbeitsnotiz mit Umfang und Termin ergänzen.
+  \item Speichern. Der Bereich erscheint bei den Empfängern unter \enquote{Delegationen} und in Benachrichtigungen.
+  \item Empfänger öffnet die Delegation, bearbeitet nur den freigegebenen Bereich und setzt über \enquote{Delegation abschließen} den Status auf \enquote{erledigt}; ein Kommentar kann die Rückgabe erläutern.
+  \item Klassenbesitzer prüft die Beiträge. Bei Korrekturbedarf Status wieder öffnen; nach Abschluss Delegation nicht vorschnell löschen.
+\end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.26\textwidth}|X|}
+\hline
+Gruppe & Fachlicher Bereich für die ganze Klasse; Delegationen sind nicht auf einen einzelnen Schüler begrenzt.\\
+\hline
+Delegiert an & Eine oder mehrere Lehrkräfte. Beiträge bleiben den Bearbeitern zuordenbar.\\
+\hline
+Offen & Arbeit steht aus oder wurde zur Korrektur zurückgegeben und zählt weiter zum Bearbeitungsstand.\\
+\hline
+Erledigt & Delegierte Person meldet die Arbeit zur Prüfung zurück. Dies bestätigt nicht automatisch die Endfreigabe des Klassenbesitzers.\\
+\hline
+Notiz/Kommentar & Arbeitsauftrag beziehungsweise Rückmeldung. Keine unnötigen personenbezogenen Details eintragen.\\
+\hline
+Überschreiben erlaubt & Systemweite Einstellung; erlaubt Änderungen vorhandener Werte nur innerhalb delegierter Bereiche.\\
+\hline
+Alle Delegationen beenden & Admin-Notfallaktion für alle Nutzer. Beiträge werden gekennzeichnet; die Aktion vorher schulweit abstimmen.\\
+\hline
+\end{tabularx}
 
 \subsection{Schüler-Eingabe freigeben (kontrolliert)}\index{Freigabe}
 \begin{enumerate}
-  \item Neue Schülerberichte starten grundsätzlich im Status \enquote{gesperrt}.
-  \item Freigabe aktivieren und Zeitfenster festlegen.
-  \item Hinweistext für Schüler hinterlegen (kurz, klar).
-  \item Nach Ablauf Freigabe schließen; danach kein Schüler-Schreibzugriff.
+  \item \enquote{Klassen \(\rightarrow\) Schüler verwalten} öffnen. Neue Schülerberichte starten grundsätzlich gesperrt.
+  \item Im Bereich \enquote{Kategorien für Schüler} ausschließlich die Bereiche markieren, die Kinder sehen sollen, und speichern.
+  \item Falls Berichte noch fehlen, \enquote{Fehlende Berichte erzeugen} verwenden und Vorlagenkonflikte einzeln prüfen.
+  \item \enquote{Für Kinder freigeben} wählen und die Sicherheitsabfrage bestätigen.
+  \item Mit einem Testzugang kontrollieren, dass nur freigegebene Kategorien erscheinen.
+  \item Nach dem Arbeitsfenster \enquote{Für Kinder sperren} wählen. Bereits gespeicherte Eingaben bleiben erhalten, können aber nicht mehr geändert werden.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/teacher_students.png}{Lehrerbereich \textendash{} Freigabe}
@@ -508,34 +1153,77 @@ Neben der globalen Freigabe kann die Lehrkraft steuern, welche Kategorien (Grupp
   \item Änderungen speichern; gesperrte Kategorien sind für Schüler nicht sichtbar.
 \end{enumerate}
 
+Jede Zeile zeigt die Kategorie und eine Checkbox für Sichtbarkeit/Bearbeitung. \enquote{Kategorien speichern} übernimmt die Auswahl für die Klasse. Eine globale Klassenfreigabe ohne markierte Kategorie führt dazu, dass Kinder zwar angemeldet sind, aber keine fachlichen Eingaben sehen.
+
 \HintBox{Gesperrte Kategorien werden in der Fortschrittsanzeige nicht als fehlend gewertet. Nutzen Sie diese Funktion, wenn einzelne Bereiche später oder gar nicht von Schülern bearbeitet werden sollen.}
 
 \subsection{Schülerdaten verwalten \& Aktionen}
 Im Schüler-Tab stehen Aktionen gesammelt im Dropdown-Menü zur Verfügung.
-\begin{itemize}
-  \item Schülerdaten bearbeiten, aktivieren/deaktivieren und PDF-Formular öffnen.
-  \item Schüler löschen ist möglich, wenn noch keine Daten hinterlegt wurden.
-  \item Schüler-Eingaben können je nach Berechtigung bearbeitet oder zurückgesetzt werden (mit Warnhinweis).
-  \item CSV-Import unterstützt E-Mail-Adressen für Eltern/Schüler.
-  \item Änderungen an personenbezogenen Daten werden korrekt übernommen.
-  \item Beim Löschen von Schülern bleiben vorhandene Berichtsdaten nachvollziehbar; die Berichtsinstanzen werden anonymisiert.
-\end{itemize}
+\begin{enumerate}
+  \item In der Schülerliste Name, Geburtsdatum, Profilstatus und Kinder-Status prüfen.
+  \item Das Aktionsmenü der richtigen Person öffnen. \enquote{Bearbeiten} öffnet Vorname, Nachname, Geburtsdatum, E-Mail Kind, E-Mail Parent 1/2 und zusätzliche Felder.
+  \item \enquote{Förderideen} öffnet optionale KI-Unterstützung; Vorschläge prüfen und nicht ungeprüft übernehmen.
+  \item \enquote{Aktivieren/Deaktivieren} verändert die aktuelle Klassenzuordnung, nicht das zentrale Profil.
+  \item \enquote{PDF-Formular} öffnet die direkte Formularansicht; \enquote{PDF exportieren} startet den Einzelbericht.
+  \item \enquote{Löschen} ist nur ohne schützenswerte Formulardaten möglich beziehungsweise Admins vorbehalten. Die angezeigte Warnung ist verbindlich.
+\end{enumerate}
+
+\ScreenshotFigure{screenshots/teacher_students_1_manual.png}{Klassenbezogene Schülerverwaltung: Zugänge, Freigabe, Export und Schüleraktionen}
+
+\ScreenshotFigure{screenshots/teacher_students_2.png}{Manuelle Anlage, CSV-Abgleich und Übernahme aus dem Vorjahr}
+
+\small
+\begin{longtable}{|p{0.28\textwidth}|p{0.63\textwidth}|}
+\hline
+\textbf{Bereich/Aktion} & \textbf{Bedeutung}\\
+\hline
+QR-Codes drucken & Erstellt eine Druckansicht vorhandener Schülerzugänge. Ausdrucke geschützt verteilen.\\
+\hline
+Login-Codes/QR erstellen & Erzeugt fehlende Zugangsdaten. Bestehende gültige Codes bleiben gemäß Dialog erhalten.\\
+\hline
+Neu generieren & Ersetzt alle Codes; alte Ausdrucke werden ungültig. Nur nach Bestätigung und anschließender Neuverteilung.\\
+\hline
+Kinder-Status Entwurf & Eingaben sind begonnen, aber noch nicht abgegeben.\\
+\hline
+Gesperrt & Lehrkraft hat die Bearbeitung geschlossen. Sichtbarkeit richtet sich nach der Schüleransicht.\\
+\hline
+Abgegeben & Schüler hat seine Eingaben abgeschlossen. Lehrkraftwerte bleiben separat.\\
+\hline
+Fehlende Berichte erzeugen & Legt für zugeordnete Schüler notwendige Berichtsinstanzen an. Bei Vorlagenkonflikten den Hinweis nicht pauschal bestätigen.\\
+\hline
+Fehltage & Zeigt Gesamt- und unentschuldigte Tage des Halbjahrs. Speichern ist nur bei aktivierter Lehrkraftberechtigung möglich.\\
+\hline
+Schüler manuell anlegen & Nur für echte Einzelzugänge. Vorher nach bestehendem Profil suchen; Doppelwarnung beachten.\\
+\hline
+CSV importieren & Startet den globalen Profilabgleich für diese Klasse. Standard bei Feldänderungen ist der neue Wert; alte Werte können feldweise direkt markiert werden.\\
+\hline
+Aus Vorjahr übernehmen & Quelle wählen, einzelne Schüler ausschließen und bestehende Profile mit neuer Zuordnung übernehmen.\\
+\hline
+Keinen/Alle ausschließen & Komfortauswahl für die Übernahmeliste; erst \enquote{Übernehmen} verändert Zuordnungen.\\
+\hline
+\end{longtable}
+\normalsize
 
 \subsection{PDF-Formular (Lehrkraft)}
 Lehrkräfte können ein PDF-Formular je Schüler öffnen, um Inhalte direkt zu prüfen oder zu ergänzen.
-\begin{itemize}
-  \item Read-only Felder werden als nicht editierbar angezeigt.
-  \item Eingabelängen werden begrenzt, um PDF-Validität zu sichern.
-  \item Bei neuen Formularen können Werte manuell ergänzt werden.
-\end{itemize}
+\begin{enumerate}
+  \item Über das Schüler-Aktionsmenü oder die Eingabeseite \enquote{PDF-Formular} öffnen.
+  \item Richtigen Schüler und Berichtskontext in der Kopfzeile prüfen.
+  \item Seite für Seite navigieren. Schreibgeschützte Felder sind nicht editierbar; sie stammen aus System-, Klassen- oder gesperrten Werten.
+  \item Editierbare Felder nur innerhalb der angezeigten Längenbegrenzung ergänzen.
+  \item Speichern und zur strukturierten Eingabe zurückkehren. Danach die Berichtsvorschau neu laden, um das Ergebnis zu prüfen.
+\end{enumerate}
 
 \subsection{KI-Unterstützung (optional)}
 Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
 \begin{itemize}
-  \item KI-Rückmeldung auf Klassenebene (Zusammenfassung/Feedback).
-  \item Schüler-KI ist durch Admin steuerbar (aktivieren/deaktivieren).
-  \item KI-Vorschläge werden nie automatisch gespeichert.
+  \item \textbf{Förderideen:} Öffnet Vorschläge für einen ausgewählten Schüler. \enquote{Neu generieren} ersetzt nur die Vorschlagsanzeige, nicht den Bericht.
+  \item \textbf{KI-Rückmeldung zur Klasse:} Fasst vorhandene Werte zusammen. \enquote{Prompt anzeigen} macht die Grundlage transparent, \enquote{Neu berechnen} startet eine neue Auswertung.
+  \item \textbf{Textprüfung:} Prüft abgeschlossene Freitexte und bietet vollständige, teilweise oder keine Übernahme an.
+  \item \textbf{Schülererklärung:} Kann vom Admin getrennt aktiviert werden und ist nicht identisch mit Lehrkraftvorschlägen.
 \end{itemize}
+
+\WarnBox{KI-Ausgaben sind Arbeitshilfen. Sie können sachlich, sprachlich oder pädagogisch unpassend sein und werden niemals ungeprüft als Berichtstext verwendet.}
 
 \subsection{Formular-Bedienung \& Stabilität}
 \begin{itemize}
@@ -547,24 +1235,45 @@ Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
 
 \subsection{Berichtsvorschau \& historische Berichte}
 Die Berichtsvorschau arbeitet schülerbezogen. Nach Auswahl eines Schülers werden alle für ihn gespeicherten Berichte mit Schuljahr, Halbjahr, Vorlage, Status und Berichtsklasse aufgelistet.
-\begin{itemize}
-  \item Suche nach Vor- oder Nachname sowie Filter nach aktueller Klasse.
-  \item Schneller Wechsel zum vorherigen oder nächsten Schüler, um eine aktuelle Klasse nacheinander zu prüfen.
-  \item In der Schülerliste steht bei aktiven Schülern nur die aktuelle Klasse, sonst die zuletzt zugeordnete Klasse.
-  \item Lehrkräfte sehen eigene Klassen, Delegationen und genehmigte Berichtseinsichten. Vollständig archivierte Schüler werden regulär nur Admins angezeigt.
-  \item Der Link \enquote{Diesen Bericht als PDF exportieren} öffnet den Export mit dem ausgewählten Bericht. Historische Exporte sind für Lehrkräfte nur innerhalb ihrer üblichen Berechtigungen möglich.
-\end{itemize}
+\begin{enumerate}
+  \item \enquote{Fertige Berichte \(\rightarrow\) Berichtsvorschau} öffnen.
+  \item Optional Vor- oder Nachname in \enquote{Schüler suchen} eingeben und/oder \enquote{Aktuelle Klasse} wählen. \enquote{Filtern} anwenden; \enquote{Filter zurücksetzen} stellt alle berechtigten Schüler wieder her.
+  \item Im Feld \enquote{Schüler} die Person wählen. Die Zahl rechts im Filterbereich zeigt, wie viele Treffer verbleiben.
+  \item Die angezeigte Klassenmarke prüfen: bei aktiver Zuordnung nur die aktuelle Klasse, sonst die zuletzt zugeordnete Klasse.
+  \item Unter \enquote{Gespeicherte Berichte} den gewünschten Zeitraum wählen. Jede Zeile zeigt Status, Vorlage, Berichtsklasse, Aktualisierungszeit und Berichts-ID.
+  \item Vorschau vollständig laden lassen und Berichtskopf sowie sichtbare Feldwerte stichprobenartig prüfen.
+  \item Mit \enquote{Vorheriger/Nächster Schüler} die gefilterte Klasse nacheinander bearbeiten.
+  \item \enquote{Diesen Bericht als PDF exportieren} übergibt genau den ausgewählten Bericht an die Exportseite.
+\end{enumerate}
+
+Lehrkräfte sehen eigene Klassen, Delegationen und genehmigte Berichtseinsichten. Vollständig archivierte Schüler werden regulär nur Admins angezeigt. Historische Exporte sind für Lehrkräfte nur innerhalb ihrer üblichen Berechtigungen möglich.
 
 \subsection{Löschung und zusätzliche Berichtseinsicht beantragen}
 Lehrkräfte können einen Bericht nicht unmittelbar löschen. In der Berichtsvorschau wird eine begründete Löschanfrage an den Admin gesendet. Der Admin kann Anfragen einzeln oder gesammelt bearbeiten. Admins können einen einzelnen Bericht auch direkt aus der Vorschau löschen; dafür müssen eine Sicherheitsbestätigung gesetzt und der angezeigte Berichtscode exakt eingegeben werden. Gelöscht wird nur der gewählte Bericht einschließlich Feldwerten, Historie und zugehörigen Elternfreigaben; Schülerprofil und andere Berichte bleiben bestehen.
 
+\subsubsection{Löschanfrage durch Lehrkraft}
+\begin{enumerate}
+  \item Den exakten Bericht in der Vorschau öffnen und Berichts-ID, Zeitraum und Vorlage prüfen.
+  \item \enquote{Löschung beantragen} aufklappen, eine nachvollziehbare Begründung eintragen und senden.
+  \item Solange eine Anfrage offen ist, zeigt die Vorschau den ausstehenden Status; keine zweite Anfrage absenden.
+  \item Der Admin öffnet \enquote{Berichtsanfragen}, prüft über \enquote{Prüfen} den Bericht und wählt \enquote{Löschung zustimmen} oder \enquote{Ablehnen}. Mehrere markierte Löschungen können gesammelt genehmigt werden.
+  \item Antragsteller erhält eine E-Mail über Genehmigung oder Ablehnung.
+\end{enumerate}
+
+\subsubsection{Direkte Löschung durch Admin}
+Admin öffnet \enquote{Bericht löschen}, setzt die Bestätigungscheckbox, gibt den angezeigten Code \texttt{BERICHT-ID} exakt ein und bestätigt. Nur dieser Bericht einschließlich Feldwerte, Änderungshistorie und Elternfreigaben wird gelöscht; Schülerprofil und andere Berichte bleiben erhalten. Vorher Export oder Backup erstellen, wenn eine Aufbewahrung erforderlich ist.
+
 Lehrkräfte mit Konto können außerdem Einsicht in die Berichte eines einzelnen Schülers oder einer gesamten Klasse beantragen:
 \begin{enumerate}
-  \item Klasse, Umfang und Begründung wählen.
+  \item \enquote{Fertige Berichte \(\rightarrow\) Berichtsanfragen} öffnen.
+  \item Unter \enquote{Umfang} \enquote{Einzelner Schüler} oder \enquote{Gesamte Klasse} wählen.
+  \item Klasse auswählen; bei Einzelumfang zusätzlich Schüler wählen.
+  \item Begründung eingeben und \enquote{Einsicht beantragen} senden.
   \item Der zuständige Klassenbesitzer oder Admin erhält eine E-Mail. Die Freigabe kann direkt über den geschützten Link in der E-Mail erfolgen.
-  \item Freigabe zeitlich begrenzen oder unbegrenzt erteilen.
+  \item Auf der Seite \enquote{Offene Einsichtsanfragen} 7 Tage, 30 Tage oder \enquote{Unbegrenzt} wählen und freigeben beziehungsweise ablehnen.
   \item Antragsteller erhält bei Genehmigung oder Ablehnung eine E-Mail.
-  \item Aktive Freigaben werden gelistet und können verlängert, zurückgezogen oder vom Empfänger zurückgegeben werden. Aus der Liste führt ein Link direkt zu den freigegebenen Berichten.
+  \item Unter \enquote{Freigegebene Berichteinsichten} \enquote{Berichte öffnen}, die Dauer verlängern, Freigabe zurückziehen oder als Empfänger zurückgeben.
+  \item Unter \enquote{Meine Einsichtsanfragen} Status und Erstellzeit eigener Anträge verfolgen.
 \end{enumerate}
 
 \HintBox{Berichtseinsichtsanträge sind ausschließlich für angemeldete Lehrkräfte vorgesehen, nicht für Eltern. Elternzugänge werden weiterhin separat verwaltet.}
@@ -579,6 +1288,16 @@ Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. 
   \item Bei Fragen oder Unsicherheiten sollen Schüler die Lehrkraft ansprechen, bevor sie absenden.
 \end{itemize}
 
+\subsection{Erster Login Schritt für Schritt}
+\begin{enumerate}
+  \item Persönlichen QR-Code scannen oder die Schüler-Loginseite öffnen und den Zugangscode eingeben.
+  \item Wird auf diesem Gerät für diesen Schüler zum ersten Mal angemeldet, Deutsch oder Englisch auswählen. Die Wahl wird auf dem Gerät gespeichert.
+  \item Intro vollständig lesen beziehungsweise vorlesen lassen. Name und Klasse prüfen; bei einem falschen Profil sofort die Lehrkraft informieren und nicht weiterschreiben.
+  \item \enquote{Starten/Weiter} wählen. Ist die Eingabe gesperrt, die Hinweisseite schließen und die Lehrkraft fragen.
+  \item In jeder sichtbaren Kategorie die eigenen Antworten eingeben und den Speicherstatus abwarten.
+  \item Vor der Abgabe noch einmal durch alle Schritte gehen. Erst danach \enquote{Abgeben} beziehungsweise den vorgesehenen Abschluss wählen.
+\end{enumerate}
+
 \subsection{Gesperrt vs. Freigegeben}
 \ScreenshotFigure{screenshots/student_locked.png}{Schülerbereich \textendash{} gesperrt}
 
@@ -586,10 +1305,33 @@ Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. 
 
 \HintBox{Schreibe 3--5 Sätze, nenne mindestens ein Beispiel, bleib freundlich und ehrlich, speichere am Ende.}
 
+\begin{tabularx}{\textwidth}{|p{0.28\textwidth}|X|}
+\hline
+Gesperrt & Es können keine Antworten verändert werden. Das ist vor der Freigabe und nach Abschluss der normale Zustand.\\
+\hline
+Entwurf & Antworten können in den freigegebenen Kategorien bearbeitet werden. Änderungen werden automatisch gespeichert.\\
+\hline
+Abgegeben & Der Schüler hat den Arbeitsstand abgeschlossen. Weitere Änderungen erfordern eine erneute Freigabe durch die Lehrkraft.\\
+\hline
+Deutsch / USA-Flagge & Wechselt die Sprache der Schüleroberfläche. Die US-Flagge steht für Englisch.\\
+\hline
+Zurück / Weiter & Navigiert je nach Klassen-Wizard zwischen Gruppen oder einzelnen Items.\\
+\hline
+Vorlesen / Stopp & Spielt den aktuellen Text in der gewählten Sprache ab beziehungsweise beendet die Wiedergabe.\\
+\hline
+Eingabefeld / Option & Speichert Text oder Auswahl für den eigenen Bericht. Nicht sichtbare Kategorien können nicht bearbeitet werden.\\
+\hline
+Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele prüfen.\\
+\hline
+\end{tabularx}
+
 \subsection{Struktur \& Übersicht}
 \begin{itemize}
+  \item Im Gruppen-Wizard werden fachliche Kategorien nacheinander geöffnet; im Items-Wizard einzelne Kompetenzen.
   \item Kategorien können einklappbar dargestellt werden, um lange Listen übersichtlich zu halten.
   \item Gesperrte Kategorien werden nicht angezeigt und zählen nicht als fehlend.
+  \item Pflichtfelder beziehungsweise offene Schritte werden im Fortschritt berücksichtigt. Eine Auswahl nur zum Erreichen von 100 Prozent ist keine inhaltliche Prüfung.
+  \item Silbenschrift färbt erkannte Silben abwechselnd blau und rot; Inhalt und Speicherung bleiben unverändert.
 \end{itemize}
 
 \subsection{Login-Optimierungen}
@@ -600,6 +1342,8 @@ Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. 
   \item Hat ein Schüler auf dem verwendeten Gerät noch keine Sprache gewählt, erscheint beim ersten erfolgreichen Login eine Auswahl zwischen Deutsch und Englisch. Die Wahl wird pro Schüler auf diesem Gerät gespeichert und kann über die Sprachschalter jederzeit geändert werden.
   \item Englisch wird im gesamten System mit der US-amerikanischen Flagge gekennzeichnet.
 \end{itemize}
+
+\HintBox{Die Sprachwahl ist geräte- und schülerbezogen. Wird ein gemeinsam genutztes Gerät an den nächsten Schüler weitergegeben, immer abmelden und dessen eigenen Zugang verwenden.}
 
 \subsection{Vorlesefunktion \& Leseanfänger}
 \begin{itemize}
@@ -612,33 +1356,82 @@ Schüler können nur schreiben, wenn die Lehrkraft die Eingabe freigegeben hat. 
   \item Für jede Klasse kann ein eigenes Intro getrennt auf Deutsch und Englisch hinterlegt werden. Fehlt die englische Fassung, wird die deutsche Fassung als Rückfall verwendet.
 \end{itemize}
 
+\textbf{Ablauf beim Vorlesen:}
+\begin{enumerate}
+  \item Das System sucht zuerst eine bereits vorbereitete Audiodatei für Sprache, Stimme, Text und Klasse.
+  \item Ist sie vorhanden, beginnt die Wiedergabe ohne erneute Hintergrundgenerierung.
+  \item Fehlt sie, wird unverändert die bewährte Live-Generierung verwendet und das Ergebnis anschließend für weitere Aufrufe gespeichert.
+  \item \enquote{Stopp} beendet die aktuelle Wiedergabe. Beim Wechsel der Sprache wird die entsprechend andere Audiodatei verwendet.
+\end{enumerate}
+
 \subsection*{Vorlese-Audiodateien verwalten}
-Admins finden unter \enquote{Einstellungen \(\rightarrow\) Vorlese-Audios} eine Übersicht aller gespeicherten Dateien. Die Liste kann nach Schuljahr, Halbjahr und Klasse gefiltert werden. Dateien lassen sich anhören, einzeln löschen oder nach einem Schulhalbjahr gesammelt entfernen.
+Admins finden unter \enquote{Einstellungen \(\rightarrow\) Vorlese-Audios} eine Übersicht aller gespeicherten Dateien.
+\begin{enumerate}
+  \item Über \enquote{Schuljahr}, \enquote{Halbjahr} und optional \enquote{Klasse} filtern und \enquote{Filtern} wählen. \enquote{Zurücksetzen} entfernt alle Filter.
+  \item In der Liste Sprache, Typ, Zuordnung, Dateigröße und Erstellzeit prüfen. Den Audio-Player zum Anhören verwenden.
+  \item Eine fehlerhafte Einzeldatei mit \enquote{Löschen} entfernen. Beim nächsten Bedarf wird sie erneut erzeugt.
+  \item Für die Bereinigung eines abgeschlossenen Zeitraums im Abschnitt \enquote{Schulhalbjahr gesammelt löschen} Schuljahr und Halbjahr wählen.
+  \item \enquote{Löschung bestätigen} markieren und \enquote{Audios löschen} wählen. Danach mit gleichem Filter prüfen, dass keine Dateien des Zeitraums verbleiben.
+\end{enumerate}
 
 \HintBox{Das Löschen einer Audiodatei löscht keine Berichtsdaten. Beim nächsten Abruf wird die Datei bei Bedarf wieder mit dem bestehenden Live-Verfahren erzeugt.}
 
 \section{Elternzugang (optional)}
 Falls freigeschaltet, können Eltern fertige Berichte lesen und ggf. Feedback geben.
-\begin{itemize}
-  \item Eltern erhalten einen zeitlich begrenzten Link mit Lesezugriff; Schreibrechte bestehen nicht.
-  \item Freigaben werden durch Lehrkraft angefragt und (je nach Einstellung) vom Admin bestätigt oder automatisch freigegeben.
-  \item Vor der Freigabe prüft das System fehlende Einträge und zeigt sie als Liste an, damit Lehrkräfte bewusste Entscheidungen treffen können.
-  \item Links können verlängert oder beendet werden; abgelaufene Freigaben lassen sich reaktivieren.
-  \item Optional kann ein Download-Button angezeigt werden; standardmäßig ist die Ansicht als Vorschau gedacht.
-  \item Optionales Feedback zum Lernentwicklungsgespräch kann aktiviert werden. Rückmeldungen können auf Wunsch anonym erfasst werden; Lehrkräfte und Admins sehen Auswertungen, Filter und Freitexte im jeweiligen Berechtigungsbereich.
-  \item Lehrkräfte können direkt per E-Mail auf Eltern-Feedback antworten.
-  \item Grafische Lehrkraft-Unterschrift kann im Eltern-PDF angezeigt werden (konfigurationsabhängig).
-  \item Datenschutz beachten: Links nicht öffentlich teilen; idealerweise mit Ablaufdatum oder Schutzmechanismus ausliefern.
-\end{itemize}
+\subsection{Elternzugang durch Lehrkraft vorbereiten}
+\begin{enumerate}
+  \item \enquote{Fertige Berichte \(\rightarrow\) Elternzugänge} öffnen und die Klasse wählen.
+  \item Falls aktiviert, unter \enquote{Signatur} die eigene grafische Unterschrift erfassen. \enquote{Löschen} entfernt sie nach Bestätigung.
+  \item Für einzelne Schüler unter \enquote{Gültig für} die gewünschte Tageszahl eintragen und \enquote{Anfragen} wählen; für die ganze Klasse den Bulk-Bereich verwenden.
+  \item Die automatische Vollständigkeitsprüfung lesen. Fehlende Einträge lassen sich aus- und einklappen. \enquote{Abbrechen} stoppt, \enquote{Fortfahren} sendet die Anfrage trotz geprüfter Warnungen.
+  \item Je nach Admin-Einstellung wird der Zugang sofort aktiv oder erscheint als offene Anfrage.
+  \item Aktiven Link mit \enquote{Kopieren} übernehmen und nur über den vorgesehenen geschützten Kanal versenden.
+\end{enumerate}
+
+\small
+\begin{longtable}{|p{0.28\textwidth}|p{0.63\textwidth}|}
+\hline
+\textbf{Option/Aktion} & \textbf{Bedeutung}\\
+\hline
+Klasse & Bestimmt Schülerliste, Signaturkontext, Anfragen, Feedback und Serienmail.\\
+\hline
+Signatur aktiv / zeichnen & Erfasst eine grafische Lehrkraft-Unterschrift für Eltern-PDFs. \enquote{Übernehmen} speichert die Zeichnung, \enquote{Leeren} leert nur die aktuelle Zeichenfläche.\\
+\hline
+Gültig für / Tage & Ablaufdauer eines neuen oder verlängerten Links. Möglichst kurz und passend zum Schulprozess wählen.\\
+\hline
+Alle angezeigten anfragen & Erstellt für die gefilterte Klasse mehrere Zugänge; fehlende Berichte und E-Mail-Adressen vorher prüfen.\\
+\hline
+Kopieren & Kopiert den individuellen Elternlink. Nicht in offene Verteiler oder öffentliche Dokumente einfügen.\\
+\hline
+Verlängern & Verschiebt das Ablaufdatum eines aktiven Links um die angegebene Dauer.\\
+\hline
+Beenden & Macht einen Link vorzeitig ungültig. Der Bericht bleibt erhalten.\\
+\hline
+Reaktivieren & Aktiviert einen abgelaufenen/beendeten Zugang mit neuer Gültigkeit, sofern weiterhin zulässig.\\
+\hline
+Download & Nur sichtbar, wenn der Admin ihn erlaubt. Erzeugt eine schreibgeschützte PDF.\\
+\hline
+Feedback markieren & Kennzeichnet eine Rückmeldung als bearbeitet; \enquote{per E-Mail antworten} öffnet den vorgesehenen Antwortweg.\\
+\hline
+Serienmail: Klasse/Schüler & \enquote{Klasse} sendet an alle passenden Empfänger, \enquote{einzelner Schüler} beschränkt die Nachricht. Ohne aktiven Link oder E-Mail wird der Empfänger in der Zusammenfassung übersprungen.\\
+\hline
+Betreff/Nachricht & Inhalt der Serienmail. Keine Zugangsdaten anderer Schüler und keine unnötigen sensiblen Details einfügen.\\
+\hline
+\end{longtable}
+\normalsize
+
+Eltern erhalten ausschließlich Lesezugriff. Optional kann ein Download-Button angezeigt werden. Feedback zum Lernentwicklungsgespräch kann aktiviert, verpflichtend vorgeschaltet oder anonym ausgewertet werden. Datenschutz beachten: Links nicht öffentlich teilen und nach Ablauf beenden.
 
 \ScreenshotFigure{screenshots/parent_view.png}{Elternansicht}
 
 \subsection{Admin: Elternfreigaben verwalten}
-\begin{itemize}
-  \item Offene Freigaben prüfen, freigeben oder beenden.
-  \item Gültigkeitsdauer verlängern oder abgelaufene Links reaktivieren.
-  \item Filter nutzen (z.\,B. Status oder Klasse), um Freigaben schnell zu finden.
-\end{itemize}
+\begin{enumerate}
+  \item \enquote{Fertige Berichte \(\rightarrow\) Elternfreigaben} öffnen.
+  \item Statusfilter \enquote{Ausstehend}, \enquote{Aktiv} oder \enquote{Alle} wählen und optional nach Klasse filtern.
+  \item Offene Zeile fachlich prüfen, Gültigkeitsdauer setzen und \enquote{Freigeben} wählen. \enquote{Alle angezeigten Anfragen freigeben} betrifft nur die aktuelle Filteransicht.
+  \item Aktive Links mit \enquote{Verlängern} anpassen oder \enquote{Beenden}. Abgelaufene Links bei Bedarf \enquote{Reaktivieren}; \enquote{Als abgelaufen setzen} dient der gezielten Statuskorrektur.
+  \item Feedbackauswertung nach Schuljahr und Ebene (gesamt, Stufe oder Klasse) filtern. Freitexte nur im berechtigten Personenkreis lesen.
+\end{enumerate}
 
 Die schulinterne Regelung legt fest, wer Feedback auswertet, wie lange Freitexte aufbewahrt werden und über welchen geschützten Kanal Rückfragen beantwortet werden. In der Anwendung können Statistiken nach Schuljahr, Stufe, Klasse und Rückmeldung gefiltert werden.
 
@@ -654,11 +1447,51 @@ Exporte basieren auf der für den Bericht gespeicherten Vorlage, den Feldwerten,
   \item Benennen Sie Exportpakete nachvollziehbar (z.\,B. \enquote{2025-LEB-4a.pdf}) und sichern Sie sie im Schularchiv.
 \end{itemize}
 
+\subsection{Alle Exportfelder und Varianten}
+\small
+\begin{longtable}{|p{0.27\textwidth}|p{0.64\textwidth}|}
+\hline
+\textbf{Feld/Variante} & \textbf{Ergebnis und Einsatz}\\
+\hline
+Klasse & Wählt Schuljahr, Halbjahr und Klasse. Im Adminbereich sind aktuelle und archivierte Klassen getrennt gruppiert.\\
+\hline
+ZIP-Export & Lädt eine ZIP-Datei mit einer separaten PDF pro Schüler. Geeignet für Einzelablage oder getrennten Versand.\\
+\hline
+Gesamt-PDF & Fügt alle berücksichtigten Schüler in eine PDF zusammen. Geeignet zum Durchsehen oder gemeinsamen Drucken.\\
+\hline
+Einzel-Export & Blendet die Schülerauswahl ein und erzeugt nur die gewählte Person. Standard für Qualitätskontrolle.\\
+\hline
+Broschürendruck (einzeln) & Ordnet Seiten eines einzelnen Berichts für Broschürendruck an. Drucker- und Duplexeinstellungen zusätzlich prüfen.\\
+\hline
+Broschürendruck (Klasse) & Erstellt eine gemeinsame Datei mit den Berichten in Broschürenreihenfolge. Zuerst einen Einzeltest durchführen.\\
+\hline
+Nur abgegebene & Überspringt Berichte, deren Schülerstatus nicht \enquote{abgegeben} ist. Lehrkraftvollständigkeit und Schülerabgabe sind getrennte Prüfungen.\\
+\hline
+Schüler & Nur bei Einzelvarianten sichtbar. Name und Berichtskontext vor Start kontrollieren.\\
+\hline
+Prüfen & Lädt Daten und listet fehlende Einträge, ohne den finalen Download zu erzeugen.\\
+\hline
+Export starten & Erzeugt die gewählte Datei. Bei Warnungen kann abgebrochen oder nach bewusster Prüfung \enquote{Ignorieren und exportieren} gewählt werden.\\
+\hline
+Status/Fortschritt & Zeigt Laden der Daten, Vorlage, PDF-Erzeugung, Zusammenführen oder ZIP-Erstellung. Browser währenddessen geöffnet lassen.\\
+\hline
+Details & Öffnet die Liste fehlender Einträge. Suche, \enquote{Alle ausklappen} und \enquote{Alle einklappen} helfen bei großen Klassen.\\
+\hline
+Abbrechen & Stoppt den Exportdialog, ohne Berichtswerte zu ändern.\\
+\hline
+Ignorieren und exportieren & Erzeugt trotz Warnungen. Nur verwenden, wenn die fehlenden Felder fachlich bewusst leer bleiben dürfen.\\
+\hline
+\end{longtable}
+\normalsize
+
 \subsection{Export durch Lehrkräfte}
 \begin{enumerate}
-  \item Exportbereich öffnen.
-  \item Test: einen Schüler exportieren und prüfen.
-  \item Klassenexport durchführen und PDF stichprobenartig kontrollieren.
+  \item \enquote{Fertige Berichte \(\rightarrow\) Export} öffnen und die aktuelle Klasse auswählen.
+  \item \enquote{Einzel-Export} wählen, einen Schüler auswählen und \enquote{Prüfen} ausführen.
+  \item Fehlende Einträge nach Schüler und Feld lesen. Zur Eingabeseite zurückkehren, korrigieren und erneut prüfen.
+  \item Einzel-PDF exportieren und Seiten, Schrift, Optionsmarkierungen, Namen und Datumsformate kontrollieren.
+  \item Gewünschte Klassenvariante wählen, bei Bedarf \enquote{Nur abgegebene} aktivieren und exportieren.
+  \item Mindestens Anfang, Mitte und Ende der erzeugten Datei sowie Dateianzahl im ZIP kontrollieren.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/teacher_export.png}{Export im Lehrerbereich}
@@ -674,30 +1507,71 @@ Exporte basieren auf der für den Bericht gespeicherten Vorlage, den Feldwerten,
 
 \subsection{Export durch Admin (alle Klassen)}
 \begin{enumerate}
-  \item Admin \(\rightarrow\) Export/Reports öffnen.
-  \item Filter setzen (z.\,B. Schuljahr oder Klasse).
-  \item Gesamtexport starten.
+  \item \enquote{Fertige Berichte \(\rightarrow\) Export} öffnen.
+  \item In der Klassenauswahl zwischen \enquote{Aktuelle Klassen} und \enquote{Archivierte Klassen} unterscheiden.
+  \item Die konkrete Berichtsklasse wählen. Für einen einzelnen historischen Bericht besser aus der Berichtsvorschau starten.
+  \item Exportvariante, Filter und gegebenenfalls Schüler wählen; \enquote{Prüfen} ausführen.
+  \item Warnungen nach Rolle und Berichtskontext bewerten, Export starten und Ergebnis stichprobenartig kontrollieren.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/admin_export.png}{Export im Adminbereich}
 
 \subsection{Einzelbericht aus der Berichtsvorschau}
-In der Berichtsvorschau den Schüler und anschließend den gewünschten historischen oder aktuellen Bericht auswählen. Der Button \enquote{Diesen Bericht als PDF exportieren} übergibt Berichts-ID, Schüler, Vorlage und Zeitraum an den Export. Vor dem Download noch einmal kontrollieren, dass der ausgewählte Bericht und nicht nur der aktuelle Klassenkontext angezeigt wird.
+\begin{enumerate}
+  \item In der Berichtsvorschau den Schüler und anschließend den gewünschten historischen oder aktuellen Bericht auswählen.
+  \item Berichtszeile anhand von Schuljahr, Halbjahr, Vorlage, Berichtsklasse und ID kontrollieren.
+  \item \enquote{Diesen Bericht als PDF exportieren} wählen. Die Exportseite erhält Berichts-ID, Schüler, Vorlage und Zeitraum.
+  \item Prüfen, dass Einzel-Export und der richtige Schüler vorausgewählt sind; Export starten.
+  \item Im PDF erneut Titel, Zeitraum und Inhalte kontrollieren.
+\end{enumerate}
 
 \section{Rollenabgrenzung im Betrieb (Admin vs. Lehrkraft)}
-\begin{itemize}
-  \item \textbf{Admin im laufenden Betrieb:} Keine Template-Wechsel oder Feldextraktionen während der Schreibphase; Fokus auf technische Unterstützung, Nutzerverwaltung, Anträge und Archiv. Dringende Strukturänderungen werden zuerst in einer Testklasse geprüft und anschließend über den schulintern benannten Admin-/IT-Kanal freigegeben.
-  \item \textbf{Lehrkraft:} Inhalte pflegen, Freigaben steuern, Exporte anstoßen; keine Änderungen an Templates oder Optionslisten.
-  \item \textbf{Zusätzliche Einsicht:} Ein genehmigter Berichtszugriff erweitert nur die freigegebene Schüler- oder Klassenansicht und ersetzt keine Klassenzuordnung.
-  \item \textbf{Abstimmung:} Vor größeren Änderungen Kollegium informieren und Testlauf mit Einzelbericht und Testklasse durchführen.
-\end{itemize}
+\begin{tabularx}{\textwidth}{|p{0.28\textwidth}|X|}
+\hline
+\textbf{Aufgabe} & \textbf{Verantwortung und Übergabe}\\
+\hline
+Vorlage, Felder, Optionslisten & Admin richtet vor Beginn ein, testet mit Testklasse und informiert Lehrkräfte über sichtbare Änderungen.\\
+\hline
+Klassen und Nutzer & Admin legt Zeiträume, Klassen und Konten an; Lehrkräfte prüfen nach Zuordnung, ob ihre Klassen vollständig sichtbar sind.\\
+\hline
+Berichtsinhalte & Lehrkraft verantwortet fachliche Eingaben, Delegationen und Endkontrolle. Admin ändert Inhalte nur in begründeten Supportfällen.\\
+\hline
+Schülereingabe & Lehrkraft wählt Kategorien, öffnet und schließt das Zeitfenster und prüft den Schülerstatus.\\
+\hline
+Anträge & Lehrkraft beantragt Löschung oder zusätzliche Einsicht; Klassenbesitzer/Admin prüft; System benachrichtigt beide Seiten.\\
+\hline
+Export & Lehrkraft exportiert aktuelle berechtigte Klassen; Admin kann zusätzlich archivierte Klassen und historische Kontexte exportieren.\\
+\hline
+Archivierung & Admin/Schulprozess setzt Klassen inaktiv; Berichte werden abgeschlossen. Lehrkraft prüft vorher Vollständigkeit und Testexport.\\
+\hline
+Zusätzliche Einsicht & Erweitert nur den freigegebenen Schüler- oder Klassenbereich und ersetzt keine Klassenzuordnung. Ablauf oder Rücknahme regelmäßig kontrollieren.\\
+\hline
+\end{tabularx}
+
+\WarnBox{Während der laufenden Schreibphase keine Template-Wechsel, Feldextraktionen oder Value-Änderungen an Optionslisten durchführen. Dringende Strukturänderungen zuerst in einer Testklasse prüfen und dokumentiert freigeben.}
 
 \section{Bearbeitungsstand \& Statusanzeigen (Übersicht)}
-\begin{itemize}
-  \item \textbf{Offene Pflichtfelder:} Markierungen oder Fortschrittsanzeigen weisen auf fehlende Eingaben hin; erst bei \enquote{vollständig} exportieren.
-  \item \textbf{Freigabe-Status:} Klar erkennbar, ob Schüler schreiben dürfen; nach Abschluss deaktivieren.
-  \item \textbf{Qualitätssicherung:} Stichprobe (mindestens zwei Schüler) und Testexport pro Klasse vor dem finalen Klassenexport.
-\end{itemize}
+\begin{tabularx}{\textwidth}{|p{0.27\textwidth}|X|}
+\hline
+Offene Pflichtfelder & Markierungen oder Prozentwerte weisen auf fehlende Pflichtwerte hin. Erst in Details prüfen, dann korrigieren.\\
+\hline
+100 Prozent / vollständig & Technische Vollständigkeit; Texte, Plausibilität und PDF-Layout trotzdem kontrollieren.\\
+\hline
+Entwurf & Bericht oder Schülerantworten sind begonnen, aber nicht endgültig abgegeben.\\
+\hline
+Abgegeben & Schülerteil ist abgeschlossen; dies bestätigt nicht automatisch die Lehrkraftprüfung.\\
+\hline
+Abgeschlossen & Bericht gehört zu einem abgeschlossenen/archivierten Kontext oder wurde fachlich finalisiert.\\
+\hline
+Aktiv/Inaktiv & Klassenstatus für laufenden Betrieb. Inaktiv blendet aus und schließt zugehörige Berichte ab, löscht aber nichts.\\
+\hline
+Offen/Erledigt bei Delegation & Arbeitsauftrag steht aus beziehungsweise wurde zurückgemeldet. Erledigt muss vom Klassenbesitzer geprüft werden.\\
+\hline
+Anfragestatus & Offen, genehmigt oder abgelehnt. Genehmigte Einsichten können zusätzlich ein Ablaufdatum haben.\\
+\hline
+\end{tabularx}
+
+Vor dem finalen Klassenexport mindestens zwei Schüler, alle Klassenfelder, Delegationsrückgaben, Schülerfreigabe und einen Einzel-PDF-Export prüfen.
 
 \section{Funktionsabdeckung \& Vollständigkeitscheck}
 Kurzer Überblick, welche Kernfunktionen in diesem Handbuch beschrieben sind und wo sie zu finden sind:
@@ -714,23 +1588,27 @@ Kurzer Überblick, welche Kernfunktionen in diesem Handbuch beschrieben sind und
 
 \section{Nach dem Zeugnis: Archivierung \& Vorbereitung neues Schuljahr}
 \begin{enumerate}
-  \item Freigaben schließen und sicherstellen, dass keine Schüler-Eingabe mehr möglich ist.
-  \item Exportdateien nachvollziehbar benennen (Schuljahr, Klasse) und im Schularchiv ablegen.
-  \item Klasse inaktiv setzen beziehungsweise das neue aktive Schulhalbjahr wählen. Beim Archivieren werden die zugehörigen Berichte automatisch als abgeschlossen markiert; dies gilt auch bei der Aktualisierung bereits archivierter Schulhalbjahre.
-  \item Berichte stichprobenartig in der schülerbezogenen Berichtsvorschau öffnen und den Status kontrollieren.
-  \item Klassen über die Auswahlvorschau in das nächste Halbjahr übertragen. Nur markierte Klassen übernehmen; Schülerprofile werden wiederverwendet und erhalten neue Zuordnungen.
-  \item Schüler, die nicht übernommen werden, behalten Profil und historische Berichte. Sie erscheinen als vollständig archiviert nur in der Adminansicht.
-  \item Template oder Optionslisten erst nach Abschluss anpassen; Änderungen dokumentieren.
-  \item Nicht mehr benötigte Audiodateien des abgeschlossenen Halbjahrs über die Audioverwaltung entfernen.
+  \item \textbf{Schülerbearbeitung schließen:} In jeder Klasse Kinder-Eingabe sperren und offene Schülerentwürfe fachlich klären.
+  \item \textbf{Delegationen abschließen:} Offene Aufgaben zurückholen oder erledigt melden lassen; Beiträge prüfen.
+  \item \textbf{Endkontrolle:} Berichtsvorschau nach aktueller Klasse filtern und Schüler nacheinander prüfen.
+  \item \textbf{Export sichern:} Einzeltest und Klassenexport erzeugen, Dateizahl und PDF-Seiten stichprobenartig prüfen, nachvollziehbar benennen und geschützt ablegen.
+  \item \textbf{Eltern-/Einsichtsfreigaben prüfen:} Nicht mehr benötigte Links und zusätzliche Berichtseinsichten beenden.
+  \item \textbf{Klasse archivieren:} Klasse inaktiv setzen. Die zugehörigen Berichte werden automatisch als abgeschlossen markiert; dies gilt auch bei der Aktualisierung bereits archivierter Schulhalbjahre.
+  \item \textbf{Status prüfen:} Mehrere Berichte des archivierten Zeitraums in der schülerbezogenen Vorschau öffnen und den Status kontrollieren.
+  \item \textbf{Nächsten Zeitraum anlegen:} Zielschulhalbjahr erstellen und über die Auswahlvorschau nur die gewünschten Klassen übertragen.
+  \item \textbf{Profile kontrollieren:} Schülerprofile werden wiederverwendet und erhalten neue Zuordnungen. Nicht übernommene Schüler behalten Profil und historische Berichte und erscheinen als vollständig archiviert nur für Admins.
+  \item \textbf{Technische Nacharbeit:} Erst jetzt Template/Optionslisten versionieren, Änderungen dokumentieren und nicht mehr benötigte Audiodateien des alten Halbjahrs gesammelt entfernen.
 \end{enumerate}
 
 \section{Support \& Eskalation (schulintern)}
-\begin{itemize}
-  \item \textbf{Erste Anlaufstelle:} Klassenlehrkraft oder der von der Schule benannte LEB-Admin. Kontaktdaten werden im internen Schulverzeichnis gepflegt, damit dieses Handbuch ohne veraltete personenbezogene Angaben weitergegeben werden kann.
-  \item \textbf{Bei Fehlermeldungen mitschicken:} Screenshot, Uhrzeit, Nutzerrolle, Klasse, ausgeführter Schritt, verwendeter Browser.
-  \item \textbf{Dringende Fälle:} Exportstopps oder Datenverlust umgehend an Admin/IT eskalieren; Änderungen dokumentieren.
-  \item \textbf{Sensible Inhalte:} Keine vollständigen Backups, Zugangsdaten oder Schülerberichte über ungesicherte Supportkanäle versenden.
-\end{itemize}
+\begin{enumerate}
+  \item Aktion stoppen, wenn ein falscher Schüler, Zeitraum, Massenimport oder Löschdialog betroffen ist.
+  \item Fehlermeldung wörtlich notieren und Screenshot ohne unnötige Schülerdaten erstellen.
+  \item Uhrzeit, Nutzerrolle, Seite, Klasse, Schüler/Berichts-ID, Browser und die letzten drei Schritte dokumentieren.
+  \item Zuerst Klassenlehrkraft oder benannten LEB-Admin kontaktieren. Exportstopps oder möglicher Datenverlust sofort an Admin/IT eskalieren.
+  \item Keine Passwörter, API-Schlüssel, vollständigen Backups oder Berichte über ungesicherte Kanäle versenden.
+  \item Nach der Korrektur denselben Ablauf mit einem Beispiel prüfen und Ergebnis im Supportfall dokumentieren.
+\end{enumerate}
 
 \section{FAQ \& Troubleshooting}
 \begin{longtable}{|p{0.45\textwidth}|p{0.45\textwidth}|}
@@ -757,7 +1635,129 @@ Vorlesen startet verzögert & Beim ersten Abruf kann die bestehende Live-Generie
 \hline
 Einsichtsanfrage bleibt offen & Zuständigen Klassenbesitzer oder Admin und E-Mail-Zustellung prüfen; aktive und offene Anträge stehen unter \enquote{Berichtsanfragen}.\\
 \hline
+Aktionsmenü in der Schülerliste öffnet nicht & Seite vollständig neu laden und prüfen, ob ein anderes Menü oder Dialogfenster offen ist. Bleibt der Fehler bestehen, Browser, Uhrzeit und betroffene Klasse an den Admin melden.\\
+\hline
+CSV-Import zeigt falsche Zielklasse & Datei nicht importieren. Dateiname, Klassenbezeichnung, Schuljahr und erkannte Spalten korrigieren und erneut \enquote{Listen prüfen}.\\
+\hline
+Bei einem Schüler haben sich mehrere Werte geändert & In jeder Eigenschaftszeile direkt bisherigen oder hochgeladenen Wert markieren. Die Entscheidung ist feldweise; Standard ist Übernehmen.\\
+\hline
+Ein Schüler kehrt nach Archivierung zurück & In der globalen Trefferauswahl das bestehende Profil wählen und nur eine neue Klassenzuordnung anlegen.\\
+\hline
+Archivierter Schüler fehlt bei Lehrkraft & Vollständig archivierte Schüler sind regulär nur für Admins sichtbar. Bei berechtigtem Bedarf Berichtseinsicht beantragen.\\
+\hline
+Berichtsvorschau zeigt Formular ohne Werte & Den konkreten gespeicherten Bericht in der Berichtszeile wählen und Berichts-ID kontrollieren; nicht nur Schüler oder aktuelle Klasse auswählen.\\
+\hline
+Einzelbericht exportiert falschen Zeitraum & Export aus der gewählten Berichtszeile über \enquote{Diesen Bericht als PDF exportieren} starten und auf der Exportseite Schüler sowie Berichtskontext prüfen.\\
+\hline
+Offene Einsichtsanfragen/Freigaben bleiben leer & Rolle und Berechtigung prüfen, dann eigene, offene und aktive Abschnitte unterscheiden. Ein genehmigter Zugriff erscheint unter Freigaben und kann über \enquote{Berichte öffnen} genutzt werden.\\
+\hline
+Elternlink ist abgelaufen & Je nach Status \enquote{Verlängern} oder \enquote{Reaktivieren}; vorher prüfen, ob Zugriff weiterhin erlaubt ist.\\
+\hline
+Schüler sieht trotz Freigabe keine Felder & Zusätzlich zur Klassenfreigabe müssen Kategorien für Schüler markiert und gespeichert sein.\\
+\hline
+Autospeicher meldet Sitzungsablauf & In neuem Fenster erneut anmelden, zur Eingabeseite zurückkehren, Sitzung prüfen und erneut speichern. Nicht ungeprüft neu laden.\\
+\hline
+Export meldet fehlende Einträge & Details öffnen, nach Schüler/Feld suchen und korrigieren. Nur bewusst optionale Lücken mit \enquote{Ignorieren und exportieren} übergehen.\\
+\hline
+Optionsmarkierung erscheint falsch im PDF & Feldtyp, zugeordnete Optionsliste, gespeicherten Value und Export-Kreuzfarbe prüfen; Einzeltest nach Korrektur wiederholen.\\
+\hline
+Schrift sieht in Vorschau und Export verschieden aus & Unter \enquote{Schriftarten} die betroffene Vorlage prüfen, fehlende Fontdatei hochladen und Einzel-PDF erneut erzeugen.\\
+\hline
+Englisches Intro fehlt & Klassen- oder Systemintro Englisch ergänzen. Je nach Konfiguration wird vorübergehend die deutsche Fassung als Rückfall genutzt.\\
+\hline
+Alte Audios sollen entfernt werden & Admin filtert unter \enquote{Vorlese-Audios} oder löscht gesammelt nach Schuljahr/Halbjahr. Berichtsdaten bleiben erhalten.\\
+\hline
+Klasse lässt sich nicht endgültig löschen & Schutzprüfung lesen. Abhängige Berichte oder Zuordnungen dürfen nicht umgangen werden; in der Regel Klasse nur archivieren.\\
+\hline
+Backup-Import zeigt Konflikte & Import abbrechen, Analyse sichern und nur nach geklärter Tabellen-/Datengruppenauswahl wiederholen.\\
+\hline
 \end{longtable}
+
+\section{Detailreferenz weiterer Verwaltungsseiten}
+Dieses Kapitel beschreibt die Seiten, die seltener verwendet werden, deren Optionen aber für einen vollständigen Betrieb wichtig sind.
+
+\subsection{Schüler-Felder}
+\begin{enumerate}
+  \item \enquote{Berichte \(\rightarrow\) Schüler-Felder} öffnen und unter \enquote{Neues Feld} einen technischen Schlüssel ohne wechselnde Schreibweise eintragen.
+  \item Deutsches und englisches Label ergänzen, Sortierwert und optionalen Standardwert festlegen.
+  \item \enquote{Anlegen} wählen. Das Feld erscheint anschließend in Schülerformularen und CSV-Zuordnungen gemäß Implementierung.
+  \item In der Liste Werte ändern und \enquote{Speichern}; \enquote{Löschen} nur verwenden, wenn vorhandene Profile und Importe das Feld nicht mehr benötigen.
+\end{enumerate}
+
+\begin{tabularx}{\textwidth}{|p{0.25\textwidth}|X|}
+\hline
+Schlüssel & Stabiler technischer Name für CSV und Mapping. Nach produktiver Nutzung nicht umbenennen.\\
+\hline
+Label DE/EN & Sichtbare Beschriftung je Sprache.\\
+\hline
+Sortierung & Kleinere Werte erscheinen früher; gleiche Werte werden nach der Systemreihenfolge sortiert.\\
+\hline
+Standardwert & Vorausfüllung für neue Profile, nicht rückwirkend für bestehende Schüler.\\
+\hline
+\end{tabularx}
+
+\subsection{Textbausteine}
+\begin{enumerate}
+  \item Titel, optionale Kategorie und Inhalt eintragen.
+  \item \enquote{Speichern} legt den Baustein an; \enquote{Generieren} nutzt die aktivierte KI-Hilfe und muss anschließend redaktionell geprüft werden.
+  \item \enquote{Neue Gruppe} legt eine Kategorie an. Kategorien lassen sich umbenennen oder löschen; enthaltene Bausteine vorher neu zuordnen.
+  \item In der Liste \enquote{Bearbeiten} für Titel, Kategorie und Inhalt verwenden; \enquote{Löschen} entfernt den Baustein aus zukünftigen Menüs.
+\end{enumerate}
+
+\subsection{Template-Mapping}
+\begin{enumerate}
+  \item Vorlage auswählen und \enquote{Felder bearbeiten} beziehungsweise den Mappingbereich öffnen.
+  \item Für jede Zielposition den passenden Systemwert oder Platzhalter einfügen.
+  \item Über die Platzhalterliste bekannte Tokens auswählen und mit \enquote{Einfügen} an der aktuellen Position ergänzen.
+  \item Speichern, einen Vorschau-Schüler wählen und Vorschau erzeugen.
+  \item Namen, Klasse, Zeitraum, Stammdaten und Sonderzeichen kontrollieren. Ein Mappingfehler kann alle Berichte dieser Vorlage betreffen.
+\end{enumerate}
+
+\subsection{Nutzerverwaltung}
+\begin{enumerate}
+  \item Für Einzelanlage E-Mail, Name und Rolle wählen und \enquote{Erstellen} verwenden.
+  \item Für Massenanlage zuerst die CSV-Vorlage herunterladen, Spalten unverändert lassen, Datei auswählen und Import starten.
+  \item In der Nutzerliste \enquote{Bearbeiten} aufklappen: Name, Rolle und Aktivstatus ändern und speichern.
+  \item \enquote{Link senden} versendet eine Passwort-Einladung beziehungsweise einen Setzlink.
+  \item \enquote{Löschen} nur nach Prüfung von Klassen, Delegationen, Anträgen und Audit-Nachvollziehbarkeit verwenden; sonst deaktivieren.
+\end{enumerate}
+
+\subsection{Berichtsanfragen als Admin}
+\begin{enumerate}
+  \item Unter \enquote{Offene Löschanfragen} Bericht, Antragsteller und Begründung lesen. \enquote{Prüfen} öffnet den konkreten Bericht.
+  \item Einzeln \enquote{Löschung zustimmen} oder \enquote{Ablehnen}. Für mehrere sichere Fälle Checkboxen markieren und \enquote{Ausgewählte Löschungen genehmigen} wählen.
+  \item Unter \enquote{Zuletzt bearbeitete Löschanfragen} Entscheidung und Bearbeiter kontrollieren.
+  \item Offene Einsichtsanfragen einzeln prüfen; Dauer 7 Tage, 30 Tage oder unbegrenzt wählen.
+  \item Aktive Freigaben über \enquote{Berichte öffnen} kontrollieren, Tage verlängern oder \enquote{Zurückziehen}.
+\end{enumerate}
+
+\subsection{Lehrkraft-Dashboard und E-Mail-Einstellungen}
+\begin{itemize}
+  \item Klassenregister wechseln die Fortschrittsansicht, ohne Berichtsdaten zu verändern.
+  \item Benachrichtigungen führen zu Delegationen, Anträgen und freigegebenen Inhalten.
+  \item \enquote{E-Mail-Benachrichtigungen} aktiviert/deaktiviert persönliche Systemmails.
+  \item \enquote{Sprache der E-Mail} wählt Deutsch oder Englisch für das eigene Konto; die Weboberfläche wird separat über die Flaggen umgestellt.
+\end{itemize}
+
+\subsection{AG-Eingaben durch Lehrkräfte}
+\begin{enumerate}
+  \item \enquote{Eingaben \(\rightarrow\) AGs} öffnen und Klasse wählen.
+  \item Pro Schüler die zutreffenden, für dieses Halbjahr aktivierten AG-Chips markieren.
+  \item Speicherstatus beziehungsweise Erfolgsmeldung abwarten.
+  \item Vor Export mindestens einen Bericht prüfen, in dem AG-Daten ausgegeben werden.
+\end{enumerate}
+
+\subsection{Kompetenzantrag durch Lehrkräfte}
+\begin{enumerate}
+  \item Kategorie und optional Unterkategorie wählen.
+  \item Deutschen Kompetenztext und nach Möglichkeit englische Fassung eintragen.
+  \item \enquote{Pflichtkompetenz} nur markieren, wenn die Kompetenz für die ausgewählten Stufen verpflichtend sein soll.
+  \item Eine oder mehrere Klassenstufen 1--4 markieren und Antrag absenden.
+  \item Status unter \enquote{Meine Anträge} verfolgen. Genehmigung oder Ablehnung wird zusätzlich per E-Mail gemeldet.
+\end{enumerate}
+
+\subsection{Vorlese-Audio-Übersicht}
+Die Filter \enquote{Schuljahr}, \enquote{Halbjahr} und \enquote{Klasse} grenzen die Dateiliste ein. Der Player dient der Qualitätskontrolle. \enquote{Löschen} entfernt eine Datei; die Sammellöschung erfordert Zeitraum und Bestätigungscheckbox. Eine gelöschte Datei wird bei Bedarf durch das bestehende Live-Verfahren neu erzeugt.
 
 \section{Anhang: Funktionsstand November 2026}
 Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funktionsbereiche zusammen. Details und Sicherheitshinweise stehen in den jeweiligen Kapiteln.
@@ -778,7 +1778,6 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 
 \appendix
 
-\clearpage
 \section{Schnellanleitung für Lehrkräfte}
 \textbf{Ziel:} Innerhalb weniger Minuten Berichte pro Klasse pflegen.
 
@@ -794,7 +1793,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 15.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 16.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}
