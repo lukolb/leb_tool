@@ -280,7 +280,12 @@ function report_access_scope_label(array $row): string {
     $expired = !empty($grant['expires_at']) && strtotime((string)$grant['expires_at']) < time();
     $canReviewGrant = user_can_review_report_access_request($pdo, $accessUserId, (int)$grant['class_id']);
     $isOwnGrant = (int)$grant['requester_user_id'] === $accessUserId;
+    $previewParams = (string)$grant['scope_type'] === 'student'
+      ? ['student_id' => (int)$grant['student_id']]
+      : ['class_id' => (int)$grant['class_id']];
+    $previewUrl = url(($isAdmin ? 'admin' : 'teacher') . '/report_preview.php?' . http_build_query($previewParams));
   ?><tr><td><?=h((string)$grant['requester_name'])?></td><td><?=h(report_access_scope_label($grant))?></td><td><?=h(report_access_class_label($grant))?></td><td><?= $grant['expires_at'] ? render_local_datetime((string)$grant['expires_at'], ui_lang()==='en'?'m/d/Y g:i A':'d.m.Y H:i') : h(t('report_requests.unlimited','Unbegrenzt')) ?><?= $expired ? ' · ' . h(t('report_requests.expired','abgelaufen')) : '' ?></td><td>
+    <a class="btn secondary" href="<?=h($previewUrl)?>"><?=h(t('report_requests.open_reports','Berichte öffnen'))?></a>
     <?php if ($canReviewGrant): ?><form method="post" style="display:flex;gap:6px;flex-wrap:wrap"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="extend_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><input class="input" type="number" name="extend_days" min="1" max="3650" value="30" style="width:90px"><button class="btn secondary" type="submit"><?=h(t('report_requests.extend','Verlängern'))?></button></form><?php endif; ?>
     <?php if ($canReviewGrant || $isOwnGrant): ?><form method="post" style="margin-top:6px" onsubmit="return confirm(<?=h(json_encode(t('report_requests.revoke_confirm','Freigabe wirklich zurückziehen?')))?>)"><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="revoke_access"><input type="hidden" name="request_id" value="<?=h((string)$grant['id'])?>"><button class="btn danger" type="submit"><?=h($canReviewGrant ? t('report_requests.revoke','Zurückziehen') : t('report_requests.return_access','Freigabe zurückgeben'))?></button></form><?php endif; ?>
   </td></tr><?php endforeach; ?></tbody></table></div>

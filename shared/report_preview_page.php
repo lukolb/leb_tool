@@ -322,6 +322,7 @@ if (!$isAdmin && $studentsByCanonical) {
   }
 }
 
+$requestedClassFilter = max(0, (int)($_GET['class_id'] ?? 0));
 $currentClassOptions = [];
 if ($studentsByCanonical) {
   $canonicalIds = array_keys($studentsByCanonical);
@@ -368,6 +369,7 @@ if ($studentsByCanonical) {
   foreach ($stAssignments->fetchAll(PDO::FETCH_ASSOC) ?: [] as $assignment) {
     $sid = (int)($assignment['student_id'] ?? 0);
     if (!isset($studentsByCanonical[$sid])) continue;
+    $assignmentClassId = (int)($assignment['class_id'] ?? 0);
     $classLabel = report_preview_class_display($assignment);
     if ($classLabel !== '' && $studentsByCanonical[$sid]['latest_class_label'] === '') {
       $studentsByCanonical[$sid]['latest_class_label'] = $classLabel;
@@ -377,11 +379,13 @@ if ($studentsByCanonical) {
       if ($classLabel !== '' && $studentsByCanonical[$sid]['current_class_label'] === '') {
         $studentsByCanonical[$sid]['current_class_label'] = $classLabel;
       }
-      $currentClassId = (int)($assignment['class_id'] ?? 0);
-      if ($currentClassId > 0) {
-        $studentsByCanonical[$sid]['current_class_ids'][$currentClassId] = $currentClassId;
-        $currentClassOptions[$currentClassId] = $classLabel;
-      }
+    }
+    if ($assignmentClassId > 0 && (
+      ((int)($assignment['is_active'] ?? 0) === 1 && (int)($assignment['class_is_active'] ?? 0) === 1)
+      || $assignmentClassId === $requestedClassFilter
+    )) {
+      $studentsByCanonical[$sid]['current_class_ids'][$assignmentClassId] = $assignmentClassId;
+      $currentClassOptions[$assignmentClassId] = $classLabel;
     }
   }
 }
@@ -441,7 +445,7 @@ if ($requestedReportId > 0) {
   }
 }
 
-$selectedClassFilter = max(0, (int)($_GET['class_id'] ?? 0));
+$selectedClassFilter = $requestedClassFilter;
 if ($selectedClassFilter > 0 && !isset($currentClassOptions[$selectedClassFilter])) $selectedClassFilter = 0;
 $studentSearch = trim((string)($_GET['q'] ?? ''));
 $studentSearchNormalized = mb_strtolower(preg_replace('/\s+/u', ' ', $studentSearch) ?? $studentSearch, 'UTF-8');
