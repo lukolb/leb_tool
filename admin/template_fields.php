@@ -941,7 +941,6 @@ const DRAFT_STORAGE_KEY = `template_fields_draft_v1:${templateId}:${currentUserI
 const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 let draftWriteTimer = 0;
 let sessionExpired = false;
-let sessionOverlay = null;
 
 function fieldUpdatePayload(field){
   return {
@@ -1271,41 +1270,36 @@ function isSessionFailure(resp, payload){
 }
 
 function ensureSessionOverlay(){
-  if (sessionOverlay) return sessionOverlay;
-  const overlay = document.createElement('div');
-  overlay.id = 'templateFieldsSessionExpiredOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
-  overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(tAdmin('session_expired_title'))}</h2><p>${escapeHtml(tAdmin('session_unsaved'))}</p><p>${escapeHtml(tAdmin('session_relogin'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(tAdmin('session_relogin_short'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(tAdmin('session_check'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(tAdmin('session_save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(tAdmin('session_reload'))}</button></div></div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
-  overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
-    const ok = await checkSessionNow(true);
-    if (!ok) return;
-    saveHint.textContent = tAdmin('session_save_resuming');
-    try { await save(); } catch (e) { saveHint.textContent = String(e?.message || e); }
-  });
-  overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => {
-    persistDraftNow();
-    window.location.reload();
-  });
-  sessionOverlay = overlay;
-  return overlay;
+  return window.LEBSessionGuard || null;
 }
 
 function showSessionOverlay(error){
   sessionExpired = true;
   persistDraftNow();
-  const overlay = ensureSessionOverlay();
-  overlay.style.display = 'flex';
   saveHint.textContent = String(error?.message || tAdmin('session_expired_message'));
+  const guard = ensureSessionOverlay();
+  if (guard) {
+    void guard.requireReauthentication().then((result) => {
+      if (result?.csrfToken) csrf = String(result.csrfToken);
+      hideSessionOverlay();
+      if (dirty.size) {
+        saveHint.textContent = tAdmin('session_save_resuming');
+        void save().catch((saveError) => { saveHint.textContent = String(saveError?.message || saveError); });
+      }
+    });
+  }
 }
 
 function hideSessionOverlay(){
   if (!sessionExpired) return;
   sessionExpired = false;
-  if (sessionOverlay) sessionOverlay.style.display = 'none';
   saveHint.textContent = tAdmin('session_restored');
 }
+
+window.addEventListener('leb:session-restored', (event) => {
+  if (event.detail?.csrfToken) csrf = String(event.detail.csrfToken);
+  hideSessionOverlay();
+});
 
 function assertApiSuccess(resp, payload, fallbackMessage){
   if (isSessionFailure(resp, payload)) {

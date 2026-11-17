@@ -62,11 +62,11 @@ if ($sessionIdleTimeout > 0) {
   }
 }
 
-// Prevent browser "confirm form resubmission" prompt on reload by replacing history state.
+// Add the site-wide session guard to authenticated HTML pages and prevent the
+// browser's "confirm form resubmission" prompt by replacing history state.
 ob_start(function (string $buffer): string {
   if (is_ajax_request()) return $buffer;
   if (stripos($buffer, '</body>') === false) return $buffer;
-  if (strpos($buffer, 'data-history-replace-state') !== false) return $buffer;
 
   $header = '';
   foreach (headers_list() as $item) {
@@ -77,12 +77,19 @@ ob_start(function (string $buffer): string {
   }
   if ($header && stripos($header, 'text/html') === false) return $buffer;
 
-  $script = "\n  <script data-history-replace-state>\n" .
-    "    if (window.history && window.history.replaceState) {\n" .
-    "      window.history.replaceState(null, document.title, window.location.href);\n" .
-    "    }\n" .
-    "  </script>\n";
-  return preg_replace('/<\/body>/i', $script . '</body>', $buffer, 1) ?? $buffer;
+  $injection = '';
+  if ((isset($_SESSION['user']) || isset($_SESSION['student'])) && strpos($buffer, 'data-session-guard-config') === false) {
+    $injection .= render_session_guard_markup();
+  }
+  if (strpos($buffer, 'data-history-replace-state') === false) {
+    $injection .= "\n  <script data-history-replace-state>\n" .
+      "    if (window.history && window.history.replaceState) {\n" .
+      "      window.history.replaceState(null, document.title, window.location.href);\n" .
+      "    }\n" .
+      "  </script>\n";
+  }
+  if ($injection === '') return $buffer;
+  return preg_replace('/<\/body>/i', $injection . '</body>', $buffer, 1) ?? $buffer;
 });
 
 
@@ -380,6 +387,124 @@ function db(): PDO {
 }
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+
+function session_guard_base64url_encode(string $value): string {
+  return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+}
+
+function session_guard_base64url_decode(string $value): string|false {
+  $padding = strlen($value) % 4;
+  if ($padding !== 0) $value .= str_repeat('=', 4 - $padding);
+  return base64_decode(strtr($value, '-_', '+/'), true);
+}
+
+function session_guard_signing_secret(): string {
+  $cfg = app_config();
+  return (string)($cfg['app']['password_pepper'] ?? '');
+}
+
+function session_guard_reauth_token(): string {
+  $secret = session_guard_signing_secret();
+  if ($secret === '') return '';
+
+  $cfg = app_config();
+  $timeout = max(0, (int)($cfg['app']['session_idle_timeout_seconds'] ?? (int)ini_get('session.gc_maxlifetime')));
+  $claims = [
+    'v' => 1,
+    'iat' => time(),
+    'exp' => time() + min(7 * 86400, max(12 * 3600, $timeout * 4)),
+  ];
+  if (isset($_SESSION['user']['id'])) {
+    $claims['kind'] = 'user';
+    $claims['id'] = (int)$_SESSION['user']['id'];
+    $claims['role'] = (string)($_SESSION['user']['role'] ?? '');
+    $claims['actual_role'] = (string)($_SESSION['user']['actual_role'] ?? $_SESSION['user']['role'] ?? '');
+  } elseif (isset($_SESSION['student']['id'])) {
+    $claims['kind'] = 'student';
+    $claims['id'] = (int)$_SESSION['student']['id'];
+  } else {
+    return '';
+  }
+
+  $payload = session_guard_base64url_encode((string)json_encode($claims, JSON_UNESCAPED_SLASHES));
+  $signature = session_guard_base64url_encode(hash_hmac('sha256', $payload, $secret, true));
+  return $payload . '.' . $signature;
+}
+
+function session_guard_verify_reauth_token(string $token): ?array {
+  $secret = session_guard_signing_secret();
+  if ($secret === '' || substr_count($token, '.') !== 1) return null;
+  [$payload, $signature] = explode('.', $token, 2);
+  $expected = session_guard_base64url_encode(hash_hmac('sha256', $payload, $secret, true));
+  if (!hash_equals($expected, $signature)) return null;
+  $decoded = session_guard_base64url_decode($payload);
+  if ($decoded === false) return null;
+  $claims = json_decode($decoded, true);
+  if (!is_array($claims) || (int)($claims['v'] ?? 0) !== 1) return null;
+  if ((int)($claims['id'] ?? 0) <= 0 || (int)($claims['exp'] ?? 0) < time()) return null;
+  if (!in_array((string)($claims['kind'] ?? ''), ['user', 'student'], true)) return null;
+  return $claims;
+}
+
+function session_guard_idle_state(): array {
+  $cfg = app_config();
+  $timeout = max(0, (int)($cfg['app']['session_idle_timeout_seconds'] ?? (int)ini_get('session.gc_maxlifetime')));
+  $lastActivity = isset($_SESSION['_last_activity']) ? (int)$_SESSION['_last_activity'] : time();
+  $remaining = $timeout > 0 ? max(0, $timeout - max(0, time() - $lastActivity)) : 0;
+  $warning = max(30, (int)($cfg['app']['session_warning_seconds'] ?? 300));
+  if ($timeout > 0) $warning = min($warning, $timeout);
+  return [
+    'idle_timeout_seconds' => $timeout,
+    'idle_remaining_seconds' => $remaining,
+    'warning_seconds' => $warning,
+    'server_time' => time(),
+  ];
+}
+
+function render_session_guard_markup(): string {
+  $kind = isset($_SESSION['user']['id']) ? 'user' : (isset($_SESSION['student']['id']) ? 'student' : '');
+  if ($kind === '') return '';
+  $reauthToken = session_guard_reauth_token();
+  if ($reauthToken === '') return '';
+
+  $idle = session_guard_idle_state();
+  $config = [
+    'statusUrl' => url('ajax/session_status.php'),
+    'reauthUrl' => url('ajax/session_reauth.php'),
+    'principalKind' => $kind,
+    'principalLabel' => $kind === 'user'
+      ? (string)($_SESSION['user']['email'] ?? $_SESSION['user']['display_name'] ?? '')
+      : t('session.student_account', 'Schülerkonto'),
+    'reauthToken' => $reauthToken,
+    'csrfToken' => csrf_token(),
+    'idleTimeoutSeconds' => $idle['idle_timeout_seconds'],
+    'idleRemainingSeconds' => $idle['idle_remaining_seconds'],
+    'warningSeconds' => $idle['warning_seconds'],
+    'pollSeconds' => 30,
+    'i18n' => [
+      'warningTitle' => t('session.warning.title', 'Deine Sitzung läuft bald ab.'),
+      'warningMessage' => t('session.warning.message', 'Ohne Aktivität wirst du in {time} abgemeldet.'),
+      'staySignedIn' => t('session.stay_signed_in', 'Angemeldet bleiben'),
+      'extending' => t('session.extending', 'Sitzung wird verlängert …'),
+      'extended' => t('session.extended', 'Du bleibst angemeldet.'),
+      'expiredTitle' => t('session.expired.title', 'Deine Sitzung ist abgelaufen.'),
+      'expiredMessage' => t('session.inline_reauth.message', 'Melde dich hier erneut an. Deine Eingaben und die geöffnete Seite bleiben erhalten.'),
+      'account' => t('session.account', 'Konto'),
+      'password' => t('session.password', 'Passwort'),
+      'loginCode' => t('session.login_code', 'Login-Code'),
+      'signIn' => t('session.sign_in', 'Weiterarbeiten'),
+      'signingIn' => t('session.signing_in', 'Anmeldung wird geprüft …'),
+      'authFailed' => t('session.auth_failed', 'Die Anmeldung war nicht erfolgreich.'),
+      'connectionFailed' => t('session.connection_failed', 'Die Verbindung konnte nicht geprüft werden. Bitte versuche es erneut.'),
+    ],
+  ];
+  $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+  if (!is_string($json)) return '';
+  $asset = __DIR__ . '/assets/session_guard.js';
+  $version = is_file($asset) ? (string)filemtime($asset) : '1';
+  return "\n  <script type=\"application/json\" data-session-guard-config>" . $json . "</script>\n" .
+    '  <script src="' . h(url('assets/session_guard.js')) . '?v=' . rawurlencode($version) . '" defer data-session-guard-script></script>' . "\n";
+}
 
 function user_timezone_name(?string $override = null): string {
   $tz = $override ?? '';
@@ -2019,11 +2144,13 @@ function auth_json_error(string $error, string $message, int $status = 401, bool
   }
   echo json_encode([
     'ok' => false,
+    'authenticated' => current_user() !== null || current_student() !== null,
     'error' => $error,
     'retryable' => false,
     'requires_login' => $requiresLogin,
+    'csrf_token' => csrf_token(),
     'message' => $message,
-  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  ] + session_guard_idle_state(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
 

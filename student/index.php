@@ -1212,41 +1212,36 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   let sessionExpired = false;
-  let sessionOverlay = null;
 
   function ensureSessionOverlay(){
-    if (sessionOverlay) return sessionOverlay;
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
-    overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(t('session.expired.title', 'session.expired.title'))}</h2><p>${escapeHtml(t('session.unsaved.message', 'session.unsaved.message'))}</p><p>${escapeHtml(t('session.relogin.message', 'session.relogin.message'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn primary" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(t('session.relogin.short', 'session.relogin.short'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(t('session.check_again', 'session.check_again'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(t('session.save_now', 'session.save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(t('session.reload_page', 'session.reload_page'))}</button></div></div>`;
-    document.body.appendChild(overlay);
-    overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
-    overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
-      const ok = await checkSessionNow(true);
-      if (ok) {
-        setSaveStatus('saving', t('session.save_resuming', 'session.save_resuming'));
-        void flushPendingSavesBlocking();
-      }
-    });
-    overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => window.location.reload());
-    sessionOverlay = overlay;
-    return overlay;
+    return window.LEBSessionGuard || null;
   }
 
   function showSessionOverlay(err){
     sessionExpired = true;
     retryTimers.forEach((timer) => clearTimeout(timer));
     retryTimers.clear();
-    const overlay = ensureSessionOverlay();
-    overlay.style.display = 'flex';
     setSaveStatus('failed_permanent', String(err?.message || t('session.expired.message', 'session.expired.message')));
+    const guard = ensureSessionOverlay();
+    if (guard) {
+      void guard.requireReauthentication().then((result) => {
+        if (result?.csrfToken) csrf = String(result.csrfToken);
+        hideSessionOverlay();
+        if (hasPendingSaves()) void flushPendingSavesBlocking();
+      });
+    }
   }
 
   function hideSessionOverlay(){
     sessionExpired = false;
-    if (sessionOverlay) sessionOverlay.style.display = 'none';
     setSaveStatus('ok', t('session.restored', 'session.restored'));
   }
+
+  window.addEventListener('leb:session-restored', (event) => {
+    if (event.detail?.csrfToken) csrf = String(event.detail.csrfToken);
+    hideSessionOverlay();
+    if (hasPendingSaves()) void flushPendingSavesBlocking();
+  });
 
   async function checkSessionNow(showFeedback = false){
     try {

@@ -12,14 +12,22 @@ if (!$authenticated) {
     'error' => 'session_expired',
     'retryable' => false,
     'requires_login' => true,
+    'csrf_token' => csrf_token(),
     'message' => t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'),
-  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  ] + session_guard_idle_state(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
+}
+
+if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'POST') {
+  csrf_verify();
+  $_SESSION['_last_activity'] = time();
 }
 
 echo json_encode([
   'ok' => true,
   'authenticated' => true,
   'csrf_token' => csrf_token(),
+  'reauth_token' => session_guard_reauth_token(),
   'role' => current_user()['role'] ?? 'student',
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  'principal_kind' => current_user() !== null ? 'user' : 'student',
+] + session_guard_idle_state(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

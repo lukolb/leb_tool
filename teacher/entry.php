@@ -3128,26 +3128,9 @@ render_teacher_header($pageTitle);
   }
 
   let sessionExpired = false;
-  let sessionOverlay = null;
 
   function ensureSessionOverlay(){
-    if (sessionOverlay) return sessionOverlay;
-    const overlay = document.createElement('div');
-    overlay.id = 'sessionExpiredOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:20px;';
-    overlay.innerHTML = `<div style="max-width:560px;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:22px;color:#111827;"><h2 style="margin:0 0 10px;">${escapeHtml(tEntry('session_expired_title'))}</h2><p>${escapeHtml(tEntry('session_unsaved'))}</p><p>${escapeHtml(tEntry('session_relogin'))}</p><div class="actions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;"><a class="btn" target="_blank" rel="noopener" href="${escapeHtml(loginUrl)}">${escapeHtml(tEntry('session_relogin'))}</a><button type="button" class="btn secondary" data-session-check>${escapeHtml(tEntry('session_check'))}</button><button type="button" class="btn secondary" data-session-save>${escapeHtml(tEntry('session_save_now'))}</button><button type="button" class="btn secondary" data-session-reload>${escapeHtml(tEntry('session_reload'))}</button></div></div>`;
-    document.body.appendChild(overlay);
-    overlay.querySelector('[data-session-check]')?.addEventListener('click', () => checkSessionNow(true));
-    overlay.querySelector('[data-session-save]')?.addEventListener('click', async () => {
-      const ok = await checkSessionNow(true);
-      if (ok) {
-        setSaveStatus('saving', tEntry('session_save_resuming'));
-        void flushPendingSavesBlocking();
-      }
-    });
-    overlay.querySelector('[data-session-reload]')?.addEventListener('click', () => window.location.reload());
-    sessionOverlay = overlay;
-    return overlay;
+    return window.LEBSessionGuard || null;
   }
 
   function showSessionOverlay(err){
@@ -3155,19 +3138,30 @@ render_teacher_header($pageTitle);
     ui.sessionExpired = true;
     ui.retryTimers.forEach((timer) => clearTimeout(timer));
     ui.retryTimers.clear();
-    const overlay = ensureSessionOverlay();
-    overlay.style.display = 'flex';
     showErr(String(err?.message || tEntry('ajax_session_expired')));
     setSaveStatus('failed_permanent', tEntry('ajax_session_expired'));
+    const guard = ensureSessionOverlay();
+    if (guard) {
+      void guard.requireReauthentication().then((result) => {
+        if (result?.csrfToken) csrf = String(result.csrfToken);
+        hideSessionOverlay();
+        if (hasPendingSaves()) void flushPendingSavesBlocking();
+      });
+    }
   }
 
   function hideSessionOverlay(){
     sessionExpired = false;
     ui.sessionExpired = false;
-    if (sessionOverlay) sessionOverlay.style.display = 'none';
     clearErr();
     setSaveStatus('ok', tEntry('session_restored'));
   }
+
+  window.addEventListener('leb:session-restored', (event) => {
+    if (event.detail?.csrfToken) csrf = String(event.detail.csrfToken);
+    hideSessionOverlay();
+    if (hasPendingSaves()) void flushPendingSavesBlocking();
+  });
 
   async function checkSessionNow(showFeedback = false){
     try {

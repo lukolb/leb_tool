@@ -60,9 +60,10 @@ template_fields_recovery_assert(
 );
 template_fields_recovery_assert(
   strpos($editor, 'function ensureSessionOverlay()') !== false
-    && strpos($editor, 'target="_blank"') !== false
-    && strpos($editor, "overlay.querySelector('[data-session-save]')") !== false,
-  'expired sessions must keep the editor open while offering re-login and save controls'
+    && strpos($editor, 'window.LEBSessionGuard || null') !== false
+    && strpos($editor, 'guard.requireReauthentication()') !== false
+    && strpos($editor, "window.addEventListener('leb:session-restored'") !== false,
+  'expired sessions must use the inline site-wide reauthentication flow and resume saving'
 );
 template_fields_recovery_assert(
   strpos($editor, 'let groupTitleEnChanged = false;') !== false

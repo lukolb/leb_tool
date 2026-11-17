@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{16.11.2026}
+\newcommand{\HandbuchStand}{17.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -328,6 +328,14 @@ Kurzer Leitfaden (nicht rechtsverbindlich):
 
 \WarnBox{Zugangsdaten nicht per unsichere Kanäle teilen.}
 
+\subsection{Sitzungsablauf ohne Datenverlust}
+\index{Sitzungsablauf}\index{Angemeldet bleiben}\index{erneute Anmeldung}\index{Autospeicherung}
+Das LEB Tool überwacht die verbleibende Sitzungszeit in allen angemeldeten Bereichen. Kurz vor dem Ablauf erscheint unten auf der Seite eine Warnung mit Countdown. \enquote{Angemeldet bleiben} verlängert die Sitzung, ohne die Seite neu zu laden.
+
+Ist die Sitzung bereits abgelaufen, öffnet sich die erneute Anmeldung direkt über der aktuellen Seite. Für Lehrkräfte und Admins wird das Passwort desselben Kontos verlangt; Schüler geben erneut ihren Login-Code ein. Die geöffnete Seite und vorhandene Eingaben bleiben dabei unverändert. Nach erfolgreicher Anmeldung aktualisiert das Tool die Sicherheitsdaten der Seite und wiederholt eine unterbrochene Speicherung automatisch. Auch normale Formulare werden vor dem Absenden geprüft, damit ein Sitzungsablauf nicht zu einer leeren oder verlorenen Eingabeseite führt.
+
+\HintBox{Bei einer Sitzungswarnung möglichst \enquote{Angemeldet bleiben} wählen. Erscheint die erneute Anmeldung, im eingeblendeten Dialog fortfahren. Kein neues Fenster öffnen und die Seite nicht neu laden; bei einem Verbindungsfehler bleiben die Eingaben sichtbar und der Versuch kann wiederholt werden.}
+
 \subsection{Vor jeder Arbeitssitzung}
 \begin{enumerate}
   \item Prüfen, ob die richtige Rolle, Klasse, das richtige Schuljahr und Halbjahr ausgewählt sind.
@@ -579,7 +587,7 @@ Automatisch nach Präfix/Seite gruppieren & Erstellt eine erste Gruppierung anha
 
 \HintBox{Gruppen und Untergruppen bestimmen die UI-Reihenfolge und Exportstruktur. Klare Benennungen helfen Lehrkräften und Schülern, fachlich durch die Klassen zu navigieren, ohne zusätzliche Erläuterungen zu benötigen.}
 
-\HintBox{Ungespeicherte Änderungen im Feld-Editor werden zusätzlich im verwendeten Browser als lokaler Entwurf gesichert. Läuft die Sitzung während der Bearbeitung ab, bleibt die Seite geöffnet: Anmeldung in einem neuen Tab durchführen, anschließend die Verbindung erneut prüfen und die Eingaben speichern. Nach einem unbeabsichtigten Neuladen stellt der Feld-Editor den lokalen Entwurf automatisch wieder her. Erst ein erfolgreicher Speichervorgang entfernt diese Sicherung.}
+\HintBox{Ungespeicherte Änderungen im Feld-Editor werden zusätzlich im verwendeten Browser als lokaler Entwurf gesichert. Läuft die Sitzung während der Bearbeitung ab, bleibt die Seite geöffnet und die erneute Anmeldung erfolgt direkt im eingeblendeten Dialog. Anschließend wird das Speichern fortgesetzt. Nach einem unbeabsichtigten Neuladen stellt der Feld-Editor den lokalen Entwurf automatisch wieder her. Erst ein erfolgreicher Speichervorgang entfernt diese Sicherung.}
 
 \ScreenshotFigure{screenshots/admin_template_fields.png}{Gruppierung \& Filter}
 
@@ -1366,7 +1374,7 @@ Gesprächsansicht & Führt Schritt für Schritt durch einen Schülerbericht und 
 \subsection*{Autospeicherung, Textbausteine \& Gesprächsansicht}
 \index{Autospeicherung}\index{Textbausteine}\index{KI-Textprüfung}\index{Gesprächsansicht}\index{Sitzungsablauf}
 \subsubsection{Autospeicherung}
-Änderungen werden automatisch gespeichert. Warten Sie nach längeren Texten auf die Statusmeldung. Bei einem Netzwerkfehler versucht die Seite erneut zu speichern. Läuft die Sitzung ab, erscheint ein Schutzdialog mit \enquote{Erneut anmelden}, \enquote{Sitzung prüfen}, \enquote{Jetzt speichern} und \enquote{Neu laden}. Zuerst in einem neuen Fenster anmelden, dann zur Eingabeseite zurückkehren und erneut speichern; \enquote{Neu laden} erst verwenden, wenn der Speicherstatus geklärt ist.
+Änderungen werden automatisch gespeichert. Warten Sie nach längeren Texten auf die Statusmeldung. Bei einem Netzwerkfehler versucht die Seite erneut zu speichern. Vor dem Sitzungsablauf erscheint eine Warnung mit \enquote{Angemeldet bleiben}. Ist die Sitzung bereits abgelaufen, erfolgt die erneute Anmeldung im eingeblendeten Dialog auf derselben Seite. Eingaben bleiben erhalten; danach wird eine unterbrochene Speicherung automatisch wiederholt. Die Seite dafür nicht neu laden.
 
 \subsubsection{Textbausteine}
 \index{Textbaustein!einfügen}\index{Textbaustein!anpassen}\index{Textbaustein!Druckübersicht}
@@ -2012,7 +2020,7 @@ Elternlink ist abgelaufen & Je nach Status \enquote{Verlängern} oder \enquote{R
 \hline
 Schüler sieht trotz Freigabe keine Felder & Zusätzlich zur Klassenfreigabe müssen Kategorien für Schüler markiert und gespeichert sein.\\
 \hline
-Autospeicher meldet Sitzungsablauf & In neuem Fenster erneut anmelden, zur Eingabeseite zurückkehren, Sitzung prüfen und erneut speichern. Nicht ungeprüft neu laden.\\
+Autospeicher meldet Sitzungsablauf & Im eingeblendeten Dialog mit demselben Konto erneut anmelden. Die Seite geöffnet lassen; Eingaben bleiben erhalten und die unterbrochene Speicherung wird danach automatisch wiederholt.\\
 \hline
 Export meldet fehlende Einträge & Details öffnen, nach Schüler/Feld suchen und korrigieren. Nur bewusst optionale Lücken mit \enquote{Ignorieren und exportieren} übergehen.\\
 \hline
@@ -2136,7 +2144,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Rollenbasierte E-Mail-Freigaben, Rücknahme und Benachrichtigung der Beteiligten.
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
-  \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und Sitzungsablauf.
+  \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
   \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport und differenzierte Delegationsrückgaben.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
@@ -2160,7 +2168,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 16.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 17.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}
