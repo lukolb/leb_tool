@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 $phpSource = file_get_contents(dirname(__DIR__) . '/admin/classes.php');
 $studentSource = file_get_contents(dirname(__DIR__) . '/teacher/students.php');
+$templateSource = file_get_contents(dirname(__DIR__) . '/admin/templates.php');
 $cssSource = file_get_contents(dirname(__DIR__) . '/assets/app.css');
-if ($phpSource === false || $studentSource === false || $cssSource === false) {
+if ($phpSource === false || $studentSource === false || $templateSource === false || $cssSource === false) {
   fwrite(STDERR, "Could not read action menu sources\n");
   exit(1);
 }
@@ -27,5 +28,12 @@ menu_assert(strpos($studentSource, "menu.style.position = 'fixed'") !== false, '
 menu_assert(strpos($studentSource, 'const spaceBelow') !== false && strpos($studentSource, 'const spaceAbove') !== false, 'student action menus must choose the visible side of the trigger');
 menu_assert(strpos($studentSource, 'viewportHeight - margin - renderedHeight') !== false, 'student action menus must be clamped to the viewport');
 menu_assert(strpos($studentSource, 'rect.bottom + scrollY') === false, 'fixed student action menus must not add the document scroll offset');
+menu_assert(strpos($templateSource, "menu.style.position = 'fixed'") !== false, 'template action menus must use viewport-relative fixed positioning');
+menu_assert(strpos($templateSource, 'const spaceBelow') !== false && strpos($templateSource, 'const spaceAbove') !== false, 'template action menus must choose the visible side of the trigger');
+menu_assert(strpos($templateSource, "menu.dataset.placement = openUpward ? 'top' : 'bottom'") !== false, 'bottom template rows must open their action menus upward');
+menu_assert(strpos($templateSource, 'viewportHeight - margin - renderedHeight') !== false, 'template action menus must be clamped to the viewport');
+menu_assert(strpos($templateSource, 'rect.bottom + scrollY') === false, 'fixed template action menus must not add the document scroll offset');
+menu_assert(strpos($templateSource, 'name="action" value="rename"') !== false, 'template action menus must offer renaming');
+menu_assert(strpos($templateSource, 'UPDATE templates SET name=?') !== false, 'template renaming must update the stored template name');
 
 fwrite(STDOUT, "action_menu_viewport_test: OK\n");
