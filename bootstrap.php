@@ -66,7 +66,8 @@ if ($sessionIdleTimeout > 0) {
 // browser's "confirm form resubmission" prompt by replacing history state.
 ob_start(function (string $buffer): string {
   if (is_ajax_request()) return $buffer;
-  if (stripos($buffer, '</body>') === false) return $buffer;
+  $bodyClosePos = strripos($buffer, '</body>');
+  if ($bodyClosePos === false) return $buffer;
 
   $header = '';
   foreach (headers_list() as $item) {
@@ -89,7 +90,7 @@ ob_start(function (string $buffer): string {
       "  </script>\n";
   }
   if ($injection === '') return $buffer;
-  return preg_replace('/<\/body>/i', $injection . '</body>', $buffer, 1) ?? $buffer;
+  return substr($buffer, 0, $bodyClosePos) . $injection . substr($buffer, $bodyClosePos);
 });
 
 

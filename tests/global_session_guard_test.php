@@ -31,8 +31,11 @@ function session_guard_assert(bool $condition, string $message): void {
 session_guard_assert(
   strpos($source['bootstrap'], 'render_session_guard_markup()') !== false
     && strpos($source['bootstrap'], 'data-session-guard-config') !== false
-    && strpos($source['bootstrap'], "url('assets/session_guard.js')") !== false,
-  'authenticated HTML responses must receive the central session guard'
+    && strpos($source['bootstrap'], "url('assets/session_guard.js')") !== false
+    && strpos($source['bootstrap'], "strripos(\$buffer, '</body>')") !== false
+    && strpos($source['bootstrap'], 'substr($buffer, 0, $bodyClosePos)') !== false
+    && strpos($source['teacher_entry'], '<\\/body><\\/html>') !== false,
+  'authenticated HTML responses must receive the central session guard at the final body close without corrupting embedded documents'
 );
 session_guard_assert(
   strpos($source['bootstrap'], "str_ends_with(\$requestPath, '/ajax/session_status.php')") !== false
