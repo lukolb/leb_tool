@@ -2802,10 +2802,12 @@ function class_report_field_value_map(PDO $pdo, int $templateId, int $classId, s
 }
 
 /**
- * Upserts all bound (system) template fields into field_values for a report instance.
- * This is safe to call multiple times.
+ * Resolves all bound (system) template fields for a report instance without
+ * changing stored report values.
+ *
+ * @return array{template_field_ids: array<int>, values: array<int, array{field_name: string, value: string}>}
  */
-function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
+function resolved_system_bindings_for_report(PDO $pdo, int $reportInstanceId): array {
   $ri = $pdo->prepare(
     "SELECT ri.id, ri.template_id, ri.student_id, ri.school_year, ri.period_label,
             s.first_name, s.last_name, s.date_of_birth,
@@ -2822,7 +2824,7 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
   );
   $ri->execute([$reportInstanceId]);
   $row = $ri->fetch(PDO::FETCH_ASSOC);
-  if (!$row) return;
+  if (!$row) return ['template_field_ids' => [], 'values' => []];
 
   $classId = (int)($row['class_id'] ?? 0);
   if ($classId <= 0) {
@@ -2882,19 +2884,8 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     ];
   }
 
-  $up = $pdo->prepare(
-    "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
-     VALUES (?, ?, ?, 'system', NULL, NOW())
-     ON DUPLICATE KEY UPDATE value_text=VALUES(value_text), source='system', updated_by_user_id=NULL, updated_at=NOW()"
-  );
-
   $tfIds = array_values(array_filter(array_map(static fn(array $f): int => (int)($f['id'] ?? 0), $tfRows), static fn(int $id): bool => $id > 0));
-  if ($tfIds) {
-    $ph = implode(',', array_fill(0, count($tfIds), '?'));
-    $params = array_merge([$reportInstanceId], $tfIds);
-    $del = $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=? AND source='system' AND template_field_id IN ($ph)");
-    $del->execute($params);
-  }
+  $resolved = [];
 
   foreach ($tfRows as $f) {
     $meta = [];
@@ -2908,8 +2899,11 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
     $tpl = isset($meta['system_binding_tpl']) ? trim((string)$meta['system_binding_tpl']) : '';
     if ($tpl !== '') {
       $val = resolve_system_binding_template($tpl, $student, $class, $meta, $fieldType, $fieldValues, $fieldMetaByName);
-      $up->execute([$reportInstanceId, (int)$f['id'], $val]);
       $fname = trim((string)($f['field_name'] ?? ''));
+      $fid = (int)($f['id'] ?? 0);
+      if ($fid > 0) {
+        $resolved[$fid] = ['field_name' => $fname, 'value' => (string)$val];
+      }
       if ($fname !== '') $fieldValues[$fname] = (string)$val;
       continue;
     }
@@ -2928,9 +2922,42 @@ function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
       }
     }
 
-    $up->execute([$reportInstanceId, (int)$f['id'], (string)$val]);
     $fname = trim((string)($f['field_name'] ?? ''));
+    $fid = (int)($f['id'] ?? 0);
+    if ($fid > 0) {
+      $resolved[$fid] = ['field_name' => $fname, 'value' => (string)$val];
+    }
     if ($fname !== '') $fieldValues[$fname] = (string)$val;
+  }
+
+  return ['template_field_ids' => $tfIds, 'values' => $resolved];
+}
+
+/**
+ * Upserts all bound (system) template fields into field_values for a report instance.
+ * This is safe to call multiple times.
+ */
+function apply_system_bindings(PDO $pdo, int $reportInstanceId): void {
+  $resolved = resolved_system_bindings_for_report($pdo, $reportInstanceId);
+  $tfIds = $resolved['template_field_ids'];
+  $values = $resolved['values'];
+
+  if ($tfIds) {
+    $ph = implode(',', array_fill(0, count($tfIds), '?'));
+    $params = array_merge([$reportInstanceId], $tfIds);
+    $del = $pdo->prepare("DELETE FROM field_values WHERE report_instance_id=? AND source='system' AND template_field_id IN ($ph)");
+    $del->execute($params);
+  }
+
+  if (!$values) return;
+
+  $up = $pdo->prepare(
+    "INSERT INTO field_values (report_instance_id, template_field_id, value_text, source, updated_by_user_id, updated_at)
+     VALUES (?, ?, ?, 'system', NULL, NOW())
+     ON DUPLICATE KEY UPDATE value_text=VALUES(value_text), source='system', updated_by_user_id=NULL, updated_at=NOW()"
+  );
+  foreach ($values as $fieldId => $entry) {
+    $up->execute([$reportInstanceId, (int)$fieldId, (string)($entry['value'] ?? '')]);
   }
 }
 

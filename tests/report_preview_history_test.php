@@ -2,9 +2,10 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__);
+$bootstrap = file_get_contents($root . '/bootstrap.php');
 $preview = file_get_contents($root . '/shared/report_preview_page.php');
 $teacherFile = file_get_contents($root . '/teacher/report_template_file.php');
-if ($preview === false || $teacherFile === false) {
+if ($bootstrap === false || $preview === false || $teacherFile === false) {
   fwrite(STDERR, "Could not read report preview sources\n");
   exit(1);
 }
@@ -20,6 +21,8 @@ report_preview_assert(strpos($preview, "name=\"period\"") === false, 'the page m
 report_preview_assert(strpos($preview, 'rp-report-list') !== false, 'each student must expose a list of their saved reports');
 report_preview_assert(strpos($preview, 'COALESCE(NULLIF(s.master_student_id, 0), s.id)=?') !== false, 'reports must be collected across all aliases of the canonical student');
 report_preview_assert(strpos($preview, 'apply_system_bindings') === false, 'opening a historical preview must never recalculate or overwrite stored values');
+report_preview_assert(strpos($preview, "\$previewStatus !== 'final'") !== false && strpos($preview, 'resolved_system_bindings_for_report') !== false, 'non-final previews must resolve missing automatic values without writing them');
+report_preview_assert(strpos($bootstrap, 'function resolved_system_bindings_for_report') !== false, 'automatic bindings must expose a read-only resolver for previews');
 report_preview_assert(strpos($preview, "CASE fv.source WHEN 'teacher' THEN 30 WHEN 'child' THEN 20 WHEN 'system' THEN 10") !== false, 'stored values must use deterministic source precedence');
 report_preview_assert(strpos($preview, 'array_key_exists($fieldName, $valuesByName)') !== false, 'lower-priority values must not overwrite the selected stored value');
 report_preview_assert(strpos($preview, "class_report_period_label(\$selectedClassId, \$selectedPeriodLabel)") !== false, 'class-scoped values must use the class belonging to the selected report period');

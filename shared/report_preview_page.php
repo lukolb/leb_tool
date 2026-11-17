@@ -679,6 +679,19 @@ if ($ri) {
       $valuesByName[$fieldName] = $resolved;
     }
 
+    // Current reports may not have materialized their automatic bindings yet.
+    // Resolve them in memory so opening the historical preview never mutates
+    // the selected report. Final reports continue to show their stored snapshot.
+    if ($previewStatus !== 'final' && function_exists('resolved_system_bindings_for_report')) {
+      $resolvedBindings = resolved_system_bindings_for_report($pdo, $previewReportId);
+      foreach (($resolvedBindings['values'] ?? []) as $fid => $entry) {
+        $fieldName = trim((string)($entry['field_name'] ?? ''));
+        if ($fieldName === '') continue;
+        $valuesByField[(int)$fid] = (string)($entry['value'] ?? '');
+        $valuesByName[$fieldName] = (string)($entry['value'] ?? '');
+      }
+    }
+
     $stFields = $pdo->prepare(
       "SELECT id, field_name, label, field_type, meta_json
        FROM template_fields
