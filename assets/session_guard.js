@@ -23,7 +23,6 @@
   let reauthPromise = null;
   let resolveReauth = null;
   let expiryCheckPending = false;
-  const bypassForms = new WeakSet();
   const pendingForms = new WeakSet();
 
   const style = document.createElement('style');
@@ -403,20 +402,47 @@
     return nativeFetch(await requestWithFreshCsrf(request));
   };
 
-  async function guardForm(form, submitter, useNativeSubmit) {
+  function submitFormNatively(form, submitter) {
+    const restore = [];
+    let submitterField = null;
+    if (submitter && submitter.form === form) {
+      const overrides = [
+        ['formaction', 'action'],
+        ['formmethod', 'method'],
+        ['formenctype', 'enctype'],
+        ['formtarget', 'target']
+      ];
+      overrides.forEach(function (entry) {
+        const attribute = entry[0];
+        const property = entry[1];
+        if (!submitter.hasAttribute(attribute)) return;
+        restore.push([property, form[property]]);
+        form[property] = submitter.getAttribute(attribute) || '';
+      });
+      if (submitter.name && !submitter.disabled) {
+        submitterField = document.createElement('input');
+        submitterField.type = 'hidden';
+        submitterField.name = submitter.name;
+        submitterField.value = submitter.value;
+        form.appendChild(submitterField);
+      }
+    }
+    try {
+      nativeFormSubmit.call(form);
+    } finally {
+      if (submitterField) submitterField.remove();
+      restore.forEach(function (entry) { form[entry[0]] = entry[1]; });
+    }
+  }
+
+  async function guardForm(form, submitter) {
     if (pendingForms.has(form)) return;
     pendingForms.add(form);
     try {
       const authenticated = await checkNow({ interactive: true });
       if (!authenticated) return;
       updateCsrfInputs();
-      if (useNativeSubmit) {
-        nativeFormSubmit.call(form);
-      } else {
-        bypassForms.add(form);
-        if (submitter && submitter.form === form) form.requestSubmit(submitter);
-        else form.requestSubmit();
-      }
+      submitFormNatively(form, submitter);
     } finally {
       pendingForms.delete(form);
     }
@@ -428,13 +454,13 @@
     if (form.dataset.sessionGuard === 'off' || String(form.method || 'get').toLowerCase() !== 'post') return;
     const action = new URL(form.action || window.location.href, window.location.href);
     if (action.origin !== window.location.origin) return;
-    if (bypassForms.has(form)) {
-      bypassForms.delete(form);
-      return;
-    }
+    // A page-specific submit handler already owns the request (usually via
+    // fetch). The global fetch wrapper protects that request, so redispatching
+    // the submit event here would execute the action twice.
+    if (event.defaultPrevented) return;
     event.preventDefault();
-    void guardForm(form, event.submitter || null, false);
-  }, true);
+    void guardForm(form, event.submitter || null);
+  });
 
   HTMLFormElement.prototype.submit = function () {
     const form = this;
@@ -442,7 +468,7 @@
       nativeFormSubmit.call(form);
       return;
     }
-    void guardForm(form, null, true);
+    void guardForm(form, null);
   };
 
   window.LEBSessionGuard = {

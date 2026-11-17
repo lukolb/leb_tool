@@ -61,8 +61,10 @@ session_guard_assert(
     && strpos($source['script'], 'window.fetch = async function') !== false
     && strpos($source['script'], 'redirectedToLogin') !== false
     && strpos($source['script'], "document.addEventListener('submit'") !== false
+    && strpos($source['script'], 'if (event.defaultPrevented) return;') !== false
+    && strpos($source['script'], 'function submitFormNatively(form, submitter)') !== false
     && strpos($source['script'], "window.dispatchEvent(new CustomEvent('leb:session-restored'") !== false,
-  'the browser guard must warn, reauthenticate inline, retry fetch calls and protect normal form submissions'
+  'the browser guard must warn, reauthenticate inline, retry fetch calls, respect page-owned submits and protect normal forms'
 );
 session_guard_assert(
   strpos($source['script'], 'window.open(') === false
