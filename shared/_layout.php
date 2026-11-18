@@ -120,7 +120,8 @@ function render_role_header(string $title): void {
             <div class="brand-subtitle"><?=h($title)?></div>
           </div>
 
-          <div class="lang-switch" aria-label="<?=h(t('ui.lang_switch_aria'))?>">
+          <div class="lang-switch" aria-label="<?=h(t('ui.header_actions_aria'))?>">
+            <a class="lang handbook-link" href="<?=h(url('docs/leb_tool_benutzerhandbuch.pdf'))?>" target="_blank" rel="noopener" aria-label="<?=h(t('nav.handbook'))?>" title="<?=h(t('nav.handbook'))?>">📘</a>
             <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('ui.lang_de'))?>">🇩🇪</a>
             <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('ui.lang_en'))?>">🇺🇸</a>
             <?php if ($canSwitchRole): ?>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
 require_once __DIR__ . '/../../shared/delegation_revoke.php';
+require_once __DIR__ . '/../../shared/delegation_notifications.php';
 require_once __DIR__ . '/../../shared/group_keys.php';
 require __DIR__ . '/../../shared/text_snippets.php';
 require __DIR__ . '/../../shared/value_history.php';
@@ -160,7 +161,7 @@ function map_option_icons(PDO $pdo, array $options, array &$iconCache = []): arr
 function load_option_list_items(PDO $pdo, int $listId, array &$iconCache = []): array {
   if ($listId <= 0) return [];
   $st = $pdo->prepare(
-    "SELECT id, value, label, label_en, icon_id
+    "SELECT id, value, label, label_en, icon_id, meta_json
         FROM option_list_items
         WHERE list_id=?
         ORDER BY sort_order ASC, id ASC"
@@ -168,12 +169,14 @@ function load_option_list_items(PDO $pdo, int $listId, array &$iconCache = []): 
   $st->execute([$listId]);
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $optionMeta = meta_read($r['meta_json'] ?? null);
     $out[] = [
       'option_item_id' => (int)$r['id'],
       'value' => (string)($r['value'] ?? ''),
       'label' => (string)($r['label'] ?? ''),
       'label_en' => (string)($r['label_en'] ?? ''),
       'icon_id' => $r['icon_id'] !== null ? (int)$r['icon_id'] : null,
+      'lock_child' => !empty($optionMeta['lock_child']) ? 1 : 0,
     ];
   }
   return map_option_icons($pdo, $out, $iconCache);
@@ -3467,6 +3470,7 @@ if ($action === 'delegations_save') {
     $items = $data['delegations'] ?? null;
     if (!is_array($items)) throw new RuntimeException('delegations fehlt.');
 
+    $assignmentNotifications = [];
     $pdo->beginTransaction();
     try {
       foreach ($items as $it) {
@@ -3484,6 +3488,18 @@ if ($action === 'delegations_save') {
           $userIds = $uid > 0 ? [$uid] : [];
         }
 
+        $existingUserIds = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $gk);
+        foreach (delegation_new_user_ids($existingUserIds, $userIds) as $newUserId) {
+          $assignmentNotifications[] = [
+            'user_id' => $newUserId,
+            'class_id' => $classId,
+            'school_year' => $schoolYear,
+            'period_label' => $periodLabel,
+            'group_key' => $gk,
+            'note' => $note,
+          ];
+        }
+
         upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, 0, $status, $note, $userId);
         foreach ($userIds as $uid) {
           upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $gk, $uid, $status, $note, $userId);
@@ -3494,6 +3510,10 @@ if ($action === 'delegations_save') {
     } catch (Throwable $e2) {
       $pdo->rollBack();
       throw $e2;
+    }
+
+    if ($assignmentNotifications) {
+      notify_delegation_assignments($pdo, $assignmentNotifications, $userId);
     }
 
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
@@ -3547,6 +3567,15 @@ if ($action === 'delegations_save') {
     if ($status !== 'open' && $status !== 'done') $status = 'open';
     $note = trim($note);
 
+    $stPrevious = $pdo->prepare(
+      "SELECT status, created_by_user_id, updated_by_user_id
+       FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=? AND user_id=?
+       LIMIT 1"
+    );
+    $stPrevious->execute([$classId, $schoolYear, $periodLabel, $storedGroupKey, $userId]);
+    $previousDelegation = $stPrevious->fetch(PDO::FETCH_ASSOC) ?: [];
+
     upsert_class_group_delegation(
       $pdo,
       $classId,
@@ -3559,8 +3588,182 @@ if ($action === 'delegations_save') {
       $userId
     );
 
+    if (delegation_status_became_done($previousDelegation['status'] ?? null, $status)) {
+      $delegatorUserId = (int)($previousDelegation['created_by_user_id'] ?? 0);
+      if ($delegatorUserId <= 0) $delegatorUserId = (int)($previousDelegation['updated_by_user_id'] ?? 0);
+      notify_delegation_completion($pdo, [
+        'delegator_user_id' => $delegatorUserId,
+        'delegate_user_id' => $userId,
+        'class_id' => $classId,
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'group_key' => $storedGroupKey,
+        'note' => $note,
+      ], $userId);
+    }
+
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
     json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
+  }
+
+  if ($action === 'apply_lock_value_to_class') {
+    $classId = (int)($data['class_id'] ?? 0);
+    $fieldId = (int)($data['template_field_id'] ?? 0);
+    $optionItemId = (int)($data['option_item_id'] ?? 0);
+    $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
+    if ($classId <= 0 || $fieldId <= 0 || $optionItemId <= 0) {
+      throw new RuntimeException('class_id/template_field_id/option_item_id fehlt.');
+    }
+
+    if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+    if (($u['role'] ?? '') !== 'admin' && !$delegatedView && !user_is_class_teacher($pdo, $userId, $classId)) {
+      throw new RuntimeException('Keine Berechtigung.');
+    }
+
+    $tpl = template_for_class($pdo, $classId);
+    $templateId = (int)$tpl['id'];
+    $schoolYear = class_school_year($pdo, $classId);
+    if ($schoolYear === '') $schoolYear = date('Y');
+    $periodLabel = normalize_class_period_label(class_period_label($pdo, $classId));
+
+    $stField = $pdo->prepare(
+      "SELECT id, field_type, is_multiline, meta_json
+       FROM template_fields
+       WHERE id=? AND template_id=? AND can_teacher_edit=1
+       LIMIT 1"
+    );
+    $stField->execute([$fieldId, $templateId]);
+    $field = $stField->fetch(PDO::FETCH_ASSOC);
+    if (!$field) throw new RuntimeException('Feld nicht erlaubt.');
+
+    $fieldType = (string)($field['field_type'] ?? '');
+    $fieldMeta = meta_read($field['meta_json'] ?? null);
+    if (!in_array($fieldType, ['radio', 'select', 'grade'], true)) {
+      throw new RuntimeException('Das Feld unterstützt keine Optionsliste.');
+    }
+    if (is_class_field($fieldMeta) || is_system_bound($fieldMeta)) {
+      throw new RuntimeException('Dieses Feld kann nicht klassenweit gesetzt werden.');
+    }
+    if (!can_user_edit_field_in_view(
+      $pdo,
+      $u,
+      $classId,
+      $schoolYear,
+      $periodLabel,
+      $fieldMeta,
+      $fieldType,
+      (int)($field['is_multiline'] ?? 0),
+      $delegatedView
+    )) {
+      throw new RuntimeException('Dieses Feld ist an eine Kollegin/einen Kollegen delegiert und kann von dir nicht bearbeitet werden.');
+    }
+
+    $listId = option_list_id_from_meta($fieldMeta);
+    if ($listId <= 0) throw new RuntimeException('Dem Feld ist keine Optionsliste zugeordnet.');
+
+    $stOption = $pdo->prepare(
+      "SELECT id, value, meta_json
+       FROM option_list_items
+       WHERE id=? AND list_id=?
+       LIMIT 1"
+    );
+    $stOption->execute([$optionItemId, $listId]);
+    $option = $stOption->fetch(PDO::FETCH_ASSOC);
+    $optionMeta = $option ? meta_read($option['meta_json'] ?? null) : [];
+    if (!$option || empty($optionMeta['lock_child'])) {
+      throw new RuntimeException('Die gewählte Option ist kein Sperrwert für Schülerfelder.');
+    }
+    $valueText = trim((string)($option['value'] ?? ''));
+    if ($valueText === '') throw new RuntimeException('Der Sperrwert ist leer.');
+    $valueJson = json_encode(['option_item_id' => $optionItemId], JSON_UNESCAPED_UNICODE);
+
+    $appliedReportIds = [];
+    $changedReportIds = [];
+    $skippedFinal = 0;
+    $pdo->beginTransaction();
+    try {
+      $stReports = $pdo->prepare(
+        "SELECT ri.id, ri.status
+         FROM report_instances ri
+         INNER JOIN students s ON s.id=ri.student_id
+         INNER JOIN student_class_assignments sca
+           ON sca.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)
+          AND sca.class_id=?
+          AND sca.is_active=1
+         WHERE ri.template_id=?
+           AND ri.school_year=?
+           AND ri.period_label=?
+         ORDER BY ri.id ASC
+         FOR UPDATE"
+      );
+      $stReports->execute([$classId, $templateId, $schoolYear, $periodLabel]);
+      $reportRows = $stReports->fetchAll(PDO::FETCH_ASSOC);
+      $reportIds = array_values(array_filter(array_map(
+        static fn(array $row): int => (int)($row['id'] ?? 0),
+        $reportRows
+      ), static fn(int $id): bool => $id > 0));
+      $existingValues = load_teacher_values_raw($pdo, $reportIds, [$fieldId]);
+
+      $upsert = $pdo->prepare(
+        "INSERT INTO field_values (report_instance_id, template_field_id, value_text, value_json, source, updated_by_user_id, updated_at)
+         VALUES (?, ?, ?, ?, 'teacher', ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           value_text=VALUES(value_text),
+           value_json=VALUES(value_json),
+           source='teacher',
+           updated_by_user_id=VALUES(updated_by_user_id),
+           updated_at=NOW()"
+      );
+
+      foreach ($reportRows as $reportRow) {
+        $reportId = (int)($reportRow['id'] ?? 0);
+        if ($reportId <= 0) continue;
+        if ((string)($reportRow['status'] ?? '') === 'final') {
+          $skippedFinal++;
+          continue;
+        }
+        $appliedReportIds[] = $reportId;
+
+        $current = $existingValues[(string)$reportId][$fieldId] ?? null;
+        $currentOptionId = 0;
+        if ($current && !empty($current['json'])) {
+          $currentJson = json_decode((string)$current['json'], true);
+          if (is_array($currentJson)) $currentOptionId = (int)($currentJson['option_item_id'] ?? 0);
+        }
+        $isUnchanged = $currentOptionId === $optionItemId
+          && trim((string)($current['text'] ?? '')) === $valueText;
+        if ($isUnchanged) continue;
+
+        $upsert->execute([$reportId, $fieldId, $valueText, $valueJson, $userId]);
+        record_field_value_history($pdo, $reportId, $fieldId, $valueText, $valueJson, 'teacher', $userId, null);
+        $changedReportIds[] = $reportId;
+      }
+
+      $pdo->commit();
+    } catch (Throwable $e2) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      throw $e2;
+    }
+
+    audit('teacher_class_lock_value_apply', $userId, [
+      'class_id' => $classId,
+      'template_field_id' => $fieldId,
+      'option_item_id' => $optionItemId,
+      'applied_count' => count($appliedReportIds),
+      'changed_count' => count($changedReportIds),
+      'skipped_final' => $skippedFinal,
+    ]);
+    json_out([
+      'ok' => true,
+      'value_text' => $valueText,
+      'applied_report_ids' => $appliedReportIds,
+      'changed_report_ids' => $changedReportIds,
+      'applied_count' => count($appliedReportIds),
+      'changed_count' => count($changedReportIds),
+      'skipped_final' => $skippedFinal,
+    ]);
   }
 
   if ($action === 'save_class') {

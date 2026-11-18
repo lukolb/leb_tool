@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
 require_once __DIR__ . '/../../shared/delegation_revoke.php';
+require_once __DIR__ . '/../../shared/delegation_notifications.php';
 require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -280,6 +281,15 @@ try {
 
     if ($status !== 'done') $status = 'open';
 
+    $stExisting = $pdo->prepare(
+      "SELECT user_id
+       FROM class_group_delegations
+       WHERE class_id=? AND school_year=? AND period_label=? AND group_key=?"
+    );
+    $stExisting->execute([$classId, $schoolYear, $periodLabel, $groupKey]);
+    $existingUserIds = array_map('intval', $stExisting->fetchAll(PDO::FETCH_COLUMN) ?: []);
+    $newAssignmentUserIds = delegation_new_user_ids($existingUserIds, $userIds);
+
     if (!$userIds) {
       // clear delegation
       annotate_revoked_delegation_texts($pdo, [[
@@ -329,6 +339,21 @@ try {
       ]);
     }
 
+    if ($newAssignmentUserIds) {
+      $events = [];
+      foreach ($newAssignmentUserIds as $newUserId) {
+        $events[] = [
+          'user_id' => $newUserId,
+          'class_id' => $classId,
+          'school_year' => $schoolYear,
+          'period_label' => $periodLabel,
+          'group_key' => $groupKey,
+          'note' => $note,
+        ];
+      }
+      notify_delegation_assignments($pdo, $events, $userId);
+    }
+
     json_out(['ok'=>true]);
   }
 
@@ -353,15 +378,29 @@ try {
     if ($status !== 'open' && $status !== 'done') $status = 'open';
 
     $st = $pdo->prepare(
-      "SELECT 1
+      "SELECT status, created_by_user_id, updated_by_user_id
        FROM class_group_delegations
        WHERE class_id=? AND school_year=? AND period_label=? AND group_key=? AND user_id=?
        LIMIT 1"
     );
     $st->execute([$classId, $schoolYear, $periodLabel, $groupKey, $userId]);
-    if (!$st->fetchColumn()) throw new RuntimeException('Nicht deine Delegation.');
+    $previousDelegation = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$previousDelegation) throw new RuntimeException('Nicht deine Delegation.');
 
     upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $userId);
+    if (delegation_status_became_done((string)($previousDelegation['status'] ?? ''), $status)) {
+      $delegatorUserId = (int)($previousDelegation['created_by_user_id'] ?? 0);
+      if ($delegatorUserId <= 0) $delegatorUserId = (int)($previousDelegation['updated_by_user_id'] ?? 0);
+      notify_delegation_completion($pdo, [
+        'delegator_user_id' => $delegatorUserId,
+        'delegate_user_id' => $userId,
+        'class_id' => $classId,
+        'school_year' => $schoolYear,
+        'period_label' => $periodLabel,
+        'group_key' => $groupKey,
+        'note' => $note,
+      ], $userId);
+    }
     json_out(['ok'=>true]);
   }
 

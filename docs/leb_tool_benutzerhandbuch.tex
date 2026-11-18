@@ -189,7 +189,8 @@ Schüler & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 \HintBox{Schüler haben keinen allgemeinen Zugriff auf fremde Daten. Ob eine Schülerfreigabe zeitlich begrenzt wird, richtet sich nach dem vorgesehenen Arbeitsfenster; sie wird bewusst von der zuständigen Lehrkraft gesteuert und anschließend wieder geschlossen.}
 
 \section{Navigation: jeder Menüpunkt im Überblick}\label{sec:navigation}
-Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
+\index{Benutzerhandbuch!Zugriff im Tool}\index{Buchsymbol}
+Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kleine Buchsymbol in der Kopfzeile öffnet dieses Benutzerhandbuch als PDF in einem neuen Browser-Tab. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
 
 \subsection{Admin-Menü vollständig erklärt}\label{sec:admin-menu}
 \index{Admin-Menü}\index{Dashboard}\index{Schule}\index{Klassen}\index{Schüler}
@@ -632,7 +633,7 @@ Label (EN) & Englischer Anzeigetext. Bleibt er leer, verwendet die Oberfläche a
 \hline
 Icon & Optionales Symbol aus der Icon Library. \enquote{-- kein --} zeigt nur den Text. Unterhalb der Auswahl erscheint die aktuelle Vorschau.\\
 \hline
-Schülerfeld sperren & Wenn diese Option im zugehörigen Lehrkraftfeld gewählt ist, wird das korrespondierende Schülerfeld gesperrt. Dies ist beispielsweise sinnvoll für \enquote{nicht beurteilt} oder \enquote{nicht bearbeitet}. Die Sperre setzt gleiche Feldbasis und korrekte Feldzuordnung voraus.\\
+Schülerfeld sperren & Wenn diese Option im zugehörigen Lehrkraftfeld gewählt ist, wird das korrespondierende Schülerfeld gesperrt. Dies ist beispielsweise sinnvoll für \enquote{nicht beurteilt} oder \enquote{nicht bearbeitet}. Die Sperre setzt gleiche Feldbasis und korrekte Feldzuordnung voraus. In der Noten- und Items-Ansicht erscheint bei den betroffenen Kompetenzen zusätzlich eine klassenweite Aktion, mit der genau dieser Sperrwert für alle nicht abgeschlossenen Schülerberichte gesetzt werden kann.\\
 \hline
 Entfernen & Entfernt die betreffende Zeile zunächst im Editor. Dauerhaft wird die Entfernung erst mit \enquote{Speichern}. Vorher prüfen, ob der Wert bereits in Berichten verwendet wurde.\\
 \hline
@@ -1323,11 +1324,12 @@ Inaktiv setzen & Archiviert die Klasse und markiert ihre Berichte automatisch al
 \index{Autospeicherung}\index{Gesprächsansicht}\index{Textprüfung}\index{XSchool}
 \index{Ansicht!Notenübersicht}\index{Ansicht!Schüler}\index{Ansicht!Items}
 \index{Schülereingaben anzeigen}\index{Verlaufssymbol}\index{Gesamtwertsymbol}
-\index{Textfeld}\index{Checkboxfeld}\index{Datumsfeld}
+\index{Textfeld}\index{Checkboxfeld}\index{Datumsfeld}\index{Sperrwert!für ganze Klasse}
 \begin{enumerate}
   \item Im Feld \enquote{Ansicht} den geeigneten Arbeitsmodus wählen: Notenübersicht, Schüler oder Items.
   \item Optional \enquote{Nur fehlende} aktivieren, um bereits ausgefüllte Einträge auszublenden.
   \item \enquote{Optionen als Buttons} aktivieren, wenn Auswahlwerte als anklickbare Karten statt Dropdowns erscheinen sollen.
+  \item Bei einer Kompetenz mit einer in der Optionsliste markierten Option \enquote{Schülerfeld sperren} kann in der Noten- oder Items-Ansicht \enquote{Für alle: Sperrwert} gewählt werden. Nach Bestätigung setzt die Aktion den Sperrwert für alle Kinder der Klasse; vorhandene Werte werden überschrieben, abgeschlossene Berichte bleiben unverändert.
   \item In der Schüleransicht Gruppe und Schüler wählen; mit \enquote{Vorheriger/Nächster Schüler} innerhalb der gefilterten Reihenfolge wechseln.
   \item In der Items-Ansicht Gruppe wählen und denselben Eintrag nacheinander für mehrere Schüler bearbeiten.
   \item Text-, Auswahl-, Checkbox- und Datumsfelder ausfüllen. Pflichtfelder sind für den Fortschritt maßgeblich.
@@ -1351,6 +1353,8 @@ Schülereingaben anzeigen & Blendet abgegebene Schülerwerte als Vergleich ein. 
 Nur fehlende & Blendet abgeschlossene Felder aus. Für Endkontrolle wieder deaktivieren, damit bereits gespeicherte Inhalte sichtbar sind.\\
 \hline
 Optionen als Buttons & Ändert nur die Bedienform der Optionsliste, nicht die gespeicherten Values.\\
+\hline
+Für alle: Sperrwert & Erscheint nur bei Kompetenzen, deren Optionsliste mindestens einen als \enquote{Schülerfeld sperren} markierten Wert enthält. Setzt den gewählten Sperrwert gesammelt für alle nicht abgeschlossenen Berichte der Klasse.\\
 \hline
 Suche & Filtert Schüler oder Items innerhalb der aktuellen Ansicht. Ein Filter verändert keine Werte.\\
 \hline
@@ -1420,9 +1424,9 @@ Delegierte Lehrkräfte dürfen diesen Import nicht durchführen.
   \item In der Eingabeseite \enquote{Delegieren} wählen.
   \item Gruppe/Fachbereich auswählen und eine oder mehrere Lehrkräfte markieren.
   \item Status \enquote{offen} verwenden und eine kurze Arbeitsnotiz mit Umfang und Termin ergänzen.
-  \item Speichern. Der Bereich erscheint bei den Empfängern unter \enquote{Delegationen} und in Benachrichtigungen.
+  \item Speichern. Der Bereich erscheint bei den Empfängern unter \enquote{Delegationen}; neu hinzugefügte Empfänger erhalten zusätzlich eine E-Mail mit Klasse, Bereich und Notiz.
   \item Empfänger öffnet die Delegation und bearbeitet nur den freigegebenen Bereich. Falls der Admin den Lesekontext aktiviert hat, blendet \enquote{Andere Fachbereiche anzeigen} die übrigen Bereiche ausschließlich schreibgeschützt ein oder aus.
-  \item Über \enquote{Delegation abschließen} den Status auf \enquote{erledigt} setzen; ein Kommentar kann die Rückgabe erläutern.
+  \item Über \enquote{Delegation abschließen} den Status auf \enquote{erledigt} setzen; ein Kommentar kann die Rückgabe erläutern. Beim ersten Wechsel von \enquote{offen} zu \enquote{erledigt} wird die delegierende Person per E-Mail benachrichtigt.
   \item Klassenbesitzer prüft die Beiträge. Bei Korrekturbedarf Status wieder öffnen; nach Abschluss Delegation nicht vorschnell löschen.
 \end{enumerate}
 
@@ -2145,7 +2149,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
-  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport und differenzierte Delegationsrückgaben.
+  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweites Setzen definierter Schüler-Sperrwerte, differenzierte Delegationsrückgaben und E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
 
