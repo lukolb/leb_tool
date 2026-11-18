@@ -802,7 +802,7 @@ CREATE TABLE IF NOT EXISTS `class_group_delegations` (
   `class_id` bigint UNSIGNED NOT NULL,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
-  `group_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `group_key` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
   `user_id` bigint UNSIGNED NOT NULL,
   `status` enum('open','done') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
   `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,

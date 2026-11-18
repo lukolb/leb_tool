@@ -44,7 +44,7 @@ function annotate_revoked_delegation_texts(PDO $pdo, ?array $scopes = null): int
       foreach ($stFields->fetchAll(PDO::FETCH_ASSOC) as $fieldRow) {
         $meta = json_decode((string)($fieldRow['meta_json'] ?? ''), true);
         $meta = is_array($meta) ? $meta : [];
-        $aliases = app_group_key_aliases_from_meta($meta);
+        $aliases = app_delegation_key_aliases_from_meta($meta);
         if (array_intersect($groupAliases, $aliases)) $fieldIds[] = (int)$fieldRow['id'];
       }
       $fieldIds = array_values(array_unique(array_filter($fieldIds, static fn($x) => $x > 0)));

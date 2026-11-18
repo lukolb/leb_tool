@@ -469,6 +469,7 @@ tr.tpl-inactive { opacity: 0.65; }
                      data-pdf-url="<?=h(url('admin/file.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.extract_fields'))?></a>
                   <a class="btn primary" href="<?=h(url('admin/template_fields.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.edit'))?></a>
                   <a class="btn secondary" href="<?=h(url('admin/template_mappings.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.mapping'))?></a>
+                  <a class="btn secondary" href="<?=h(url('admin/template_trial.php?template_id='.(int)$t['id']))?>"><?=h(t('admin.templates.action.trial'))?></a>
                   <form method="post">
                     <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"> 
                     <input type="hidden" name="action" value="rename"> 

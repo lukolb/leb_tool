@@ -2036,6 +2036,7 @@ render_teacher_header($pageTitle);
     'delegation_clear' => t('teacher.entry.delegation_edit.clear_button'),
     'delegation_done_empty' => t('teacher.entry.delegation_done.empty'),
     'delegation_empty' => t('teacher.entry.delegation_edit.empty'),
+    'delegation_mail_failed' => t('teacher.entry.delegation_mail_failed'),
     'snippet_no_text' => t('teacher.entry.snippets.no_text'),
     'snippet_no_text_fallback' => t('teacher.entry.snippets.no_text_fallback'),
     'snippet_no_target' => t('teacher.entry.snippets.no_target'),
@@ -3078,10 +3079,13 @@ render_teacher_header($pageTitle);
     const map = {};
     const groups = activeGroups();
     groups.forEach(g => {
-      const delegatedUserIds = Array.isArray(g?.delegation?.user_ids)
-        ? g.delegation.user_ids.map(x => Number(x)).filter(x => x > 0)
-        : [];
-      (g.fields || []).forEach(f => { map[String(f.id)] = { ...f, _group_key: g.key, _delegated_user_ids: delegatedUserIds }; });
+      (g.fields || []).forEach(f => {
+        const effectiveDelegation = f?.delegation || g?.delegation || null;
+        const delegatedUserIds = Array.isArray(effectiveDelegation?.user_ids)
+          ? effectiveDelegation.user_ids.map(x => Number(x)).filter(x => x > 0)
+          : [];
+        map[String(f.id)] = { ...f, _group_key: g.key, _delegated_user_ids: delegatedUserIds };
+      });
     });
     if (!CHILD_MODE) {
       // class fields are NOT in groups (by design), so add them too:
@@ -4112,11 +4116,12 @@ render_teacher_header($pageTitle);
     let delegatedMissing = 0;
     let delegatedTotal = 0;
     activeGroups().forEach(g => {
-      const delegatedUsers = Array.isArray(g?.delegation?.users) ? g.delegation.users : [];
-      const delegatedToOthers = delegatedUsers.length > 0
-        && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
       (g.fields || []).forEach(f => {
         if (!isRequiredField(f)) return;
+        const effectiveDelegation = f?.delegation || g?.delegation || null;
+        const delegatedUsers = Array.isArray(effectiveDelegation?.users) ? effectiveDelegation.users : [];
+        const delegatedToOthers = delegatedUsers.length > 0
+          && !delegatedUsers.some(u => Number(u?.user_id || 0) === CURRENT_USER_ID);
         const raw = delegatedToOthers ? teacherVal(reportId, f.id) : teacherEditVal(reportId, f.id);
         const missing = String(raw ?? '').trim() === '';
         if (!delegatedToOthers && isEditableField(f, g)) {
@@ -5854,6 +5859,54 @@ render_teacher_header($pageTitle);
     return users.find(u => Number(u.user_id || 0) === CURRENT_USER_ID) || null;
   }
 
+  function delegationMailWarning(result){
+    const expected = Math.max(0, Number(result?.mail_notification?.expected || 0));
+    const sent = Math.max(0, Number(result?.mail_notification?.sent || 0));
+    if (expected <= sent) return '';
+    return tfmtEntry('delegation_mail_failed', { failed: expected - sent, expected });
+  }
+
+  function delegationForScopeKey(scopeKey){
+    const key = String(scopeKey || '').trim();
+    if (!key) return null;
+    const exact = (state.delegations || []).find(d => String(d?.group_key || '') === key);
+    if (exact) return exact;
+    if (!key.includes('::')) {
+      const group = (state.groups || []).find(g => String(g?.key || '') === key);
+      return group?.delegation || null;
+    }
+    return null;
+  }
+
+  function delegationScopeOptions(onlyAssignedToCurrentUser=false){
+    const scopes = [];
+    (state.groups || []).forEach(g => {
+      const groupKey = String(g?.key || '').trim();
+      if (!groupKey) return;
+      const groupTitle = String(g?.title || groupKey);
+      scopes.push({ key: groupKey, label: groupTitle });
+
+      const subgroups = new Map();
+      (g.fields || []).forEach(f => {
+        const subgroup = String(f?.subgroup || '').trim();
+        if (!subgroup || subgroups.has(subgroup)) return;
+        subgroups.set(subgroup, subgroupLabelForLang(subgroup, f?.subgroup_title_en));
+      });
+      subgroups.forEach((subgroupLabel, subgroup) => {
+        scopes.push({
+          key: `${groupKey}::${subgroup}`,
+          label: `${groupTitle} › ${subgroupLabel}`,
+        });
+      });
+    });
+
+    if (!onlyAssignedToCurrentUser) return scopes;
+    return scopes.filter(scope => {
+      const del = delegationForScopeKey(scope.key);
+      return Array.isArray(del?.user_ids) && del.user_ids.some(id => Number(id) === CURRENT_USER_ID);
+    });
+  }
+
   function ensureSelect(selectEl){
     if (!selectEl) return;
     if (!selectEl.options.length) {
@@ -5876,7 +5929,7 @@ render_teacher_header($pageTitle);
         const g = activeGroups().find(x => String(x.key) === groupKey);
 
         // Delegation-Text: bevorzugt master-Logik, sonst Fallback
-        const del = g?.delegation;
+        const del = delegationForScopeKey(optData.value) || g?.delegation;
         const delNames = del ? delegationNames(del) : '';
         const delTxt = delNames
           ? ` → ${delNames}`
@@ -6261,7 +6314,7 @@ render_teacher_header($pageTitle);
       const _gtMiss = Math.max(0, _gtTotal - _gtDone);
       const _gtPct = _gtTotal > 0 ? Math.round((_gtDone / _gtTotal) * 100) : 0;
       const canEditGroup = (Number(g.can_edit||0) === 1);
-      const del = g.delegation;
+      const del = delegationForScopeKey(groupFilterValue(g.key, groupFilter.subgroup)) || g.delegation;
       const delNames = delegationNames(del);
       const delDone = delegationAllDone(del);
       const delBadge = delNames
@@ -6900,12 +6953,18 @@ render_teacher_header($pageTitle);
       // unless read-only visibility is enabled for other fields.
       if (DELEGATED_MODE && (!DELEGATED_READONLY_VISIBLE || !delegatedShowOtherFields)) {
         const uid = CURRENT_USER_ID;
-        state.groups = (state.groups || []).filter(g => {
-          const delUids = Array.isArray(g?.delegation?.user_ids)
-            ? g.delegation.user_ids.map(x => Number(x)).filter(x => x > 0)
-            : [];
-          return delUids.includes(uid);
-        });
+        state.groups = (state.groups || []).map(g => {
+          const fields = (g.fields || []).filter(f => {
+            const effectiveDelegation = f?.delegation || g?.delegation || null;
+            const delUids = Array.isArray(effectiveDelegation?.user_ids)
+              ? effectiveDelegation.user_ids.map(x => Number(x)).filter(x => x > 0)
+              : [];
+            return Number(f?.can_edit || 0) === 1 && delUids.includes(uid);
+          });
+          return fields.length
+            ? { ...g, fields, can_edit: fields.some(f => Number(f?.can_edit || 0) === 1) ? 1 : 0 }
+            : null;
+        }).filter(Boolean);
       }
 
       state.child_groups = buildChildGroups();
@@ -7011,12 +7070,12 @@ function openDelegations(preselectGroupKey){
   if (DELEGATED_MODE) return; // delegierter darf hier nicht delegieren
   dlg.style.display = 'block';
 
-  // groups dropdown
+  // Main groups and their subgroups can be delegated independently.
   dlgGroup.innerHTML = '';
-  (state.groups||[]).forEach(g => {
+  delegationScopeOptions().forEach(scope => {
     const opt = document.createElement('option');
-    opt.value = g.key;
-    opt.textContent = g.title || g.key;
+    opt.value = scope.key;
+    opt.textContent = scope.label;
     dlgGroup.appendChild(opt);
   });
 
@@ -7061,12 +7120,12 @@ function closeDelegations(){
     if (!dlgDone) return;
     dlgDone.style.display = 'block';
 
-    // dropdown groups = state.groups (already delegated-only)
+    // Only scopes assigned to the current delegate are offered here.
     dlgDoneGroup.innerHTML = '';
-    (state.groups||[]).forEach(g => {
+    delegationScopeOptions(true).forEach(scope => {
       const opt = document.createElement('option');
-      opt.value = g.key;
-      opt.textContent = g.title || g.key;
+      opt.value = scope.key;
+      opt.textContent = scope.label;
       dlgDoneGroup.appendChild(opt);
     });
 
@@ -7084,8 +7143,7 @@ function closeDelegations(){
 
   function syncDoneForm(){
     const gk = String(dlgDoneGroup.value || '');
-    const g = (state.groups||[]).find(x => String(x.key) === gk);
-    const del = g && g.delegation ? g.delegation : null;
+    const del = delegationForScopeKey(gk);
     const mine = delegationSelfEntry(del);
 
     dlgDoneStatus.value = (mine && mine.status) ? String(mine.status) : 'open';
@@ -7096,8 +7154,8 @@ function closeDelegations(){
     if (!dlgDoneList) return;
     const rows = [];
 
-    (state.groups||[]).forEach(g => {
-      const del = g.delegation || null;
+    delegationScopeOptions(true).forEach(scope => {
+      const del = delegationForScopeKey(scope.key);
       const mine = delegationSelfEntry(del);
       const delNames = delegationNames(del);
       const statusLbl = (mine && mine.status === 'done') ? tEntry('status_done') : tEntry('status_open');
@@ -7106,10 +7164,10 @@ function closeDelegations(){
       rows.push(`
         <div class="del-row">
           <div class="l">
-            <div class="t">${esc(g.title || g.key)}</div>
+            <div class="t">${esc(scope.label)}</div>
             <div class="s">${delNames ? '→ ' + esc(delNames) + ' · ' : ''}${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
           </div>
-          <button class="btn secondary" type="button" data-done-edit="${esc(g.key)}">${esc(tEntry('delegation_edit'))}</button>
+          <button class="btn secondary" type="button" data-done-edit="${esc(scope.key)}">${esc(tEntry('delegation_edit'))}</button>
         </div>
       `);
     });
@@ -7126,8 +7184,7 @@ function closeDelegations(){
 
 function syncDelegationForm(){
   const gk = String(dlgGroup.value || '');
-  const g = (state.groups||[]).find(x => String(x.key) === gk);
-  const del = g && g.delegation ? g.delegation : null;
+  const del = delegationForScopeKey(gk);
 
   const ids = Array.isArray(del?.user_ids) ? del.user_ids.map(x => Number(x)).filter(x => x > 0) : [];
   dlgUsers.querySelectorAll('input[data-user-checkbox="1"]').forEach(cb => {
@@ -7140,8 +7197,8 @@ function syncDelegationForm(){
 function renderDelegationsList(){
   if (!dlgList) return;
   const rows = [];
-  (state.groups||[]).forEach(g => {
-    const del = g.delegation;
+  delegationScopeOptions().forEach(scope => {
+    const del = delegationForScopeKey(scope.key);
     const users = Array.isArray(del?.users) ? del.users : [];
     if (!users.length) return;
     const names = users.map(u => {
@@ -7154,10 +7211,10 @@ function renderDelegationsList(){
     rows.push(`
       <div class="del-row">
         <div class="l">
-          <div class="t">${esc(g.title || g.key)}</div>
+          <div class="t">${esc(scope.label)}</div>
           <div class="s">→ ${esc(names)} · ${esc(statusLbl)}${note ? ' · ' + esc(note) : ''}</div>
         </div>
-        <button class="btn secondary" type="button" data-clear-deleg="${esc(g.key)}">${esc(tEntry('delegation_clear'))}</button>
+        <button class="btn secondary" type="button" data-clear-deleg="${esc(scope.key)}">${esc(tEntry('delegation_clear'))}</button>
       </div>
     `);
   });
@@ -7196,7 +7253,7 @@ if (btnDelegationsTop) btnDelegationsTop.addEventListener('click', () => openDel
       const status = String(dlgDoneStatus.value || 'open');
       const note = String(dlgDoneNote.value || '');
 
-      await api('delegations_mark', {
+      const result = await api('delegations_mark', {
         class_id: state.class_id,
         period_label: state.period_label,
         group_key: gk,
@@ -7206,6 +7263,8 @@ if (btnDelegationsTop) btnDelegationsTop.addEventListener('click', () => openDel
 
       await loadClass(state.class_id);
       openDoneModal(gk);
+      const mailWarning = delegationMailWarning(result);
+      if (mailWarning) showErr(mailWarning);
     });
   }
 
@@ -7227,7 +7286,7 @@ if (dlgSave) {
     const status = String(dlgStatus.value || 'open');
     const note = String(dlgNote.value || '');
 
-    await api('delegations_save', {
+    const result = await api('delegations_save', {
       class_id: state.class_id,
       period_label: state.period_label,
       delegations: [{ group_key: gk, user_ids: userIds, status, note }]
@@ -7235,6 +7294,8 @@ if (dlgSave) {
 
     await loadClass(state.class_id);
     openDelegations();
+    const mailWarning = delegationMailWarning(result);
+    if (mailWarning) showErr(mailWarning);
   });
 }
 

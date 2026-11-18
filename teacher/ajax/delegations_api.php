@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../../bootstrap.php';
 require_once __DIR__ . '/../../shared/delegation_revoke.php';
 require_once __DIR__ . '/../../shared/delegation_notifications.php';
+require_once __DIR__ . '/../../shared/group_keys.php';
 require_teacher();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -30,12 +31,17 @@ function class_display(array $c): string {
 }
 
 function group_title_override(string $groupKey): string {
+  $parts = app_group_scope_parts_from_key($groupKey);
+  $mainKey = (string)$parts['group'];
+  $subgroup = (string)$parts['subgroup'];
   $cfg = app_config();
   $map = $cfg['student']['group_titles'] ?? [];
-  if (!is_array($map)) return $groupKey;
-  $t = $map[$groupKey] ?? null;
+  if (!is_array($map)) $map = [];
+  $t = $map[$mainKey] ?? null;
   $t = is_string($t) ? trim($t) : '';
-  return $t !== '' ? $t : $groupKey;
+  $label = $t !== '' ? $t : $mainKey;
+  if ($subgroup !== '') $label .= ' › ' . $subgroup;
+  return $label !== '' ? $label : $groupKey;
 }
 
 function normalize_period_label(?string $s): string {
@@ -339,6 +345,8 @@ try {
       ]);
     }
 
+    $mailExpected = count($newAssignmentUserIds);
+    $mailSent = 0;
     if ($newAssignmentUserIds) {
       $events = [];
       foreach ($newAssignmentUserIds as $newUserId) {
@@ -351,10 +359,10 @@ try {
           'note' => $note,
         ];
       }
-      notify_delegation_assignments($pdo, $events, $userId);
+      $mailSent = notify_delegation_assignments($pdo, $events, $userId);
     }
 
-    json_out(['ok'=>true]);
+    json_out(['ok'=>true, 'mail_notification'=>['expected'=>$mailExpected, 'sent'=>$mailSent]]);
   }
 
   if ($action === 'mark') {
@@ -388,10 +396,13 @@ try {
     if (!$previousDelegation) throw new RuntimeException('Nicht deine Delegation.');
 
     upsert_class_group_delegation($pdo, $classId, $schoolYear, $periodLabel, $groupKey, $userId, $status, $note, $userId);
+    $mailExpected = 0;
+    $mailSent = 0;
     if (delegation_status_became_done((string)($previousDelegation['status'] ?? ''), $status)) {
       $delegatorUserId = (int)($previousDelegation['created_by_user_id'] ?? 0);
       if ($delegatorUserId <= 0) $delegatorUserId = (int)($previousDelegation['updated_by_user_id'] ?? 0);
-      notify_delegation_completion($pdo, [
+      $mailExpected = ($delegatorUserId > 0 && $delegatorUserId !== $userId) ? 1 : 0;
+      $mailSent = notify_delegation_completion($pdo, [
         'delegator_user_id' => $delegatorUserId,
         'delegate_user_id' => $userId,
         'class_id' => $classId,
@@ -399,9 +410,9 @@ try {
         'period_label' => $periodLabel,
         'group_key' => $groupKey,
         'note' => $note,
-      ], $userId);
+      ], $userId) ? 1 : 0;
     }
-    json_out(['ok'=>true]);
+    json_out(['ok'=>true, 'mail_notification'=>['expected'=>$mailExpected, 'sent'=>$mailSent]]);
   }
 
   throw new RuntimeException('Unbekannte action.');

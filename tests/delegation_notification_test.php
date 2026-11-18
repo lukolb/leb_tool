@@ -30,6 +30,15 @@ delegation_notification_assert(
   !delegation_status_became_done('done', 'done') && !delegation_status_became_done('open', 'open'),
   'unchanged delegation states must not trigger completion emails'
 );
+delegation_notification_assert(
+  delegation_notification_recipient_count([
+    ['user_id' => 2],
+    ['user_id' => 2],
+    ['user_id' => 3],
+    ['user_id' => 0],
+  ]) === 2,
+  'mail feedback must count distinct valid recipients'
+);
 
 $assignmentHtml = build_delegation_assignment_email('Ada', [[
   'group_label' => 'Deutsch',
@@ -68,6 +77,16 @@ foreach ([$entryApi, $delegationsApi] as $source) {
       && str_contains($source, 'delegation_status_became_done'),
     'every delegation endpoint must send assignment and completion notifications without duplicates'
   );
+  delegation_notification_assert(
+    str_contains($source, 'mail_notification'),
+    'every delegation endpoint must report whether the mail transport accepted the notifications'
+  );
 }
+
+$bootstrap = file_get_contents($root . '/bootstrap.php');
+delegation_notification_assert(
+  is_string($bootstrap) && substr_count($bootstrap, '$sent = mail(') >= 2,
+  'mail delivery must retry without custom transport parameters after an explicit transport rejection'
+);
 
 fwrite(STDOUT, "delegation_notification_test: OK\n");

@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{17.11.2026}
+\newcommand{\HandbuchStand}{18.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -442,6 +442,8 @@ Bearbeiten & Öffnet Feldtypen, Gruppen, Rechte, Pflichtstatus, Optionslisten, D
 \hline
 Mapping & Verknüpft Formularfelder und Systemplatzhalter für die Ausgabe.\\
 \hline
+Probelauf & Öffnet eine vollständig flüchtige Testeingabe für Stammdaten, AGs und sämtliche Berichtsfelder. Anschließend wird die endgültig ausgefüllte PDF erzeugt, ohne Schüler-, Klassen- oder Berichtsdaten zu speichern.\\
+\hline
 Umbenennen & Ändert die sichtbare Bezeichnung, nicht die gespeicherten Berichtsinhalte.\\
 \hline
 Löschen & Ist geschützt, wenn Berichte die Vorlage verwenden. Vor einer bestätigten Löschung Abhängigkeiten und Historie prüfen.\\
@@ -451,6 +453,28 @@ Löschen & Ist geschützt, wenn Berichte die Vorlage verwenden. Vor einer bestä
 \ScreenshotFigure{screenshots/admin_template.png}{Template-Upload}
 
 \HintBox{Nach dem Upload folgt die Feldextraktion in Abschnitt~\ref{sec:felder-extrahieren}. Die extrahierten Felder werden danach gemäß Abschnitt~\ref{sec:felder-gruppieren} fachlich gruppiert und mit Rechten versehen.}
+
+\subsection{Template-Probelauf ohne Datenspeicherung}\label{sec:template-probelauf}
+\index{Template!Probelauf}\index{Berichtsvorschau!Template-Probelauf}\index{Testdaten!flüchtig}
+\index{AG!Probelauf}\index{Mapping!Probelauf}\index{PDF!Probelauf}
+Mit dem Probelauf prüft ein Admin eine fertig konfigurierte Vorlage, bevor sie einer Klasse zugeordnet oder mit echten Schülerdaten verwendet wird. Der Ablauf nutzt die reguläre PDF-Erzeugung der Berichtsvorschau, legt aber weder ein Schülerprofil noch eine Klasse, eine Berichtsinstanz, AG-Zuordnungen oder Feldwerte an.
+
+\begin{enumerate}
+  \item Unter \enquote{Template-Vorbereitung \(\rightarrow\) Templates} im Aktionsmenü der gewünschten Vorlage \enquote{Probelauf} wählen.
+  \item Oben kontrollieren, ob Name und Version der richtigen Vorlage angezeigt werden. Über die Template-Auswahl kann ohne Rückkehr zur Liste zu einer anderen Vorlage gewechselt werden; dabei werden die bisherigen Testeingaben verworfen.
+  \item Unter \enquote{Schüler-Stammdaten} Vorname, Nachname, Geburtsdatum, Fehlzeiten und alle administrativ angelegten zusätzlichen Schülerfelder testweise ausfüllen.
+  \item Unter \enquote{Klassen- und Berichtszeitraum} Schuljahr, Halbjahr, Klassenstufe, Klassenbezeichnung und bei Bedarf einen alternativen Klassennamen eintragen.
+  \item Unter \enquote{Arbeitsgemeinschaften (AGs)} dieselben Katalogeinträge auswählen, die auch Lehrkräften zur Verfügung stehen. Der daraus erzeugte AG-Satz wird nach dem Start der Vorschau angezeigt und in zugeordnete Systemfelder eingesetzt.
+  \item Unter \enquote{Berichtsfelder} Lehrkraft-, Schüler- und Klassenfelder ausfüllen. Automatische Felder sind gekennzeichnet und werden aus Stammdaten, AG-Auswahl, Feldreferenzen, Bedingungen und Mapping-Vorlagen berechnet.
+  \item \enquote{Berichtsvorschau anzeigen} wählen. Das Tool füllt das AcroForm, aktualisiert Schriften und Radio-Kreuze und erzeugt daraus die endgültige PDF. Angezeigt wird diese erzeugte PDF, nicht eine HTML-Ebene über der leeren Vorlage.
+  \item Namen, Datumsformat, Klasse, AG-Satz, Optionswerte, Kommentare, Schüler-/Lehrkraftkreuze und Seitenumbrüche in der Vorschau vollständig kontrollieren.
+  \item Bei Bedarf unter \enquote{Export-Variante} dieselben regulären Ausgabeformen wie im Klassenexport wählen: ZIP-Export, Gesamt-PDF, Einzel-Export, Broschürendruck (einzeln) oder Broschürendruck (Klasse). Da der Probelauf genau einen flüchtigen Testschüler enthält, umfassen ZIP und Klassenvarianten jeweils diesen einen Testbericht; Dateiaufbau, Reduzierung auf nicht editierbare Felder und Broschürenanordnung folgen dennoch der gewählten regulären Variante.
+  \item \enquote{Export starten} wählen. Die heruntergeladene Testdatei wird ausschließlich im Browser aus den aktuellen Eingaben erzeugt und nicht als Bericht auf dem Server abgelegt.
+\end{enumerate}
+
+\WarnBox{Der Probelauf besitzt keine Speicherfunktion und keine automatische Sicherung. Beim Wechsel der Vorlage, Neuladen oder Schließen der Seite gehen alle Testeingaben verloren. Das ist beabsichtigt und schützt davor, Probedaten mit echten Schüler- oder Berichtsdaten zu vermischen.}
+
+\HintBox{Der Probelauf prüft die Vorlage und PDF-Erzeugung ohne Produktivdaten. Vor einer schulweiten Umstellung zusätzlich einen vollständigen Ablauf mit einer vorgesehenen Testklasse prüfen, damit auch Rechte, Delegationen und Freigaben kontrolliert sind.}
 
 \subsection{Felder extrahieren (Formularfelder auslesen)}\label{sec:felder-extrahieren}\index{Feldextraktion}
 \index{Feldextraktion!Schülerrechte}\index{Feldextraktion!Lehrkraftrechte}
@@ -784,7 +808,7 @@ Klasse löschen & Entfernt die Klassenzuordnung nach exakter Sicherheitsbestäti
 \end{longtable}
 \normalsize
 
-\HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie daher neue Vorlagen zunächst an einer Testklasse, bevor Sie produktive Klassen umstellen.}
+\HintBox{Änderungen am Template wirken sofort auf alle zugeordneten Klassen. Prüfen Sie die PDF-Erzeugung zunächst mit dem flüchtigen Probelauf aus Abschnitt~\ref{sec:template-probelauf} und anschließend den vollständigen Rechte- und Freigabeablauf in einer Testklasse, bevor Sie produktive Klassen umstellen.}
 
 \HintBox{Feldzuordnungen können klassen- oder templatebezogen abweichen. Prüfen Sie nach Umstellungen, ob alle Klassen die korrekten Felder und Gruppen verwenden.}
 
@@ -1423,9 +1447,9 @@ Delegierte Lehrkräfte dürfen diesen Import nicht durchführen.
 \index{Delegation!Alle beenden}
 \begin{enumerate}
   \item In der Eingabeseite \enquote{Delegieren} wählen.
-  \item Gruppe/Fachbereich auswählen und eine oder mehrere Lehrkräfte markieren.
+  \item Eine ganze Gruppe/Fachbereich oder gezielt eine eingerückte Untergruppe auswählen und eine oder mehrere Lehrkräfte markieren. Eine Delegation der Hauptgruppe gilt für alle enthaltenen Felder; eine zusätzlich gesetzte Untergruppen-Delegation hat für deren Felder Vorrang.
   \item Status \enquote{offen} verwenden und eine kurze Arbeitsnotiz mit Umfang und Termin ergänzen.
-  \item Speichern. Der Bereich erscheint bei den Empfängern unter \enquote{Delegationen}; neu hinzugefügte Empfänger erhalten zusätzlich eine E-Mail mit Klasse, Bereich und Notiz.
+  \item Speichern. Der Bereich erscheint bei den Empfängern unter \enquote{Delegationen}; neu hinzugefügte Empfänger erhalten zusätzlich eine E-Mail mit Klasse, Gruppe beziehungsweise Untergruppe und Notiz. Kann der Mailserver eine Benachrichtigung nicht annehmen, bleibt die Delegation gespeichert und die Oberfläche zeigt sofort einen deutlichen Hinweis zur Prüfung von Empfängeradresse und Mail-Konfiguration.
   \item Empfänger öffnet die Delegation und bearbeitet nur den freigegebenen Bereich. Falls der Admin den Lesekontext aktiviert hat, blendet \enquote{Andere Fachbereiche anzeigen} die übrigen Bereiche ausschließlich schreibgeschützt ein oder aus.
   \item Über \enquote{Delegation abschließen} den Status auf \enquote{erledigt} setzen; ein Kommentar kann die Rückgabe erläutern. Beim ersten Wechsel von \enquote{offen} zu \enquote{erledigt} wird die delegierende Person per E-Mail benachrichtigt.
   \item Klassenbesitzer prüft die Beiträge. Bei Korrekturbedarf Status wieder öffnen; nach Abschluss Delegation nicht vorschnell löschen.
@@ -1434,6 +1458,8 @@ Delegierte Lehrkräfte dürfen diesen Import nicht durchführen.
 \begin{tabularx}{\textwidth}{|p{0.26\textwidth}|X|}
 \hline
 Gruppe & Fachlicher Bereich für die ganze Klasse; Delegationen sind nicht auf einen einzelnen Schüler begrenzt.\\
+\hline
+Untergruppe & Gezielter Teil einer Gruppe. Sie kann unabhängig delegiert werden; dadurch bleiben die übrigen Untergruppen bei der Klassenlehrkraft.\\
 \hline
 Delegiert an & Eine oder mehrere Lehrkräfte. Beiträge bleiben den Bearbeitern zuordenbar.\\
 \hline
@@ -2150,7 +2176,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
-  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, differenzierte Delegationsrückgaben und E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
+  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
 
@@ -2173,7 +2199,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 17.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 18.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}

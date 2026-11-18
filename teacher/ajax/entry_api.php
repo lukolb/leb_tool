@@ -874,6 +874,10 @@ function group_key_aliases_from_meta(array $meta): array {
   return app_group_key_aliases_from_meta($meta);
 }
 
+function delegation_key_aliases_from_meta(array $meta): array {
+  return app_delegation_key_aliases_from_meta($meta);
+}
+
 function group_key_aliases_from_key(string $groupKey): array {
   return app_group_key_aliases_from_label($groupKey);
 }
@@ -894,7 +898,7 @@ function delegation_from_map_for_aliases(array $delegations, array $aliases): ?a
 }
 
 function delegation_from_map_for_meta(array $delegations, array $meta): ?array {
-  return delegation_from_map_for_aliases($delegations, group_key_aliases_from_meta($meta));
+  return delegation_from_map_for_aliases($delegations, delegation_key_aliases_from_meta($meta));
 }
 
 function label_for_lang(?string $labelDe, ?string $labelEn, string $lang): string {
@@ -1075,6 +1079,14 @@ function delegated_users_for_group(PDO $pdo, int $classId, string $schoolYear, s
   return $out;
 }
 
+function delegated_users_for_field_meta(PDO $pdo, int $classId, string $schoolYear, string $periodLabel, array $meta): array {
+  foreach (delegation_key_aliases_from_meta($meta) as $groupKey) {
+    $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, (string)$groupKey);
+    if ($assigned) return $assigned;
+  }
+  return [];
+}
+
 function user_is_class_teacher(PDO $pdo, int $userId, int $classId): bool {
   if ($userId <= 0 || $classId <= 0) return false;
   $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
@@ -1105,7 +1117,7 @@ function can_user_edit_field(PDO $pdo, array $currentUser, int $classId, string 
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
 
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
+  $assigned = delegated_users_for_field_meta($pdo, $classId, $schoolYear, $periodLabel, $meta);
   $isClassTeacher = user_is_class_teacher($pdo, $uid, $classId);
   if (!$assigned) return $isClassTeacher;
 
@@ -1133,7 +1145,7 @@ function can_user_edit_field_in_view(
   if (($currentUser['role'] ?? '') === 'admin') return true;
   $uid = (int)($currentUser['id'] ?? 0);
   if ($uid <= 0) return false;
-  $assigned = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, group_key_aliases_from_meta($meta));
+  $assigned = delegated_users_for_field_meta($pdo, $classId, $schoolYear, $periodLabel, $meta);
   return $assigned && in_array($uid, $assigned, true);
 }
 
@@ -2359,6 +2371,8 @@ try {
         'options' => $optsTeacher,
         'subgroup' => $gParts['subgroup'],
         'subgroup_title_en' => (string)($meta['subgroup_title_en'] ?? ''),
+        'delegation_scope_key' => app_group_scope_key($gKey, (string)$gParts['subgroup']),
+        'delegation' => delegation_from_map_for_meta($delegations, $meta),
         'can_edit' => $canEditField ? 1 : 0,
         'snippet_categories' => snippet_categories_from_meta($meta),
         'snippet_category_ids' => snippet_category_ids_from_meta($meta),
@@ -2711,14 +2725,6 @@ try {
     $cfg = app_config();
     $delegationCfg = $cfg['delegation'] ?? [];
     $delegateShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
-    $delegateGroupKeys = [];
-    if ($delegateOnly && $delegations) {
-      foreach ($delegations as $gk => $del) {
-        $uids = isset($del['user_ids']) && is_array($del['user_ids']) ? $del['user_ids'] : [];
-        if (in_array($userId, $uids, true)) $delegateGroupKeys[] = (string)$gk;
-      }
-    }
-
     $ri = find_or_create_report_instance_for_student($pdo, $templateId, $studentId, $schoolYear, $periodLabel, $userId);
     $reportId = (int)($ri['id'] ?? 0);
     $classReportInstanceId = find_or_create_class_report_instance($pdo, $templateId, $classId, $schoolYear, $periodLabel);
@@ -2758,7 +2764,6 @@ try {
       $lang,
       $childFieldByBase,
       $delegateOnly,
-      $delegateGroupKeys,
       $delegateShowOtherFieldsReadonly,
       $delegatedView,
       $periodLabel,
@@ -2772,15 +2777,6 @@ try {
     ): void {
       $meta = meta_read($f['meta_json'] ?? null);
       $isSystemBound = is_system_bound($meta);
-      $groupAliases = group_key_aliases_from_meta($meta);
-      if (
-        $delegateOnly
-        && !$delegateShowOtherFieldsReadonly
-        && !$isSystemBound
-        && !array_intersect($groupAliases, $delegateGroupKeys)
-      ) {
-        return;
-      }
       $childFieldId = 0;
       if (!$forceChildOnly) {
         $base = base_field_key((string)($f['field_name'] ?? ''));
@@ -2836,6 +2832,9 @@ try {
           $isMultiline,
           $delegatedView
         );
+      }
+      if ($delegateOnly && !$delegateShowOtherFieldsReadonly && !$isSystemBound && !$canEditField) {
+        return;
       }
 
       $isClassField = is_class_field($meta);
@@ -3513,12 +3512,17 @@ if ($action === 'delegations_save') {
       throw $e2;
     }
 
-    if ($assignmentNotifications) {
-      notify_delegation_assignments($pdo, $assignmentNotifications, $userId);
-    }
+    $mailExpected = delegation_notification_recipient_count($assignmentNotifications);
+    $mailSent = $assignmentNotifications
+      ? notify_delegation_assignments($pdo, $assignmentNotifications, $userId)
+      : 0;
 
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel);
-    json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
+    json_out([
+      'ok'=>true,
+      'delegations'=>array_values($delegations),
+      'mail_notification'=>['expected'=>$mailExpected, 'sent'=>$mailSent],
+    ]);
   }
   
     // Delegated teachers: only update status/note for delegations assigned to them.
@@ -3589,10 +3593,13 @@ if ($action === 'delegations_save') {
       $userId
     );
 
+    $mailExpected = 0;
+    $mailSent = 0;
     if (delegation_status_became_done($previousDelegation['status'] ?? null, $status)) {
       $delegatorUserId = (int)($previousDelegation['created_by_user_id'] ?? 0);
       if ($delegatorUserId <= 0) $delegatorUserId = (int)($previousDelegation['updated_by_user_id'] ?? 0);
-      notify_delegation_completion($pdo, [
+      $mailExpected = ($delegatorUserId > 0 && $delegatorUserId !== $userId) ? 1 : 0;
+      $mailSent = notify_delegation_completion($pdo, [
         'delegator_user_id' => $delegatorUserId,
         'delegate_user_id' => $userId,
         'class_id' => $classId,
@@ -3600,11 +3607,15 @@ if ($action === 'delegations_save') {
         'period_label' => $periodLabel,
         'group_key' => $storedGroupKey,
         'note' => $note,
-      ], $userId);
+      ], $userId) ? 1 : 0;
     }
 
     $delegations = load_class_group_delegations($pdo, $classId, $schoolYear, $periodLabel, $canManageDelegations ? 0 : $userId);
-    json_out(['ok'=>true, 'delegations'=>array_values($delegations)]);
+    json_out([
+      'ok'=>true,
+      'delegations'=>array_values($delegations),
+      'mail_notification'=>['expected'=>$mailExpected, 'sent'=>$mailSent],
+    ]);
   }
 
   if ($action === 'apply_lock_value_to_class') {
@@ -3836,7 +3847,6 @@ if ($action === 'delegations_save') {
     $schoolYear = (string)($ri['school_year'] ?? '');
     $periodLabelDeleg = normalize_class_period_label($classPeriodLabel);
 
-    $gKey = group_key_from_meta($meta);
     $type = (string)($frow['field_type'] ?? '');
     $isMultiline = (int)($frow['is_multiline'] ?? 0);
     if (!can_user_edit_field_in_view($pdo, $u, $classId, $schoolYear, $periodLabelDeleg, $meta, $type, $isMultiline, $delegatedView)) {
@@ -3845,7 +3855,7 @@ if ($action === 'delegations_save') {
     $valueTextInput = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     $valueJson = null;
-    $assignedUsers = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabelDeleg, $gKey);
+    $assignedUsers = delegated_users_for_field_meta($pdo, $classId, $schoolYear, $periodLabelDeleg, $meta);
     $delegateUserId = count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0;
 
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {
@@ -3965,7 +3975,6 @@ if ($action === 'delegations_save') {
     // ✅ Delegation serverseitig erzwingen
     $schoolYear = (string)($ri['school_year'] ?? '');
     $periodLabel = (string)($ri['period_label'] ?? 'Standard');
-    $gKey = group_key_from_meta($meta);
     $type = (string)($frow['field_type'] ?? '');
     $isMultiline = (int)($frow['is_multiline'] ?? 0);
     if (!can_user_edit_field_in_view($pdo, $u, $classId, $schoolYear, $periodLabel, $meta, $type, $isMultiline, $delegatedView)) {
@@ -3975,7 +3984,7 @@ if ($action === 'delegations_save') {
 
     // ✅ immer initialisieren (sonst Undefined variable)
     $valueJson = null;
-    $assignedUsers = delegated_users_for_group($pdo, $classId, $schoolYear, $periodLabel, $gKey);
+    $assignedUsers = delegated_users_for_field_meta($pdo, $classId, $schoolYear, $periodLabel, $meta);
     $delegateUserId = count($assignedUsers) === 1 ? (int)$assignedUsers[0] : 0;
 
     if ($assignedUsers && is_free_text_field($type, $isMultiline)) {

@@ -1241,6 +1241,16 @@ function ensure_schema(PDO $pdo): void {
   $did = true;
 
   try {
+    // Subgroup delegation keys contain "main group::subgroup" and therefore
+    // need more room than the historic main-group-only value.
+    if (db_has_table($pdo, 'class_group_delegations') && db_column_character_length($pdo, 'class_group_delegations', 'group_key') < 190) {
+      try {
+        $pdo->exec("ALTER TABLE class_group_delegations MODIFY COLUMN group_key VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL");
+      } catch (Throwable $e) {
+        // Keep the rest of the additive migrations available on restricted hosting.
+      }
+    }
+
     // --- classes: add period_label + grade_level + label (keeps legacy `name`)
     if (!db_has_column($pdo, 'classes', 'period_label')) {
       $pdo->exec("ALTER TABLE classes ADD COLUMN period_label VARCHAR(50) NOT NULL DEFAULT 'Standard' AFTER school_year");
@@ -2111,6 +2121,12 @@ function db_has_column(PDO $pdo, string $table, string $column): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?");
   $stmt->execute([$table, $column]);
   return (int)($stmt->fetch()['c'] ?? 0) > 0;
+}
+
+function db_column_character_length(PDO $pdo, string $table, string $column): int {
+  $stmt = $pdo->prepare("SELECT CHARACTER_MAXIMUM_LENGTH AS max_len FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=? LIMIT 1");
+  $stmt->execute([$table, $column]);
+  return (int)($stmt->fetch()['max_len'] ?? 0);
 }
 
 function db_has_index(PDO $pdo, string $table, string $index): bool {
@@ -3042,6 +3058,19 @@ function send_email(string $to, string $subject, string $htmlBody): bool {
     $message['headers'],
     $additionalParams
   );
+  if (!$sent) {
+    // Some shared hosts reject custom sendmail parameters even though the same
+    // locally configured sender is accepted without them. Retry only after the
+    // transport explicitly rejected the first attempt, so successful sends are
+    // never duplicated.
+    error_log('LEB mail transport rejected the envelope-sender attempt for recipient ' . $message['to'] . '; retrying without custom parameters.');
+    $sent = mail(
+      $message['to'],
+      $message['subject'],
+      $message['body'],
+      $message['headers']
+    );
+  }
   if (!$sent) error_log('LEB mail was rejected by the local mail transport for recipient ' . $message['to']);
   return $sent;
 }

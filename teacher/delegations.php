@@ -27,6 +27,7 @@ $badgeRemoved = t('teacher.delegations.badge.removed', 'aufgehoben');
 $statusLabel = t('teacher.delegations.status_label', 'Status:');
 $delegatedLabel = t('teacher.delegations.delegated_label', 'Delegiert an:');
 $clearShort = t('teacher.delegations.modal.clear_short', 'aufheben');
+$mailFailed = t('teacher.delegations.mail_failed', 'Die Änderung wurde gespeichert, aber {failed} von {expected} E-Mail-Benachrichtigungen konnten vom Mailserver nicht angenommen werden.');
 
 render_teacher_header($pageTitle);
 ?>
@@ -118,6 +119,7 @@ render_teacher_header($pageTitle);
   const statusLabel = <?=json_encode($statusLabel)?>;
   const delegatedLabel = <?=json_encode($delegatedLabel)?>;
   const clearShort = <?=json_encode($clearShort)?>;
+  const mailFailed = <?=json_encode($mailFailed)?>;
 
   const errBox = document.getElementById('errBox');
   const errMsg = document.getElementById('errMsg');
@@ -136,6 +138,14 @@ render_teacher_header($pageTitle);
   function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
   function showErr(msg){ errMsg.textContent = msg; errBox.style.display='block'; }
   function clearErr(){ errBox.style.display='none'; errMsg.textContent=''; }
+  function mailWarning(result){
+    const expected = Math.max(0, Number(result?.mail_notification?.expected || 0));
+    const sent = Math.max(0, Number(result?.mail_notification?.sent || 0));
+    if (expected <= sent) return '';
+    return mailFailed
+      .replace('{failed}', String(expected - sent))
+      .replace('{expected}', String(expected));
+  }
 
   async function api(action, payload){
     const res = await fetch(apiUrl, {
@@ -356,7 +366,7 @@ render_teacher_header($pageTitle);
       if (!editCtx) return;
       try {
         if (!editCtx.can_assign) {
-          await api('mark', {
+          var saveResult = await api('mark', {
             class_id: editCtx.class_id,
             period_label: editCtx.period_label,
             group_key: editCtx.group_key,
@@ -367,7 +377,7 @@ render_teacher_header($pageTitle);
           const userIds = Array.from(dlgUsers.querySelectorAll('input[data-user-checkbox="1"]:checked'))
             .map(cb => Number(cb.value || 0))
             .filter(v => v > 0);
-          await api('save', {
+          var saveResult = await api('save', {
             class_id: editCtx.class_id,
             period_label: editCtx.period_label,
             group_key: editCtx.group_key,
@@ -382,6 +392,8 @@ render_teacher_header($pageTitle);
         users = j.users || users;
         closeModal();
         render();
+        const warning = mailWarning(saveResult);
+        if (warning) showErr(warning);
       } catch (e) {
         showErr(e.message || String(e));
       }

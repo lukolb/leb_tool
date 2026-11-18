@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/group_keys.php';
+
 function delegation_notification_escape(string $value): string {
   return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
@@ -20,6 +22,16 @@ function delegation_status_became_done(?string $previousStatus, string $nextStat
     && strtolower(trim($nextStatus)) === 'done';
 }
 
+function delegation_notification_recipient_count(array $events): int {
+  $ids = [];
+  foreach ($events as $event) {
+    if (!is_array($event)) continue;
+    $id = (int)($event['user_id'] ?? 0);
+    if ($id > 0) $ids[$id] = true;
+  }
+  return count($ids);
+}
+
 function delegation_notification_period_label(string $periodLabel, string $lang): string {
   $period = normalize_class_period_label($periodLabel);
   if ($lang === 'en') return $period === 'H2' ? '2nd semester' : '1st semester';
@@ -36,14 +48,19 @@ function delegation_notification_class_label(array $class): string {
 
 function delegation_notification_group_label(string $groupKey, string $lang): string {
   $groupKey = trim($groupKey);
+  $parts = app_group_scope_parts_from_key($groupKey);
+  $mainKey = (string)$parts['group'];
+  $subgroup = (string)$parts['subgroup'];
   $cfg = app_config();
   $bucket = $lang === 'en' ? 'group_titles_en' : 'group_titles';
   $map = $cfg['student'][$bucket] ?? [];
+  $label = $mainKey;
   if (is_array($map)) {
-    $mapped = trim((string)($map[$groupKey] ?? ''));
-    if ($mapped !== '') return $mapped;
+    $mapped = trim((string)($map[$mainKey] ?? ''));
+    if ($mapped !== '') $label = $mapped;
   }
-  return $groupKey;
+  if ($subgroup !== '') $label .= ' › ' . $subgroup;
+  return $label !== '' ? $label : $groupKey;
 }
 
 function delegation_notification_recipient(PDO $pdo, int $userId): ?array {
@@ -190,7 +207,15 @@ function notify_delegation_assignments(PDO $pdo, array $events, int $actorUserId
   foreach ($byRecipient as $recipientId => $recipientEvents) {
     try {
       $recipient = delegation_notification_recipient($pdo, (int)$recipientId);
-      if (!$recipient) continue;
+      if (!$recipient) {
+        audit('delegation_assignment_email', $actorUserId, [
+          'recipient_user_id' => (int)$recipientId,
+          'assignment_count' => count($recipientEvents),
+          'sent' => false,
+          'reason' => 'recipient_email_unavailable',
+        ]);
+        continue;
+      }
       $lang = (string)$recipient['lang'];
       $assignments = [];
       foreach ($recipientEvents as $event) {
@@ -225,6 +250,15 @@ function notify_delegation_assignments(PDO $pdo, array $events, int $actorUserId
       if ($ok) $sent++;
     } catch (Throwable $e) {
       error_log('[delegation assignment mail] ' . $e->getMessage());
+      try {
+        audit('delegation_assignment_email', $actorUserId, [
+          'recipient_user_id' => (int)$recipientId,
+          'assignment_count' => count($recipientEvents),
+          'sent' => false,
+          'reason' => 'mail_exception',
+        ]);
+      } catch (Throwable $ignored) {
+      }
     }
   }
   return $sent;
@@ -238,7 +272,17 @@ function notify_delegation_completion(PDO $pdo, array $event, int $actorUserId):
   try {
     $recipient = delegation_notification_recipient($pdo, $delegatorId);
     $class = delegation_notification_class($pdo, (int)($event['class_id'] ?? 0));
-    if (!$recipient || !$class) return false;
+    if (!$recipient || !$class) {
+      audit('delegation_completion_email', $actorUserId, [
+        'recipient_user_id' => $delegatorId,
+        'delegate_user_id' => $delegateId,
+        'class_id' => (int)($event['class_id'] ?? 0),
+        'group_key' => (string)($event['group_key'] ?? ''),
+        'sent' => false,
+        'reason' => !$recipient ? 'recipient_email_unavailable' : 'class_unavailable',
+      ]);
+      return false;
+    }
     $lang = (string)$recipient['lang'];
     $completion = [
       'class_label' => delegation_notification_class_label($class),
@@ -266,6 +310,17 @@ function notify_delegation_completion(PDO $pdo, array $event, int $actorUserId):
     return $ok;
   } catch (Throwable $e) {
     error_log('[delegation completion mail] ' . $e->getMessage());
+    try {
+      audit('delegation_completion_email', $actorUserId, [
+        'recipient_user_id' => $delegatorId,
+        'delegate_user_id' => $delegateId,
+        'class_id' => (int)($event['class_id'] ?? 0),
+        'group_key' => (string)($event['group_key'] ?? ''),
+        'sent' => false,
+        'reason' => 'mail_exception',
+      ]);
+    } catch (Throwable $ignored) {
+    }
     return false;
   }
 }

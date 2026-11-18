@@ -48,6 +48,27 @@ function app_group_key_from_meta(array $meta): string {
   return app_group_label_from_meta($meta);
 }
 
+function app_group_scope_key(string $group, string $subgroup = ''): string {
+  $group = trim($group);
+  $subgroup = trim($subgroup);
+  if ($group === '') $group = 'Allgemein';
+  return $subgroup !== '' ? ($group . '::' . $subgroup) : $group;
+}
+
+function app_group_scope_key_from_meta(array $meta): string {
+  $parts = app_group_parts_from_meta($meta);
+  return app_group_scope_key((string)$parts['group'], (string)$parts['subgroup']);
+}
+
+function app_group_scope_parts_from_key(string $key): array {
+  $key = trim($key);
+  $parts = explode('::', $key, 2);
+  return [
+    'group' => trim((string)($parts[0] ?? '')),
+    'subgroup' => trim((string)($parts[1] ?? '')),
+  ];
+}
+
 function app_legacy_group_key_from_label(string $label): string {
   $label = trim($label);
   if ($label === '') return '';
@@ -58,6 +79,17 @@ function app_legacy_group_key_from_label(string $label): string {
 }
 
 function app_group_key_aliases_from_label(string $label): array {
+  $scope = app_group_scope_parts_from_key($label);
+  $subgroup = (string)$scope['subgroup'];
+  if ($subgroup !== '') {
+    $aliases = [];
+    foreach ([(string)$scope['group'], app_legacy_group_key_from_label((string)$scope['group'])] as $groupCandidate) {
+      $candidate = app_group_scope_key($groupCandidate, $subgroup);
+      if ($candidate !== '' && !in_array($candidate, $aliases, true)) $aliases[] = $candidate;
+    }
+    return $aliases;
+  }
+
   $aliases = [];
   foreach ([$label, app_legacy_group_key_from_label($label)] as $candidate) {
     $candidate = trim((string)$candidate);
@@ -68,6 +100,30 @@ function app_group_key_aliases_from_label(string $label): array {
 
 function app_group_key_aliases_from_meta(array $meta): array {
   return app_group_key_aliases_from_label(app_group_key_from_meta($meta));
+}
+
+/**
+ * Delegation lookup order for a field: its subgroup first, then the main group.
+ * This lets a subgroup assignment override a broader main-group assignment while
+ * preserving all historic main-group delegation rows.
+ */
+function app_delegation_key_aliases_from_meta(array $meta): array {
+  $parts = app_group_parts_from_meta($meta);
+  $group = (string)$parts['group'];
+  $subgroup = (string)$parts['subgroup'];
+  $aliases = [];
+
+  if ($subgroup !== '') {
+    foreach (app_group_key_aliases_from_label($group) as $groupAlias) {
+      $candidate = app_group_scope_key($groupAlias, $subgroup);
+      if (!in_array($candidate, $aliases, true)) $aliases[] = $candidate;
+    }
+  }
+
+  foreach (app_group_key_aliases_from_label($group) as $candidate) {
+    if (!in_array($candidate, $aliases, true)) $aliases[] = $candidate;
+  }
+  return $aliases;
 }
 
 function app_group_key_matches_map(array $map, array $aliases): bool {
