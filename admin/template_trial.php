@@ -217,7 +217,7 @@ render_admin_header(t('admin.template_trial.title'));
               <h3 class="trial-group-title"><?=h((string)$group['title'])?></h3>
               <?php foreach ($group['subgroups'] as $subgroup): ?>
                 <div class="trial-subgroup" data-trial-subgroup="<?=h((string)$subgroup['key'])?>">
-                  <h4 class="trial-subgroup-title"><?=h((string)($subgroup['title'] !== '' ? $subgroup['title'] : t('admin.template_trial.general_subgroup')))?></h4>
+                  <h4 class="trial-subgroup-title"><?=h((string)($subgroup['title'] !== '' ? $subgroup['title'] : (ui_lang() === 'en' ? 'General fields' : 'Allgemeine Felder')))?></h4>
                   <div class="trial-grid">
                     <?php foreach ($subgroup['fields'] as $field):
                       $fid=(int)$field['id']; $type=(string)$field['field_type']; $system=(int)$field['system_bound']===1;
