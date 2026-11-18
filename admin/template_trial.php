@@ -47,6 +47,30 @@ if ($templateId > 0) {
   }
 }
 
+$fieldGroups = [];
+if (is_array($definition)) {
+  foreach (($definition['fields'] ?? []) as $field) {
+    $groupKey = trim((string)($field['group_key'] ?? ''));
+    if ($groupKey === '') $groupKey = 'Allgemein';
+    $subgroupKey = trim((string)($field['subgroup'] ?? ''));
+    if (!isset($fieldGroups[$groupKey])) {
+      $fieldGroups[$groupKey] = [
+        'key' => $groupKey,
+        'title' => trim((string)($field['group_title'] ?? '')) ?: $groupKey,
+        'subgroups' => [],
+      ];
+    }
+    if (!isset($fieldGroups[$groupKey]['subgroups'][$subgroupKey])) {
+      $fieldGroups[$groupKey]['subgroups'][$subgroupKey] = [
+        'key' => $subgroupKey,
+        'title' => $subgroupKey,
+        'fields' => [],
+      ];
+    }
+    $fieldGroups[$groupKey]['subgroups'][$subgroupKey]['fields'][] = $field;
+  }
+}
+
 $now = new DateTimeImmutable('now');
 $year = (int)$now->format('Y');
 $schoolYearDefault = (int)$now->format('n') >= 7
@@ -81,6 +105,11 @@ render_admin_header(t('admin.template_trial.title'));
   .trial-field textarea{min-height:90px;resize:vertical}
   .trial-field.automatic{padding:11px;border:1px solid #bfd2f5;border-radius:10px;background:#f3f7ff}
   .trial-field.automatic input,.trial-field.automatic textarea{background:#fff;color:#26364f;border-style:dashed;cursor:default}
+  .trial-field-groups{display:flex;flex-direction:column;gap:18px}
+  .trial-group{border:1px solid var(--border);border-radius:14px;padding:14px;background:#fbfcfe}
+  .trial-group-title{margin:0 0 12px;font-size:20px;color:#17233a}
+  .trial-subgroup+.trial-subgroup{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}
+  .trial-subgroup-title{margin:0 0 10px;font-size:15px;color:#40506a;text-transform:none}
   .trial-label-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .trial-badge{display:inline-flex;padding:2px 7px;border-radius:999px;background:#eef1f5;color:#475569;font-size:11px;font-weight:700}
   .trial-badge.child{background:#edf8ee;color:#256b2b}
@@ -182,41 +211,53 @@ render_admin_header(t('admin.template_trial.title'));
           <button class="btn secondary" type="button" id="trialRandomizeButton"><?=h(t('admin.template_trial.randomize_button'))?></button>
           <span class="muted" id="trialSystemStatus" aria-live="polite"><?=h(t('admin.template_trial.automatic_updating'))?></span>
         </div>
-        <div class="trial-grid">
-          <?php foreach ($definition['fields'] as $field):
-            $fid=(int)$field['id']; $type=(string)$field['field_type']; $system=(int)$field['system_bound']===1;
-            $role=(string)$field['role']; $full=((int)$field['is_multiline']===1 || $type==='multiline');
-          ?>
-            <?php $automaticKind=(string)($field['automatic_kind'] ?? ''); ?>
-            <label class="trial-field <?=$full?'full':''?> <?=$system?'automatic':''?>">
-              <span class="trial-label-line">
-                <span><?=h((string)$field['label'])?></span>
-                <span class="trial-badge <?=$role==='child'?'child':($role==='system'?'system':'')?>"><?=h(t('admin.template_trial.role.'.$role))?></span>
-                <?php if ((int)$field['is_required']===1): ?><span class="trial-badge"><?=h(t('admin.template_trial.required'))?></span><?php endif; ?>
-              </span>
-              <?php if ($system): ?>
-                <?php if ($automaticKind === 'signature'): ?>
-                  <input data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>">
-                <?php else: ?>
-                  <textarea data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" rows="2" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>"></textarea>
-                <?php endif; ?>
-              <?php elseif ($type === 'checkbox'): ?>
-                <span><input data-trial-field="<?=h((string)$fid)?>" data-field-kind="checkbox" type="checkbox" value="1" style="width:auto"> <?=h(t('admin.template_trial.checkbox_yes'))?></span>
-              <?php elseif (!empty($field['options'])): ?>
-                <select data-trial-field="<?=h((string)$fid)?>" data-field-kind="option"><option value=""></option><?php foreach ($field['options'] as $option): ?><option value="<?=h((string)$option['value'])?>"><?=h((string)$option['label'])?></option><?php endforeach; ?></select>
-              <?php elseif ($type === 'date'): ?>
-                <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="date" type="date">
-              <?php elseif ($type === 'number' || $type === 'grade'): ?>
-                <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="number" type="number">
-              <?php elseif ($full): ?>
-                <textarea data-trial-field="<?=h((string)$fid)?>" data-field-kind="text"></textarea>
-              <?php else: ?>
-                <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="text" autocomplete="off">
-              <?php endif; ?>
-              <?php if ($system): ?><span class="trial-help"><?=h(t('admin.template_trial.automatic_hint.' . ($automaticKind !== '' ? $automaticKind : 'template')))?></span><?php endif; ?>
-              <?php if ((string)$field['help_text'] !== ''): ?><span class="trial-help"><?=h((string)$field['help_text'])?></span><?php endif; ?>
-              <span class="trial-help"><code><?=h((string)$field['field_name'])?></code></span>
-            </label>
+        <div class="trial-field-groups">
+          <?php foreach ($fieldGroups as $group): ?>
+            <section class="trial-group" data-trial-group="<?=h((string)$group['key'])?>">
+              <h3 class="trial-group-title"><?=h((string)$group['title'])?></h3>
+              <?php foreach ($group['subgroups'] as $subgroup): ?>
+                <div class="trial-subgroup" data-trial-subgroup="<?=h((string)$subgroup['key'])?>">
+                  <h4 class="trial-subgroup-title"><?=h((string)($subgroup['title'] !== '' ? $subgroup['title'] : t('admin.template_trial.general_subgroup')))?></h4>
+                  <div class="trial-grid">
+                    <?php foreach ($subgroup['fields'] as $field):
+                      $fid=(int)$field['id']; $type=(string)$field['field_type']; $system=(int)$field['system_bound']===1;
+                      $role=(string)$field['role']; $full=((int)$field['is_multiline']===1 || $type==='multiline');
+                      $automaticKind=(string)($field['automatic_kind'] ?? '');
+                    ?>
+                      <label class="trial-field <?=$full?'full':''?> <?=$system?'automatic':''?>">
+                        <span class="trial-label-line">
+                          <span><?=h((string)$field['label'])?></span>
+                          <span class="trial-badge <?=$role==='child'?'child':($role==='system'?'system':'')?>"><?=h(t('admin.template_trial.role.'.$role))?></span>
+                          <?php if ((int)$field['is_required']===1): ?><span class="trial-badge"><?=h(t('admin.template_trial.required'))?></span><?php endif; ?>
+                        </span>
+                        <?php if ($system): ?>
+                          <?php if ($automaticKind === 'signature'): ?>
+                            <input data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>">
+                          <?php else: ?>
+                            <textarea data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" rows="2" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>"></textarea>
+                          <?php endif; ?>
+                        <?php elseif ($type === 'checkbox'): ?>
+                          <span><input data-trial-field="<?=h((string)$fid)?>" data-field-kind="checkbox" type="checkbox" value="1" style="width:auto"> <?=h(t('admin.template_trial.checkbox_yes'))?></span>
+                        <?php elseif (!empty($field['options'])): ?>
+                          <select data-trial-field="<?=h((string)$fid)?>" data-field-kind="option"><option value=""></option><?php foreach ($field['options'] as $option): ?><option value="<?=h((string)$option['value'])?>"><?=h((string)$option['label'])?></option><?php endforeach; ?></select>
+                        <?php elseif ($type === 'date'): ?>
+                          <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="date" type="date">
+                        <?php elseif ($type === 'number' || $type === 'grade'): ?>
+                          <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="number" type="number">
+                        <?php elseif ($full): ?>
+                          <textarea data-trial-field="<?=h((string)$fid)?>" data-field-kind="text"></textarea>
+                        <?php else: ?>
+                          <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="text" autocomplete="off">
+                        <?php endif; ?>
+                        <?php if ($system): ?><span class="trial-help"><?=h(t('admin.template_trial.automatic_hint.' . ($automaticKind !== '' ? $automaticKind : 'template')))?></span><?php endif; ?>
+                        <?php if ((string)$field['help_text'] !== ''): ?><span class="trial-help"><?=h((string)$field['help_text'])?></span><?php endif; ?>
+                        <span class="trial-help"><code><?=h((string)$field['field_name'])?></code></span>
+                      </label>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </section>
           <?php endforeach; ?>
         </div>
       </div>

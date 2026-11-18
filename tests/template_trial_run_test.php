@@ -55,6 +55,15 @@ template_trial_assert(
 );
 
 template_trial_assert(
+  str_contains($page, 'class="trial-field-groups"')
+    && str_contains($page, 'data-trial-group=')
+    && str_contains($page, 'data-trial-subgroup=')
+    && str_contains($helper, 'app_group_parts_from_meta($meta)')
+    && substr_count($translations, "'admin.template_trial.general_subgroup'") === 2,
+  'report inputs must be organized by their configured main groups and subgroups in both languages'
+);
+
+template_trial_assert(
   str_contains($page, 'generateFilledReportPdf({')
     && str_contains($page, 'pdfLibUrl: PDF_LIB_URL')
     && str_contains($page, "url('assets/pdf-lib.min.js')")

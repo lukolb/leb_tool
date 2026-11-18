@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/group_keys.php';
+
 /**
  * Read-only helpers for the admin template trial run.
  *
@@ -28,6 +30,17 @@ function template_trial_label(?string $de, ?string $en, string $lang): string {
   $en = trim((string)$en);
   if ($lang === 'en' && $en !== '') return $en;
   return $de !== '' ? $de : $en;
+}
+
+function template_trial_group_title(string $groupKey, string $lang): string {
+  $cfg = app_config();
+  $bucket = $lang === 'en' ? 'group_titles_en' : 'group_titles';
+  $titles = $cfg['student'][$bucket] ?? [];
+  if (is_array($titles)) {
+    $mapped = trim((string)($titles[$groupKey] ?? ''));
+    if ($mapped !== '') return $mapped;
+  }
+  return $groupKey;
 }
 
 function template_trial_rect(mixed $raw): ?array {
@@ -131,6 +144,13 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
   $fields = [];
   foreach ($fieldRows as $row) {
     $meta = template_trial_meta($row['meta_json'] ?? null);
+    $groupParts = app_group_parts_from_meta($meta);
+    $groupKey = (string)$groupParts['group'];
+    $subgroup = (string)$groupParts['subgroup'];
+    if ($lang === 'en') {
+      $subgroupEn = trim((string)($meta['subgroup_title_en'] ?? $meta['subcategory_en'] ?? ''));
+      if ($subgroupEn !== '') $subgroup = $subgroupEn;
+    }
     $bindingTemplate = trim((string)($meta['system_binding_tpl'] ?? ''));
     $binding = trim((string)($meta['system_binding'] ?? ''));
     $canChild = (int)($row['can_child_edit'] ?? 0) === 1;
@@ -163,6 +183,9 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
       'role' => $role,
       'system_bound' => $systemBound ? 1 : 0,
       'automatic_kind' => $automaticKind,
+      'group_key' => $groupKey,
+      'group_title' => template_trial_group_title($groupKey, $lang),
+      'subgroup' => $subgroup,
       'binding_template' => $bindingTemplate,
       'binding' => $binding,
       'date_format' => $dateFormat,
