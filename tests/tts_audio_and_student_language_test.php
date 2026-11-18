@@ -18,9 +18,13 @@ $keyB = tts_audio_cache_key("Hallo   Welt!", 'de', 'de_DE-thorsten-medium');
 $keyC = tts_audio_cache_key('Hello world!', 'en', 'en_US-lessac-medium');
 assert_true(strlen($keyA) === 64 && $keyA === $keyB, 'Equivalent text must produce one stable cache key.');
 assert_true($keyA !== $keyC, 'Language, voice and text must be part of the cache key.');
+$cacheKeyFunction = new ReflectionFunction('tts_audio_cache_key');
+assert_true($cacheKeyFunction->getNumberOfParameters() === 3, 'The physical audio cache key must not contain a class ID.');
 
 $student = (string)file_get_contents($root . '/student/index.php');
 $classes = (string)file_get_contents($root . '/teacher/classes.php');
+$adminAudio = (string)file_get_contents($root . '/admin/tts_audio.php');
+$adminAudioApi = (string)file_get_contents($root . '/admin/ajax/tts_audio_cache_api.php');
 $schema = (string)file_get_contents($root . '/bootstrap.php');
 $wizard = (string)file_get_contents($root . '/student/ajax/wizard_api.php');
 $layout = (string)file_get_contents($root . '/shared/_layout.php');
@@ -33,6 +37,13 @@ assert_true(str_contains($student, 'const blob = await session.predict(normalize
 assert_true(str_contains($student, 'void prefetchVitsModel(voiceId);'), 'The proven live VITS model prefetch must remain unchanged.');
 assert_true(str_contains($student, 'void uploadGeneratedTts(normalized, voiceId, blob);'), 'A live-generated file must be saved for subsequent playback.');
 assert_true(str_contains($classes, 'if ($new === 1) $ttsGenerationClassId = $classId;'), 'Enabling read aloud must automatically start class cache preparation.');
+assert_true(str_contains($adminAudio, "class=\"tts-bulk-class\"") && str_contains($adminAudio, "id=\"ttsSelectAll\""), 'Admins must be able to select multiple read-aloud classes in audio management.');
+assert_true(str_contains($adminAudio, "for (let classIndex = 0; classIndex < selected.length; classIndex++)"), 'Admin audio preparation must process every selected class.');
+assert_true(str_contains($adminAudio, "url('admin/ajax/tts_audio_cache_api.php')"), 'Admin bulk generation must use its protected admin API.');
+assert_true(str_contains($adminAudio, '$rowsByAudio[$audioId]') && str_contains($adminAudio, "'class_usages'"), 'Audio management must show one physical file with its class usages instead of duplicate class-specific rows.');
+assert_true(str_contains($adminAudioApi, 'require_admin();'), 'The admin audio API must require an admin session.');
+assert_true(str_contains($adminAudioApi, 'tts_audio_class_plan($pdo, $classId)') && str_contains($adminAudioApi, 'tts_audio_store_upload($pdo, $classId'), 'Admin bulk generation must reuse the established class plan and upload validation.');
+assert_true(str_contains($schema, 'UNIQUE KEY uq_tts_audio_cache_key (cache_key)'), 'Identical text, language and voice must share one physical audio file across classes.');
 assert_true(str_contains($schema, 'CREATE TABLE tts_audio_files') && str_contains($schema, 'CREATE TABLE tts_audio_class_links'), 'Audio cache tables must be migrated automatically.');
 
 assert_true(str_contains($schema, 'syllable_coloring_enabled'), 'Class schema must store the syllable-color setting.');
