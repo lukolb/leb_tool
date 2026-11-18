@@ -2148,6 +2148,7 @@ try {
         'label' => $labelChild,
         'help_text' => (string)($cf['help_text'] ?? ''),
         'is_multiline' => (int)($cf['is_multiline'] ?? 0),
+        'is_required' => (int)($cf['is_required'] ?? 0),
         'options' => $optsChild,
       ];
     }

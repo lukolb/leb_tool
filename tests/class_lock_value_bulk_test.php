@@ -34,6 +34,17 @@ class_lock_value_bulk_assert(
   'every teacher input mode must offer the confirmed class action after selecting a marked lock value'
 );
 
+$offerStart = strpos($entryPage, 'function offerLockValueForClass(');
+$offerEnd = strpos($entryPage, 'function wireTeacherInputs(', $offerStart !== false ? $offerStart : 0);
+$offerSource = ($offerStart !== false && $offerEnd !== false) ? substr($entryPage, $offerStart, $offerEnd - $offerStart) : '';
+class_lock_value_bulk_assert(
+  str_contains($entryPage, 'function applyClassLockValueLocally(')
+    && str_contains($entryPage, 'function updateLockValueControlsLocally(')
+    && str_contains($offerSource, 'applyClassLockValueLocally(field, sourceReportId, lockOption, result);')
+    && !str_contains($offerSource, 'loadClass('),
+  'the confirmed class action must update in-memory values and visible controls without reloading the class'
+);
+
 class_lock_value_bulk_assert(
   !str_contains($entryPage, 'data-bulk-lock-field')
     && !str_contains($entryPage, 'bulkLockControlsHtml')
@@ -47,6 +58,7 @@ class_lock_value_bulk_assert(
     && str_contains($entryApi, "\$sourceReportId = (int)(\$data['source_report_instance_id'] ?? 0)")
     && str_contains($entryApi, 'if ($reportId === $sourceReportId)')
     && str_contains($entryApi, "=== 'final'")
+    && str_contains($entryApi, "'is_required' => (int)(\$cf['is_required'] ?? 0)")
     && str_contains($entryApi, "audit('teacher_class_lock_value_apply'"),
   'the server must validate the source report and lock option, preserve final reports and audit the class action'
 );
@@ -62,6 +74,7 @@ class_lock_value_bulk_assert(
   str_contains($handbook, '\\index{Sperrwert!für ganze Klasse}')
     && str_contains($handbook, 'direkt nach der Auswahl dieses Wertes')
     && str_contains($handbook, 'Dropdowns und in der Darstellung \\enquote{Optionen als Buttons}')
+    && str_contains($handbook, 'ohne die Seite neu zu laden')
     && stripos($handbook, 'abgeschlossene Berichte bleiben unverändert') !== false,
   'the handbook must explain the selection prompt in every view and its safeguards'
 );

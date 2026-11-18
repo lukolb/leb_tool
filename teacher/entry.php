@@ -3055,6 +3055,7 @@ render_teacher_header($pageTitle);
           label: String(child.label || f.label || f.field_name || ''),
           help_text: String(child.help_text || ''),
           is_multiline: Number(child.is_multiline || 0),
+          is_required: Number(child.is_required || 0),
           options: Array.isArray(child.options) ? child.options : [],
           subgroup: String(f.subgroup || ''),
           subgroup_title_en: String(f.subgroup_title_en || ''),
@@ -4589,6 +4590,111 @@ render_teacher_header($pageTitle);
     ) || null;
   }
 
+  function markChildFieldLockedLocally(reportId, field){
+    const childFieldId = Number(field?.child?.id || 0);
+    if (!childFieldId) return;
+
+    const ridKey = String(reportId);
+    const childKey = String(childFieldId);
+    if (!state.locked_child_fields || typeof state.locked_child_fields !== 'object') {
+      state.locked_child_fields = {};
+    }
+    if (!state.locked_child_fields[ridKey] || typeof state.locked_child_fields[ridKey] !== 'object') {
+      state.locked_child_fields[ridKey] = {};
+    }
+    if (state.locked_child_fields[ridKey][childKey]) return;
+    state.locked_child_fields[ridKey][childKey] = true;
+
+    const student = findStudentByReportId(reportId);
+    if (!student) return;
+    const hasChildValue = String(childVal(reportId, childFieldId) ?? '').trim() !== '';
+    const required = Number(field?.child?.is_required || 0) === 1;
+    if (required) {
+      student.progress_child_total = Math.max(0, Number(student.progress_child_total || 0) - 1);
+      if (hasChildValue) {
+        student.progress_child_done = Math.max(0, Number(student.progress_child_done || 0) - 1);
+      } else {
+        student.progress_child_missing = Math.max(0, Number(student.progress_child_missing || 0) - 1);
+      }
+      const lockedLabel = String(field?.child?.label || '').trim();
+      if (lockedLabel && Array.isArray(student.child_missing_fields)) {
+        student.child_missing_fields = student.child_missing_fields.filter(label => String(label || '').trim() !== lockedLabel);
+      }
+      return;
+    }
+
+    student.progress_child_optional_total = Math.max(0, Number(student.progress_child_optional_total || 0) - 1);
+    if (hasChildValue) {
+      student.progress_child_optional_done = Math.max(0, Number(student.progress_child_optional_done || 0) - 1);
+    } else {
+      student.progress_child_optional_empty = Math.max(0, Number(student.progress_child_optional_empty || 0) - 1);
+    }
+  }
+
+  function updateLockValueControlsLocally(reportId, field, value){
+    const rid = String(reportId);
+    const fid = String(field?.id || '');
+    if (!rid || !fid) return;
+    const reportSelector = CSS.escape(rid);
+    const fieldSelector = CSS.escape(fid);
+
+    document.querySelectorAll(`[data-teacher-input="1"][data-report-id="${reportSelector}"][data-field-id="${fieldSelector}"]`).forEach(inp => {
+      if (inp.dataset.combo === '1') {
+        inp.dataset.actual = value;
+        inp.value = teacherDisplay(field, value);
+      } else if (inp.type === 'checkbox') {
+        inp.checked = value === '1';
+      } else {
+        inp.value = value;
+      }
+      syncMissingClass(inp, value);
+    });
+
+    document.querySelectorAll(`[data-option-block][data-report-id="${reportSelector}"][data-field-id="${fieldSelector}"]`).forEach(wrap => {
+      updateOptionCardGroup(wrap, value);
+      syncMissingClass(wrap, value);
+    });
+  }
+
+  function applyClassLockValueLocally(field, sourceReportId, lockOption, result){
+    const fieldId = Number(field?.id || 0);
+    const value = String(lockOption?.value ?? result?.value_text ?? '').trim();
+    if (!fieldId || !value) return;
+
+    const appliedReportIds = Array.isArray(result?.applied_report_ids) ? result.applied_report_ids : [];
+    const reportIds = [...new Set([sourceReportId, ...appliedReportIds].map(id => Number(id)).filter(id => id > 0))];
+    const changedReportIds = new Set((Array.isArray(result?.changed_report_ids) ? result.changed_report_ids : []).map(id => Number(id)));
+    const valueJson = JSON.stringify({ option_item_id: Number(lockOption?.option_item_id || 0) });
+    const displayValue = teacherDisplay(field, value);
+
+    reportIds.forEach(reportId => {
+      const ridKey = String(reportId);
+      const fidKey = String(fieldId);
+      if (!state.values_teacher[ridKey]) state.values_teacher[ridKey] = {};
+      if (!state.values_teacher_own[ridKey]) state.values_teacher_own[ridKey] = {};
+      state.values_teacher[ridKey][fidKey] = value;
+      state.values_teacher_own[ridKey][fidKey] = value;
+      if (state.values_teacher_parts?.[ridKey]) delete state.values_teacher_parts[ridKey][fidKey];
+
+      markChildFieldLockedLocally(reportId, field);
+      updateLockValueControlsLocally(reportId, field, value);
+      aiCache.delete(reportId);
+
+      const student = findStudentByReportId(reportId);
+      if (student) {
+        recomputeStudentProgress(student);
+        updateStudentRowUI(student);
+      }
+      if (changedReportIds.has(reportId)) {
+        addHistoryEntry(reportId, fieldId, displayValue, 'teacher', value, valueJson);
+      }
+    });
+
+    recomputeFormsSummary();
+    updateFormsProgressUI();
+    updateActiveStudentBadge();
+  }
+
   function offerLockValueForClass(field, sourceReportId, selectedValue){
     if (CHILD_MODE || !field || isClassFieldId(Number(field.id || 0))) return;
     const lockOption = lockOptionForValue(field, selectedValue);
@@ -4613,7 +4719,7 @@ render_teacher_header($pageTitle);
       });
       const appliedCount = Number(result?.applied_count || 0);
       const skippedFinal = Number(result?.skipped_final || 0);
-      await loadClass(state.class_id);
+      applyClassLockValueLocally(field, sourceReportId, lockOption, result);
       const successText = skippedFinal > 0
         ? tfmtEntry('bulk_lock_applied_with_final', { count: appliedCount, final: skippedFinal })
         : tfmtEntry('bulk_lock_applied', { count: appliedCount });
