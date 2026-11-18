@@ -44,6 +44,20 @@ function template_trial_rect(mixed $raw): ?array {
   return $rect;
 }
 
+function template_trial_signature_value(string $fieldName, string $label, array $student): string {
+  $key = mb_strtolower(trim($fieldName . ' ' . $label), 'UTF-8');
+  $lastName = trim((string)($student['last_name'] ?? ''));
+  if ($lastName === '') $lastName = 'Mustermann';
+
+  if (preg_match('/guardian|parent|eltern|sorgeberechtigt/u', $key)) {
+    return 'E. ' . $lastName;
+  }
+  if (preg_match('/head|principal|director|leitung|schulleitung/u', $key)) {
+    return 'S. Schulleitung';
+  }
+  return 'M. Musterlehrkraft';
+}
+
 function template_trial_options(PDO $pdo, array $field, array &$cache, string $lang): array {
   $meta = template_trial_meta($field['meta_json'] ?? null);
   $listId = (int)($meta['option_list_template_id'] ?? 0);
@@ -111,11 +125,14 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
     $meta = template_trial_meta($row['meta_json'] ?? null);
     $bindingTemplate = trim((string)($meta['system_binding_tpl'] ?? ''));
     $binding = trim((string)($meta['system_binding'] ?? ''));
-    $systemBound = $bindingTemplate !== '' || $binding !== '';
     $canChild = (int)($row['can_child_edit'] ?? 0) === 1;
     $canTeacher = (int)($row['can_teacher_edit'] ?? 0) === 1;
-    $role = $systemBound ? 'system' : ($canChild && !$canTeacher ? 'child' : ($canChild ? 'both' : 'teacher'));
     $fieldType = (string)($row['field_type'] ?? 'text');
+    $automaticKind = ($bindingTemplate !== '' || $binding !== '')
+      ? 'mapping'
+      : ($fieldType === 'signature' ? 'signature' : (!$canChild && !$canTeacher ? 'template' : ''));
+    $systemBound = $automaticKind !== '';
+    $role = $systemBound ? 'system' : ($canChild && !$canTeacher ? 'child' : ($canChild ? 'both' : 'teacher'));
     $dateMode = (string)($meta['date_format_mode'] ?? 'preset');
     $dateFormat = $dateMode === 'custom'
       ? trim((string)($meta['date_format_custom'] ?? ''))
@@ -135,6 +152,7 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
       'can_teacher_edit' => $canTeacher ? 1 : 0,
       'role' => $role,
       'system_bound' => $systemBound ? 1 : 0,
+      'automatic_kind' => $automaticKind,
       'binding_template' => $bindingTemplate,
       'binding' => $binding,
       'date_format' => $dateFormat,
@@ -244,6 +262,7 @@ function template_trial_resolve(array $definition, array $payload): array {
     $meta = is_array($field['meta'] ?? null) ? $field['meta'] : [];
     $value = $fieldValuesByName[$fieldName] ?? '';
 
+    $automaticKind = (string)($field['automatic_kind'] ?? '');
     if ((int)($field['system_bound'] ?? 0) === 1) {
       $tpl = trim((string)($field['binding_template'] ?? ''));
       if ($tpl !== '') {
@@ -256,19 +275,26 @@ function template_trial_resolve(array $definition, array $payload): array {
           $fieldValuesByName,
           $fieldMetaByName
         );
-      } else {
+      } elseif (trim((string)($field['binding'] ?? '')) !== '') {
         $resolved = resolve_system_binding_value((string)($field['binding'] ?? ''), $student, $class);
         $value = $resolved === null ? '' : (string)$resolved;
         if ((string)($field['binding'] ?? '') === 'student.date_of_birth' && (string)($field['date_format'] ?? '') !== '') {
           $value = format_date_pattern($value, (string)$field['date_format']);
         }
+      } elseif ($automaticKind === 'signature') {
+        $value = template_trial_signature_value($fieldName, (string)($field['label'] ?? ''), $student);
+      } else {
+        // A non-editable PDF field without a mapping keeps the value already
+        // embedded in the template. Do not send an empty value that would
+        // accidentally clear that PDF default.
+        $value = '';
       }
       $systemValues[(string)$fieldId] = $value;
       $fieldValuesByName[$fieldName] = $value;
     }
 
     $values[(string)$fieldId] = $value;
-    $valuesByName[$fieldName] = $value;
+    if ($automaticKind !== 'template') $valuesByName[$fieldName] = $value;
     $display = $value;
     if ((string)($field['field_type'] ?? '') === 'date' && (string)($field['date_format'] ?? '') !== '') {
       $display = format_date_pattern($value, (string)$field['date_format']);
@@ -277,6 +303,7 @@ function template_trial_resolve(array $definition, array $payload): array {
     $fieldMeta[$fieldName] = [
       'field_type' => (string)($field['field_type'] ?? 'text'),
       'date_format' => (string)($field['date_format'] ?? ''),
+      'automatic_kind' => $automaticKind,
     ];
   }
 

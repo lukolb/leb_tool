@@ -79,6 +79,8 @@ render_admin_header(t('admin.template_trial.title'));
   .trial-field.full{grid-column:1/-1}
   .trial-field input,.trial-field select,.trial-field textarea{width:100%;box-sizing:border-box}
   .trial-field textarea{min-height:90px;resize:vertical}
+  .trial-field.automatic{padding:11px;border:1px solid #bfd2f5;border-radius:10px;background:#f3f7ff}
+  .trial-field.automatic input,.trial-field.automatic textarea{background:#fff;color:#26364f;border-style:dashed;cursor:default}
   .trial-label-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .trial-badge{display:inline-flex;padding:2px 7px;border-radius:999px;background:#eef1f5;color:#475569;font-size:11px;font-weight:700}
   .trial-badge.child{background:#edf8ee;color:#256b2b}
@@ -133,9 +135,9 @@ render_admin_header(t('admin.template_trial.title'));
       <div class="card">
         <h2><?=h(t('admin.template_trial.student_data'))?></h2>
         <div class="trial-grid">
-          <label class="trial-field"><span><?=h(t('admin.template_trial.first_name'))?></span><input data-student="first_name" value="Leo" autocomplete="off"></label>
-          <label class="trial-field"><span><?=h(t('admin.template_trial.last_name'))?></span><input data-student="last_name" value="Beispiel" autocomplete="off"></label>
-          <label class="trial-field"><span><?=h(t('admin.template_trial.date_of_birth'))?></span><input data-student="date_of_birth" type="date" value="2019-05-14"></label>
+          <label class="trial-field"><span><?=h(t('admin.template_trial.first_name'))?></span><input data-student="first_name" value="Max" autocomplete="off"></label>
+          <label class="trial-field"><span><?=h(t('admin.template_trial.last_name'))?></span><input data-student="last_name" value="Mustermann" autocomplete="off"></label>
+          <label class="trial-field"><span><?=h(t('admin.template_trial.date_of_birth'))?></span><input data-student="date_of_birth" type="date" value="2020-01-01"></label>
           <label class="trial-field"><span><?=h(t('admin.template_trial.absence_total'))?></span><input data-student="absence_days_total" type="number" min="0" value="0"></label>
           <label class="trial-field"><span><?=h(t('admin.template_trial.absence_unexcused'))?></span><input data-student="absence_days_unexcused" type="number" min="0" value="0"></label>
           <?php foreach ($definition['custom_fields'] as $custom): $key=(string)($custom['field_key'] ?? ''); if ($key === '') continue; ?>
@@ -176,30 +178,42 @@ render_admin_header(t('admin.template_trial.title'));
       <div class="card">
         <h2><?=h(t('admin.template_trial.report_fields'))?></h2>
         <p class="muted"><?=h(t('admin.template_trial.report_fields_hint'))?></p>
+        <div class="actions" style="margin:0 0 14px">
+          <button class="btn secondary" type="button" id="trialRandomizeButton"><?=h(t('admin.template_trial.randomize_button'))?></button>
+          <span class="muted" id="trialSystemStatus" aria-live="polite"><?=h(t('admin.template_trial.automatic_updating'))?></span>
+        </div>
         <div class="trial-grid">
           <?php foreach ($definition['fields'] as $field):
             $fid=(int)$field['id']; $type=(string)$field['field_type']; $system=(int)$field['system_bound']===1;
             $role=(string)$field['role']; $full=((int)$field['is_multiline']===1 || $type==='multiline');
           ?>
-            <label class="trial-field <?=$full?'full':''?>">
+            <?php $automaticKind=(string)($field['automatic_kind'] ?? ''); ?>
+            <label class="trial-field <?=$full?'full':''?> <?=$system?'automatic':''?>">
               <span class="trial-label-line">
                 <span><?=h((string)$field['label'])?></span>
                 <span class="trial-badge <?=$role==='child'?'child':($role==='system'?'system':'')?>"><?=h(t('admin.template_trial.role.'.$role))?></span>
                 <?php if ((int)$field['is_required']===1): ?><span class="trial-badge"><?=h(t('admin.template_trial.required'))?></span><?php endif; ?>
               </span>
               <?php if ($system): ?>
-                <textarea data-system-output="<?=h((string)$fid)?>" disabled rows="2"></textarea>
+                <?php if ($type === 'signature'): ?>
+                  <input data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>">
+                <?php else: ?>
+                  <textarea data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" rows="2" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>"></textarea>
+                <?php endif; ?>
               <?php elseif ($type === 'checkbox'): ?>
                 <span><input data-trial-field="<?=h((string)$fid)?>" data-field-kind="checkbox" type="checkbox" value="1" style="width:auto"> <?=h(t('admin.template_trial.checkbox_yes'))?></span>
               <?php elseif (!empty($field['options'])): ?>
                 <select data-trial-field="<?=h((string)$fid)?>" data-field-kind="option"><option value=""></option><?php foreach ($field['options'] as $option): ?><option value="<?=h((string)$option['value'])?>"><?=h((string)$option['label'])?></option><?php endforeach; ?></select>
               <?php elseif ($type === 'date'): ?>
                 <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="date" type="date">
+              <?php elseif ($type === 'number' || $type === 'grade'): ?>
+                <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="number" type="number">
               <?php elseif ($full): ?>
                 <textarea data-trial-field="<?=h((string)$fid)?>" data-field-kind="text"></textarea>
               <?php else: ?>
                 <input data-trial-field="<?=h((string)$fid)?>" data-field-kind="text" autocomplete="off">
               <?php endif; ?>
+              <?php if ($system): ?><span class="trial-help"><?=h(t('admin.template_trial.automatic_hint.' . ($automaticKind !== '' ? $automaticKind : 'template')))?></span><?php endif; ?>
               <?php if ((string)$field['help_text'] !== ''): ?><span class="trial-help"><?=h((string)$field['help_text'])?></span><?php endif; ?>
               <span class="trial-help"><code><?=h((string)$field['field_name'])?></code></span>
             </label>
@@ -258,6 +272,12 @@ render_admin_header(t('admin.template_trial.title'));
         'export_done' => t('admin.template_trial.export_done'),
         'export_failed' => t('admin.template_trial.error.export_failed'),
         'booklet_suffix' => t('teacher.export.booklet_suffix'),
+        'automatic_updating' => t('admin.template_trial.automatic_updating'),
+        'automatic_current' => t('admin.template_trial.automatic_current'),
+        'automatic_failed' => t('admin.template_trial.automatic_failed'),
+        'random_short' => t('admin.template_trial.random_short'),
+        'random_long' => t('admin.template_trial.random_long'),
+        'random_done' => t('admin.template_trial.random_done'),
       ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
 
       const templateSelect = document.getElementById('trialTemplateSelect');
@@ -270,9 +290,13 @@ render_admin_header(t('admin.template_trial.title'));
       const exportMode = document.getElementById('trialExportMode');
       const exportButton = document.getElementById('trialExportButton');
       const exportStatus = document.getElementById('trialExportStatus');
+      const randomizeButton = document.getElementById('trialRandomizeButton');
+      const systemStatus = document.getElementById('trialSystemStatus');
       let pdfDoc = null;
       let lastResult = null;
       let renderedPdfBytes = null;
+      let systemRefreshTimer = null;
+      let systemRefreshVersion = 0;
 
       templateSelect?.addEventListener('change', () => {
         const url = new URL(window.location.href);
@@ -312,6 +336,70 @@ render_admin_header(t('admin.template_trial.title'));
           el.value = String(result.system_values?.[el.dataset.systemOutput] ?? '');
         });
         if (agSentence) agSentence.value = String(result.ag_sentence ?? '');
+      }
+
+      async function refreshAutomaticFields(){
+        const version = ++systemRefreshVersion;
+        if (systemStatus) systemStatus.textContent = I18N.automatic_updating;
+        try {
+          const result = await resolvePreviewValues();
+          if (version !== systemRefreshVersion) return;
+          applySystemOutputs(result);
+          lastResult = null;
+          if (systemStatus) systemStatus.textContent = I18N.automatic_current;
+        } catch (error) {
+          if (version !== systemRefreshVersion) return;
+          if (systemStatus) systemStatus.textContent = I18N.automatic_failed;
+        }
+      }
+
+      function scheduleAutomaticRefresh(){
+        clearTimeout(systemRefreshTimer);
+        if (systemStatus) systemStatus.textContent = I18N.automatic_updating;
+        systemRefreshTimer = setTimeout(refreshAutomaticFields,220);
+      }
+
+      function randomChoice(items){
+        return items.length ? items[Math.floor(Math.random()*items.length)] : null;
+      }
+
+      function randomizeTrialData(){
+        const customInputs = Array.from(document.querySelectorAll('[data-custom-field]'));
+        customInputs.forEach((el,index) => { el.value = `${I18N.random_short} ${index+1}`; });
+
+        const className = document.querySelector('[data-class="name"]');
+        if (className) className.value = UI_LANG === 'en' ? 'Octopus Class' : 'Oktopusklasse';
+        const absenceTotal = document.querySelector('[data-student="absence_days_total"]');
+        const absenceUnexcused = document.querySelector('[data-student="absence_days_unexcused"]');
+        if (absenceTotal) absenceTotal.value = String(1+Math.floor(Math.random()*4));
+        if (absenceUnexcused) absenceUnexcused.value = String(Math.min(Number(absenceTotal?.value || 0),Math.floor(Math.random()*2)));
+
+        document.querySelectorAll('[data-trial-field]').forEach((el,index) => {
+          const kind = String(el.dataset.fieldKind || 'text');
+          if (kind === 'checkbox') {
+            el.checked = Math.random() >= .5;
+          } else if (kind === 'option') {
+            const all = Array.from(el.options || []).filter((option) => String(option.value || '') !== '');
+            const preferred = all.filter((option) => !/^(?:n\/?a|nicht bewertet)$/i.test(String(option.value || option.textContent || '').trim()));
+            const selected = randomChoice(preferred.length ? preferred : all);
+            if (selected) el.value = selected.value;
+          } else if (kind === 'date') {
+            el.value = `2026-06-${String(10+(index%18)).padStart(2,'0')}`;
+          } else if (kind === 'number') {
+            el.value = String(1+(index%5));
+          } else {
+            el.value = el.tagName === 'TEXTAREA' ? I18N.random_long : `${I18N.random_short} ${index+1}`;
+          }
+        });
+
+        const agInputs = Array.from(document.querySelectorAll('[data-ag-name]'));
+        agInputs.forEach((el) => { el.checked = false; });
+        const shuffled = agInputs.slice().sort(() => Math.random()-.5);
+        const agCount = Math.min(shuffled.length,1+Math.floor(Math.random()*Math.min(3,Math.max(1,shuffled.length))));
+        shuffled.slice(0,agCount).forEach((el) => { el.checked = true; });
+
+        status.textContent = I18N.random_done;
+        refreshAutomaticFields();
       }
 
       async function renderPreview(result){
@@ -373,6 +461,13 @@ render_admin_header(t('admin.template_trial.title'));
       }
 
       previewButton?.addEventListener('click',runPreview);
+      randomizeButton?.addEventListener('click',randomizeTrialData);
+
+      document.querySelectorAll('[data-student],[data-class],[data-custom-field],[data-trial-field],[data-ag-name]').forEach((el) => {
+        el.addEventListener('input',scheduleAutomaticRefresh);
+        el.addEventListener('change',scheduleAutomaticRefresh);
+      });
+      refreshAutomaticFields();
 
       function safeFilename(value){
         const clean = String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')

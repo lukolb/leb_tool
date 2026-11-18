@@ -345,6 +345,66 @@ function fillForm(pdfDoc, values, fieldMeta, language, PDFLib){
   return form;
 }
 
+function signatureWidgetPage(pdfDoc, widget, PDFLib){
+  try {
+    const direct = widget?.getPage?.();
+    if (direct) return direct;
+  } catch {}
+  const pages = pdfDoc.getPages();
+  try {
+    const pageRef = widget?.P?.();
+    if (pageRef) {
+      const match = pages.find((page) => String(page.ref) === String(pageRef));
+      if (match) return match;
+    }
+  } catch {}
+  try {
+    const widgetRef = widget?.ref;
+    if (widgetRef) {
+      for (const page of pages) {
+        const annots = page?.node?.Annots?.();
+        const refs = annots?.asArray?.() || [];
+        if (refs.some((ref) => String(ref) === String(widgetRef))) return page;
+      }
+    }
+  } catch {}
+  return pages.length === 1 ? pages[0] : null;
+}
+
+async function drawSignaturePlaceholders(pdfDoc, form, values, fieldMeta, PDFLib){
+  let font = null;
+  try { font = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique); } catch {}
+  for (const field of form.getFields()) {
+    const name = field.getName();
+    const meta = fieldMeta?.[name] || {};
+    if (String(meta.field_type || '').toLowerCase() !== 'signature') continue;
+    if (typeof field.setText === 'function') continue;
+    const value = String(values?.[name] ?? '').trim();
+    if (!value) continue;
+    for (const widget of field?.acroField?.getWidgets?.() || []) {
+      const rect = widget?.getRectangle?.();
+      const page = signatureWidgetPage(pdfDoc,widget,PDFLib);
+      if (!rect || !page || !rect.width || !rect.height) continue;
+      const size = Math.max(7,Math.min(12,rect.height*.48));
+      let shown = value;
+      if (font) {
+        const maxWidth = Math.max(1,rect.width-6);
+        while (shown.length > 1 && font.widthOfTextAtSize(shown,size) > maxWidth) shown = shown.slice(0,-1);
+      }
+      try {
+        page.drawText(shown,{
+          x:rect.x+3,
+          y:rect.y+Math.max(2,(rect.height-size)*.48),
+          size,
+          font:font || undefined,
+          color:PDFLib.rgb(.12,.18,.32),
+          maxWidth:Math.max(1,rect.width-6),
+        });
+      } catch {}
+    }
+  }
+}
+
 export async function generateFilledReportPdf(options){
   const config = {
     pdfLibUrl: 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js',
@@ -364,6 +424,7 @@ export async function generateFilledReportPdf(options){
   const form = fillForm(pdfDoc,config.fieldValues,config.fieldMeta,config.language,PDFLib);
   await updateTextAppearances(form,pdfDoc,config,PDFLib);
   applyRadioCrosses(pdfDoc,form,config,PDFLib);
+  await drawSignaturePlaceholders(pdfDoc,form,config.fieldValues,config.fieldMeta,PDFLib);
   return new Uint8Array(await pdfDoc.save());
 }
 

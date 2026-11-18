@@ -26,11 +26,32 @@ template_trial_assert(
 
 template_trial_assert(
   str_contains($page, 'data-student="first_name"')
+    && str_contains($page, 'value="Max"')
+    && str_contains($page, 'value="Mustermann"')
+    && str_contains($page, 'value="2020-01-01"')
     && str_contains($page, 'data-custom-field=')
     && str_contains($page, 'data-class="school_year"')
     && str_contains($page, 'data-ag-name')
     && str_contains($page, 'data-trial-field='),
   'the trial run must accept master data, custom student data, class data, AGs and every report field'
+);
+
+template_trial_assert(
+  str_contains($page, 'id="trialRandomizeButton"')
+    && str_contains($page, 'function randomizeTrialData()')
+    && str_contains($page, "document.querySelectorAll('[data-trial-field]')")
+    && str_contains($page, "document.querySelectorAll('[data-ag-name]')")
+    && str_contains($page, 'I18N.random_long'),
+  'one action must randomly fill regular fields, free text and activities while retaining the sample student'
+);
+
+template_trial_assert(
+  str_contains($page, 'function scheduleAutomaticRefresh()')
+    && str_contains($page, "el.addEventListener('input',scheduleAutomaticRefresh)")
+    && str_contains($page, "el.addEventListener('change',scheduleAutomaticRefresh)")
+    && str_contains($page, 'refreshAutomaticFields();')
+    && str_contains($page, 'data-automatic-kind='),
+  'automatic fields must be clearly marked and refreshed without a page reload after dependent input changes'
 );
 
 template_trial_assert(
@@ -49,6 +70,7 @@ template_trial_assert(
     && str_contains($generator, 'fillForm(pdfDoc')
     && str_contains($generator, 'updateTextAppearances')
     && str_contains($generator, 'applyRadioCrosses')
+    && str_contains($generator, 'drawSignaturePlaceholders')
     && str_contains($generator, 'pdfDoc.save()'),
   'the trial run must build the final AcroForm PDF with the same core steps as the report preview'
 );
@@ -127,6 +149,16 @@ $definition = [
       'binding_template' => '{{student.custom.pronoun}}', 'binding' => '',
       'date_format' => '', 'meta' => [],
     ],
+    [
+      'id' => 6, 'field_name' => 'teachersign', 'label' => 'Unterschrift Lehrkraft',
+      'field_type' => 'signature', 'system_bound' => 1, 'automatic_kind' => 'signature',
+      'binding_template' => '', 'binding' => '', 'date_format' => '', 'meta' => [],
+    ],
+    [
+      'id' => 7, 'field_name' => 'pdf_default', 'label' => 'PDF-Vorbelegung',
+      'field_type' => 'text', 'system_bound' => 1, 'automatic_kind' => 'template',
+      'binding_template' => '', 'binding' => '', 'date_format' => '', 'meta' => [],
+    ],
   ],
 ];
 
@@ -146,6 +178,8 @@ template_trial_assert(($resolved['values_by_name']['Name'] ?? '') === 'Mia Muste
 template_trial_assert(($resolved['values_by_name']['Klasse'] ?? '') === '1a', 'class mapping must resolve in memory');
 template_trial_assert(($resolved['values_by_name']['Kommentar'] ?? '') === 'Ein flüchtiger Testkommentar.', 'manual report values must reach the generated PDF map');
 template_trial_assert(($resolved['values_by_name']['Anrede'] ?? '') === 'sie', 'custom student fields must resolve in memory');
+template_trial_assert(($resolved['values_by_name']['teachersign'] ?? '') === 'M. Musterlehrkraft', 'signature fields must receive a read-only trial signature');
+template_trial_assert(!array_key_exists('pdf_default', $resolved['values_by_name']), 'unmapped read-only fields must retain their PDF template defaults');
 template_trial_assert(
   ($resolved['values_by_name']['AG'] ?? '') === 'Mia hat erfolgreich an der Theater-AG und der Schach-AG teilgenommen.',
   'AG selection must use the regular report sentence generator and reject unknown catalog values'
