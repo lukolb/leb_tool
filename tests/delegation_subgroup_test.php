@@ -39,6 +39,7 @@ delegation_subgroup_assert(
 $root = dirname(__DIR__);
 $entryApi = file_get_contents($root . '/teacher/ajax/entry_api.php');
 $entryPage = file_get_contents($root . '/teacher/entry.php');
+$inboxPage = file_get_contents($root . '/teacher/delegations.php');
 $inboxApi = file_get_contents($root . '/teacher/ajax/delegations_api.php');
 $revoke = file_get_contents($root . '/shared/delegation_revoke.php');
 
@@ -53,8 +54,22 @@ delegation_subgroup_assert(
   is_string($entryPage)
     && str_contains($entryPage, 'delegationScopeOptions')
     && str_contains($entryPage, 'delegationForScopeKey')
-    && str_contains($entryPage, 'effectiveDelegation = f?.delegation || g?.delegation'),
+    && str_contains($entryPage, 'effectiveDelegation = f?.delegation || g?.delegation')
+    && str_contains($entryPage, 'data-open-deleg="${esc(scopeKey)}"')
+    && str_contains($entryPage, 'renderStudentFields(fields, reportId, locked, { groupKey: g.key })'),
   'the delegation dialogs and field map must operate on main groups and subgroups'
+);
+delegation_subgroup_assert(
+  str_contains($entryPage, "dlgUserFilter.addEventListener('input', filterDelegationUsers)")
+    && str_contains($entryPage, 'delegationTeacherSortKey')
+    && is_string($inboxPage)
+    && str_contains($inboxPage, "dlgUserFilter.addEventListener('input', filterDelegationUsers)"),
+  'both delegation dialogs must filter teachers live while the user types'
+);
+delegation_subgroup_assert(
+  str_contains($entryApi, "SUBSTRING_INDEX(TRIM(display_name), ' ', -1)")
+    && str_contains($inboxApi, "SUBSTRING_INDEX(TRIM(display_name), ' ', -1)"),
+  'delegation recipients must be loaded in surname order in every delegation endpoint'
 );
 delegation_subgroup_assert(
   is_string($inboxApi) && str_contains($inboxApi, 'app_group_scope_parts_from_key'),

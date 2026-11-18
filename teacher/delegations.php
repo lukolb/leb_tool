@@ -15,6 +15,9 @@ $statusOpen = t('teacher.delegations.status.open', 'offen');
 $statusDone = t('teacher.delegations.status.done', 'fertig');
 $modalTitle = t('teacher.delegations.modal.title', 'Delegation bearbeiten');
 $modalDelegatedTo = t('teacher.delegations.modal.delegated_to', 'Delegiert an');
+$modalUserFilterLabel = t('teacher.entry.delegation_edit.users_filter_label', 'Lehrkräfte filtern');
+$modalUserFilterPlaceholder = t('teacher.entry.delegation_edit.users_filter_placeholder', 'Nach Namen tippen …');
+$modalUserFilterEmpty = t('teacher.entry.delegation_edit.users_filter_empty', 'Keine passende Lehrkraft gefunden.');
 $modalClearNote = t('teacher.delegations.modal.clear_note', '„— aufheben —“ entfernt die Delegation komplett.');
 $modalStatus = t('teacher.delegations.modal.status', 'Status');
 $modalComment = t('teacher.delegations.modal.comment', 'Kommentar');
@@ -63,7 +66,9 @@ render_teacher_header($pageTitle);
     <div class="row" style="gap:10px; margin-top:12px; align-items:flex-end; flex-wrap:wrap;">
       <div style="min-width:280px;">
         <label class="label"><?=h($modalDelegatedTo)?></label>
+        <input class="input" id="dlgUserFilter" type="search" autocomplete="off" placeholder="<?=h($modalUserFilterPlaceholder)?>" aria-label="<?=h($modalUserFilterLabel)?>" style="width:100%; margin-bottom:6px;">
         <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
+        <div id="dlgUsersEmpty" class="muted" style="font-size:12px; margin-top:4px; display:none;"><?=h($modalUserFilterEmpty)?></div>
         <div class="muted" style="font-size:12px; margin-top:4px;"><?=h($modalClearNote)?></div>
       </div>
 
@@ -129,7 +134,9 @@ render_teacher_header($pageTitle);
 
   const dlg = document.getElementById('dlgEdit');
   const dlgMeta = document.getElementById('dlgMeta');
+  const dlgUserFilter = document.getElementById('dlgUserFilter');
   const dlgUsers = document.getElementById('dlgUsers');
+  const dlgUsersEmpty = document.getElementById('dlgUsersEmpty');
   const dlgSt = document.getElementById('dlgSt');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
@@ -162,6 +169,17 @@ render_teacher_header($pageTitle);
   let users = [];
   let editCtx = null; // class_id, period_label, group_key, ...
 
+  function filterDelegationUsers(){
+    const needle = String(dlgUserFilter?.value || '').toLocaleLowerCase().trim();
+    let visible = 0;
+    dlgUsers.querySelectorAll('[data-delegation-user="1"]').forEach(row => {
+      const matches = !needle || String(row.dataset.searchText || '').includes(needle);
+      row.style.display = matches ? 'flex' : 'none';
+      if (matches) visible++;
+    });
+    if (dlgUsersEmpty) dlgUsersEmpty.style.display = visible > 0 ? 'none' : 'block';
+  }
+
   function buildUsersSelect(selectedUserIds, disabled){
     dlgUsers.innerHTML = '';
     const ids = Array.isArray(selectedUserIds) ? selectedUserIds.map(x => Number(x)).filter(x => x > 0) : [];
@@ -172,6 +190,8 @@ render_teacher_header($pageTitle);
       wrap.style.alignItems = 'center';
       wrap.style.gap = '8px';
       wrap.style.padding = '4px 2px';
+      wrap.dataset.delegationUser = '1';
+      wrap.dataset.searchText = `${u.name} ${u.role === 'admin' ? 'Admin' : ''}`.toLocaleLowerCase();
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
@@ -187,6 +207,7 @@ render_teacher_header($pageTitle);
       wrap.appendChild(txt);
       dlgUsers.appendChild(wrap);
     });
+    filterDelegationUsers();
   }
 
   function syncDisableIfClearing(){
@@ -204,6 +225,7 @@ render_teacher_header($pageTitle);
 
   function openModal(ctx){
     editCtx = ctx;
+    if (dlgUserFilter) dlgUserFilter.value = '';
     const periodPart = ctx.period_label_display ? ` · ${ctx.period_label_display}` : '';
     dlgMeta.textContent = `${ctx.class_title}${periodPart} · ${ctx.group_title}`;
     buildUsersSelect(ctx.user_ids || [], !ctx.can_assign);
@@ -360,6 +382,7 @@ render_teacher_header($pageTitle);
     dlg.querySelectorAll('[data-close="1"]').forEach(el => el.addEventListener('click', closeModal));
   }
   if (dlgUsers) dlgUsers.addEventListener('change', syncDisableIfClearing);
+  if (dlgUserFilter) dlgUserFilter.addEventListener('input', filterDelegationUsers);
 
   if (dlgSave) {
     dlgSave.addEventListener('click', async () => {

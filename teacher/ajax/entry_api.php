@@ -938,7 +938,8 @@ function load_teachers_for_delegation(PDO $pdo): array {
     "SELECT id, display_name, role
      FROM users
      WHERE is_active=1 AND deleted_at IS NULL AND role IN ('teacher','admin')
-     ORDER BY display_name ASC, id ASC"
+     ORDER BY SUBSTRING_INDEX(TRIM(display_name), ' ', -1) COLLATE utf8mb4_unicode_ci ASC,
+              display_name ASC, id ASC"
   );
   $out = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {

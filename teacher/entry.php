@@ -1414,7 +1414,17 @@ render_teacher_header($pageTitle);
           </div>
           <div style="min-width:280px;">
             <label class="label"><?=h(t('teacher.entry.delegation_edit.users_label'))?></label>
+            <input
+              class="input"
+              id="dlgUserFilter"
+              type="search"
+              autocomplete="off"
+              placeholder="<?=h(t('teacher.entry.delegation_edit.users_filter_placeholder'))?>"
+              aria-label="<?=h(t('teacher.entry.delegation_edit.users_filter_label'))?>"
+              style="width:100%; margin-bottom:6px;"
+            >
             <div id="dlgUsers" class="input" style="width:100%; padding:8px; max-height:220px; overflow:auto;"></div>
+            <div id="dlgUsersEmpty" class="muted" style="font-size:12px; margin-top:4px; display:none;"><?=h(t('teacher.entry.delegation_edit.users_filter_empty'))?></div>
             <div class="muted" style="font-size:12px; margin-top:4px;"><?=h(t('teacher.entry.delegation_edit.clear_hint'))?></div>
           </div>
           <div style="min-width:160px;">
@@ -1831,7 +1841,13 @@ render_teacher_header($pageTitle);
     background: rgba(0,122,51,0.06);
     padding:6px 10px;
     border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
   }
+  .subgroup-h .subgroup-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
   .opts{ display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:stretch; }
   .opt{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border-radius:12px; border:1px solid var(--border); background: #fff; cursor:pointer; user-select:none; flex:0 0 auto; text-align:left; color: inherit; min-height:36px; }
@@ -2180,6 +2196,7 @@ render_teacher_header($pageTitle);
     'text_review_replacement' => t('teacher.text_review.replacement', 'Vorgeschlagene Änderung'),
     'text_review_result' => t('teacher.text_review.result', 'Neuer Text nach Übernahme'),
     'delegate_action_short' => t('teacher.entry.delegate_action_short'),
+    'delegation_users_filter_empty' => t('teacher.entry.delegation_edit.users_filter_empty'),
     'group_progress' => t('teacher.entry.group_progress'),
     'role_child' => t('teacher.entry.role_child'),
     'role_teacher' => t('teacher.entry.role_teacher'),
@@ -2245,7 +2262,9 @@ render_teacher_header($pageTitle);
   const elSaveStatus = document.getElementById('saveStatus');
   const dlg = document.getElementById('dlgDelegations');
   const dlgGroup = document.getElementById('dlgGroup');
+  const dlgUserFilter = document.getElementById('dlgUserFilter');
   const dlgUsers = document.getElementById('dlgUsers');
+  const dlgUsersEmpty = document.getElementById('dlgUsersEmpty');
   const dlgStatus = document.getElementById('dlgStatus');
   const dlgNote = document.getElementById('dlgNote');
   const dlgSave = document.getElementById('dlgSave');
@@ -6008,13 +6027,23 @@ render_teacher_header($pageTitle);
 
   function renderStudentFields(fields, reportId, locked, opts = {}){
     const showSubgroups = opts.showSubgroups !== false;
+    const groupKey = String(opts.groupKey || '').trim();
     let html = '';
     let currentSubKey = '';
     (fields || []).forEach(f => {
       const subKey = String(f.subgroup || '').trim();
       const subLabel = subgroupLabelForLang(subKey, f.subgroup_title_en);
       if (showSubgroups && subKey && subKey !== currentSubKey) {
-        html += `<div class="subgroup-h">${esc(subLabel)}</div>`;
+        const scopeKey = groupKey ? groupFilterValue(groupKey, subKey) : '';
+        const subgroupDelegation = scopeKey ? delegationForScopeKey(scopeKey) : null;
+        const subgroupNames = delegationNames(subgroupDelegation);
+        const subgroupBadge = subgroupNames
+          ? `<span class="badge-del">${esc(tfmtEntry(delegationAllDone(subgroupDelegation) ? 'delegated_badge_done' : 'delegated_badge', { names: subgroupNames, status: tEntry('status_done') }))}</span>`
+          : '';
+        const subgroupDelegateButton = (!CHILD_MODE && CAN_DELEGATE && scopeKey)
+          ? `<button class="btn" type="button" tabindex="-1" data-open-deleg="${esc(scopeKey)}" style="padding:5px 9px; font-size:12px;">${esc(tEntry('delegate_action_short'))}</button>`
+          : '';
+        html += `<div class="subgroup-h"><span>${esc(subLabel)}</span><span class="subgroup-actions">${subgroupBadge}${subgroupDelegateButton}</span></div>`;
         currentSubKey = subKey;
       } else if (!subKey) {
         currentSubKey = '';
@@ -6334,7 +6363,7 @@ render_teacher_header($pageTitle);
           </div>
         `;
       html += `<div class="progress sm" style="margin:6px 0 10px;"><div class="progress-bar${_gtMiss === 0 ? ' ok' : ''}" style="width:${_gtPct}%;"></div></div>`;
-      html += renderStudentFields(fields, reportId, locked);
+      html += renderStudentFields(fields, reportId, locked, { groupKey: g.key });
     });
 
     studentForm.innerHTML = html || `<div class="alert">${esc(tEntry('no_open_fields'))}</div>`;
@@ -7084,14 +7113,22 @@ function openDelegations(preselectGroupKey){
   }
   if (!dlgGroup.value && dlgGroup.options.length) dlgGroup.value = dlgGroup.options[0].value;
 
-  // users dropdown
+  // Teachers are shown by surname and can be filtered immediately while typing.
+  if (dlgUserFilter) dlgUserFilter.value = '';
   dlgUsers.innerHTML = '';
-  (state.delegation_users||[]).forEach(u => {
+  const delegationUsers = [...(state.delegation_users || [])].sort((a, b) => {
+    const aKey = delegationTeacherSortKey(a?.name || '');
+    const bKey = delegationTeacherSortKey(b?.name || '');
+    return aKey.localeCompare(bKey, UI_LANG === 'en' ? 'en' : 'de', { sensitivity: 'base', numeric: true });
+  });
+  delegationUsers.forEach(u => {
     const wrap = document.createElement('label');
     wrap.style.display = 'flex';
     wrap.style.alignItems = 'center';
     wrap.style.gap = '8px';
     wrap.style.padding = '4px 2px';
+    wrap.dataset.delegationUser = '1';
+    wrap.dataset.searchText = normalize(`${u.name} ${u.role === 'admin' ? 'Admin' : ''}`);
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
@@ -7105,10 +7142,31 @@ function openDelegations(preselectGroupKey){
     wrap.appendChild(txt);
     dlgUsers.appendChild(wrap);
   });
+  filterDelegationUsers();
 
   // sync form with selected group
   syncDelegationForm();
   renderDelegationsList();
+}
+
+function delegationTeacherSortKey(name){
+  const fullName = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!fullName) return '';
+  const parts = fullName.split(' ');
+  const lastName = parts.pop() || '';
+  return `${lastName}\u0000${fullName}`;
+}
+
+function filterDelegationUsers(){
+  if (!dlgUsers) return;
+  const needle = normalize(dlgUserFilter?.value || '');
+  let visible = 0;
+  dlgUsers.querySelectorAll('[data-delegation-user="1"]').forEach(row => {
+    const matches = !needle || String(row.dataset.searchText || '').includes(needle);
+    row.style.display = matches ? 'flex' : 'none';
+    if (matches) visible++;
+  });
+  if (dlgUsersEmpty) dlgUsersEmpty.style.display = visible > 0 ? 'none' : 'block';
 }
 
 function closeDelegations(){
@@ -7274,6 +7332,10 @@ if (dlg) {
 
 if (dlgGroup) {
   dlgGroup.addEventListener('change', () => syncDelegationForm());
+}
+
+if (dlgUserFilter) {
+  dlgUserFilter.addEventListener('input', filterDelegationUsers);
 }
 
 if (dlgSave) {
