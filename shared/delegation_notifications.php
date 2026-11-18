@@ -66,7 +66,7 @@ function delegation_notification_group_label(string $groupKey, string $lang): st
 function delegation_notification_recipient(PDO $pdo, int $userId): ?array {
   if ($userId <= 0) return null;
   $st = $pdo->prepare(
-    "SELECT u.id, u.display_name, u.email, u.preferred_lang,
+    "SELECT u.id, u.display_name, u.email,
             p.notification_lang
      FROM users u
      LEFT JOIN teacher_notification_preferences p ON p.user_id=u.id
@@ -79,7 +79,7 @@ function delegation_notification_recipient(PDO $pdo, int $userId): ?array {
   $email = trim((string)($row['email'] ?? ''));
   if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return null;
   $lang = trim((string)($row['notification_lang'] ?? ''));
-  if ($lang === '') $lang = (string)($row['preferred_lang'] ?? 'de');
+  if ($lang === '') $lang = 'de';
   return [
     'id' => (int)$row['id'],
     'name' => trim((string)($row['display_name'] ?? '')),

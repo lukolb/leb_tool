@@ -40,6 +40,39 @@ delegation_notification_assert(
   'mail feedback must count distinct valid recipients'
 );
 
+$recipientPdo = new PDO('sqlite::memory:');
+$recipientPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$recipientPdo->exec(
+  "CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    deleted_at TEXT DEFAULT NULL
+  )"
+);
+$recipientPdo->exec(
+  "CREATE TABLE teacher_notification_preferences (
+    user_id INTEGER PRIMARY KEY,
+    notification_lang TEXT NOT NULL DEFAULT 'de'
+  )"
+);
+$recipientPdo->exec("INSERT INTO users (id,email,display_name) VALUES (7,'ada@example.test','Ada')");
+$recipientPdo->exec("INSERT INTO teacher_notification_preferences (user_id,notification_lang) VALUES (7,'en')");
+$recipient = delegation_notification_recipient($recipientPdo, 7);
+delegation_notification_assert(
+  is_array($recipient)
+    && ($recipient['email'] ?? '') === 'ada@example.test'
+    && ($recipient['lang'] ?? '') === 'en',
+  'recipient lookup must work with the real users schema and honor notification language'
+);
+$recipientPdo->exec("INSERT INTO users (id,email,display_name) VALUES (8,'grace@example.test','Grace')");
+$recipientWithoutPreference = delegation_notification_recipient($recipientPdo, 8);
+delegation_notification_assert(
+  is_array($recipientWithoutPreference) && ($recipientWithoutPreference['lang'] ?? '') === 'de',
+  'recipient lookup must default to German when no notification preference exists'
+);
+
 $assignmentHtml = build_delegation_assignment_email('Ada', [[
   'group_label' => 'Deutsch',
   'class_label' => '1a',
