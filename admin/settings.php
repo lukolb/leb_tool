@@ -463,12 +463,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) {
         $radioCrossColorMode = 'pdf_text';
       }
-      $radioCrossColor = trim((string)($_POST['export_radio_cross_color'] ?? ($cfg['export']['radio_cross_color'] ?? '#0b57d0')));
-      if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColor)) {
-        throw new RuntimeException(t('admin.settings.error.export_radio_cross_color_invalid', 'Kreuz-Farbe ungültig (z.B. #0b57d0).'));
+      $legacyRadioCrossColor = trim((string)($cfg['export']['radio_cross_color'] ?? '#0b57d0'));
+      if (!preg_match('/^#[0-9a-fA-F]{6}$/', $legacyRadioCrossColor)) $legacyRadioCrossColor = '#0b57d0';
+      $radioCrossColorStudent = trim((string)($_POST['export_radio_cross_color_student'] ?? ($cfg['export']['radio_cross_color_student'] ?? $legacyRadioCrossColor)));
+      $radioCrossColorTeacher = trim((string)($_POST['export_radio_cross_color_teacher'] ?? ($cfg['export']['radio_cross_color_teacher'] ?? $legacyRadioCrossColor)));
+      if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorStudent)) {
+        throw new RuntimeException(t('admin.settings.error.export_radio_cross_color_student_invalid', 'Farbe für Schülerkreuze ungültig (z.B. #0b57d0).'));
+      }
+      if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorTeacher)) {
+        throw new RuntimeException(t('admin.settings.error.export_radio_cross_color_teacher_invalid', 'Farbe für Lehrkraftkreuze ungültig (z.B. #0b57d0).'));
       }
       $cfg['export']['radio_cross_color_mode'] = $radioCrossColorMode;
-      $cfg['export']['radio_cross_color'] = strtoupper($radioCrossColor);
+      $cfg['export']['radio_cross_color_student'] = strtoupper($radioCrossColorStudent);
+      $cfg['export']['radio_cross_color_teacher'] = strtoupper($radioCrossColorTeacher);
+      // Keep the former shared key for older installations and code versions.
+      $cfg['export']['radio_cross_color'] = strtoupper($radioCrossColorTeacher);
     }
 
     // ---- Delegation settings ----
@@ -617,8 +626,12 @@ $exportCfg = $cfg['export'] ?? [];
 $exportAllowEditable = (bool)($exportCfg['allow_editable_pdf'] ?? false);
 $exportRadioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
 if (!in_array($exportRadioCrossColorMode, ['pdf_text', 'admin'], true)) $exportRadioCrossColorMode = 'pdf_text';
-$exportRadioCrossColor = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
-if (!preg_match('/^#[0-9a-fA-F]{6}$/', $exportRadioCrossColor)) $exportRadioCrossColor = '#0b57d0';
+$exportRadioCrossColorLegacy = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $exportRadioCrossColorLegacy)) $exportRadioCrossColorLegacy = '#0b57d0';
+$exportRadioCrossColorStudent = trim((string)($exportCfg['radio_cross_color_student'] ?? $exportRadioCrossColorLegacy));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $exportRadioCrossColorStudent)) $exportRadioCrossColorStudent = $exportRadioCrossColorLegacy;
+$exportRadioCrossColorTeacher = trim((string)($exportCfg['radio_cross_color_teacher'] ?? $exportRadioCrossColorLegacy));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $exportRadioCrossColorTeacher)) $exportRadioCrossColorTeacher = $exportRadioCrossColorLegacy;
 $signatureCfg = $cfg['signature'] ?? [];
 $signatureMasterKeySet = trim((string)($signatureCfg['master_key'] ?? '')) !== '';
 
@@ -1145,38 +1158,51 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <option value="admin" <?=$exportRadioCrossColorMode === 'admin' ? 'selected' : ''?>><?=h(t('admin.settings.export.radio_cross_color_mode_admin', 'Feste Farbe aus Einstellungen'))?></option>
     </select>
 
-    <div id="exportRadioCrossColorWrap" style="margin-top:8px; max-width:460px;">
-      <label for="exportRadioCrossColor"><?=h(t('admin.settings.export.radio_cross_color', 'Kreuz-Farbe (fix)'))?></label>
+    <div id="exportRadioCrossColorWrap" style="margin-top:8px; max-width:460px; display:grid; gap:12px;">
+      <div>
+      <label for="exportRadioCrossColorStudent"><?=h(t('admin.settings.export.radio_cross_color_student', 'Farbe für Schülerkreuze'))?></label>
       <div style="display:grid; grid-template-columns:90px 1fr; gap:10px; align-items:center;">
-        <input id="exportRadioCrossColorPicker" type="color" value="<?=h((string)$exportRadioCrossColor)?>" aria-label="<?=h(t('admin.settings.export.radio_cross_color_picker', 'Kreuz-Farbe auswählen'))?>" style="height:42px; padding:0; border-radius:12px;">
-        <input id="exportRadioCrossColor" name="export_radio_cross_color" value="<?=h((string)$exportRadioCrossColor)?>" required placeholder="#0b57d0">
+        <input id="exportRadioCrossColorStudentPicker" type="color" value="<?=h((string)$exportRadioCrossColorStudent)?>" aria-label="<?=h(t('admin.settings.export.radio_cross_color_student_picker', 'Farbe für Schülerkreuze auswählen'))?>" style="height:42px; padding:0; border-radius:12px;">
+        <input id="exportRadioCrossColorStudent" name="export_radio_cross_color_student" value="<?=h((string)$exportRadioCrossColorStudent)?>" required placeholder="#0b57d0">
       </div>
-      <p class="muted" style="margin-top:6px;"><?=h(t('admin.settings.export.radio_cross_color_hint', 'Wird nur genutzt, wenn „Feste Farbe aus Einstellungen“ gewählt ist.'))?></p>
+      </div>
+      <div>
+      <label for="exportRadioCrossColorTeacher"><?=h(t('admin.settings.export.radio_cross_color_teacher', 'Farbe für Lehrkraftkreuze'))?></label>
+      <div style="display:grid; grid-template-columns:90px 1fr; gap:10px; align-items:center;">
+        <input id="exportRadioCrossColorTeacherPicker" type="color" value="<?=h((string)$exportRadioCrossColorTeacher)?>" aria-label="<?=h(t('admin.settings.export.radio_cross_color_teacher_picker', 'Farbe für Lehrkraftkreuze auswählen'))?>" style="height:42px; padding:0; border-radius:12px;">
+        <input id="exportRadioCrossColorTeacher" name="export_radio_cross_color_teacher" value="<?=h((string)$exportRadioCrossColorTeacher)?>" required placeholder="#0b57d0">
+      </div>
+      </div>
+      <p class="muted" style="margin:0;"><?=h(t('admin.settings.export.radio_cross_color_hint', 'Wird nur genutzt, wenn „Feste Farbe aus Einstellungen“ gewählt ist. Felder mit der Rollen-Endung -S verwenden die Schülerfarbe; -T und alle übrigen Radio-Felder verwenden die Lehrkraftfarbe.'))?></p>
     </div>
 
     <script>
       (function(){
         const mode = document.getElementById('exportRadioCrossColorMode');
         const wrap = document.getElementById('exportRadioCrossColorWrap');
-        const picker = document.getElementById('exportRadioCrossColorPicker');
-        const hex = document.getElementById('exportRadioCrossColor');
-        const syncFromPicker = () => {
-          if (!picker || !hex) return;
-          hex.value = (picker.value || '').toUpperCase();
-        };
-        const syncFromHex = () => {
-          if (!picker || !hex) return;
-          const val = String(hex.value || '').trim();
-          if (/^#[0-9a-fA-F]{6}$/.test(val)) picker.value = val;
+        const wireColorPair = (pickerId, hexId) => {
+          const picker = document.getElementById(pickerId);
+          const hex = document.getElementById(hexId);
+          const syncFromPicker = () => {
+            if (!picker || !hex) return;
+            hex.value = (picker.value || '').toUpperCase();
+          };
+          const syncFromHex = () => {
+            if (!picker || !hex) return;
+            const val = String(hex.value || '').trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(val)) picker.value = val;
+          };
+          if (picker) picker.addEventListener('input', syncFromPicker);
+          if (hex) hex.addEventListener('input', syncFromHex);
+          syncFromHex();
         };
         const render = () => {
           if (!mode || !wrap) return;
-          wrap.style.display = mode.value === 'admin' ? 'block' : 'none';
+          wrap.style.display = mode.value === 'admin' ? 'grid' : 'none';
         };
         if (mode) mode.addEventListener('change', render);
-        if (picker) picker.addEventListener('input', syncFromPicker);
-        if (hex) hex.addEventListener('input', syncFromHex);
-        syncFromHex();
+        wireColorPair('exportRadioCrossColorStudentPicker', 'exportRadioCrossColorStudent');
+        wireColorPair('exportRadioCrossColorTeacherPicker', 'exportRadioCrossColorTeacher');
         render();
       })();
     </script>

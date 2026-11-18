@@ -633,7 +633,7 @@ Label (EN) & Englischer Anzeigetext. Bleibt er leer, verwendet die Oberfläche a
 \hline
 Icon & Optionales Symbol aus der Icon Library. \enquote{-- kein --} zeigt nur den Text. Unterhalb der Auswahl erscheint die aktuelle Vorschau.\\
 \hline
-Schülerfeld sperren & Wenn diese Option im zugehörigen Lehrkraftfeld gewählt ist, wird das korrespondierende Schülerfeld gesperrt. Dies ist beispielsweise sinnvoll für \enquote{nicht beurteilt} oder \enquote{nicht bearbeitet}. Die Sperre setzt gleiche Feldbasis und korrekte Feldzuordnung voraus. In der Noten- und Items-Ansicht erscheint bei den betroffenen Kompetenzen zusätzlich eine klassenweite Aktion, mit der genau dieser Sperrwert für alle nicht abgeschlossenen Schülerberichte gesetzt werden kann.\\
+Schülerfeld sperren & Wenn diese Option im zugehörigen Lehrkraftfeld gewählt ist, wird das korrespondierende Schülerfeld gesperrt. Dies ist beispielsweise sinnvoll für \enquote{nicht beurteilt} oder \enquote{nicht bearbeitet}. Die Sperre setzt gleiche Feldbasis und korrekte Feldzuordnung voraus. Wählt eine Lehrkraft diesen Wert bei einem Kind, fragt das Tool direkt nach der Auswahl dieses Wertes, ob er für alle anderen Kinder der Klasse übernommen werden soll. Die Rückfrage erscheint in allen bearbeitbaren Eingabeansichten, in Dropdowns und in der Darstellung \enquote{Optionen als Buttons}.\\
 \hline
 Entfernen & Entfernt die betreffende Zeile zunächst im Editor. Dauerhaft wird die Entfernung erst mit \enquote{Speichern}. Vorher prüfen, ob der Wert bereits in Berichten verwendet wurde.\\
 \hline
@@ -975,6 +975,7 @@ Das Dashboard zeigt Systemstatus, Bearbeitungsstände und Schnellzugriffe.
 \index{Textprüfung!Batchgröße}\index{Textprüfung!Tageslimit}\index{Textprüfung!Cache-TTL}
 \index{Elternmodus!Download}\index{Elternmodus!automatische Freigabe}\index{Elternmodus!Feedback}
 \index{Signature-Master-Key}\index{PDF!Flattening}\index{Radio-Kreuzfarbe}
+\index{Radio-Kreuzfarbe!Schüler}\index{Radio-Kreuzfarbe!Lehrkraft}
 \index{Delegation!schreibgeschützter Kontext}\index{Fehltage!Lehrkraftberechtigung}
 \index{Vorlesen!Stimme}\index{Vorlesen!Geschwindigkeit}\index{Intro!Deutsch}\index{Intro!Englisch}
 \index{Logo!hochladen}\index{Logo!entfernen}\index{DELETE-Bestätigung}
@@ -1038,7 +1039,7 @@ Feedback anonym & Entfernt den direkten Personenbezug in der Auswertung gemäß 
 \hline
 PDFs bearbeitbar lassen & Deaktiviert das standardmäßige Flattening. Für endgültige Ausgaben im Regelfall ausgeschaltet lassen.\\
 \hline
-Farbe für Radio-Kreuze & \enquote{Aus PDF übernehmen} nutzt die Textfarbe des betreffenden Radio-Buttons. \enquote{Feste Farbe aus Einstellungen} aktiviert das zusätzliche Hex-Feld \enquote{Kreuz-Farbe (fix)}. Danach einen Einzeltest exportieren.\\
+Farbe für Radio-Kreuze & \enquote{Aus PDF übernehmen} nutzt die Textfarbe des betreffenden Radio-Buttons. \enquote{Feste Farben aus Einstellungen} aktiviert zwei getrennte Hex-Felder für Schüler- und Lehrkraftkreuze. Rollenfelder mit der Endung \texttt{-S} erhalten die Schülerfarbe; \texttt{-T} und alle übrigen Radio-Felder erhalten die Lehrkraftfarbe. Die Trennung gilt einheitlich in Berichtvorschau, Export und Eltern-PDF. Danach einen Einzeltest mit beiden Rollen exportieren.\\
 \hline
 Nicht delegierte Felder schreibgeschützt anzeigen & Aktiv: Delegierte sehen zusätzlich alle übrigen Fachbereiche, können sie aber nicht bearbeiten. Inaktiv: Es werden nur die tatsächlich delegierten Bereiche angezeigt. Die Einstellung erweitert niemals die Schreibrechte.\\
 \hline
@@ -1063,7 +1064,7 @@ Schüler/Klasse endgültig löschen & Löscht einschließlich abhängiger Berich
 \begin{itemize}
   \item \textbf{Delegation mit Kontext:} \enquote{Nicht delegierte Felder schreibgeschützt anzeigen} aktivieren, wenn eine Fachlehrkraft den Gesamtbericht lesen, aber nur ihren delegierten Bereich ändern soll. Der Arbeitsablauf steht in Abschnitt~\ref{sec:schuelerberichte}.
   \item \textbf{Zweisprachiges Vorlesen:} deutsche und englische Stimme getrennt auswählen, beide Geschwindigkeiten testen und erst danach speichern. Vorbereitete sowie live erzeugte Audios werden in Abschnitt~\ref{sec:vorlesen} erläutert.
-  \item \textbf{Einheitliche PDF-Markierungen:} nur dann eine feste Kreuzfarbe wählen, wenn alle Vorlagen dieselbe Farbe verwenden sollen. Andernfalls \enquote{Aus PDF übernehmen} beibehalten und gemäß Abschnitt~\ref{sec:export-archiv} einen Einzelbericht testen.
+  \item \textbf{Unterschiedliche PDF-Markierungen:} \enquote{Feste Farben aus Einstellungen} wählen, Schüler- und Lehrkraftfarbe getrennt festlegen und gemäß Abschnitt~\ref{sec:export-archiv} einen Einzelbericht mit beiden Bewertungsspalten testen. Sollen Vorlagen ihre eigenen Farben behalten, stattdessen \enquote{Aus PDF übernehmen} verwenden.
   \item \textbf{Schüler-Intro:} In beiden Sprachfassungen denselben Informationsumfang verwenden, zum Beispiel Begrüßung mit \texttt{\{\{first\_name\}\}}, Klassenangabe mit \texttt{\{\{class\}\}} und kurze Bedienhinweise.
 \end{itemize}
 
@@ -1329,7 +1330,7 @@ Inaktiv setzen & Archiviert die Klasse und markiert ihre Berichte automatisch al
   \item Im Feld \enquote{Ansicht} den geeigneten Arbeitsmodus wählen: Notenübersicht, Schüler oder Items.
   \item Optional \enquote{Nur fehlende} aktivieren, um bereits ausgefüllte Einträge auszublenden.
   \item \enquote{Optionen als Buttons} aktivieren, wenn Auswahlwerte als anklickbare Karten statt Dropdowns erscheinen sollen.
-  \item Bei einer Kompetenz mit einer in der Optionsliste markierten Option \enquote{Schülerfeld sperren} kann in der Noten- oder Items-Ansicht \enquote{Für alle: Sperrwert} gewählt werden. Nach Bestätigung setzt die Aktion den Sperrwert für alle Kinder der Klasse; vorhandene Werte werden überschrieben, abgeschlossene Berichte bleiben unverändert.
+  \item Bei einer Kompetenz mit einer in der Optionsliste markierten Option \enquote{Schülerfeld sperren} den Sperrwert zunächst wie gewohnt für ein Kind auswählen. Das Tool fragt unmittelbar, ob dieser Wert auch für alle anderen Kinder übernommen werden soll. \enquote{Abbrechen} belässt die Auswahl nur beim aktuellen Kind; nach Bestätigung werden vorhandene Werte dieser Kompetenz bei allen anderen nicht abgeschlossenen Berichten überschrieben. Abgeschlossene Berichte bleiben unverändert. Die Rückfrage funktioniert in allen bearbeitbaren Eingabeansichten sowohl mit Dropdowns als auch mit \enquote{Optionen als Buttons}.
   \item In der Schüleransicht Gruppe und Schüler wählen; mit \enquote{Vorheriger/Nächster Schüler} innerhalb der gefilterten Reihenfolge wechseln.
   \item In der Items-Ansicht Gruppe wählen und denselben Eintrag nacheinander für mehrere Schüler bearbeiten.
   \item Text-, Auswahl-, Checkbox- und Datumsfelder ausfüllen. Pflichtfelder sind für den Fortschritt maßgeblich.
@@ -1354,7 +1355,7 @@ Nur fehlende & Blendet abgeschlossene Felder aus. Für Endkontrolle wieder deakt
 \hline
 Optionen als Buttons & Ändert nur die Bedienform der Optionsliste, nicht die gespeicherten Values.\\
 \hline
-Für alle: Sperrwert & Erscheint nur bei Kompetenzen, deren Optionsliste mindestens einen als \enquote{Schülerfeld sperren} markierten Wert enthält. Setzt den gewählten Sperrwert gesammelt für alle nicht abgeschlossenen Berichte der Klasse.\\
+Rückfrage bei Sperrwert & Erscheint direkt nach der Auswahl eines als \enquote{Schülerfeld sperren} markierten Wertes. Es gibt keinen separaten Klassen-Button. Nach Bestätigung übernimmt das Tool den Wert für alle anderen nicht abgeschlossenen Berichte der Klasse.\\
 \hline
 Suche & Filtert Schüler oder Items innerhalb der aktuellen Ansicht. Ein Filter verändert keine Werte.\\
 \hline
@@ -2149,7 +2150,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
-  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweites Setzen definierter Schüler-Sperrwerte, differenzierte Delegationsrückgaben und E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
+  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, differenzierte Delegationsrückgaben und E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
 

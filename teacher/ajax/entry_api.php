@@ -3610,9 +3610,10 @@ if ($action === 'delegations_save') {
     $classId = (int)($data['class_id'] ?? 0);
     $fieldId = (int)($data['template_field_id'] ?? 0);
     $optionItemId = (int)($data['option_item_id'] ?? 0);
+    $sourceReportId = (int)($data['source_report_instance_id'] ?? 0);
     $delegatedView = ((int)($data['delegated'] ?? 0) === 1);
-    if ($classId <= 0 || $fieldId <= 0 || $optionItemId <= 0) {
-      throw new RuntimeException('class_id/template_field_id/option_item_id fehlt.');
+    if ($classId <= 0 || $fieldId <= 0 || $optionItemId <= 0 || $sourceReportId <= 0) {
+      throw new RuntimeException('class_id/template_field_id/option_item_id/source_report_instance_id fehlt.');
     }
 
     if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
@@ -3682,6 +3683,7 @@ if ($action === 'delegations_save') {
     $appliedReportIds = [];
     $changedReportIds = [];
     $skippedFinal = 0;
+    $sourceReportFound = false;
     $pdo->beginTransaction();
     try {
       $stReports = $pdo->prepare(
@@ -3720,6 +3722,13 @@ if ($action === 'delegations_save') {
       foreach ($reportRows as $reportRow) {
         $reportId = (int)($reportRow['id'] ?? 0);
         if ($reportId <= 0) continue;
+        if ($reportId === $sourceReportId) {
+          $sourceReportFound = true;
+          if ((string)($reportRow['status'] ?? '') === 'final') {
+            throw new RuntimeException('Der ausgewählte Bericht ist bereits abgeschlossen.');
+          }
+          continue;
+        }
         if ((string)($reportRow['status'] ?? '') === 'final') {
           $skippedFinal++;
           continue;
@@ -3741,6 +3750,10 @@ if ($action === 'delegations_save') {
         $changedReportIds[] = $reportId;
       }
 
+      if (!$sourceReportFound) {
+        throw new RuntimeException('Der ausgewählte Schülerbericht gehört nicht zu dieser Klasse.');
+      }
+
       $pdo->commit();
     } catch (Throwable $e2) {
       if ($pdo->inTransaction()) $pdo->rollBack();
@@ -3751,6 +3764,7 @@ if ($action === 'delegations_save') {
       'class_id' => $classId,
       'template_field_id' => $fieldId,
       'option_item_id' => $optionItemId,
+      'source_report_instance_id' => $sourceReportId,
       'applied_count' => count($appliedReportIds),
       'changed_count' => count($changedReportIds),
       'skipped_final' => $skippedFinal,

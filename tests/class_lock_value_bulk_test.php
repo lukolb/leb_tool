@@ -25,22 +25,34 @@ class_lock_value_bulk_assert(
 );
 
 class_lock_value_bulk_assert(
-  str_contains($entryPage, "Number(option?.lock_child || 0) === 1")
+  str_contains($entryPage, 'function lockOptionForValue(field, value)')
+    && str_contains($entryPage, 'function offerLockValueForClass(field, sourceReportId, selectedValue)')
     && str_contains($entryPage, "api('apply_lock_value_to_class'")
-    && str_contains($entryPage, "window.confirm(tfmtEntry('bulk_lock_confirm'"),
-  'the grades overview must offer a confirmed class action only for marked lock values'
+    && str_contains($entryPage, "window.confirm(tfmtEntry('bulk_lock_confirm'")
+    && str_contains($entryPage, "if (previousValue !== merged) offerLockValueForClass(f, reportId, merged);")
+    && str_contains($entryPage, 'offerLockValueForClass(f, reportId, merged);'),
+  'every teacher input mode must offer the confirmed class action after selecting a marked lock value'
+);
+
+class_lock_value_bulk_assert(
+  !str_contains($entryPage, 'data-bulk-lock-field')
+    && !str_contains($entryPage, 'bulkLockControlsHtml')
+    && str_contains($entryPage, '[data-option-card="1"]'),
+  'the class action must be triggered from dropdowns or option cards without a separate button'
 );
 
 class_lock_value_bulk_assert(
   str_contains($entryApi, "if (\$action === 'apply_lock_value_to_class')")
     && str_contains($entryApi, "empty(\$optionMeta['lock_child'])")
+    && str_contains($entryApi, "\$sourceReportId = (int)(\$data['source_report_instance_id'] ?? 0)")
+    && str_contains($entryApi, 'if ($reportId === $sourceReportId)')
     && str_contains($entryApi, "=== 'final'")
     && str_contains($entryApi, "audit('teacher_class_lock_value_apply'"),
-  'the server must validate the lock option, preserve final reports and audit the class action'
+  'the server must validate the source report and lock option, preserve final reports and audit the class action'
 );
 
 class_lock_value_bulk_assert(
-  substr_count($translations, "'teacher.entry.bulk_lock_all'") === 2
+  !str_contains($translations, "'teacher.entry.bulk_lock_all'")
     && substr_count($translations, "'teacher.entry.bulk_lock_confirm'") === 2
     && substr_count($translations, "'teacher.entry.bulk_lock_applied'") === 2,
   'the class lock-value action must be translated in German and English'
@@ -48,9 +60,10 @@ class_lock_value_bulk_assert(
 
 class_lock_value_bulk_assert(
   str_contains($handbook, '\\index{Sperrwert!für ganze Klasse}')
-    && str_contains($handbook, '\\enquote{Für alle: Sperrwert}')
-    && str_contains($handbook, 'abgeschlossene Berichte bleiben unverändert'),
-  'the handbook must explain the class-wide lock-value action and its safeguards'
+    && str_contains($handbook, 'direkt nach der Auswahl dieses Wertes')
+    && str_contains($handbook, 'Dropdowns und in der Darstellung \\enquote{Optionen als Buttons}')
+    && stripos($handbook, 'abgeschlossene Berichte bleiben unverändert') !== false,
+  'the handbook must explain the selection prompt in every view and its safeguards'
 );
 
 fwrite(STDOUT, "class_lock_value_bulk_test: OK\n");

@@ -1534,8 +1534,8 @@ render_teacher_header($pageTitle);
     <!-- Split head/body tables so sticky header isn't trapped by the horizontal scroller. -->
     <div id="gradeTableWrap" class="grade-table-wrap">
       <div id="gradeHeadSticky" class="grade-head-sticky">
-        <div id="gradeHeadScroller" class="grade-head-scroller">
-        <table id="gradeTableHead" class="table grade-table">
+        <div id="gradeHeadScroller" class="grade-head-scroller" aria-hidden="true">
+        <table id="gradeTableHead" class="table grade-table" aria-hidden="true">
           <colgroup id="gradeColGroupHead"></colgroup>
           <thead id="gradeHead"></thead>
         </table>
@@ -2185,8 +2185,6 @@ render_teacher_header($pageTitle);
     'no_open_fields' => t('teacher.entry.no_open_fields'),
     'no_options' => t('teacher.entry.no_options'),
     'no_grade_fields' => t('teacher.entry.no_grade_fields'),
-    'bulk_lock_all' => t('teacher.entry.bulk_lock_all'),
-    'bulk_lock_title' => t('teacher.entry.bulk_lock_title'),
     'bulk_lock_confirm' => t('teacher.entry.bulk_lock_confirm'),
     'bulk_lock_applying' => t('teacher.entry.bulk_lock_applying'),
     'bulk_lock_applied' => t('teacher.entry.bulk_lock_applied'),
@@ -4581,6 +4579,52 @@ render_teacher_header($pageTitle);
     if (target && typeof target.focus === 'function') target.focus();
   }
 
+  function lockOptionForValue(field, value){
+    const selectedValue = String(value ?? '').trim();
+    if (!field || !selectedValue) return null;
+    return (Array.isArray(field.options) ? field.options : []).find(option =>
+      Number(option?.lock_child || 0) === 1
+        && Number(option?.option_item_id || 0) > 0
+        && String(option?.value ?? '').trim() === selectedValue
+    ) || null;
+  }
+
+  function offerLockValueForClass(field, sourceReportId, selectedValue){
+    if (CHILD_MODE || !field || isClassFieldId(Number(field.id || 0))) return;
+    const lockOption = lockOptionForValue(field, selectedValue);
+    if (!lockOption) return;
+
+    const sourceStudent = findStudentByReportId(sourceReportId);
+    if (!sourceStudent) return;
+    const valueLabel = String(lockOption.label_resolved || lockOption.label || lockOption.value || '').trim();
+    const confirmed = window.confirm(tfmtEntry('bulk_lock_confirm', {
+      value: valueLabel,
+      student: String(sourceStudent.name || ''),
+    }));
+    if (!confirmed) return;
+
+    void withSavedChanges(async () => {
+      setSaveStatus('saving', tEntry('bulk_lock_applying'));
+      const result = await api('apply_lock_value_to_class', {
+        class_id: state.class_id,
+        template_field_id: Number(field.id || 0),
+        option_item_id: Number(lockOption.option_item_id || 0),
+        source_report_instance_id: sourceReportId,
+      });
+      const appliedCount = Number(result?.applied_count || 0);
+      const skippedFinal = Number(result?.skipped_final || 0);
+      await loadClass(state.class_id);
+      const successText = skippedFinal > 0
+        ? tfmtEntry('bulk_lock_applied_with_final', { count: appliedCount, final: skippedFinal })
+        : tfmtEntry('bulk_lock_applied', { count: appliedCount });
+      setSaveStatus('ok', successText);
+    }).catch(error => {
+      console.error(error);
+      showErr(String(error?.message || tEntry('bulk_lock_error')));
+      setSaveStatus('error', tEntry('bulk_lock_error'));
+    });
+  }
+
   function wireTeacherInputs(rootEl){
     if (!rootEl) return;
 
@@ -4597,7 +4641,8 @@ render_teacher_header($pageTitle);
 
       const isClass = isClassFieldId(fieldId);
       const saveMerged = (val) => {
-        const finalVal = resolveMergeWithChild(reportId, fieldId, val);
+        const lockOption = lockOptionForValue(f, val);
+        const finalVal = lockOption ? String(lockOption.value ?? val) : resolveMergeWithChild(reportId, fieldId, val);
         if (isClass) scheduleSaveClass(fieldId, finalVal);
         else scheduleSave(reportId, fieldId, finalVal);
         return finalVal;
@@ -4611,6 +4656,7 @@ render_teacher_header($pageTitle);
         if (f) inp.value = teacherDisplay(f, actual);
 
         const commit = () => {
+          const previousValue = String(inp.dataset.actual ?? '');
           const typed = inp.value;
           const res = f ? resolveTypedToValue(f, typed) : { value: String(typed ?? '').trim(), valid: true };
 
@@ -4626,6 +4672,7 @@ render_teacher_header($pageTitle);
           inp.dataset.actual = merged;
           if (f) inp.value = teacherDisplay(f, merged);
           syncMissingClass(inp, merged);
+          if (previousValue !== merged) offerLockValueForClass(f, reportId, merged);
         };
 
         inp.addEventListener('change', commit);
@@ -4712,8 +4759,10 @@ render_teacher_header($pageTitle);
       if (disabled) return;
 
       const isClass = isClassFieldId(fieldId);
+      const f = state.fieldMap[String(fieldId)];
       const saveMerged = (val) => {
-        const finalVal = resolveMergeWithChild(reportId, fieldId, val);
+        const lockOption = lockOptionForValue(f, val);
+        const finalVal = lockOption ? String(lockOption.value ?? val) : resolveMergeWithChild(reportId, fieldId, val);
         if (isClass) scheduleSaveClass(fieldId, finalVal);
         else scheduleSave(reportId, fieldId, finalVal);
         return finalVal;
@@ -4730,6 +4779,7 @@ render_teacher_header($pageTitle);
         const merged = saveMerged(val);
         updateOptionCardGroup(wrap, val);
         syncMissingClass(card, merged);
+        offerLockValueForClass(f, reportId, merged);
       };
 
       card.addEventListener('click', select);
@@ -6461,70 +6511,6 @@ render_teacher_header($pageTitle);
     }, 120);
   }
 
-  function lockOptionsForField(field){
-    if (!field || Number(field.can_edit || 0) !== 1) return [];
-    return (Array.isArray(field.options) ? field.options : []).filter(option =>
-      Number(option?.lock_child || 0) === 1
-        && Number(option?.option_item_id || 0) > 0
-        && String(option?.value ?? '').trim() !== ''
-    );
-  }
-
-  function bulkLockControlsHtml(field){
-    if (CHILD_MODE || MEETING_MODE) return '';
-    const options = lockOptionsForField(field);
-    if (!options.length) return '';
-
-    const buttons = options.map(option => {
-      const optionId = Number(option.option_item_id || 0);
-      const value = String(option.value ?? '').trim();
-      const label = String(option.label_resolved || option.label || value).trim() || value;
-      return `<button
-        type="button"
-        class="btn tiny secondary bulk-lock-button"
-        data-bulk-lock-field="${esc(field.id)}"
-        data-bulk-lock-option="${esc(optionId)}"
-        data-bulk-lock-label="${esc(label)}"
-        title="${esc(tfmtEntry('bulk_lock_title', { value: label }))}"
-      >${esc(tfmtEntry('bulk_lock_all', { value: label }))}</button>`;
-    }).join('');
-
-    return `<div class="bulk-lock-controls" style="display:flex; gap:4px; flex-wrap:wrap; margin-top:6px;">${buttons}</div>`;
-  }
-
-  function wireBulkLockControls(root){
-    if (!root) return;
-    root.querySelectorAll('[data-bulk-lock-field][data-bulk-lock-option]').forEach(button => {
-      button.addEventListener('click', () => {
-        const fieldId = Number(button.getAttribute('data-bulk-lock-field') || 0);
-        const optionItemId = Number(button.getAttribute('data-bulk-lock-option') || 0);
-        const label = String(button.getAttribute('data-bulk-lock-label') || '').trim();
-        if (!fieldId || !optionItemId) return;
-        if (!window.confirm(tfmtEntry('bulk_lock_confirm', { value: label }))) return;
-
-        void withSavedChanges(async () => {
-          setSaveStatus('saving', tEntry('bulk_lock_applying'));
-          const result = await api('apply_lock_value_to_class', {
-            class_id: state.class_id,
-            template_field_id: fieldId,
-            option_item_id: optionItemId,
-          });
-          const appliedCount = Number(result?.applied_count || 0);
-          const skippedFinal = Number(result?.skipped_final || 0);
-          await loadClass(state.class_id);
-          const successText = skippedFinal > 0
-            ? tfmtEntry('bulk_lock_applied_with_final', { count: appliedCount, final: skippedFinal })
-            : tfmtEntry('bulk_lock_applied', { count: appliedCount });
-          setSaveStatus('ok', successText);
-        }).catch(error => {
-          console.error(error);
-          showErr(String(error?.message || tEntry('bulk_lock_error')));
-          setSaveStatus('error', tEntry('bulk_lock_error'));
-        });
-      });
-    });
-  }
-
   function renderGradesView(){
     ensureSelect(gradeGroupSelect);
 
@@ -6581,7 +6567,7 @@ render_teacher_header($pageTitle);
         const tdLabel = document.createElement('td');
         tdLabel.className = 'sticky';
         const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f._group_title || '')}</div><div class="muted" style="font-size:12px;">${esc(lbl)}</div>${bulkLockControlsHtml(f)}`;
+        tdLabel.innerHTML = `<div style="font-weight:800;">${esc(f._group_title || '')}</div><div class="muted" style="font-size:12px;">${esc(lbl)}</div>`;
         row.appendChild(tdLabel);
 
         sCols.forEach(s => {
@@ -6617,7 +6603,6 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    wireBulkLockControls(gradeBody);
     if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
@@ -6656,7 +6641,7 @@ render_teacher_header($pageTitle);
     fields.forEach(f => {
       const th = document.createElement('th');
       const lbl = resolveLabelTemplate(String(f.label || f.field_name));
-      th.innerHTML = `<div class="muted" style="font-size:12px;">${esc(lbl)}</div>${bulkLockControlsHtml(f)}`;
+      th.innerHTML = `<div class="muted" style="font-size:12px;">${esc(lbl)}</div>`;
       tr2.appendChild(th);
     });
     gradeHead.appendChild(tr2);
@@ -6702,7 +6687,6 @@ render_teacher_header($pageTitle);
       syncGradeHeaderScroll();
     });
     wireActiveInputs(gradeBody);
-    wireBulkLockControls(gradeHead);
     if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(gradeBody);
     }
@@ -6755,7 +6739,7 @@ render_teacher_header($pageTitle);
       const subgroupKey = String(f.subgroup || '').trim();
       const subgroupLabel = subgroupLabelForLang(subgroupKey, f.subgroup_title_en);
       const subgroupHtml = subgroupLabel ? `<div class="subgroup-label">${esc(subgroupLabel)}</div>` : '';
-      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>${subgroupHtml}${bulkLockControlsHtml(f)}`;
+      tdLabel.innerHTML = `<div style="font-weight:800;">${esc(lbl)}</div><div class="muted" style="font-size:12px;">${esc(f._group_title)}</div>${subgroupHtml}`;
       row.appendChild(tdLabel);
 
       sCols.forEach(s => {
@@ -6786,7 +6770,6 @@ render_teacher_header($pageTitle);
     });
 
     wireActiveInputs(itemBody);
-    wireBulkLockControls(itemBody);
     if (!CHILD_MODE && !DELEGATED_MODE) {
       wireChildValueControls(itemBody);
     }

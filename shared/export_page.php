@@ -109,8 +109,12 @@ $exportCfg = $cfg['export'] ?? [];
 $allowEditablePdf = (bool)($exportCfg['allow_editable_pdf'] ?? false);
 $radioCrossColorMode = (string)($exportCfg['radio_cross_color_mode'] ?? 'pdf_text');
 if (!in_array($radioCrossColorMode, ['pdf_text', 'admin'], true)) $radioCrossColorMode = 'pdf_text';
-$radioCrossColorHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
-if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorHex)) $radioCrossColorHex = '#0b57d0';
+$radioCrossColorLegacyHex = trim((string)($exportCfg['radio_cross_color'] ?? '#0b57d0'));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorLegacyHex)) $radioCrossColorLegacyHex = '#0b57d0';
+$radioCrossColorStudentHex = trim((string)($exportCfg['radio_cross_color_student'] ?? $radioCrossColorLegacyHex));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorStudentHex)) $radioCrossColorStudentHex = $radioCrossColorLegacyHex;
+$radioCrossColorTeacherHex = trim((string)($exportCfg['radio_cross_color_teacher'] ?? $radioCrossColorLegacyHex));
+if (!preg_match('/^#[0-9a-fA-F]{6}$/', $radioCrossColorTeacherHex)) $radioCrossColorTeacherHex = $radioCrossColorLegacyHex;
 
 function export_class_display(array $c): string {
   $label = (string)($c['label'] ?? '');
@@ -318,7 +322,8 @@ const FONTKIT_URL = 'https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.m
 const EXPORT_LANG = <?= json_encode(ui_lang()) ?>;
 const ALLOW_EDITABLE_PDF = <?= $allowEditablePdf ? 'true' : 'false' ?>;
 const RADIO_CROSS_COLOR_MODE = <?= json_encode($radioCrossColorMode) ?>;
-const RADIO_CROSS_COLOR_HEX = <?= json_encode($radioCrossColorHex) ?>;
+const RADIO_CROSS_COLOR_STUDENT_HEX = <?= json_encode($radioCrossColorStudentHex) ?>;
+const RADIO_CROSS_COLOR_TEACHER_HEX = <?= json_encode($radioCrossColorTeacherHex) ?>;
 const I18N = <?= json_encode($txJs, JSON_UNESCAPED_UNICODE) ?>;
 const INITIAL_STUDENT_ID = (() => {
   const raw = new URLSearchParams(window.location.search).get('student_id') || '';
@@ -1254,7 +1259,12 @@ function getWidgetTextColor(widget, radioField, PDFName){
 
 function resolveRadioCrossColor(widget, radioField, PDFName){
   if (RADIO_CROSS_COLOR_MODE === 'admin') {
-    return hexToRgbColor(RADIO_CROSS_COLOR_HEX) || { model: 'rgb', values: [0, 0, 0] };
+    let fieldName = '';
+    try { fieldName = String(radioField?.getName?.() || ''); } catch (e) {}
+    const colorHex = /[-_]S$/i.test(fieldName)
+      ? RADIO_CROSS_COLOR_STUDENT_HEX
+      : RADIO_CROSS_COLOR_TEACHER_HEX;
+    return hexToRgbColor(colorHex) || { model: 'rgb', values: [0, 0, 0] };
   }
   return getWidgetTextColor(widget, radioField, PDFName);
 }
