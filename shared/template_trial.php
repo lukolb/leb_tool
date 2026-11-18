@@ -58,6 +58,14 @@ function template_trial_signature_value(string $fieldName, string $label, array 
   return 'M. Musterlehrkraft';
 }
 
+function template_trial_is_signature_field(string $fieldType, string $fieldName): bool {
+  if (mb_strtolower(trim($fieldType), 'UTF-8') === 'signature') return true;
+  $key = mb_strtolower(preg_replace('/[^\p{L}\p{N}]+/u', '', $fieldName) ?? '', 'UTF-8');
+  if ($key === '') return false;
+  return preg_match('/^(?:teacher|head|guardian|parent|principal|director|school|class|student|pupil)?sign(?:ature)?$/u', $key) === 1
+    || preg_match('/^(?:lehrer|schulleitung|eltern|erziehungsberechtigt)?unterschrift$/u', $key) === 1;
+}
+
 function template_trial_options(PDO $pdo, array $field, array &$cache, string $lang): array {
   $meta = template_trial_meta($field['meta_json'] ?? null);
   $listId = (int)($meta['option_list_template_id'] ?? 0);
@@ -128,9 +136,11 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
     $canChild = (int)($row['can_child_edit'] ?? 0) === 1;
     $canTeacher = (int)($row['can_teacher_edit'] ?? 0) === 1;
     $fieldType = (string)($row['field_type'] ?? 'text');
+    $fieldName = (string)($row['field_name'] ?? '');
+    $isSignature = template_trial_is_signature_field($fieldType, $fieldName);
     $automaticKind = ($bindingTemplate !== '' || $binding !== '')
       ? 'mapping'
-      : ($fieldType === 'signature' ? 'signature' : (!$canChild && !$canTeacher ? 'template' : ''));
+      : ($isSignature ? 'signature' : (!$canChild && !$canTeacher ? 'template' : ''));
     $systemBound = $automaticKind !== '';
     $role = $systemBound ? 'system' : ($canChild && !$canTeacher ? 'child' : ($canChild ? 'both' : 'teacher'));
     $dateMode = (string)($meta['date_format_mode'] ?? 'preset');
@@ -142,7 +152,7 @@ function template_trial_load(PDO $pdo, int $templateId, string $lang): array {
 
     $fields[] = [
       'id' => (int)$row['id'],
-      'field_name' => (string)($row['field_name'] ?? ''),
+      'field_name' => $fieldName,
       'field_type' => $fieldType,
       'label' => $label,
       'help_text' => (string)($row['help_text'] ?? ''),

@@ -195,7 +195,7 @@ render_admin_header(t('admin.template_trial.title'));
                 <?php if ((int)$field['is_required']===1): ?><span class="trial-badge"><?=h(t('admin.template_trial.required'))?></span><?php endif; ?>
               </span>
               <?php if ($system): ?>
-                <?php if ($type === 'signature'): ?>
+                <?php if ($automaticKind === 'signature'): ?>
                   <input data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>">
                 <?php else: ?>
                   <textarea data-system-output="<?=h((string)$fid)?>" data-automatic-kind="<?=h($automaticKind)?>" readonly aria-readonly="true" rows="2" placeholder="<?=h(t('admin.template_trial.automatic_placeholder'))?>"></textarea>

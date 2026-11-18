@@ -116,6 +116,11 @@ putenv('APP_CONFIG_FILE=' . $root . '/config.sample.php');
 require_once $root . '/bootstrap.php';
 require_once $root . '/shared/template_trial.php';
 
+template_trial_assert(template_trial_is_signature_field('text', 'teachersign'), 'legacy teacher signature names must be detected');
+template_trial_assert(template_trial_is_signature_field('text', 'headsign'), 'legacy head signature names must be detected');
+template_trial_assert(template_trial_is_signature_field('text', 'guardiansign'), 'legacy guardian signature names must be detected');
+template_trial_assert(!template_trial_is_signature_field('text', 'design'), 'ordinary field names ending in sign-like letters must stay editable');
+
 $definition = [
   'custom_fields' => [
     ['field_key' => 'pronoun', 'default_value' => ''],
