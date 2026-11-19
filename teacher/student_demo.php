@@ -34,7 +34,7 @@ if (($user['role'] ?? '') === 'admin') {
     "SELECT DISTINCT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.template_id
      FROM classes c
      LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
-     LEFT JOIN class_group_delegations d ON d.class_id=c.id AND d.user_id=?
+     LEFT JOIN class_group_delegations d ON d.class_id=c.id AND d.user_id=? AND d.status='open'
      WHERE c.is_active=1 AND (uca.user_id IS NOT NULL OR d.user_id IS NOT NULL)
      ORDER BY c.school_year DESC, CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
               c.grade_level ASC, c.label ASC, c.name ASC"

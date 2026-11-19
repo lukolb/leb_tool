@@ -12,8 +12,9 @@ function nav_items_for_role(string $role): array {
       ['label'=>t('nav.dashboard'), 'href'=>'admin/index.php', 'files'=>['index.php']],
 
       // Master data
-      ['label'=>t('nav.school'), 'href'=>'admin/classes.php', 'files'=>['classes.php','students.php'], 'children'=>[
+      ['label'=>t('nav.school'), 'href'=>'admin/classes.php', 'files'=>['classes.php','students.php','student_demo.php'], 'children'=>[
         ['label'=>t('nav.classes'),  'href'=>'admin/classes.php',  'files'=>['classes.php']],
+        ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
         ['label'=>t('nav.students'), 'href'=>'admin/students.php', 'files'=>['students.php']],
       ]],
 
@@ -49,22 +50,21 @@ function nav_items_for_role(string $role): array {
         ['label'=>t('nav.log'), 'href'=>'admin/log.php', 'files'=>['log.php']],
         ['label'=>t('nav.backup'), 'href'=>'admin/backup.php', 'files'=>['backup.php']],
       ]],
-
-      ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
       ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
     ];
   }
 
   return [
     ['label'=>t('nav.dashboard'), 'href'=>'teacher/index.php', 'files'=>['index.php']],
-    ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php', 'class_intro.php', 'students.php']],
+    ['label'=>t('nav.classes'),  'href'=>'teacher/classes.php',  'files'=>['classes.php', 'class_intro.php', 'students.php', 'student_demo.php'], 'children'=>[
+      ['label'=>t('nav.classes'), 'href'=>'teacher/classes.php', 'files'=>['classes.php', 'class_intro.php', 'students.php']],
+      ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
+    ]],
     ['label'=>t('nav.entries'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php','ags.php'], 'children'=>[
       ['label'=>t('nav.entries', 'Eingaben'), 'href'=>'teacher/entry.php', 'files'=>['entry.php', 'pdf_entry.php', 'child_entry.php']],
       ['label'=>t('nav.ags', 'AGs'), 'href'=>'teacher/ags.php', 'files'=>['ags.php']],
     ]],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
-    ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
-
     // Reports
     ['label'=>t('nav.final_reports'), 'href'=>'teacher/report_preview.php', 'files'=>[
       'export.php','parents.php','report_preview.php','report_requests.php','latex_templates.php'], 'children'=>[

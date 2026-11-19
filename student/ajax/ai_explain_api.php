@@ -125,8 +125,9 @@ function student_context(PDO $pdo, int $studentId, string $lang): array {
 try {
   $pdo = db();
   $lang = ui_lang();
-  $studentId = (int)($_SESSION['student']['id'] ?? 0);
-  if ($studentId <= 0) throw new RuntimeException(t_lang('student.ai.error.not_logged_in', $lang));
+  $demo = current_student_demo();
+  $studentId = $demo ? 0 : (int)($_SESSION['student']['id'] ?? 0);
+  if (!$demo && $studentId <= 0) throw new RuntimeException(t_lang('student.ai.error.not_logged_in', $lang));
 
   $data = read_json_body();
   if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
@@ -139,7 +140,25 @@ try {
   $lang = (string)($data['lang'] ?? $lang);
   $lang = ($lang === 'en') ? 'en' : 'de';
 
-  $ctx = student_context($pdo, $studentId, $lang);
+  if ($demo) {
+    $user = current_user() ?? [];
+    $userId = (int)($user['id'] ?? 0);
+    $classId = (int)($demo['class_id'] ?? 0);
+    if ($userId <= 0 || $classId <= 0 || !user_can_access_class($pdo, $userId, $classId)) {
+      throw new RuntimeException(t('session.forbidden.message', 'Keine Berechtigung.'));
+    }
+    $stDemo = $pdo->prepare(
+      'SELECT 0 AS id, c.id AS class_id, c.template_id, c.grade_level
+       FROM classes c
+       WHERE c.id=? AND c.is_active=1
+       LIMIT 1'
+    );
+    $stDemo->execute([$classId]);
+    $ctx = $stDemo->fetch(PDO::FETCH_ASSOC);
+    if (!$ctx) throw new RuntimeException(t_lang('student_demo.error.class_unavailable', $lang));
+  } else {
+    $ctx = student_context($pdo, $studentId, $lang);
+  }
   $templateId = (int)($ctx['template_id'] ?? 0);
   if ($templateId <= 0) throw new RuntimeException(t_lang('student.ai.error.no_template', $lang));
 

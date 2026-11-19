@@ -886,7 +886,7 @@ try {
       'field_lookup' => $fieldLookup,
       'ui' => [
         'display_mode' => student_wizard_display_mode_from_class($studentRow),
-        'ai_enabled' => !$isDemo && ai_provider_enabled(),
+        'ai_enabled' => ai_provider_enabled(),
         'demo_mode' => $isDemo,
       ],
       'ui_lang' => $lang,

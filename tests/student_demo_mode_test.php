@@ -15,6 +15,7 @@ foreach ([
   'student' => 'student/index.php',
   'wizard' => 'student/ajax/wizard_api.php',
   'tts' => 'student/ajax/tts_audio_cache_api.php',
+  'ai' => 'student/ajax/ai_explain_api.php',
   'exit' => 'student/demo_exit.php',
   'layout' => 'shared/_layout.php',
   'translations' => 'shared/translations.php',
@@ -31,8 +32,9 @@ student_demo_assert(
 );
 student_demo_assert(
   str_contains($sources['launcher'], 'user_can_access_class($pdo, $userId, $classId)')
-    && str_contains($sources['launcher'], "(\$user['role'] ?? '') !== 'admin'"),
-  'demo launch must enforce the same class scope as the teacher area while allowing admins'
+    && str_contains($sources['launcher'], "(\$user['role'] ?? '') !== 'admin'")
+    && str_contains($sources['launcher'], "d.status='open'"),
+  'demo launch must enforce the same class scope, include every actively delegated class and allow admins'
 );
 student_demo_assert(
   str_contains($sources['student'], "user_can_access_class(\$pdo, \$userId, (int)\$studentDemo['class_id'])")
@@ -55,8 +57,16 @@ student_demo_assert(
 student_demo_assert(
   str_contains($sources['student'], 'const DEMO_MODE =')
     && str_contains($sources['student'], 'student_demo.banner_text')
-    && str_contains($sources['student'], "'student/demo_exit.php'"),
-  'the student screen must visibly mark demo mode and provide a safe exit'
+    && str_contains($sources['student'], "'student/demo_exit.php'")
+    && str_contains($sources['student'], '.demo-banner{')
+    && !str_contains($sources['student'], 'class="alert demo-banner"'),
+  'the student screen must use a compact demo marker and provide one safe exit in the regular header'
+);
+student_demo_assert(
+  str_contains($sources['wizard'], "'ai_enabled' => ai_provider_enabled()")
+    && str_contains($sources['ai'], 'current_student_demo()')
+    && str_contains($sources['ai'], 'user_can_access_class($pdo, $userId, $classId)'),
+  'admin-enabled student AI help must also be available in demo mode without bypassing class access'
 );
 student_demo_assert(
   str_contains($sources['tts'], 'current_student_demo()')
@@ -71,8 +81,10 @@ student_demo_assert(
 student_demo_assert(
   substr_count($sources['translations'], "'nav.student_demo'") === 2
     && substr_count($sources['translations'], "'student_demo.start'") === 2
-    && substr_count($sources['layout'], "t('nav.student_demo'") === 2,
-  'the demo entry point must be available and translated in both staff roles'
+    && substr_count($sources['layout'], "t('nav.student_demo'") === 2
+    && str_contains($sources['layout'], "'files'=>['classes.php','students.php','student_demo.php'], 'children'=>[")
+    && str_contains($sources['layout'], "'files'=>['classes.php', 'class_intro.php', 'students.php', 'student_demo.php'], 'children'=>["),
+  'the translated demo entry point must be nested in the class area for both staff roles'
 );
 
 fwrite(STDOUT, "student_demo_mode_test: OK\n");

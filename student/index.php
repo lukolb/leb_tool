@@ -256,6 +256,22 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     .deadline-inline .label{ font-weight:700; }
     .deadline-inline .date{ color:var(--muted); }
 
+    .demo-banner{
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      width:fit-content;
+      max-width:100%;
+      margin:0 0 8px;
+      padding:5px 9px;
+      border:1px solid rgba(180, 110, 0, 0.28);
+      border-radius:999px;
+      background:rgba(255, 180, 0, 0.09);
+      color:#6f4600;
+      font-size:12px;
+      line-height:1.25;
+    }
+
     .ai-help-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .ai-help-btn{ border:1px solid var(--border); background:#fff; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; cursor:pointer; }
     .ai-help-btn:hover{ background: rgba(11,87,208,0.06); }
@@ -460,10 +476,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   <div class="container page-shell">
 
     <?php if ($isStudentDemo): ?>
-      <div class="alert demo-banner" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-        <div><strong><?=h(t('student_demo.banner_title', 'Demo-Modus'))?></strong> · <?=h(t('student_demo.banner_text', 'Eingaben werden nicht in Schülerberichten gespeichert.'))?></div>
-        <a class="btn secondary" href="<?=h(url('student/demo_exit.php'))?>"><?=h(t('student_demo.exit', 'Demo beenden'))?></a>
-      </div>
+      <div class="demo-banner"><strong><?=h(t('student_demo.banner_title', 'Demo-Modus'))?>:</strong> <?=h(t('student_demo.banner_text', 'Eingaben werden nicht in Schülerberichten gespeichert.'))?></div>
     <?php endif; ?>
 
     <div class="card">
