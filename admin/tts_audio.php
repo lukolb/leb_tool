@@ -71,7 +71,7 @@ $classes = $pdo->query(
    ORDER BY c.school_year DESC, c.grade_level, c.label, c.name"
 )->fetchAll(PDO::FETCH_ASSOC);
 $generationClasses = array_values(array_filter($classes, static function (array $class) use ($selectedYear, $selectedPeriod, $selectedClass): bool {
-  if ((int)($class['is_active'] ?? 0) !== 1 || (int)($class['tts_enabled'] ?? 0) !== 1) return false;
+  if ((int)($class['is_active'] ?? 0) !== 1) return false;
   if ($selectedYear !== '' && (string)$class['school_year'] !== $selectedYear) return false;
   if ($selectedPeriod !== '' && normalize_class_period_label((string)$class['period_label']) !== normalize_class_period_label($selectedPeriod)) return false;
   if ($selectedClass > 0 && (int)$class['id'] !== $selectedClass) return false;
@@ -143,9 +143,9 @@ render_admin_header(t('tts_audio.admin.title', 'Audioverwaltung'));
 
 <div class="card" id="ttsBulkCard">
   <h2><?=h(t('tts_audio.admin.bulk_heading', 'Audiodateien gesammelt erzeugen'))?></h2>
-  <p class="muted"><?=h(t('tts_audio.admin.bulk_intro', 'Wähle aktive Klassen mit eingeschalteter Vorlesefunktion aus. Identische Texte verwenden klassenübergreifend dieselbe Datei; nur noch nicht vorhandene Texte werden erzeugt. Die Auswahl folgt den Filtern dieser Seite.'))?></p>
+  <p class="muted"><?=h(t('tts_audio.admin.bulk_intro', 'Wähle aktive Klassen aus. Die Audios können auch vorbereitet werden, wenn Vorlesen für eine Klasse noch nicht aktiviert ist. Identische Texte verwenden klassenübergreifend dieselbe Datei; nur noch nicht vorhandene Texte werden erzeugt. Die Auswahl folgt den Filtern dieser Seite.'))?></p>
   <?php if (!$generationClasses): ?>
-    <p class="muted"><?=h(t('tts_audio.admin.bulk_empty', 'Für die aktuelle Auswahl gibt es keine aktive Klasse mit eingeschalteter Vorlesefunktion.'))?></p>
+    <p class="muted"><?=h(t('tts_audio.admin.bulk_empty', 'Für die aktuelle Auswahl gibt es keine aktive Klasse.'))?></p>
   <?php else: ?>
     <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
       <label style="display:flex; gap:8px; align-items:center; font-weight:700;">
@@ -160,7 +160,11 @@ render_admin_header(t('tts_audio.admin.title', 'Audioverwaltung'));
         <?php $className = tts_admin_class_name($class); ?>
         <label style="display:flex; gap:8px; align-items:flex-start; border:1px solid var(--border, #d1d5db); border-radius:8px; padding:10px;">
           <input type="checkbox" class="tts-bulk-class" value="<?=(int)$class['id']?>" data-class-label="<?=h($className)?>">
-          <span><strong><?=h($className)?></strong><br><small class="muted"><?=h((string)$class['school_year'] . ' · ' . (string)$class['period_label'])?></small></span>
+          <span>
+            <strong><?=h($className)?></strong><br>
+            <small class="muted"><?=h((string)$class['school_year'] . ' · ' . (string)$class['period_label'])?></small><br>
+            <small class="muted"><?=h((int)($class['tts_enabled'] ?? 0) === 1 ? t('tts_audio.admin.bulk_tts_on', 'Vorlesen aktiv') : t('tts_audio.admin.bulk_tts_off', 'Vorlesen noch nicht aktiviert'))?></small>
+          </span>
         </label>
       <?php endforeach; ?>
     </div>

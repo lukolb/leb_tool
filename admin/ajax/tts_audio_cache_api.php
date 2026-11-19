@@ -22,7 +22,7 @@ try {
 
   $action = trim((string)($_POST['action'] ?? ''));
   if ($action === 'plan') {
-    $items = tts_audio_class_plan($pdo, $classId);
+    $items = tts_audio_class_plan($pdo, $classId, true);
     $cached = 0;
     foreach ($items as &$item) {
       $audio = tts_audio_find($pdo, (string)$item['cache_key']);
@@ -50,7 +50,7 @@ try {
   }
 
   if ($action === 'upload') {
-    $stored = tts_audio_store_upload($pdo, $classId, $_FILES['audio'] ?? [], $_POST);
+    $stored = tts_audio_store_upload($pdo, $classId, $_FILES['audio'] ?? [], $_POST, true);
     tts_admin_json([
       'ok' => true,
       'cache_key' => (string)$stored['cache_key'],

@@ -112,12 +112,12 @@ function tts_audio_link_to_class(
   $st->execute([$classId, $audioId, $sourceType, $sourceKey, $sourceLabel]);
 }
 
-function tts_audio_store_upload(PDO $pdo, int $classId, array $upload, array $meta): array {
+function tts_audio_store_upload(PDO $pdo, int $classId, array $upload, array $meta, bool $allowDisabledClass = false): array {
   if ($classId <= 0) throw new RuntimeException(t('tts_audio.error.class', 'Ungültige Klasse.'));
   $classSt = $pdo->prepare('SELECT id, tts_enabled FROM classes WHERE id=? LIMIT 1');
   $classSt->execute([$classId]);
   $class = $classSt->fetch(PDO::FETCH_ASSOC);
-  if (!$class || (int)($class['tts_enabled'] ?? 0) !== 1) {
+  if (!$class || (!$allowDisabledClass && (int)($class['tts_enabled'] ?? 0) !== 1)) {
     throw new RuntimeException(t('tts_audio.error.disabled', 'Vorlesen ist für diese Klasse nicht aktiviert.'));
   }
 
@@ -257,7 +257,7 @@ function tts_audio_intro_text(string $html, array $class, array $student): strin
   return tts_audio_normalize_text($text);
 }
 
-function tts_audio_class_plan(PDO $pdo, int $classId): array {
+function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass = false): array {
   $stClass = $pdo->prepare(
     'SELECT id, school_year, period_label, grade_level, label, name, template_id,
             student_intro_html, student_intro_html_en, tts_enabled
@@ -266,7 +266,7 @@ function tts_audio_class_plan(PDO $pdo, int $classId): array {
   $stClass->execute([$classId]);
   $class = $stClass->fetch(PDO::FETCH_ASSOC);
   if (!$class) throw new RuntimeException(t('tts_audio.error.class', 'Ungültige Klasse.'));
-  if ((int)($class['tts_enabled'] ?? 0) !== 1) throw new RuntimeException(t('tts_audio.error.disabled', 'Vorlesen ist für diese Klasse nicht aktiviert.'));
+  if (!$allowDisabledClass && (int)($class['tts_enabled'] ?? 0) !== 1) throw new RuntimeException(t('tts_audio.error.disabled', 'Vorlesen ist für diese Klasse nicht aktiviert.'));
 
   $templateId = (int)($class['template_id'] ?? 0);
   $items = [];

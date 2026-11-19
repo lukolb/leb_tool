@@ -25,6 +25,8 @@ $student = (string)file_get_contents($root . '/student/index.php');
 $classes = (string)file_get_contents($root . '/teacher/classes.php');
 $adminAudio = (string)file_get_contents($root . '/admin/tts_audio.php');
 $adminAudioApi = (string)file_get_contents($root . '/admin/ajax/tts_audio_cache_api.php');
+$teacherAudioApi = (string)file_get_contents($root . '/teacher/ajax/tts_audio_cache_api.php');
+$studentAudioApi = (string)file_get_contents($root . '/student/ajax/tts_audio_cache_api.php');
 $schema = (string)file_get_contents($root . '/bootstrap.php');
 $wizard = (string)file_get_contents($root . '/student/ajax/wizard_api.php');
 $layout = (string)file_get_contents($root . '/shared/_layout.php');
@@ -42,7 +44,12 @@ assert_true(str_contains($adminAudio, "for (let classIndex = 0; classIndex < sel
 assert_true(str_contains($adminAudio, "url('admin/ajax/tts_audio_cache_api.php')"), 'Admin bulk generation must use its protected admin API.');
 assert_true(str_contains($adminAudio, '$rowsByAudio[$audioId]') && str_contains($adminAudio, "'class_usages'"), 'Audio management must show one physical file with its class usages instead of duplicate class-specific rows.');
 assert_true(str_contains($adminAudioApi, 'require_admin();'), 'The admin audio API must require an admin session.');
-assert_true(str_contains($adminAudioApi, 'tts_audio_class_plan($pdo, $classId)') && str_contains($adminAudioApi, 'tts_audio_store_upload($pdo, $classId'), 'Admin bulk generation must reuse the established class plan and upload validation.');
+assert_true(str_contains($adminAudioApi, 'tts_audio_class_plan($pdo, $classId, true)') && str_contains($adminAudioApi, 'tts_audio_store_upload($pdo, $classId, $_FILES[\'audio\'] ?? [], $_POST, true)'), 'Admin bulk generation must explicitly permit preparation before read aloud is enabled.');
+assert_true(!str_contains($teacherAudioApi . $studentAudioApi, 'tts_audio_store_upload($pdo, $classId, $_FILES[\'audio\'] ?? [], $_POST, true)'), 'Teacher and student uploads must not bypass the read-aloud setting.');
+$planParameters = (new ReflectionFunction('tts_audio_class_plan'))->getParameters();
+$storeParameters = (new ReflectionFunction('tts_audio_store_upload'))->getParameters();
+assert_true(($planParameters[2]->getDefaultValue() ?? true) === false && ($storeParameters[4]->getDefaultValue() ?? true) === false, 'Preparing audio for a disabled class must remain an explicit admin-only opt-in.');
+assert_true(str_contains($adminAudio, "if ((int)(\$class['is_active'] ?? 0) !== 1) return false;") && !str_contains($adminAudio, "(int)(\$class['tts_enabled'] ?? 0) !== 1) return false;"), 'All active classes must be available to the admin bulk generator regardless of the read-aloud setting.');
 assert_true(str_contains($schema, 'UNIQUE KEY uq_tts_audio_cache_key (cache_key)'), 'Identical text, language and voice must share one physical audio file across classes.');
 assert_true(str_contains($schema, 'CREATE TABLE tts_audio_files') && str_contains($schema, 'CREATE TABLE tts_audio_class_links'), 'Audio cache tables must be migrated automatically.');
 
