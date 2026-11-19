@@ -13,10 +13,7 @@ if ($embedUrl === '') {
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Referrer-Policy: no-referrer');
 
-$publicUrl = ai_help_public_url($embedUrl);
 $title = t('ai_help.title', 'LEB Tool Hilfe');
-$privacyHint = t('ai_help.privacy_hint', 'Bitte keine personenbezogenen Daten eingeben.');
-$externalLabel = t('ai_help.open_external', 'In neuem Fenster öffnen');
 ?>
 <!doctype html>
 <html lang="<?=h(ui_lang())?>">
@@ -26,23 +23,13 @@ $externalLabel = t('ai_help.open_external', 'In neuem Fenster öffnen');
   <title><?=h($title)?></title>
   <link rel="stylesheet" href="<?=h(url('assets/app.css'))?>">
 </head>
-<body class="ai-help-window">
-  <header class="ai-help-window-header">
-    <div class="ai-help-heading">
-      <strong><?=h($title)?></strong>
-      <span><?=h($privacyHint)?></span>
-    </div>
-    <?php if ($publicUrl !== ''): ?>
-      <a class="ai-help-window-external" href="<?=h($publicUrl)?>" target="_blank" rel="noopener noreferrer" aria-label="<?=h($externalLabel)?>" title="<?=h($externalLabel)?>">↗</a>
-    <?php endif; ?>
-  </header>
+<body class="ai-help-embed-page">
   <iframe
-    class="ai-help-window-frame"
+    class="ai-help-embed-frame"
     title="<?=h($title)?>"
     src="<?=h($embedUrl)?>"
     referrerpolicy="no-referrer"
     allow="fullscreen; clipboard-write"
   ></iframe>
-  <script>window.name = 'lebToolHelp';</script>
 </body>
 </html>

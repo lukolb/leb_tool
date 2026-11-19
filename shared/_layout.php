@@ -190,7 +190,7 @@ function render_ai_help_widget(): void {
   $embedUrl = ai_help_embed_url();
   if ($embedUrl === '') return;
   $openLabel = t('ai_help.open', 'KI-Hilfe öffnen');
-  $helpUrl = url('help_assistant.php');
+  $workspaceUrl = url('help_workspace.php');
   ?>
   <button
     class="ai-help-fab"
@@ -207,24 +207,15 @@ function render_ai_help_widget(): void {
     (() => {
       const button = document.getElementById('aiHelpFab');
       if (!button) return;
-      const helpUrl = <?=json_encode($helpUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)?>;
+      if (window.self !== window.top) {
+        button.hidden = true;
+        return;
+      }
+      const workspaceUrl = <?=json_encode($workspaceUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)?>;
 
       button.addEventListener('click', () => {
-        const width = Math.min(480, window.screen.availWidth || 480);
-        const height = Math.min(800, window.screen.availHeight || 800);
-        const left = Math.max(0, (window.screen.availLeft || 0) + (window.screen.availWidth || width) - width - 20);
-        const top = Math.max(0, (window.screen.availTop || 0) + (window.screen.availHeight || height) - height - 20);
-        const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
-        const helpWindow = window.open('', 'lebToolHelp', features);
-        if (!helpWindow) return;
-        try {
-          if (helpWindow.location.href === 'about:blank' || helpWindow.location.href === '') {
-            helpWindow.location.replace(helpUrl);
-          }
-        } catch (error) {
-          // A manually navigated help window is still reused and focused.
-        }
-        helpWindow.focus();
+        const page = window.location.pathname + window.location.search + window.location.hash;
+        window.location.assign(`${workspaceUrl}?page=${encodeURIComponent(page)}`);
       });
     })();
   </script>

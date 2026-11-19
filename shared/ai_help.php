@@ -55,3 +55,31 @@ function ai_help_public_url(string $embedUrl): string {
     'token' => (string)($query['token'] ?? ''),
   ], '', '&', PHP_QUERY_RFC3986);
 }
+
+/**
+ * Keep the app frame on this installation and prevent recursive help frames.
+ */
+function ai_help_normalize_workspace_page(string $input, string $fallback, string $basePath = ''): string {
+  $value = trim($input);
+  if ($value === '' || str_contains($value, "\\")) return $fallback;
+
+  $parts = parse_url($value);
+  if (!is_array($parts) || isset($parts['scheme']) || isset($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+    return $fallback;
+  }
+
+  $path = '/' . ltrim((string)($parts['path'] ?? ''), '/');
+  if ($path === '/' || str_contains($path, "\0")) return $fallback;
+  $normalizedBase = rtrim('/' . ltrim($basePath, '/'), '/');
+  if ($normalizedBase === '/') $normalizedBase = '';
+  if ($normalizedBase !== '' && $path !== $normalizedBase && !str_starts_with($path, $normalizedBase . '/')) {
+    return $fallback;
+  }
+
+  if (in_array(basename($path), ['help_workspace.php', 'help_assistant.php'], true)) return $fallback;
+
+  $result = $path;
+  if (isset($parts['query']) && $parts['query'] !== '') $result .= '?' . $parts['query'];
+  if (isset($parts['fragment']) && $parts['fragment'] !== '') $result .= '#' . $parts['fragment'];
+  return $result;
+}

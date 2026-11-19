@@ -515,47 +515,126 @@ th{color:#111; font-size:13px}
   outline:3px solid rgba(11,87,208,.28);
   outline-offset:3px;
 }
-.ai-help-window{
+.ai-help-embed-page{
+  width:100%;
   height:100vh;
   margin:0;
-  display:flex;
-  flex-direction:column;
   overflow:hidden;
   background:#fff;
+}
+.ai-help-embed-frame{
+  display:block;
+  width:100%;
+  height:100%;
+  border:0;
+  background:#fff;
+}
+
+.help-workspace-page{
+  width:100%;
+  height:100vh;
+  margin:0;
+  overflow:hidden;
+  background:var(--bg);
   color:var(--text);
   font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
-.ai-help-window-header{
+.help-workspace{
+  --help-dock-width:430px;
+  width:100%;
+  height:100%;
+  display:flex;
+  min-width:0;
+  overflow:hidden;
+}
+.help-workspace-app{
+  flex:1 1 auto;
+  min-width:0;
+  height:100%;
+}
+.help-workspace-app iframe{
+  display:block;
+  width:100%;
+  height:100%;
+  border:0;
+  background:var(--bg);
+}
+.help-workspace-chat{
+  position:relative;
+  flex:0 0 var(--help-dock-width);
+  width:var(--help-dock-width);
+  min-width:0;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  border-left:1px solid var(--border);
+  background:#fff;
+  box-shadow:-8px 0 24px rgba(15,23,42,.08);
+  transition:width .18s ease, flex-basis .18s ease;
+}
+.help-workspace-resizer{
+  position:absolute;
+  z-index:4;
+  top:0;
+  bottom:0;
+  left:-5px;
+  width:10px;
+  cursor:col-resize;
+  touch-action:none;
+}
+.help-workspace-resizer::after{
+  content:"";
+  position:absolute;
+  top:0;
+  bottom:0;
+  left:4px;
+  width:2px;
+  background:transparent;
+  transition:background .15s ease;
+}
+.help-workspace-resizer:hover::after,
+.help-workspace-resizer:focus-visible::after,
+.is-help-resizing .help-workspace-resizer::after{background:var(--primary);}
+.help-workspace-resizer:focus-visible{outline:none;}
+.help-workspace-chat-header{
   min-height:60px;
-  padding:10px 14px;
+  padding:10px 10px 10px 14px;
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:10px;
+  gap:8px;
   border-bottom:1px solid var(--border);
   background:#fff;
 }
 .ai-help-heading{display:flex; flex-direction:column; gap:2px; min-width:0;}
 .ai-help-heading strong{font-size:14px; color:#111827;}
 .ai-help-heading span{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.ai-help-window-external{
-  width:36px;
-  height:36px;
+.help-workspace-actions{display:flex; align-items:center; gap:2px; flex:0 0 auto;}
+.help-workspace-actions a,
+.help-workspace-actions button{
+  width:34px;
+  height:34px;
   display:inline-flex;
   align-items:center;
   justify-content:center;
+  padding:0;
+  border:0;
   border-radius:9px;
   background:transparent;
   color:#374151;
   text-decoration:none;
   font:600 21px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  cursor:pointer;
 }
-.ai-help-window-external:hover{background:#f3f4f6; color:#111827;}
-.ai-help-window-external:focus-visible{
+.help-workspace-actions a:hover,
+.help-workspace-actions button:hover{background:#f3f4f6; color:#111827;}
+.help-workspace-actions a:focus-visible,
+.help-workspace-actions button:focus-visible,
+.help-workspace-restore:focus-visible{
   outline:3px solid rgba(11,87,208,.28);
   outline-offset:2px;
 }
-.ai-help-window-frame{
+.help-workspace-chat-frame{
   flex:1 1 auto;
   display:block;
   width:100%;
@@ -563,7 +642,43 @@ th{color:#111; font-size:13px}
   border:0;
   background:#fff;
 }
+.help-workspace-restore{
+  display:none;
+  width:42px;
+  height:42px;
+  margin:auto;
+  border:0;
+  border-radius:50%;
+  background:var(--primary);
+  color:#fff;
+  box-shadow:0 6px 18px rgba(15,23,42,.22);
+  font:700 21px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  cursor:pointer;
+}
+.help-workspace.is-help-minimized .help-workspace-chat{
+  flex-basis:58px;
+  width:58px;
+}
+.help-workspace.is-help-minimized .help-workspace-resizer,
+.help-workspace.is-help-minimized .help-workspace-chat-header,
+.help-workspace.is-help-minimized .help-workspace-chat-frame{display:none;}
+.help-workspace.is-help-minimized .help-workspace-restore{display:flex; align-items:center; justify-content:center;}
+.is-help-resizing{user-select:none; cursor:col-resize;}
+.is-help-resizing .help-workspace-chat{transition:none;}
+.is-help-resizing iframe{pointer-events:none;}
 
 @media (max-width: 600px){
   .ai-help-fab{right:14px; bottom:14px;}
+}
+@media (max-width: 760px){
+  .help-workspace-chat{
+    position:absolute;
+    z-index:20;
+    top:0;
+    right:0;
+    bottom:0;
+    width:min(var(--help-dock-width), 100vw);
+    max-width:100vw;
+  }
+  .help-workspace.is-help-minimized .help-workspace-chat{width:58px;}
 }
