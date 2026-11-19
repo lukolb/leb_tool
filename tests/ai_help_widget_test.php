@@ -97,8 +97,10 @@ ai_help_test_assert(
 ai_help_test_assert(
   is_string($css) && str_contains($css, '.ai-help-fab')
     && str_contains($css, '.help-workspace-resizer')
-    && str_contains($css, '.help-workspace.is-help-minimized'),
-  'the floating button and resizable, minimizable dock must be styled'
+    && str_contains($css, '.help-workspace.is-help-minimized')
+    && str_contains($css, 'position:fixed;')
+    && str_contains($css, 'bottom:22px;'),
+  'the floating button and dock minimized back to a floating button must be styled'
 );
 ai_help_test_assert(
   is_string($sample) && str_contains($sample, "'help_assistant' => [")

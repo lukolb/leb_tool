@@ -644,9 +644,8 @@ th{color:#111; font-size:13px}
 }
 .help-workspace-restore{
   display:none;
-  width:42px;
-  height:42px;
-  margin:auto;
+  width:52px;
+  height:52px;
   border:0;
   border-radius:50%;
   background:var(--primary);
@@ -656,8 +655,19 @@ th{color:#111; font-size:13px}
   cursor:pointer;
 }
 .help-workspace.is-help-minimized .help-workspace-chat{
-  flex-basis:58px;
-  width:58px;
+  position:fixed;
+  z-index:30;
+  top:auto;
+  right:22px;
+  bottom:22px;
+  left:auto;
+  width:52px;
+  height:52px;
+  flex-basis:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+  transition:none;
 }
 .help-workspace.is-help-minimized .help-workspace-resizer,
 .help-workspace.is-help-minimized .help-workspace-chat-header,
@@ -680,5 +690,12 @@ th{color:#111; font-size:13px}
     width:min(var(--help-dock-width), 100vw);
     max-width:100vw;
   }
-  .help-workspace.is-help-minimized .help-workspace-chat{width:58px;}
+  .help-workspace.is-help-minimized .help-workspace-chat{
+    position:fixed;
+    top:auto;
+    right:14px;
+    bottom:14px;
+    width:52px;
+    height:52px;
+  }
 }
