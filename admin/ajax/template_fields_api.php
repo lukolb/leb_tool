@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../bootstrap.php';
+require_once __DIR__ . '/../../shared/tts_audio_cache.php';
 require_admin();
 
 header('Content-Type: application/json; charset=utf-8');
@@ -157,6 +158,7 @@ try {
     }
 
     $pdo->commit();
+    tts_audio_cleanup_template_classes($pdo, $templateId);
     audit('template_fields_save', (int)current_user()['id'], ['template_id'=>$templateId,'count'=>$count]);
     echo json_encode(['ok'=>true,'saved'=>$count], JSON_UNESCAPED_UNICODE);
     exit;
@@ -258,6 +260,7 @@ try {
     }
     $pdo->commit();
 
+    tts_audio_cleanup_template_classes($pdo, $templateId);
     audit('template_fields_bulk_patch', (int)current_user()['id'], ['template_id'=>$templateId,'count'=>$count]);
     echo json_encode(['ok'=>true,'patched'=>$count], JSON_UNESCAPED_UNICODE);
     exit;
@@ -280,6 +283,7 @@ try {
     $deleted = $del->rowCount();
     $pdo->commit();
 
+    tts_audio_cleanup_template_classes($pdo, $templateId);
     audit('template_fields_delete', (int)current_user()['id'], ['template_id'=>$templateId,'deleted'=>$deleted]);
     echo json_encode(['ok'=>true,'deleted'=>$deleted], JSON_UNESCAPED_UNICODE);
     exit;

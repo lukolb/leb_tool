@@ -244,6 +244,25 @@ function get_student_and_class(PDO $pdo, int $studentId): array {
   return $row;
 }
 
+function get_demo_student_and_class(PDO $pdo, array $demo): array {
+  $st = $pdo->prepare(
+    "SELECT 0 AS id, ? AS first_name, '' AS last_name, c.id AS class_id,
+            c.school_year, c.grade_level, c.label, c.name AS class_name,
+            c.template_id AS class_template_id,
+            c.student_wizard_display AS student_wizard_display,
+            c.student_intro_html AS student_intro_html,
+            c.student_intro_html_en AS student_intro_html_en
+     FROM classes c
+     WHERE c.id=? AND c.is_active=1
+     LIMIT 1"
+  );
+  $st->execute([t('student_demo.student_name', 'Demoschüler'), (int)$demo['class_id']]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) throw new RuntimeException(t('student_demo.error.class_unavailable', 'Die Klasse ist nicht aktiv oder nicht mehr vorhanden.'));
+  $row['student_wizard_display'] = (string)$demo['display_mode'];
+  return $row;
+}
+
 function class_display(array $row): string {
   $label = (string)($row['label'] ?? '');
   $grade = isset($row['grade_level']) ? (int)$row['grade_level'] : null;
@@ -318,6 +337,28 @@ function template_for_student(PDO $pdo, int $studentId): array {
 
   return [
     'id' => $tid,
+    'name' => (string)($row['name'] ?? ''),
+    'template_version' => (int)($row['template_version'] ?? 0),
+    'period_label' => normalize_class_period_label($row['period_label'] ?? 'Standard'),
+  ];
+}
+
+function template_for_demo_class(PDO $pdo, array $demo): array {
+  $st = $pdo->prepare(
+    "SELECT c.id AS class_id, c.template_id, c.period_label,
+            t.id AS tid, t.name, t.template_version, t.is_active
+     FROM classes c
+     LEFT JOIN templates t ON t.id=c.template_id
+     WHERE c.id=? AND c.is_active=1
+     LIMIT 1"
+  );
+  $st->execute([(int)$demo['class_id']]);
+  $row = $st->fetch(PDO::FETCH_ASSOC);
+  if (!$row) throw new RuntimeException(t('student_demo.error.class_unavailable', 'Die Klasse ist nicht aktiv oder nicht mehr vorhanden.'));
+  if ((int)($row['tid'] ?? 0) <= 0) throw new RuntimeException(t('student.wizard.error.no_template'));
+  if ((int)($row['is_active'] ?? 0) !== 1) throw new RuntimeException(t('student.wizard.error.template_inactive'));
+  return [
+    'id' => (int)$row['tid'],
     'name' => (string)($row['name'] ?? ''),
     'template_version' => (int)($row['template_version'] ?? 0),
     'period_label' => normalize_class_period_label($row['period_label'] ?? 'Standard'),
@@ -611,11 +652,29 @@ function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId, array
   return true;
 }
 
+function all_demo_child_fields_filled(PDO $pdo, int $templateId, array $values, array $lockedFieldIds = []): bool {
+  foreach (load_child_fields($pdo, $templateId) as $field) {
+    $fieldId = (int)($field['id'] ?? 0);
+    if ($fieldId <= 0 || !empty($lockedFieldIds[$fieldId])) continue;
+    if (trim((string)($values[$fieldId]['text'] ?? '')) === '') return false;
+  }
+  return true;
+}
+
 try {
   $pdo = db();
-  $studentId = (int)($_SESSION['student']['id'] ?? 0);
+  $demo = current_student_demo();
+  $isDemo = $demo !== null;
+  $studentId = $isDemo ? 0 : (int)($_SESSION['student']['id'] ?? 0);
   $lang = ui_lang();
-  if ($studentId <= 0) throw new RuntimeException(t('student.wizard.error.not_logged_in'));
+  if (!$isDemo && $studentId <= 0) throw new RuntimeException(t('student.wizard.error.not_logged_in'));
+  if ($isDemo) {
+    $user = current_user() ?? [];
+    $userId = (int)($user['id'] ?? 0);
+    if ($userId <= 0 || !user_can_access_class($pdo, $userId, (int)$demo['class_id'])) {
+      throw new RuntimeException(t('session.forbidden.message', 'Keine Berechtigung.'));
+    }
+  }
 
   $data = read_json_body();
   if (!isset($_POST['csrf_token']) && isset($data['csrf_token'])) $_POST['csrf_token'] = (string)$data['csrf_token'];
@@ -627,11 +686,11 @@ try {
     throw new RuntimeException(t('student.wizard.error.invalid_action'));
   }
 
-  $tpl = template_for_student($pdo, $studentId);
+  $tpl = $isDemo ? template_for_demo_class($pdo, $demo) : template_for_student($pdo, $studentId);
   $templateId = (int)$tpl['id'];
   $periodLabel = normalize_class_period_label($tpl['period_label'] ?? 'Standard');
 
-  $studentRow = get_student_and_class($pdo, $studentId);
+  $studentRow = $isDemo ? get_demo_student_and_class($pdo, $demo) : get_student_and_class($pdo, $studentId);
   $schoolYear = (string)($studentRow['school_year'] ?? '');
   if ($schoolYear === '') {
     $cfg = app_config();
@@ -640,13 +699,15 @@ try {
   if ($schoolYear === '') throw new RuntimeException(t('student.wizard.error.school_year_missing'));
   $classId = (int)($studentRow['class_id'] ?? 0);
 
-  $ctx = find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear, $periodLabel);
-  
-  if ((int)$ctx['report_instance_id'] < 0) throw new RuntimeException(t('student.wizard.error.report_unavailable'));
-  
+  $ctx = $isDemo
+    ? ['report_instance_id' => 0, 'status' => 'draft']
+    : find_or_create_report_instance($pdo, $studentId, $templateId, $schoolYear, $periodLabel);
+
+  if (!$isDemo && (int)$ctx['report_instance_id'] < 0) throw new RuntimeException(t('student.wizard.error.report_unavailable'));
+
   $reportId = (int)$ctx['report_instance_id'];
 
-  $status = get_report_status($pdo, $reportId);
+  $status = $isDemo ? 'draft' : get_report_status($pdo, $reportId);
   $childCanEdit = ($status === 'draft');
   $groupUnlocks = load_child_group_unlocks($pdo, $classId, $schoolYear, 'Standard');
 
@@ -671,7 +732,9 @@ try {
     }
 
     $fieldsRaw = load_child_fields($pdo, $templateId);
-    $values = load_child_values($pdo, $reportId);
+    $values = $isDemo && is_array($_SESSION['student_demo']['values'] ?? null)
+      ? $_SESSION['student_demo']['values']
+      : load_child_values($pdo, $reportId);
 
     $fieldLookup = load_all_fields_lookup($pdo, $templateId, $reportId);
 
@@ -823,7 +886,8 @@ try {
       'field_lookup' => $fieldLookup,
       'ui' => [
         'display_mode' => student_wizard_display_mode_from_class($studentRow),
-        'ai_enabled' => ai_provider_enabled(),
+        'ai_enabled' => !$isDemo && ai_provider_enabled(),
+        'demo_mode' => $isDemo,
       ],
       'ui_lang' => $lang,
       'translations' => ui_translations(),
@@ -831,7 +895,7 @@ try {
   }
 
   if ($action === 'save_value') {
-    ensure_editable_or_throw($pdo, $reportId);
+    if (!$isDemo) ensure_editable_or_throw($pdo, $reportId);
 
     $fieldId = (int)($data['template_field_id'] ?? 0);
     if ($fieldId <= 0) throw new RuntimeException('template_field_id fehlt.');
@@ -902,6 +966,22 @@ try {
       }
     }
 
+    if ($isDemo) {
+      if (!isset($_SESSION['student_demo']['values']) || !is_array($_SESSION['student_demo']['values'])) {
+        $_SESSION['student_demo']['values'] = [];
+      }
+      $_SESSION['student_demo']['values'][$fieldId] = [
+        'text' => $valueText,
+        'json' => $valueJson,
+      ];
+      json_out([
+        'ok' => true,
+        'demo_mode' => true,
+        'template_field_id' => $fieldId,
+        'updated_at' => date(DATE_ATOM),
+      ]);
+    }
+
     try {
       $pdo->beginTransaction();
 
@@ -938,7 +1018,7 @@ try {
   }
 
   // submit
-  ensure_editable_or_throw($pdo, $reportId);
+  if (!$isDemo) ensure_editable_or_throw($pdo, $reportId);
   $lockContext = child_lock_context($pdo, $templateId, $reportId);
   $lockedFieldIds = [];
   foreach (load_child_fields($pdo, $templateId) as $f) {
@@ -947,8 +1027,19 @@ try {
       $lockedFieldIds[$fid] = true;
     }
   }
-  if (!all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds)) {
+  $allFilled = $isDemo
+    ? all_demo_child_fields_filled($pdo, $templateId, (array)($_SESSION['student_demo']['values'] ?? []), $lockedFieldIds)
+    : all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds);
+  if (!$allFilled) {
     throw new RuntimeException(t('student.wizard.error.fields_required'));
+  }
+
+  if ($isDemo) {
+    audit('student_demo_complete', (int)(current_user()['id'] ?? 0), [
+      'class_id' => $classId,
+      'display_mode' => (string)($demo['display_mode'] ?? ''),
+    ]);
+    json_out(['ok' => true, 'demo_mode' => true]);
   }
 
   $pdo->prepare(

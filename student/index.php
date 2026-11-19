@@ -11,25 +11,48 @@ if (!headers_sent()) {
 }
 
 $pdo = db();
-$studentId = (int)($_SESSION['student']['id'] ?? 0);
+$studentDemo = current_student_demo();
+$isStudentDemo = $studentDemo !== null;
+$studentId = $isStudentDemo ? 0 : (int)($_SESSION['student']['id'] ?? 0);
 
-$st = $pdo->prepare(
-  "SELECT s.id, s.first_name, s.last_name, sca.class_id, sca.is_active,
-          c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id,
-          c.tts_enabled, c.syllable_coloring_enabled
-   FROM students s
-   INNER JOIN student_class_assignments sca ON sca.student_id=s.id
-   INNER JOIN classes c ON c.id=sca.class_id
-   WHERE s.id=?
-   ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC,
-            CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC
-   LIMIT 1"
-);
-$st->execute([$studentId]);
+if ($isStudentDemo) {
+  $user = current_user() ?? [];
+  $userId = (int)($user['id'] ?? 0);
+  if ($userId <= 0 || !user_can_access_class($pdo, $userId, (int)$studentDemo['class_id'])) {
+    unset($_SESSION['student_demo']);
+    redirect('teacher/student_demo.php');
+  }
+}
+
+if ($isStudentDemo) {
+  $st = $pdo->prepare(
+    "SELECT 0 AS id, ? AS first_name, '' AS last_name, c.id AS class_id, c.is_active,
+            c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id,
+            c.tts_enabled, c.syllable_coloring_enabled
+     FROM classes c
+     WHERE c.id=?
+     LIMIT 1"
+  );
+  $st->execute([t('student_demo.student_name', 'Demoschüler'), (int)$studentDemo['class_id']]);
+} else {
+  $st = $pdo->prepare(
+    "SELECT s.id, s.first_name, s.last_name, sca.class_id, sca.is_active,
+            c.school_year, c.period_label, c.grade_level, c.label, c.name AS class_name, c.template_id,
+            c.tts_enabled, c.syllable_coloring_enabled
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     INNER JOIN classes c ON c.id=sca.class_id
+     WHERE s.id=?
+     ORDER BY sca.is_active DESC, c.is_active DESC, c.school_year DESC,
+              CASE c.period_label WHEN 'H2' THEN 2 ELSE 1 END DESC, c.id DESC
+     LIMIT 1"
+  );
+  $st->execute([$studentId]);
+}
 $me = $st->fetch(PDO::FETCH_ASSOC);
 if (!$me) {
   // session invalid
-  redirect('student/logout.php');
+  redirect($isStudentDemo ? 'student/demo_exit.php' : 'student/logout.php');
 }
 
 function class_display(array $row): string {
@@ -58,7 +81,7 @@ $deadlineRows = $schoolYear !== '' ? fetch_submission_deadlines($pdo, $schoolYea
 $studentDeadline = $deadlineRows['student'] ?? null;
 $studentDeadlineInfo = deadline_remaining_info($studentDeadline['due_at'] ?? null);
 $showStudentDeadline = (bool)($studentCfg['show_deadline'] ?? false);
-$showStudentDeadlineInline = $showStudentDeadline && !empty($studentDeadline['due_at']);
+$showStudentDeadlineInline = !$isStudentDemo && $showStudentDeadline && !empty($studentDeadline['due_at']);
 
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
@@ -67,7 +90,7 @@ $syllableColoringEnabled = (int)($me['syllable_coloring_enabled'] ?? 0) === 1;
 $isActive = (int)($me['is_active'] ?? 0) === 1;
 
 $reportStatus = 'draft';
-if ($hasTemplate && $schoolYear !== '') {
+if (!$isStudentDemo && $hasTemplate && $schoolYear !== '') {
   $st = $pdo->prepare(
     "SELECT status\n" .
     " FROM report_instances\n" .
@@ -436,6 +459,13 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 <body class="page">
   <div class="container page-shell">
 
+    <?php if ($isStudentDemo): ?>
+      <div class="alert demo-banner" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div><strong><?=h(t('student_demo.banner_title', 'Demo-Modus'))?></strong> · <?=h(t('student_demo.banner_text', 'Eingaben werden nicht in Schülerberichten gespeichert.'))?></div>
+        <a class="btn secondary" href="<?=h(url('student/demo_exit.php'))?>"><?=h(t('student_demo.exit', 'Demo beenden'))?></a>
+      </div>
+    <?php endif; ?>
+
     <div class="card">
       <div class="brand-top">
         <div class="brand-left">
@@ -461,7 +491,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
               <a class="lang <?= $lang==='de' ? 'active' : '' ?>" data-lang="de" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('student.lang_de', 'Deutsch'))?>">🇩🇪</a>
               <a class="lang <?= $lang==='en' ? 'active' : '' ?>" data-lang="en" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('student.lang_en', 'English'))?>">🇺🇸</a>
               </div>
-            <a class="btn secondary" id="logoutBtn" href="<?=h(url('student/logout.php'))?>"><?=h(t('student.logout', 'Logout'))?></a>
+            <a class="btn secondary" id="logoutBtn" href="<?=h(url($isStudentDemo ? 'student/demo_exit.php' : 'student/logout.php'))?>"><?=h($isStudentDemo ? t('student_demo.exit', 'Demo beenden') : t('student.logout', 'Logout'))?></a>
           </div>
         </div>
       </div>
@@ -572,7 +602,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   const loginUrl = <?=json_encode(url('student/login.php'))?>;
   const aiApiUrl = <?=json_encode(url('student/ajax/ai_explain_api.php'))?>;
   const ORG_NAME = <?= json_encode($orgName) ?>;
-  const STUDENT_LANGUAGE_KEY = <?=json_encode('leb_student_language_' . substr(hash('sha256', (string)$studentId), 0, 20))?>;
+  const DEMO_MODE = <?=json_encode($isStudentDemo)?>;
+  const STUDENT_LANGUAGE_KEY = <?=json_encode('leb_student_language_' . substr(hash('sha256', $isStudentDemo ? ('demo:' . (int)$me['class_id']) : (string)$studentId), 0, 20))?>;
   let csrf = <?=json_encode(csrf_token())?>;
   const HAS_TEMPLATE = <?=json_encode($hasTemplate)?>;
   const STUDENT_ACTIVE = <?=json_encode($isActive)?>;
@@ -1027,7 +1058,25 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
-  async function speakWithCachedAudio(text){
+  function currentTtsSource(includeGroup = false, kindOverride = ''){
+    const cur = flatSteps[activeStep] || {};
+    const language = currentLang === 'en' ? 'en' : 'de';
+    const kind = kindOverride || String(cur.kind || 'screen');
+    const identity = cur.field?.id
+      ? `field-${cur.field.id}`
+      : [cur.group || cur.key || 'general', cur.subgroup || ''].filter(Boolean).join('-');
+    const sourceKey = ['step', displayMode, kind, identity || 'general', includeGroup ? 'context' : 'plain', language]
+      .join(':')
+      .replace(/[^a-z0-9:_.-]+/gi, '-')
+      .slice(0, 190);
+    return {
+      source_type: 'runtime_step',
+      source_key: sourceKey,
+      source_label: String(cur.field?.label || cur.title || cur.groupTitle || '').slice(0, 255)
+    };
+  }
+
+  async function speakWithCachedAudio(text, source = null){
     const normalized = normalizedTtsText(text);
     if (!normalized) return false;
     const language = currentLang === 'en' ? 'en' : 'de';
@@ -1035,7 +1084,11 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     try {
       const key = await ttsCacheKey(normalized, language, voiceId);
       if (!key) return false;
-      const res = await fetch(`${TTS_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+      const query = new URLSearchParams({ key });
+      if (source?.source_type) query.set('source_type', String(source.source_type));
+      if (source?.source_key) query.set('source_key', String(source.source_key));
+      if (source?.source_label) query.set('source_label', String(source.source_label));
+      const res = await fetch(`${TTS_CACHE_URL}?${query.toString()}`, {
         credentials:'same-origin',
         cache:'force-cache'
       });
@@ -1047,7 +1100,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
-  async function uploadGeneratedTts(text, voiceId, blob){
+  async function uploadGeneratedTts(text, voiceId, blob, source = null){
     try {
       const normalized = normalizedTtsText(text);
       const language = currentLang === 'en' ? 'en' : 'de';
@@ -1059,6 +1112,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       form.set('text', normalized);
       form.set('language', language);
       form.set('voice_id', voiceId);
+      if (source?.source_type) form.set('source_type', String(source.source_type));
+      if (source?.source_key) form.set('source_key', String(source.source_key));
+      if (source?.source_label) form.set('source_label', String(source.source_label));
       form.set('audio', blob, key + '.wav');
       const res = await fetch(TTS_CACHE_URL, { method:'POST', body:form, credentials:'same-origin' });
       const data = await res.json().catch(() => null);
@@ -1069,7 +1125,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     }
   }
 
-  async function speakWithVits(text){
+  async function speakWithVits(text, source = null){
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
     const voiceId = vitsVoiceIdForLang();
@@ -1079,7 +1135,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       stopTts();
       updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
       const blob = await session.predict(normalized);
-      void uploadGeneratedTts(normalized, voiceId, blob);
+      void uploadGeneratedTts(normalized, voiceId, blob, source);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.playbackRate = ttsRateForLang();
@@ -1140,9 +1196,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
       return;
     }
-    const cached = await speakWithCachedAudio(normalizedText);
+    const source = currentTtsSource(includeGroup);
+    const cached = await speakWithCachedAudio(normalizedText, source);
     if (cached) return;
-    const ok = await speakWithVits(normalizedText);
+    const ok = await speakWithVits(normalizedText, source);
     if (!ok) {
       speakWithWebSpeech(normalizedText);
     }
@@ -1152,9 +1209,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (!ttsSupported) return false;
     const normalized = typeof text === 'string' ? text.trim() : '';
     if (!normalized) return false;
-    const cached = await speakWithCachedAudio(normalized);
+    const source = currentTtsSource(false, 'ai-help');
+    const cached = await speakWithCachedAudio(normalized, source);
     if (cached) return true;
-    const ok = await speakWithVits(normalized);
+    const ok = await speakWithVits(normalized, source);
     if (!ok) {
       return speakWithWebSpeech(normalized);
     }
@@ -1401,7 +1459,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     if (elClassLabel) elClassLabel.textContent = t('student.class_label');
 
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) logoutBtn.textContent = t('student.logout', 'Logout');
+    if (logoutBtn) logoutBtn.textContent = DEMO_MODE ? t('student_demo.exit', 'Demo beenden') : t('student.logout', 'Logout');
 
     const langSwitch = document.querySelector('.lang-switch');
     if (langSwitch) langSwitch.setAttribute('aria-label', t('student.lang_switch_aria', 'Sprache wechseln'));
@@ -2527,7 +2585,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       return;
     }
 
-    if (!confirm(t('student.js.submit_confirm', 'Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.'))) return;
+    const confirmText = DEMO_MODE
+      ? t('student_demo.submit_confirm', 'Möchtest du den Demo-Ablauf abschließen? Es werden keine Schülerdaten gespeichert.')
+      : t('student.js.submit_confirm', 'Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.');
+    if (!confirm(confirmText)) return;
 
     try {
       btnNext.disabled = true;
@@ -2557,7 +2618,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       if (activeStep < 0) activeStep = flatSteps.length - 1;
       render();
       exitFullscreenForBeginner();
-      alert(t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
+      alert(DEMO_MODE
+        ? t('student_demo.submit_done', 'Demo abgeschlossen. Es wurden keine Schülerdaten gespeichert.')
+        : t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
     } catch(e){
       alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
     } finally {

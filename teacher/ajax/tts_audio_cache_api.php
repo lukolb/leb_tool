@@ -27,6 +27,7 @@ try {
   $action = trim((string)($_POST['action'] ?? ''));
   if ($action === 'plan') {
     $items = tts_audio_class_plan($pdo, $classId);
+    $cleanup = tts_audio_reconcile_class_plan($pdo, $classId, $items);
     $cached = 0;
     foreach ($items as &$item) {
       $audio = tts_audio_find($pdo, (string)$item['cache_key']);
@@ -49,6 +50,7 @@ try {
       'items' => $items,
       'total' => count($items),
       'cached' => $cached,
+      'deleted_obsolete' => (int)$cleanup['files'],
       'csrf_token' => csrf_token(),
     ]);
   }

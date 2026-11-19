@@ -13,6 +13,7 @@ if (!headers_sent()) {
 
 $pdo = db();
 $u = current_user();
+$automaticCleanup = tts_audio_cleanup_all_class_plans($pdo);
 $err = '';
 $ok = '';
 
@@ -135,7 +136,13 @@ render_admin_header(t('tts_audio.admin.title', 'Audioverwaltung'));
 ?>
 <div class="card">
   <h1><?=h(t('tts_audio.admin.heading', 'Vorlese-Audiodateien'))?></h1>
-  <p class="muted"><?=h(t('tts_audio.admin.intro', 'Hier können fehlende Audiodateien für mehrere Klassen erzeugt sowie vorhandene Dateien angehört und verwaltet werden.'))?></p>
+  <p class="muted"><?=h(t('tts_audio.admin.intro', 'Hier können fehlende Audiodateien für mehrere Klassen erzeugt sowie vorhandene Dateien angehört und verwaltet werden. Veraltete Audios werden automatisch entfernt, sobald sich der zugrunde liegende Text oder die Stimme ändert.'))?></p>
+  <?php if ((int)$automaticCleanup['files'] > 0): ?>
+    <div class="alert success"><?=h(strtr(t('tts_audio.admin.automatic_cleanup_done', '{files} veraltete Audiodateien wurden automatisch gelöscht ({size}).'), [
+      '{files}' => (string)(int)$automaticCleanup['files'],
+      '{size}' => tts_admin_bytes((int)$automaticCleanup['bytes']),
+    ]))?></div>
+  <?php endif; ?>
 </div>
 
 <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>

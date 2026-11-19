@@ -19,7 +19,7 @@ function nav_items_for_role(string $role): array {
 
       // Templates & content
       ['label'=>t('nav.reports'), 'href'=>'admin/templates.php', 'files'=>[
-        'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php','ags.php'
+        'templates.php','template_fields.php','template_mappings.php','icon_library.php','student_fields.php','text_snippets.php','ags.php','tts_audio.php'
       ], 'children'=>[
       ['label'=>t('nav.templates'),      'href'=>'admin/templates.php',      'files'=>['templates.php','template_fields.php','template_mappings.php']],
       ['label'=>t('nav.fonts'),          'href'=>'admin/fonts.php',          'files'=>['fonts.php']],
@@ -27,6 +27,7 @@ function nav_items_for_role(string $role): array {
         ['label'=>t('nav.student_fields'), 'href'=>'admin/student_fields.php', 'files'=>['student_fields.php']],
         ['label'=>t('nav.text_snippets'),  'href'=>'admin/text_snippets.php',  'files'=>['text_snippets.php']],
         ['label'=>t('nav.ags', 'AGs'),  'href'=>'admin/ags.php',  'files'=>['ags.php']],
+        ['label'=>t('nav.tts_audio', 'Vorlese-Audios'), 'href'=>'admin/tts_audio.php', 'files'=>['tts_audio.php']],
       ]],
 
       // Reports
@@ -42,14 +43,14 @@ function nav_items_for_role(string $role): array {
       ]],
 
       // Master data
-      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php', 'tts_audio.php'], 'children'=>[
+      ['label'=>t('nav.settings'), 'href'=>'admin/settings.php', 'files'=>['settings.php','users.php', 'log.php', 'backup.php'], 'children'=>[
         ['label'=>t('nav.settings'),  'href'=>'admin/settings.php',  'files'=>['settings.php']],
-        ['label'=>t('nav.tts_audio', 'Vorlese-Audios'), 'href'=>'admin/tts_audio.php', 'files'=>['tts_audio.php']],
         ['label'=>t('nav.users'), 'href'=>'admin/users.php', 'files'=>['users.php']],
         ['label'=>t('nav.log'), 'href'=>'admin/log.php', 'files'=>['log.php']],
         ['label'=>t('nav.backup'), 'href'=>'admin/backup.php', 'files'=>['backup.php']],
       ]],
-        
+
+      ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
       ['label'=>t('nav.logout'), 'href'=>'logout.php', 'files'=>['logout.php']],
     ];
   }
@@ -62,6 +63,7 @@ function nav_items_for_role(string $role): array {
       ['label'=>t('nav.ags', 'AGs'), 'href'=>'teacher/ags.php', 'files'=>['ags.php']],
     ]],
     ['label'=>t('nav.delegations'), 'href'=>'teacher/delegations.php', 'files'=>['delegations.php']],
+    ['label'=>t('nav.student_demo', 'Demoschüler'), 'href'=>'teacher/student_demo.php', 'files'=>['student_demo.php']],
 
     // Reports
     ['label'=>t('nav.final_reports'), 'href'=>'teacher/report_preview.php', 'files'=>[

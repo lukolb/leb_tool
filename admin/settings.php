@@ -556,6 +556,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
 
     $cfg = app_config(true);
+    if (in_array($action, ['save', 'save_student_intro'], true)) {
+      $cleanup = tts_audio_cleanup_all_class_plans($pdo);
+      if ((int)$cleanup['files'] > 0) {
+        audit('tts_audio_cleanup_obsolete', (int)current_user()['id'], $cleanup + ['trigger' => $action]);
+      }
+    }
     }
 
   } catch (Throwable $e) {

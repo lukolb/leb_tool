@@ -96,20 +96,41 @@ function tts_audio_link_to_class(
   string $sourceType = 'runtime',
   string $sourceKey = '',
   string $sourceLabel = ''
-): void {
-  if ($classId <= 0 || $audioId <= 0) return;
+): array {
+  if ($classId <= 0 || $audioId <= 0) return [];
   $sourceType = preg_replace('/[^a-z0-9_-]/i', '', $sourceType) ?: 'runtime';
   $sourceKey = substr(trim($sourceKey), 0, 190);
   $sourceLabel = substr(trim($sourceLabel), 0, 255);
+  $replacedAudioIds = [];
+  if ($sourceKey !== '') {
+    $old = $pdo->prepare(
+      'SELECT audio_id
+       FROM tts_audio_class_links
+       WHERE class_id=? AND source_type=? AND source_key=? AND audio_id<>?'
+    );
+    $old->execute([$classId, $sourceType, $sourceKey, $audioId]);
+    $replacedAudioIds = array_map('intval', $old->fetchAll(PDO::FETCH_COLUMN));
+    if ($replacedAudioIds) {
+      $deleteOld = $pdo->prepare(
+        'DELETE FROM tts_audio_class_links
+         WHERE class_id=? AND source_type=? AND source_key=? AND audio_id<>?'
+      );
+      $deleteOld->execute([$classId, $sourceType, $sourceKey, $audioId]);
+    }
+  }
   $st = $pdo->prepare(
     "INSERT INTO tts_audio_class_links (class_id, audio_id, source_type, source_key, source_label)
      VALUES (?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
-       source_type=VALUES(source_type),
-       source_key=IF(VALUES(source_key)<>'', VALUES(source_key), source_key),
-       source_label=IF(VALUES(source_label)<>'', VALUES(source_label), source_label)"
+       source_key=IF(source_type IN ('competency','section','intro'), source_key,
+         IF(VALUES(source_key)<>'', VALUES(source_key), source_key)),
+       source_label=IF(source_type IN ('competency','section','intro'), source_label,
+         IF(VALUES(source_label)<>'', VALUES(source_label), source_label)),
+       source_type=IF(source_type IN ('competency','section','intro'), source_type, VALUES(source_type))"
   );
   $st->execute([$classId, $audioId, $sourceType, $sourceKey, $sourceLabel]);
+  if ($replacedAudioIds && !$pdo->inTransaction()) tts_audio_remove_orphan_files($pdo, $replacedAudioIds);
+  return $replacedAudioIds;
 }
 
 function tts_audio_store_upload(PDO $pdo, int $classId, array $upload, array $meta, bool $allowDisabledClass = false): array {
@@ -205,7 +226,7 @@ function tts_audio_store_upload(PDO $pdo, int $classId, array $upload, array $me
       $audioId = (int)($existingId->fetchColumn() ?: 0);
     }
     if ($audioId <= 0) throw new RuntimeException('Audio-ID fehlt.');
-    tts_audio_link_to_class(
+    $replacedAudioIds = tts_audio_link_to_class(
       $pdo,
       $classId,
       $audioId,
@@ -214,6 +235,7 @@ function tts_audio_store_upload(PDO $pdo, int $classId, array $upload, array $me
       (string)($meta['source_label'] ?? '')
     );
     $pdo->commit();
+    if ($replacedAudioIds) tts_audio_remove_orphan_files($pdo, $replacedAudioIds);
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     @unlink($absolutePath);
@@ -284,7 +306,7 @@ function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass =
         $de = trim((string)($field['label'] ?? ''));
         $en = trim((string)($field['label_en'] ?? ''));
         $text = $language === 'en' && $en !== '' ? $en : ($de !== '' ? $de : (string)$field['field_name']);
-        tts_audio_plan_add($items, $text, $language, 'competency', 'field:' . (int)$field['id'], $text);
+        tts_audio_plan_add($items, $text, $language, 'competency', 'field:' . (int)$field['id'] . ':' . $language, $text);
       }
       $meta = json_decode((string)($field['meta_json'] ?? ''), true);
       if (!is_array($meta)) $meta = [];
@@ -309,7 +331,7 @@ function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass =
         }
         $prefix = tts_audio_translation($language, 'student.js.group_intro_tts', $language === 'en' ? 'Next up is the topic' : 'Weiter geht es mit dem Thema');
         $groupText = trim($prefix . ' ' . $groupTitle . '.');
-        tts_audio_plan_add($items, $groupText, $language, 'section', 'group:' . $groupKey, $groupText);
+        tts_audio_plan_add($items, $groupText, $language, 'section', 'group:' . $groupKey . ':' . $language, $groupText);
         foreach ((array)($groupData['subgroups'] ?? []) as $subgroup => $subMeta) {
           $subgroupTitle = (string)$subgroup;
           if ($language === 'en') {
@@ -319,7 +341,7 @@ function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass =
           }
           $sectionTitle = $groupTitle . ' – ' . $subgroupTitle;
           $sectionText = trim($prefix . ' ' . $sectionTitle . '.');
-          tts_audio_plan_add($items, $sectionText, $language, 'section', 'subgroup:' . $groupKey . ':' . $subgroup, $sectionText);
+          tts_audio_plan_add($items, $sectionText, $language, 'section', 'subgroup:' . $groupKey . ':' . $subgroup . ':' . $language, $sectionText);
         }
       }
     }
@@ -350,7 +372,7 @@ function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass =
     foreach ($students as $student) {
       $text = tts_audio_intro_text($introHtml, $class, $student);
       if ($text === '') continue;
-      tts_audio_plan_add($items, $text, $language, 'intro', 'student:' . (int)$student['id'], $text);
+      tts_audio_plan_add($items, $text, $language, 'intro', 'student:' . (int)$student['id'] . ':' . $language, $text);
     }
   }
 
@@ -384,6 +406,81 @@ function tts_audio_plan_add(
     'source_key' => $sourceKey,
     'source_label' => $sourceLabel,
   ];
+}
+
+function tts_audio_reconcile_class_plan(PDO $pdo, int $classId, array $items): array {
+  if ($classId <= 0 || !db_has_table($pdo, 'tts_audio_class_links') || !db_has_table($pdo, 'tts_audio_files')) {
+    return ['links' => 0, 'files' => 0, 'bytes' => 0];
+  }
+  $requiredKeys = [];
+  foreach ($items as $item) {
+    $key = strtolower(trim((string)($item['cache_key'] ?? '')));
+    if (preg_match('/^[a-f0-9]{64}$/', $key)) $requiredKeys[$key] = true;
+  }
+
+  $st = $pdo->prepare(
+    "SELECT l.audio_id, f.cache_key
+     FROM tts_audio_class_links l
+     INNER JOIN tts_audio_files f ON f.id=l.audio_id
+     WHERE l.class_id=? AND l.source_type IN ('competency','section','intro')"
+  );
+  $st->execute([$classId]);
+  $staleAudioIds = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $cacheKey = strtolower((string)($row['cache_key'] ?? ''));
+    if (!isset($requiredKeys[$cacheKey])) $staleAudioIds[] = (int)$row['audio_id'];
+  }
+  $staleAudioIds = array_values(array_unique(array_filter($staleAudioIds)));
+  if (!$staleAudioIds) return ['links' => 0, 'files' => 0, 'bytes' => 0];
+
+  $placeholders = implode(',', array_fill(0, count($staleAudioIds), '?'));
+  $params = array_merge([$classId], $staleAudioIds);
+  $delete = $pdo->prepare(
+    "DELETE FROM tts_audio_class_links
+     WHERE class_id=? AND source_type IN ('competency','section','intro') AND audio_id IN ($placeholders)"
+  );
+  $delete->execute($params);
+  $links = $delete->rowCount();
+  $removed = tts_audio_remove_orphan_files($pdo, $staleAudioIds);
+  return ['links' => $links, 'files' => $removed['files'], 'bytes' => $removed['bytes']];
+}
+
+function tts_audio_cleanup_class_plan(PDO $pdo, int $classId): array {
+  $items = tts_audio_class_plan($pdo, $classId, true);
+  return tts_audio_reconcile_class_plan($pdo, $classId, $items);
+}
+
+function tts_audio_cleanup_template_classes(PDO $pdo, int $templateId): array {
+  if ($templateId <= 0) return ['classes' => 0, 'links' => 0, 'files' => 0, 'bytes' => 0];
+  $st = $pdo->prepare('SELECT id FROM classes WHERE template_id=?');
+  $st->execute([$templateId]);
+  return tts_audio_cleanup_classes($pdo, array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)));
+}
+
+function tts_audio_cleanup_all_class_plans(PDO $pdo): array {
+  $ids = $pdo->query(
+    'SELECT DISTINCT c.id
+     FROM classes c
+     LEFT JOIN tts_audio_class_links l ON l.class_id=c.id
+     WHERE c.tts_enabled=1 OR l.class_id IS NOT NULL'
+  )->fetchAll(PDO::FETCH_COLUMN);
+  return tts_audio_cleanup_classes($pdo, array_map('intval', $ids ?: []));
+}
+
+function tts_audio_cleanup_classes(PDO $pdo, array $classIds): array {
+  $result = ['classes' => 0, 'links' => 0, 'files' => 0, 'bytes' => 0];
+  foreach (array_values(array_unique(array_filter(array_map('intval', $classIds)))) as $classId) {
+    try {
+      $cleaned = tts_audio_cleanup_class_plan($pdo, $classId);
+      $result['classes']++;
+      $result['links'] += (int)$cleaned['links'];
+      $result['files'] += (int)$cleaned['files'];
+      $result['bytes'] += (int)$cleaned['bytes'];
+    } catch (Throwable $e) {
+      // Cleanup must never prevent saving the changed source text.
+    }
+  }
+  return $result;
 }
 
 function tts_audio_remove_orphan_files(PDO $pdo, array $audioIds): array {

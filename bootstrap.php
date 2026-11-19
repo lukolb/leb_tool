@@ -2321,8 +2321,19 @@ function current_student(): ?array {
   return isset($_SESSION['student']) && is_array($_SESSION['student']) ? $_SESSION['student'] : null;
 }
 
+function current_student_demo(): ?array {
+  $demo = $_SESSION['student_demo'] ?? null;
+  $user = current_user();
+  if (!is_array($demo) || !$user) return null;
+  if ((int)($demo['started_by_user_id'] ?? 0) !== (int)($user['id'] ?? 0)) return null;
+  $classId = (int)($demo['class_id'] ?? 0);
+  $mode = strtolower(trim((string)($demo['display_mode'] ?? '')));
+  if ($classId <= 0 || !in_array($mode, ['groups', 'items', 'beginner'], true)) return null;
+  return $demo;
+}
+
 function require_student(): void {
-  if (!isset($_SESSION['student']['id'])) {
+  if (!isset($_SESSION['student']['id']) && current_student_demo() === null) {
     if (is_ajax_request()) {
       auth_json_error('session_expired', t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'), 401, true);
     }

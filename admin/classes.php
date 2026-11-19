@@ -890,6 +890,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("INSERT IGNORE INTO user_class_assignments (user_id, class_id) VALUES (?, ?)")->execute([$tid, $classId]);
       }
       $pdo->commit();
+      if ($templateId !== $currentTemplateId) tts_audio_cleanup_class_plan($pdo, $classId);
 
       audit('admin_class_update', $userId, [
         'class_id'=>$classId,

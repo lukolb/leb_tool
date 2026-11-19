@@ -29,8 +29,20 @@ function tts_student_class(PDO $pdo, int $studentId): ?array {
 
 try {
   $pdo = db();
-  $studentId = (int)($_SESSION['student']['id'] ?? 0);
-  $class = tts_student_class($pdo, $studentId);
+  $demo = current_student_demo();
+  $studentId = $demo ? 0 : (int)($_SESSION['student']['id'] ?? 0);
+  if ($demo) {
+    $user = current_user() ?? [];
+    $userId = (int)($user['id'] ?? 0);
+    if ($userId <= 0 || !user_can_access_class($pdo, $userId, (int)$demo['class_id'])) {
+      tts_student_json(['ok' => false, 'error' => 'forbidden'], 403);
+    }
+    $stDemoClass = $pdo->prepare('SELECT id, tts_enabled FROM classes WHERE id=? AND is_active=1 LIMIT 1');
+    $stDemoClass->execute([(int)$demo['class_id']]);
+    $class = $stDemoClass->fetch(PDO::FETCH_ASSOC) ?: null;
+  } else {
+    $class = tts_student_class($pdo, $studentId);
+  }
   if (!$class || (int)($class['tts_enabled'] ?? 0) !== 1) {
     tts_student_json(['ok' => false, 'error' => 'tts_disabled'], 403);
   }
@@ -43,7 +55,10 @@ try {
     }
     $audio = tts_audio_find($pdo, $cacheKey);
     if (!$audio) tts_student_json(['ok' => false, 'error' => 'cache_miss'], 404);
-    tts_audio_link_to_class($pdo, $classId, (int)$audio['id'], 'runtime', 'runtime:' . $cacheKey, '');
+    $sourceType = trim((string)($_GET['source_type'] ?? 'runtime'));
+    $sourceKey = trim((string)($_GET['source_key'] ?? ('runtime:' . $cacheKey)));
+    $sourceLabel = trim((string)($_GET['source_label'] ?? ''));
+    tts_audio_link_to_class($pdo, $classId, (int)$audio['id'], $sourceType, $sourceKey, $sourceLabel);
 
     $etag = '"' . $cacheKey . '"';
     if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
@@ -69,9 +84,9 @@ try {
       'language' => (string)($_POST['language'] ?? 'de'),
       'voice_id' => (string)($_POST['voice_id'] ?? ''),
       'cache_key' => (string)($_POST['cache_key'] ?? ''),
-      'source_type' => 'runtime',
-      'source_key' => 'runtime:' . (string)($_POST['cache_key'] ?? ''),
-      'source_label' => '',
+      'source_type' => (string)($_POST['source_type'] ?? 'runtime'),
+      'source_key' => (string)($_POST['source_key'] ?? ('runtime:' . (string)($_POST['cache_key'] ?? ''))),
+      'source_label' => (string)($_POST['source_label'] ?? ''),
     ]);
     tts_student_json([
       'ok' => true,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../bootstrap.php';
 require __DIR__ . '/_layout.php';
+require_once __DIR__ . '/../shared/tts_audio_cache.php';
 require_teacher();
 
 $pdo = db();
@@ -70,8 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$err) {
 
       $pdo->prepare("UPDATE classes SET student_intro_html=?, student_intro_html_en=? WHERE id=?")
           ->execute([$store, $storeEn, $classId]);
+      $cleanup = tts_audio_cleanup_class_plan($pdo, $classId);
 
-      audit('class_set_student_intro', $userId, ['class_id'=>$classId]);
+      audit('class_set_student_intro', $userId, [
+        'class_id'=>$classId,
+        'obsolete_audio_files_deleted'=>(int)$cleanup['files'],
+      ]);
       $ok = t('teacher.class_intro.saved');
 
       $st = $pdo->prepare("SELECT id, school_year, grade_level, label, name, student_intro_html, student_intro_html_en FROM classes WHERE id=? LIMIT 1");
