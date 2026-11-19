@@ -6,6 +6,7 @@ require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
 require_once __DIR__ . '/shared/mail.php';
 require_once __DIR__ . '/shared/competency_codes.php';
+require_once __DIR__ . '/shared/ai_help.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
 if (!defined('APP_CONFIG_PATH')) define('APP_CONFIG_PATH', $configPath);

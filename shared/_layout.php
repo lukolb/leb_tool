@@ -186,9 +186,86 @@ function render_role_header(string $title): void {
   <?php
 }
 
+function render_ai_help_widget(): void {
+  $embedUrl = ai_help_embed_url();
+  if ($embedUrl === '') return;
+  $publicUrl = ai_help_public_url($embedUrl);
+  $title = t('ai_help.title', 'LEB Tool Hilfe');
+  $privacyHint = t('ai_help.privacy_hint', 'Bitte keine personenbezogenen Daten eingeben.');
+  $openLabel = t('ai_help.open', 'KI-Hilfe öffnen');
+  $closeLabel = t('ai_help.close', 'KI-Hilfe schließen');
+  $externalLabel = t('ai_help.open_external', 'In neuem Fenster öffnen');
+  ?>
+  <button
+    class="ai-help-fab"
+    type="button"
+    id="aiHelpFab"
+    aria-label="<?=h($openLabel)?>"
+    title="<?=h($openLabel)?>"
+    aria-controls="aiHelpPanel"
+    aria-expanded="false"
+  >
+    <span aria-hidden="true">?</span>
+  </button>
+
+  <section class="ai-help-panel" id="aiHelpPanel" role="dialog" aria-labelledby="aiHelpTitle" hidden>
+    <div class="ai-help-header">
+      <div class="ai-help-heading">
+        <strong id="aiHelpTitle"><?=h($title)?></strong>
+        <span><?=h($privacyHint)?></span>
+      </div>
+      <div class="ai-help-actions">
+        <?php if ($publicUrl !== ''): ?>
+          <a href="<?=h($publicUrl)?>" target="_blank" rel="noopener noreferrer" aria-label="<?=h($externalLabel)?>" title="<?=h($externalLabel)?>">↗</a>
+        <?php endif; ?>
+        <button type="button" id="aiHelpClose" aria-label="<?=h($closeLabel)?>" title="<?=h($closeLabel)?>">×</button>
+      </div>
+    </div>
+    <iframe
+      id="aiHelpFrame"
+      title="<?=h($title)?>"
+      data-src="<?=h($embedUrl)?>"
+      referrerpolicy="no-referrer"
+      allow="fullscreen; clipboard-write"
+    ></iframe>
+  </section>
+
+  <script>
+    (() => {
+      const button = document.getElementById('aiHelpFab');
+      const panel = document.getElementById('aiHelpPanel');
+      const close = document.getElementById('aiHelpClose');
+      const frame = document.getElementById('aiHelpFrame');
+      if (!button || !panel || !close || !frame) return;
+
+      const openPanel = () => {
+        if (!frame.getAttribute('src')) {
+          frame.setAttribute('src', frame.dataset.src || '');
+        }
+        panel.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        close.focus();
+      };
+      const closePanel = () => {
+        panel.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+        button.focus();
+      };
+
+      button.addEventListener('click', () => panel.hidden ? openPanel() : closePanel());
+      close.addEventListener('click', closePanel);
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !panel.hidden) closePanel();
+      });
+    })();
+  </script>
+  <?php
+}
+
 function render_role_footer(): void {
   echo "</div>";
   ?>
+  <?php render_ai_help_widget(); ?>
   <?php
   render_history_replace_state_script();
   echo "</body></html>";

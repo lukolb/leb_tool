@@ -343,6 +343,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $ok = t('admin.settings.deadlines.ok', 'Fristen gespeichert.');
       audit('deadline_update', $actorId, ['school_year'=>$schoolYear, 'period_label'=>$periodLabel]);
       $cfg = app_config(true);
+    } elseif ($action === 'save_help_assistant') {
+      if (!isset($cfg['help_assistant']) || !is_array($cfg['help_assistant'])) {
+        $cfg['help_assistant'] = [];
+      }
+      $existingEmbedUrl = ai_help_normalize_embed_url((string)($cfg['help_assistant']['embed_url'] ?? ''));
+      $embedInput = trim((string)($_POST['help_assistant_embed'] ?? ''));
+      $clearEmbed = isset($_POST['help_assistant_clear']);
+
+      if ($clearEmbed) {
+        $embedUrl = '';
+      } elseif ($embedInput !== '') {
+        $embedUrl = ai_help_normalize_embed_url($embedInput);
+        if ($embedUrl === '') {
+          throw new RuntimeException(t('admin.settings.help_assistant.invalid', 'Bitte einen gültigen öffentlichen fobizz-Assistenten-Link oder iFrame-Code eingeben.'));
+        }
+      } else {
+        $embedUrl = $existingEmbedUrl;
+      }
+
+      $helpEnabled = isset($_POST['help_assistant_enabled']);
+      if ($helpEnabled && $embedUrl === '') {
+        throw new RuntimeException(t('admin.settings.help_assistant.required', 'Zum Aktivieren wird ein fobizz-Freigabelink oder iFrame-Code benötigt.'));
+      }
+      $cfg['help_assistant']['enabled'] = $helpEnabled;
+      $cfg['help_assistant']['embed_url'] = $embedUrl;
+
+      $export = "<?php\n// config.php (updated by admin/settings.php)\nreturn " . var_export($cfg, true) . ";\n";
+      if (file_put_contents($cfgPath, $export, LOCK_EX) === false) {
+        throw new RuntimeException(t('admin.settings.error.config_write_failed', 'Konnte config.php nicht schreiben (Rechte?).'));
+      }
+
+      $ok = t('admin.settings.ok.settings_saved', 'Einstellungen gespeichert.');
+      audit('settings_update', (int)current_user()['id'], ['action'=>$action]);
+      $cfg = app_config(true);
     } else {
     // ---- Branding ----
     $brand = $cfg['app']['brand'] ?? [];
@@ -617,6 +651,9 @@ $textCheckMaxFields = (int)($textCheckCfg['max_fields_per_batch'] ?? 8);
 $textCheckDailyUser = (int)($textCheckCfg['daily_limit_per_user'] ?? 5);
 $textCheckDailyTotal = (int)($textCheckCfg['daily_limit_total'] ?? 50);
 $textCheckCacheTtl = (int)($textCheckCfg['cache_ttl'] ?? 604800);
+$helpAssistantCfg = $cfg['help_assistant'] ?? [];
+$helpAssistantEnabled = (bool)($helpAssistantCfg['enabled'] ?? false);
+$helpAssistantConfigured = ai_help_normalize_embed_url((string)($helpAssistantCfg['embed_url'] ?? '')) !== '';
 
 $delegationShowOtherFieldsReadonly = (bool)($delegationCfg['show_other_fields_readonly'] ?? false);
 $teacherAllowAbsenceEdit = (bool)($teacherCfg['allow_absence_edit'] ?? false);
@@ -1025,6 +1062,46 @@ render_admin_header(t('admin.settings.page_title', 'Admin – Settings'));
       <div><label><?=h(t('admin.settings.text_check.limit_total', 'Tageslimit gesamt'))?></label><input type="number" name="text_check_daily_limit_total" min="0" value="<?=h((string)$textCheckDailyTotal)?>"></div>
       <div><label><?=h(t('admin.settings.text_check.cache_ttl', 'Cache-TTL (Sek.)'))?></label><input type="number" name="text_check_cache_ttl" min="0" value="<?=h((string)$textCheckCacheTtl)?>"></div>
     </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2><?=h(t('admin.settings.help_assistant.title', 'LEB Tool Hilfe'))?></h2>
+  <p class="muted"><?=h(t('admin.settings.help_assistant.desc', 'Bindet einen öffentlichen fobizz-Assistenten als dezenten Hilfe-Button für Admins und Lehrkräfte ein. Der iFrame wird erst beim Öffnen geladen.'))?></p>
+
+  <form method="post" autocomplete="off" data-central-save="1">
+    <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+    <input type="hidden" name="action" value="save_help_assistant">
+    <input type="hidden" name="help_assistant_form" value="1">
+
+    <div class="chk">
+      <label class="toggle-switch">
+        <input type="checkbox" name="help_assistant_enabled" value="1" <?=$helpAssistantEnabled ? 'checked' : ''?>>
+        <span class="toggle-slider" aria-hidden="true"></span>
+        <span class="toggle-label"><?=h(t('admin.settings.help_assistant.enable', 'Schwebende KI-Hilfe anzeigen'))?></span>
+      </label>
+    </div>
+
+    <label for="helpAssistantEmbed"><?=h(t('admin.settings.help_assistant.embed_label', 'fobizz-Freigabelink oder iFrame-Code'))?></label>
+    <input
+      id="helpAssistantEmbed"
+      name="help_assistant_embed"
+      type="password"
+      value=""
+      autocomplete="new-password"
+      placeholder="<?=h($helpAssistantConfigured
+        ? t('admin.settings.help_assistant.configured', 'Bereits sicher in der lokalen Konfiguration hinterlegt')
+        : t('admin.settings.help_assistant.placeholder', 'https://app.fobizz.com/ai/chats/public_assistants/…'))?>"
+    >
+    <p class="muted"><?=h(t('admin.settings.help_assistant.hint', 'Der Freigabetoken wird nur in der lokalen config.php gespeichert und nicht ins Repository übernommen. Ein leeres Feld behält die bestehende Konfiguration.'))?></p>
+
+    <?php if ($helpAssistantConfigured): ?>
+      <label class="chk"><input type="checkbox" name="help_assistant_clear" value="1"> <?=h(t('admin.settings.help_assistant.clear', 'Hinterlegten Assistenten entfernen'))?></label>
+    <?php endif; ?>
 
     <div class="actions">
       <button class="btn primary" type="submit"><?=h(t('admin.settings.save_button', 'Speichern'))?></button>

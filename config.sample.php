@@ -94,6 +94,12 @@ return [
     'model' => 'gpt-4o-mini',
     'timeout_seconds' => 60,
   ],
+  'help_assistant' => [
+    // Optionaler, eingebetteter fobizz-Hilfeassistent fuer Admins und Lehrkraefte.
+    // Den Freigabelink bzw. iframe-Code nur lokal in config.php hinterlegen.
+    'enabled' => false,
+    'embed_url' => '',
+  ],
   'text_check' => [
     // Abschließende serverseitige KI-Textprüfung. Standardmäßig deaktiviert.
     'enabled' => false,

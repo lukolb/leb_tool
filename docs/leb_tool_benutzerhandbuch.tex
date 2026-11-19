@@ -111,7 +111,7 @@
   {\large Lernentwicklungsberichte digital verwalten}\\[0.2cm]
   {\large Zielgruppe: Grundschule · Kollegium · Administration}\\[0.2cm]
   {\large Stand: \HandbuchStand}\\[0.4cm]
-  {\large \href{https://notebooklm.google.com/notebook/d40f8971-e822-40c0-ac89-75797cad7ee3}{KI-Assistent zum Handbuch}}\\[0.2cm]
+  {\large KI-Hilfe: Fragezeichen unten rechts im LEB Tool}\\[0.2cm]
   \textcolor{primary}{\rule{0.72\textwidth}{1.2pt}}\\[0.6cm]
 \end{center}
 
@@ -190,7 +190,7 @@ Schüler & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 
 \section{Navigation: jeder Menüpunkt im Überblick}\label{sec:navigation}
 \index{Benutzerhandbuch!Zugriff im Tool}\index{Buchsymbol}
-Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kleine Buchsymbol in der Kopfzeile öffnet dieses Benutzerhandbuch als PDF in einem neuen Browser-Tab. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
+Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kleine Buchsymbol in der Kopfzeile öffnet dieses Benutzerhandbuch als PDF in einem neuen Browser-Tab. Ist die optionale fobizz-Hilfe eingerichtet, öffnet das unauffällige Fragezeichen unten rechts einen eingebetteten Hilfe-Chat. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
 
 \subsection{Admin-Menü vollständig erklärt}\label{sec:admin-menu}
 \index{Admin-Menü}\index{Dashboard}\index{Schule}\index{Klassen}\index{Schüler}
@@ -316,7 +316,11 @@ Aufklappbereich & Blendet selten benötigte Detailfunktionen ein. Ein geschlosse
 \hline
 Fortschrittsbalken & Zeigt Vollständigkeit der Pflichtfelder; er ersetzt nicht die inhaltliche Prüfung.\\
 \hline
+Schwebendes Fragezeichen & Öffnet die optionale \enquote{LEB Tool Hilfe} für Bedien- und Supportfragen. Der externe fobizz-Inhalt wird erst nach dem Öffnen geladen. Mit \enquote{×} wird das Fenster geschlossen; der Pfeil öffnet es bei Bedarf in einem eigenen Tab.\\
+\hline
 \end{tabularx}
+
+\WarnBox{Keine Namen, Berichtsinhalte, E-Mail-Adressen, Zugangsdaten, QR-Codes, API-Schlüssel oder andere personenbezogene beziehungsweise geheime Daten in die KI-Hilfe eingeben. Für Beispiele nur anonymisierte Platzhalter verwenden.}
 
 \section{Datenschutz \& Verantwortlichkeiten}\label{sec:datenschutz}\index{Datenschutz}
 \index{Rollenbasierter Zugriff}\index{HTTPS}\index{Datenminimierung}\index{Arbeitssitzung}
@@ -1001,6 +1005,7 @@ Das Dashboard zeigt Systemstatus, Bearbeitungsstände und Schnellzugriffe.
 \index{Live-Preview}\index{Organisation}\index{Default-Schuljahr}\index{Schul-Zeitzone}
 \index{Primärfarbe}\index{Sekundärfarbe}\index{Schülerfrist}\index{Delegationsfrist}\index{Lehrkraftfrist}
 \index{From E-Mail}\index{From Name}\index{KI-Provider}\index{Basis-URL}\index{API-Key}\index{KI-Modell}
+\index{LEB Tool Hilfe}\index{fobizz}\index{KI-Hilfe}\index{iFrame}
 \index{Textprüfung!Batchgröße}\index{Textprüfung!Tageslimit}\index{Textprüfung!Cache-TTL}
 \index{Elternmodus!Download}\index{Elternmodus!automatische Freigabe}\index{Elternmodus!Feedback}
 \index{Signature-Master-Key}\index{PDF!Flattening}\index{Radio-Kreuzfarbe}
@@ -1043,6 +1048,8 @@ KI-Erklärungen Schüler & Unabhängiger Schalter für kurze Schülererklärunge
 Provider & \enquote{OpenAI} nutzt den Standardanbieter; \enquote{OpenAI-kompatibel} erlaubt eine eigene Basis-URL.\\
 \hline
 Basis-URL / API-Key / Modell & Technische Providerdaten. Schlüssel niemals in Screenshots, Supportnachrichten oder Handbuch übernehmen. Modellname muss beim Provider existieren.\\
+\hline
+LEB Tool Hilfe & Aktiviert den schwebenden Hilfe-Button für Admins und Lehrkräfte. Akzeptiert den öffentlichen fobizz-Freigabelink oder den vollständigen iFrame-Code. Der Freigabetoken wird ausschließlich in der lokalen \texttt{config.php} gespeichert; ein leeres Eingabefeld behält die bestehende Konfiguration. Der iFrame wird erst beim Öffnen des Chats geladen.\\
 \hline
 Textprüfung aktivieren & Erlaubt abschließende Prüfung von Freitexten. Vorschläge werden einzeln angenommen, teilweise übernommen oder abgelehnt.\\
 \hline
@@ -2015,6 +2022,7 @@ Kurzer Überblick, welche Kernfunktionen in diesem Handbuch beschrieben sind und
 \section{Support \& Eskalation (schulintern)}
 \index{Support}\index{Fehlermeldung}\index{Eskalation}
 \index{Support!Screenshot}\index{Support!Berichts-ID}\index{Support!Browser}\index{Datenverlust}
+Für allgemeine Bedienfragen kann die optionale \enquote{LEB Tool Hilfe} verwendet werden. Sie greift über die Websuche auf die jeweils aktuelle Handbuch-PDF der LEB-Webseite und bei technischen Fragen auf das öffentliche GitHub-Repository zu. Die Hilfe berät nur und nimmt selbst keine Änderungen im LEB Tool vor.
 \begin{enumerate}
   \item Aktion stoppen, wenn ein falscher Schüler, Zeitraum, Massenimport oder Löschdialog betroffen ist.
   \item Fehlermeldung wörtlich notieren und Screenshot ohne unnötige Schülerdaten erstellen.
