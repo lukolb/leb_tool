@@ -42,12 +42,20 @@ $translations = file_get_contents($root . '/shared/translations.php');
 $css = file_get_contents($root . '/assets/app.css');
 $sample = file_get_contents($root . '/config.sample.php');
 $handbook = file_get_contents($root . '/docs/leb_tool_benutzerhandbuch.tex');
+$helpPage = file_get_contents($root . '/help_assistant.php');
 
 ai_help_test_assert(
   is_string($layout) && str_contains($layout, 'class="ai-help-fab"')
-    && str_contains($layout, 'data-src="<?=h($embedUrl)?>"')
-    && str_contains($layout, "frame.setAttribute('src', frame.dataset.src || '')"),
-  'the shared authenticated layout must lazily load the floating help widget'
+    && str_contains($layout, "window.open('', 'lebToolHelp'")
+    && str_contains($layout, 'helpWindow.focus()'),
+  'the shared authenticated layout must reuse a persistent named help window'
+);
+ai_help_test_assert(
+  is_string($helpPage) && str_contains($helpPage, 'require_teacher();')
+    && str_contains($helpPage, 'class="ai-help-window-frame"')
+    && str_contains($helpPage, 'src="<?=h($embedUrl)?>"')
+    && str_contains($helpPage, "window.name = 'lebToolHelp'"),
+  'the authenticated help window must keep one fobizz iframe alive across LEB page changes'
 );
 ai_help_test_assert(
   is_string($settings) && str_contains($settings, 'name="help_assistant_form"')
@@ -63,8 +71,8 @@ ai_help_test_assert(
   'widget and settings labels must be translated in German and English'
 );
 ai_help_test_assert(
-  is_string($css) && str_contains($css, '.ai-help-fab') && str_contains($css, '.ai-help-panel'),
-  'the floating button and panel must be styled'
+  is_string($css) && str_contains($css, '.ai-help-fab') && str_contains($css, '.ai-help-window-frame'),
+  'the floating button and persistent help window must be styled'
 );
 ai_help_test_assert(
   is_string($sample) && str_contains($sample, "'help_assistant' => [")

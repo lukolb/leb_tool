@@ -511,29 +511,23 @@ th{color:#111; font-size:13px}
   transform:translateY(-1px);
   box-shadow:0 10px 28px rgba(15,23,42,.3);
 }
-.ai-help-fab:focus-visible,
-.ai-help-actions a:focus-visible,
-.ai-help-actions button:focus-visible{
+.ai-help-fab:focus-visible{
   outline:3px solid rgba(11,87,208,.28);
   outline-offset:3px;
 }
-.ai-help-panel{
-  position:fixed;
-  right:20px;
-  bottom:78px;
-  z-index:1099;
-  width:min(430px, calc(100vw - 28px));
-  height:min(720px, calc(100vh - 112px));
-  min-height:420px;
+.ai-help-window{
+  height:100vh;
+  margin:0;
+  display:flex;
+  flex-direction:column;
   overflow:hidden;
-  border:1px solid var(--border);
-  border-radius:16px;
   background:#fff;
-  box-shadow:0 20px 60px rgba(15,23,42,.26);
+  color:var(--text);
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 }
-.ai-help-header{
-  min-height:58px;
-  padding:9px 10px 9px 14px;
+.ai-help-window-header{
+  min-height:60px;
+  padding:10px 14px;
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -544,41 +538,32 @@ th{color:#111; font-size:13px}
 .ai-help-heading{display:flex; flex-direction:column; gap:2px; min-width:0;}
 .ai-help-heading strong{font-size:14px; color:#111827;}
 .ai-help-heading span{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-.ai-help-actions{display:flex; align-items:center; gap:4px; flex:0 0 auto;}
-.ai-help-actions a,
-.ai-help-actions button{
-  width:34px;
-  height:34px;
+.ai-help-window-external{
+  width:36px;
+  height:36px;
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  padding:0;
-  border:0;
   border-radius:9px;
   background:transparent;
   color:#374151;
   text-decoration:none;
   font:600 21px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  cursor:pointer;
 }
-.ai-help-actions a:hover,
-.ai-help-actions button:hover{background:#f3f4f6; color:#111827;}
-.ai-help-panel iframe{
+.ai-help-window-external:hover{background:#f3f4f6; color:#111827;}
+.ai-help-window-external:focus-visible{
+  outline:3px solid rgba(11,87,208,.28);
+  outline-offset:2px;
+}
+.ai-help-window-frame{
+  flex:1 1 auto;
   display:block;
   width:100%;
-  height:calc(100% - 58px);
+  min-height:0;
   border:0;
   background:#fff;
 }
 
 @media (max-width: 600px){
   .ai-help-fab{right:14px; bottom:14px;}
-  .ai-help-panel{
-    right:8px;
-    bottom:70px;
-    width:calc(100vw - 16px);
-    height:calc(100vh - 82px);
-    min-height:0;
-    border-radius:14px;
-  }
 }

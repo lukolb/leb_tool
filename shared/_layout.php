@@ -189,12 +189,8 @@ function render_role_header(string $title): void {
 function render_ai_help_widget(): void {
   $embedUrl = ai_help_embed_url();
   if ($embedUrl === '') return;
-  $publicUrl = ai_help_public_url($embedUrl);
-  $title = t('ai_help.title', 'LEB Tool Hilfe');
-  $privacyHint = t('ai_help.privacy_hint', 'Bitte keine personenbezogenen Daten eingeben.');
   $openLabel = t('ai_help.open', 'KI-Hilfe öffnen');
-  $closeLabel = t('ai_help.close', 'KI-Hilfe schließen');
-  $externalLabel = t('ai_help.open_external', 'In neuem Fenster öffnen');
+  $helpUrl = url('help_assistant.php');
   ?>
   <button
     class="ai-help-fab"
@@ -202,60 +198,33 @@ function render_ai_help_widget(): void {
     id="aiHelpFab"
     aria-label="<?=h($openLabel)?>"
     title="<?=h($openLabel)?>"
-    aria-controls="aiHelpPanel"
-    aria-expanded="false"
+    aria-haspopup="dialog"
   >
     <span aria-hidden="true">?</span>
   </button>
 
-  <section class="ai-help-panel" id="aiHelpPanel" role="dialog" aria-labelledby="aiHelpTitle" hidden>
-    <div class="ai-help-header">
-      <div class="ai-help-heading">
-        <strong id="aiHelpTitle"><?=h($title)?></strong>
-        <span><?=h($privacyHint)?></span>
-      </div>
-      <div class="ai-help-actions">
-        <?php if ($publicUrl !== ''): ?>
-          <a href="<?=h($publicUrl)?>" target="_blank" rel="noopener noreferrer" aria-label="<?=h($externalLabel)?>" title="<?=h($externalLabel)?>">↗</a>
-        <?php endif; ?>
-        <button type="button" id="aiHelpClose" aria-label="<?=h($closeLabel)?>" title="<?=h($closeLabel)?>">×</button>
-      </div>
-    </div>
-    <iframe
-      id="aiHelpFrame"
-      title="<?=h($title)?>"
-      data-src="<?=h($embedUrl)?>"
-      referrerpolicy="no-referrer"
-      allow="fullscreen; clipboard-write"
-    ></iframe>
-  </section>
-
   <script>
     (() => {
       const button = document.getElementById('aiHelpFab');
-      const panel = document.getElementById('aiHelpPanel');
-      const close = document.getElementById('aiHelpClose');
-      const frame = document.getElementById('aiHelpFrame');
-      if (!button || !panel || !close || !frame) return;
+      if (!button) return;
+      const helpUrl = <?=json_encode($helpUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)?>;
 
-      const openPanel = () => {
-        if (!frame.getAttribute('src')) {
-          frame.setAttribute('src', frame.dataset.src || '');
+      button.addEventListener('click', () => {
+        const width = Math.min(480, window.screen.availWidth || 480);
+        const height = Math.min(800, window.screen.availHeight || 800);
+        const left = Math.max(0, (window.screen.availLeft || 0) + (window.screen.availWidth || width) - width - 20);
+        const top = Math.max(0, (window.screen.availTop || 0) + (window.screen.availHeight || height) - height - 20);
+        const features = `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`;
+        const helpWindow = window.open('', 'lebToolHelp', features);
+        if (!helpWindow) return;
+        try {
+          if (helpWindow.location.href === 'about:blank' || helpWindow.location.href === '') {
+            helpWindow.location.replace(helpUrl);
+          }
+        } catch (error) {
+          // A manually navigated help window is still reused and focused.
         }
-        panel.hidden = false;
-        button.setAttribute('aria-expanded', 'true');
-        close.focus();
-      };
-      const closePanel = () => {
-        panel.hidden = true;
-        button.setAttribute('aria-expanded', 'false');
-        button.focus();
-      };
-
-      button.addEventListener('click', () => panel.hidden ? openPanel() : closePanel());
-      close.addEventListener('click', closePanel);
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !panel.hidden) closePanel();
+        helpWindow.focus();
       });
     })();
   </script>

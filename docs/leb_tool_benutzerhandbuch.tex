@@ -190,7 +190,7 @@ Schüler & Eigene Reflexionsfelder (nur nach Freigabe) & Kurzzeit-Fenster\\
 
 \section{Navigation: jeder Menüpunkt im Überblick}\label{sec:navigation}
 \index{Benutzerhandbuch!Zugriff im Tool}\index{Buchsymbol}
-Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kleine Buchsymbol in der Kopfzeile öffnet dieses Benutzerhandbuch als PDF in einem neuen Browser-Tab. Ist die optionale fobizz-Hilfe eingerichtet, öffnet das unauffällige Fragezeichen unten rechts einen eingebetteten Hilfe-Chat. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
+Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kleine Buchsymbol in der Kopfzeile öffnet dieses Benutzerhandbuch als PDF in einem neuen Browser-Tab. Ist die optionale fobizz-Hilfe eingerichtet, öffnet das unauffällige Fragezeichen unten rechts ein eigenes kleines Hilfefenster. Dieses Fenster bleibt beim Wechsel zwischen LEB-Seiten geöffnet, damit eine Anleitung Schritt für Schritt befolgt werden kann. Ein Admin kann über das Werkzeugsymbol zwischen Admin- und Lehrkraftansicht wechseln. Die Sprachschalter \textbf{Deutsch} und \textbf{Englisch} ändern die Sprache der Oberfläche; Englisch wird mit der US-amerikanischen Flagge gekennzeichnet. Der Rollenwechsel ändert nur die Ansicht und die verfügbaren Funktionen, nicht das Benutzerkonto.
 
 \subsection{Admin-Menü vollständig erklärt}\label{sec:admin-menu}
 \index{Admin-Menü}\index{Dashboard}\index{Schule}\index{Klassen}\index{Schüler}
@@ -316,7 +316,7 @@ Aufklappbereich & Blendet selten benötigte Detailfunktionen ein. Ein geschlosse
 \hline
 Fortschrittsbalken & Zeigt Vollständigkeit der Pflichtfelder; er ersetzt nicht die inhaltliche Prüfung.\\
 \hline
-Schwebendes Fragezeichen & Öffnet die optionale \enquote{LEB Tool Hilfe} für Bedien- und Supportfragen. Der externe fobizz-Inhalt wird erst nach dem Öffnen geladen. Mit \enquote{×} wird das Fenster geschlossen; der Pfeil öffnet es bei Bedarf in einem eigenen Tab.\\
+Schwebendes Fragezeichen & Öffnet oder fokussiert die optionale \enquote{LEB Tool Hilfe} für Bedien- und Supportfragen in einem kleinen separaten Fenster. Der externe fobizz-Inhalt wird erst beim ersten Öffnen geladen. Das Hilfefenster bleibt bei Seitenwechseln im LEB Tool erhalten; der Pfeil öffnet fobizz bei Bedarf zusätzlich in einem eigenen Tab.\\
 \hline
 \end{tabularx}
 
@@ -1049,7 +1049,7 @@ Provider & \enquote{OpenAI} nutzt den Standardanbieter; \enquote{OpenAI-kompatib
 \hline
 Basis-URL / API-Key / Modell & Technische Providerdaten. Schlüssel niemals in Screenshots, Supportnachrichten oder Handbuch übernehmen. Modellname muss beim Provider existieren.\\
 \hline
-LEB Tool Hilfe & Aktiviert den schwebenden Hilfe-Button für Admins und Lehrkräfte. Akzeptiert den öffentlichen fobizz-Freigabelink oder den vollständigen iFrame-Code. Der Freigabetoken wird ausschließlich in der lokalen \texttt{config.php} gespeichert; ein leeres Eingabefeld behält die bestehende Konfiguration. Der iFrame wird erst beim Öffnen des Chats geladen.\\
+LEB Tool Hilfe & Aktiviert den schwebenden Hilfe-Button für Admins und Lehrkräfte. Akzeptiert den öffentlichen fobizz-Freigabelink oder den vollständigen iFrame-Code. Der Freigabetoken wird ausschließlich in der lokalen \texttt{config.php} gespeichert; ein leeres Eingabefeld behält die bestehende Konfiguration. Der iFrame wird beim ersten Öffnen in einem benannten Hilfefenster geladen und bleibt dort über LEB-Seitenwechsel hinweg erhalten.\\
 \hline
 Textprüfung aktivieren & Erlaubt abschließende Prüfung von Freitexten. Vorschläge werden einzeln angenommen, teilweise übernommen oder abgelehnt.\\
 \hline
