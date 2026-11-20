@@ -26,7 +26,7 @@ try {
   $sourceClassId = (int)($_GET['source_class_id'] ?? 0);
   if ($sourceClassId <= 0) throw new RuntimeException(t('teacher.students_source.error.source_class_missing'));
 
-  if (!user_can_access_class($pdo, $userId, $sourceClassId)) {
+  if (!user_can_manage_class($pdo, $userId, $sourceClassId)) {
     throw new RuntimeException(t('teacher.students_source.error.no_access'));
   }
 

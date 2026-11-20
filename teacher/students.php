@@ -59,6 +59,106 @@ function group_title_from_meta(array $meta, string $groupKey, string $lang): str
   return group_title_override_lang($groupKey, $lang);
 }
 
+function student_field_group_meta(array $field): array {
+  $meta = meta_read($field['meta_json'] ?? null);
+  foreach ([
+    'group_label' => 'group',
+    'group_label_en' => 'group_title_en',
+    'subgroup_label' => 'subgroup',
+    'subgroup_label_en' => 'subgroup_title_en',
+  ] as $column => $metaKey) {
+    $value = trim((string)($field[$column] ?? ''));
+    if ($value !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $value;
+  }
+  return $meta;
+}
+
+function delegate_child_scope_title(array $meta, string $scopeKey, string $lang): string {
+  $parts = app_group_scope_parts_from_key($scopeKey);
+  $groupKey = (string)($parts['group'] ?? '');
+  $subgroupKey = (string)($parts['subgroup'] ?? '');
+  $metaParts = app_group_parts_from_meta($meta);
+  $groupTitle = group_title_from_meta($meta, (string)$metaParts['group'], $lang);
+  if ($groupTitle === '') $groupTitle = $groupKey;
+  if ($subgroupKey === '') return $groupTitle;
+
+  $subgroupTitle = $subgroupKey;
+  if ($lang === 'en') {
+    $candidate = app_group_meta_first_string($meta, ['subgroup_title_en', 'subcategory_en', 'subgroup_label_en']);
+    if ($candidate === '') $candidate = app_group_meta_rcff_first_string($meta, ['subcategory_en']);
+    if ($candidate !== '') $subgroupTitle = $candidate;
+  } elseif ((string)$metaParts['subgroup'] !== '') {
+    $subgroupTitle = (string)$metaParts['subgroup'];
+  }
+  return $groupTitle . ' › ' . $subgroupTitle;
+}
+
+function load_delegate_child_scopes(PDO $pdo, int $userId, int $classId, int $templateId, string $schoolYear, string $periodLabel, string $lang): array {
+  if ($userId <= 0 || $classId <= 0 || $templateId <= 0 || $schoolYear === '') return [];
+  $periodLabel = normalize_class_period_label($periodLabel);
+
+  $stDelegations = $pdo->prepare(
+    "SELECT group_key, user_id, status
+     FROM class_group_delegations
+     WHERE class_id=? AND school_year=? AND period_label=?"
+  );
+  $stDelegations->execute([$classId, $schoolYear, $periodLabel]);
+  $delegations = [];
+  foreach ($stDelegations->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $key = trim((string)($row['group_key'] ?? ''));
+    $uid = (int)($row['user_id'] ?? 0);
+    if ($key === '' || $uid <= 0) continue;
+    if (!isset($delegations[$key])) $delegations[$key] = [];
+    $delegations[$key][$uid] = (string)($row['status'] ?? 'open');
+  }
+  if (!$delegations) return [];
+
+  $select = 'id, meta_json';
+  foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
+    if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
+  }
+  $stFields = $pdo->prepare(
+    "SELECT $select
+     FROM template_fields
+     WHERE template_id=? AND can_child_edit=1
+     ORDER BY sort_order ASC, id ASC"
+  );
+  $stFields->execute([$templateId]);
+
+  $scopes = [];
+  foreach ($stFields->fetchAll(PDO::FETCH_ASSOC) as $field) {
+    $fieldId = (int)($field['id'] ?? 0);
+    if ($fieldId <= 0) continue;
+    $meta = student_field_group_meta($field);
+    $matchedKey = '';
+    $matchedUsers = [];
+    foreach (app_delegation_key_aliases_from_meta($meta) as $candidate) {
+      if (!array_key_exists($candidate, $delegations)) continue;
+      $matchedKey = (string)$candidate;
+      $matchedUsers = (array)$delegations[$candidate];
+      break;
+    }
+    if ($matchedKey === '' || (($matchedUsers[$userId] ?? '') !== 'open')) continue;
+
+    if (!isset($scopes[$matchedKey])) {
+      $scopes[$matchedKey] = [
+        'key' => $matchedKey,
+        'scope_key' => $matchedKey,
+        'title' => delegate_child_scope_title($meta, $matchedKey, $lang),
+        'aliases' => app_group_key_aliases_from_label($matchedKey),
+        'field_ids' => [],
+      ];
+    }
+    $scopes[$matchedKey]['field_ids'][] = $fieldId;
+  }
+
+  foreach ($scopes as &$scope) {
+    $scope['field_ids'] = array_values(array_unique(array_map('intval', $scope['field_ids'] ?? [])));
+  }
+  unset($scope);
+  return $scopes;
+}
+
 function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang): array {
   if ($templateId <= 0) return [];
   $select = 'id, meta_json';
@@ -241,8 +341,8 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
 
   $fieldIds = [];
   foreach ($groups as $gKey => $gData) {
-    $aliases = is_array($gData['aliases'] ?? null) ? $gData['aliases'] : [(string)$gKey];
-    $includeGroup = !($groupUnlockInfo['active'] ?? false) || app_group_key_matches_map($groupUnlockInfo['map'] ?? [], $aliases);
+    $scopeKey = (string)($gData['scope_key'] ?? $gKey);
+    $includeGroup = !($groupUnlockInfo['active'] ?? false) || app_child_scope_unlocked($groupUnlockInfo['map'] ?? [], $scopeKey);
     if (!$includeGroup) continue;
     foreach (($gData['field_ids'] ?? []) as $fid) {
       $fid = (int)$fid;
@@ -341,6 +441,13 @@ if (!$class) {
   echo '<div class="card"><h2>'.h(t('teacher.students.card_access_codes', 'Schüler-Zugangscodes')).'</h2><div class="alert danger"><strong>'.h(t('teacher.students.error_class_not_found', 'Klasse nicht gefunden.')).'</strong></div><a class="btn secondary" href="'.h(url($toClassesUrl)).'">'.h(t('teacher.students.back_to_classes', '← zurück zu den Klassen')).'</a></div>';
   render_teacher_footer();
   exit;
+}
+
+// Delegations grant a deliberately restricted self-assessment workflow, not
+// access to student/class management. The dedicated renderer exits here before
+// any of the regular student-management POST actions or personal-data views.
+if (!user_can_manage_class($pdo, $userId, $classId)) {
+  render_delegate_self_assessment_page($pdo, $u, $class, $classId, $userId);
 }
 
 $err = '';
@@ -1420,6 +1527,376 @@ function child_status_badge(?string $status, ?string $progressStatus = null): st
   return '<span class="badge ' . h($class) . '">' . h($label) . '</span>';
 }
 
+function delegate_generate_missing_student_logins(PDO $pdo, int $classId): array {
+  $st = $pdo->prepare(
+    "SELECT s.id, s.qr_token, s.login_code
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=? AND sca.is_active=1
+     ORDER BY s.last_name ASC, s.first_name ASC"
+  );
+  $st->execute([$classId]);
+  $students = $st->fetchAll(PDO::FETCH_ASSOC);
+  if (!$students) return ['generated' => 0, 'skipped' => 0];
+
+  $pdo->beginTransaction();
+  try {
+    $upd = $pdo->prepare("UPDATE students SET qr_token=?, login_code=? WHERE id=?");
+    $chkToken = $pdo->prepare("SELECT 1 FROM students WHERE qr_token=? LIMIT 1");
+    $chkCode = $pdo->prepare("SELECT 1 FROM students WHERE login_code=? LIMIT 1");
+    $generated = 0;
+    $skipped = 0;
+    foreach ($students as $student) {
+      if (trim((string)($student['qr_token'] ?? '')) !== '' && trim((string)($student['login_code'] ?? '')) !== '') {
+        $skipped++;
+        continue;
+      }
+
+      $token = trim((string)($student['qr_token'] ?? ''));
+      if ($token === '') {
+        for ($i = 0; $i < 40; $i++) {
+          $candidate = random_student_token();
+          $chkToken->execute([$candidate]);
+          if (!$chkToken->fetchColumn()) { $token = $candidate; break; }
+        }
+        if ($token === '') throw new RuntimeException(t('teacher.students.error_token_generation', 'Konnte keinen eindeutigen QR-Token erzeugen.'));
+      }
+
+      $code = trim((string)($student['login_code'] ?? ''));
+      if ($code === '') {
+        for ($i = 0; $i < 40; $i++) {
+          $candidate = random_login_code();
+          $chkCode->execute([$candidate]);
+          if (!$chkCode->fetchColumn()) { $code = $candidate; break; }
+        }
+        if ($code === '') throw new RuntimeException(t('teacher.students.error_code_generation', 'Konnte keinen eindeutigen Login-Code erzeugen.'));
+      }
+
+      $upd->execute([$token, $code, (int)$student['id']]);
+      $generated++;
+    }
+    $pdo->commit();
+    return ['generated' => $generated, 'skipped' => $skipped];
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
+function save_delegate_child_scope_unlocks(
+  PDO $pdo,
+  int $classId,
+  int $templateId,
+  string $schoolYear,
+  string $periodLabel,
+  int $userId,
+  array $scopes,
+  array $selectedKeys
+): void {
+  $validKeys = array_keys($scopes);
+  $selectedKeys = array_values(array_intersect($validKeys, array_values(array_unique(array_map('strval', $selectedKeys)))));
+  $existing = load_child_group_unlocks($pdo, $classId, $schoolYear, $periodLabel);
+  $allGroups = load_child_groups_for_template($pdo, $templateId, ui_lang());
+
+  $pdo->beginTransaction();
+  try {
+    $upsert = $pdo->prepare(
+      "INSERT INTO class_child_group_unlocks
+       (class_id, school_year, period_label, group_key, is_unlocked, created_by_user_id, updated_by_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         is_unlocked=VALUES(is_unlocked),
+         updated_by_user_id=VALUES(updated_by_user_id),
+         updated_at=NOW()"
+    );
+
+    // An empty table historically means "all groups open". Materialize that
+    // state before a delegate writes one scope so unrelated areas do not close.
+    if (!($existing['active'] ?? false)) {
+      foreach (array_keys($allGroups) as $groupKey) {
+        $upsert->execute([$classId, $schoolYear, $periodLabel, (string)$groupKey, 1, $userId, $userId]);
+      }
+    }
+
+    foreach ($validKeys as $scopeKey) {
+      $isUnlocked = in_array($scopeKey, $selectedKeys, true) ? 1 : 0;
+      $upsert->execute([$classId, $schoolYear, $periodLabel, $scopeKey, $isUnlocked, $userId, $userId]);
+    }
+    $pdo->commit();
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
+function delegate_self_assessment_data(
+  PDO $pdo,
+  int $classId,
+  int $templateId,
+  string $schoolYear,
+  string $periodLabel,
+  array $scopes,
+  array $groupUnlockInfo
+): array {
+  $st = $pdo->prepare(
+    "SELECT s.id, s.first_name, s.last_name
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=? AND sca.is_active=1
+     ORDER BY s.last_name ASC, s.first_name ASC"
+  );
+  $st->execute([$classId]);
+  $students = $st->fetchAll(PDO::FETCH_ASSOC);
+  $studentIds = array_map(static fn($row)=>(int)($row['id'] ?? 0), $students ?: []);
+
+  $progress = $students
+    ? build_student_child_entry_progress($pdo, $students, $templateId, $schoolYear, $periodLabel, $scopes, $groupUnlockInfo)
+    : [];
+  $statusMap = $studentIds ? load_child_status_map($pdo, $studentIds, $periodLabel, $templateId, $schoolYear) : [];
+  foreach ($progress as &$row) {
+    $row['child_status'] = $statusMap[(int)($row['student_id'] ?? 0)] ?? null;
+  }
+  unset($row);
+
+  $reportMap = $studentIds
+    ? load_report_instance_map_for_template($pdo, $studentIds, $templateId, $schoolYear, $periodLabel)
+    : [];
+  $scopeProgress = ($scopes && $studentIds)
+    ? build_child_group_progress($pdo, $scopes, $studentIds, $reportMap)
+    : [];
+
+  return ['students' => $students, 'progress' => $progress, 'scope_progress' => $scopeProgress];
+}
+
+function render_delegate_self_assessment_page(PDO $pdo, array $user, array $class, int $classId, int $userId): never {
+  $periodLabel = normalize_class_period_label($class['period_label'] ?? 'Standard');
+  $schoolYear = trim((string)($class['school_year'] ?? ''));
+  if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+  $activeTemplate = get_active_template($pdo, $classId);
+  $templateId = (int)($activeTemplate['id'] ?? 0);
+  $scopes = $templateId > 0
+    ? load_delegate_child_scopes($pdo, $userId, $classId, $templateId, $schoolYear, $periodLabel, ui_lang())
+    : [];
+  $err = '';
+  $ok = '';
+
+  if ($_SERVER['REQUEST_METHOD'] === 'GET' && (string)($_GET['action'] ?? '') === 'student_progress') {
+    $unlocks = ($templateId > 0 && $schoolYear !== '')
+      ? load_child_group_unlocks($pdo, $classId, $schoolYear, $periodLabel)
+      : ['active' => false, 'map' => []];
+    $data = $templateId > 0
+      ? delegate_self_assessment_data($pdo, $classId, $templateId, $schoolYear, $periodLabel, $scopes, $unlocks)
+      : ['progress' => []];
+    students_json_out(['ok' => true, 'students' => $data['progress'] ?? [], 'server_time' => date(DATE_ATOM)]);
+  }
+
+  if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_verify();
+    $action = (string)($_POST['action'] ?? '');
+    try {
+      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_generate_login'], true)) {
+        throw new RuntimeException(t('teacher.delegate_self_assessment.error_action', 'Diese Aktion ist für Delegierte nicht erlaubt.'));
+      }
+      if ($action !== 'delegate_generate_login' && (!$activeTemplate || !$scopes)) {
+        throw new RuntimeException(t('teacher.delegate_self_assessment.error_no_fields', 'In den delegierten Bereichen sind keine Schülerfelder verfügbar.'));
+      }
+
+      if ($action === 'delegate_generate_login') {
+        $codes = delegate_generate_missing_student_logins($pdo, $classId);
+        audit('delegate_self_assessment_generate_login', $userId, ['class_id'=>$classId] + $codes);
+        $ok = strtr(t('teacher.delegate_self_assessment.codes_created', 'Zugangscodes erstellt: {generated}; bereits vorhanden: {skipped}.'), [
+          '{generated}' => (string)$codes['generated'],
+          '{skipped}' => (string)$codes['skipped'],
+        ]);
+      } elseif ($action === 'delegate_self_assessment_scopes') {
+        $selected = $_POST['group_unlocks'] ?? [];
+        $selected = is_array($selected) ? $selected : [];
+        save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, $selected);
+        audit('delegate_self_assessment_scopes', $userId, [
+          'class_id'=>$classId,
+          'scope_keys'=>array_values(array_intersect(array_keys($scopes), array_map('strval', $selected))),
+        ]);
+        $ok = t('teacher.delegate_self_assessment.scopes_saved', 'Die Freigaben der delegierten Bereiche wurden gespeichert.');
+      } else {
+        $created = ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, false);
+        save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, array_keys($scopes));
+        $unlocked = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, 'unlock');
+        $codes = delegate_generate_missing_student_logins($pdo, $classId);
+        audit('delegate_self_assessment_prepare', $userId, [
+          'class_id'=>$classId,
+          'template_id'=>$templateId,
+          'scopes'=>array_keys($scopes),
+          'reports_created'=>$created,
+          'reports_unlocked'=>$unlocked,
+          'codes_generated'=>$codes['generated'],
+        ]);
+        $ok = strtr(t('teacher.delegate_self_assessment.prepared', 'Selbsteinschätzung vorbereitet: {reports} Berichte neu, {unlocked} freigegeben, {codes} Zugangscodes neu.'), [
+          '{reports}' => (string)$created,
+          '{unlocked}' => (string)$unlocked,
+          '{codes}' => (string)$codes['generated'],
+        ]);
+      }
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      $err = $e->getMessage();
+    }
+  }
+
+  $unlocks = ($templateId > 0 && $schoolYear !== '')
+    ? load_child_group_unlocks($pdo, $classId, $schoolYear, $periodLabel)
+    : ['active' => false, 'map' => []];
+  $pageData = $templateId > 0
+    ? delegate_self_assessment_data($pdo, $classId, $templateId, $schoolYear, $periodLabel, $scopes, $unlocks)
+    : ['students'=>[], 'progress'=>[], 'scope_progress'=>[]];
+  $progressMap = [];
+  foreach ($pageData['progress'] as $row) $progressMap[(int)($row['student_id'] ?? 0)] = $row;
+
+  $title = t('teacher.delegate_self_assessment.title', 'Selbsteinschätzung durchführen');
+  render_teacher_header($title . ' – ' . class_display($class));
+  ?>
+  <div class="card">
+    <div class="row-actions" style="float:right;">
+      <a class="btn secondary" href="<?=h(url('teacher/delegations.php'))?>"><?=h(t('teacher.delegate_self_assessment.back', '← zurück zu den Delegationen'))?></a>
+    </div>
+    <h1><?=h($title)?></h1>
+    <p class="muted"><?=h((string)$class['school_year'])?> · <?=h(period_label_display($class['period_label'] ?? 'Standard'))?> · <?=h(class_display($class))?></p>
+  </div>
+
+  <?php if ($err): ?><div class="alert danger"><strong><?=h($err)?></strong></div><?php endif; ?>
+  <?php if ($ok): ?><div class="alert success"><strong><?=h($ok)?></strong></div><?php endif; ?>
+
+  <div class="card">
+    <h2><?=h(t('teacher.delegate_self_assessment.scope_title', 'Eingeschränkter Delegationszugriff'))?></h2>
+    <p><?=h(t('teacher.delegate_self_assessment.scope_hint', 'Du kannst die Selbsteinschätzung nur für deine aktuell delegierten Bereiche vorbereiten, freigeben und verfolgen. Schülerstammdaten, Klassenzuordnungen, Fehltage und weitere Schüleraktionen können hier nicht bearbeitet werden.'))?></p>
+    <?php if (!$activeTemplate): ?>
+      <div class="alert"><?=h(t('teacher.students.no_active_template', 'Kein aktives Template – Kinder-Eingabe kann nicht gesteuert werden.'))?></div>
+    <?php elseif (!$scopes): ?>
+      <div class="alert"><?=h(t('teacher.delegate_self_assessment.no_scopes', 'In deinen delegierten Bereichen sind keine Felder für die Selbsteinschätzung vorhanden.'))?></div>
+    <?php else: ?>
+      <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
+        <form method="post" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="delegate_self_assessment_prepare">
+          <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.prepare_confirm', 'Delegierte Bereiche jetzt für die Schüler freigeben und fehlende Berichte sowie Zugangscodes anlegen?'))?>');"><?=h(t('teacher.delegate_self_assessment.prepare', 'Vorbereiten und freigeben'))?></button>
+        </form>
+        <a class="btn primary" href="<?=h(url('teacher/qr_print.php?class_id=' . (int)$classId))?>" target="_blank"><?=h(t('teacher.students.print_qr', 'QR-Codes drucken'))?></a>
+        <form method="post" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="delegate_generate_login">
+          <button class="btn secondary" type="submit"><?=h(t('teacher.delegate_self_assessment.create_codes', 'Fehlende Zugangscodes erstellen'))?></button>
+        </form>
+        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
+      </div>
+    <?php endif; ?>
+  </div>
+
+  <?php if ($activeTemplate && $scopes): ?>
+  <div class="card">
+    <h2><?=h(t('teacher.delegate_self_assessment.areas', 'Delegierte Bereiche für Schüler'))?></h2>
+    <p class="muted"><?=h(t('teacher.delegate_self_assessment.areas_hint', 'Nur diese Bereiche kannst du öffnen oder schließen. Andere Bereiche und deren Freigaben bleiben unverändert.'))?></p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+      <input type="hidden" name="action" value="delegate_self_assessment_scopes">
+      <table class="table">
+        <thead><tr>
+          <th><?=h(t('teacher.students.child_group_col_name', 'Kategorie'))?></th>
+          <th><?=h(t('teacher.students.child_group_col_unlock', 'Freigabe'))?></th>
+          <th><?=h(t('teacher.students.child_group_col_progress', 'Bearbeitungsstand'))?></th>
+          <th><?=h(t('teacher.students.child_group_col_fields', 'Felder'))?></th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($scopes as $scopeKey => $scope):
+          $isUnlocked = !($unlocks['active'] ?? false) || app_child_scope_unlocked($unlocks['map'] ?? [], (string)$scopeKey);
+          $scopeProgress = $pageData['scope_progress'][$scopeKey] ?? ['students_done'=>0,'students_total'=>0,'students_percent'=>null];
+          $percent = $scopeProgress['students_percent'] !== null ? (string)$scopeProgress['students_percent'] : '–';
+        ?>
+          <tr>
+            <td><strong><?=h((string)($scope['title'] ?? $scopeKey))?></strong></td>
+            <td><label style="display:flex; gap:8px; align-items:center;"><input type="checkbox" name="group_unlocks[]" value="<?=h((string)$scopeKey)?>" <?=$isUnlocked ? 'checked' : ''?>> <span><?=h($isUnlocked ? t('teacher.students.child_group_unlocked', 'freigegeben') : t('teacher.students.child_group_locked', 'gesperrt'))?></span></label></td>
+            <td><?=h((string)($scopeProgress['students_done'] ?? 0))?> / <?=h((string)($scopeProgress['students_total'] ?? 0))?> <span class="muted small">(<?=h($percent)?> %)</span></td>
+            <td><?=h((string)count($scope['field_ids'] ?? []))?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+      <div class="actions" style="justify-content:flex-start; margin-top:12px;"><button class="btn primary" type="submit"><?=h(t('teacher.delegate_self_assessment.save_areas', 'Freigaben speichern'))?></button></div>
+    </form>
+  </div>
+  <?php endif; ?>
+
+  <div class="card">
+    <h2><?=h(t('teacher.delegate_self_assessment.progress', 'Fortschritt der Schüler'))?></h2>
+    <?php if (!$pageData['students']): ?>
+      <p class="muted"><?=h(t('teacher.students.none', 'Noch keine Schüler in dieser Klasse.'))?></p>
+    <?php else: ?>
+      <table class="table">
+        <thead><tr><th><?=h(t('teacher.students.col_name', 'Name'))?></th><th><?=h(t('teacher.students.col_child_status', 'Kinder-Status'))?></th><th><?=h(t('teacher.students.col_child_progress', 'Fortschritt'))?></th></tr></thead>
+        <tbody>
+        <?php foreach ($pageData['students'] as $student):
+          $sid = (int)($student['id'] ?? 0);
+          $prog = $progressMap[$sid] ?? ['completed'=>0,'total'=>0,'percent'=>0,'status'=>'no_fields','child_status'=>null];
+          $progStatus = (string)($prog['status'] ?? 'no_fields');
+          $progLabel = match ($progStatus) {
+            'complete' => t('teacher.students.progress_complete', 'fertig'),
+            'in_progress' => t('teacher.students.progress_in_progress', 'in Bearbeitung'),
+            'not_started' => t('teacher.students.progress_not_started', 'noch nicht begonnen'),
+            default => t('teacher.students.progress_no_fields', 'keine freigegebenen Felder'),
+          };
+          $percent = max(0, min(100, (int)($prog['percent'] ?? 0)));
+        ?>
+          <tr>
+            <td><?=h((string)$student['last_name'])?>, <?=h((string)$student['first_name'])?></td>
+            <td><span data-child-status="<?=h((string)$sid)?>"><?=child_status_badge($prog['child_status'] ?? null, $progStatus)?></span></td>
+            <td>
+              <div class="student-progress" data-student-progress="<?=h((string)$sid)?>" data-status="<?=h($progStatus)?>">
+                <div class="student-progress-meta"><span data-progress-percent><?=h((string)$percent)?>%</span><span data-progress-count><?=h((string)(int)($prog['completed'] ?? 0))?>/<?=h((string)(int)($prog['total'] ?? 0))?></span></div>
+                <div class="student-progress-track"><div class="student-progress-fill" style="width:<?=h((string)$percent)?>%;"></div></div>
+                <div class="student-progress-label" data-progress-status><?=h($progLabel)?></div>
+              </div>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php endif; ?>
+  </div>
+  <style>
+  .student-progress{min-width:180px}.student-progress-meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#475569;margin-bottom:4px}.student-progress-track{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}.student-progress-fill{height:100%;background:#2563eb;transition:width .25s ease}.student-progress[data-status="complete"] .student-progress-fill{background:#16a34a}.student-progress[data-status="not_started"] .student-progress-fill,.student-progress[data-status="no_fields"] .student-progress-fill{background:#94a3b8}.student-progress-label{margin-top:4px;font-size:12px;color:#64748b}
+  </style>
+  <script>
+  (() => {
+    const progressUrl = <?=json_encode(url('teacher/students.php?class_id=' . (int)$classId . '&action=student_progress'))?>;
+    const labels = <?=json_encode([
+      'complete'=>t('teacher.students.progress_complete', 'fertig'),
+      'in_progress'=>t('teacher.students.progress_in_progress', 'in Bearbeitung'),
+      'not_started'=>t('teacher.students.progress_not_started', 'noch nicht begonnen'),
+      'no_fields'=>t('teacher.students.progress_no_fields', 'keine freigegebenen Felder'),
+    ], JSON_UNESCAPED_UNICODE)?>;
+    const childLabels = <?=json_encode([
+      'submitted'=>t('teacher.students.child_status_submitted', 'Abgegeben'),
+      'in_progress'=>t('teacher.students.child_status_in_progress', 'In Bearbeitung'),
+      'not_started'=>t('teacher.students.child_status_not_started', 'Noch nicht begonnen'),
+      'not_released'=>t('teacher.students.child_status_not_released', 'Nicht freigegeben'),
+    ], JSON_UNESCAPED_UNICODE)?>;
+    function childView(status, progress){ if(status==='submitted'||status==='final')return['submitted','success']; if(status==='draft')return[(progress==='in_progress'||progress==='complete')?'in_progress':'not_started',(progress==='in_progress'||progress==='complete')?'blue':'warn']; return['not_released','danger']; }
+    function apply(row){
+      const el=document.querySelector(`[data-student-progress="${CSS.escape(String(row.student_id))}"]`); if(!el)return;
+      const status=String(row.status||'no_fields'), pct=Math.max(0,Math.min(100,Number(row.percent||0)));
+      el.dataset.status=status; el.querySelector('[data-progress-percent]').textContent=`${pct}%`; el.querySelector('[data-progress-count]').textContent=`${Number(row.completed||0)}/${Number(row.total||0)}`; el.querySelector('.student-progress-fill').style.width=`${pct}%`; el.querySelector('[data-progress-status]').textContent=labels[status]||labels.no_fields;
+      const holder=document.querySelector(`[data-child-status="${CSS.escape(String(row.student_id))}"]`); if(holder){const [key,badge]=childView(String(row.child_status||''),status);holder.innerHTML=`<span class="badge ${badge}">${childLabels[key]||key}</span>`;}
+    }
+    async function refresh(){try{const res=await fetch(progressUrl,{credentials:'same-origin'});if(!res.ok)return;const data=await res.json();if(data&&Array.isArray(data.students))data.students.forEach(app);}catch(e){}}
+    if(document.querySelector('[data-student-progress]')){refresh();setInterval(()=>{if(!document.hidden)refresh();},8000);}
+  })();
+  </script>
+  <?php
+  render_teacher_footer();
+  exit;
+}
+
 // POST actions: add, deactivate, copy, lock/unlock class
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   csrf_verify();
@@ -1830,7 +2307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($sourceClassId <= 0) throw new RuntimeException(t('teacher.students.error_missing_source', 'Quelle fehlt.'));
       if (!is_array($exclude)) $exclude = [];
 
-      if (!user_can_access_class($pdo, $userId, $sourceClassId)) {
+      if (!user_can_manage_class($pdo, $userId, $sourceClassId)) {
         throw new RuntimeException(t('teacher.students.error_source_forbidden', 'Keine Berechtigung für die Quellklasse.'));
       }
 

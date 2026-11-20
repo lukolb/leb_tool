@@ -153,6 +153,20 @@ function group_key_unlocked(array $unlockMap, array $aliases): bool {
   return app_group_key_matches_map($unlockMap, $aliases);
 }
 
+function field_group_meta(array $field): array {
+  $meta = meta_read($field['meta_json'] ?? null);
+  foreach ([
+    'group_label' => 'group',
+    'group_label_en' => 'group_title_en',
+    'subgroup_label' => 'subgroup',
+    'subgroup_label_en' => 'subgroup_title_en',
+  ] as $column => $metaKey) {
+    $value = trim((string)($field[$column] ?? ''));
+    if ($value !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $value;
+  }
+  return $meta;
+}
+
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
   $s = explode('-', $s, 2)[0];
@@ -638,7 +652,7 @@ function child_lock_context(PDO $pdo, int $templateId, int $reportId): array {
   ];
 }
 
-function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId, array $lockedFieldIds = []): bool {
+function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId, array $lockedFieldIds = [], ?array $unlockMap = null): bool {
   $fields = load_child_fields($pdo, $templateId);
   if (!$fields) return true;
 
@@ -646,16 +660,18 @@ function all_child_fields_filled(PDO $pdo, int $templateId, int $reportId, array
   foreach ($fields as $f) {
     $fid = (int)$f['id'];
     if (!empty($lockedFieldIds[$fid])) continue;
+    if ($unlockMap !== null && !app_child_field_unlocked($unlockMap, field_group_meta($f))) continue;
     $v = $vals[$fid]['text'] ?? null;
     if (trim((string)$v) === '') return false;
   }
   return true;
 }
 
-function all_demo_child_fields_filled(PDO $pdo, int $templateId, array $values, array $lockedFieldIds = []): bool {
+function all_demo_child_fields_filled(PDO $pdo, int $templateId, array $values, array $lockedFieldIds = [], ?array $unlockMap = null): bool {
   foreach (load_child_fields($pdo, $templateId) as $field) {
     $fieldId = (int)($field['id'] ?? 0);
     if ($fieldId <= 0 || !empty($lockedFieldIds[$fieldId])) continue;
+    if ($unlockMap !== null && !app_child_field_unlocked($unlockMap, field_group_meta($field))) continue;
     if (trim((string)($values[$fieldId]['text'] ?? '')) === '') return false;
   }
   return true;
@@ -709,7 +725,7 @@ try {
 
   $status = $isDemo ? 'draft' : get_report_status($pdo, $reportId);
   $childCanEdit = ($status === 'draft');
-  $groupUnlocks = load_child_group_unlocks($pdo, $classId, $schoolYear, 'Standard');
+  $groupUnlocks = load_child_group_unlocks($pdo, $classId, $schoolYear, $periodLabel);
 
   if ($action === 'bootstrap') {
     $introHtml = '';
@@ -768,16 +784,8 @@ try {
         $lockedFieldIds[$fid] = true;
         continue;
       }
-      $meta = meta_read($r['meta_json'] ?? null);
-      foreach ([
-        'group_label' => 'group',
-        'group_label_en' => 'group_title_en',
-        'subgroup_label' => 'subgroup',
-        'subgroup_label_en' => 'subgroup_title_en',
-      ] as $column => $metaKey) {
-        $v = trim((string)($r[$column] ?? ''));
-        if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
-      }
+      $meta = field_group_meta($r);
+      if ($groupUnlocks['active'] && !app_child_field_unlocked($groupUnlocks['map'], $meta)) continue;
 
       $gParts = group_parts_from_meta($meta);
       $gKey = $gParts['group'];
@@ -856,13 +864,7 @@ try {
       'fields' => [],
     ];
 
-    if ($groupUnlocks['active']) {
-      foreach ($groups as $gKey => $gData) {
-        $aliases = is_array($gData['aliases'] ?? null) ? $gData['aliases'] : [$gKey];
-        if (!group_key_unlocked($groupUnlocks['map'], $aliases)) unset($groups[$gKey]);
-      }
-      if (!$groups) $childCanEdit = false;
-    }
+    if ($groupUnlocks['active'] && !$groups) $childCanEdit = false;
 
     foreach ($groups as $gKey => $gData) {
       $steps[] = [
@@ -920,21 +922,12 @@ try {
     }
 
     $type = (string)$frow['field_type'];
-    $meta = meta_read($frow['meta_json'] ?? null);
-    foreach ([
-      'group_label' => 'group',
-      'group_label_en' => 'group_title_en',
-      'subgroup_label' => 'subgroup',
-      'subgroup_label_en' => 'subgroup_title_en',
-    ] as $column => $metaKey) {
-      $v = trim((string)($frow[$column] ?? ''));
-      if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
-    }
+    $meta = field_group_meta($frow);
     $maxLen = pdf_max_len_from_meta($meta);
     $valueText = isset($data['value_text']) ? (string)$data['value_text'] : null;
 
     if ($groupUnlocks['active']) {
-      if (!group_key_unlocked($groupUnlocks['map'], group_key_aliases_from_meta($meta))) {
+      if (!app_child_field_unlocked($groupUnlocks['map'], $meta)) {
         throw new RuntimeException('Kategorie noch nicht freigegeben.');
       }
     }
@@ -1028,8 +1021,8 @@ try {
     }
   }
   $allFilled = $isDemo
-    ? all_demo_child_fields_filled($pdo, $templateId, (array)($_SESSION['student_demo']['values'] ?? []), $lockedFieldIds)
-    : all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds);
+    ? all_demo_child_fields_filled($pdo, $templateId, (array)($_SESSION['student_demo']['values'] ?? []), $lockedFieldIds, $groupUnlocks['active'] ? $groupUnlocks['map'] : null)
+    : all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds, $groupUnlocks['active'] ? $groupUnlocks['map'] : null);
   if (!$allFilled) {
     throw new RuntimeException(t('student.wizard.error.fields_required'));
   }

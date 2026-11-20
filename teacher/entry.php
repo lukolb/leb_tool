@@ -982,6 +982,7 @@ render_teacher_header($pageTitle);
       <?php if (!$delegatedMode): ?>
         <button class="btn" type="button" id="btnDelegationsTop"><?=h(t('teacher.entry.delegate_action'))?></button>
       <?php else: ?>
+        <a class="btn secondary" href="<?=h(url('teacher/students.php?class_id=' . (int)$classId))?>"><?=h(t('teacher.delegations.self_assessment', 'Selbsteinschätzung'))?></a>
         <button class="btn" type="button" id="btnDelegationDoneTop"><?=h(t('teacher.entry.complete_delegation'))?></button>
       <?php endif; ?>
       <?php if (!$delegatedMode): ?>

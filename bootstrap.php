@@ -1251,6 +1251,13 @@ function ensure_schema(PDO $pdo): void {
         // Keep the rest of the additive migrations available on restricted hosting.
       }
     }
+    if (db_has_table($pdo, 'class_child_group_unlocks') && db_column_character_length($pdo, 'class_child_group_unlocks', 'group_key') < 190) {
+      try {
+        $pdo->exec("ALTER TABLE class_child_group_unlocks MODIFY COLUMN group_key VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL");
+      } catch (Throwable $e) {
+        // Keep the rest of the additive migrations available on restricted hosting.
+      }
+    }
 
     // --- classes: add period_label + grade_level + label (keeps legacy `name`)
     if (!db_has_column($pdo, 'classes', 'period_label')) {
@@ -1974,7 +1981,7 @@ function ensure_schema(PDO $pdo): void {
         "  class_id BIGINT UNSIGNED NOT NULL,\n" .
         "  school_year VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
         "  period_label VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',\n" .
-        "  group_key VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  group_key VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
         "  is_unlocked TINYINT(1) NOT NULL DEFAULT '1',\n" .
         "  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
         "  updated_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
@@ -2260,6 +2267,21 @@ function user_can_access_class(PDO $pdo, int $userId, int $classId): bool {
   }
 
   return false;
+}
+
+/**
+ * Class management is intentionally narrower than class access. Delegations
+ * grant access to delegated report work and its self-assessment workflow, but
+ * never turn a delegate into a class teacher who may edit class/student data.
+ */
+function user_can_manage_class(PDO $pdo, int $userId, int $classId): bool {
+  if ($userId <= 0 || $classId <= 0) return false;
+  $u = current_user();
+  if (($u['role'] ?? '') === 'admin') return true;
+
+  $st = $pdo->prepare("SELECT 1 FROM user_class_assignments WHERE user_id=? AND class_id=? LIMIT 1");
+  $st->execute([$userId, $classId]);
+  return (bool)$st->fetchColumn();
 }
 
 function user_can_view_student_report(PDO $pdo, int $userId, int $canonicalStudentId, string $schoolYear, string $periodLabel): bool {

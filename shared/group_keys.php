@@ -134,6 +134,53 @@ function app_group_key_matches_map(array $map, array $aliases): bool {
   return false;
 }
 
+/**
+ * Returns the first explicitly stored value for a list of compatible keys.
+ * Unlike app_group_key_matches_map(), an explicit false value is significant:
+ * subgroup settings must be able to override a broader main-group setting.
+ */
+function app_group_map_value_for_aliases(array $map, array $aliases): ?bool {
+  foreach ($aliases as $alias) {
+    $alias = trim((string)$alias);
+    if ($alias !== '' && array_key_exists($alias, $map)) return (bool)$map[$alias];
+  }
+  return null;
+}
+
+/**
+ * Resolve a child-input unlock for one concrete field. A subgroup-specific
+ * row takes precedence over the main group; historic group-key aliases remain
+ * supported. Missing rows mean locked once an explicit unlock map is active.
+ */
+function app_child_field_unlocked(array $map, array $meta): bool {
+  $parts = app_group_parts_from_meta($meta);
+  $group = (string)$parts['group'];
+  $subgroup = (string)$parts['subgroup'];
+
+  if ($subgroup !== '') {
+    $scopeKey = app_group_scope_key($group, $subgroup);
+    $subgroupValue = app_group_map_value_for_aliases($map, app_group_key_aliases_from_label($scopeKey));
+    if ($subgroupValue !== null) return $subgroupValue;
+  }
+
+  $groupValue = app_group_map_value_for_aliases($map, app_group_key_aliases_from_label($group));
+  return $groupValue ?? false;
+}
+
+function app_child_scope_unlocked(array $map, string $scopeKey): bool {
+  $parts = app_group_scope_parts_from_key($scopeKey);
+  $group = (string)$parts['group'];
+  $subgroup = (string)$parts['subgroup'];
+
+  if ($subgroup !== '') {
+    $subgroupValue = app_group_map_value_for_aliases($map, app_group_key_aliases_from_label($scopeKey));
+    if ($subgroupValue !== null) return $subgroupValue;
+  }
+
+  $groupValue = app_group_map_value_for_aliases($map, app_group_key_aliases_from_label($group));
+  return $groupValue ?? false;
+}
+
 function app_group_entry_from_alias_map(array $map, array $aliases): ?array {
   foreach ($aliases as $alias) {
     $alias = trim((string)$alias);

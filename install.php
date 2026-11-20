@@ -821,7 +821,7 @@ CREATE TABLE IF NOT EXISTS `class_child_group_unlocks` (
   `class_id` bigint UNSIGNED NOT NULL,
   `school_year` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `period_label` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Standard',
-  `group_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `group_key` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
   `is_unlocked` tinyint(1) NOT NULL DEFAULT '1',
   `created_by_user_id` bigint UNSIGNED DEFAULT NULL,
   `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,

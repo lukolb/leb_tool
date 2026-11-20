@@ -43,7 +43,7 @@ if ($classId <= 0) {
   $err = t('teacher.class_intro.missing_class');
 }
 
-if (!$err && ($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+if (!$err && ($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
   $err = t('teacher.class_intro.no_access');
 }
 

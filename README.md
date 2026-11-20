@@ -70,6 +70,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - **Delegationen**:
   - Fachbereiche an andere Lehrkräfte delegieren
   - Status einsehen (offen / in Bearbeitung / abgeschlossen)
+  - Delegierte Lehrkräfte können die Selbsteinschätzung für ihre Bereiche vorbereiten, Zugangscodes/QR-Codes drucken, Bereiche freigeben und den Fortschritt verfolgen
 - Delegationen ändern oder zurücknehmen
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
@@ -80,6 +81,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 **Besonderheiten:**
 - Lehrkräfte sehen nur **eigene Klassen und delegierte Inhalte**
 - Delegierte Inhalte sind klar von eigenen Klassen getrennt
+- Delegierte erhalten keine Schülerstammdaten- oder Klassenverwaltungsrechte
 - Keine Änderung von System-Templates möglich
 
 ---
@@ -208,6 +210,7 @@ Delegationen ermöglichen die Zusammenarbeit mehrerer Lehrkräfte an einer Klass
 - Status-Tracking
 - Delegationen änder- und widerrufbar
 - Anzeige delegierter *und* delegierender Klassen
+- Bereichsbezogene Schüler-Selbsteinschätzung durch Delegierte ohne Freigabe der Schülerverwaltung
 - Admin kann jederzeit eingreifen
 
 ---

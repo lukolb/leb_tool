@@ -100,8 +100,9 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
       <label class="label" for="demoClass"><?=h(t('student_demo.class', 'Klasse'))?></label>
       <select class="input" id="demoClass" name="class_id" required style="width:100%; max-width:560px;">
         <option value=""><?=h(t('student_demo.choose_class', 'Bitte wählen…'))?></option>
+        <?php $requestedClassId = (int)($_POST['class_id'] ?? ($_GET['class_id'] ?? 0)); ?>
         <?php foreach ($classes as $class): ?>
-          <option value="<?=(int)$class['id']?>" <?=((int)($_POST['class_id'] ?? 0) === (int)$class['id']) ? 'selected' : ''?> <?=((int)($class['template_id'] ?? 0) <= 0) ? 'disabled' : ''?>>
+          <option value="<?=(int)$class['id']?>" <?=($requestedClassId === (int)$class['id']) ? 'selected' : ''?> <?=((int)($class['template_id'] ?? 0) <= 0) ? 'disabled' : ''?>>
             <?=h(demo_class_label($class) . ((int)($class['template_id'] ?? 0) <= 0 ? ' · ' . t('student_demo.without_template', 'ohne Vorlage') : ''))?>
           </option>
         <?php endforeach; ?>

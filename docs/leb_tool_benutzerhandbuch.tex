@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{19.11.2026}
+\newcommand{\HandbuchStand}{20.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -1489,6 +1489,23 @@ Alle Delegationen beenden & Admin-Notfallaktion für alle Nutzer. Beiträge werd
 \hline
 \end{tabularx}
 
+\subsection*{Selbsteinschätzung in delegierten Bereichen durchführen}
+\index{Delegation!Selbsteinschätzung}\index{Selbsteinschätzung!delegierter Bereich}
+\index{QR-Codes!Delegierte}\index{Schülerdaten!Delegierte}
+Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offenen Bereiche selbst organisieren, ohne Zugriff auf die allgemeine Schülerverwaltung zu erhalten.
+\begin{enumerate}
+  \item Unter \enquote{Delegationen} beim eigenen offenen Bereich \enquote{Selbsteinschätzung} wählen. Derselbe Knopf steht in der geöffneten Delegation oben zur Verfügung.
+  \item Die Seite weist ausdrücklich auf den eingeschränkten Zugriff hin. Sichtbar sind nur Schülernamen, Kinder-Status und Fortschritt; Schülerstammdaten, Klassenzuordnungen, Fehltage, Import, Löschen, Export und andere Schüleraktionen bleiben unzugänglich.
+  \item \enquote{Vorbereiten und freigeben} wählen. Dadurch werden fehlende Berichte sicher angelegt, die eigenen delegierten Haupt- oder Untergruppen für Schüler geöffnet, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
+  \item Optional über \enquote{Schüleransicht testen} den Ablauf ohne echte Schülerdaten kontrollieren.
+  \item \enquote{QR-Codes drucken} öffnen und die Ausdrucke geschützt an die Schüler verteilen. \enquote{Fehlende Zugangscodes erstellen} ergänzt Codes, ohne vorhandene Ausdrucke ungültig zu machen.
+  \item Im Abschnitt \enquote{Delegierte Bereiche für Schüler} nur die eigenen Bereiche öffnen oder schließen. Untergruppen werden einzeln berücksichtigt; Freigaben anderer Lehrkräfte oder der Klassenlehrkraft bleiben unverändert.
+  \item Den automatisch aktualisierten Fortschritt beobachten. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
+  \item Nach dem Arbeitsfenster die eigenen Bereiche abwählen und \enquote{Freigaben speichern}. Dies schließt nur die delegierten Bereiche und sperrt keine parallele Selbsteinschätzung anderer Bereiche. Anschließend die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
+\end{enumerate}
+
+\HintBox{Delegationszugriff und Klassenverwaltung bleiben getrennt: Eine Delegation berechtigt zur fachlichen Eingabe und zum zugehörigen Selbsteinschätzungsablauf, aber nicht zum Bearbeiten von Schülerprofilen oder Klasseneinstellungen.}
+
 \subsection{Schüler-Eingabe freigeben (kontrolliert)}\label{sec:schuelerfreigabe}\index{Freigabe}
 \index{Schüler-Eingabe}\index{Kategorien für Schüler}\index{Fehlende Berichte erzeugen}
 \index{Für Kinder freigeben}\index{Für Kinder sperren}\index{Schülerkategorie!Sichtbarkeit}
@@ -1533,7 +1550,7 @@ Lehrkräfte und Admins können die Schüleransicht ohne echten Schülerbericht �
 \index{Schüler bearbeiten}\index{Förderideen}\index{Fehltage!Lehrkraft}\index{Schüler aus Vorjahr übernehmen}
 \index{QR-Codes!drucken}\index{Login-Codes!erstellen}\index{Login-Codes!neu generieren}
 \index{Schülerstatus!Entwurf}\index{Schülerstatus!Gesperrt}\index{Schülerstatus!Abgegeben}
-Im Schüler-Tab stehen Aktionen gesammelt im Dropdown-Menü zur Verfügung.
+Im Schüler-Tab stehen Klassenlehrkräften und Admins Aktionen gesammelt im Dropdown-Menü zur Verfügung. Reine Delegierte gelangen stattdessen in die oben beschriebene eingeschränkte Selbsteinschätzungsansicht.
 \begin{enumerate}
   \item In der Schülerliste Name, Geburtsdatum, Profilstatus und Kinder-Status prüfen.
   \item Das Aktionsmenü der richtigen Person öffnen. \enquote{Bearbeiten} öffnet Vorname, Nachname, Geburtsdatum, E-Mail Kind, E-Mail Parent 1/2 und zusätzliche Felder.
@@ -2207,7 +2224,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Isolierter Demoschüler für Lehrkräfte und Admins mit vorab wählbarer Gruppen-, Items- oder Leseanfängeransicht ohne Veränderung echter Berichte.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
-  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
+  \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen, eingeschränkte Selbsteinschätzungsdurchführung durch Delegierte sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
 
@@ -2225,12 +2242,12 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Fortschritt prüfen (Anzeige fehlender Felder beachten).
   \item Bei Bedarf delegieren: Fachbereiche an Kollegen abgeben.
   \item Delegationen verwalten: Fachbereiche an Kollegen delegieren oder zurückholen.
-  \item Optional Schülerfreigabe setzen und nach Ablauf wieder schließen.
+  \item Optional Schülerfreigabe setzen und nach Ablauf wieder schließen; Delegierte verwenden dafür ausschließlich die eingeschränkte Selbsteinschätzungsansicht ihrer Bereiche.
   \item Berichtsvorschau prüfen; anschließend Export je Schüler oder gesamte Klasse durchführen.
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 19.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 20.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}

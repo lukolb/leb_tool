@@ -115,6 +115,7 @@ render_teacher_header($pageTitle);
   const apiUrl = <?=json_encode(url('teacher/ajax/delegations_api.php'))?>;
   const csrf = <?=json_encode(csrf_token())?>;
   const baseOpen = <?=json_encode(url('teacher/entry.php'))?>;
+  const baseSelfAssessment = <?=json_encode(url('teacher/students.php'))?>;
   const currentUserId = <?=json_encode((int)(current_user()['id'] ?? 0))?>;
   const emptyText = <?=json_encode($emptyText)?>;
   const statusOpen = <?=json_encode($statusOpen)?>;
@@ -290,6 +291,7 @@ render_teacher_header($pageTitle);
         const badgeCls = st==='done' ? 'badge-st done' : 'badge-st';
         const badgeTxt = st==='done' ? statusDone : statusOpen;
         const openUrl = baseOpen + `?delegated=1&class_id=${encodeURIComponent(String(c.class_id))}&view=item&group_key=${encodeURIComponent(String(g.group_key))}`;
+        const selfAssessmentUrl = baseSelfAssessment + `?class_id=${encodeURIComponent(String(c.class_id))}`;
         const mine = (g.users || []).find(u => Number(u.user_id || 0) === currentUserId) || {};
         const flowLabel = g.is_mine ? 'eingehend' : 'ausgehend';
         const editBtn = canAssign
@@ -337,6 +339,7 @@ render_teacher_header($pageTitle);
             </div>
             <div class="row-actions" style="margin:0; display:flex; gap:8px; flex-wrap:wrap;">
               ${g.is_mine ? `<a class="btn secondary" href="${openUrl}"><?=h(t('teacher.delegations.open', 'Öffnen'))?></a>` : ``}
+              ${g.is_mine ? `<a class="btn secondary" href="${selfAssessmentUrl}"><?=h(t('teacher.delegations.self_assessment', 'Selbsteinschätzung'))?></a>` : ``}
               ${editBtn}
             </div>
           </div>

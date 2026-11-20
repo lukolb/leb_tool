@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
-      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      if (($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
         throw new RuntimeException('Keine Berechtigung.');
       }
 
@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
-      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      if (($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
         throw new RuntimeException('Keine Berechtigung.');
       }
 
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($action === 'prepare_tts') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
-      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      if (($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
         throw new RuntimeException('Keine Berechtigung.');
       }
       $st = $pdo->prepare('SELECT tts_enabled FROM classes WHERE id=? LIMIT 1');
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($action === 'toggle_syllable_coloring') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
-      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      if (($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
         throw new RuntimeException('Keine Berechtigung.');
       }
       $new = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1 ? 1 : 0;
@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $classId = (int)($_POST['class_id'] ?? 0);
       if ($classId <= 0) throw new RuntimeException('class_id fehlt.');
 
-      if (($u['role'] ?? '') !== 'admin' && !user_can_access_class($pdo, $userId, $classId)) {
+      if (($u['role'] ?? '') !== 'admin' && !user_can_manage_class($pdo, $userId, $classId)) {
         throw new RuntimeException('Keine Berechtigung.');
       }
 
