@@ -45,6 +45,13 @@ assert_true(
     && str_contains($student, 'stopTts(false);'),
   'Starting a new read-aloud request must stop current playback and prevent older asynchronous audio from starting later.'
 );
+assert_true(
+  str_contains($student, "cur && cur.kind === 'submit'")
+    && str_contains($student, "parts.join('. ')")
+    && substr_count($student, 'if (isBeginnerMode && TTS_ALLOWED && ttsSupported)') >= 3
+    && strpos($student, 'speakCurrentStep(false);', strpos($student, 'else { // submit')) !== false,
+  'The completion page must expose its complete text to read-aloud and start automatically in beginner mode.'
+);
 assert_true(str_contains($classes, 'if ($new === 1) $ttsGenerationClassId = $classId;'), 'Enabling read aloud must automatically start class cache preparation.');
 assert_true(str_contains($adminAudio, "class=\"tts-bulk-class\"") && str_contains($adminAudio, "id=\"ttsSelectAll\""), 'Admins must be able to select multiple read-aloud classes in audio management.');
 assert_true(str_contains($adminAudio, "for (let classIndex = 0; classIndex < selected.length; classIndex++)"), 'Admin audio preparation must process every selected class.');

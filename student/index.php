@@ -955,8 +955,16 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   function currentStepTextForTts(includeGroup = false){
+    const cur = flatSteps[activeStep];
+    if (cur && cur.kind === 'submit') {
+      const parts = [
+        elTitle ? String(elTitle.textContent || '').trim() : '',
+        elSub ? String(elSub.textContent || '').trim() : '',
+        elBody ? String(elBody.innerText || '').trim() : ''
+      ].filter(Boolean);
+      return parts.join('. ').replace(/\.{2,}/g, '.');
+    }
     if (isBeginnerMode) {
-      const cur = flatSteps[activeStep];
       if (cur && cur.kind === 'intro' && elBody) {
         return String(elBody.innerText || '').trim();
       }
@@ -2876,6 +2884,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.textContent = '—';
       btnNext.disabled = true;
       btnNext.style.visibility = 'hidden';
+      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
+        speakCurrentStep(false);
+      }
     }
 
     if (isBeginnerMode) {

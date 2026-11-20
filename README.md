@@ -75,6 +75,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
 - Vorlesen spielt immer nur eine Audioausgabe; eine neu gestartete Ausgabe stoppt die vorherige sofort und verhindert auch den verspäteten Start älterer Hintergrundgenerierungen
+- Im Leseanfänger-Modus wird auch die vollständige Abschlussseite automatisch vorgelesen
 - Schüler-Eingabe freigeben/sperren (optional pro Kategorie)
 - Elternmodus anfragen/freigeben inkl. fehlender Einträge prüfen
 - Elternlinks verlängern oder beenden
