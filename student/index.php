@@ -2759,14 +2759,14 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     const confirmText = DEMO_MODE
       ? t('student_demo.submit_confirm', 'Möchtest du den Demo-Ablauf abschließen? Es werden keine Schülerdaten gespeichert.')
-      : t('student.js.submit_confirm', 'Möchtest du jetzt abgeben? Danach kannst du nichts mehr ändern.');
+      : t('student.js.submit_confirm', 'Möchtest du diesen Durchlauf abschließen? Wenn noch andere Kategorien fehlen, kannst du sie später weiterbearbeiten.');
     if (!confirm(confirmText)) return;
 
     try {
       btnNext.disabled = true;
       btnPrev.disabled = true;
       setSaving(true);
-      await api('submit', {});
+      const submitResult = await api('submit', {});
       const j = await api('bootstrap', {});
       applyBootstrapResponse(j);
 
@@ -2792,7 +2792,9 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       exitFullscreenForBeginner();
       alert(DEMO_MODE
         ? t('student_demo.submit_done', 'Demo abgeschlossen. Es wurden keine Schülerdaten gespeichert.')
-        : t('student.js.submit_thanks', 'Danke! Du hast abgegeben.'));
+        : (submitResult?.all_categories_complete === false
+          ? t('student.js.submit_partial', 'Dieser Durchlauf ist fertig. Weitere Kategorien können später freigegeben werden.')
+          : t('student.js.submit_thanks', 'Danke! Du hast abgegeben.')));
     } catch(e){
       alert(e?.message || t('student.js.submit_error', 'Fehler beim Abgeben.'));
     } finally {

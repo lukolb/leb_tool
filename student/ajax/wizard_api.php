@@ -1057,23 +1057,33 @@ try {
     throw new RuntimeException(t('student.wizard.error.fields_required'));
   }
 
+  // A category run may be completed while other, currently hidden categories
+  // are still open. Only the complete child self-assessment may become globally
+  // submitted; partial runs stay editable for later category releases.
+  $allCategoriesFilled = $isDemo
+    ? all_demo_child_fields_filled($pdo, $templateId, (array)($_SESSION['student_demo']['values'] ?? []), $lockedFieldIds, null)
+    : all_child_fields_filled($pdo, $templateId, $reportId, $lockedFieldIds, null);
+
   if ($isDemo) {
     audit('student_demo_complete', (int)(current_user()['id'] ?? 0), [
       'class_id' => $classId,
       'display_mode' => (string)($demo['display_mode'] ?? ''),
     ]);
-    json_out(['ok' => true, 'demo_mode' => true]);
+    json_out(['ok' => true, 'demo_mode' => true, 'all_categories_complete' => $allCategoriesFilled]);
   }
 
-  $pdo->prepare(
-    "UPDATE report_instances
-     SET status='submitted', locked_by_user_id=NULL, locked_at=NULL
-     WHERE id=?"
-  )->execute([$reportId]);
+  if ($allCategoriesFilled) {
+    $pdo->prepare(
+      "UPDATE report_instances
+       SET status='submitted', locked_by_user_id=NULL, locked_at=NULL
+       WHERE id=?"
+    )->execute([$reportId]);
+    audit('student_submit', null, ['student_id'=>$studentId,'report_instance_id'=>$reportId]);
+    json_out(['ok' => true, 'status' => 'submitted', 'all_categories_complete' => true]);
+  }
 
-  audit('student_submit', null, ['student_id'=>$studentId,'report_instance_id'=>$reportId]);
-
-  json_out(['ok' => true]);
+  audit('student_submit_partial', null, ['student_id'=>$studentId,'report_instance_id'=>$reportId]);
+  json_out(['ok' => true, 'status' => 'draft', 'all_categories_complete' => false]);
 
 } catch (Throwable $e) {
   $message = $e->getMessage();

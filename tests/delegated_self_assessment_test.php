@@ -52,7 +52,7 @@ delegated_self_assessment_assert(
   'delegate access must branch into a restricted view before student management executes'
 );
 delegated_self_assessment_assert(
-  str_contains($sources['students'], "['delegate_self_assessment_prepare', 'delegate_self_assessment_lock', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_self_assessment_display_demo', 'delegate_generate_login']")
+  str_contains($sources['students'], "['delegate_self_assessment_prepare', 'delegate_self_assessment_lock', 'delegate_self_assessment_reset_incomplete', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_self_assessment_display_demo', 'delegate_generate_login']")
     && str_contains($sources['students'], 'delegate_generate_missing_student_logins')
     && str_contains($sources['students'], "\$token = trim((string)(\$student['qr_token'] ?? ''))")
     && str_contains($sources['students'], "\$code = trim((string)(\$student['login_code'] ?? ''))")
@@ -71,6 +71,13 @@ delegated_self_assessment_assert(
     && str_contains($sources['students'], "audit('delegate_self_assessment_lock'")
     && str_contains($sources['students'], 'value="delegate_self_assessment_lock"'),
   'delegates must be able to close their scopes and lock student entry for the whole class'
+);
+delegated_self_assessment_assert(
+  str_contains($sources['students'], "\$action === 'delegate_self_assessment_reset_incomplete'")
+    && str_contains($sources['students'], 'reopen_incomplete_submitted_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel)')
+    && str_contains($sources['students'], "audit('delegate_self_assessment_reset_incomplete'")
+    && str_contains($sources['students'], 'value="delegate_self_assessment_reset_incomplete"'),
+  'delegates must be able to reopen incomplete submissions without gaining student-management access'
 );
 delegated_self_assessment_assert(
   str_contains($sources['students'], 'normalize_delegate_student_display')

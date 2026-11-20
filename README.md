@@ -70,7 +70,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - **Delegationen**:
   - Fachbereiche an andere Lehrkräfte delegieren
   - Status einsehen (offen / in Bearbeitung / abgeschlossen)
-  - Delegierte Lehrkräfte können die Selbsteinschätzung für ihre Bereiche vorbereiten, Schüleransicht und Silbenschrift für den Durchlauf unabhängig einstellen, Zugangscodes/QR-Codes drucken, exakt die aktuellen Kategorien exklusiv freigeben und den cachefrei im Hintergrund aktualisierten Fortschritt bis auf jedes einzelne tatsächlich verfügbare Item verfolgen; individuelle `n/a`-Sperren werden weder angezeigt noch mitgezählt
+  - Delegierte Lehrkräfte können die Selbsteinschätzung für ihre Bereiche vorbereiten, Schüleransicht und Silbenschrift für den Durchlauf unabhängig einstellen, Zugangscodes/QR-Codes drucken, exakt die aktuellen Kategorien exklusiv freigeben und den cachefrei im Hintergrund aktualisierten Fortschritt bis auf jedes einzelne tatsächlich verfügbare Item verfolgen; individuelle `n/a`-Sperren werden weder angezeigt noch mitgezählt, unvollständige Abgaben werden beim nächsten Kategorien-Durchlauf automatisch wieder als Entwurf geöffnet
 - Delegationen ändern oder zurücknehmen
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
@@ -78,6 +78,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - Im Leseanfänger-Modus wird auch die vollständige Abschlussseite automatisch vorgelesen
 - Auf iPads wird das gemeinsame Audioelement bei der ersten Berührung freigeschaltet; ein während des Ladens oder durch Safari blockierter automatischer Start wird anschließend erneut versucht
 - Schüler-Eingabe freigeben/sperren (optional pro Kategorie)
+- Der globale Status „Abgegeben“ wird erst gesetzt, wenn alle für das Kind verfügbaren Kategorien erledigt sind; Lehrkräfte können ihn bei Bedarf wieder auf Entwurf zurücksetzen
 - Elternmodus anfragen/freigeben inkl. fehlender Einträge prüfen
 - Elternlinks verlängern oder beenden
 

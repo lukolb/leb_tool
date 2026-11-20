@@ -1500,8 +1500,8 @@ Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offene
   \item Im Abschnitt \enquote{Delegierte Bereiche für Schüler} genau die Kategorien des aktuellen Durchlaufs markieren. Haupt- und Untergruppen werden einzeln ausgewiesen. \enquote{Freigaben speichern} übernimmt diese Auswahl exklusiv: Nur markierte Kategorien bleiben offen, alle anderen werden gesperrt.
   \item Optional über \enquote{Schüleransicht testen} den Ablauf mit der gewählten Darstellung kontrollieren. Im Demoschüler einen Referenzschüler wählen; dadurch werden dessen individuelle \enquote{n/a}-Sperren berücksichtigt. Die Demo-Eingaben selbst bleiben rein sitzungsbasiert und verändern keine Schülerdaten. Der Knopf speichert Ansicht und Silbenschrift automatisch, bevor die Demo geöffnet wird.
   \item \enquote{QR-Codes drucken} öffnen und die Ausdrucke geschützt an die Schüler verteilen. \enquote{Fehlende Zugangscodes erstellen} ergänzt Codes, ohne vorhandene Ausdrucke ungültig zu machen.
-  \item \enquote{Vorbereiten und freigeben} verwendet unmittelbar die im selben Formular aktuell markierten Kategorien. Zusätzlich werden fehlende Berichte sicher angelegt, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
-  \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene und für das jeweilige Kind tatsächlich verfügbare Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Mit \enquote{n/a} für die Schüler gesperrte Kompetenzen erscheinen nicht und werden weder als offen noch in der Gesamtzahl mitgezählt. Status, Gesamtzahl und vollständige Itemliste werden cachefrei etwa alle zwei Sekunden ohne Neuladen aktualisiert. Beim Zurückkehren in einen zeitweise inaktiven Browser-Tab, bei erneutem Netzwerkzugang und beim erneuten Fokus erfolgt sofort ein zusätzlicher Abgleich. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
+  \item \enquote{Vorbereiten und freigeben} verwendet unmittelbar die im selben Formular aktuell markierten Kategorien. Zusätzlich werden fehlende Berichte sicher angelegt, gesperrte Berichte wieder als Entwurf freigegeben und unvollständige ältere Abgaben automatisch erneut geöffnet. Vollständig erledigte Abgaben bleiben bestehen. Ausschließlich fehlende Zugangscodes werden erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
+  \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene und für das jeweilige Kind tatsächlich verfügbare Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Mit \enquote{n/a} für die Schüler gesperrte Kompetenzen erscheinen nicht und werden weder als offen noch in der Gesamtzahl mitgezählt. Status, Gesamtzahl und vollständige Itemliste werden cachefrei etwa alle zwei Sekunden ohne Neuladen aktualisiert. Beim Zurückkehren in einen zeitweise inaktiven Browser-Tab, bei erneutem Netzwerkzugang und beim erneuten Fokus erfolgt sofort ein zusätzlicher Abgleich. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden. \enquote{Unvollständige Abgaben öffnen} setzt bei Bedarf solche Berichte ausdrücklich auf Entwurf zurück, ohne Antworten zu löschen.
   \item Nach dem eigenen Arbeitsfenster alle Bereiche abwählen und \enquote{Freigaben speichern}; damit sind sämtliche Kategorien geschlossen. Soll zusätzlich der Berichtsstatus der Schüler-Eingabe insgesamt gesperrt werden, anschließend \enquote{Schülereingaben sperren} wählen und die Sicherheitsabfrage bestätigen. Gespeicherte Antworten bleiben erhalten. Danach die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
 \end{enumerate}
 
@@ -1514,9 +1514,10 @@ Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offene
   \item \enquote{Klassen \(\rightarrow\) Schüler verwalten} öffnen. Neue Schülerberichte starten grundsätzlich gesperrt.
   \item Im Bereich \enquote{Kategorien für Schüler} ausschließlich die Bereiche markieren, die Kinder sehen sollen, und speichern.
   \item Falls Berichte noch fehlen, \enquote{Fehlende Berichte erzeugen} verwenden und Vorlagenkonflikte einzeln prüfen.
-  \item \enquote{Für Kinder freigeben} wählen und die Sicherheitsabfrage bestätigen.
+  \item \enquote{Für Kinder freigeben} wählen und die Sicherheitsabfrage bestätigen. Dabei werden frühere Abgaben automatisch wieder als Entwurf geöffnet, wenn noch mindestens eine für das jeweilige Kind verfügbare Kategorie unvollständig ist.
   \item Über \enquote{Demoschüler} die passende Klasse und Ansicht wählen und kontrollieren, dass nur freigegebene Kategorien erscheinen.
   \item Nach dem Arbeitsfenster \enquote{Für Kinder sperren} wählen. Bereits gespeicherte Eingaben bleiben erhalten, können aber nicht mehr geändert werden.
+  \item Für eine bewusste Korrekturrunde kann die Klassenlehrkraft \enquote{Abgegeben-Status zurücksetzen} wählen. Dies setzt abgegebene Berichte auf Entwurf zurück, erhält alle Antworten und verändert keine endgültig abgeschlossenen Berichte.
 \end{enumerate}
 
 \ScreenshotFigure{screenshots/teacher_students.png}{Lehrerbereich \textendash{} Freigabe}
@@ -1578,11 +1579,13 @@ Login-Codes/QR erstellen & Erzeugt fehlende Zugangsdaten. Bestehende gültige Co
 \hline
 Neu generieren & Ersetzt alle Codes; alte Ausdrucke werden ungültig. Nur nach Bestätigung und anschließender Neuverteilung.\\
 \hline
-Kinder-Status Entwurf & Eingaben sind begonnen, aber noch nicht abgegeben.\\
+Kinder-Status Entwurf & Eingaben sind begonnen oder ein Kategorien-Durchlauf ist beendet, während weitere verfügbare Kategorien noch fehlen.\\
 \hline
 Gesperrt & Lehrkraft hat die Bearbeitung geschlossen. Sichtbarkeit richtet sich nach der Schüleransicht.\\
 \hline
-Abgegeben & Schüler hat seine Eingaben abgeschlossen. Lehrkraftwerte bleiben separat.\\
+Abgegeben & Alle für dieses Kind verfügbaren Kategorien sind erledigt; individuelle \enquote{n/a}-Sperren zählen nicht mit. Lehrkraftwerte bleiben separat.\\
+\hline
+Abgegeben-Status zurücksetzen & Setzt abgegebene Berichte für eine Korrektur wieder auf Entwurf. Gespeicherte Antworten bleiben erhalten; endgültig abgeschlossene Berichte bleiben unverändert.\\
 \hline
 Fehlende Berichte erzeugen & Legt für zugeordnete Schüler notwendige Berichtsinstanzen an. Bei Vorlagenkonflikten den Hinweis nicht pauschal bestätigen.\\
 \hline
@@ -1724,7 +1727,7 @@ Gesperrt & Es können keine Antworten verändert werden. Das ist vor der Freigab
 \hline
 Entwurf & Antworten können in den freigegebenen Kategorien bearbeitet werden. Änderungen werden automatisch gespeichert.\\
 \hline
-Abgegeben & Der Schüler hat den Arbeitsstand abgeschlossen. Weitere Änderungen erfordern eine erneute Freigabe durch die Lehrkraft.\\
+Abgegeben & Der Schüler hat alle für ihn verfügbaren Kategorien abgeschlossen. Weitere Änderungen erfordern eine erneute Freigabe oder das Zurücksetzen durch die Lehrkraft.\\
 \hline
 Deutsch / USA-Flagge & Wechselt die Sprache der Schüleroberfläche. Die US-Flagge steht für Englisch.\\
 \hline
@@ -1734,7 +1737,7 @@ Vorlesen / Stopp & Spielt den aktuellen Text in der gewählten Sprache ab bezieh
 \hline
 Eingabefeld / Option & Speichert Text oder Auswahl für den eigenen Bericht. Nicht sichtbare Kategorien können nicht bearbeitet werden.\\
 \hline
-Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele prüfen.\\
+Abgeben & Beendet den aktuellen Kategorien-Durchlauf. Der globale Status \enquote{Abgegeben} wird erst gesetzt, wenn alle für dieses Kind verfügbaren Kategorien erledigt sind; sonst bleibt der Bericht für spätere Kategorien als Entwurf erhalten.\\
 \hline
 \end{tabularx}
 
@@ -2068,6 +2071,8 @@ Für allgemeine Bedienfragen kann die optionale \enquote{LEB Tool Hilfe} verwend
 Dropdown zeigt keine Werte & Optionsliste fehlt oder wurde dem Feld nicht zugeordnet; Liste prüfen und zuweisen.\\
 \hline
 Schüler sehen keine Eingabe & Freigabe durch Lehrkraft fehlt oder wurde geschlossen; Freigabe erneut aktivieren.\\
+\hline
+Abgegeben blockiert weitere Kategorien & Neue Kategorien auswählen und erneut \enquote{Für Kinder freigeben} beziehungsweise \enquote{Vorbereiten und freigeben} wählen. Unvollständige Abgaben werden automatisch als Entwurf geöffnet; alternativ \enquote{Abgegeben-Status zurücksetzen} verwenden.\\
 \hline
 Felder erscheinen auf falschen Seiten & Felder erneut extrahieren und Seitenzuordnung prüfen.\\
 \hline

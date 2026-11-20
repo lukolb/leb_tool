@@ -1564,14 +1564,78 @@ function ensure_reports_for_class(PDO $pdo, int $templateId, int $classId, strin
   return $created;
 }
 
-function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, string $mode): int {
-  $periodLabel = normalize_class_period_label($periodLabel);
-  // mode: 'lock' => draft -> locked, keep submitted untouched
-  // mode: 'unlock' => locked -> draft, keep submitted untouched
+function class_canonical_student_ids(PDO $pdo, int $classId): array {
   $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
   $requestedStudentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
-  $studentIds = array_values(array_unique(array_values(requested_student_canonical_map($pdo, $requestedStudentIds))));
+  return array_values(array_unique(array_values(requested_student_canonical_map($pdo, $requestedStudentIds))));
+}
+
+function reset_submitted_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $studentIds = class_canonical_student_ids($pdo, $classId);
+  if (!$studentIds) return 0;
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $sql =
+    "UPDATE report_instances ri
+     INNER JOIN students s ON s.id=ri.student_id
+     SET ri.status='draft', ri.locked_by_user_id=NULL, ri.locked_at=NULL
+     WHERE ri.template_id=? AND ri.school_year=? AND ri.period_label=?
+       AND COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+       AND ri.status='submitted'";
+  $q = $pdo->prepare($sql);
+  $q->execute(array_merge([$templateId, $schoolYear, $periodLabel], $studentIds));
+  return $q->rowCount();
+}
+
+function reopen_incomplete_submitted_reports_for_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT s.id, s.first_name, s.last_name
+     FROM students s
+     INNER JOIN student_class_assignments sca ON sca.student_id=s.id
+     WHERE sca.class_id=?"
+  );
+  $st->execute([$classId]);
+  $students = $st->fetchAll(PDO::FETCH_ASSOC);
+  if (!$students) return 0;
+
+  $groups = load_child_groups_for_template($pdo, $templateId, ui_lang());
+  if (!$groups) return 0;
+  $progress = build_student_child_entry_progress(
+    $pdo,
+    $students,
+    $templateId,
+    $schoolYear,
+    $periodLabel,
+    $groups,
+    ['active' => false, 'map' => []]
+  );
+  $reportIds = [];
+  foreach ($progress as $row) {
+    $reportId = (int)($row['report_id'] ?? 0);
+    $completed = (int)($row['completed'] ?? 0);
+    $total = (int)($row['total'] ?? 0);
+    if ($reportId > 0 && $completed < $total) $reportIds[] = $reportId;
+  }
+  $reportIds = array_values(array_unique($reportIds));
+  if (!$reportIds) return 0;
+
+  $in = implode(',', array_fill(0, count($reportIds), '?'));
+  $q = $pdo->prepare(
+    "UPDATE report_instances
+     SET status='draft', locked_by_user_id=NULL, locked_at=NULL
+     WHERE id IN ($in) AND status='submitted'"
+  );
+  $q->execute($reportIds);
+  return $q->rowCount();
+}
+
+function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel, int $userId, string $mode): int {
+  $periodLabel = normalize_class_period_label($periodLabel);
+  // mode: 'lock' => draft -> locked, keep submitted untouched
+  // mode: 'unlock' => locked -> draft and reopen incomplete legacy submissions
+  $studentIds = class_canonical_student_ids($pdo, $classId);
   if (!$studentIds) return 0;
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
@@ -1598,7 +1662,11 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
 
   $q = $pdo->prepare($sql);
   $q->execute($params);
-  return $q->rowCount();
+  $changed = $q->rowCount();
+  if ($mode === 'unlock') {
+    $changed += reopen_incomplete_submitted_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel);
+  }
+  return $changed;
 }
 
 function class_child_status_counts(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): array {
@@ -1607,12 +1675,13 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
   $st->execute([$classId]);
   $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
   $total = count($studentIds);
-  if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
+  if ($total === 0) return ['draft'=>0,'locked'=>0,'submitted'=>0,'resettable_submitted'=>0,'total'=>0];
 
   $statusMap = load_child_status_map($pdo, $studentIds, $periodLabel, $templateId, $schoolYear);
 
-  $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>$total];
+  $counts = ['draft'=>0,'locked'=>0,'submitted'=>0,'resettable_submitted'=>0,'total'=>$total];
   foreach ($statusMap as $status) {
+    if ($status === 'submitted') $counts['resettable_submitted']++;
     if ($status === 'final') $status = 'submitted';
     if (!isset($counts[$status])) continue;
     $counts[$status]++;
@@ -1949,7 +2018,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
     try {
-      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_lock', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_self_assessment_display_demo', 'delegate_generate_login'], true)) {
+      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_lock', 'delegate_self_assessment_reset_incomplete', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_self_assessment_display_demo', 'delegate_generate_login'], true)) {
         throw new RuntimeException(t('teacher.delegate_self_assessment.error_action', 'Diese Aktion ist für Delegierte nicht erlaubt.'));
       }
       if ($action !== 'delegate_generate_login' && (!$activeTemplate || !$scopes)) {
@@ -1974,6 +2043,16 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
         ]);
         $ok = strtr(t('teacher.delegate_self_assessment.locked', 'Schülereingaben gesperrt: {locked} Berichte. Gespeicherte Antworten bleiben erhalten.'), [
           '{locked}' => (string)$locked,
+        ]);
+      } elseif ($action === 'delegate_self_assessment_reset_incomplete') {
+        $reopened = reopen_incomplete_submitted_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel);
+        audit('delegate_self_assessment_reset_incomplete', $userId, [
+          'class_id'=>$classId,
+          'template_id'=>$templateId,
+          'reports_reopened'=>$reopened,
+        ]);
+        $ok = strtr(t('teacher.delegate_self_assessment.reset_incomplete_done', 'Unvollständige Abgaben wurden wieder geöffnet: {count} Berichte.'), [
+          '{count}' => (string)$reopened,
         ]);
       } elseif ($action === 'delegate_self_assessment_display' || $action === 'delegate_self_assessment_display_demo') {
         $displayMode = normalize_delegate_student_display((string)($_POST['student_wizard_display'] ?? 'groups'));
@@ -2077,6 +2156,12 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
           <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
           <input type="hidden" name="action" value="delegate_self_assessment_lock">
           <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.lock_confirm', 'Schülereingaben für die gesamte Klasse jetzt sperren? Gespeicherte Antworten bleiben erhalten.'))?>');"><?=h(t('teacher.delegate_self_assessment.lock', 'Schülereingaben sperren'))?></button>
+        </form>
+        <form method="post" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="delegate_self_assessment_reset_incomplete">
+          <button class="btn secondary" type="submit" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.reset_incomplete_confirm', 'Abgegeben-Status für unvollständige Berichte zurücksetzen? Gespeicherte Antworten bleiben erhalten.'))?>');"><?=h(t('teacher.delegate_self_assessment.reset_incomplete', 'Unvollständige Abgaben öffnen'))?></button>
         </form>
       </div>
     <?php endif; ?>
@@ -2313,6 +2398,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
           $ok = strtr(t('teacher.students.ok_child_unlocked', 'Kinder-Eingabe freigegeben ({count} Reports).'), ['{count}' => (string)$changed]);
         }
+    }
+
+    elseif ($action === 'child_reset_submitted_class') {
+      $tpl = get_active_template($pdo, $classId);
+      if (!$tpl) throw new RuntimeException(t('teacher.students.error_no_active_template', 'Kein aktives Template gefunden.'));
+
+      $templateId = (int)$tpl['id'];
+      $schoolYear = (string)($class['school_year'] ?? '');
+      if ($schoolYear === '') $schoolYear = (string)(app_config()['app']['default_school_year'] ?? '');
+      $changed = reset_submitted_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel);
+
+      audit('teacher_child_reset_submitted_class', $userId, [
+        'class_id'=>$classId,
+        'template_id'=>$templateId,
+        'school_year'=>$schoolYear,
+        'changed'=>$changed,
+      ]);
+      $ok = strtr(t('teacher.students.ok_child_reset_submitted', 'Abgegeben-Status zurückgesetzt ({count} Berichte).'), [
+        '{count}' => (string)$changed,
+      ]);
     }
 
     elseif ($action === 'create_missing_reports') {
@@ -2896,7 +3001,7 @@ $tplIdForUi = $activeTpl ? (int)$activeTpl['id'] : 0;
 $schoolYearUi = (string)($class['school_year'] ?? '');
 if ($schoolYearUi === '') $schoolYearUi = (string)(app_config()['app']['default_school_year'] ?? '');
 
-$counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi, $periodLabel) : ['draft'=>0,'locked'=>0,'submitted'=>0,'total'=>0];
+$counts = $tplIdForUi ? class_child_status_counts($pdo, $tplIdForUi, $classId, $schoolYearUi, $periodLabel) : ['draft'=>0,'locked'=>0,'submitted'=>0,'resettable_submitted'=>0,'total'=>0];
 
 $studentIds = array_map(fn($r)=>(int)($r['id'] ?? 0), $students ?: []);
 $childStatusMap = $tplIdForUi ? load_child_status_map($pdo, $studentIds, $periodLabel, $tplIdForUi, $schoolYearUi) : [];
@@ -3030,6 +3135,17 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
           <?=h(t('teacher.students.child_lock', 'Für Kinder sperren'))?>
         </a>
       </form>
+
+      <?php if ((int)$counts['resettable_submitted'] > 0): ?>
+      <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
+        <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+        <input type="hidden" name="action" value="child_reset_submitted_class">
+        <button class="btn secondary" type="submit" onclick="return confirm('<?=h(t('teacher.students.confirm_child_reset_submitted', 'Abgegeben-Status für alle Schüler dieser Klasse wirklich auf Entwurf zurücksetzen? Gespeicherte Antworten bleiben erhalten.'))?>');">
+          <?=h(t('teacher.students.child_reset_submitted', 'Abgegeben-Status zurücksetzen'))?>
+        </button>
+      </form>
+      <?php endif; ?>
 
       <form method="post" style="display:inline-flex; gap:8px; align-items:center; margin:0;">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
