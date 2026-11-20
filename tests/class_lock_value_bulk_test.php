@@ -10,13 +10,26 @@ function class_lock_value_bulk_assert(bool $condition, string $message): void {
 $root = dirname(__DIR__);
 $entryPage = file_get_contents($root . '/teacher/entry.php');
 $entryApi = file_get_contents($root . '/teacher/ajax/entry_api.php');
+$wizardApi = file_get_contents($root . '/student/ajax/wizard_api.php');
+$adminDashboard = file_get_contents($root . '/admin/index.php');
+$teacherDashboard = file_get_contents($root . '/teacher/index.php');
+$exportCore = file_get_contents($root . '/shared/export_api_core.php');
 $translations = file_get_contents($root . '/shared/translations.php');
 $handbook = file_get_contents($root . '/docs/leb_tool_benutzerhandbuch.tex');
 
 class_lock_value_bulk_assert(
-  is_string($entryPage) && is_string($entryApi) && is_string($translations) && is_string($handbook),
+  is_string($entryPage) && is_string($entryApi) && is_string($wizardApi) && is_string($adminDashboard)
+    && is_string($teacherDashboard) && is_string($exportCore) && is_string($translations) && is_string($handbook),
   'bulk lock-value sources must be readable'
 );
+
+foreach ([$entryApi, $wizardApi, $adminDashboard, $teacherDashboard, $exportCore] as $pairingSource) {
+  class_lock_value_bulk_assert(
+    !str_contains($pairingSource, "explode('-', \$s, 2)[0]")
+      && str_contains($pairingSource, "preg_replace('/[-_](s|t)\$/i', '', trim(\$s))"),
+    'n/a child locks must pair only exact teacher/student variants and keep hyphenated competency codes distinct'
+  );
+}
 
 class_lock_value_bulk_assert(
   str_contains($entryApi, 'SELECT id, value, label, label_en, icon_id, meta_json')

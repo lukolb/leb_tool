@@ -2350,8 +2350,9 @@ function current_student_demo(): ?array {
   if (!is_array($demo) || !$user) return null;
   if ((int)($demo['started_by_user_id'] ?? 0) !== (int)($user['id'] ?? 0)) return null;
   $classId = (int)($demo['class_id'] ?? 0);
+  $referenceStudentId = (int)($demo['reference_student_id'] ?? 0);
   $mode = strtolower(trim((string)($demo['display_mode'] ?? '')));
-  if ($classId <= 0 || !in_array($mode, ['groups', 'items', 'beginner'], true)) return null;
+  if ($classId <= 0 || $referenceStudentId <= 0 || !in_array($mode, ['groups', 'items', 'beginner'], true)) return null;
   return $demo;
 }
 

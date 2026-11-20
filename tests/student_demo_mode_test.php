@@ -28,9 +28,19 @@ student_demo_assert(
   str_contains($sources['launcher'], "['groups', 'items', 'beginner']")
     && str_contains($sources['launcher'], "name=\"display_mode\"")
     && str_contains($sources['launcher'], "name=\"syllable_coloring_enabled\"")
+    && str_contains($sources['launcher'], "name=\"reference_student_id\"")
     && str_contains($sources['launcher'], "'syllable_coloring_enabled' => \$syllableColoring")
+    && str_contains($sources['launcher'], "'reference_student_id' => \$referenceStudentId")
     && str_contains($sources['launcher'], "\$_SESSION['student_demo']"),
   'teachers and admins must choose all three supported views and an independent syllable option before starting an isolated demo session'
+);
+student_demo_assert(
+  str_contains($sources['bootstrap'], "\$demo['reference_student_id']")
+    && str_contains($sources['wizard'], 'function demo_reference_report_id')
+    && str_contains($sources['wizard'], '$lockReportId = $isDemo')
+    && substr_count($sources['wizard'], 'child_lock_context($pdo, $templateId, $lockReportId)') === 3
+    && substr_count($sources['translations'], "'student_demo.reference_student'") === 2,
+  'demo mode must use a selected real report only as the source of per-student n/a locks'
 );
 student_demo_assert(
   str_contains($sources['launcher'], 'user_can_access_class($pdo, $userId, $classId)')

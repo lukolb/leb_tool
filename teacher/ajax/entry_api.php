@@ -1312,7 +1312,7 @@ function base_field_key(string $fieldName): string {
   // Do not truncate at the first hyphen: field names such as ENG-001-S or
   // skillcb-cid-477-1 must remain distinct so entry.php maps each stored
   // child value to the correct template_field_id.
-  $s = preg_replace('/[-_](s|t)$/i', '', $s) ?? $s;
+  $s = preg_replace('/[-_](s|t)$/i', '', trim($s)) ?? $s;
   return trim($s);
 }
 

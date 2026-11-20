@@ -243,6 +243,128 @@ function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang)
   return $groups;
 }
 
+function student_progress_base_field_key(string $fieldName): string {
+  $key = strtolower(trim($fieldName));
+  $key = preg_replace('/\s+/', ' ', $key) ?? $key;
+  $key = preg_replace('/[-_](s|t)$/i', '', trim($key)) ?? $key;
+  return trim($key);
+}
+
+function student_progress_option_list_id(array $meta): int {
+  $listId = $meta['option_list_template_id'] ?? null;
+  return ($listId === null || $listId === '') ? 0 : (int)$listId;
+}
+
+/**
+ * Return the child fields that are unavailable for each report because the
+ * paired teacher field currently uses an option such as "n/a" with
+ * meta.lock_child enabled. The student wizard applies the same rule.
+ *
+ * @return array<string,array<int,bool>> report id => child field ids
+ */
+function load_student_progress_locked_child_fields(PDO $pdo, int $templateId, array $reportIds, array $childFieldIds): array {
+  $reportIds = array_values(array_unique(array_filter(array_map('intval', $reportIds), fn($id) => $id > 0)));
+  $childFieldIds = array_values(array_unique(array_filter(array_map('intval', $childFieldIds), fn($id) => $id > 0)));
+  if ($templateId <= 0 || !$reportIds || !$childFieldIds) return [];
+
+  $st = $pdo->prepare(
+    "SELECT id, field_name, field_type, can_child_edit, can_teacher_edit, meta_json
+     FROM template_fields
+     WHERE template_id=?"
+  );
+  $st->execute([$templateId]);
+
+  $teacherByBase = [];
+  $childById = [];
+  $teacherFieldIds = [];
+  $optionListIds = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $field) {
+    $fieldId = (int)($field['id'] ?? 0);
+    $baseKey = student_progress_base_field_key((string)($field['field_name'] ?? ''));
+    if ($fieldId <= 0 || $baseKey === '') continue;
+    if ((int)($field['can_child_edit'] ?? 0) === 1 && in_array($fieldId, $childFieldIds, true)) {
+      $childById[$fieldId] = $baseKey;
+    }
+    if ((int)($field['can_teacher_edit'] ?? 0) !== 1 || isset($teacherByBase[$baseKey])) continue;
+    $teacherByBase[$baseKey] = $field;
+    $teacherFieldIds[] = $fieldId;
+    if (in_array((string)($field['field_type'] ?? ''), ['radio', 'select', 'grade'], true)) {
+      $listId = student_progress_option_list_id(meta_read($field['meta_json'] ?? null));
+      if ($listId > 0) $optionListIds[] = $listId;
+    }
+  }
+  if (!$teacherFieldIds || !$teacherByBase || !$childById || !$optionListIds) return [];
+
+  $inReports = implode(',', array_fill(0, count($reportIds), '?'));
+  $inTeacherFields = implode(',', array_fill(0, count($teacherFieldIds), '?'));
+  $valuesSt = $pdo->prepare(
+    "SELECT report_instance_id, template_field_id, value_text, value_json
+     FROM field_values
+     WHERE report_instance_id IN ($inReports)
+       AND template_field_id IN ($inTeacherFields)
+       AND source='teacher'"
+  );
+  $valuesSt->execute(array_merge($reportIds, $teacherFieldIds));
+  $teacherValues = [];
+  foreach ($valuesSt->fetchAll(PDO::FETCH_ASSOC) as $value) {
+    $reportId = (string)(int)($value['report_instance_id'] ?? 0);
+    $fieldId = (int)($value['template_field_id'] ?? 0);
+    if ($reportId === '0' || $fieldId <= 0) continue;
+    $teacherValues[$reportId][$fieldId] = [
+      'text' => $value['value_text'] !== null ? (string)$value['value_text'] : null,
+      'json' => $value['value_json'] !== null ? (string)$value['value_json'] : null,
+    ];
+  }
+  if (!$teacherValues) return [];
+
+  $optionListIds = array_values(array_unique($optionListIds));
+  $inLists = implode(',', array_fill(0, count($optionListIds), '?'));
+  $optionsSt = $pdo->prepare(
+    "SELECT id, list_id, value, meta_json
+     FROM option_list_items
+     WHERE list_id IN ($inLists)"
+  );
+  $optionsSt->execute($optionListIds);
+  $optionMaps = [];
+  foreach ($optionsSt->fetchAll(PDO::FETCH_ASSOC) as $option) {
+    $listId = (int)($option['list_id'] ?? 0);
+    $optionId = (int)($option['id'] ?? 0);
+    if ($listId <= 0 || $optionId <= 0) continue;
+    $value = trim((string)($option['value'] ?? ''));
+    $locked = !empty(meta_read($option['meta_json'] ?? null)['lock_child']);
+    $optionMaps[$listId]['by_id'][$optionId] = $locked;
+    if ($value !== '' && !isset($optionMaps[$listId]['by_value'][$value])) {
+      $optionMaps[$listId]['by_value'][$value] = $optionId;
+    }
+  }
+
+  $lockedByReport = [];
+  foreach ($teacherValues as $reportId => $reportValues) {
+    foreach ($childById as $childFieldId => $baseKey) {
+      $teacherField = $teacherByBase[$baseKey] ?? null;
+      if (!$teacherField || !in_array((string)($teacherField['field_type'] ?? ''), ['radio', 'select', 'grade'], true)) continue;
+      $teacherValue = $reportValues[(int)($teacherField['id'] ?? 0)] ?? null;
+      if (!$teacherValue) continue;
+      $listId = student_progress_option_list_id(meta_read($teacherField['meta_json'] ?? null));
+      if ($listId <= 0 || empty($optionMaps[$listId])) continue;
+
+      $optionId = 0;
+      if (!empty($teacherValue['json'])) {
+        $decoded = json_decode((string)$teacherValue['json'], true);
+        if (is_array($decoded) && isset($decoded['option_item_id'])) $optionId = (int)$decoded['option_item_id'];
+      }
+      if ($optionId <= 0) {
+        $valueText = trim((string)($teacherValue['text'] ?? ''));
+        if ($valueText !== '') $optionId = (int)($optionMaps[$listId]['by_value'][$valueText] ?? 0);
+      }
+      if ($optionId > 0 && !empty($optionMaps[$listId]['by_id'][$optionId])) {
+        $lockedByReport[$reportId][$childFieldId] = true;
+      }
+    }
+  }
+  return $lockedByReport;
+}
+
 function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, string $periodLabel): array {
   if ($classId <= 0 || $schoolYear === '') return ['active' => false, 'map' => []];
   $st = $pdo->prepare(
@@ -386,6 +508,9 @@ function build_child_group_progress(PDO $pdo, array $groups, array $studentIds, 
 function students_json_out(array $payload, int $status = 200): never {
   http_response_code($status);
   header('Content-Type: application/json; charset=utf-8');
+  header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+  header('Pragma: no-cache');
+  header('Expires: 0');
   echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -431,7 +556,6 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
     }
   }
   $fieldIds = array_keys($itemsByField);
-  $total = count($fieldIds);
 
   $reportMap = ($studentIds && $templateId > 0 && $schoolYear !== '')
     ? load_report_instance_map_for_template($pdo, $studentIds, $templateId, $schoolYear, $periodLabel)
@@ -441,6 +565,11 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
   foreach ($reportMap as $sid => $rid) {
     $rid = (int)$rid;
     if ($rid > 0) $reportToStudent[$rid] = (int)$sid;
+  }
+  $lockedByReport = load_student_progress_locked_child_fields($pdo, $templateId, array_keys($reportToStudent), $fieldIds);
+  $lockedByStudent = [];
+  foreach ($reportToStudent as $reportId => $studentId) {
+    $lockedByStudent[$studentId] = $lockedByReport[(string)$reportId] ?? [];
   }
 
   $completedByStudentField = [];
@@ -462,6 +591,7 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
       $sid = $reportToStudent[$rid] ?? 0;
       $fid = (int)($r['template_field_id'] ?? 0);
       if ($sid <= 0 || $fid <= 0) continue;
+      if (!empty($lockedByStudent[$sid][$fid])) continue;
       $valueText = trim((string)($r['value_text'] ?? ''));
       $valueJson = trim((string)($r['value_json'] ?? ''));
       if ($valueText === '' && $valueJson === '') continue;
@@ -476,6 +606,12 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
 
   $out = [];
   foreach ($studentIds as $sid) {
+    $studentItemsByField = array_filter(
+      $itemsByField,
+      fn($item, $fieldId) => empty($lockedByStudent[$sid][(int)$fieldId]),
+      ARRAY_FILTER_USE_BOTH
+    );
+    $total = count($studentItemsByField);
     $completed = isset($completedByStudentField[$sid]) ? count($completedByStudentField[$sid]) : 0;
     $percent = $total > 0 ? (int)round(($completed / $total) * 100) : 0;
     $status = 'no_fields';
@@ -485,7 +621,7 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
       else $status = 'not_started';
     }
     $items = [];
-    foreach ($itemsByField as $fid => $item) {
+    foreach ($studentItemsByField as $fid => $item) {
       $items[] = $item + ['complete' => !empty($completedByStudentField[$sid][$fid])];
     }
     $out[] = [
@@ -2028,13 +2164,13 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
                 <div class="student-progress-track"><div class="student-progress-fill" style="width:<?=h((string)$percent)?>%;"></div></div>
                 <div class="student-progress-label" data-progress-status><?=h($progLabel)?></div>
               </div>
-              <?php $progressItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; if ($progressItems): ?>
-                <details class="student-item-progress">
+              <?php $progressItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; ?>
+                <details class="student-item-progress" data-item-progress="<?=h((string)$sid)?>" <?=$progressItems ? '' : 'hidden'?>>
                   <summary data-item-progress-summary="<?=h((string)$sid)?>"><?=h(strtr(t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'), [
                     '{completed}' => (string)(int)($prog['completed'] ?? 0),
                     '{total}' => (string)count($progressItems),
                   ]))?></summary>
-                  <ul>
+                  <ul data-item-progress-list="<?=h((string)$sid)?>">
                     <?php foreach ($progressItems as $item):
                       $itemId = (int)($item['id'] ?? 0);
                       $itemComplete = !empty($item['complete']);
@@ -2049,7 +2185,6 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
                     <?php endforeach; ?>
                   </ul>
                 </details>
-              <?php endif; ?>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -2086,9 +2221,22 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
       const status=String(row.status||'no_fields'), pct=Math.max(0,Math.min(100,Number(row.percent||0)));
       el.dataset.status=status; el.querySelector('[data-progress-percent]').textContent=`${pct}%`; el.querySelector('[data-progress-count]').textContent=`${Number(row.completed||0)}/${Number(row.total||0)}`; el.querySelector('.student-progress-fill').style.width=`${pct}%`; el.querySelector('[data-progress-status]').textContent=labels[status]||labels.no_fields;
       if(Array.isArray(row.items)){
-        let done=0;
-        row.items.forEach(item=>{const complete=Boolean(item.complete);if(complete)done++;const itemEl=document.querySelector(`[data-student-item="${CSS.escape(`${row.student_id}:${item.id}`)}"]`);if(!itemEl)return;itemEl.dataset.complete=complete?'1':'0';const state=itemEl.querySelector('[data-item-state]');if(state){state.textContent=complete?'✓':'○';state.setAttribute('aria-label',complete?itemLabels.done:itemLabels.open);}});
-        const summary=document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);if(summary)summary.textContent=itemLabels.summary.replace('{completed}',String(done)).replace('{total}',String(row.items.length));
+        const items=row.items, done=items.reduce((sum,item)=>sum+(item.complete?1:0),0);
+        const details=document.querySelector(`[data-item-progress="${CSS.escape(String(row.student_id))}"]`);
+        const summary=document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);
+        const list=document.querySelector(`[data-item-progress-list="${CSS.escape(String(row.student_id))}"]`);
+        if(details)details.hidden=items.length===0;
+        if(summary)summary.textContent=itemLabels.summary.replace('{completed}',String(done)).replace('{total}',String(items.length));
+        if(list){
+          list.textContent='';
+          items.forEach(item=>{
+            const complete=Boolean(item.complete), li=document.createElement('li'), state=document.createElement('span'), label=document.createElement('span');
+            li.dataset.studentItem=`${row.student_id}:${item.id}`;li.dataset.complete=complete?'1':'0';
+            state.className='student-item-state';state.dataset.itemState='';state.textContent=complete?'✓':'○';state.setAttribute('aria-label',complete?itemLabels.done:itemLabels.open);
+            const scope=String(item.scope_title||'').trim(), text=String(item.label||`#${item.id}`);label.textContent=scope?`${scope} – ${text}`:text;
+            li.append(state,label);list.append(li);
+          });
+        }
       }
       const holder=document.querySelector(`[data-child-status="${CSS.escape(String(row.student_id))}"]`); if(holder){const [key,badge]=childView(String(row.child_status||''),status);holder.innerHTML=`<span class="badge ${badge}">${childLabels[key]||key}</span>`;}
     }
@@ -2097,7 +2245,8 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
       if (refreshInFlight) return;
       refreshInFlight = true;
       try {
-        const res=await fetch(progressUrl,{credentials:'same-origin'});
+        const requestUrl=progressUrl+(progressUrl.includes('?')?'&':'?')+'_='+Date.now();
+        const res=await fetch(requestUrl,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
         if(!res.ok)return;
         const data=await res.json();
         if(data&&Array.isArray(data.students))data.students.forEach(app);
@@ -3115,13 +3264,13 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 </div>
                 <div class="student-progress-label" data-progress-status><?=h($progLabel)?></div>
               </div>
-              <?php $progItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; if ($progItems): ?>
-                <details class="student-item-progress">
+              <?php $progItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; ?>
+                <details class="student-item-progress" data-item-progress="<?=h((string)$sid)?>" <?=$progItems ? '' : 'hidden'?>>
                   <summary data-item-progress-summary="<?=h((string)$sid)?>"><?=h(strtr(t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'), [
                     '{completed}' => (string)$progCompleted,
                     '{total}' => (string)count($progItems),
                   ]))?></summary>
-                  <ul>
+                  <ul data-item-progress-list="<?=h((string)$sid)?>">
                     <?php foreach ($progItems as $item):
                       $itemId = (int)($item['id'] ?? 0);
                       $itemComplete = !empty($item['complete']);
@@ -3136,7 +3285,6 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                     <?php endforeach; ?>
                   </ul>
                 </details>
-              <?php endif; ?>
             </td>
             <td>
               <div class="action-menu">
@@ -3385,21 +3533,33 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       if (fillEl) fillEl.style.width = `${percent}%`;
       if (statusEl) statusEl.textContent = studentProgressLabels[status] || studentProgressLabels.no_fields || status;
       if (Array.isArray(row.items)) {
-        let done = 0;
-        row.items.forEach((item) => {
-          const complete = Boolean(item.complete);
-          if (complete) done++;
-          const itemEl = document.querySelector(`[data-student-item="${CSS.escape(`${row.student_id}:${item.id}`)}"]`);
-          if (!itemEl) return;
-          itemEl.dataset.complete = complete ? '1' : '0';
-          const stateEl = itemEl.querySelector('[data-item-state]');
-          if (stateEl) {
+        const items = row.items;
+        const done = items.reduce((sum, item) => sum + (item.complete ? 1 : 0), 0);
+        const detailsEl = document.querySelector(`[data-item-progress="${CSS.escape(String(row.student_id))}"]`);
+        const summaryEl = document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);
+        const listEl = document.querySelector(`[data-item-progress-list="${CSS.escape(String(row.student_id))}"]`);
+        if (detailsEl) detailsEl.hidden = items.length === 0;
+        if (summaryEl) summaryEl.textContent = studentItemProgressLabels.summary.replace('{completed}', String(done)).replace('{total}', String(items.length));
+        if (listEl) {
+          listEl.textContent = '';
+          items.forEach((item) => {
+            const complete = Boolean(item.complete);
+            const itemEl = document.createElement('li');
+            const stateEl = document.createElement('span');
+            const labelEl = document.createElement('span');
+            itemEl.dataset.studentItem = `${row.student_id}:${item.id}`;
+            itemEl.dataset.complete = complete ? '1' : '0';
+            stateEl.className = 'student-item-state';
+            stateEl.dataset.itemState = '';
             stateEl.textContent = complete ? '✓' : '○';
             stateEl.setAttribute('aria-label', complete ? studentItemProgressLabels.done : studentItemProgressLabels.open);
-          }
-        });
-        const summaryEl = document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);
-        if (summaryEl) summaryEl.textContent = studentItemProgressLabels.summary.replace('{completed}', String(done)).replace('{total}', String(row.items.length));
+            const scope = String(item.scope_title || '').trim();
+            const text = String(item.label || `#${item.id}`);
+            labelEl.textContent = scope ? `${scope} – ${text}` : text;
+            itemEl.append(stateEl, labelEl);
+            listEl.append(itemEl);
+          });
+        }
       }
       updateChildStatus(row, status);
     }
@@ -3410,7 +3570,8 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       if (studentProgressRefreshInFlight) return;
       studentProgressRefreshInFlight = true;
       try {
-        const res = await fetch(studentProgressUrl, { credentials: 'same-origin' });
+        const requestUrl = studentProgressUrl + (studentProgressUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
+        const res = await fetch(requestUrl, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         if (!json || json.ok === false || !Array.isArray(json.students)) return;

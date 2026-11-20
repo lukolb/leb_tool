@@ -118,8 +118,8 @@ function option_list_id_from_meta(array $meta): int {
 
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
-  $s = explode('-', $s, 2)[0];
   $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+  $s = preg_replace('/[-_](s|t)$/i', '', trim($s)) ?? $s;
   return trim($s);
 }
 

@@ -88,6 +88,9 @@ delegated_self_assessment_assert(
 delegated_self_assessment_assert(
   substr_count($sources['students'], 'setInterval(refresh, 5000)') === 1
     && substr_count($sources['students'], 'setInterval(refreshStudentProgress, 5000)') === 1
+    && substr_count($sources['students'], "cache:'no-store'") === 1
+    && substr_count($sources['students'], "cache: 'no-store'") === 1
+    && str_contains($sources['students'], "header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0')")
     && !str_contains($sources['students'], 'if(document.hidden)refresh()')
     && !str_contains($sources['students'], 'if (document.hidden) return;'),
   'student progress must keep polling in the background without a page reload'
@@ -102,10 +105,24 @@ delegated_self_assessment_assert(
 delegated_self_assessment_assert(
   str_contains($sources['students'], "'items' => \$items")
     && str_contains($sources['students'], 'data-student-item=')
+    && substr_count($sources['students'], 'data-item-progress-list=') >= 2
     && str_contains($sources['students'], 'data-item-progress-summary=')
     && str_contains($sources['students'], 'Array.isArray(row.items)')
     && substr_count($sources['translations'], "'teacher.students.items_summary'") === 2,
   'progress must expose, render, and live-update every individual released item'
+);
+delegated_self_assessment_assert(
+  str_contains($sources['students'], 'function load_student_progress_locked_child_fields')
+    && str_contains($sources['students'], "['lock_child']")
+    && str_contains($sources['students'], 'if (!empty($lockedByStudent[$sid][$fid])) continue;')
+    && str_contains($sources['students'], '$studentItemsByField = array_filter('),
+  'n/a-locked competencies must be removed per student from progress totals and item lists'
+);
+delegated_self_assessment_assert(
+  !str_contains($sources['wizard'], "explode('-', \$s, 2)[0]")
+    && str_contains($sources['wizard'], "preg_replace('/[-_](s|t)\$/i', '', trim(\$s))")
+    && str_contains($sources['students'], "preg_replace('/[-_](s|t)\$/i', '', trim(\$key))"),
+  'teacher/student field pairing must remove only the explicit role suffix instead of collapsing every hyphenated competency'
 );
 delegated_self_assessment_assert(
   substr_count($sources['students'], '$scopeKey = app_group_scope_key_from_meta($meta)') >= 2

@@ -70,7 +70,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - **Delegationen**:
   - Fachbereiche an andere Lehrkräfte delegieren
   - Status einsehen (offen / in Bearbeitung / abgeschlossen)
-  - Delegierte Lehrkräfte können die Selbsteinschätzung für ihre Bereiche vorbereiten, Schüleransicht und Silbenschrift für den Durchlauf unabhängig einstellen, Zugangscodes/QR-Codes drucken, exakt die aktuellen Kategorien exklusiv freigeben und den im Hintergrund aktualisierten Fortschritt bis auf jedes einzelne Item verfolgen
+  - Delegierte Lehrkräfte können die Selbsteinschätzung für ihre Bereiche vorbereiten, Schüleransicht und Silbenschrift für den Durchlauf unabhängig einstellen, Zugangscodes/QR-Codes drucken, exakt die aktuellen Kategorien exklusiv freigeben und den cachefrei im Hintergrund aktualisierten Fortschritt bis auf jedes einzelne tatsächlich verfügbare Item verfolgen; individuelle `n/a`-Sperren werden weder angezeigt noch mitgezählt
 - Delegationen ändern oder zurücknehmen
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)

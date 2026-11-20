@@ -43,10 +43,34 @@ if (($user['role'] ?? '') === 'admin') {
   $classes = $stClasses->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
+$demoStudentsByClass = [];
+$demoClassIds = array_values(array_unique(array_filter(array_map(fn($class) => (int)($class['id'] ?? 0), $classes), fn($id) => $id > 0)));
+if ($demoClassIds) {
+  $inClasses = implode(',', array_fill(0, count($demoClassIds), '?'));
+  $studentsSt = $pdo->prepare(
+    "SELECT sca.class_id, s.id, s.first_name, s.last_name
+     FROM student_class_assignments sca
+     INNER JOIN students s ON s.id=sca.student_id
+     WHERE sca.class_id IN ($inClasses) AND sca.is_active=1
+     ORDER BY s.last_name ASC, s.first_name ASC, s.id ASC"
+  );
+  $studentsSt->execute($demoClassIds);
+  foreach ($studentsSt->fetchAll(PDO::FETCH_ASSOC) as $student) {
+    $studentClassId = (int)($student['class_id'] ?? 0);
+    $studentId = (int)($student['id'] ?? 0);
+    if ($studentClassId <= 0 || $studentId <= 0) continue;
+    $demoStudentsByClass[$studentClassId][] = [
+      'id' => $studentId,
+      'name' => trim((string)($student['last_name'] ?? '') . ', ' . (string)($student['first_name'] ?? '')),
+    ];
+  }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
     csrf_verify();
     $classId = (int)($_POST['class_id'] ?? 0);
+    $referenceStudentId = (int)($_POST['reference_student_id'] ?? 0);
     $displayMode = strtolower(trim((string)($_POST['display_mode'] ?? 'groups')));
     $syllableColoring = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1;
     if ($classId <= 0) throw new RuntimeException(t('student_demo.error.class_required', 'Bitte wähle eine Klasse.'));
@@ -65,10 +89,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ((int)($selectedClass['template_id'] ?? 0) <= 0) {
       throw new RuntimeException(t('student_demo.error.no_template', 'Der Klasse ist noch keine Vorlage zugeordnet.'));
     }
+    $referenceValid = false;
+    foreach (($demoStudentsByClass[$classId] ?? []) as $demoStudent) {
+      if ((int)($demoStudent['id'] ?? 0) === $referenceStudentId) {
+        $referenceValid = true;
+        break;
+      }
+    }
+    if (!$referenceValid) {
+      throw new RuntimeException(t('student_demo.error.reference_required', 'Bitte wähle einen Referenzschüler für die individuellen n/a-Sperren.'));
+    }
 
     unset($_SESSION['student']);
     $_SESSION['student_demo'] = [
       'class_id' => $classId,
+      'reference_student_id' => $referenceStudentId,
       'display_mode' => $displayMode,
       'syllable_coloring_enabled' => $syllableColoring,
       'values' => [],
@@ -77,6 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ];
     audit('student_demo_start', $userId, [
       'class_id' => $classId,
+      'reference_student_id' => $referenceStudentId,
       'display_mode' => $displayMode,
       'syllable_coloring_enabled' => $syllableColoring,
     ]);
@@ -103,6 +139,7 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
   <?php else: ?>
     <?php
       $requestedClassId = (int)($_POST['class_id'] ?? ($_GET['class_id'] ?? 0));
+      $requestedStudentId = (int)($_POST['reference_student_id'] ?? ($_GET['student_id'] ?? 0));
       $requestedClassSyllables = false;
       foreach ($classes as $classOption) {
         if ((int)($classOption['id'] ?? 0) === $requestedClassId) {
@@ -130,6 +167,17 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
         <?php endforeach; ?>
       </select>
 
+      <div style="margin-top:14px; max-width:560px;">
+        <label class="label" for="demoReferenceStudent"><?=h(t('student_demo.reference_student', 'Referenzschüler für n/a-Sperren'))?></label>
+        <select class="input" id="demoReferenceStudent" name="reference_student_id" required style="width:100%;">
+          <option value=""><?=h(t('student_demo.choose_reference_student', 'Bitte wählen…'))?></option>
+          <?php foreach (($demoStudentsByClass[$requestedClassId] ?? []) as $demoStudent): ?>
+            <option value="<?=(int)$demoStudent['id']?>" <?=((int)$demoStudent['id'] === $requestedStudentId) ? 'selected' : ''?>><?=h((string)$demoStudent['name'])?></option>
+          <?php endforeach; ?>
+        </select>
+        <p class="muted" style="margin:6px 0 0;"><?=h(t('student_demo.reference_student_hint', 'Die Demo übernimmt nur die individuellen n/a-Sperren dieses Kindes. Demo-Eingaben bleiben weiterhin getrennt und verändern keinen Schülerbericht.'))?></p>
+      </div>
+
       <fieldset style="border:0; padding:0; margin:20px 0 0;">
         <legend class="label"><?=h(t('student_demo.view', 'Ansicht'))?></legend>
         <?php $selectedMode = strtolower(trim((string)($_POST['display_mode'] ?? ($_GET['display_mode'] ?? 'groups')))); ?>
@@ -153,15 +201,37 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
     <script>
     (() => {
       const classSelect = document.getElementById('demoClass');
+      const studentSelect = document.getElementById('demoReferenceStudent');
       const syllableToggle = document.getElementById('demoSyllableColoring');
-      if (!classSelect || !syllableToggle) return;
+      const studentsByClass = <?=json_encode($demoStudentsByClass, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+      if (!classSelect || !studentSelect || !syllableToggle) return;
+      const chooseStudentLabel = <?=json_encode(t('student_demo.choose_reference_student', 'Bitte wählen…'), JSON_UNESCAPED_UNICODE)?>;
       let changedByUser = false;
       syllableToggle.addEventListener('change', () => { changedByUser = true; });
+      function updateStudents(){
+        const keep = studentSelect.value;
+        studentSelect.textContent = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = chooseStudentLabel;
+        studentSelect.append(placeholder);
+        const students = studentsByClass[String(classSelect.value)] || [];
+        students.forEach(student => {
+          const option = document.createElement('option');
+          option.value = String(student.id);
+          option.textContent = String(student.name || '');
+          studentSelect.append(option);
+        });
+        if (students.some(student => String(student.id) === keep)) studentSelect.value = keep;
+        else if (students.length) studentSelect.value = String(students[0].id);
+      }
       classSelect.addEventListener('change', () => {
+        updateStudents();
         if (changedByUser) return;
         const option = classSelect.options[classSelect.selectedIndex];
         syllableToggle.checked = option?.dataset?.syllables === '1';
       });
+      if (!studentSelect.value) updateStudents();
     })();
     </script>
   <?php endif; ?>

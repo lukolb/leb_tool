@@ -169,8 +169,8 @@ function field_group_meta(array $field): array {
 
 function base_field_key(string $fieldName): string {
   $s = strtolower(trim($fieldName));
-  $s = explode('-', $s, 2)[0];
   $s = preg_replace('/\s+/', ' ', $s) ?? $s;
+  $s = preg_replace('/[-_](s|t)$/i', '', trim($s)) ?? $s;
   return trim($s);
 }
 
@@ -377,6 +377,30 @@ function template_for_demo_class(PDO $pdo, array $demo): array {
     'template_version' => (int)($row['template_version'] ?? 0),
     'period_label' => normalize_class_period_label($row['period_label'] ?? 'Standard'),
   ];
+}
+
+function demo_reference_report_id(PDO $pdo, array $demo, int $templateId, string $schoolYear, string $periodLabel): int {
+  $classId = (int)($demo['class_id'] ?? 0);
+  $referenceStudentId = (int)($demo['reference_student_id'] ?? 0);
+  if ($classId <= 0 || $referenceStudentId <= 0 || $templateId <= 0 || trim($schoolYear) === '') return 0;
+  $periodLabel = normalize_class_period_label($periodLabel);
+  $st = $pdo->prepare(
+    "SELECT ri.id
+     FROM students requested
+     INNER JOIN student_class_assignments sca
+       ON sca.student_id=requested.id AND sca.class_id=? AND sca.is_active=1
+     INNER JOIN students report_student
+       ON COALESCE(NULLIF(report_student.master_student_id, 0), report_student.id)
+        = COALESCE(NULLIF(requested.master_student_id, 0), requested.id)
+     INNER JOIN report_instances ri
+       ON ri.student_id=report_student.id
+      AND ri.template_id=? AND ri.school_year=? AND ri.period_label=?
+     WHERE requested.id=?
+     ORDER BY (ri.student_id=requested.id) DESC, ri.updated_at DESC, ri.id DESC
+     LIMIT 1"
+  );
+  $st->execute([$classId, $templateId, $schoolYear, $periodLabel, $referenceStudentId]);
+  return (int)($st->fetchColumn() ?: 0);
 }
 
 function find_or_create_class_report_instance(PDO $pdo, int $templateId, int $classId, string $schoolYear, string $periodLabel): int {
@@ -722,6 +746,12 @@ try {
   if (!$isDemo && (int)$ctx['report_instance_id'] < 0) throw new RuntimeException(t('student.wizard.error.report_unavailable'));
 
   $reportId = (int)$ctx['report_instance_id'];
+  $lockReportId = $isDemo
+    ? demo_reference_report_id($pdo, $demo, $templateId, $schoolYear, $periodLabel)
+    : $reportId;
+  if ($isDemo && $lockReportId <= 0) {
+    throw new RuntimeException(t('student_demo.error.reference_report_missing', 'Für den gewählten Referenzschüler ist noch kein Bericht für diesen Durchlauf vorhanden.'));
+  }
 
   $status = $isDemo ? 'draft' : get_report_status($pdo, $reportId);
   $childCanEdit = ($status === 'draft');
@@ -776,7 +806,7 @@ try {
     $iconIds = [];
     $optCache = []; // listId => options array
     $lockedFieldIds = [];
-    $lockContext = child_lock_context($pdo, $templateId, $reportId);
+    $lockContext = child_lock_context($pdo, $templateId, $lockReportId);
 
     foreach ($fieldsRaw as $r) {
       $fid = (int)$r['id'];
@@ -916,7 +946,7 @@ try {
     $frow = $st->fetch(PDO::FETCH_ASSOC);
     if (!$frow) throw new RuntimeException('Feld nicht erlaubt.');
 
-    $lockContext = child_lock_context($pdo, $templateId, $reportId);
+    $lockContext = child_lock_context($pdo, $templateId, $lockReportId);
     if (child_field_locked_by_teacher($pdo, $frow, $lockContext)) {
       throw new RuntimeException('Feld ist gesperrt.');
     }
@@ -1012,7 +1042,7 @@ try {
 
   // submit
   if (!$isDemo) ensure_editable_or_throw($pdo, $reportId);
-  $lockContext = child_lock_context($pdo, $templateId, $reportId);
+  $lockContext = child_lock_context($pdo, $templateId, $lockReportId);
   $lockedFieldIds = [];
   foreach (load_child_fields($pdo, $templateId) as $f) {
     $fid = (int)($f['id'] ?? 0);
