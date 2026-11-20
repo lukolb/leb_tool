@@ -246,7 +246,7 @@ Einstellungen \(\rightarrow\) Audit-Log & Änderungen nach Zeitraum, Ereignis, N
 \hline
 Einstellungen \(\rightarrow\) Backup & Geschützte Sicherung exportieren oder eine Sicherungsdatei analysiert und selektiv wiederherstellen.\\
 \hline
-Schule \(\rightarrow\) Demoschüler & Schülerablauf für eine zugängliche Klasse in der vorab gewählten Gruppen-, Items- oder Leseanfängeransicht testen, ohne echte Berichte zu verändern.\\
+Schule \(\rightarrow\) Demoschüler & Schülerablauf für eine zugängliche Klasse in der vorab gewählten Gruppen-, Items- oder Leseanfängeransicht mit optionaler Silbenschrift testen, ohne echte Berichte zu verändern.\\
 \hline
 Abmelden & Beendet die aktuelle Sitzung. Auf gemeinsam genutzten Geräten immer verwenden und danach das Browserfenster schließen.\\
 \hline
@@ -271,7 +271,7 @@ Eingaben \(\rightarrow\) AGs & Klasse auswählen und AG-Teilnahmen der Schüler 
 \hline
 Delegationen & Empfangene und vergebene Fachbereichsdelegationen suchen, öffnen, bearbeiten, abschließen oder zurückgeben.\\
 \hline
-Klassen \(\rightarrow\) Demoschüler & Schülerablauf für eine eigene oder aktiv delegierte Klasse in der vorab gewählten Gruppen-, Items- oder Leseanfängeransicht testen oder vorführen.\\
+Klassen \(\rightarrow\) Demoschüler & Schülerablauf für eine eigene oder aktiv delegierte Klasse in der vorab gewählten Gruppen-, Items- oder Leseanfängeransicht mit optionaler Silbenschrift testen oder vorführen.\\
 \hline
 Berichte \(\rightarrow\) Berichtsvorschau & Aktuelle und historische Berichte berechtigter Schüler öffnen, nacheinander prüfen, exportieren oder eine Löschung beantragen.\\
 \hline
@@ -1496,13 +1496,13 @@ Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offene
 \begin{enumerate}
   \item Unter \enquote{Delegationen} beim eigenen offenen Bereich \enquote{Selbsteinschätzung} wählen. Derselbe Knopf steht in der geöffneten Delegation oben zur Verfügung.
   \item Die Seite weist ausdrücklich auf den eingeschränkten Zugriff hin. Sichtbar sind nur Schülernamen, Kinder-Status und Fortschritt; Schülerstammdaten, Klassenzuordnungen, Fehltage, Import, Löschen, Export und andere Schüleraktionen bleiben unzugänglich.
-  \item Unter \enquote{Ansicht für diesen Durchlauf} zwischen \enquote{Gruppen}, \enquote{Items} und \enquote{Leseanfänger} wählen und \enquote{Schüleransicht speichern} anklicken. Die Auswahl gilt während dieses Durchlaufs für alle Schüler der Klasse und kann vor dem nächsten Durchlauf wieder geändert werden.
+  \item Unter \enquote{Darstellung für diesen Durchlauf} zwischen \enquote{Gruppen}, \enquote{Items} und \enquote{Leseanfänger} wählen. Unabhängig davon kann \enquote{Silbenschrift verwenden} aktiviert werden. \enquote{Darstellung speichern} übernimmt beides für alle Schüler der Klasse; vor dem nächsten Durchlauf kann die Auswahl wieder geändert werden.
   \item \enquote{Vorbereiten und freigeben} wählen. Dadurch werden fehlende Berichte sicher angelegt, die eigenen delegierten Haupt- oder Untergruppen für Schüler geöffnet, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
-  \item Optional über \enquote{Schüleransicht testen} den Ablauf mit der gewählten Ansicht ohne echte Schülerdaten kontrollieren.
+  \item Optional über \enquote{Schüleransicht testen} den Ablauf mit der gewählten Darstellung ohne echte Schülerdaten kontrollieren. Der Knopf speichert Ansicht und Silbenschrift automatisch, bevor die Demo geöffnet wird.
   \item \enquote{QR-Codes drucken} öffnen und die Ausdrucke geschützt an die Schüler verteilen. \enquote{Fehlende Zugangscodes erstellen} ergänzt Codes, ohne vorhandene Ausdrucke ungültig zu machen.
   \item Im Abschnitt \enquote{Delegierte Bereiche für Schüler} nur die eigenen Bereiche öffnen oder schließen. Untergruppen werden einzeln berücksichtigt; Freigaben anderer Lehrkräfte oder der Klassenlehrkraft bleiben unverändert.
-  \item Den automatisch aktualisierten Fortschritt beobachten. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
-  \item Nach dem Arbeitsfenster die eigenen Bereiche abwählen und \enquote{Freigaben speichern}. Dies schließt nur die delegierten Bereiche und sperrt keine parallele Selbsteinschätzung anderer Bereiche. Anschließend die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
+  \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Status, Gesamtzahl und Itemliste werden ohne Neuladen aktualisiert und auch bei einem zeitweise inaktiven Browser-Tab weiter abgeglichen. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
+  \item Nach dem eigenen Arbeitsfenster die eigenen Bereiche abwählen und \enquote{Freigaben speichern}. Dies schließt nur die delegierten Bereiche. Soll die Schüler-Eingabe insgesamt beendet werden, anschließend \enquote{Schülereingaben sperren} wählen und die Sicherheitsabfrage bestätigen. Dieser Schritt sperrt die Eingabe für die gesamte Klasse; gespeicherte Antworten bleiben erhalten. Danach die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
 \end{enumerate}
 
 \HintBox{Delegationszugriff und Klassenverwaltung bleiben getrennt: Eine Delegation berechtigt zur fachlichen Eingabe und zum zugehörigen Selbsteinschätzungsablauf, aber nicht zum Bearbeiten von Schülerprofilen oder Klasseneinstellungen.}
@@ -1534,12 +1534,13 @@ Jede Zeile zeigt die Kategorie und eine Checkbox für Sichtbarkeit/Bearbeitung. 
 \HintBox{Gesperrte Kategorien werden in der Fortschrittsanzeige nicht als fehlend gewertet. Nutzen Sie diese Funktion, wenn einzelne Bereiche später oder gar nicht von Schülern bearbeitet werden sollen.}
 
 \subsection{Demoschüler: Ablauf testen und vorführen}
-\label{sec:demoschueler}\index{Demoschüler}\index{Schüleransicht!Demo}\index{Leseanfänger!Demo}
+\label{sec:demoschueler}\index{Demoschüler}\index{Schüleransicht!Demo}\index{Leseanfänger!Demo}\index{Silbenschrift!Demo}
 Lehrkräfte und Admins können die Schüleransicht ohne echten Schülerbericht öffnen. Die Demo eignet sich zur Vorbereitung, zur technischen Kontrolle und zur Vorführung im Klassenraum.
 \begin{enumerate}
   \item Im Menü \enquote{Klassen} den Unterpunkt \enquote{Demoschüler} öffnen; im Adminbereich liegt er im Menü \enquote{Schule} direkt bei \enquote{Klassen}.
   \item Eine aktive, zugängliche Klasse auswählen. Lehrkräfte sehen sowohl eigene Klassen als auch alle Klassen, für die sie eine aktive Delegation besitzen. Klassen ohne zugeordnete Vorlage können nicht gestartet werden.
   \item Die gewünschte Ansicht vorab festlegen: \enquote{Gruppen}, \enquote{Items} oder \enquote{Leseanfänger}.
+  \item Unabhängig von der Ansicht optional \enquote{Silbenschrift verwenden} aktivieren. Diese Auswahl gilt nur für die Demo-Sitzung und verändert die Klasseneinstellung nicht.
   \item \enquote{Demo starten} wählen. Der farbige Hinweis \enquote{Demo-Modus} bleibt während der gesamten Vorführung sichtbar.
   \item Eingaben, Navigation, Sprachwechsel, Vorlesen und den Abschluss wie aus Kindersicht testen. Ist die KI-Hilfefunktion in den Admin-Einstellungen für Schüler aktiviert, steht auch der Fragezeichen-Button in der Demo zur Verfügung.
   \item Mit \enquote{Demo beenden} zur Auswahl zurückkehren. Die Anmeldung als Lehrkraft beziehungsweise Admin bleibt bestehen.
@@ -2222,7 +2223,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Schülerbezogene Berichtshistorie mit Suche, Klassenfilter, Export, Löschanträgen und zeitlich begrenzter Einsicht.
   \item Rollenbasierte E-Mail-Freigaben, Rücknahme und Benachrichtigung der Beteiligten.
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, automatischer Bereinigung veralteter Dateien, administrativer Sammelerzeugung für mehrere Klassen, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
-  \item Isolierter Demoschüler für Lehrkräfte und Admins mit vorab wählbarer Gruppen-, Items- oder Leseanfängeransicht ohne Veränderung echter Berichte.
+  \item Isolierter Demoschüler für Lehrkräfte und Admins mit vorab wählbarer Gruppen-, Items- oder Leseanfängeransicht und davon unabhängiger optionaler Silbenschrift ohne Veränderung echter Berichte.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
   \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen, eingeschränkte Selbsteinschätzungsdurchführung durch Delegierte sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.

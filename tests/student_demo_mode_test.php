@@ -27,8 +27,10 @@ foreach ([
 student_demo_assert(
   str_contains($sources['launcher'], "['groups', 'items', 'beginner']")
     && str_contains($sources['launcher'], "name=\"display_mode\"")
+    && str_contains($sources['launcher'], "name=\"syllable_coloring_enabled\"")
+    && str_contains($sources['launcher'], "'syllable_coloring_enabled' => \$syllableColoring")
     && str_contains($sources['launcher'], "\$_SESSION['student_demo']"),
-  'teachers and admins must choose all three supported views before starting an isolated demo session'
+  'teachers and admins must choose all three supported views and an independent syllable option before starting an isolated demo session'
 );
 student_demo_assert(
   str_contains($sources['launcher'], 'user_can_access_class($pdo, $userId, $classId)')
@@ -61,6 +63,11 @@ student_demo_assert(
     && str_contains($sources['student'], '.demo-banner{')
     && !str_contains($sources['student'], 'class="alert demo-banner"'),
   'the student screen must use a compact demo marker and provide one safe exit in the regular header'
+);
+student_demo_assert(
+  str_contains($sources['student'], "!empty(\$studentDemo['syllable_coloring_enabled'])")
+    && str_contains($sources['student'], 'const SYLLABLE_COLORING ='),
+  'demo syllable coloring must come from the isolated session instead of changing the class setting'
 );
 student_demo_assert(
   str_contains($sources['wizard'], "'ai_enabled' => ai_provider_enabled()")

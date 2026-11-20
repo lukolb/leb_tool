@@ -86,7 +86,9 @@ $showStudentDeadlineInline = !$isStudentDemo && $showStudentDeadline && !empty($
 $classTemplateId = (int)($me['template_id'] ?? 0);
 $hasTemplate = ($classTemplateId > 0);
 $ttsEnabled = (int)($me['tts_enabled'] ?? 0) === 1;
-$syllableColoringEnabled = (int)($me['syllable_coloring_enabled'] ?? 0) === 1;
+$syllableColoringEnabled = $isStudentDemo
+  ? !empty($studentDemo['syllable_coloring_enabled'])
+  : (int)($me['syllable_coloring_enabled'] ?? 0) === 1;
 $isActive = (int)($me['is_active'] ?? 0) === 1;
 
 $reportStatus = 'draft';

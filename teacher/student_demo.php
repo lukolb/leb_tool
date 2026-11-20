@@ -23,7 +23,7 @@ function demo_class_label(array $class): string {
 
 if (($user['role'] ?? '') === 'admin') {
   $classes = $pdo->query(
-    "SELECT id, school_year, period_label, grade_level, label, name, template_id
+    "SELECT id, school_year, period_label, grade_level, label, name, template_id, syllable_coloring_enabled
      FROM classes
      WHERE is_active=1
      ORDER BY school_year DESC, CASE period_label WHEN 'H2' THEN 2 ELSE 1 END DESC,
@@ -31,7 +31,7 @@ if (($user['role'] ?? '') === 'admin') {
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
 } else {
   $stClasses = $pdo->prepare(
-    "SELECT DISTINCT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.template_id
+    "SELECT DISTINCT c.id, c.school_year, c.period_label, c.grade_level, c.label, c.name, c.template_id, c.syllable_coloring_enabled
      FROM classes c
      LEFT JOIN user_class_assignments uca ON uca.class_id=c.id AND uca.user_id=?
      LEFT JOIN class_group_delegations d ON d.class_id=c.id AND d.user_id=? AND d.status='open'
@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
     $classId = (int)($_POST['class_id'] ?? 0);
     $displayMode = strtolower(trim((string)($_POST['display_mode'] ?? 'groups')));
+    $syllableColoring = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1;
     if ($classId <= 0) throw new RuntimeException(t('student_demo.error.class_required', 'Bitte wähle eine Klasse.'));
     if (!in_array($displayMode, ['groups', 'items', 'beginner'], true)) {
       throw new RuntimeException(t('student_demo.error.mode_invalid', 'Die gewählte Ansicht ist ungültig.'));
@@ -69,11 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $_SESSION['student_demo'] = [
       'class_id' => $classId,
       'display_mode' => $displayMode,
+      'syllable_coloring_enabled' => $syllableColoring,
       'values' => [],
       'started_by_user_id' => $userId,
       'started_at' => time(),
     ];
-    audit('student_demo_start', $userId, ['class_id' => $classId, 'display_mode' => $displayMode]);
+    audit('student_demo_start', $userId, [
+      'class_id' => $classId,
+      'display_mode' => $displayMode,
+      'syllable_coloring_enabled' => $syllableColoring,
+    ]);
     redirect('student/index.php');
   } catch (Throwable $e) {
     $error = $e->getMessage();
@@ -95,14 +101,30 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
   <?php if (!$classes): ?>
     <div class="alert"><?=h(t('student_demo.no_classes', 'Es ist keine aktive, zugängliche Klasse vorhanden.'))?></div>
   <?php else: ?>
+    <?php
+      $requestedClassId = (int)($_POST['class_id'] ?? ($_GET['class_id'] ?? 0));
+      $requestedClassSyllables = false;
+      foreach ($classes as $classOption) {
+        if ((int)($classOption['id'] ?? 0) === $requestedClassId) {
+          $requestedClassSyllables = (int)($classOption['syllable_coloring_enabled'] ?? 0) === 1;
+          break;
+        }
+      }
+      if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $selectedSyllables = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1;
+      } elseif (array_key_exists('syllable_coloring_enabled', $_GET)) {
+        $selectedSyllables = (int)$_GET['syllable_coloring_enabled'] === 1;
+      } else {
+        $selectedSyllables = $requestedClassSyllables;
+      }
+    ?>
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <label class="label" for="demoClass"><?=h(t('student_demo.class', 'Klasse'))?></label>
       <select class="input" id="demoClass" name="class_id" required style="width:100%; max-width:560px;">
         <option value=""><?=h(t('student_demo.choose_class', 'Bitte wählen…'))?></option>
-        <?php $requestedClassId = (int)($_POST['class_id'] ?? ($_GET['class_id'] ?? 0)); ?>
         <?php foreach ($classes as $class): ?>
-          <option value="<?=(int)$class['id']?>" <?=($requestedClassId === (int)$class['id']) ? 'selected' : ''?> <?=((int)($class['template_id'] ?? 0) <= 0) ? 'disabled' : ''?>>
+          <option value="<?=(int)$class['id']?>" data-syllables="<?=((int)($class['syllable_coloring_enabled'] ?? 0) === 1) ? '1' : '0'?>" <?=($requestedClassId === (int)$class['id']) ? 'selected' : ''?> <?=((int)($class['template_id'] ?? 0) <= 0) ? 'disabled' : ''?>>
             <?=h(demo_class_label($class) . ((int)($class['template_id'] ?? 0) <= 0 ? ' · ' . t('student_demo.without_template', 'ohne Vorlage') : ''))?>
           </option>
         <?php endforeach; ?>
@@ -119,11 +141,29 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
         </div>
       </fieldset>
 
+      <div style="margin-top:14px; max-width:560px;">
+        <label class="panel" style="padding:12px; cursor:pointer; display:block;"><input id="demoSyllableColoring" type="checkbox" name="syllable_coloring_enabled" value="1" <?=$selectedSyllables ? 'checked' : ''?>> <strong><?=h(t('student_demo.syllable_label', 'Silbenschrift verwenden'))?></strong><br><span class="muted"><?=h(t('student_demo.syllable_hint', 'Optional und unabhängig von der gewählten Ansicht; gilt nur für diese Demo-Sitzung.'))?></span></label>
+      </div>
+
       <div class="actions" style="justify-content:flex-start; margin-top:18px;">
         <button class="btn primary" type="submit"><?=h(t('student_demo.start', 'Demo starten'))?></button>
         <?php if ($activeDemo): ?><a class="btn secondary" href="<?=h(url('student/index.php'))?>"><?=h(t('student_demo.continue', 'Laufende Demo fortsetzen'))?></a><?php endif; ?>
       </div>
     </form>
+    <script>
+    (() => {
+      const classSelect = document.getElementById('demoClass');
+      const syllableToggle = document.getElementById('demoSyllableColoring');
+      if (!classSelect || !syllableToggle) return;
+      let changedByUser = false;
+      syllableToggle.addEventListener('change', () => { changedByUser = true; });
+      classSelect.addEventListener('change', () => {
+        if (changedByUser) return;
+        const option = classSelect.options[classSelect.selectedIndex];
+        syllableToggle.checked = option?.dataset?.syllables === '1';
+      });
+    })();
+    </script>
   <?php endif; ?>
 </div>
 

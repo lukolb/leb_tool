@@ -22,6 +22,34 @@ function student_custom_field_label(array $field): string {
   return (string)($field['label'] ?? '');
 }
 
+function student_child_item_label(array $field, string $lang): string {
+  $labelEn = trim((string)($field['label_en'] ?? ''));
+  if ($lang === 'en' && $labelEn !== '') return $labelEn;
+  $label = trim((string)($field['label'] ?? ''));
+  if ($label !== '') return $label;
+  $fallback = trim((string)($field['field_name'] ?? ''));
+  return $fallback !== '' ? $fallback : ('#' . (int)($field['id'] ?? 0));
+}
+
+function requested_student_canonical_map(PDO $pdo, array $studentIds): array {
+  $studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0)));
+  if (!$studentIds) return [];
+  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $st = $pdo->prepare(
+    "SELECT id, COALESCE(NULLIF(master_student_id, 0), id) AS canonical_student_id
+     FROM students
+     WHERE id IN ($in)"
+  );
+  $st->execute($studentIds);
+  $map = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+    $requestedId = (int)($row['id'] ?? 0);
+    $canonicalId = (int)($row['canonical_student_id'] ?? 0);
+    if ($requestedId > 0 && $canonicalId > 0) $map[$requestedId] = $canonicalId;
+  }
+  return $map;
+}
+
 function meta_read(?string $json): array {
   if (!$json) return [];
   $a = json_decode($json, true);
@@ -113,7 +141,7 @@ function load_delegate_child_scopes(PDO $pdo, int $userId, int $classId, int $te
   }
   if (!$delegations) return [];
 
-  $select = 'id, meta_json';
+  $select = 'id, field_name, label, label_en, meta_json';
   foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
     if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
   }
@@ -147,9 +175,16 @@ function load_delegate_child_scopes(PDO $pdo, int $userId, int $classId, int $te
         'title' => delegate_child_scope_title($meta, $matchedKey, $lang),
         'aliases' => app_group_key_aliases_from_label($matchedKey),
         'field_ids' => [],
+        'items' => [],
       ];
     }
     $scopes[$matchedKey]['field_ids'][] = $fieldId;
+    $scopes[$matchedKey]['items'][] = [
+      'id' => $fieldId,
+      'label' => student_child_item_label($field, $lang),
+      'scope_key' => app_group_scope_key_from_meta($meta),
+      'scope_title' => (string)$scopes[$matchedKey]['title'],
+    ];
   }
 
   foreach ($scopes as &$scope) {
@@ -161,7 +196,7 @@ function load_delegate_child_scopes(PDO $pdo, int $userId, int $classId, int $te
 
 function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang): array {
   if ($templateId <= 0) return [];
-  $select = 'id, meta_json';
+  $select = 'id, field_name, label, label_en, meta_json';
   foreach (['group_label', 'group_label_en', 'subgroup_label', 'subgroup_label_en'] as $column) {
     if (db_has_column($pdo, 'template_fields', $column)) $select .= ', ' . $column;
   }
@@ -190,12 +225,18 @@ function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang)
     $gTitle = group_title_from_meta($meta, $gKey, $lang);
     $gAliases = group_key_aliases_from_meta($meta);
     if (!isset($groups[$gKey])) {
-      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'aliases' => $gAliases, 'field_ids' => []];
+      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'aliases' => $gAliases, 'field_ids' => [], 'items' => []];
     } else {
       $groups[$gKey]['title'] = $gTitle;
       $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
     }
     $groups[$gKey]['field_ids'][] = $fid;
+    $groups[$gKey]['items'][] = [
+      'id' => $fid,
+      'label' => student_child_item_label($r, $lang),
+      'scope_key' => app_group_scope_key_from_meta($meta),
+      'scope_title' => delegate_child_scope_title($meta, app_group_scope_key_from_meta($meta), $lang),
+    ];
   }
   return $groups;
 }
@@ -220,30 +261,51 @@ function load_child_group_unlocks(PDO $pdo, int $classId, string $schoolYear, st
 }
 
 function load_report_instance_map_for_template(PDO $pdo, array $studentIds, int $templateId, string $schoolYear, string $periodLabel): array {
-  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
+  $studentIds = array_values(array_unique(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0)));
   $periodLabel = normalize_class_period_label($periodLabel);
   if (!$studentIds || $templateId <= 0 || $schoolYear === '') return [];
 
-  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $canonicalByRequested = requested_student_canonical_map($pdo, $studentIds);
+  if (!$canonicalByRequested) return [];
+
+  $canonicalIds = array_values(array_unique(array_values($canonicalByRequested)));
+  $canonicalIn = implode(',', array_fill(0, count($canonicalIds), '?'));
   $sql =
-    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+            r.student_id AS report_student_id,
             r.id AS report_instance_id
      FROM report_instances r
      INNER JOIN students s ON s.id=r.student_id
-     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
+     WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($canonicalIn)
        AND r.template_id=?
        AND r.school_year=?
        AND r.period_label=?
-     ORDER BY (r.student_id=COALESCE(NULLIF(s.master_student_id, 0), s.id)) DESC,
-              r.updated_at DESC, r.id DESC";
+     ORDER BY r.updated_at DESC, r.id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge($studentIds, [$templateId, $schoolYear, $periodLabel]));
+  $q->execute(array_merge($canonicalIds, [$templateId, $schoolYear, $periodLabel]));
 
-  $map = [];
+  $reportsByCanonical = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $sid = (int)$r['student_id'];
-    if ($sid <= 0) continue;
-    if (!isset($map[$sid])) $map[$sid] = (int)($r['report_instance_id'] ?? 0);
+    $canonicalId = (int)($r['canonical_student_id'] ?? 0);
+    if ($canonicalId <= 0) continue;
+    if (!isset($reportsByCanonical[$canonicalId])) $reportsByCanonical[$canonicalId] = [];
+    $reportsByCanonical[$canonicalId][] = [
+      'report_student_id' => (int)($r['report_student_id'] ?? 0),
+      'report_instance_id' => (int)($r['report_instance_id'] ?? 0),
+    ];
+  }
+  $map = [];
+  foreach ($canonicalByRequested as $requestedId => $canonicalId) {
+    $candidates = $reportsByCanonical[$canonicalId] ?? [];
+    if (!$candidates) continue;
+    $chosen = $candidates[0];
+    foreach ($candidates as $candidate) {
+      if ((int)$candidate['report_student_id'] === (int)$requestedId) {
+        $chosen = $candidate;
+        break;
+      }
+    }
+    $map[$requestedId] = (int)$chosen['report_instance_id'];
   }
   return $map;
 }
@@ -339,17 +401,34 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
   $periodLabel = normalize_class_period_label($periodLabel);
   $schoolYear = trim($schoolYear);
 
-  $fieldIds = [];
+  $itemsByField = [];
   foreach ($groups as $gKey => $gData) {
-    $scopeKey = (string)($gData['scope_key'] ?? $gKey);
-    $includeGroup = !($groupUnlockInfo['active'] ?? false) || app_child_scope_unlocked($groupUnlockInfo['map'] ?? [], $scopeKey);
-    if (!$includeGroup) continue;
-    foreach (($gData['field_ids'] ?? []) as $fid) {
-      $fid = (int)$fid;
-      if ($fid > 0) $fieldIds[] = $fid;
+    $groupItems = is_array($gData['items'] ?? null) ? $gData['items'] : [];
+    if (!$groupItems) {
+      foreach (($gData['field_ids'] ?? []) as $fid) {
+        $groupItems[] = [
+          'id' => (int)$fid,
+          'label' => '#' . (int)$fid,
+          'scope_key' => (string)($gData['scope_key'] ?? $gKey),
+          'scope_title' => (string)($gData['title'] ?? $gKey),
+        ];
+      }
+    }
+    foreach ($groupItems as $item) {
+      $fid = (int)($item['id'] ?? 0);
+      if ($fid <= 0) continue;
+      $scopeKey = (string)($item['scope_key'] ?? ($gData['scope_key'] ?? $gKey));
+      $isUnlocked = !($groupUnlockInfo['active'] ?? false)
+        || app_child_scope_unlocked($groupUnlockInfo['map'] ?? [], $scopeKey);
+      if (!$isUnlocked || isset($itemsByField[$fid])) continue;
+      $itemsByField[$fid] = [
+        'id' => $fid,
+        'label' => (string)($item['label'] ?? ('#' . $fid)),
+        'scope_title' => (string)($item['scope_title'] ?? ($gData['title'] ?? $gKey)),
+      ];
     }
   }
-  $fieldIds = array_values(array_unique($fieldIds));
+  $fieldIds = array_keys($itemsByField);
   $total = count($fieldIds);
 
   $reportMap = ($studentIds && $templateId > 0 && $schoolYear !== '')
@@ -403,6 +482,10 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
       elseif ($completed > 0) $status = 'in_progress';
       else $status = 'not_started';
     }
+    $items = [];
+    foreach ($itemsByField as $fid => $item) {
+      $items[] = $item + ['complete' => !empty($completedByStudentField[$sid][$fid])];
+    }
     $out[] = [
       'student_id' => $sid,
       'name' => $studentNames[$sid] ?? '',
@@ -412,6 +495,7 @@ function build_student_child_entry_progress(PDO $pdo, array $students, int $temp
       'percent' => $percent,
       'status' => $status,
       'updated_at' => $updatedByStudent[$sid] ?? null,
+      'items' => $items,
     ];
   }
   return $out;
@@ -433,7 +517,7 @@ if (!user_can_access_class($pdo, $userId, $classId)) {
   exit;
 }
 
-$clsSt = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name, student_wizard_display FROM classes WHERE id=? LIMIT 1");
+$clsSt = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name, student_wizard_display, syllable_coloring_enabled FROM classes WHERE id=? LIMIT 1");
 $clsSt->execute([$classId]);
 $class = $clsSt->fetch();
 if (!$class) {
@@ -1348,7 +1432,8 @@ function lock_or_unlock_class(PDO $pdo, int $templateId, int $classId, string $s
   // mode: 'unlock' => locked -> draft, keep submitted untouched
   $st = $pdo->prepare("SELECT student_id AS id FROM student_class_assignments WHERE class_id=?");
   $st->execute([$classId]);
-  $studentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  $requestedStudentIds = array_map(fn($r)=>(int)$r['id'], $st->fetchAll(PDO::FETCH_ASSOC));
+  $studentIds = array_values(array_unique(array_values(requested_student_canonical_map($pdo, $requestedStudentIds))));
   if (!$studentIds) return 0;
 
   $in = implode(',', array_fill(0, count($studentIds), '?'));
@@ -1403,11 +1488,12 @@ function class_child_status_counts(PDO $pdo, int $templateId, int $classId, stri
  */
 function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel, int $templateId = 0, string $schoolYear = ''): array {
   $periodLabel = normalize_class_period_label($periodLabel);
-  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
-  if (!$studentIds) return [];
+  $canonicalByRequested = requested_student_canonical_map($pdo, $studentIds);
+  if (!$canonicalByRequested) return [];
+  $canonicalIds = array_values(array_unique(array_values($canonicalByRequested)));
 
-  $in = implode(',', array_fill(0, count($studentIds), '?'));
-  $params = array_merge($studentIds, [$periodLabel]);
+  $in = implode(',', array_fill(0, count($canonicalIds), '?'));
+  $params = array_merge($canonicalIds, [$periodLabel]);
   $filters = "COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in) AND r.period_label=?";
   if ($templateId > 0) {
     $filters .= " AND r.template_id=?";
@@ -1419,8 +1505,8 @@ function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel,
     $params[] = $schoolYear;
   }
   $sql =
-    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
-            r.status, r.created_at, r.updated_at, r.id
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+            r.student_id AS report_student_id, r.status, r.created_at, r.updated_at, r.id
      FROM report_instances r
      INNER JOIN students s ON s.id=r.student_id
      WHERE $filters
@@ -1428,11 +1514,28 @@ function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel,
   $q = $pdo->prepare($sql);
   $q->execute($params);
 
-  $map = [];
+  $statusesByCanonical = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $sid = (int)$r['student_id'];
-    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
-    $map[$sid] = (string)$r['status'];
+    $canonicalId = (int)($r['canonical_student_id'] ?? 0);
+    if ($canonicalId <= 0) continue;
+    if (!isset($statusesByCanonical[$canonicalId])) $statusesByCanonical[$canonicalId] = [];
+    $statusesByCanonical[$canonicalId][] = [
+      'report_student_id' => (int)($r['report_student_id'] ?? 0),
+      'status' => (string)($r['status'] ?? ''),
+    ];
+  }
+  $map = [];
+  foreach ($canonicalByRequested as $requestedId => $canonicalId) {
+    $candidates = $statusesByCanonical[$canonicalId] ?? [];
+    if (!$candidates) continue;
+    $chosen = $candidates[0];
+    foreach ($candidates as $candidate) {
+      if ((int)$candidate['report_student_id'] === (int)$requestedId) {
+        $chosen = $candidate;
+        break;
+      }
+    }
+    $map[$requestedId] = (string)$chosen['status'];
   }
   return $map;
 }
@@ -1443,29 +1546,46 @@ function load_child_status_map(PDO $pdo, array $studentIds, string $periodLabel,
  */
 function load_report_instance_map(PDO $pdo, array $studentIds, string $periodLabel): array {
   $periodLabel = normalize_class_period_label($periodLabel);
-  $studentIds = array_values(array_filter(array_map('intval', $studentIds), fn($x)=>$x>0));
-  if (!$studentIds) return [];
+  $canonicalByRequested = requested_student_canonical_map($pdo, $studentIds);
+  if (!$canonicalByRequested) return [];
+  $canonicalIds = array_values(array_unique(array_values($canonicalByRequested)));
 
-  $in = implode(',', array_fill(0, count($studentIds), '?'));
+  $in = implode(',', array_fill(0, count($canonicalIds), '?'));
   $sql =
-    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS student_id,
-            r.id AS report_instance_id, r.status, r.created_at, r.updated_at
+    "SELECT COALESCE(NULLIF(s.master_student_id, 0), s.id) AS canonical_student_id,
+            r.student_id AS report_student_id, r.id AS report_instance_id, r.status, r.created_at, r.updated_at
      FROM report_instances r
      INNER JOIN students s ON s.id=r.student_id
      WHERE COALESCE(NULLIF(s.master_student_id, 0), s.id) IN ($in)
        AND r.period_label=?
      ORDER BY IFNULL(r.updated_at, r.created_at) DESC, r.id DESC";
   $q = $pdo->prepare($sql);
-  $q->execute(array_merge($studentIds, [$periodLabel]));
+  $q->execute(array_merge($canonicalIds, [$periodLabel]));
 
-  $map = [];
+  $reportsByCanonical = [];
   foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    $sid = (int)$r['student_id'];
-    if (isset($map[$sid])) continue; // keep latest (first in ordered list)
-    $map[$sid] = [
+    $canonicalId = (int)($r['canonical_student_id'] ?? 0);
+    if ($canonicalId <= 0) continue;
+    if (!isset($reportsByCanonical[$canonicalId])) $reportsByCanonical[$canonicalId] = [];
+    $reportsByCanonical[$canonicalId][] = [
+      'report_student_id' => (int)($r['report_student_id'] ?? 0),
       'report_instance_id' => (int)$r['report_instance_id'],
       'status' => (string)$r['status'],
     ];
+  }
+  $map = [];
+  foreach ($canonicalByRequested as $requestedId => $canonicalId) {
+    $candidates = $reportsByCanonical[$canonicalId] ?? [];
+    if (!$candidates) continue;
+    $chosen = $candidates[0];
+    foreach ($candidates as $candidate) {
+      if ((int)$candidate['report_student_id'] === (int)$requestedId) {
+        $chosen = $candidate;
+        break;
+      }
+    }
+    unset($chosen['report_student_id']);
+    $map[$requestedId] = $chosen;
   }
   return $map;
 }
@@ -1699,7 +1819,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
     try {
-      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_generate_login'], true)) {
+      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_lock', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_self_assessment_display_demo', 'delegate_generate_login'], true)) {
         throw new RuntimeException(t('teacher.delegate_self_assessment.error_action', 'Diese Aktion ist für Delegierte nicht erlaubt.'));
       }
       if ($action !== 'delegate_generate_login' && (!$activeTemplate || !$scopes)) {
@@ -1713,15 +1833,36 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
           '{generated}' => (string)$codes['generated'],
           '{skipped}' => (string)$codes['skipped'],
         ]);
-      } elseif ($action === 'delegate_self_assessment_display') {
+      } elseif ($action === 'delegate_self_assessment_lock') {
+        save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, []);
+        $locked = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, 'lock');
+        audit('delegate_self_assessment_lock', $userId, [
+          'class_id'=>$classId,
+          'template_id'=>$templateId,
+          'scopes'=>array_keys($scopes),
+          'reports_locked'=>$locked,
+        ]);
+        $ok = strtr(t('teacher.delegate_self_assessment.locked', 'Schülereingaben gesperrt: {locked} Berichte. Gespeicherte Antworten bleiben erhalten.'), [
+          '{locked}' => (string)$locked,
+        ]);
+      } elseif ($action === 'delegate_self_assessment_display' || $action === 'delegate_self_assessment_display_demo') {
         $displayMode = normalize_delegate_student_display((string)($_POST['student_wizard_display'] ?? 'groups'));
-        $pdo->prepare("UPDATE classes SET student_wizard_display=? WHERE id=?")->execute([$displayMode, $classId]);
+        $syllableColoring = (int)($_POST['syllable_coloring_enabled'] ?? 0) === 1 ? 1 : 0;
+        $pdo->prepare("UPDATE classes SET student_wizard_display=?, syllable_coloring_enabled=? WHERE id=?")
+          ->execute([$displayMode, $syllableColoring, $classId]);
         $class['student_wizard_display'] = $displayMode;
+        $class['syllable_coloring_enabled'] = $syllableColoring;
         audit('delegate_self_assessment_display', $userId, [
           'class_id'=>$classId,
           'student_wizard_display'=>$displayMode,
+          'syllable_coloring_enabled'=>$syllableColoring,
         ]);
-        $ok = t('teacher.delegate_self_assessment.display_saved', 'Die Schüleransicht für diesen Durchlauf wurde gespeichert.');
+        if ($action === 'delegate_self_assessment_display_demo') {
+          redirect('teacher/student_demo.php?class_id=' . $classId
+            . '&display_mode=' . rawurlencode($displayMode)
+            . '&syllable_coloring_enabled=' . ($syllableColoring === 1 ? '1' : '0'));
+        }
+        $ok = t('teacher.delegate_self_assessment.display_saved', 'Die Darstellung für diesen Durchlauf wurde gespeichert.');
       } elseif ($action === 'delegate_self_assessment_scopes') {
         $selected = $_POST['group_unlocks'] ?? [];
         $selected = is_array($selected) ? $selected : [];
@@ -1765,6 +1906,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
   $progressMap = [];
   foreach ($pageData['progress'] as $row) $progressMap[(int)($row['student_id'] ?? 0)] = $row;
   $studentDisplay = normalize_delegate_student_display((string)($class['student_wizard_display'] ?? 'groups'));
+  $syllableColoring = (int)($class['syllable_coloring_enabled'] ?? 0) === 1;
 
   $title = t('teacher.delegate_self_assessment.title', 'Selbsteinschätzung durchführen');
   render_teacher_header($title . ' – ' . class_display($class));
@@ -1802,27 +1944,32 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
           <input type="hidden" name="action" value="delegate_generate_login">
           <button class="btn secondary" type="submit"><?=h(t('teacher.delegate_self_assessment.create_codes', 'Fehlende Zugangscodes erstellen'))?></button>
         </form>
-        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId . '&display_mode=' . rawurlencode($studentDisplay)))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
+        <form method="post" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+          <input type="hidden" name="action" value="delegate_self_assessment_lock">
+          <button class="btn danger" type="submit" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.lock_confirm', 'Schülereingaben für die gesamte Klasse jetzt sperren? Gespeicherte Antworten bleiben erhalten.'))?>');"><?=h(t('teacher.delegate_self_assessment.lock', 'Schülereingaben sperren'))?></button>
+        </form>
       </div>
     <?php endif; ?>
   </div>
 
   <?php if ($activeTemplate && $scopes): ?>
   <div class="card">
-    <h2><?=h(t('teacher.delegate_self_assessment.display_title', 'Ansicht für diesen Durchlauf'))?></h2>
-    <p class="muted"><?=h(t('teacher.delegate_self_assessment.display_hint', 'Die Auswahl gilt während dieses Durchlaufs für alle Schüler dieser Klasse und kann vor dem nächsten Durchlauf wieder geändert werden.'))?></p>
+    <h2><?=h(t('teacher.delegate_self_assessment.display_title', 'Darstellung für diesen Durchlauf'))?></h2>
+    <p class="muted"><?=h(t('teacher.delegate_self_assessment.display_hint', 'Ansicht und Silbenschrift werden unabhängig voneinander eingestellt. Die Auswahl gilt während dieses Durchlaufs für alle Schüler dieser Klasse und kann vor dem nächsten Durchlauf wieder geändert werden.'))?></p>
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-      <input type="hidden" name="action" value="delegate_self_assessment_display">
       <div style="display:grid; gap:10px; max-width:760px;">
         <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="groups" <?=$studentDisplay === 'groups' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.groups', 'Gruppen'))?></strong><br><span class="muted"><?=h(t('student_demo.view.groups_hint', 'Mehrere Kompetenzen einer Kategorie gemeinsam anzeigen.'))?></span></label>
         <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="items" <?=$studentDisplay === 'items' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.items', 'Items'))?></strong><br><span class="muted"><?=h(t('student_demo.view.items_hint', 'Kompetenzen einzeln Schritt für Schritt anzeigen.'))?></span></label>
         <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="beginner" <?=$studentDisplay === 'beginner' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.beginner', 'Leseanfänger'))?></strong><br><span class="muted"><?=h(t('student_demo.view.beginner_hint', 'Große, reduzierte Schrittansicht mit automatischer Vorlese-Unterstützung.'))?></span></label>
+        <label class="panel" style="padding:12px; cursor:pointer;"><input type="checkbox" name="syllable_coloring_enabled" value="1" <?=$syllableColoring ? 'checked' : ''?>> <strong><?=h(t('teacher.delegate_self_assessment.syllable_label', 'Silbenschrift verwenden'))?></strong><br><span class="muted"><?=h(t('teacher.delegate_self_assessment.syllable_hint', 'Färbt erkannte deutsche Silben abwechselnd blau und rot; unabhängig von der gewählten Ansicht.'))?></span></label>
       </div>
       <div class="actions" style="justify-content:flex-start; margin-top:12px;">
-        <button class="btn primary" type="submit"><?=h(t('teacher.delegate_self_assessment.save_display', 'Schüleransicht speichern'))?></button>
-        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId . '&display_mode=' . rawurlencode($studentDisplay)))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
+        <button class="btn primary" type="submit" name="action" value="delegate_self_assessment_display"><?=h(t('teacher.delegate_self_assessment.save_display', 'Darstellung speichern'))?></button>
+        <button class="btn secondary" type="submit" name="action" value="delegate_self_assessment_display_demo"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></button>
       </div>
     </form>
   </div>
@@ -1890,6 +2037,28 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
                 <div class="student-progress-track"><div class="student-progress-fill" style="width:<?=h((string)$percent)?>%;"></div></div>
                 <div class="student-progress-label" data-progress-status><?=h($progLabel)?></div>
               </div>
+              <?php $progressItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; if ($progressItems): ?>
+                <details class="student-item-progress">
+                  <summary data-item-progress-summary="<?=h((string)$sid)?>"><?=h(strtr(t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'), [
+                    '{completed}' => (string)(int)($prog['completed'] ?? 0),
+                    '{total}' => (string)count($progressItems),
+                  ]))?></summary>
+                  <ul>
+                    <?php foreach ($progressItems as $item):
+                      $itemId = (int)($item['id'] ?? 0);
+                      $itemComplete = !empty($item['complete']);
+                      $itemLabel = trim((string)($item['scope_title'] ?? ''));
+                      if ($itemLabel !== '') $itemLabel .= ' – ';
+                      $itemLabel .= (string)($item['label'] ?? ('#' . $itemId));
+                    ?>
+                      <li data-student-item="<?=h($sid . ':' . $itemId)?>" data-complete="<?=$itemComplete ? '1' : '0'?>">
+                        <span class="student-item-state" data-item-state aria-label="<?=h($itemComplete ? t('teacher.students.item_done', 'erledigt') : t('teacher.students.item_open', 'offen'))?>"><?=$itemComplete ? '✓' : '○'?></span>
+                        <span><?=h($itemLabel)?></span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </details>
+              <?php endif; ?>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -1898,7 +2067,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
     <?php endif; ?>
   </div>
   <style>
-  .student-progress{min-width:180px}.student-progress-meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#475569;margin-bottom:4px}.student-progress-track{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}.student-progress-fill{height:100%;background:#2563eb;transition:width .25s ease}.student-progress[data-status="complete"] .student-progress-fill{background:#16a34a}.student-progress[data-status="not_started"] .student-progress-fill,.student-progress[data-status="no_fields"] .student-progress-fill{background:#94a3b8}.student-progress-label{margin-top:4px;font-size:12px;color:#64748b}
+  .student-progress{min-width:180px}.student-progress-meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#475569;margin-bottom:4px}.student-progress-track{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}.student-progress-fill{height:100%;background:#2563eb;transition:width .25s ease}.student-progress[data-status="complete"] .student-progress-fill{background:#16a34a}.student-progress[data-status="not_started"] .student-progress-fill,.student-progress[data-status="no_fields"] .student-progress-fill{background:#94a3b8}.student-progress-label{margin-top:4px;font-size:12px;color:#64748b}.student-item-progress{margin-top:8px;font-size:12px}.student-item-progress summary{cursor:pointer;color:#334155}.student-item-progress ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px}.student-item-progress li{display:flex;gap:6px;align-items:flex-start;color:#64748b}.student-item-progress li[data-complete="1"]{color:#166534}.student-item-state{display:inline-flex;min-width:16px;font-weight:700}
   </style>
   <script>
   (() => {
@@ -1915,15 +2084,43 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
       'not_started'=>t('teacher.students.child_status_not_started', 'Noch nicht begonnen'),
       'not_released'=>t('teacher.students.child_status_not_released', 'Nicht freigegeben'),
     ], JSON_UNESCAPED_UNICODE)?>;
+    const itemLabels = <?=json_encode([
+      'summary'=>t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'),
+      'done'=>t('teacher.students.item_done', 'erledigt'),
+      'open'=>t('teacher.students.item_open', 'offen'),
+    ], JSON_UNESCAPED_UNICODE)?>;
     function childView(status, progress){ if(status==='submitted'||status==='final')return['submitted','success']; if(status==='draft')return[(progress==='in_progress'||progress==='complete')?'in_progress':'not_started',(progress==='in_progress'||progress==='complete')?'blue':'warn']; return['not_released','danger']; }
     function apply(row){
       const el=document.querySelector(`[data-student-progress="${CSS.escape(String(row.student_id))}"]`); if(!el)return;
       const status=String(row.status||'no_fields'), pct=Math.max(0,Math.min(100,Number(row.percent||0)));
       el.dataset.status=status; el.querySelector('[data-progress-percent]').textContent=`${pct}%`; el.querySelector('[data-progress-count]').textContent=`${Number(row.completed||0)}/${Number(row.total||0)}`; el.querySelector('.student-progress-fill').style.width=`${pct}%`; el.querySelector('[data-progress-status]').textContent=labels[status]||labels.no_fields;
+      if(Array.isArray(row.items)){
+        let done=0;
+        row.items.forEach(item=>{const complete=Boolean(item.complete);if(complete)done++;const itemEl=document.querySelector(`[data-student-item="${CSS.escape(`${row.student_id}:${item.id}`)}"]`);if(!itemEl)return;itemEl.dataset.complete=complete?'1':'0';const state=itemEl.querySelector('[data-item-state]');if(state){state.textContent=complete?'✓':'○';state.setAttribute('aria-label',complete?itemLabels.done:itemLabels.open);}});
+        const summary=document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);if(summary)summary.textContent=itemLabels.summary.replace('{completed}',String(done)).replace('{total}',String(row.items.length));
+      }
       const holder=document.querySelector(`[data-child-status="${CSS.escape(String(row.student_id))}"]`); if(holder){const [key,badge]=childView(String(row.child_status||''),status);holder.innerHTML=`<span class="badge ${badge}">${childLabels[key]||key}</span>`;}
     }
-    async function refresh(){try{const res=await fetch(progressUrl,{credentials:'same-origin'});if(!res.ok)return;const data=await res.json();if(data&&Array.isArray(data.students))data.students.forEach(app);}catch(e){}}
-    if(document.querySelector('[data-student-progress]')){refresh();setInterval(()=>{if(!document.hidden)refresh();},8000);}
+    let refreshInFlight = false;
+    async function refresh(){
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const res=await fetch(progressUrl,{credentials:'same-origin'});
+        if(!res.ok)return;
+        const data=await res.json();
+        if(data&&Array.isArray(data.students))data.students.forEach(app);
+      } catch(e) {
+        // Keep the current values visible; the next background tick retries.
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+    if(document.querySelector('[data-student-progress]')){
+      refresh();
+      setInterval(refresh, 5000);
+      document.addEventListener('visibilitychange', () => { if(!document.hidden)refresh(); });
+    }
   })();
   </script>
   <?php
@@ -2928,6 +3125,28 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
                 </div>
                 <div class="student-progress-label" data-progress-status><?=h($progLabel)?></div>
               </div>
+              <?php $progItems = is_array($prog['items'] ?? null) ? $prog['items'] : []; if ($progItems): ?>
+                <details class="student-item-progress">
+                  <summary data-item-progress-summary="<?=h((string)$sid)?>"><?=h(strtr(t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'), [
+                    '{completed}' => (string)$progCompleted,
+                    '{total}' => (string)count($progItems),
+                  ]))?></summary>
+                  <ul>
+                    <?php foreach ($progItems as $item):
+                      $itemId = (int)($item['id'] ?? 0);
+                      $itemComplete = !empty($item['complete']);
+                      $itemLabel = trim((string)($item['scope_title'] ?? ''));
+                      if ($itemLabel !== '') $itemLabel .= ' – ';
+                      $itemLabel .= (string)($item['label'] ?? ('#' . $itemId));
+                    ?>
+                      <li data-student-item="<?=h($sid . ':' . $itemId)?>" data-complete="<?=$itemComplete ? '1' : '0'?>">
+                        <span class="student-item-state" data-item-state aria-label="<?=h($itemComplete ? t('teacher.students.item_done', 'erledigt') : t('teacher.students.item_open', 'offen'))?>"><?=$itemComplete ? '✓' : '○'?></span>
+                        <span><?=h($itemLabel)?></span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </details>
+              <?php endif; ?>
             </td>
             <td>
               <div class="action-menu">
@@ -3108,6 +3327,12 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
   .student-progress[data-status="not_started"] .student-progress-fill,
   .student-progress[data-status="no_fields"] .student-progress-fill{ background:#94a3b8; }
   .student-progress-label{ margin-top:4px; font-size:12px; color:#64748b; }
+  .student-item-progress{ margin-top:8px; font-size:12px; }
+  .student-item-progress summary{ cursor:pointer; color:#334155; }
+  .student-item-progress ul{ list-style:none; margin:6px 0 0; padding:0; display:grid; gap:4px; }
+  .student-item-progress li{ display:flex; gap:6px; align-items:flex-start; color:#64748b; }
+  .student-item-progress li[data-complete="1"]{ color:#166534; }
+  .student-item-state{ display:inline-flex; min-width:16px; font-weight:700; }
   </style>
   <script>
     const studentData = <?=json_encode($studentsForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
@@ -3124,6 +3349,11 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       'in_progress' => t('teacher.students.child_status_in_progress', 'In Bearbeitung'),
       'not_started' => t('teacher.students.child_status_not_started', 'Noch nicht begonnen'),
       'not_released' => t('teacher.students.child_status_not_released', 'Nicht freigegeben'),
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
+    const studentItemProgressLabels = <?=json_encode([
+      'summary' => t('teacher.students.items_summary', 'Einzel-Items: {completed}/{total}'),
+      'done' => t('teacher.students.item_done', 'erledigt'),
+      'open' => t('teacher.students.item_open', 'offen'),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
     const editModal = document.getElementById('editModal');
     const editForm = document.getElementById('editForm');
@@ -3164,11 +3394,31 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       if (countEl) countEl.textContent = `${completed}/${total}`;
       if (fillEl) fillEl.style.width = `${percent}%`;
       if (statusEl) statusEl.textContent = studentProgressLabels[status] || studentProgressLabels.no_fields || status;
+      if (Array.isArray(row.items)) {
+        let done = 0;
+        row.items.forEach((item) => {
+          const complete = Boolean(item.complete);
+          if (complete) done++;
+          const itemEl = document.querySelector(`[data-student-item="${CSS.escape(`${row.student_id}:${item.id}`)}"]`);
+          if (!itemEl) return;
+          itemEl.dataset.complete = complete ? '1' : '0';
+          const stateEl = itemEl.querySelector('[data-item-state]');
+          if (stateEl) {
+            stateEl.textContent = complete ? '✓' : '○';
+            stateEl.setAttribute('aria-label', complete ? studentItemProgressLabels.done : studentItemProgressLabels.open);
+          }
+        });
+        const summaryEl = document.querySelector(`[data-item-progress-summary="${CSS.escape(String(row.student_id))}"]`);
+        if (summaryEl) summaryEl.textContent = studentItemProgressLabels.summary.replace('{completed}', String(done)).replace('{total}', String(row.items.length));
+      }
       updateChildStatus(row, status);
     }
 
+    let studentProgressRefreshInFlight = false;
     async function refreshStudentProgress() {
       if (!studentProgressUrl) return;
+      if (studentProgressRefreshInFlight) return;
+      studentProgressRefreshInFlight = true;
       try {
         const res = await fetch(studentProgressUrl, { credentials: 'same-origin' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -3177,15 +3427,14 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         json.students.forEach(applyStudentProgressRow);
       } catch (e) {
         // Keep the existing values visible; the next polling tick will retry.
+      } finally {
+        studentProgressRefreshInFlight = false;
       }
     }
 
     if (document.querySelector('[data-student-progress]')) {
       refreshStudentProgress();
-      setInterval(() => {
-        if (document.hidden) return;
-        refreshStudentProgress();
-      }, 8000);
+      setInterval(refreshStudentProgress, 5000);
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshStudentProgress();
       });
