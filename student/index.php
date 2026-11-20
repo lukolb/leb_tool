@@ -751,6 +751,27 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     else element.textContent = String(text ?? '');
   }
 
+  function applySyllableColoring(root){
+    if (!SYLLABLE_COLORING || !root) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node){
+        if (!/[\p{L}]/u.test(String(node.nodeValue || ''))) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent || parent.closest('script,style,textarea,input,select,option,button,code,pre,.syllable-blue,.syllable-red,.badge-mini,[data-no-syllable-coloring]')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach(node => {
+      const template = document.createElement('template');
+      template.innerHTML = syllableTextHtml(String(node.nodeValue || ''));
+      node.replaceWith(template.content);
+    });
+  }
+
   function playPling(){
     if (!isBeginnerMode) return;
     try{
@@ -1566,8 +1587,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
     const tEl = document.getElementById('lockedTitle');
     const pEl = document.getElementById('lockedText');
-    if (tEl && title) tEl.textContent = title;
-    if (pEl && text) pEl.textContent = text;
+    if (tEl && title) setSyllableText(tEl, title);
+    if (pEl && text) setSyllableText(pEl, text);
 
     if (btnPrev) btnPrev.disabled = true;
     if (btnNext) btnNext.disabled = true;
@@ -2019,6 +2040,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
         });
       });
     }
+    applySyllableColoring(elNav);
   }
 
   function setSaving(on){
@@ -2510,35 +2532,35 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
 
   function updateReqHint(){
     if (isBeginnerMode) {
-      if (elReqHint) elReqHint.textContent = '';
+      setSyllableText(elReqHint, '');
       return;
     }
     const cur = flatSteps[activeStep];
-    if (!cur) { elReqHint.textContent = ''; return; }
+    if (!cur) { setSyllableText(elReqHint, ''); return; }
 
     if (cur.kind === 'intro') {
-      elReqHint.textContent = t('student.js.req_hint_intro', 'Klicke „Los geht\'s“, um zu starten.');
+      setSyllableText(elReqHint, t('student.js.req_hint_intro', 'Klicke „Los geht\'s“, um zu starten.'));
       return;
     }
     if (cur.kind === 'group_intro') {
       const st = groupStats(cur.fields || []);
-      elReqHint.textContent = (st.missing === 0)
+      setSyllableText(elReqHint, (st.missing === 0)
         ? t('student.js.req_hint_group_done', 'Abschnitt ist schon komplett ✓')
-        : tfmt('student.js.req_hint_group_missing', '{count} fehlen in diesem Abschnitt (du kannst starten).', { count: st.missing });
+        : tfmt('student.js.req_hint_group_missing', '{count} fehlen in diesem Abschnitt (du kannst starten).', { count: st.missing }));
       return;
     }
     if (cur.kind === 'submit') {
       const allMissing = totalMissingCount();
-      elReqHint.textContent = allMissing === 0
+      setSyllableText(elReqHint, allMissing === 0
         ? t('student.js.req_hint_submit_ok', 'Alles erledigt – du kannst abgeben.')
-        : tfmt('student.js.req_hint_submit_missing', '{count} Felder fehlen noch.', { count: allMissing });
+        : tfmt('student.js.req_hint_submit_missing', '{count} Felder fehlen noch.', { count: allMissing }));
       return;
     }
 
     const miss = currentStepMissingCount();
-    elReqHint.textContent = (miss === 0)
+    setSyllableText(elReqHint, (miss === 0)
       ? t('student.js.req_hint_step_ok', 'Alles ausgefüllt ✓')
-      : tfmt('student.js.req_hint_step_missing', '{count} fehlen noch (du kannst trotzdem weiter).', { count: miss });
+      : tfmt('student.js.req_hint_step_missing', '{count} fehlen noch (du kannst trotzdem weiter).', { count: miss }));
   }
 
   function totalMissingCount(){
@@ -2817,6 +2839,10 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     updateReqHint();
     refreshDynamicTexts(elBody);
     updateOverallProgress();
+    applySyllableColoring(elTitle);
+    applySyllableColoring(elSub);
+    applySyllableColoring(elBody);
+    applySyllableColoring(elReqHint);
 
     if (displayMode === 'items') {
       const cur = flatSteps[activeStep];

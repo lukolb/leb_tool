@@ -1323,7 +1323,7 @@ Vorlesen aktivieren & Schaltet TTS für die Klasse frei und startet die Grundlag
 \hline
 Audios vorbereiten & Erzeugt die benötigten deutschen/englischen Kompetenztexte und Intros vorab. Fehlende Dateien werden beim Schülerabruf weiterhin live erzeugt.\\
 \hline
-Silbenschrift & Färbt erkannte deutsche Silben abwechselnd blau und rot; hat keinen Einfluss auf gespeicherte Berichtswerte.\\
+Silbenschrift & Färbt Texte der Schüleransicht abwechselnd blau und rot, darunter Eingangstext, Gruppen, Untergruppen, Kompetenztexte und Hinweise; hat keinen Einfluss auf gespeicherte Berichtswerte.\\
 \hline
 Intro bearbeiten & Öffnet deutsche und englische Klasseneinführung. Fehlt Englisch, kann je nach Funktion die deutsche Fassung als Rückfall dienen.\\
 \hline
@@ -1497,12 +1497,12 @@ Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offene
   \item Unter \enquote{Delegationen} beim eigenen offenen Bereich \enquote{Selbsteinschätzung} wählen. Derselbe Knopf steht in der geöffneten Delegation oben zur Verfügung.
   \item Die Seite weist ausdrücklich auf den eingeschränkten Zugriff hin. Sichtbar sind nur Schülernamen, Kinder-Status und Fortschritt; Schülerstammdaten, Klassenzuordnungen, Fehltage, Import, Löschen, Export und andere Schüleraktionen bleiben unzugänglich.
   \item Unter \enquote{Darstellung für diesen Durchlauf} zwischen \enquote{Gruppen}, \enquote{Items} und \enquote{Leseanfänger} wählen. Unabhängig davon kann \enquote{Silbenschrift verwenden} aktiviert werden. \enquote{Darstellung speichern} übernimmt beides für alle Schüler der Klasse; vor dem nächsten Durchlauf kann die Auswahl wieder geändert werden.
-  \item \enquote{Vorbereiten und freigeben} wählen. Dadurch werden fehlende Berichte sicher angelegt, die eigenen delegierten Haupt- oder Untergruppen für Schüler geöffnet, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
+  \item Im Abschnitt \enquote{Delegierte Bereiche für Schüler} genau die Kategorien des aktuellen Durchlaufs markieren. Haupt- und Untergruppen werden einzeln ausgewiesen. \enquote{Freigaben speichern} übernimmt diese Auswahl exklusiv: Nur markierte Kategorien bleiben offen, alle anderen werden gesperrt.
   \item Optional über \enquote{Schüleransicht testen} den Ablauf mit der gewählten Darstellung ohne echte Schülerdaten kontrollieren. Der Knopf speichert Ansicht und Silbenschrift automatisch, bevor die Demo geöffnet wird.
   \item \enquote{QR-Codes drucken} öffnen und die Ausdrucke geschützt an die Schüler verteilen. \enquote{Fehlende Zugangscodes erstellen} ergänzt Codes, ohne vorhandene Ausdrucke ungültig zu machen.
-  \item Im Abschnitt \enquote{Delegierte Bereiche für Schüler} nur die eigenen Bereiche öffnen oder schließen. Untergruppen werden einzeln berücksichtigt; Freigaben anderer Lehrkräfte oder der Klassenlehrkraft bleiben unverändert.
+  \item \enquote{Vorbereiten und freigeben} verwendet unmittelbar die im selben Formular aktuell markierten Kategorien. Zusätzlich werden fehlende Berichte sicher angelegt, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
   \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Status, Gesamtzahl und Itemliste werden ohne Neuladen aktualisiert und auch bei einem zeitweise inaktiven Browser-Tab weiter abgeglichen. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
-  \item Nach dem eigenen Arbeitsfenster die eigenen Bereiche abwählen und \enquote{Freigaben speichern}. Dies schließt nur die delegierten Bereiche. Soll die Schüler-Eingabe insgesamt beendet werden, anschließend \enquote{Schülereingaben sperren} wählen und die Sicherheitsabfrage bestätigen. Dieser Schritt sperrt die Eingabe für die gesamte Klasse; gespeicherte Antworten bleiben erhalten. Danach die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
+  \item Nach dem eigenen Arbeitsfenster alle Bereiche abwählen und \enquote{Freigaben speichern}; damit sind sämtliche Kategorien geschlossen. Soll zusätzlich der Berichtsstatus der Schüler-Eingabe insgesamt gesperrt werden, anschließend \enquote{Schülereingaben sperren} wählen und die Sicherheitsabfrage bestätigen. Gespeicherte Antworten bleiben erhalten. Danach die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
 \end{enumerate}
 
 \HintBox{Delegationszugriff und Klassenverwaltung bleiben getrennt: Eine Delegation berechtigt zur fachlichen Eingabe und zum zugehörigen Selbsteinschätzungsablauf, aber nicht zum Bearbeiten von Schülerprofilen oder Klasseneinstellungen.}
@@ -1743,7 +1743,7 @@ Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele p
   \item Kategorien können einklappbar dargestellt werden, um lange Listen übersichtlich zu halten.
   \item Gesperrte Kategorien werden nicht angezeigt und zählen nicht als fehlend.
   \item Pflichtfelder beziehungsweise offene Schritte werden im Fortschritt berücksichtigt. Eine Auswahl nur zum Erreichen von 100 Prozent ist keine inhaltliche Prüfung.
-  \item Silbenschrift färbt erkannte Silben abwechselnd blau und rot; Inhalt und Speicherung bleiben unverändert.
+  \item Silbenschrift färbt die inhaltlichen Texte der Schüleransicht abwechselnd blau und rot: Eingangstext, Gruppen- und Untergruppentitel, Kompetenztexte sowie Hinweise. Inhalt und Speicherung bleiben unverändert.
 \end{itemize}
 
 \subsection{Login-Optimierungen}
@@ -1768,7 +1768,7 @@ Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele p
   \item Fehlt eine passende Datei, wird weiterhin die bewährte Live-Generierung auf dem Gerät verwendet; das Ergebnis wird anschließend für weitere Aufrufe gespeichert.
   \item Stimmeinstellungen sind je Sprache getrennt konfigurierbar.
   \item Optionaler Leseanfänger-Wizard unterstützt Erstklässler.
-  \item Lehrkräfte können je Klasse Silbenschrift aktivieren. Die erkannten Silben der Kompetenztexte werden abwechselnd blau und rot dargestellt.
+  \item Lehrkräfte können je Klasse Silbenschrift aktivieren. Eingangstext, Gruppen, Untergruppen, Kompetenztexte und Hinweise werden dabei mit abwechselnd blauen und roten Silben dargestellt.
   \item Für jede Klasse kann ein eigenes Intro getrennt auf Deutsch und Englisch hinterlegt werden. Fehlt die englische Fassung, wird die deutsche Fassung als Rückfall verwendet.
   \item Ändert sich ein Kompetenztext, ein Intro oder die konfigurierte Stimme, wird die alte Zuordnung automatisch entfernt. Eine physische Audiodatei wird gelöscht, sobald keine andere Klasse sie mehr benötigt.
 \end{itemize}

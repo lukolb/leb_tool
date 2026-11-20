@@ -167,23 +167,25 @@ function load_delegate_child_scopes(PDO $pdo, int $userId, int $classId, int $te
       break;
     }
     if ($matchedKey === '' || (($matchedUsers[$userId] ?? '') !== 'open')) continue;
+    $scopeKey = app_group_scope_key_from_meta($meta);
 
-    if (!isset($scopes[$matchedKey])) {
-      $scopes[$matchedKey] = [
-        'key' => $matchedKey,
-        'scope_key' => $matchedKey,
-        'title' => delegate_child_scope_title($meta, $matchedKey, $lang),
-        'aliases' => app_group_key_aliases_from_label($matchedKey),
+    if (!isset($scopes[$scopeKey])) {
+      $scopes[$scopeKey] = [
+        'key' => $scopeKey,
+        'scope_key' => $scopeKey,
+        'delegation_key' => $matchedKey,
+        'title' => delegate_child_scope_title($meta, $scopeKey, $lang),
+        'aliases' => app_group_key_aliases_from_label($scopeKey),
         'field_ids' => [],
         'items' => [],
       ];
     }
-    $scopes[$matchedKey]['field_ids'][] = $fieldId;
-    $scopes[$matchedKey]['items'][] = [
+    $scopes[$scopeKey]['field_ids'][] = $fieldId;
+    $scopes[$scopeKey]['items'][] = [
       'id' => $fieldId,
       'label' => student_child_item_label($field, $lang),
-      'scope_key' => app_group_scope_key_from_meta($meta),
-      'scope_title' => (string)$scopes[$matchedKey]['title'],
+      'scope_key' => $scopeKey,
+      'scope_title' => (string)$scopes[$scopeKey]['title'],
     ];
   }
 
@@ -221,21 +223,21 @@ function load_child_groups_for_template(PDO $pdo, int $templateId, string $lang)
       $v = trim((string)($r[$column] ?? ''));
       if ($v !== '' && trim((string)($meta[$metaKey] ?? '')) === '') $meta[$metaKey] = $v;
     }
-    $gKey = group_key_from_meta($meta);
-    $gTitle = group_title_from_meta($meta, $gKey, $lang);
-    $gAliases = group_key_aliases_from_meta($meta);
-    if (!isset($groups[$gKey])) {
-      $groups[$gKey] = ['key' => $gKey, 'title' => $gTitle, 'aliases' => $gAliases, 'field_ids' => [], 'items' => []];
+    $scopeKey = app_group_scope_key_from_meta($meta);
+    $scopeTitle = delegate_child_scope_title($meta, $scopeKey, $lang);
+    $scopeAliases = app_group_key_aliases_from_label($scopeKey);
+    if (!isset($groups[$scopeKey])) {
+      $groups[$scopeKey] = ['key' => $scopeKey, 'scope_key' => $scopeKey, 'title' => $scopeTitle, 'aliases' => $scopeAliases, 'field_ids' => [], 'items' => []];
     } else {
-      $groups[$gKey]['title'] = $gTitle;
-      $groups[$gKey]['aliases'] = array_values(array_unique(array_merge($groups[$gKey]['aliases'] ?? [], $gAliases)));
+      $groups[$scopeKey]['title'] = $scopeTitle;
+      $groups[$scopeKey]['aliases'] = array_values(array_unique(array_merge($groups[$scopeKey]['aliases'] ?? [], $scopeAliases)));
     }
-    $groups[$gKey]['field_ids'][] = $fid;
-    $groups[$gKey]['items'][] = [
+    $groups[$scopeKey]['field_ids'][] = $fid;
+    $groups[$scopeKey]['items'][] = [
       'id' => $fid,
       'label' => student_child_item_label($r, $lang),
-      'scope_key' => app_group_scope_key_from_meta($meta),
-      'scope_title' => delegate_child_scope_title($meta, app_group_scope_key_from_meta($meta), $lang),
+      'scope_key' => $scopeKey,
+      'scope_title' => $scopeTitle,
     ];
   }
   return $groups;
@@ -1715,32 +1717,24 @@ function save_delegate_child_scope_unlocks(
 ): void {
   $validKeys = array_keys($scopes);
   $selectedKeys = array_values(array_intersect($validKeys, array_values(array_unique(array_map('strval', $selectedKeys)))));
-  $existing = load_child_group_unlocks($pdo, $classId, $schoolYear, $periodLabel);
   $allGroups = load_child_groups_for_template($pdo, $templateId, ui_lang());
+  $allKeys = array_keys($allGroups);
 
   $pdo->beginTransaction();
   try {
-    $upsert = $pdo->prepare(
+    $pdo->prepare(
+      "DELETE FROM class_child_group_unlocks
+       WHERE class_id=? AND school_year=? AND period_label=?"
+    )->execute([$classId, $schoolYear, $periodLabel]);
+
+    $insert = $pdo->prepare(
       "INSERT INTO class_child_group_unlocks
        (class_id, school_year, period_label, group_key, is_unlocked, created_by_user_id, updated_by_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         is_unlocked=VALUES(is_unlocked),
-         updated_by_user_id=VALUES(updated_by_user_id),
-         updated_at=NOW()"
+       VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
-
-    // An empty table historically means "all groups open". Materialize that
-    // state before a delegate writes one scope so unrelated areas do not close.
-    if (!($existing['active'] ?? false)) {
-      foreach (array_keys($allGroups) as $groupKey) {
-        $upsert->execute([$classId, $schoolYear, $periodLabel, (string)$groupKey, 1, $userId, $userId]);
-      }
-    }
-
-    foreach ($validKeys as $scopeKey) {
+    foreach ($allKeys as $scopeKey) {
       $isUnlocked = in_array($scopeKey, $selectedKeys, true) ? 1 : 0;
-      $upsert->execute([$classId, $schoolYear, $periodLabel, $scopeKey, $isUnlocked, $userId, $userId]);
+      $insert->execute([$classId, $schoolYear, $periodLabel, $scopeKey, $isUnlocked, $userId, $userId]);
     }
     $pdo->commit();
   } catch (Throwable $e) {
@@ -1873,14 +1867,17 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
         ]);
         $ok = t('teacher.delegate_self_assessment.scopes_saved', 'Die Freigaben der delegierten Bereiche wurden gespeichert.');
       } else {
+        $selected = $_POST['group_unlocks'] ?? [];
+        $selected = is_array($selected) ? $selected : [];
+        $selected = array_values(array_intersect(array_keys($scopes), array_map('strval', $selected)));
         $created = ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, false);
-        save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, array_keys($scopes));
+        save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, $selected);
         $unlocked = lock_or_unlock_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, 'unlock');
         $codes = delegate_generate_missing_student_logins($pdo, $classId);
         audit('delegate_self_assessment_prepare', $userId, [
           'class_id'=>$classId,
           'template_id'=>$templateId,
-          'scopes'=>array_keys($scopes),
+          'scopes'=>$selected,
           'reports_created'=>$created,
           'reports_unlocked'=>$unlocked,
           'codes_generated'=>$codes['generated'],
@@ -1931,12 +1928,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
       <div class="alert"><?=h(t('teacher.delegate_self_assessment.no_scopes', 'In deinen delegierten Bereichen sind keine Felder für die Selbsteinschätzung vorhanden.'))?></div>
     <?php else: ?>
       <div class="actions" style="justify-content:flex-start; flex-wrap:wrap;">
-        <form method="post" style="margin:0;">
-          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
-          <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-          <input type="hidden" name="action" value="delegate_self_assessment_prepare">
-          <button class="btn primary" type="submit" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.prepare_confirm', 'Delegierte Bereiche jetzt für die Schüler freigeben und fehlende Berichte sowie Zugangscodes anlegen?'))?>');"><?=h(t('teacher.delegate_self_assessment.prepare', 'Vorbereiten und freigeben'))?></button>
-        </form>
+        <button class="btn primary" type="submit" form="delegateScopeForm" name="action" value="delegate_self_assessment_prepare" onclick="return confirm('<?=h(t('teacher.delegate_self_assessment.prepare_confirm', 'Die aktuell eingestellten delegierten Bereiche jetzt exklusiv für die Schüler freigeben und alle anderen Kategorien sperren? Fehlende Berichte und Zugangscodes werden angelegt.'))?>');"><?=h(t('teacher.delegate_self_assessment.prepare', 'Vorbereiten und freigeben'))?></button>
         <a class="btn primary" href="<?=h(url('teacher/qr_print.php?class_id=' . (int)$classId))?>" target="_blank"><?=h(t('teacher.students.print_qr', 'QR-Codes drucken'))?></a>
         <form method="post" style="margin:0;">
           <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
@@ -1976,11 +1968,10 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
 
   <div class="card">
     <h2><?=h(t('teacher.delegate_self_assessment.areas', 'Delegierte Bereiche für Schüler'))?></h2>
-    <p class="muted"><?=h(t('teacher.delegate_self_assessment.areas_hint', 'Nur diese Bereiche kannst du öffnen oder schließen. Andere Bereiche und deren Freigaben bleiben unverändert.'))?></p>
-    <form method="post">
+    <p class="muted"><?=h(t('teacher.delegate_self_assessment.areas_hint', 'Nur die hier ausgewählten Kategorien sind für die Schüler freigegeben. Alle übrigen Gruppen und Untergruppen werden gesperrt.'))?></p>
+    <form method="post" id="delegateScopeForm">
       <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
       <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
-      <input type="hidden" name="action" value="delegate_self_assessment_scopes">
       <table class="table">
         <thead><tr>
           <th><?=h(t('teacher.students.child_group_col_name', 'Kategorie'))?></th>
@@ -2003,7 +1994,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
         <?php endforeach; ?>
         </tbody>
       </table>
-      <div class="actions" style="justify-content:flex-start; margin-top:12px;"><button class="btn primary" type="submit"><?=h(t('teacher.delegate_self_assessment.save_areas', 'Freigaben speichern'))?></button></div>
+      <div class="actions" style="justify-content:flex-start; margin-top:12px;"><button class="btn primary" type="submit" name="action" value="delegate_self_assessment_scopes"><?=h(t('teacher.delegate_self_assessment.save_areas', 'Freigaben speichern'))?></button></div>
     </form>
   </div>
   <?php endif; ?>
@@ -2964,9 +2955,8 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
             <tbody>
               <?php foreach ($childGroups as $gKey => $gData): ?>
                 <?php
-                  $groupAliases = is_array($gData['aliases'] ?? null) ? $gData['aliases'] : [(string)$gKey];
                   $isUnlocked = $groupUnlockInfo['active']
-                    ? app_group_key_matches_map($groupUnlockInfo['map'], $groupAliases)
+                    ? app_child_scope_unlocked($groupUnlockInfo['map'], (string)$gKey)
                     : true;
                   $prog = $groupProgress[$gKey] ?? ['students_done'=>0,'students_total'=>0,'fields_total'=>count($gData['field_ids'] ?? []),'students_percent'=>null];
                   $pct = $prog['students_percent'] !== null ? (string)$prog['students_percent'] : '–';

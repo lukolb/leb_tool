@@ -66,6 +66,15 @@ assert_true(str_contains((string)file_get_contents($root . '/teacher/class_intro
 assert_true(str_contains($schema, 'syllable_coloring_enabled'), 'Class schema must store the syllable-color setting.');
 assert_true(str_contains($classes, 'toggle_syllable_coloring'), 'Teachers must be able to toggle syllable colors per class.');
 assert_true(str_contains($student, 'syllableTextHtml'), 'Student competency labels must support alternating syllable colors.');
+assert_true(
+  str_contains($student, 'function applySyllableColoring(root)')
+    && str_contains($student, 'applySyllableColoring(elNav)')
+    && str_contains($student, 'applySyllableColoring(elTitle)')
+    && str_contains($student, 'applySyllableColoring(elSub)')
+    && str_contains($student, 'applySyllableColoring(elBody)')
+    && str_contains($student, 'setSyllableText(elReqHint'),
+  'Syllable colors must cover group and subgroup navigation, headings, intro content, and guidance text.'
+);
 
 assert_true(str_contains($schema, 'student_intro_html_en'), 'Class schema must store an English intro.');
 assert_true(str_contains($wizard, "\$lang === 'en'"), 'Student bootstrap must select the intro by language.');

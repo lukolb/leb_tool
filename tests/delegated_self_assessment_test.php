@@ -57,6 +57,9 @@ delegated_self_assessment_assert(
     && str_contains($sources['students'], "\$token = trim((string)(\$student['qr_token'] ?? ''))")
     && str_contains($sources['students'], "\$code = trim((string)(\$student['login_code'] ?? ''))")
     && str_contains($sources['students'], 'ensure_reports_for_class($pdo, $templateId, $classId, $schoolYear, $periodLabel, $userId, false)')
+    && str_contains($sources['students'], 'form="delegateScopeForm"')
+    && str_contains($sources['students'], 'id="delegateScopeForm"')
+    && str_contains($sources['students'], 'save_delegate_child_scope_unlocks($pdo, $classId, $templateId, $schoolYear, $periodLabel, $userId, $scopes, $selected)')
     && str_contains($sources['students'], "url('teacher/qr_print.php?class_id=")
     && str_contains($sources['students'], "redirect('teacher/student_demo.php?class_id="),
   'the delegate workflow must provide safe preparation, codes, QR printing, and a student-view test'
@@ -103,6 +106,14 @@ delegated_self_assessment_assert(
     && str_contains($sources['students'], 'Array.isArray(row.items)')
     && substr_count($sources['translations'], "'teacher.students.items_summary'") === 2,
   'progress must expose, render, and live-update every individual released item'
+);
+delegated_self_assessment_assert(
+  substr_count($sources['students'], '$scopeKey = app_group_scope_key_from_meta($meta)') >= 2
+    && str_contains($sources['students'], '$allKeys = array_keys($allGroups)')
+    && str_contains($sources['students'], 'foreach ($allKeys as $scopeKey)')
+    && str_contains($sources['students'], 'DELETE FROM class_child_group_unlocks')
+    && str_contains($sources['students'], "app_child_scope_unlocked(\$groupUnlockInfo['map'], (string)\$gKey)"),
+  'each save must release exactly the selected concrete groups or subgroups and lock every other category'
 );
 delegated_self_assessment_assert(
   str_contains($sources['classes'], 'user_can_manage_class($pdo, $userId, $classId)')
