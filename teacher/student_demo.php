@@ -110,7 +110,8 @@ render_teacher_header(t('student_demo.title', 'Demoschüler'));
 
       <fieldset style="border:0; padding:0; margin:20px 0 0;">
         <legend class="label"><?=h(t('student_demo.view', 'Ansicht'))?></legend>
-        <?php $selectedMode = (string)($_POST['display_mode'] ?? 'groups'); ?>
+        <?php $selectedMode = strtolower(trim((string)($_POST['display_mode'] ?? ($_GET['display_mode'] ?? 'groups')))); ?>
+        <?php if (!in_array($selectedMode, ['groups', 'items', 'beginner'], true)) $selectedMode = 'groups'; ?>
         <div style="display:grid; gap:10px; max-width:560px;">
           <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="display_mode" value="groups" <?=$selectedMode === 'groups' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.groups', 'Gruppen'))?></strong><br><span class="muted"><?=h(t('student_demo.view.groups_hint', 'Mehrere Kompetenzen einer Kategorie gemeinsam anzeigen.'))?></span></label>
           <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="display_mode" value="items" <?=$selectedMode === 'items' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.items', 'Items'))?></strong><br><span class="muted"><?=h(t('student_demo.view.items_hint', 'Kompetenzen einzeln Schritt für Schritt anzeigen.'))?></span></label>

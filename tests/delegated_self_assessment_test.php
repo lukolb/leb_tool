@@ -52,7 +52,7 @@ delegated_self_assessment_assert(
   'delegate access must branch into a restricted view before student management executes'
 );
 delegated_self_assessment_assert(
-  str_contains($sources['students'], "['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_generate_login']")
+  str_contains($sources['students'], "['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_generate_login']")
     && str_contains($sources['students'], 'delegate_generate_missing_student_logins')
     && str_contains($sources['students'], "\$token = trim((string)(\$student['qr_token'] ?? ''))")
     && str_contains($sources['students'], "\$code = trim((string)(\$student['login_code'] ?? ''))")
@@ -60,6 +60,15 @@ delegated_self_assessment_assert(
     && str_contains($sources['students'], "url('teacher/qr_print.php?class_id=")
     && str_contains($sources['students'], "url('teacher/student_demo.php?class_id="),
   'the delegate workflow must provide safe preparation, codes, QR printing, and a student-view test'
+);
+delegated_self_assessment_assert(
+  str_contains($sources['students'], 'normalize_delegate_student_display')
+    && str_contains($sources['students'], "UPDATE classes SET student_wizard_display=? WHERE id=?")
+    && str_contains($sources['students'], "audit('delegate_self_assessment_display'")
+    && str_contains($sources['students'], "name=\"student_wizard_display\"")
+    && str_contains($sources['students'], "&display_mode=' . rawurlencode(\$studentDisplay)")
+    && str_contains(file_get_contents($root . '/teacher/student_demo.php'), "\$_GET['display_mode']"),
+  'delegates must be able to select and test the class-wide student view for their session'
 );
 delegated_self_assessment_assert(
   str_contains($sources['classes'], 'user_can_manage_class($pdo, $userId, $classId)')

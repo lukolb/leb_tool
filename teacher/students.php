@@ -433,7 +433,7 @@ if (!user_can_access_class($pdo, $userId, $classId)) {
   exit;
 }
 
-$clsSt = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name FROM classes WHERE id=? LIMIT 1");
+$clsSt = $pdo->prepare("SELECT id, school_year, period_label, grade_level, label, name, student_wizard_display FROM classes WHERE id=? LIMIT 1");
 $clsSt->execute([$classId]);
 $class = $clsSt->fetch();
 if (!$class) {
@@ -1668,6 +1668,11 @@ function delegate_self_assessment_data(
   return ['students' => $students, 'progress' => $progress, 'scope_progress' => $scopeProgress];
 }
 
+function normalize_delegate_student_display(string $value): string {
+  $value = strtolower(trim($value));
+  return in_array($value, ['groups', 'items', 'beginner'], true) ? $value : 'groups';
+}
+
 function render_delegate_self_assessment_page(PDO $pdo, array $user, array $class, int $classId, int $userId): never {
   $periodLabel = normalize_class_period_label($class['period_label'] ?? 'Standard');
   $schoolYear = trim((string)($class['school_year'] ?? ''));
@@ -1694,7 +1699,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
     csrf_verify();
     $action = (string)($_POST['action'] ?? '');
     try {
-      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_generate_login'], true)) {
+      if (!in_array($action, ['delegate_self_assessment_prepare', 'delegate_self_assessment_scopes', 'delegate_self_assessment_display', 'delegate_generate_login'], true)) {
         throw new RuntimeException(t('teacher.delegate_self_assessment.error_action', 'Diese Aktion ist für Delegierte nicht erlaubt.'));
       }
       if ($action !== 'delegate_generate_login' && (!$activeTemplate || !$scopes)) {
@@ -1708,6 +1713,15 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
           '{generated}' => (string)$codes['generated'],
           '{skipped}' => (string)$codes['skipped'],
         ]);
+      } elseif ($action === 'delegate_self_assessment_display') {
+        $displayMode = normalize_delegate_student_display((string)($_POST['student_wizard_display'] ?? 'groups'));
+        $pdo->prepare("UPDATE classes SET student_wizard_display=? WHERE id=?")->execute([$displayMode, $classId]);
+        $class['student_wizard_display'] = $displayMode;
+        audit('delegate_self_assessment_display', $userId, [
+          'class_id'=>$classId,
+          'student_wizard_display'=>$displayMode,
+        ]);
+        $ok = t('teacher.delegate_self_assessment.display_saved', 'Die Schüleransicht für diesen Durchlauf wurde gespeichert.');
       } elseif ($action === 'delegate_self_assessment_scopes') {
         $selected = $_POST['group_unlocks'] ?? [];
         $selected = is_array($selected) ? $selected : [];
@@ -1750,6 +1764,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
     : ['students'=>[], 'progress'=>[], 'scope_progress'=>[]];
   $progressMap = [];
   foreach ($pageData['progress'] as $row) $progressMap[(int)($row['student_id'] ?? 0)] = $row;
+  $studentDisplay = normalize_delegate_student_display((string)($class['student_wizard_display'] ?? 'groups'));
 
   $title = t('teacher.delegate_self_assessment.title', 'Selbsteinschätzung durchführen');
   render_teacher_header($title . ' – ' . class_display($class));
@@ -1787,12 +1802,31 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
           <input type="hidden" name="action" value="delegate_generate_login">
           <button class="btn secondary" type="submit"><?=h(t('teacher.delegate_self_assessment.create_codes', 'Fehlende Zugangscodes erstellen'))?></button>
         </form>
-        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
+        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId . '&display_mode=' . rawurlencode($studentDisplay)))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
       </div>
     <?php endif; ?>
   </div>
 
   <?php if ($activeTemplate && $scopes): ?>
+  <div class="card">
+    <h2><?=h(t('teacher.delegate_self_assessment.display_title', 'Ansicht für diesen Durchlauf'))?></h2>
+    <p class="muted"><?=h(t('teacher.delegate_self_assessment.display_hint', 'Die Auswahl gilt während dieses Durchlaufs für alle Schüler dieser Klasse und kann vor dem nächsten Durchlauf wieder geändert werden.'))?></p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+      <input type="hidden" name="class_id" value="<?=h((string)$classId)?>">
+      <input type="hidden" name="action" value="delegate_self_assessment_display">
+      <div style="display:grid; gap:10px; max-width:760px;">
+        <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="groups" <?=$studentDisplay === 'groups' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.groups', 'Gruppen'))?></strong><br><span class="muted"><?=h(t('student_demo.view.groups_hint', 'Mehrere Kompetenzen einer Kategorie gemeinsam anzeigen.'))?></span></label>
+        <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="items" <?=$studentDisplay === 'items' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.items', 'Items'))?></strong><br><span class="muted"><?=h(t('student_demo.view.items_hint', 'Kompetenzen einzeln Schritt für Schritt anzeigen.'))?></span></label>
+        <label class="panel" style="padding:12px; cursor:pointer;"><input type="radio" name="student_wizard_display" value="beginner" <?=$studentDisplay === 'beginner' ? 'checked' : ''?>> <strong><?=h(t('teacher.classes.wizard.beginner', 'Leseanfänger'))?></strong><br><span class="muted"><?=h(t('student_demo.view.beginner_hint', 'Große, reduzierte Schrittansicht mit automatischer Vorlese-Unterstützung.'))?></span></label>
+      </div>
+      <div class="actions" style="justify-content:flex-start; margin-top:12px;">
+        <button class="btn primary" type="submit"><?=h(t('teacher.delegate_self_assessment.save_display', 'Schüleransicht speichern'))?></button>
+        <a class="btn secondary" href="<?=h(url('teacher/student_demo.php?class_id=' . (int)$classId . '&display_mode=' . rawurlencode($studentDisplay)))?>"><?=h(t('teacher.delegate_self_assessment.demo', 'Schüleransicht testen'))?></a>
+      </div>
+    </form>
+  </div>
+
   <div class="card">
     <h2><?=h(t('teacher.delegate_self_assessment.areas', 'Delegierte Bereiche für Schüler'))?></h2>
     <p class="muted"><?=h(t('teacher.delegate_self_assessment.areas_hint', 'Nur diese Bereiche kannst du öffnen oder schließen. Andere Bereiche und deren Freigaben bleiben unverändert.'))?></p>
