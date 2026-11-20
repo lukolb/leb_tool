@@ -86,14 +86,19 @@ delegated_self_assessment_assert(
   'delegates must be able to save and test the independent class-wide view and syllable setting with one demo button'
 );
 delegated_self_assessment_assert(
-  substr_count($sources['students'], 'setInterval(refresh, 5000)') === 1
-    && substr_count($sources['students'], 'setInterval(refreshStudentProgress, 5000)') === 1
+  str_contains($sources['students'], 'const refreshEveryMs = 2000;')
+    && str_contains($sources['students'], 'const studentProgressRefreshEveryMs = 2000;')
+    && str_contains($sources['students'], 'scheduleRefresh(refreshEveryMs)')
+    && str_contains($sources['students'], 'scheduleStudentProgressRefresh(studentProgressRefreshEveryMs)')
+    && substr_count($sources['students'], "window.addEventListener('focus'") === 2
+    && substr_count($sources['students'], "window.addEventListener('pageshow'") === 2
+    && substr_count($sources['students'], 'dataset.studentProgressRefreshedAt') === 2
     && substr_count($sources['students'], "cache:'no-store'") === 1
     && substr_count($sources['students'], "cache: 'no-store'") === 1
     && str_contains($sources['students'], "header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0')")
     && !str_contains($sources['students'], 'if(document.hidden)refresh()')
     && !str_contains($sources['students'], 'if (document.hidden) return;'),
-  'student progress must keep polling in the background without a page reload'
+  'student progress must poll every two seconds and refresh immediately after tab or connection resumption without a page reload'
 );
 delegated_self_assessment_assert(
   str_contains($sources['students'], 'function requested_student_canonical_map')

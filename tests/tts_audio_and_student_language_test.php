@@ -32,12 +32,19 @@ $wizard = (string)file_get_contents($root . '/student/ajax/wizard_api.php');
 $layout = (string)file_get_contents($root . '/shared/_layout.php');
 $parent = (string)file_get_contents($root . '/parent/portal.php');
 
-$cacheCall = strpos($student, 'await speakWithCachedAudio(normalizedText, source)');
-$liveCall = strpos($student, 'await speakWithVits(normalizedText, source)');
+$cacheCall = strpos($student, 'await speakWithCachedAudio(normalizedText, source, requestId)');
+$liveCall = strpos($student, 'await speakWithVits(normalizedText, source, requestId)');
 assert_true($cacheCall !== false && $liveCall !== false && $cacheCall < $liveCall, 'Student playback must check the cache before live generation.');
 assert_true(str_contains($student, 'const blob = await session.predict(normalized);'), 'Existing live VITS generation must remain available.');
 assert_true(str_contains($student, 'void prefetchVitsModel(voiceId);'), 'The proven live VITS model prefetch must remain unchanged.');
 assert_true(str_contains($student, 'void uploadGeneratedTts(normalized, voiceId, blob, source);'), 'A live-generated file must be saved for subsequent playback together with its stable source identity.');
+assert_true(
+  str_contains($student, 'let ttsRequestId = 0;')
+    && substr_count($student, 'const requestId = beginTtsRequest();') >= 2
+    && str_contains($student, 'if (!ttsRequestIsActive(requestId)) return;')
+    && str_contains($student, 'stopTts(false);'),
+  'Starting a new read-aloud request must stop current playback and prevent older asynchronous audio from starting later.'
+);
 assert_true(str_contains($classes, 'if ($new === 1) $ttsGenerationClassId = $classId;'), 'Enabling read aloud must automatically start class cache preparation.');
 assert_true(str_contains($adminAudio, "class=\"tts-bulk-class\"") && str_contains($adminAudio, "id=\"ttsSelectAll\""), 'Admins must be able to select multiple read-aloud classes in audio management.');
 assert_true(str_contains($adminAudio, "for (let classIndex = 0; classIndex < selected.length; classIndex++)"), 'Admin audio preparation must process every selected class.');

@@ -116,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       'display_mode' => $displayMode,
       'syllable_coloring_enabled' => $syllableColoring,
     ]);
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
     redirect('student/index.php');
   } catch (Throwable $e) {
     $error = $e->getMessage();

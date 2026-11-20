@@ -2215,6 +2215,7 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
       'done'=>t('teacher.students.item_done', 'erledigt'),
       'open'=>t('teacher.students.item_open', 'offen'),
     ], JSON_UNESCAPED_UNICODE)?>;
+    const refreshEveryMs = 2000;
     function childView(status, progress){ if(status==='submitted'||status==='final')return['submitted','success']; if(status==='draft')return[(progress==='in_progress'||progress==='complete')?'in_progress':'not_started',(progress==='in_progress'||progress==='complete')?'blue':'warn']; return['not_released','danger']; }
     function apply(row){
       const el=document.querySelector(`[data-student-progress="${CSS.escape(String(row.student_id))}"]`); if(!el)return;
@@ -2249,17 +2250,28 @@ function render_delegate_self_assessment_page(PDO $pdo, array $user, array $clas
         const res=await fetch(requestUrl,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
         if(!res.ok)return;
         const data=await res.json();
-        if(data&&Array.isArray(data.students))data.students.forEach(app);
+        if(data&&Array.isArray(data.students)){
+          data.students.forEach(app);
+          document.documentElement.dataset.studentProgressRefreshedAt=String(Date.now());
+        }
       } catch(e) {
         // Keep the current values visible; the next background tick retries.
       } finally {
         refreshInFlight = false;
       }
     }
+    let refreshTimer = 0;
+    function scheduleRefresh(delay = refreshEveryMs){
+      if(refreshTimer)window.clearTimeout(refreshTimer);
+      refreshTimer=window.setTimeout(async()=>{await refresh();scheduleRefresh(refreshEveryMs);},delay);
+    }
+    function refreshImmediately(){scheduleRefresh(0);}
     if(document.querySelector('[data-student-progress]')){
-      refresh();
-      setInterval(refresh, 5000);
-      document.addEventListener('visibilitychange', () => { if(!document.hidden)refresh(); });
+      refreshImmediately();
+      document.addEventListener('visibilitychange', () => { if(!document.hidden)refreshImmediately(); });
+      window.addEventListener('focus', refreshImmediately);
+      window.addEventListener('pageshow', refreshImmediately);
+      window.addEventListener('online', refreshImmediately);
     }
   })();
   </script>
@@ -3493,6 +3505,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       'done' => t('teacher.students.item_done', 'erledigt'),
       'open' => t('teacher.students.item_open', 'offen'),
     ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)?>;
+    const studentProgressRefreshEveryMs = 2000;
     const editModal = document.getElementById('editModal');
     const editForm = document.getElementById('editForm');
 
@@ -3576,6 +3589,7 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
         const json = await res.json();
         if (!json || json.ok === false || !Array.isArray(json.students)) return;
         json.students.forEach(applyStudentProgressRow);
+        document.documentElement.dataset.studentProgressRefreshedAt = String(Date.now());
       } catch (e) {
         // Keep the existing values visible; the next polling tick will retry.
       } finally {
@@ -3583,12 +3597,26 @@ render_teacher_header(t('teacher.students.title', 'Schüler') . ' – ' . (strin
       }
     }
 
+    let studentProgressRefreshTimer = 0;
+    function scheduleStudentProgressRefresh(delay = studentProgressRefreshEveryMs) {
+      if (studentProgressRefreshTimer) window.clearTimeout(studentProgressRefreshTimer);
+      studentProgressRefreshTimer = window.setTimeout(async () => {
+        await refreshStudentProgress();
+        scheduleStudentProgressRefresh(studentProgressRefreshEveryMs);
+      }, delay);
+    }
+    function refreshStudentProgressImmediately() {
+      scheduleStudentProgressRefresh(0);
+    }
+
     if (document.querySelector('[data-student-progress]')) {
-      refreshStudentProgress();
-      setInterval(refreshStudentProgress, 5000);
+      refreshStudentProgressImmediately();
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) refreshStudentProgress();
+        if (!document.hidden) refreshStudentProgressImmediately();
       });
+      window.addEventListener('focus', refreshStudentProgressImmediately);
+      window.addEventListener('pageshow', refreshStudentProgressImmediately);
+      window.addEventListener('online', refreshStudentProgressImmediately);
     }
 
     function openEditModal(id) {

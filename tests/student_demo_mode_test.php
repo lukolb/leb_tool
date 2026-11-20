@@ -43,6 +43,11 @@ student_demo_assert(
   'demo mode must use a selected real report only as the source of per-student n/a locks'
 );
 student_demo_assert(
+  str_contains($sources['launcher'], 'session_write_close()')
+    && strpos($sources['launcher'], 'session_write_close()') < strpos($sources['launcher'], "redirect('student/index.php')"),
+  'the selected reference student must be written to the session before the cross-area demo redirect'
+);
+student_demo_assert(
   str_contains($sources['launcher'], 'user_can_access_class($pdo, $userId, $classId)')
     && str_contains($sources['launcher'], "(\$user['role'] ?? '') !== 'admin'")
     && str_contains($sources['launcher'], "d.status='open'"),

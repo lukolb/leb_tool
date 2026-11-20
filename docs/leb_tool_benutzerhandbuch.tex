@@ -1501,7 +1501,7 @@ Delegierte Lehrkräfte können die Schüler-Selbsteinschätzung für ihre offene
   \item Optional über \enquote{Schüleransicht testen} den Ablauf mit der gewählten Darstellung kontrollieren. Im Demoschüler einen Referenzschüler wählen; dadurch werden dessen individuelle \enquote{n/a}-Sperren berücksichtigt. Die Demo-Eingaben selbst bleiben rein sitzungsbasiert und verändern keine Schülerdaten. Der Knopf speichert Ansicht und Silbenschrift automatisch, bevor die Demo geöffnet wird.
   \item \enquote{QR-Codes drucken} öffnen und die Ausdrucke geschützt an die Schüler verteilen. \enquote{Fehlende Zugangscodes erstellen} ergänzt Codes, ohne vorhandene Ausdrucke ungültig zu machen.
   \item \enquote{Vorbereiten und freigeben} verwendet unmittelbar die im selben Formular aktuell markierten Kategorien. Zusätzlich werden fehlende Berichte sicher angelegt, gesperrte Berichte wieder als Entwurf freigegeben und ausschließlich fehlende Zugangscodes erzeugt. Ein Vorlagenkonflikt stoppt den Vorgang, statt vorhandene Berichte zu ersetzen; dann Klassenlehrkraft oder Admin informieren.
-  \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene und für das jeweilige Kind tatsächlich verfügbare Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Mit \enquote{n/a} für die Schüler gesperrte Kompetenzen erscheinen nicht und werden weder als offen noch in der Gesamtzahl mitgezählt. Status, Gesamtzahl und vollständige Itemliste werden cachefrei ohne Neuladen aktualisiert und beim Zurückkehren in einen zeitweise inaktiven Browser-Tab sofort erneut abgeglichen. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
+  \item Den automatisch im Hintergrund aktualisierten Fortschritt beobachten. Über \enquote{Einzel-Items} lässt sich für jedes freigegebene und für das jeweilige Kind tatsächlich verfügbare Item getrennt erkennen, ob es noch offen oder bereits erledigt ist. Mit \enquote{n/a} für die Schüler gesperrte Kompetenzen erscheinen nicht und werden weder als offen noch in der Gesamtzahl mitgezählt. Status, Gesamtzahl und vollständige Itemliste werden cachefrei etwa alle zwei Sekunden ohne Neuladen aktualisiert. Beim Zurückkehren in einen zeitweise inaktiven Browser-Tab, bei erneutem Netzwerkzugang und beim erneuten Fokus erfolgt sofort ein zusätzlicher Abgleich. Für einen späteren weiteren Bereich kann \enquote{Vorbereiten und freigeben} erneut verwendet werden.
   \item Nach dem eigenen Arbeitsfenster alle Bereiche abwählen und \enquote{Freigaben speichern}; damit sind sämtliche Kategorien geschlossen. Soll zusätzlich der Berichtsstatus der Schüler-Eingabe insgesamt gesperrt werden, anschließend \enquote{Schülereingaben sperren} wählen und die Sicherheitsabfrage bestätigen. Gespeicherte Antworten bleiben erhalten. Danach die Delegation bei fachlich abgeschlossener Arbeit wie gewohnt fertigmelden.
 \end{enumerate}
 
@@ -1770,6 +1770,7 @@ Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele p
   \item Fehlt eine passende Datei, wird weiterhin die bewährte Live-Generierung auf dem Gerät verwendet; das Ergebnis wird anschließend für weitere Aufrufe gespeichert.
   \item Stimmeinstellungen sind je Sprache getrennt konfigurierbar.
   \item Optionaler Leseanfänger-Wizard unterstützt Erstklässler.
+  \item Es läuft immer nur eine Vorleseausgabe gleichzeitig. Sobald ein neuer Text gestartet wird, stoppt das System die vorherige Ausgabe sofort; eine noch vorbereitete ältere Ausgabe kann danach nicht verspätet einsetzen.
   \item Lehrkräfte können je Klasse Silbenschrift aktivieren. Eingangstext, Gruppen, Untergruppen, Kompetenztexte und Hinweise werden dabei mit abwechselnd blauen und roten Silben dargestellt.
   \item Für jede Klasse kann ein eigenes Intro getrennt auf Deutsch und Englisch hinterlegt werden. Fehlt die englische Fassung, wird die deutsche Fassung als Rückfall verwendet.
   \item Ändert sich ein Kompetenztext, ein Intro oder die konfigurierte Stimme, wird die alte Zuordnung automatisch entfernt. Eine physische Audiodatei wird gelöscht, sobald keine andere Klasse sie mehr benötigt.
@@ -1780,7 +1781,7 @@ Abgeben & Schließt die Schülerbearbeitung ab. Vorher Antworten und Beispiele p
   \item Das System sucht zuerst eine bereits vorbereitete Audiodatei für Sprache, Stimme, Text und Klasse.
   \item Ist sie vorhanden, beginnt die Wiedergabe ohne erneute Hintergrundgenerierung.
   \item Fehlt sie, wird unverändert die bewährte Live-Generierung verwendet und das Ergebnis anschließend für weitere Aufrufe gespeichert.
-  \item \enquote{Stopp} beendet die aktuelle Wiedergabe. Beim Wechsel der Sprache wird die entsprechend andere Audiodatei verwendet.
+  \item \enquote{Stopp} beendet die aktuelle Wiedergabe. Der Start eines anderen Textes beendet sie ebenfalls automatisch. Beim Wechsel der Sprache wird die entsprechend andere Audiodatei verwendet.
 \end{enumerate}
 
 \subsection*{Vorlese-Audiodateien verwalten}

@@ -74,6 +74,7 @@ Lehrkräfte arbeiten **klassenbezogen**.
 - Delegationen ändern oder zurücknehmen
 - Filter & Suche innerhalb von Klassen
 - Fortschrittsanzeigen (fehlende Felder, Vollständigkeit)
+- Vorlesen spielt immer nur eine Audioausgabe; eine neu gestartete Ausgabe stoppt die vorherige sofort und verhindert auch den verspäteten Start älterer Hintergrundgenerierungen
 - Schüler-Eingabe freigeben/sperren (optional pro Kategorie)
 - Elternmodus anfragen/freigeben inkl. fehlender Einträge prüfen
 - Elternlinks verlängern oder beenden
