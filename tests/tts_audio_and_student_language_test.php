@@ -41,16 +41,30 @@ assert_true(str_contains($student, 'void uploadGeneratedTts(normalized, voiceId,
 assert_true(
   str_contains($student, 'let ttsRequestId = 0;')
     && substr_count($student, 'const requestId = beginTtsRequest();') >= 2
-    && str_contains($student, 'if (!ttsRequestIsActive(requestId)) return;')
+    && str_contains($student, 'if (!ttsRequestIsActive(requestId)) return false;')
     && str_contains($student, 'stopTts(false);'),
   'Starting a new read-aloud request must stop current playback and prevent older asynchronous audio from starting later.'
 );
 assert_true(
   str_contains($student, "cur && cur.kind === 'submit'")
     && str_contains($student, "parts.join('. ')")
-    && substr_count($student, 'if (isBeginnerMode && TTS_ALLOWED && ttsSupported)') >= 3
-    && strpos($student, 'speakCurrentStep(false);', strpos($student, 'else { // submit')) !== false,
+    && substr_count($student, 'if (isBeginnerMode && TTS_ALLOWED)') >= 3
+    && strpos($student, 'autoSpeakCurrentStep(false);', strpos($student, 'else { // submit')) !== false,
   'The completion page must expose its complete text to read-aloud and start automatically in beginner mode.'
+);
+assert_true(
+  str_contains($student, 'let vitsLoadPromise = null;')
+    && str_contains($student, 'if (vitsLoadPromise) return vitsLoadPromise;')
+    && str_contains($student, 'if (ttsSupported) retryPendingAutomaticTts();'),
+  'Concurrent iPad startup must await one shared VITS module load and retry the pending automatic read-aloud after it finishes.'
+);
+assert_true(
+  str_contains($student, 'function ensureTtsMediaElement()')
+    && str_contains($student, 'const audio = ensureTtsMediaElement();')
+    && str_contains($student, "document.addEventListener('touchend', primeTtsAudioFromGesture")
+    && str_contains($student, "document.addEventListener('pointerdown', primeTtsAudioFromGesture")
+    && str_contains($student, 'return await playTtsBlob(blob, requestId);'),
+  'iPad playback must unlock and reuse one persistent audio element from a user gesture for cached and newly generated speech.'
 );
 assert_true(str_contains($classes, 'if ($new === 1) $ttsGenerationClassId = $classId;'), 'Enabling read aloud must automatically start class cache preparation.');
 assert_true(str_contains($adminAudio, "class=\"tts-bulk-class\"") && str_contains($adminAudio, "id=\"ttsSelectAll\""), 'Admins must be able to select multiple read-aloud classes in audio management.');

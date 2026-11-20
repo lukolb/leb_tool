@@ -843,10 +843,87 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   let ttsUtterance = null;
   let vitsModule = null;
   let vitsLoading = false;
+  let vitsLoadPromise = null;
   let vitsAudio = null;
+  let ttsMediaElement = null;
+  let ttsMediaElementUnlocked = false;
+  let ttsPlaybackBlockedRequestId = null;
+  let pendingAutoTts = null;
   let ttsRequestId = 0;
   const vitsSessions = new Map();
   let vitsPrefetchPromise = null;
+  const TTS_UNLOCK_AUDIO_DATA_URL = 'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+
+  function ensureTtsMediaElement(){
+    if (ttsMediaElement) return ttsMediaElement;
+    const audio = document.createElement('audio');
+    audio.preload = 'auto';
+    audio.setAttribute('playsinline', '');
+    audio.setAttribute('aria-hidden', 'true');
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
+    ttsMediaElement = audio;
+    return audio;
+  }
+
+  function releaseTtsObjectUrl(audio){
+    if (!audio?._ttsObjectUrl) return;
+    try { URL.revokeObjectURL(audio._ttsObjectUrl); } catch(e) {}
+    audio._ttsObjectUrl = '';
+  }
+
+  function isTtsGestureBlock(error){
+    const name = String(error?.name || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return name === 'notallowederror' || message.includes('not allowed') || message.includes('user gesture');
+  }
+
+  function retryPendingAutomaticTts(){
+    const pending = pendingAutoTts;
+    if (!pending || !TTS_ALLOWED) return;
+    window.setTimeout(() => {
+      if (pendingAutoTts !== pending || activeStep !== pending.step || !ttsSupported) return;
+      pendingAutoTts = null;
+      autoSpeakCurrentStep(pending.includeGroup);
+    }, 0);
+  }
+
+  function primeTtsAudioFromGesture(event){
+    if (!TTS_ALLOWED) return;
+    const target = event?.target instanceof Element ? event.target : null;
+    const manualTtsClick = !!target?.closest('#ttsButton');
+    const audio = ensureTtsMediaElement();
+    if (vitsAudio === audio && !audio.paused) {
+      ttsMediaElementUnlocked = true;
+      if (!manualTtsClick) retryPendingAutomaticTts();
+      return;
+    }
+    if (ttsMediaElementUnlocked) {
+      if (!manualTtsClick) retryPendingAutomaticTts();
+      return;
+    }
+
+    audio.dataset.ttsUnlocking = '1';
+    audio.src = TTS_UNLOCK_AUDIO_DATA_URL;
+    audio.load();
+    let playPromise = null;
+    try { playPromise = audio.play(); } catch(e) {}
+    const finish = (unlocked) => {
+      if (unlocked) ttsMediaElementUnlocked = true;
+      if (audio.dataset.ttsUnlocking === '1') {
+        try { audio.pause(); audio.currentTime = 0; } catch(e) {}
+        audio.removeAttribute('src');
+        try { audio.load(); } catch(e) {}
+        delete audio.dataset.ttsUnlocking;
+      }
+      if (!manualTtsClick) retryPendingAutomaticTts();
+    };
+    if (playPromise && typeof playPromise.then === 'function') {
+      playPromise.then(() => finish(true), () => finish(false));
+    } else {
+      finish(true);
+    }
+  }
 
   function isTtsSpeaking(){
     if (vitsAudio && !vitsAudio.paused) return true;
@@ -921,10 +998,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const audio = vitsAudio;
       vitsAudio = null;
       try { audio.pause(); audio.currentTime = 0; } catch(e) {}
-      if (audio._ttsObjectUrl) {
-        try { URL.revokeObjectURL(audio._ttsObjectUrl); } catch(e) {}
-        audio._ttsObjectUrl = '';
-      }
+      releaseTtsObjectUrl(audio);
     }
     if (webSpeechSupported && window.speechSynthesis) {
       try { window.speechSynthesis.cancel(); } catch(e) {}
@@ -1023,28 +1097,38 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   async function loadVitsModule(){
-    if (vitsModule || vitsLoading) return vitsModule;
+    if (vitsModule) return vitsModule;
+    if (vitsLoadPromise) return vitsLoadPromise;
     vitsLoading = true;
     updateTtsUi();
-    try {
-      const rawModule = await import(VITS_MODULE_URL);
-      if (rawModule && rawModule.predict) {
-        vitsModule = rawModule;
-      } else if (rawModule && rawModule.default && rawModule.default.predict) {
-        vitsModule = rawModule.default;
-      } else {
+    vitsLoadPromise = (async () => {
+      try {
+        const rawModule = await import(VITS_MODULE_URL);
+        if (rawModule && rawModule.predict) {
+          vitsModule = rawModule;
+        } else if (rawModule && rawModule.default && rawModule.default.predict) {
+          vitsModule = rawModule.default;
+        } else {
+          vitsModule = null;
+        }
+        ttsSupported = !!vitsModule || webSpeechSupported;
+      } catch (e) {
+        console.warn('vits-web failed to load', e);
         vitsModule = null;
+        ttsSupported = webSpeechSupported;
+      } finally {
+        vitsLoading = false;
+        placeTtsButton();
+        updateTtsUi();
+        if (ttsSupported) retryPendingAutomaticTts();
       }
-      ttsSupported = !!vitsModule || webSpeechSupported;
-    } catch (e) {
-      console.warn('vits-web failed to load', e);
-      vitsModule = null;
-      ttsSupported = webSpeechSupported;
+      return vitsModule;
+    })();
+    try {
+      return await vitsLoadPromise;
     } finally {
-      vitsLoading = false;
-      updateTtsUi();
+      vitsLoadPromise = null;
     }
-    return vitsModule;
   }
 
   async function prefetchVitsModel(voiceId){
@@ -1092,19 +1176,21 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     stopTts(false);
     if (!ttsRequestIsActive(requestId)) return false;
     const objectUrl = URL.createObjectURL(blob);
-    const audio = new Audio(objectUrl);
+    const audio = ensureTtsMediaElement();
+    delete audio.dataset.ttsUnlocking;
+    releaseTtsObjectUrl(audio);
+    audio.src = objectUrl;
     audio._ttsObjectUrl = objectUrl;
     audio.playbackRate = ttsRateForLang();
+    audio.load();
     audio.onended = () => {
-      if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-      audio._ttsObjectUrl = '';
+      releaseTtsObjectUrl(audio);
       if (vitsAudio !== audio) return;
       vitsAudio = null;
       if (ttsRequestIsActive(requestId)) updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
     };
     audio.onerror = () => {
-      if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-      audio._ttsObjectUrl = '';
+      releaseTtsObjectUrl(audio);
       if (vitsAudio !== audio) return;
       vitsAudio = null;
       if (ttsRequestIsActive(requestId)) updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
@@ -1113,19 +1199,24 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     try {
       await audio.play();
+      ttsMediaElementUnlocked = true;
+      if (ttsPlaybackBlockedRequestId === requestId) ttsPlaybackBlockedRequestId = null;
       if (!ttsRequestIsActive(requestId)) {
         try { audio.pause(); audio.currentTime = 0; } catch(e) {}
-        if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-        audio._ttsObjectUrl = '';
+        releaseTtsObjectUrl(audio);
         if (vitsAudio === audio) vitsAudio = null;
         return false;
       }
       updateTtsUi();
       return true;
     } catch (error) {
-      if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-      audio._ttsObjectUrl = '';
+      releaseTtsObjectUrl(audio);
       if (vitsAudio === audio) vitsAudio = null;
+      if (isTtsGestureBlock(error) && ttsRequestIsActive(requestId)) {
+        ttsMediaElementUnlocked = false;
+        ttsPlaybackBlockedRequestId = requestId;
+        updateTtsUi(t('student.tts.tap_to_start', 'Tippe einmal auf Vorlesen, um den Ton zu starten.'));
+      }
       return false;
     }
   }
@@ -1211,44 +1302,7 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       const blob = await session.predict(normalized);
       void uploadGeneratedTts(normalized, voiceId, blob, source);
       if (!ttsRequestIsActive(requestId)) return false;
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio._ttsObjectUrl = url;
-      audio.playbackRate = ttsRateForLang();
-      audio.onended = () => {
-        if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-        audio._ttsObjectUrl = '';
-        if (vitsAudio !== audio) return;
-        vitsAudio = null;
-        if (ttsRequestIsActive(requestId)) updateTtsUi(t('student.tts.ready', 'Bereit zum Vorlesen.'));
-      };
-      audio.onerror = () => {
-        if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-        audio._ttsObjectUrl = '';
-        if (vitsAudio !== audio) return;
-        vitsAudio = null;
-        if (ttsRequestIsActive(requestId)) updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
-      };
-      vitsAudio = audio;
-      updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
-      try {
-        await audio.play();
-        if (!ttsRequestIsActive(requestId)) {
-          try { audio.pause(); audio.currentTime = 0; } catch(e) {}
-          if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-          audio._ttsObjectUrl = '';
-          if (vitsAudio === audio) vitsAudio = null;
-          return false;
-        }
-        updateTtsUi();
-        return true;
-      } catch (e) {
-        if (audio._ttsObjectUrl) URL.revokeObjectURL(audio._ttsObjectUrl);
-        audio._ttsObjectUrl = '';
-        if (vitsAudio === audio) vitsAudio = null;
-        if (ttsRequestIsActive(requestId)) updateTtsUi(t('student.tts.error', 'Vorlesen wurde gestoppt.'));
-        return false;
-      }
+      return await playTtsBlob(blob, requestId);
     } catch (err) {
       console.warn('vits-web playback failed', err);
       if (ttsRequestIsActive(requestId)) {
@@ -1287,23 +1341,32 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
   }
 
   async function speakCurrentStep(includeGroup = false){
-    if (!ttsSupported) return;
+    if (!ttsSupported) return false;
     const text = currentStepTextForTts(includeGroup);
     const normalizedText = typeof text === 'string' ? text : '';
     if (!normalizedText || normalizedText.replace(/\s+/g, '').trim() === '') {
       updateTtsUi(t('student.tts.nothing', 'Nichts zum Vorlesen gefunden.'));
-      return;
+      return false;
     }
     const requestId = beginTtsRequest();
+    ttsPlaybackBlockedRequestId = null;
     updateTtsUi(t('student.tts.reading', 'Liest gerade …'));
     const source = currentTtsSource(includeGroup);
     const cached = await speakWithCachedAudio(normalizedText, source, requestId);
-    if (cached) return;
-    if (!ttsRequestIsActive(requestId)) return;
+    if (cached) return true;
+    if (!ttsRequestIsActive(requestId) || ttsPlaybackBlockedRequestId === requestId) return false;
     const ok = await speakWithVits(normalizedText, source, requestId);
-    if (!ok && ttsRequestIsActive(requestId)) {
-      speakWithWebSpeech(normalizedText, requestId);
-    }
+    if (ok) return true;
+    if (!ttsRequestIsActive(requestId) || ttsPlaybackBlockedRequestId === requestId) return false;
+    return speakWithWebSpeech(normalizedText, requestId);
+  }
+
+  function autoSpeakCurrentStep(includeGroup = false){
+    const pending = { step: activeStep, includeGroup: !!includeGroup };
+    pendingAutoTts = pending;
+    void speakCurrentStep(includeGroup).then((started) => {
+      if (started && pendingAutoTts === pending) pendingAutoTts = null;
+    });
   }
 
   async function speakText(text){
@@ -1327,11 +1390,16 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
     updateTtsUi();
     if (!ttsButton) return;
     ttsButton.addEventListener('click', () => {
+      pendingAutoTts = null;
       if (isTtsSpeaking()) { stopTts(); }
       else {
         void speakCurrentStep(true);
       }
     });
+    document.addEventListener('pointerdown', primeTtsAudioFromGesture, { capture:true, passive:true });
+    document.addEventListener('touchend', primeTtsAudioFromGesture, { capture:true, passive:true });
+    document.addEventListener('click', primeTtsAudioFromGesture, true);
+    document.addEventListener('keydown', primeTtsAudioFromGesture, true);
     if (webSpeechSupported && typeof window.speechSynthesis?.addEventListener === 'function') {
       window.speechSynthesis.addEventListener('voiceschanged', () => updateTtsUi());
     }
@@ -2782,8 +2850,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnPrev.disabled = (activeStep <= 0);
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported && !didAutoReadIntro) {
-        speakCurrentStep();
+      if (isBeginnerMode && TTS_ALLOWED && !didAutoReadIntro) {
+        autoSpeakCurrentStep();
         didAutoReadIntro = true;
       }
     }
@@ -2834,8 +2902,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.textContent = isBeginnerMode ? t('student.buttons.next', 'Weiter') : t('student.js.cta_next', t('student.buttons.next', 'Weiter'));
       btnNext.disabled = false;
       btnNext.style.visibility = 'visible';
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
-        speakCurrentStep(false);
+      if (isBeginnerMode && TTS_ALLOWED) {
+        autoSpeakCurrentStep(false);
       }
     }
 
@@ -2859,8 +2927,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.classList.toggle('cta-ready', isBeginnerMode && ready);
       btnNext.style.visibility = 'visible';
 
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
-        if (!suppressTtsOnce) speakCurrentStep(false);
+      if (isBeginnerMode && TTS_ALLOWED) {
+        if (!suppressTtsOnce) autoSpeakCurrentStep(false);
         suppressTtsOnce = false;
       }
     }
@@ -2884,8 +2952,8 @@ $ttsVoicePrefEn = trim((string)($studentCfg['tts_voice_en'] ?? ''));
       btnNext.textContent = '—';
       btnNext.disabled = true;
       btnNext.style.visibility = 'hidden';
-      if (isBeginnerMode && TTS_ALLOWED && ttsSupported) {
-        speakCurrentStep(false);
+      if (isBeginnerMode && TTS_ALLOWED) {
+        autoSpeakCurrentStep(false);
       }
     }
 
