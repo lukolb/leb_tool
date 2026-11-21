@@ -2572,21 +2572,259 @@ function normalize_system_binding_key(string $binding): string {
   };
 }
 
-function binding_condition_matches(string $leftRaw, string $op, string $rightRaw): bool {
-  $left = str_replace(',', '.', trim($leftRaw));
-  $right = str_replace(',', '.', trim($rightRaw));
-  if (!is_numeric($left) || !is_numeric($right)) return false;
-  $l = (float)$left;
-  $r = (float)$right;
+function binding_condition_truthy(mixed $value): bool {
+  if (is_bool($value)) return $value;
+  if ($value === null) return false;
+  if (is_int($value) || is_float($value)) return $value != 0;
+
+  // Preserve the established content-check behavior: every non-empty field
+  // value (including the string "0") counts as present.
+  return trim((string)$value) !== '';
+}
+
+function binding_condition_boolean_value(mixed $value): bool {
+  if (is_bool($value)) return $value;
+  if ($value === null) return false;
+  if (is_int($value) || is_float($value)) return $value != 0;
+
+  $normalized = mb_strtolower(trim((string)$value), 'UTF-8');
+  if (in_array($normalized, ['', '0', 'false', 'no', 'off', 'nein', 'falsch', 'null'], true)) return false;
+  if (in_array($normalized, ['1', 'true', 'yes', 'on', 'ja', 'wahr'], true)) return true;
+  return $normalized !== '';
+}
+
+function binding_condition_compare_values(mixed $left, string $op, mixed $right): bool {
+  $op = match ($op) {
+    '=' => '==',
+    '<>' => '!=',
+    default => $op,
+  };
+
+  if ($op === '===' || $op === '!==') {
+    $same = get_debug_type($left) === get_debug_type($right) && $left === $right;
+    return $op === '===' ? $same : !$same;
+  }
+
+  if ($op === '==' || $op === '!=') {
+    if (is_bool($left) || is_bool($right)) {
+      $same = binding_condition_boolean_value($left) === binding_condition_boolean_value($right);
+    } elseif ($left === null || $right === null) {
+      $same = ($left === null || trim((string)$left) === '')
+        && ($right === null || trim((string)$right) === '');
+    } else {
+      $leftNumber = str_replace(',', '.', trim((string)$left));
+      $rightNumber = str_replace(',', '.', trim((string)$right));
+      if (is_numeric($leftNumber) && is_numeric($rightNumber)) {
+        $same = (float)$leftNumber == (float)$rightNumber;
+      } else {
+        $same = (string)$left === (string)$right;
+      }
+    }
+    return $op === '==' ? $same : !$same;
+  }
+
+  $leftNumber = str_replace(',', '.', trim((string)$left));
+  $rightNumber = str_replace(',', '.', trim((string)$right));
+  if (is_numeric($leftNumber) && is_numeric($rightNumber)) {
+    $comparison = (float)$leftNumber <=> (float)$rightNumber;
+  } else {
+    $comparison = strcmp((string)$left, (string)$right);
+  }
+
   return match ($op) {
-    '>' => $l > $r,
-    '>=' => $l >= $r,
-    '<' => $l < $r,
-    '<=' => $l <= $r,
-    '==' => $l == $r,
-    '!=' => $l != $r,
+    '>' => $comparison > 0,
+    '>=' => $comparison >= 0,
+    '<' => $comparison < 0,
+    '<=' => $comparison <= 0,
     default => false,
   };
+}
+
+function binding_condition_matches(string $leftRaw, string $op, string $rightRaw): bool {
+  return binding_condition_compare_values($leftRaw, $op, $rightRaw);
+}
+
+/**
+ * Tokenize a condition without evaluating PHP code.
+ *
+ * Supported operators: !, not, &&, and, ||, or, xor, =, ==, ===, !=,
+ * !==, <>, >, >=, < and <=. Text literals may use single or double quotes.
+ */
+function binding_condition_tokenize(string $expression): ?array {
+  $tokens = [];
+  $length = strlen($expression);
+  $offset = 0;
+
+  while ($offset < $length) {
+    $rest = substr($expression, $offset);
+    if (preg_match('/^\s+/u', $rest, $space)) {
+      $offset += strlen((string)$space[0]);
+      continue;
+    }
+
+    $char = $expression[$offset];
+    if ($char === '"' || $char === "'") {
+      $quote = $char;
+      $offset++;
+      $value = '';
+      $closed = false;
+      while ($offset < $length) {
+        $current = $expression[$offset++];
+        if ($current === $quote) {
+          $closed = true;
+          break;
+        }
+        if ($current === '\\' && $offset < $length) {
+          $escaped = $expression[$offset++];
+          $value .= match ($escaped) {
+            'n' => "\n",
+            'r' => "\r",
+            't' => "\t",
+            default => $escaped,
+          };
+          continue;
+        }
+        $value .= $current;
+      }
+      if (!$closed) return null;
+      $tokens[] = ['type' => 'literal', 'value' => $value];
+      continue;
+    }
+
+    $operator = null;
+    foreach (['!==', '===', '>=', '<=', '==', '!=', '&&', '||', '<>', '!', '>', '<', '=', '(', ')'] as $candidate) {
+      if (str_starts_with($rest, $candidate)) {
+        $operator = $candidate;
+        break;
+      }
+    }
+    if ($operator !== null) {
+      $tokens[] = ['type' => $operator === '(' || $operator === ')' ? $operator : 'operator', 'value' => $operator];
+      $offset += strlen($operator);
+      continue;
+    }
+
+    if (preg_match('/^-?(?:[0-9]+(?:[.,][0-9]+)?|[.,][0-9]+)/', $rest, $number)) {
+      $raw = str_replace(',', '.', (string)$number[0]);
+      $tokens[] = ['type' => 'literal', 'value' => (float)$raw];
+      $offset += strlen((string)$number[0]);
+      continue;
+    }
+
+    if (!preg_match('/^[a-zA-Z0-9_][a-zA-Z0-9_.:\-]*/', $rest, $identifier)) return null;
+    $raw = (string)$identifier[0];
+    $keyword = strtolower($raw);
+    if (in_array($keyword, ['and', 'or', 'xor', 'not'], true)) {
+      $tokens[] = ['type' => 'operator', 'value' => $keyword];
+    } elseif ($keyword === 'true') {
+      $tokens[] = ['type' => 'literal', 'value' => true];
+    } elseif ($keyword === 'false') {
+      $tokens[] = ['type' => 'literal', 'value' => false];
+    } elseif ($keyword === 'null' || $keyword === 'empty') {
+      $tokens[] = ['type' => 'literal', 'value' => null];
+    } else {
+      $tokens[] = ['type' => 'operand', 'value' => $raw];
+    }
+    $offset += strlen($raw);
+  }
+
+  $tokens[] = ['type' => 'eof', 'value' => null];
+  return $tokens;
+}
+
+function binding_condition_parse_primary(array $tokens, int &$index, callable $resolver): array {
+  $token = $tokens[$index] ?? ['type' => 'eof', 'value' => null];
+  if ($token['type'] === 'literal') {
+    $index++;
+    return [true, $token['value']];
+  }
+  if ($token['type'] === 'operand') {
+    $index++;
+    return [true, (string)$resolver((string)$token['value'])];
+  }
+  if ($token['type'] === '(') {
+    $index++;
+    [$ok, $value] = binding_condition_parse_or($tokens, $index, $resolver);
+    if (!$ok || ($tokens[$index]['type'] ?? '') !== ')') return [false, null];
+    $index++;
+    return [true, $value];
+  }
+  return [false, null];
+}
+
+function binding_condition_parse_unary(array $tokens, int &$index, callable $resolver): array {
+  $token = $tokens[$index] ?? ['type' => 'eof', 'value' => null];
+  if ($token['type'] === 'operator' && in_array($token['value'], ['!', 'not'], true)) {
+    $index++;
+    [$ok, $value] = binding_condition_parse_unary($tokens, $index, $resolver);
+    return $ok ? [true, !binding_condition_truthy($value)] : [false, null];
+  }
+  return binding_condition_parse_primary($tokens, $index, $resolver);
+}
+
+function binding_condition_parse_comparison(array $tokens, int &$index, callable $resolver): array {
+  [$ok, $left] = binding_condition_parse_unary($tokens, $index, $resolver);
+  if (!$ok) return [false, null];
+
+  $token = $tokens[$index] ?? ['type' => 'eof', 'value' => null];
+  $comparisons = ['=', '==', '===', '!=', '!==', '<>', '>', '>=', '<', '<='];
+  if ($token['type'] !== 'operator' || !in_array($token['value'], $comparisons, true)) {
+    return [true, $left];
+  }
+
+  $index++;
+  [$rightOk, $right] = binding_condition_parse_unary($tokens, $index, $resolver);
+  if (!$rightOk) return [false, null];
+  return [true, binding_condition_compare_values($left, (string)$token['value'], $right)];
+}
+
+function binding_condition_parse_and(array $tokens, int &$index, callable $resolver): array {
+  [$ok, $value] = binding_condition_parse_comparison($tokens, $index, $resolver);
+  if (!$ok) return [false, null];
+  while (true) {
+    $token = $tokens[$index] ?? ['type' => 'eof', 'value' => null];
+    if ($token['type'] !== 'operator' || !in_array($token['value'], ['&&', 'and'], true)) break;
+    $index++;
+    [$rightOk, $right] = binding_condition_parse_comparison($tokens, $index, $resolver);
+    if (!$rightOk) return [false, null];
+    $value = binding_condition_truthy($value) && binding_condition_truthy($right);
+  }
+  return [true, $value];
+}
+
+function binding_condition_parse_xor(array $tokens, int &$index, callable $resolver): array {
+  [$ok, $value] = binding_condition_parse_and($tokens, $index, $resolver);
+  if (!$ok) return [false, null];
+  while (($tokens[$index]['type'] ?? '') === 'operator' && ($tokens[$index]['value'] ?? '') === 'xor') {
+    $index++;
+    [$rightOk, $right] = binding_condition_parse_and($tokens, $index, $resolver);
+    if (!$rightOk) return [false, null];
+    $value = binding_condition_truthy($value) !== binding_condition_truthy($right);
+  }
+  return [true, $value];
+}
+
+function binding_condition_parse_or(array $tokens, int &$index, callable $resolver): array {
+  [$ok, $value] = binding_condition_parse_xor($tokens, $index, $resolver);
+  if (!$ok) return [false, null];
+  while (true) {
+    $token = $tokens[$index] ?? ['type' => 'eof', 'value' => null];
+    if ($token['type'] !== 'operator' || !in_array($token['value'], ['||', 'or'], true)) break;
+    $index++;
+    [$rightOk, $right] = binding_condition_parse_xor($tokens, $index, $resolver);
+    if (!$rightOk) return [false, null];
+    $value = binding_condition_truthy($value) || binding_condition_truthy($right);
+  }
+  return [true, $value];
+}
+
+function binding_condition_evaluate(string $expression, callable $resolver): bool {
+  $tokens = binding_condition_tokenize(trim($expression));
+  if ($tokens === null) return false;
+  $index = 0;
+  [$ok, $value] = binding_condition_parse_or($tokens, $index, $resolver);
+  if (!$ok || ($tokens[$index]['type'] ?? '') !== 'eof') return false;
+  return binding_condition_truthy($value);
 }
 
 function resolve_binding_condition_operand_value(string $key, array $student, array $class, array $fieldValues = []): string {
@@ -2636,50 +2874,79 @@ function resolve_field_reference_value(string $fieldName, array $fieldValues, ar
 }
 
 /**
+ * Render a condition segment until EOF, {{:}} or {{?}}.
+ *
+ * @return array{0:string,1:string,2:int} rendered text, stop token, new offset
+ */
+function render_binding_condition_segment(string $tpl, int $offset, callable $resolver, bool $stopAtControl): array {
+  $out = '';
+  $length = strlen($tpl);
+
+  while ($offset < $length) {
+    $open = strpos($tpl, '{{', $offset);
+    if ($open === false) {
+      $out .= substr($tpl, $offset);
+      return [$out, 'eof', $length];
+    }
+    $out .= substr($tpl, $offset, $open - $offset);
+
+    $close = strpos($tpl, '}}', $open + 2);
+    if ($close === false) {
+      $out .= substr($tpl, $open);
+      return [$out, 'eof', $length];
+    }
+
+    $wholeTag = substr($tpl, $open, $close + 2 - $open);
+    $tag = trim(substr($tpl, $open + 2, $close - $open - 2));
+    $offset = $close + 2;
+
+    if ($tag === ':' || $tag === '?') {
+      if ($stopAtControl) return [$out, $tag === ':' ? 'else' : 'end', $offset];
+      $out .= $wholeTag;
+      continue;
+    }
+
+    if ($tag === '' || !str_ends_with($tag, '?')) {
+      $out .= $wholeTag;
+      continue;
+    }
+
+    $expression = trim(substr($tag, 0, -1));
+    if ($expression === '') {
+      $out .= $wholeTag;
+      continue;
+    }
+
+    $blockStart = $open;
+    [$whenTrue, $stop, $nextOffset] = render_binding_condition_segment($tpl, $offset, $resolver, true);
+    $whenFalse = '';
+    if ($stop === 'else') {
+      [$whenFalse, $stop, $nextOffset] = render_binding_condition_segment($tpl, $nextOffset, $resolver, true);
+    }
+
+    if ($stop !== 'end') {
+      // Keep incomplete blocks unchanged so an editing mistake is visible and
+      // does not silently remove report text.
+      $out .= substr($tpl, $blockStart, $nextOffset - $blockStart);
+      return [$out, 'eof', $nextOffset];
+    }
+
+    $out .= binding_condition_evaluate($expression, $resolver) ? $whenTrue : $whenFalse;
+    $offset = $nextOffset;
+  }
+
+  return [$out, 'eof', $offset];
+}
+
+/**
  * Conditional block syntax:
  *   {{student.absence_days_total>0?}} ... {{?}}
- *   {{ag.sentence?}} ... {{?}}  (true when value is not empty)
+ *   {{ag.sentence?}} ... {{:}} fallback {{?}}
+ *   {{!field:class_representative?}} ... {{?}}
+ *   {{(field:a == "yes" || field:b >= 2) && !field:c?}} ... {{?}}
  */
 function apply_binding_condition_blocks(string $tpl, callable $resolver): string {
-  $comparePattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*(==|!=|>=|<=|>|<)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
-  $existsPattern = '/\{\{\s*([a-zA-Z0-9_.:-]+)\s*\?\s*\}\}(.*?)\{\{\s*\?\s*\}\}/s';
-  $maxPasses = 8;
-  $out = $tpl;
-  for ($i = 0; $i < $maxPasses; $i++) {
-    $changed = false;
-
-    if (preg_match($comparePattern, $out)) {
-      $next = preg_replace_callback($comparePattern, static function(array $m) use ($resolver): string {
-        $key = (string)$m[1];
-        $op = (string)$m[2];
-        $rhs = (string)$m[3];
-        $body = (string)$m[4];
-        $val = (string)$resolver($key);
-        return binding_condition_matches($val, $op, $rhs) ? $body : '';
-      }, $out);
-      if ($next === null) break;
-      if ($next !== $out) {
-        $out = $next;
-        $changed = true;
-      }
-    }
-
-    if (preg_match($existsPattern, $out)) {
-      $next = preg_replace_callback($existsPattern, static function(array $m) use ($resolver): string {
-        $key = (string)$m[1];
-        $body = (string)$m[2];
-        $val = trim((string)$resolver($key));
-        return $val !== '' ? $body : '';
-      }, $out);
-      if ($next === null) break;
-      if ($next !== $out) {
-        $out = $next;
-        $changed = true;
-      }
-    }
-
-    if (!$changed) break;
-  }
+  [$out] = render_binding_condition_segment($tpl, 0, $resolver, false);
   return $out;
 }
 

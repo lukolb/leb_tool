@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{20.11.2026}
+\newcommand{\HandbuchStand}{21.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -2163,7 +2163,7 @@ Standardwert & Vorausfüllung für neue Profile, nicht rückwirkend für bestehe
 \end{enumerate}
 
 \subsection{Template-Mapping}
-\index{Template-Mapping}\index{Systemplatzhalter}\index{Vorschau-Schüler}
+\index{Template-Mapping}\index{Systemplatzhalter}\index{Vorschau-Schüler}\index{Bedingung!Template-Mapping}\index{Boolescher Vergleich}
 \begin{enumerate}
   \item Vorlage auswählen und \enquote{Felder bearbeiten} beziehungsweise den Mappingbereich öffnen.
   \item Für jede Zielposition den passenden Systemwert oder Platzhalter einfügen.
@@ -2171,6 +2171,28 @@ Standardwert & Vorausfüllung für neue Profile, nicht rückwirkend für bestehe
   \item Speichern, einen Vorschau-Schüler wählen und Vorschau erzeugen.
   \item Namen, Klasse, Zeitraum, Stammdaten und Sonderzeichen kontrollieren. Ein Mappingfehler kann alle Berichte dieser Vorlage betreffen.
 \end{enumerate}
+
+Ein Mapping kann Text abhängig von Stammdaten oder anderen Berichtsfeldern einsetzen. Jeder Block beginnt mit einem Ausdruck und einem Fragezeichen und endet mit \texttt{\{\{?\}\}}. Der Ausdruck ohne Vergleich prüft, ob ein Wert vorhanden ist. Ein vorangestelltes \texttt{!} beziehungsweise \texttt{not} prüft den Gegenfall.
+
+{\small
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.43\textwidth}|X|}
+\hline
+\textbf{Schreibweise} & \textbf{Wirkung}\tabularnewline
+\hline
+\texttt{\{\{field:\allowbreak klassensprecher?\}\}\allowbreak Text\allowbreak\{\{?\}\}} & Gibt den Text nur aus, wenn das Feld einen Inhalt besitzt.\tabularnewline
+\hline
+\texttt{\{\{!field:\allowbreak klassensprecher?\}\}\allowbreak-\allowbreak\{\{?\}\}} & Gibt den Bindestrich nur aus, wenn das Feld leer ist. Ein solcher Gegenblock darf direkt hinter dem Wahr-Block stehen.\tabularnewline
+\hline
+\texttt{\{\{field:\allowbreak klassensprecher?\}\}\allowbreak Text\allowbreak\{\{:\}\}\allowbreak-\allowbreak\{\{?\}\}} & Verwendet \texttt{\{\{:\}\}} als Else-Trenner: vor dem Trenner steht der Wahr-Text, dahinter der Ersatztext.\tabularnewline
+\hline
+\texttt{\{\{field:status=='gewaehlt'\allowbreak{} \&\&\allowbreak{} !field:gesperrt?\}\}\allowbreak Text\allowbreak\{\{?\}\}} & Verknüpft einen Textvergleich und eine Negation. Textwerte werden in einfache oder doppelte Anführungszeichen gesetzt.\tabularnewline
+\hline
+\end{tabularx}
+}
+
+Erlaubte logische Operatoren sind \texttt{!} beziehungsweise \texttt{not}, \texttt{\&\&} beziehungsweise \texttt{and}, \texttt{||} beziehungsweise \texttt{or} sowie \texttt{xor}. Vergleiche können mit \texttt{=}, \texttt{==}, \texttt{===}, \texttt{!=}, \texttt{!==}, \texttt{<>}, \texttt{>}, \texttt{>=}, \texttt{<} und \texttt{<=} geschrieben werden. Als feste Werte stehen Zahlen, Text in Anführungszeichen, \texttt{true}, \texttt{false}, \texttt{null} und \texttt{empty} zur Verfügung. Runde Klammern legen die gewünschte Reihenfolge eindeutig fest; verschachtelte Bedingungsblöcke sind ebenfalls zulässig. Bei Zahlen auf beiden Seiten wird numerisch verglichen, sonst als Text. Eine reine Inhaltsprüfung behandelt auch den Textwert \texttt{0} als vorhanden; für einen booleschen Nullwert daher ausdrücklich mit \texttt{false} oder der Zahl \texttt{0} vergleichen.
+
+\HintBox{Komplexe Mappings immer mit einem Vorschau-Schüler und anschließend im flüchtigen Template-Probelauf prüfen. Ein fehlendes \texttt{\{\{?\}\}} lässt den unvollständigen Block bewusst sichtbar, statt Berichtstext stillschweigend zu entfernen.}
 
 \subsection{Nutzerverwaltung}
 \index{Nutzerverwaltung!Rolle}\index{Nutzerverwaltung!Aktivstatus}\index{Nutzerverwaltung!Löschen}
@@ -2235,6 +2257,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, automatischer Bereinigung veralteter Dateien, administrativer Sammelerzeugung für mehrere Klassen, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Isolierter Demoschüler für Lehrkräfte und Admins mit vorab wählbarer Gruppen-, Items- oder Leseanfängeransicht und davon unabhängiger optionaler Silbenschrift ohne Veränderung echter Berichte.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
+  \item Template-Mappings mit verschachtelten booleschen Bedingungen, Vergleichen, Negation sowie Wahr-/Else-Texten.
   \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
   \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen, eingeschränkte Selbsteinschätzungsdurchführung durch Delegierte sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
@@ -2259,7 +2282,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 20.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 21.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}

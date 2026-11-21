@@ -23,13 +23,13 @@ $tx = [
   'template_select' => t('admin.template_mappings.template_select', '— Template auswählen —'),
   'fields_edit' => t('admin.template_mappings.fields_edit', 'Felder bearbeiten'),
   'mapping_for' => t('admin.template_mappings.mapping_for', 'Mapping für: {template} (v{version})'),
-  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst freien Text und Platzhalter kombinieren, z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Feldreferenzen sind mit <code>{{field:versetzt}}</code> möglich. Bedingungen als Block: <code>{{student.absence_days_total>0?}}Fehltage: {{student.absence_days_total}}{{?}}</code> oder <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>. In mehrzeiligen Feldern sind Zeilenumbrüche erlaubt (Enter). Gespeichert wird in <code>template_fields.meta_json.system_binding_tpl</code> (bei genau einem Platzhalter zusätzlich in <code>system_binding</code> für Abwärtskompatibilität).'),
+  'tip' => t('admin.template_mappings.tip', 'Tipp: Du kannst freien Text und Platzhalter kombinieren, z.B. <code>{{student.first_name}} {{student.last_name}}</code>. Feldreferenzen sind mit <code>{{field:versetzt}}</code> möglich. Bedingungen erlauben einen Wahr- und Ersatztext: <code>{{field:versetzt?}}Wird versetzt.{{:}}-{{?}}</code>. Alternativ kann der Gegenfall separat mit <code>{{!field:versetzt?}}-{{?}}</code> formuliert werden. Erlaubt sind <code>!</code>/<code>not</code>, <code>&amp;&amp;</code>/<code>and</code>, <code>||</code>/<code>or</code>, <code>xor</code>, Klammern sowie <code>= == === != !== &lt;&gt; &gt; &gt;= &lt; &lt;=</code>; Textwerte stehen in Anführungszeichen. In mehrzeiligen Feldern sind Zeilenumbrüche erlaubt (Enter).'),
   'placeholder_label' => t('admin.template_mappings.placeholder_label', 'Platzhalter einfügen'),
   'insert_btn' => t('admin.template_mappings.insert_btn', 'In das aktive Feld einfügen'),
   'table_field' => t('admin.template_mappings.table_field', 'PDF-Formfeld'),
   'table_template' => t('admin.template_mappings.table_template', 'Binding-Template'),
   'table_preview' => t('admin.template_mappings.table_preview', 'Vorschau'),
-  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Beispiele: <code>{{student.first_name}}</code>, <code>{{class.display}}</code>, <code>{{field:versetzt}}</code>, <code>{{field:versetzt>0?}}Wird versetzt.{{?}}</code>'),
+  'placeholder_hint' => t('admin.template_mappings.placeholder_hint', 'Beispiele: <code>{{student.first_name}}</code>, <code>{{field:versetzt}}</code>, <code>{{field:versetzt?}}Ja{{:}}Nein{{?}}</code>, <code>{{field:status==&quot;gewählt&quot; &amp;&amp; !field:gesperrt?}}Text{{?}}</code>'),
   'save' => t('admin.template_mappings.save', 'Speichern'),
   'preview_title' => t('admin.template_mappings.preview_title', 'Vorschau'),
   'preview_hint' => t('admin.template_mappings.preview_hint', 'Wähle einen Schüler aus, um die Platzhalter-Ersetzungen zu prüfen.'),
@@ -352,15 +352,8 @@ function preview_used_field_placeholders(array $fields, array $currentTpl): arra
     $t = (string)$tpl;
     if ($t === '') continue;
 
-    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*\}\}/', $t, $m1)) {
-      foreach ((array)($m1[1] ?? []) as $name) {
-        $n = trim((string)$name);
-        if ($n !== '') $found[$n] = true;
-      }
-    }
-
-    if (preg_match_all('/\{\{\s*field:([a-zA-Z0-9_.-]+)\s*(?:==|!=|>=|<=|>|<)\s*-?[0-9]+(?:[.,][0-9]+)?\s*\?\s*\}\}/', $t, $m2)) {
-      foreach ((array)($m2[1] ?? []) as $name) {
+    if (preg_match_all('/\bfield:([a-zA-Z0-9_.-]+)/', $t, $matches)) {
+      foreach ((array)($matches[1] ?? []) as $name) {
         $n = trim((string)$name);
         if ($n !== '') $found[$n] = true;
       }
