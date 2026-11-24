@@ -163,7 +163,7 @@ try {
   if ($templateId <= 0) throw new RuntimeException(t_lang('student.ai.error.no_template', $lang));
 
   $st = $pdo->prepare(
-    "SELECT id, field_name, field_type, label, label_en, help_text\n" .
+    "SELECT id, field_name, field_type, label, label_en, help_text, meta_json\n" .
     "FROM template_fields\n" .
     "WHERE id=? AND template_id=? AND can_child_edit=1\n" .
     "LIMIT 1"
@@ -171,6 +171,7 @@ try {
   $st->execute([$fieldId, $templateId]);
   $field = $st->fetch(PDO::FETCH_ASSOC);
   if (!$field) throw new RuntimeException(t_lang('student.ai.error.field_not_allowed', $lang));
+  $field = competency_child_text_apply_overrides($pdo, $templateId, [$field])[0] ?? $field;
 
   $label = '';
   if ($lang === 'en') {

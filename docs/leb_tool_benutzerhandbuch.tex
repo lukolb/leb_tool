@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{21.11.2026}
+\newcommand{\HandbuchStand}{23.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -196,7 +196,7 @@ Nach der Anmeldung erscheint die Navigation passend zur aktuellen Rolle. Das kle
 \index{Admin-Menü}\index{Dashboard}\index{Schule}\index{Klassen}\index{Schüler}
 \index{Template-Vorbereitung}\index{Templates}\index{Schriftarten}\index{Options-Listen}
 \index{Schüler-Felder}\index{Textbausteine}\index{AGs}\index{Berichte}
-\index{Berichtsvorschau}\index{Berichtsanfragen}\index{Export}\index{Elternfreigaben}
+\index{Berichtsvorschau}\index{Berichtsanfragen}\index{Export}\index{Elternfreigaben}\index{Kindertexte}
 \index{Kompetenzen}\index{PDF-Vorlagen}\index{Template-Pakete}\index{Einstellungen}
 \index{Vorlese-Audios}\index{Nutzerverwaltung}\index{Audit-Log}\index{Datensicherung}\index{Abmelden}
 \small
@@ -234,6 +234,8 @@ Berichte \(\rightarrow\) Elternfreigaben & Offene, aktive, abgelaufene und beend
 \hline
 Berichte \(\rightarrow\) Kompetenzen & Kompetenzbaum, Klassenstufen, Pflichtstatus, Darstellung und zweisprachige Texte pflegen sowie Kompetenzanträge bearbeiten.\\
 \hline
+Berichte \(\rightarrow\) Kindertexte & Zu einer Vorlage die unveränderbaren Lehrkrafttexte und die gemeinsam verwendeten deutschen und englischen Kindertexte anzeigen; Kindertexte bearbeiten, passende Texte aus anderen Vorlagen übernehmen oder KI-Vorschläge gesammelt vorbereiten.\\
+\hline
 Berichte \(\rightarrow\) PDF-Vorlagen & LaTeX-Pakete und Layouts importieren, aktivieren, als Standard setzen oder löschen.\\
 \hline
 Berichte \(\rightarrow\) Template-Pakete & Vorbereitete PDF-/RCFF-Pakete prüfen, importieren, erneut anwenden oder löschen.\\
@@ -255,7 +257,7 @@ Abmelden & Beendet die aktuelle Sitzung. Auf gemeinsam genutzten Geräten immer 
 
 \subsection{Lehrkraft-Menü vollständig erklärt}\label{sec:lehrkraft-menu}
 \index{Lehrkraft-Menü}\index{Eingaben}\index{Delegationen}\index{Elternzugänge}
-\index{Kompetenzanträge}
+\index{Kompetenzanträge}\index{Kindertexte}
 \small
 \begin{longtable}{|p{0.24\textwidth}|p{0.67\textwidth}|}
 \hline
@@ -282,6 +284,8 @@ Berichte \(\rightarrow\) Export & Berechtigte Klassen als ZIP, Gesamt-PDF, Einze
 Berichte \(\rightarrow\) Elternzugänge & Elternzugänge beantragen und verwalten, Signatur erfassen, Links verlängern oder beenden, Serienmails senden und Feedback auswerten.\\
 \hline
 Berichte \(\rightarrow\) Kompetenzanträge & Neue deutsch/englische Kompetenzen mit Kategorie, Klassenstufe und Pflichtstatus zur Adminprüfung einreichen; Status eigener Anträge verfolgen.\\
+\hline
+Berichte \(\rightarrow\) Kindertexte & Zu einer berechtigten Vorlage die Lehrkrafttexte lesen und die systemweit für diese Vorlage gemeinsam verwendeten deutschen und englischen Kindertexte bearbeiten; vorhandene Formulierungen aus anderen Vorlagen oder KI-Vorschläge können als Ausgangspunkt dienen.\\
 \hline
 Berichte \(\rightarrow\) PDF-Vorlagen & Bereitgestellte LaTeX-/PDF-Vorlagen im zulässigen Lehrkraftumfang verwenden und erzeugte Berichte prüfen.\\
 \hline
@@ -341,9 +345,9 @@ Kurzer Leitfaden (nicht rechtsverbindlich):
 \index{Sitzungsablauf}\index{Angemeldet bleiben}\index{erneute Anmeldung}\index{Autospeicherung}
 Das LEB Tool überwacht die verbleibende Sitzungszeit in allen angemeldeten Bereichen. Kurz vor dem Ablauf erscheint unten auf der Seite eine Warnung mit Countdown. \enquote{Angemeldet bleiben} verlängert die Sitzung, ohne die Seite neu zu laden.
 
-Ist die Sitzung bereits abgelaufen, öffnet sich die erneute Anmeldung direkt über der aktuellen Seite. Für Lehrkräfte und Admins wird das Passwort desselben Kontos verlangt; Schüler geben erneut ihren Login-Code ein. Die geöffnete Seite und vorhandene Eingaben bleiben dabei unverändert. Nach erfolgreicher Anmeldung aktualisiert das Tool die Sicherheitsdaten der Seite und wiederholt eine unterbrochene Speicherung automatisch. Auch normale Formulare werden vor dem Absenden geprüft, damit ein Sitzungsablauf nicht zu einer leeren oder verlorenen Eingabeseite führt.
+Ist die Sitzung bereits abgelaufen, öffnet sich die erneute Anmeldung direkt über der aktuellen Seite. Für Lehrkräfte und Admins wird das Passwort desselben Kontos verlangt; Schüler geben erneut ihren Login-Code ein. Die geöffnete Seite und vorhandene Eingaben bleiben dabei unverändert. Nach erfolgreicher Anmeldung aktualisiert das Tool die Sicherheitsdaten der Seite und wiederholt eine unterbrochene Speicherung automatisch. Auch normale Formulare werden vor dem Absenden geprüft, damit ein Sitzungsablauf nicht zu einer leeren oder verlorenen Eingabeseite führt. Ist der Anmeldekontext des Dialogs inzwischen selbst abgelaufen oder antwortet er nicht rechtzeitig, wechselt das Tool automatisch zur passenden vollständigen Anmeldung. Nach erfolgreicher Anmeldung führt es auf die ursprüngliche Seite einschließlich Auswahlparametern und Seitenanker zurück.
 
-\HintBox{Bei einer Sitzungswarnung möglichst \enquote{Angemeldet bleiben} wählen. Erscheint die erneute Anmeldung, im eingeblendeten Dialog fortfahren. Kein neues Fenster öffnen und die Seite nicht neu laden; bei einem Verbindungsfehler bleiben die Eingaben sichtbar und der Versuch kann wiederholt werden.}
+\HintBox{Bei einer Sitzungswarnung möglichst \enquote{Angemeldet bleiben} wählen. Erscheint die erneute Anmeldung, im eingeblendeten Dialog fortfahren. Ein manuelles Neuladen ist nicht erforderlich: Kann der Dialog nicht mehr verwendet werden, öffnet das Tool selbst die richtige Anmeldung und kehrt anschließend zur Herkunftsseite zurück.}
 
 \subsection{Vor jeder Arbeitssitzung}
 \begin{enumerate}
@@ -1415,7 +1419,7 @@ Gesprächsansicht & Führt Schritt für Schritt durch einen Schülerbericht und 
 \subsection*{Autospeicherung, Textbausteine \& Gesprächsansicht}
 \index{Autospeicherung}\index{Textbausteine}\index{KI-Textprüfung}\index{Gesprächsansicht}\index{Sitzungsablauf}
 \subsubsection{Autospeicherung}
-Änderungen werden automatisch gespeichert. Warten Sie nach längeren Texten auf die Statusmeldung. Bei einem Netzwerkfehler versucht die Seite erneut zu speichern. Vor dem Sitzungsablauf erscheint eine Warnung mit \enquote{Angemeldet bleiben}. Ist die Sitzung bereits abgelaufen, erfolgt die erneute Anmeldung im eingeblendeten Dialog auf derselben Seite. Eingaben bleiben erhalten; danach wird eine unterbrochene Speicherung automatisch wiederholt. Die Seite dafür nicht neu laden.
+Änderungen werden automatisch gespeichert. Warten Sie nach längeren Texten auf die Statusmeldung. Bei einem Netzwerkfehler versucht die Seite erneut zu speichern. Vor dem Sitzungsablauf erscheint eine Warnung mit \enquote{Angemeldet bleiben}. Ist die Sitzung bereits abgelaufen, erfolgt die erneute Anmeldung im eingeblendeten Dialog auf derselben Seite. Eingaben bleiben erhalten; danach wird eine unterbrochene Speicherung automatisch wiederholt. Ist auch dieser Dialog abgelaufen oder nicht erreichbar, öffnet das Tool automatisch die richtige vollständige Anmeldung und kehrt danach zur Herkunftsseite zurück. Die Seite dafür nicht manuell neu laden.
 
 \subsubsection{Textbausteine}
 \index{Textbaustein!einfügen}\index{Textbaustein!anpassen}\index{Textbaustein!Druckübersicht}
@@ -1620,9 +1624,27 @@ Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
   \item \textbf{KI-Rückmeldung zur Klasse:} Fasst vorhandene Werte zusammen. \enquote{Prompt anzeigen} macht die Grundlage transparent, \enquote{Neu berechnen} startet eine neue Auswertung.
   \item \textbf{Textprüfung:} Prüft abgeschlossene Freitexte und bietet vollständige, teilweise oder keine Übernahme an.
   \item \textbf{Schülererklärung:} Kann vom Admin getrennt aktiviert werden und ist nicht identisch mit Lehrkraftvorschlägen.
+  \item \textbf{Kindertexte einer Vorlage:} Erstellt auf Wunsch gesammelt Vorschläge in kindgerechtem Deutsch und amerikanischem Englisch. Die Vorschläge werden zunächst nur in die Eingabefelder eingesetzt und erst nach Prüfung mit \enquote{Alle KI-Vorschläge speichern} übernommen.
 \end{itemize}
 
 \WarnBox{KI-Ausgaben sind Arbeitshilfen. Sie können sachlich, sprachlich oder pädagogisch unpassend sein und werden niemals ungeprüft als Berichtstext verwendet.}
+
+\subsection{Gemeinsame Kindertexte für Kompetenzen}\label{sec:kindertexte}
+\index{Kindertexte}\index{Kompetenz!Kindertext}\index{KI!Kindertexte}\index{Vorlese-Audio!Kindertexte}
+Unter \enquote{Berichte \(\rightarrow\) Kindertexte} passen Lehrkräfte und Admins die Formulierungen an, die Kinder in der Selbsteinschätzung sehen und hören. Die fachlichen deutschen und englischen Lehrkrafttexte werden daneben immer vollständig und schreibgeschützt angezeigt. Bearbeitbar sind ausschließlich die Kindertexte.
+
+\begin{enumerate}
+  \item Eine zugängliche Vorlage wählen und bei Bedarf die Kompetenzen durchsuchen.
+  \item Pro Kompetenz den deutschen und englischen Lehrkrafttext als fachliche Referenz lesen.
+  \item Den deutschen und/oder englischen Kindertext kindgerecht formulieren und mit \enquote{Kindertext speichern} sichern. \enquote{Zurücksetzen} entfernt die Anpassung wieder und verwendet erneut den in der Vorlage hinterlegten Kindertext.
+  \item Wird derselbe deutsch-englische Lehrkraftwortlaut in einer anderen Vorlage verwendet, zeigt das Tool dort bereits gepflegte Kindertexte als Vorschlag an. \enquote{Übernehmen} füllt beide Eingabefelder; gespeichert wird erst nach der anschließenden Prüfung.
+\end{enumerate}
+
+\HintBox{Je Vorlage und Kompetenz gibt es systemweit genau einen gemeinsamen Kindertext pro Sprache. Parallellehrkräfte arbeiten deshalb unmittelbar mit denselben Formulierungen; die Anpassung gehört nicht zu einer einzelnen Klasse oder Person.}
+
+Bei aktivierter KI kann \enquote{Alle Kindertexte kindgerechter formulieren} die Texte einer Vorlage gesammelt auf Deutsch und Englisch vorbereiten. Standardmäßig bleiben bereits gepflegte Texte unverändert; die Option \enquote{Vorhandene Kindertexte ebenfalls neu formulieren} nimmt sie bewusst in den Vorschlag auf. Nach der Generierung werden alle Vorschläge sichtbar markiert und können einzeln überarbeitet werden. Erst \enquote{Alle KI-Vorschläge speichern} übernimmt sie gemeinsam.
+
+Die gespeicherten Kindertexte werden in der Schüleransicht, bei Schülererklärungen und bei der Vorlese-Audio-Erzeugung verwendet. Nach einer Änderung werden nicht mehr passende Audiozuordnungen automatisch bereinigt; die nächste Live- oder Sammelerzeugung verwendet den aktuellen deutschen beziehungsweise englischen Kindertext.
 
 \subsection{Formular-Bedienung \& Stabilität}
 \begin{itemize}
@@ -2110,7 +2132,7 @@ Elternlink ist abgelaufen & Je nach Status \enquote{Verlängern} oder \enquote{R
 \hline
 Schüler sieht trotz Freigabe keine Felder & Zusätzlich zur Klassenfreigabe müssen Kategorien für Schüler markiert und gespeichert sein.\\
 \hline
-Autospeicher meldet Sitzungsablauf & Im eingeblendeten Dialog mit demselben Konto erneut anmelden. Die Seite geöffnet lassen; Eingaben bleiben erhalten und die unterbrochene Speicherung wird danach automatisch wiederholt.\\
+Autospeicher meldet Sitzungsablauf & Im eingeblendeten Dialog mit demselben Konto erneut anmelden. Ist dieser Dialog selbst abgelaufen oder antwortet nicht, öffnet das Tool automatisch die passende vollständige Anmeldung und kehrt danach zur Herkunftsseite zurück. Manuelles Neuladen ist nicht nötig.\\
 \hline
 Export meldet fehlende Einträge & Details öffnen, nach Schüler/Feld suchen und korrigieren. Nur bewusst optionale Lücken mit \enquote{Ignorieren und exportieren} übergehen.\\
 \hline
@@ -2120,7 +2142,7 @@ Schrift sieht in Vorschau und Export verschieden aus & Unter \enquote{Schriftart
 \hline
 Englisches Intro fehlt & Klassen- oder Systemintro Englisch ergänzen. Je nach Konfiguration wird vorübergehend die deutsche Fassung als Rückfall genutzt.\\
 \hline
-Alte Audios sollen entfernt werden & Nach Text- oder Stimmenänderungen erfolgt die Bereinigung automatisch. Unter \enquote{Template-Vorbereitung \(\rightarrow\) Vorlese-Audios} kann der Admin den Bestand kontrollieren; die Zeitraumslöschung bleibt für abgeschlossene Halbjahre verfügbar. Berichtsdaten bleiben erhalten.\\
+Alte Audios sollen entfernt werden & Nach Text-, Kindertext- oder Stimmenänderungen erfolgt die Bereinigung automatisch. Unter \enquote{Template-Vorbereitung \(\rightarrow\) Vorlese-Audios} kann der Admin den Bestand kontrollieren; die Zeitraumslöschung bleibt für abgeschlossene Halbjahre verfügbar. Berichtsdaten bleiben erhalten.\\
 \hline
 Klasse lässt sich nicht endgültig löschen & Schutzprüfung lesen. Abhängige Berichte oder Zuordnungen dürfen nicht umgangen werden; in der Regel Klasse nur archivieren.\\
 \hline
@@ -2244,7 +2266,7 @@ Erlaubte logische Operatoren sind \texttt{!} beziehungsweise \texttt{not}, \text
 
 \subsection{Vorlese-Audio-Übersicht}
 \index{Vorlese-Audios!Filter}\index{Vorlese-Audios!anhören}\index{Vorlese-Audios!löschen}\index{Vorlese-Audios!Bulk-Erzeugung}
-Die Filter \enquote{Schuljahr}, \enquote{Halbjahr} und \enquote{Klasse} grenzen sowohl die Dateiliste als auch die auswählbaren Klassen der Sammelerzeugung ein. \enquote{Alle angezeigten Klassen auswählen} und \enquote{Audios für Auswahl erzeugen} erzeugen nur fehlende Dateien für aktive Klassen. Das ist auch vor Aktivierung der Vorlesefunktion möglich; für Schüler bleibt Vorlesen dennoch bis zur Aktivierung ausgeschaltet. Identische Texte werden unabhängig von der Klasse nur einmal gespeichert; Klassen erhalten lediglich eine Zuordnung zu dieser Datei. Beim Öffnen der Übersicht werden veraltete Quellen automatisch abgeglichen und ungenutzte Dateien gelöscht. Der Player dient der Qualitätskontrolle. \enquote{Löschen} entfernt eine Datei; die Sammellöschung erfordert Zeitraum und Bestätigungscheckbox.
+Die Filter \enquote{Schuljahr}, \enquote{Halbjahr} und \enquote{Klasse} grenzen sowohl die Dateiliste als auch die auswählbaren Klassen der Sammelerzeugung ein. \enquote{Alle angezeigten Klassen auswählen} und \enquote{Audios für Auswahl erzeugen} erzeugen nur fehlende Dateien für aktive Klassen. Das ist auch vor Aktivierung der Vorlesefunktion möglich; für Schüler bleibt Vorlesen dennoch bis zur Aktivierung ausgeschaltet. Für Kompetenz-Audios wird der aktuell gepflegte deutsche beziehungsweise englische Kindertext der Vorlage verwendet. Identische Texte werden unabhängig von der Klasse nur einmal gespeichert; Klassen erhalten lediglich eine Zuordnung zu dieser Datei. Beim Öffnen der Übersicht werden veraltete Quellen automatisch abgeglichen und ungenutzte Dateien gelöscht. Der Player dient der Qualitätskontrolle. \enquote{Löschen} entfernt eine Datei; die Sammellöschung erfordert Zeitraum und Bestätigungscheckbox.
 
 \section{Anhang: Funktionsstand November 2026}
 Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funktionsbereiche zusammen. Details und Sicherheitshinweise stehen in den jeweiligen Kapiteln.
@@ -2254,11 +2276,12 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
   \item Schulhalbjahre, selektive Klassenübertragung, sichere Löschung und automatischer Berichtsabschluss beim Archivieren.
   \item Schülerbezogene Berichtshistorie mit Suche, Klassenfilter, Export, Löschanträgen und zeitlich begrenzter Einsicht.
   \item Rollenbasierte E-Mail-Freigaben, Rücknahme und Benachrichtigung der Beteiligten.
-  \item Gecachte Vorlese-Audios mit unveränderter Live-Generierung als Rückfall, automatischer Bereinigung veralteter Dateien, administrativer Sammelerzeugung für mehrere Klassen, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
+  \item Gemeinsam gepflegte, vorlagenbezogene Kindertexte für Kompetenzen in Deutsch und Englisch, mit schreibgeschützten Lehrkrafttexten, Wiederverwendung bei gleichem Wortlaut und prüfbarer KI-Sammelunterstützung.
+  \item Gecachte Vorlese-Audios auf Basis der aktuellen Kindertexte mit unveränderter Live-Generierung als Rückfall, automatischer Bereinigung veralteter Dateien, administrativer Sammelerzeugung für mehrere Klassen, Audioverwaltung, Silbenschrift und zweisprachigen Intros.
   \item Isolierter Demoschüler für Lehrkräfte und Admins mit vorab wählbarer Gruppen-, Items- oder Leseanfängeransicht und davon unabhängiger optionaler Silbenschrift ohne Veränderung echter Berichte.
   \item Kompetenzen, Kompetenzanträge, LaTeX-/RCFF-Pakete, AGs und eingebettete Schriftarten.
   \item Template-Mappings mit verschachtelten booleschen Bedingungen, Vergleichen, Negation sowie Wahr-/Else-Texten.
-  \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung.
+  \item Backups mit Analyse, Fristen, Schulzeitzone, E-Mail-Einstellungen, Audit-Log und sitzungsweiter Warnung sowie verlustfreier erneuter Anmeldung mit automatischer Rückkehr zur Herkunftsseite, falls der eingeblendete Dialog selbst abläuft.
   \item Gesprächsansicht, Textbausteine, KI-Textprüfung, XSchool-Endnotenimport, klassenweite Übernahme definierter Schüler-Sperrwerte nach Rückfrage, Delegation ganzer Gruppen oder einzelner Untergruppen, eingeschränkte Selbsteinschätzungsdurchführung durch Delegierte sowie nachvollziehbare E-Mail-Benachrichtigungen bei Zuweisung und Fertigmeldung.
   \item Elternfreigaben, optionale Downloads, Unterschriften und auswertbares beziehungsweise anonymes Gesprächsfeedback.
 \end{itemize}
@@ -2282,7 +2305,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 21.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 23.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}

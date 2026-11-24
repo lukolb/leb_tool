@@ -436,6 +436,24 @@ CREATE TABLE IF NOT EXISTS `template_fields` (
   KEY `idx_template_fields_template` (`template_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `template_competency_child_texts` (
+  `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  `template_id` bigint UNSIGNED NOT NULL,
+  `competency_key` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `teacher_text_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `teacher_text_de` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `teacher_text_en` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `child_text_de` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `child_text_en` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `updated_by_user_id` bigint UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_template_competency_child_text` (`template_id`,`competency_key`),
+  KEY `idx_template_competency_teacher_hash` (`teacher_text_hash`),
+  KEY `idx_template_competency_updated_by` (`updated_by_user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `report_instances` (
   `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
   `template_id` bigint UNSIGNED NOT NULL,
@@ -852,6 +870,10 @@ ALTER TABLE `templates`
 
 ALTER TABLE `template_fields`
   ADD CONSTRAINT `fk_template_fields_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE `template_competency_child_texts`
+  ADD CONSTRAINT `fk_template_competency_child_template` FOREIGN KEY (`template_id`) REFERENCES `templates` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_template_competency_child_user` FOREIGN KEY (`updated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE `generated_template_packages`
   ADD CONSTRAINT `fk_gtp_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,

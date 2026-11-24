@@ -14,6 +14,7 @@ function student_session_set(int $studentId): void {
 $err = '';
 $code = '';
 $token = (string)($_GET['token'] ?? '');
+$next = safe_login_next_path((string)($_GET['next'] ?? $_POST['next'] ?? ''));
 
 if ($token !== '') {
   try {
@@ -29,6 +30,10 @@ if ($token !== '') {
     $row = $st->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException(t('student.login.error.invalid_qr', 'Ungültiger QR-Code.'));
     student_session_set((int)$row['id']);
+    if ($next !== '') {
+      header('Location: ' . $next);
+      exit;
+    }
     redirect('student/index.php');
   } catch (Throwable $e) {
     $err = $e->getMessage();
@@ -55,6 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$row) throw new RuntimeException(t('student.login.error.not_found', 'Code nicht gefunden.'));
 
     student_session_set((int)$row['id']);
+    if ($next !== '') {
+      header('Location: ' . $next);
+      exit;
+    }
     redirect('student/index.php');
   } catch (Throwable $e) {
     $msg = $e->getMessage();
@@ -297,6 +306,7 @@ $logo = (string)($b['logo_path'] ?? '');
 
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+        <input type="hidden" name="next" value="<?=h($next)?>">
 
         <label for="login_code_mask"><?=h(t('student.login.label_code', 'Login-Code'))?></label>
 
@@ -596,6 +606,8 @@ $logo = (string)($b['logo_path'] ?? '');
             const sameOrigin = urlCandidate.origin === window.location.origin;
             const token = urlCandidate.searchParams.get('token');
             if (token && sameOrigin) {
+              const returnTarget = <?=json_encode($next, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)?>;
+              if (returnTarget) urlCandidate.searchParams.set('next', returnTarget);
               playQrBeep();
               window.location.href = urlCandidate.toString();
               return;

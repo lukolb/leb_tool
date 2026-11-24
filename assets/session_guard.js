@@ -23,6 +23,7 @@
   let reauthPromise = null;
   let resolveReauth = null;
   let expiryCheckPending = false;
+  let loginRedirectStarted = false;
   const pendingForms = new WeakSet();
 
   const style = document.createElement('style');
@@ -180,6 +181,35 @@
     }
   }
 
+  function redirectToFullLogin() {
+    if (loginRedirectStarted) return;
+    loginRedirectStarted = true;
+    let loginUrl;
+    try {
+      loginUrl = new URL(String(config.loginUrl || ''), window.location.href);
+      const returnTarget = window.location.pathname + window.location.search + window.location.hash;
+      loginUrl.searchParams.set('next', returnTarget);
+    } catch (_) {
+      loginUrl = new URL('/login.php', window.location.origin);
+    }
+    window.location.assign(loginUrl.toString());
+  }
+
+  function needsFullLogin(payload) {
+    const code = String(payload && (payload.error || payload.code) || '').toLowerCase();
+    return code === 'reauth_context_invalid' || code === 'csrf_failed' || code === 'login_context_expired';
+  }
+
+  async function guardFetch(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(function () { controller.abort(); }, Math.max(1000, Number(timeoutMs || 15000)));
+    try {
+      return await nativeFetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
   function isSessionFailure(response, payload) {
     const code = String(payload && (payload.error || payload.code) || '').toLowerCase();
     return response.status === 401
@@ -206,6 +236,10 @@
 
   function requestReauthentication() {
     if (reauthPromise) return reauthPromise;
+    if (!reauthToken) {
+      redirectToFullLogin();
+      return new Promise(function () {});
+    }
     warning.hidden = true;
     overlay.hidden = false;
     reauthError.textContent = '';
@@ -214,18 +248,22 @@
     reauthPromise = new Promise(function (resolve) { resolveReauth = resolve; });
     void (async function () {
       try {
-        const response = await nativeFetch(config.statusUrl, {
+        const response = await guardFetch(config.statusUrl, {
           credentials: 'same-origin',
           cache: 'no-store',
           headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
-        });
+        }, 15000);
         const payload = await parseJson(response);
         syncState(payload);
         if (response.ok && payload.authenticated !== false) {
           finishReauthentication(payload);
           return;
         }
-      } catch (_) {
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          redirectToFullLogin();
+          return;
+        }
         reauthError.textContent = String(i18n.connectionFailed || 'Connection could not be checked.');
       }
       signInButton.disabled = false;
@@ -305,7 +343,7 @@
     if (config.principalKind === 'student') payload.login_code = credentialInput.value;
     else payload.password = credentialInput.value;
     try {
-      const response = await nativeFetch(config.reauthUrl, {
+      const response = await guardFetch(config.reauthUrl, {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',
@@ -316,17 +354,25 @@
           'X-Requested-With': 'XMLHttpRequest'
         },
         body: JSON.stringify(payload)
-      });
+      }, 20000);
       const result = await parseJson(response);
       if (result.csrf_token) csrfToken = String(result.csrf_token);
       if (!response.ok || result.ok === false || result.authenticated === false) {
+        if (needsFullLogin(result)) {
+          redirectToFullLogin();
+          return;
+        }
         reauthError.textContent = String(result.message || i18n.authFailed || 'Sign-in failed.');
         credentialInput.select();
         return;
       }
       finishReauthentication(result);
       showToast(i18n.extended || 'Session restored.');
-    } catch (_) {
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        redirectToFullLogin();
+        return;
+      }
       reauthError.textContent = String(i18n.connectionFailed || 'Connection could not be checked.');
     } finally {
       signInButton.disabled = false;

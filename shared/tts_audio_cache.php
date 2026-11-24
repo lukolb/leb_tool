@@ -301,7 +301,8 @@ function tts_audio_class_plan(PDO $pdo, int $classId, bool $allowDisabledClass =
     );
     $stFields->execute([$templateId]);
     $groups = [];
-    foreach ($stFields->fetchAll(PDO::FETCH_ASSOC) as $field) {
+    $childFields = competency_child_text_apply_overrides($pdo, $templateId, $stFields->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    foreach ($childFields as $field) {
       foreach (['de', 'en'] as $language) {
         $de = trim((string)($field['label'] ?? ''));
         $en = trim((string)($field['label_en'] ?? ''));

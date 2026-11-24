@@ -529,7 +529,7 @@ function load_child_fields(PDO $pdo, int $templateId): array {
      ORDER BY sort_order ASC, id ASC"
   );
   $st->execute([$templateId]);
-  return $st->fetchAll(PDO::FETCH_ASSOC);
+  return competency_child_text_apply_overrides($pdo, $templateId, $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
 }
 
 function load_teacher_fields(PDO $pdo, int $templateId): array {

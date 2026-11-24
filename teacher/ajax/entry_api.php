@@ -1804,7 +1804,7 @@ function load_child_fields_for_pairing(PDO $pdo, int $templateId): array {
      ORDER BY sort_order ASC, id ASC"
   );
   $st->execute([$templateId]);
-  return $st->fetchAll(PDO::FETCH_ASSOC);
+  return competency_child_text_apply_overrides($pdo, $templateId, $st->fetchAll(PDO::FETCH_ASSOC) ?: []);
 }
 
 function load_values(PDO $pdo, array $reportIds, array $fieldIds, string $source, string $lang): array {

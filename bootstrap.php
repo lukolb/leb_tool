@@ -6,6 +6,7 @@ require_once __DIR__ . '/shared/translations.php';
 require_once __DIR__ . '/shared/signatures.php';
 require_once __DIR__ . '/shared/mail.php';
 require_once __DIR__ . '/shared/competency_codes.php';
+require_once __DIR__ . '/shared/competency_child_texts.php';
 require_once __DIR__ . '/shared/ai_help.php';
 
 $configPath = getenv('APP_CONFIG_FILE') ?: (__DIR__ . '/config.php');
@@ -316,6 +317,21 @@ function url(string $path): string {
   return APP_BASE_URL . $path;
 }
 
+function safe_login_next_path(string $nextRaw): string {
+  $nextRaw = trim($nextRaw);
+  if ($nextRaw === '' || preg_match('/[\x00-\x1F\x7F]/', $nextRaw)) return '';
+  if (preg_match('~^[a-z][a-z0-9+.-]*://~i', $nextRaw) || str_starts_with($nextRaw, '//')) return '';
+  $parts = parse_url($nextRaw);
+  if ($parts === false || isset($parts['host']) || isset($parts['scheme']) || isset($parts['user']) || isset($parts['pass'])) return '';
+  $path = (string)($parts['path'] ?? '');
+  $decodedPath = rawurldecode($path);
+  if ($path === '' || $path[0] !== '/' || str_contains($decodedPath, '\\') || preg_match('~(?:^|/)\.\.(?:/|$)~', $decodedPath)) return '';
+  if (APP_BASE_URL !== '' && $path !== APP_BASE_URL && !str_starts_with($path, APP_BASE_URL . '/')) return '';
+  $query = (string)($parts['query'] ?? '');
+  $fragment = (string)($parts['fragment'] ?? '');
+  return $path . ($query !== '' ? ('?' . $query) : '') . ($fragment !== '' ? ('#' . $fragment) : '');
+}
+
 /**
  * Outputs favicon link tags.
  *
@@ -473,6 +489,7 @@ function render_session_guard_markup(): string {
   $config = [
     'statusUrl' => url('ajax/session_status.php'),
     'reauthUrl' => url('ajax/session_reauth.php'),
+    'loginUrl' => $kind === 'student' ? url('student/login.php') : url('login.php'),
     'principalKind' => $kind,
     'principalLabel' => $kind === 'user'
       ? (string)($_SESSION['user']['email'] ?? $_SESSION['user']['display_name'] ?? '')
@@ -2117,6 +2134,27 @@ function ensure_schema(PDO $pdo): void {
     if (!db_has_table($pdo, 'competency_requests')) {
       $pdo->exec("CREATE TABLE competency_requests (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, teacher_user_id BIGINT UNSIGNED NOT NULL, category_id BIGINT UNSIGNED DEFAULT NULL, subcategory_id BIGINT UNSIGNED DEFAULT NULL, proposal_text_de TEXT NOT NULL, proposal_text_en TEXT, status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', admin_note TEXT, approved_competency_id BIGINT UNSIGNED DEFAULT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_by_user_id BIGINT UNSIGNED DEFAULT NULL, reviewed_at DATETIME DEFAULT NULL, PRIMARY KEY (id), KEY idx_comp_req_status (status, created_at)) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
+    if (!db_has_table($pdo, 'template_competency_child_texts')) {
+      $pdo->exec(
+        "CREATE TABLE template_competency_child_texts (\n" .
+        "  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,\n" .
+        "  template_id BIGINT UNSIGNED NOT NULL,\n" .
+        "  competency_key VARCHAR(190) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  teacher_text_hash CHAR(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  teacher_text_de TEXT COLLATE utf8mb4_unicode_ci NOT NULL,\n" .
+        "  teacher_text_en TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n" .
+        "  child_text_de TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n" .
+        "  child_text_en TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n" .
+        "  updated_by_user_id BIGINT UNSIGNED DEFAULT NULL,\n" .
+        "  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n" .
+        "  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n" .
+        "  PRIMARY KEY (id),\n" .
+        "  UNIQUE KEY uq_template_competency_child_text (template_id, competency_key),\n" .
+        "  KEY idx_template_competency_teacher_hash (teacher_text_hash),\n" .
+        "  KEY idx_template_competency_updated_by (updated_by_user_id)\n" .
+        ") CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+      );
+    }
 
     // --- AG catalog + assignments
     ensure_ag_tables($pdo);
@@ -2361,7 +2399,11 @@ function require_student(): void {
     if (is_ajax_request()) {
       auth_json_error('session_expired', t('session.expired.message', 'Die Sitzung ist abgelaufen. Bitte melde dich erneut an.'), 401, true);
     }
-    header('Location: ' . url('student/login.php'));
+    $req = (string)($_SERVER['REQUEST_URI'] ?? url('student/index.php'));
+    $path = (string)(parse_url($req, PHP_URL_PATH) ?? url('student/index.php'));
+    $query = (string)(parse_url($req, PHP_URL_QUERY) ?? '');
+    $next = safe_login_next_path($path . ($query !== '' ? ('?' . $query) : ''));
+    header('Location: ' . url('student/login.php') . ($next !== '' ? ('?next=' . rawurlencode($next)) : ''));
     exit;
   }
 }
