@@ -99,6 +99,9 @@ competency_child_assert(
     && str_contains((string)$aiPage, 'id="aiReviewAll"')
     && str_contains((string)$aiPage, 'setAiReviewMode(true, true)')
     && str_contains((string)$aiApi, 'competency_child_ai_chat')
+    && str_contains((string)$aiApi, 'Ich-kann-Aussage')
+    && str_contains((string)$aiApi, 'Er darf länger als der Lehrkrafttext sein')
+    && str_contains((string)$aiApi, 'schwierige oder abstrakte Begriffe')
     && str_contains((string)$aiApi, 'competency_child_text_grade_levels')
     && str_contains((string)$aiApi, "'translate_to_en'")
     && str_contains((string)$aiApi, "'translate_to_de'")
@@ -112,6 +115,7 @@ competency_child_assert(
     && substr_count((string)$translations, "'competency_child_texts.ai_mode_translate_de'") === 2
     && substr_count((string)$translations, "'competency_child_texts.reset_all'") === 2
     && str_contains((string)$handbook, '\\enquote{KI-Vorschläge prüfen}')
+    && str_contains((string)$handbook, 'Ich-kann-Erklärungen')
     && str_contains((string)$handbook, '\\enquote{Alle Kindertexte zurücksetzen}'),
   'the bilingual UI and handbook must explain review, translation, grouping, and bulk reset workflows'
 );
