@@ -11,7 +11,9 @@ function student_session_set(int $studentId): void {
   $_SESSION['student'] = ['id' => $studentId];
 }
 
-$err = '';
+$err = ((string)($_GET['csrf_expired'] ?? '') === '1')
+  ? t('auth.login.csrf_expired', 'Die Sicherheitsprüfung ist abgelaufen. Bitte melde dich erneut an.')
+  : '';
 $code = '';
 $token = (string)($_GET['token'] ?? '');
 $next = safe_login_next_path((string)($_GET['next'] ?? $_POST['next'] ?? ''));
@@ -70,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (str_contains(strtolower($msg), 'csrf') || str_contains(strtolower($msg), 'token')) {
       unset($_SESSION['csrf_token']);
       csrf_token();
-      $err = t('auth.login.csrf_expired', 'Die Login-Seite war zu lange geöffnet. Bitte versuche es erneut.');
+      $err = t('auth.login.csrf_expired', 'Die Sicherheitsprüfung ist abgelaufen. Bitte melde dich erneut an.');
     } else {
       $err = $msg;
     }

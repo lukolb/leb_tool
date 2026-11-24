@@ -2,7 +2,17 @@
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
-require_login();
+$targetRole = (string)($_POST['role'] ?? $_GET['role'] ?? '');
+if (!in_array($targetRole, ['admin', 'teacher'], true)) {
+  http_response_code(400);
+  echo "Ungültige Rolle.";
+  exit;
+}
+
+$targetPath = $targetRole === 'admin' ? url('admin/index.php') : url('teacher/index.php');
+if (!current_user()) {
+  redirect_to_full_login($targetPath, $targetRole, false);
+}
 
 if (!is_actual_admin()) {
   http_response_code(403);
@@ -12,16 +22,7 @@ if (!is_actual_admin()) {
 
 $token = $_POST['csrf_token'] ?? $_GET['csrf_token'] ?? '';
 if (!is_string($token) || $token === '' || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
-  http_response_code(400);
-  echo "CSRF Token ungültig.";
-  exit;
-}
-
-$targetRole = (string)($_POST['role'] ?? $_GET['role'] ?? '');
-if (!in_array($targetRole, ['admin', 'teacher'], true)) {
-  http_response_code(400);
-  echo "Ungültige Rolle.";
-  exit;
+  redirect_to_full_login($targetPath, $targetRole, false);
 }
 
 $_SESSION['user']['role'] = $targetRole;

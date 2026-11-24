@@ -129,9 +129,11 @@ function render_role_header(string $title): void {
             <a class="lang <?= $lang==='de' ? 'active' : '' ?>" href="<?=h(url_with_lang('de'))?>" title="<?=h(t('ui.lang_de'))?>">🇩🇪</a>
             <a class="lang <?= $lang==='en' ? 'active' : '' ?>" href="<?=h(url_with_lang('en'))?>" title="<?=h(t('ui.lang_en'))?>">🇺🇸</a>
             <?php if ($canSwitchRole): ?>
-              <a class="lang" href="<?=h(url('switch_role.php?role=' . urlencode($switchRole) . '&csrf_token=' . urlencode(csrf_token())))?>" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>">
-                <?=h($switchIcon)?>
-              </a>
+              <form class="role-switch-form" method="post" action="<?=h(url('switch_role.php'))?>">
+                <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+                <input type="hidden" name="role" value="<?=h($switchRole)?>">
+                <button class="lang" type="submit" aria-label="<?=h($switchLabel)?>" title="<?=h($switchLabel)?>"><?=h($switchIcon)?></button>
+              </form>
             <?php endif; ?>
           </div>
         </div>

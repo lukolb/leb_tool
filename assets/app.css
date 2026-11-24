@@ -486,6 +486,14 @@ th{color:#111; font-size:13px}
 }
 .lang-switch .lang:hover{ background: rgba(0,0,0,0.04); }
 .lang-switch .lang.active{ border-color: var(--border); background: rgba(11,87,208,0.06); }
+.lang-switch .role-switch-form{ margin:0; }
+.lang-switch button.lang{
+  appearance:none;
+  background:transparent;
+  color:inherit;
+  font-family:inherit;
+  cursor:pointer;
+}
 
 /* Optional embedded help assistant (admin and teacher areas) */
 .ai-help-fab{

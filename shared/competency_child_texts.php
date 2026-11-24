@@ -53,6 +53,51 @@ function competency_child_text_teacher_hash(string $teacherDe, string $teacherEn
   return hash('sha256', competency_child_text_normalize($teacherDe) . "\n" . competency_child_text_normalize($teacherEn));
 }
 
+/** @return array<int,int> */
+function competency_child_text_grade_levels(PDO $pdo, int $templateId): array {
+  if ($templateId <= 0) return [];
+  $levels = [];
+  try {
+    $st = $pdo->prepare(
+      "SELECT DISTINCT grade_level
+         FROM classes
+        WHERE template_id=? AND grade_level IS NOT NULL
+        ORDER BY grade_level ASC"
+    );
+    $st->execute([$templateId]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) ?: [] as $level) {
+      $level = (int)$level;
+      if ($level > 0 && $level <= 13) $levels[] = $level;
+    }
+  } catch (Throwable $e) {
+    // Some tests and incomplete installations do not have the classes table yet.
+  }
+  if ($levels) return array_values(array_unique($levels));
+
+  try {
+    $st = $pdo->prepare("SELECT name FROM templates WHERE id=? LIMIT 1");
+    $st->execute([$templateId]);
+    $name = (string)($st->fetchColumn() ?: '');
+    if (preg_match('/(?:Klasse|Grade)\s*([1-9]|1[0-3])/iu', $name, $match)) {
+      return [(int)$match[1]];
+    }
+  } catch (Throwable $e) {
+    // A grade cannot always be inferred for a new or detached template.
+  }
+  return [];
+}
+
+function competency_child_text_grade_context(array $levels): string {
+  $levels = array_values(array_unique(array_filter(array_map('intval', $levels), static fn(int $level): bool => $level > 0 && $level <= 13)));
+  if (!$levels) return 'Grundschule, Klassenstufe nicht eindeutig hinterlegt; verwende besonders einfache Sprache für 6- bis 10-jährige Kinder';
+  sort($levels, SORT_NUMERIC);
+  $youngest = $levels[0];
+  $ageMin = $youngest + 5;
+  $ageMax = $youngest + 6;
+  $label = count($levels) === 1 ? (string)$youngest : implode(', ', $levels);
+  return 'Klassenstufe ' . $label . ' (für die jüngste Zielgruppe etwa ' . $ageMin . ' bis ' . $ageMax . ' Jahre)';
+}
+
 function competency_child_text_group_value(array $field, string $key): string {
   $meta = competency_child_text_meta($field);
   $rcff = is_array($meta['rcff'] ?? null) ? $meta['rcff'] : [];

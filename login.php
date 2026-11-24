@@ -2,11 +2,15 @@
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
-$err = '';
+$err = ((string)($_GET['csrf_expired'] ?? '') === '1')
+  ? t('auth.login.csrf_expired', 'Die Sicherheitsprüfung ist abgelaufen. Bitte melde dich erneut an.')
+  : '';
 $email = $_POST['email'] ?? '';
 $pass  = $_POST['password'] ?? '';
 $nextRaw = (string)($_GET['next'] ?? $_POST['next'] ?? '');
 $needAdmin = ((string)($_GET['need_admin'] ?? '') === '1');
+$requestedRoleRaw = (string)($_GET['role'] ?? $_POST['role'] ?? '');
+$requestedRole = in_array($requestedRoleRaw, ['admin', 'teacher'], true) ? $requestedRoleRaw : '';
 
 $next = safe_login_next_path($nextRaw);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -30,19 +34,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       } else {
         session_regenerate_id(true);
         $actualRole = (string)($u['role'] ?? '');
+        $activeRole = $actualRole === 'admin' && $requestedRole !== '' ? $requestedRole : $actualRole;
         $_SESSION['user'] = [
           'id' => (int)$u['id'],
           'email' => $u['email'],
           'display_name' => $u['display_name'],
-          'role' => $actualRole,
+          'role' => $activeRole,
           'actual_role' => $actualRole,
         ];
         audit('login', (int)$u['id']);
+        if ($requestedRole !== '' && $actualRole !== 'admin') {
+          $next = '';
+        }
         if ($next !== '') {
           header('Location: ' . $next);
           exit;
         }
         if ($actualRole === 'admin') {
+          if ($requestedRole === 'admin') redirect('admin/index.php');
+          if ($requestedRole === 'teacher') redirect('teacher/index.php');
           redirect('role_select.php');
         }
         redirect('teacher/index.php');
@@ -53,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (str_contains(strtolower($msg), 'csrf') || str_contains(strtolower($msg), 'token')) {
       unset($_SESSION['csrf_token']);
       csrf_token();
-      $err = t('auth.login.csrf_expired', 'Die Login-Seite war zu lange geöffnet. Bitte versuche es erneut.');
+      $err = t('auth.login.csrf_expired', 'Die Sicherheitsprüfung ist abgelaufen. Bitte melde dich erneut an.');
     } else {
       $err = t('auth.error_prefix', 'Fehler: ') . $msg;
     }
@@ -99,6 +109,7 @@ $logo = $b['logo_path'] ?? '';
       <form id="loginForm" method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="next" value="<?=h($next)?>">
+        <?php if ($requestedRole !== ''): ?><input type="hidden" name="role" value="<?=h($requestedRole)?>"><?php endif; ?>
         <label><?=h(t('auth.login.email_label'))?></label>
         <input name="email" type="email" value="<?=h((string)$email)?>" required>
 

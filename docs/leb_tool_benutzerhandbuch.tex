@@ -43,7 +43,7 @@
   citecolor=primary
 }
 
-\newcommand{\HandbuchStand}{23.11.2026}
+\newcommand{\HandbuchStand}{24.11.2026}
 
 \newcommand{\HintBox}[1]{%
   \noindent\fcolorbox{primary}{hintbg}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{\textbf{Hinweis:} #1}}\par
@@ -345,7 +345,7 @@ Kurzer Leitfaden (nicht rechtsverbindlich):
 \index{Sitzungsablauf}\index{Angemeldet bleiben}\index{erneute Anmeldung}\index{Autospeicherung}
 Das LEB Tool überwacht die verbleibende Sitzungszeit in allen angemeldeten Bereichen. Kurz vor dem Ablauf erscheint unten auf der Seite eine Warnung mit Countdown. \enquote{Angemeldet bleiben} verlängert die Sitzung, ohne die Seite neu zu laden.
 
-Ist die Sitzung bereits abgelaufen, öffnet sich die erneute Anmeldung direkt über der aktuellen Seite. Für Lehrkräfte und Admins wird das Passwort desselben Kontos verlangt; Schüler geben erneut ihren Login-Code ein. Die geöffnete Seite und vorhandene Eingaben bleiben dabei unverändert. Nach erfolgreicher Anmeldung aktualisiert das Tool die Sicherheitsdaten der Seite und wiederholt eine unterbrochene Speicherung automatisch. Auch normale Formulare werden vor dem Absenden geprüft, damit ein Sitzungsablauf nicht zu einer leeren oder verlorenen Eingabeseite führt. Ist der Anmeldekontext des Dialogs inzwischen selbst abgelaufen oder antwortet er nicht rechtzeitig, wechselt das Tool automatisch zur passenden vollständigen Anmeldung. Nach erfolgreicher Anmeldung führt es auf die ursprüngliche Seite einschließlich Auswahlparametern und Seitenanker zurück.
+Ist die Sitzung bereits abgelaufen, öffnet sich die erneute Anmeldung direkt über der aktuellen Seite. Für Lehrkräfte und Admins wird das Passwort desselben Kontos verlangt; Schüler geben erneut ihren Login-Code ein. Die geöffnete Seite und vorhandene Eingaben bleiben dabei unverändert. Nach erfolgreicher Anmeldung aktualisiert das Tool die Sicherheitsdaten der Seite und wiederholt eine unterbrochene Speicherung automatisch. Auch normale Formulare werden vor dem Absenden geprüft, damit ein Sitzungsablauf nicht zu einer leeren oder verlorenen Eingabeseite führt. Ist der Anmeldekontext des Dialogs inzwischen selbst abgelaufen oder antwortet er nicht rechtzeitig, wechselt das Tool automatisch zur passenden vollständigen Anmeldung. Nach erfolgreicher Anmeldung führt es auf die ursprüngliche Seite einschließlich Auswahlparametern und Seitenanker zurück. Läuft die Sicherheitsprüfung beim Wechsel zwischen Admin- und Lehrkraftrolle ab, erscheint ebenfalls die vollständige Anmeldung; danach wird der Wechsel automatisch in die gewählte Rolle fortgesetzt.
 
 \HintBox{Bei einer Sitzungswarnung möglichst \enquote{Angemeldet bleiben} wählen. Erscheint die erneute Anmeldung, im eingeblendeten Dialog fortfahren. Ein manuelles Neuladen ist nicht erforderlich: Kann der Dialog nicht mehr verwendet werden, öffnet das Tool selbst die richtige Anmeldung und kehrt anschließend zur Herkunftsseite zurück.}
 
@@ -1624,7 +1624,7 @@ Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
   \item \textbf{KI-Rückmeldung zur Klasse:} Fasst vorhandene Werte zusammen. \enquote{Prompt anzeigen} macht die Grundlage transparent, \enquote{Neu berechnen} startet eine neue Auswertung.
   \item \textbf{Textprüfung:} Prüft abgeschlossene Freitexte und bietet vollständige, teilweise oder keine Übernahme an.
   \item \textbf{Schülererklärung:} Kann vom Admin getrennt aktiviert werden und ist nicht identisch mit Lehrkraftvorschlägen.
-  \item \textbf{Kindertexte einer Vorlage:} Erstellt auf Wunsch gesammelt Vorschläge in kindgerechtem Deutsch und amerikanischem Englisch. Die Vorschläge werden zunächst nur in die Eingabefelder eingesetzt und erst nach Prüfung mit \enquote{Alle KI-Vorschläge speichern} übernommen.
+  \item \textbf{Kindertexte einer Vorlage:} Erstellt auf Wunsch gesammelt alters- und klassenstufengerechte Vorschläge in Deutsch und amerikanischem Englisch. Alternativ übersetzt die KI einen eingetragenen deutschen Kindertext nur ins Englische oder einen englischen Kindertext nur ins Deutsche. Die Vorschläge werden zunächst nur in die Eingabefelder eingesetzt und erst nach Prüfung gemeinsam übernommen.
 \end{itemize}
 
 \WarnBox{KI-Ausgaben sind Arbeitshilfen. Sie können sachlich, sprachlich oder pädagogisch unpassend sein und werden niemals ungeprüft als Berichtstext verwendet.}
@@ -1634,15 +1634,18 @@ Je nach Konfiguration kann die Lehrkraft KI-Funktionen nutzen.
 Unter \enquote{Berichte \(\rightarrow\) Kindertexte} passen Lehrkräfte und Admins die Formulierungen an, die Kinder in der Selbsteinschätzung sehen und hören. Die fachlichen deutschen und englischen Lehrkrafttexte werden daneben immer vollständig und schreibgeschützt angezeigt. Bearbeitbar sind ausschließlich die Kindertexte.
 
 \begin{enumerate}
-  \item Eine zugängliche Vorlage wählen und bei Bedarf die Kompetenzen durchsuchen.
+  \item Eine zugängliche Vorlage wählen. Die Kompetenzen erscheinen nach Gruppe und Untergruppe gegliedert. Einzelne Bereiche über ihre Überschrift öffnen oder schließen; \enquote{Alle öffnen} und \enquote{Alle schließen} steuern die gesamte Gliederung.
+  \item Bei Bedarf die Kompetenzen durchsuchen. Passende Gruppen und Untergruppen werden dabei automatisch geöffnet.
   \item Pro Kompetenz den deutschen und englischen Lehrkrafttext als fachliche Referenz lesen.
-  \item Den deutschen und/oder englischen Kindertext kindgerecht formulieren und mit \enquote{Kindertext speichern} sichern. \enquote{Zurücksetzen} entfernt die Anpassung wieder und verwendet erneut den in der Vorlage hinterlegten Kindertext.
+  \item Den deutschen und/oder englischen Kindertext kindgerecht formulieren und mit \enquote{Gemeinsam speichern} sichern. \enquote{Zurücksetzen} entfernt die einzelne Anpassung wieder. \enquote{Alle Kindertexte zurücksetzen} entfernt nach Bestätigung sämtliche gemeinsamen Anpassungen der gewählten Vorlage.
   \item Wird derselbe deutsch-englische Lehrkraftwortlaut in einer anderen Vorlage verwendet, zeigt das Tool dort bereits gepflegte Kindertexte als Vorschlag an. \enquote{Übernehmen} füllt beide Eingabefelder; gespeichert wird erst nach der anschließenden Prüfung.
 \end{enumerate}
 
 \HintBox{Je Vorlage und Kompetenz gibt es systemweit genau einen gemeinsamen Kindertext pro Sprache. Parallellehrkräfte arbeiten deshalb unmittelbar mit denselben Formulierungen; die Anpassung gehört nicht zu einer einzelnen Klasse oder Person.}
 
-Bei aktivierter KI kann \enquote{Alle Kindertexte kindgerechter formulieren} die Texte einer Vorlage gesammelt auf Deutsch und Englisch vorbereiten. Standardmäßig bleiben bereits gepflegte Texte unverändert; die Option \enquote{Vorhandene Kindertexte ebenfalls neu formulieren} nimmt sie bewusst in den Vorschlag auf. Nach der Generierung werden alle Vorschläge sichtbar markiert und können einzeln überarbeitet werden. Erst \enquote{Alle KI-Vorschläge speichern} übernimmt sie gemeinsam.
+Bei aktivierter KI zeigt der Bereich die aus den zugeordneten Klassen beziehungsweise dem Vorlagennamen ermittelte Klassenstufe. Für die Aufgabe \enquote{Deutsch und Englisch kindgerechter formulieren} erstellt die KI merklich einfachere, altersgerechte Neuformulierungen; unverändert wiederholte Lehrkrafttexte werden nicht als Vorschlag akzeptiert. Mit \enquote{Deutschen Kindertext ins Englische übersetzen} oder \enquote{Englischen Kindertext ins Deutsche übersetzen} bleibt der eingetragene Ausgangstext unverändert und nur das jeweilige Zielfeld wird ergänzt. Die Option zum Überschreiben nimmt bereits ausgefüllte Zieltexte bewusst in die Bearbeitung auf.
+
+Nach der Generierung wechselt die Seite automatisch in den Prüfmodus, öffnet die betroffenen Gruppen und springt zum ersten violett markierten Vorschlag. \enquote{KI-Vorschläge prüfen} blendet ausschließlich die noch nicht gespeicherten Vorschläge ein; \enquote{Alle Kompetenzen anzeigen} beendet diesen Filter. Lehrkraft- und Kindertext stehen weiterhin direkt nebeneinander und jeder Vorschlag kann vor dem gemeinsamen Speichern bearbeitet werden. Erst \enquote{Geprüfte Vorschläge gemeinsam speichern} übernimmt die markierten Texte.
 
 Die gespeicherten Kindertexte werden in der Schüleransicht, bei Schülererklärungen und bei der Vorlese-Audio-Erzeugung verwendet. Nach einer Änderung werden nicht mehr passende Audiozuordnungen automatisch bereinigt; die nächste Live- oder Sammelerzeugung verwendet den aktuellen deutschen beziehungsweise englischen Kindertext.
 
@@ -2305,7 +2308,7 @@ Die folgende Liste fasst die für den aktuellen Betrieb besonders wichtigen Funk
 \end{enumerate}
 
 \vspace{1cm}
-{\small Stand: redaktionell mit dem Funktionsstand vom 23.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
+{\small Stand: redaktionell mit dem Funktionsstand vom 24.11.2026 abgeglichen. Nach funktionsrelevanten Software-Updates sind Handbuchquelle, PDF, Screenshots und Versionsdatum gemeinsam zu aktualisieren.}
 
 \clearpage
 \section{Mini-Glossar}

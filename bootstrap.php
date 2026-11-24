@@ -332,6 +332,33 @@ function safe_login_next_path(string $nextRaw): string {
   return $path . ($query !== '' ? ('?' . $query) : '') . ($fragment !== '' ? ('#' . $fragment) : '');
 }
 
+function redirect_to_full_login(string $nextRaw = '', string $requestedRole = '', ?bool $studentLogin = null): never {
+  $next = safe_login_next_path($nextRaw);
+  if ($next === '') {
+    $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '');
+    $path = (string)(parse_url($requestUri, PHP_URL_PATH) ?? '');
+    $query = (string)(parse_url($requestUri, PHP_URL_QUERY) ?? '');
+    $next = safe_login_next_path($path . ($query !== '' ? ('?' . $query) : ''));
+  }
+
+  if ($studentLogin === null) {
+    $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?? '');
+    $studentPrefix = url('student/');
+    $studentLogin = current_user() === null
+      && (current_student() !== null || str_starts_with($requestPath, $studentPrefix));
+  }
+
+  $params = ['csrf_expired' => '1'];
+  if ($next !== '') $params['next'] = $next;
+  if (!$studentLogin && in_array($requestedRole, ['admin', 'teacher'], true)) {
+    $params['role'] = $requestedRole;
+  }
+
+  $loginPath = $studentLogin ? 'student/login.php' : 'login.php';
+  header('Location: ' . url($loginPath) . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986));
+  exit;
+}
+
 /**
  * Outputs favicon link tags.
  *
@@ -2422,7 +2449,12 @@ function csrf_verify(): void {
   $t = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
   if (!is_string($t) || $t === '' || !hash_equals($_SESSION['csrf_token'] ?? '', $t)) {
     if (is_ajax_request()) {
-      auth_json_error('csrf_failed', t('session.csrf_failed.message', 'Die Sicherheitsprüfung ist abgelaufen. Bitte lade die Seite neu oder melde dich erneut an.'), 403, !current_user() && !current_student());
+      auth_json_error('csrf_failed', t('session.csrf_failed.message', 'Die Sicherheitsprüfung ist abgelaufen. Bitte lade die Seite neu oder melde dich erneut an.'), 403, true);
+    }
+    $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH) ?? '');
+    $isLoginRequest = in_array($requestPath, [url('login.php'), url('student/login.php')], true);
+    if (!$isLoginRequest && (current_user() !== null || current_student() !== null)) {
+      redirect_to_full_login();
     }
     throw new RuntimeException('CSRF Token ungültig.');
   }

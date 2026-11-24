@@ -51,6 +51,11 @@ session_guard_assert(
   'every JSON authentication failure must provide the fresh CSRF state needed for inline reauthentication'
 );
 session_guard_assert(
+  strpos($source['bootstrap'], "auth_json_error('csrf_failed'") !== false
+    && strpos($source['bootstrap'], "403, true") !== false,
+  'an expired AJAX CSRF token must always request reauthentication'
+);
+session_guard_assert(
   strpos($source['bootstrap'], "hash_hmac('sha256'") !== false
     && strpos($source['reauth'], "FROM users WHERE id=?") !== false
     && strpos($source['reauth'], "WHERE s.id=? AND s.login_code=?") !== false

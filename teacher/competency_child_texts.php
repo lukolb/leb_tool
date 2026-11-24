@@ -66,6 +66,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($catalog as $item) $catalogByKey[(string)$item['competency_key']] = $item;
     $action = trim((string)($_POST['action'] ?? 'save_single'));
 
+    if ($action === 'reset_all') {
+      $delete = $pdo->prepare("DELETE FROM template_competency_child_texts WHERE template_id=?");
+      $delete->execute([$templateId]);
+      $resetCount = $delete->rowCount();
+      audit('competency_child_text_reset_all', $userId, ['template_id' => $templateId, 'count' => $resetCount]);
+      tts_audio_cleanup_template_classes($pdo, $templateId);
+      header('Location: ' . url('teacher/competency_child_texts.php?template_id=' . $templateId . '&saved=reset_all'));
+      exit;
+    }
+
     if ($action === 'save_ai_batch') {
       $texts = json_decode((string)($_POST['texts_json'] ?? ''), true);
       if (!is_array($texts) || !$texts || count($texts) > count($catalogByKey)) {
@@ -172,6 +182,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $catalog = $templateId > 0 ? competency_child_text_catalog($pdo, $templateId) : [];
 $overrides = $templateId > 0 ? competency_child_text_overrides($pdo, $templateId) : [];
+$aiGradeLevels = $templateId > 0 ? competency_child_text_grade_levels($pdo, $templateId) : [];
+$aiGradeLabel = $aiGradeLevels ? implode(', ', $aiGradeLevels) : t('competency_child_texts.ai_grade_unknown', 'nicht eindeutig hinterlegt');
+$catalogGroups = [];
+foreach ($catalog as $item) {
+  $categoryDe = trim((string)($item['category_de'] ?? ''));
+  $categoryEn = trim((string)($item['category_en'] ?? ''));
+  $subcategoryDe = trim((string)($item['subcategory_de'] ?? ''));
+  $subcategoryEn = trim((string)($item['subcategory_en'] ?? ''));
+  $categoryLabel = ui_lang() === 'en' && $categoryEn !== '' ? $categoryEn : $categoryDe;
+  $subcategoryLabel = ui_lang() === 'en' && $subcategoryEn !== '' ? $subcategoryEn : $subcategoryDe;
+  if ($categoryLabel === '') $categoryLabel = t('competency_child_texts.ungrouped', 'Ohne Gruppe');
+  if ($subcategoryLabel === '') $subcategoryLabel = t('competency_child_texts.unsubgrouped', 'Ohne Untergruppe');
+  $categoryKey = hash('sha256', $categoryDe . "\n" . $categoryEn);
+  $subcategoryKey = hash('sha256', $subcategoryDe . "\n" . $subcategoryEn);
+  if (!isset($catalogGroups[$categoryKey])) {
+    $catalogGroups[$categoryKey] = ['label' => $categoryLabel, 'count' => 0, 'subgroups' => []];
+  }
+  if (!isset($catalogGroups[$categoryKey]['subgroups'][$subcategoryKey])) {
+    $catalogGroups[$categoryKey]['subgroups'][$subcategoryKey] = ['label' => $subcategoryLabel, 'items' => []];
+  }
+  $catalogGroups[$categoryKey]['subgroups'][$subcategoryKey]['items'][] = $item;
+  $catalogGroups[$categoryKey]['count']++;
+}
 $hashes = array_values(array_unique(array_filter(array_map(static fn(array $item): string => (string)$item['teacher_text_hash'], $catalog))));
 $suggestionsByHash = [];
 if ($hashes && db_has_table($pdo, 'template_competency_child_texts')) {
@@ -206,6 +239,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
 <?php if ($error !== ''): ?><div class="alert danger"><strong><?=h($error)?></strong></div><?php endif; ?>
 <?php if ((string)($_GET['saved'] ?? '') === '1'): ?><div class="alert success"><strong><?=h(t('competency_child_texts.saved', 'Der gemeinsame Kindertext wurde gespeichert.'))?></strong></div><?php endif; ?>
 <?php if ((string)($_GET['saved'] ?? '') === 'batch'): ?><div class="alert success"><strong><?=h(t('competency_child_texts.ai_batch_saved', 'Die geprüften KI-Vorschläge wurden gemeinsam gespeichert und werden bei der Audiogenerierung berücksichtigt.'))?></strong></div><?php endif; ?>
+<?php if ((string)($_GET['saved'] ?? '') === 'reset_all'): ?><div class="alert success"><strong><?=h(t('competency_child_texts.reset_all_saved', 'Alle Kindertexte dieser Vorlage wurden zurückgesetzt.'))?></strong></div><?php endif; ?>
 
 <?php if (!$templates): ?>
   <div class="card"><p><?=h(t('competency_child_texts.no_templates', 'Für deine Klassen ist keine Vorlage mit Schüler-Kompetenzen verfügbar.'))?></p></div>
@@ -225,15 +259,42 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     </div>
   </div>
 
+  <div class="card competency-child-view-actions">
+    <div>
+      <strong><?=h(t('competency_child_texts.group_view', 'Gruppenansicht'))?></strong>
+      <p class="muted"><?=h(t('competency_child_texts.group_view_hint', 'Kompetenzen sind nach Gruppe und Untergruppe sortiert. Öffne nur die Bereiche, die du gerade prüfen möchtest.'))?></p>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" type="button" id="expandAllGroups"><?=h(t('competency_child_texts.expand_all', 'Alle öffnen'))?></button>
+      <button class="btn secondary" type="button" id="collapseAllGroups"><?=h(t('competency_child_texts.collapse_all', 'Alle schließen'))?></button>
+      <?php if ($overrides): ?>
+        <form method="post" class="competency-child-reset-all-form">
+          <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
+          <input type="hidden" name="template_id" value="<?= (int)$templateId ?>">
+          <input type="hidden" name="action" value="reset_all">
+          <button class="btn danger" type="submit" onclick="return confirm(<?=h(json_encode(t('competency_child_texts.reset_all_confirm', 'Wirklich alle gemeinsam gespeicherten Kindertexte dieser Vorlage zurücksetzen? Danach werden wieder die ursprünglichen Vorlagentexte verwendet.'), JSON_UNESCAPED_UNICODE))?>)"><?=h(t('competency_child_texts.reset_all', 'Alle Kindertexte zurücksetzen'))?></button>
+        </form>
+      <?php endif; ?>
+    </div>
+  </div>
+
   <?php $aiConfig = app_config()['ai'] ?? []; $aiAvailable = (bool)($aiConfig['enabled'] ?? true) && trim((string)($aiConfig['api_key'] ?? getenv('OPENAI_API_KEY') ?: '')) !== ''; ?>
   <div class="card competency-child-ai-panel">
     <div>
       <h2><?=h(t('competency_child_texts.ai_title', 'Kindertexte mit KI vorbereiten'))?></h2>
       <p class="muted"><?=h(t('competency_child_texts.ai_intro', 'Die hinterlegte KI erstellt gesammelt deutsche und englische Vorschläge. Prüfe und bearbeite sie vor dem gemeinsamen Speichern.'))?></p>
-      <label class="choice-chip"><input type="checkbox" id="aiReplaceExisting" value="1"> <span><?=h(t('competency_child_texts.ai_replace_existing', 'Auch bereits gespeicherte Kindertexte neu vorschlagen'))?></span></label>
+      <p class="competency-child-ai-grade"><?=h(str_replace('{grade}', $aiGradeLabel, t('competency_child_texts.ai_grade', 'Zielgruppe: Klassenstufe {grade}')))?></p>
+      <label for="aiMode"><strong><?=h(t('competency_child_texts.ai_mode', 'KI-Aufgabe'))?></strong></label>
+      <select class="input" id="aiMode">
+        <option value="simplify_both"><?=h(t('competency_child_texts.ai_mode_simplify', 'Deutsch und Englisch kindgerechter formulieren'))?></option>
+        <option value="translate_to_en"><?=h(t('competency_child_texts.ai_mode_translate_en', 'Deutschen Kindertext ins Englische übersetzen'))?></option>
+        <option value="translate_to_de"><?=h(t('competency_child_texts.ai_mode_translate_de', 'Englischen Kindertext ins Deutsche übersetzen'))?></option>
+      </select>
+      <label class="choice-chip"><input type="checkbox" id="aiReplaceExisting" value="1"> <span><?=h(t('competency_child_texts.ai_replace_existing', 'Bereits ausgefüllte Zieltexte ebenfalls bearbeiten und überschreiben'))?></span></label>
     </div>
     <div class="competency-child-ai-actions">
       <button class="btn" type="button" id="aiGenerateAll" <?=$aiAvailable?'':'disabled'?>><?=h(t('competency_child_texts.ai_generate', 'KI-Vorschläge für Vorlage erstellen'))?></button>
+      <button class="btn secondary" type="button" id="aiReviewAll" hidden><?=h(t('competency_child_texts.ai_review', 'KI-Vorschläge prüfen'))?></button>
       <button class="btn" type="button" id="aiSaveAll" hidden><?=h(t('competency_child_texts.ai_save_all', 'Geprüfte Vorschläge gemeinsam speichern'))?></button>
     </div>
     <p class="competency-child-ai-status" id="aiBatchStatus" aria-live="polite"><?php if (!$aiAvailable): ?><?=h(t('competency_child_texts.ai_unavailable', 'KI-Vorschläge sind deaktiviert oder es ist kein API-Schlüssel hinterlegt.'))?><?php endif; ?></p>
@@ -246,7 +307,15 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
   </div>
 
   <div id="competencyChildList">
-  <?php foreach ($catalog as $item):
+  <?php foreach ($catalogGroups as $group): ?>
+    <details class="competency-child-group">
+      <summary><span><?=h((string)$group['label'])?></span><span class="competency-child-count"><?= (int)$group['count'] ?></span></summary>
+      <div class="competency-child-group-body">
+      <?php foreach ($group['subgroups'] as $subgroup): ?>
+        <details class="competency-child-subgroup">
+          <summary><span><?=h((string)$subgroup['label'])?></span><span class="competency-child-count"><?= count($subgroup['items']) ?></span></summary>
+          <div class="competency-child-subgroup-body">
+          <?php foreach ($subgroup['items'] as $item):
     $key = (string)$item['competency_key'];
     $override = $overrides[$key] ?? [];
     $childDe = (string)($override['child_text_de'] ?? '');
@@ -254,16 +323,15 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     $hash = (string)$item['teacher_text_hash'];
     $suggestions = $suggestionsByHash[$hash] ?? [];
     $anchor = 'competency-' . substr(hash('sha256', $key), 0, 12);
-    $category = ui_lang() === 'en' && trim((string)$item['category_en']) !== '' ? (string)$item['category_en'] : (string)$item['category_de'];
-    $subcategory = ui_lang() === 'en' && trim((string)$item['subcategory_en']) !== '' ? (string)$item['subcategory_en'] : (string)$item['subcategory_de'];
+    $category = (string)$group['label'];
+    $subcategory = (string)$subgroup['label'];
     $searchText = implode(' ', [(string)$item['code'], $category, $subcategory, (string)$item['teacher_text_de'], (string)$item['teacher_text_en'], $childDe, $childEn]);
   ?>
     <section class="card competency-child-card" id="<?=h($anchor)?>" data-search="<?=h(function_exists('mb_strtolower') ? mb_strtolower($searchText, 'UTF-8') : strtolower($searchText))?>">
       <div class="competency-child-heading">
         <div>
           <?php if ((string)$item['code'] !== ''): ?><span class="chip"><?=h((string)$item['code'])?></span><?php endif; ?>
-          <?php if ($category !== ''): ?><strong><?=h($category)?></strong><?php endif; ?>
-          <?php if ($subcategory !== ''): ?><span class="muted"> · <?=h($subcategory)?></span><?php endif; ?>
+          <span class="competency-child-ai-badge" hidden><?=h(t('competency_child_texts.ai_badge', 'KI-Vorschlag – noch nicht gespeichert'))?></span>
         </div>
         <?php if ($childDe !== '' || $childEn !== ''): ?><span class="competency-child-shared"><?=h(t('competency_child_texts.shared', 'Gemeinsam gespeichert'))?></span><?php endif; ?>
       </div>
@@ -302,29 +370,70 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
         </div>
       </form>
     </section>
+          <?php endforeach; ?>
+          </div>
+        </details>
+      <?php endforeach; ?>
+      </div>
+    </details>
   <?php endforeach; ?>
   </div>
   <p class="card muted" id="competencyChildEmpty" hidden><?=h(t('competency_child_texts.no_search_results', 'Keine passende Kompetenz gefunden.'))?></p>
 <?php endif; ?>
 
 <style>
-.competency-child-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(240px,.7fr);gap:16px;align-items:end}.competency-child-toolbar form,.competency-child-toolbar>div{display:grid;gap:6px}.competency-child-ai-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:center;border-left:4px solid #7c3aed}.competency-child-ai-panel h2{margin-top:0}.competency-child-ai-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.competency-child-ai-status{grid-column:1/-1;margin:0;font-weight:650;color:#4c1d95}.competency-child-card{scroll-margin-top:150px}.competency-child-card.ai-proposal{border-color:#8b5cf6;box-shadow:0 0 0 2px rgba(124,58,237,.12)}.competency-child-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}.competency-child-shared{padding:4px 9px;border-radius:999px;background:#e8f5e9;color:#256029;font-size:12px;font-weight:700}.competency-child-teacher-grid,.competency-child-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.competency-child-label{display:block;font-size:13px;font-weight:750;color:#334155;margin-bottom:5px}.competency-child-readonly{min-height:58px;padding:10px 12px;border:1px solid #dbe2ea;border-radius:10px;background:#f6f8fb;color:#475569}.competency-child-form{margin-top:14px}.competency-child-editor-grid textarea{width:100%;box-sizing:border-box;resize:vertical}.competency-child-suggestions{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e6;border:1px solid #f4d58d}.competency-child-copy{margin:3px 6px 3px 0}.competency-child-actions{justify-content:flex-end;margin-top:12px}.chip{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;background:#eef5ff;margin-right:6px}@media(max-width:760px){.competency-child-toolbar,.competency-child-teacher-grid,.competency-child-editor-grid,.competency-child-ai-panel{grid-template-columns:1fr}.competency-child-heading{display:block}.competency-child-shared{display:inline-block;margin-top:8px}.competency-child-ai-actions{justify-content:flex-start}}
+.competency-child-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(240px,.7fr);gap:16px;align-items:end}.competency-child-toolbar form,.competency-child-toolbar>div{display:grid;gap:6px}.competency-child-view-actions{display:flex;justify-content:space-between;gap:16px;align-items:center}.competency-child-view-actions p{margin:4px 0 0}.competency-child-view-actions .actions{margin:0;justify-content:flex-end}.competency-child-reset-all-form{margin:0}.competency-child-ai-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:center;border-left:4px solid #7c3aed}.competency-child-ai-panel h2{margin-top:0}.competency-child-ai-panel>div:first-child{display:grid;gap:7px}.competency-child-ai-panel>div:first-child>p{margin:0}.competency-child-ai-grade{font-weight:750;color:#5b21b6}.competency-child-ai-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.competency-child-ai-actions [hidden],.competency-child-ai-badge[hidden],.competency-child-card[hidden],.competency-child-group[hidden],.competency-child-subgroup[hidden],#competencyChildEmpty[hidden]{display:none!important}.competency-child-ai-status{grid-column:1/-1;margin:0;font-weight:650;color:#4c1d95}.competency-child-group,.competency-child-subgroup{border:1px solid #d9e0e8;border-radius:12px;background:#fff;margin:0 0 14px}.competency-child-subgroup{margin:0 0 10px;background:#f8fafc}.competency-child-group>summary,.competency-child-subgroup>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-weight:800;padding:14px 16px;list-style-position:inside}.competency-child-subgroup>summary{padding:11px 14px}.competency-child-group-body{padding:0 12px 2px}.competency-child-subgroup-body{padding:0 10px 2px}.competency-child-count{min-width:28px;text-align:center;padding:2px 8px;border-radius:999px;background:#e8eef8;color:#334155;font-size:12px}.competency-child-card{scroll-margin-top:150px;margin:0 0 10px}.competency-child-card.ai-proposal{border-color:#8b5cf6;box-shadow:0 0 0 2px rgba(124,58,237,.12);background:#fdfbff}.competency-child-ai-badge{display:inline-block;border-radius:999px;padding:3px 9px;background:#ede9fe;color:#5b21b6;font-size:12px;font-weight:800}.competency-child-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}.competency-child-shared{padding:4px 9px;border-radius:999px;background:#e8f5e9;color:#256029;font-size:12px;font-weight:700}.competency-child-teacher-grid,.competency-child-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.competency-child-label{display:block;font-size:13px;font-weight:750;color:#334155;margin-bottom:5px}.competency-child-readonly{min-height:58px;padding:10px 12px;border:1px solid #dbe2ea;border-radius:10px;background:#f6f8fb;color:#475569}.competency-child-form{margin-top:14px}.competency-child-editor-grid textarea{width:100%;box-sizing:border-box;resize:vertical}.competency-child-suggestions{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e6;border:1px solid #f4d58d}.competency-child-copy{margin:3px 6px 3px 0}.competency-child-actions{justify-content:flex-end;margin-top:12px}.chip{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;background:#eef5ff;margin-right:6px}@media(max-width:760px){.competency-child-toolbar,.competency-child-teacher-grid,.competency-child-editor-grid,.competency-child-ai-panel{grid-template-columns:1fr}.competency-child-view-actions{display:block}.competency-child-view-actions .actions{justify-content:flex-start;margin-top:12px}.competency-child-heading{display:block}.competency-child-shared{display:inline-block;margin-top:8px}.competency-child-ai-actions{justify-content:flex-start}}
 </style>
 <script>
 (() => {
   const search = document.getElementById('competencySearch');
   const cards = Array.from(document.querySelectorAll('.competency-child-card'));
+  const groupDetails = Array.from(document.querySelectorAll('.competency-child-group'));
+  const subgroupDetails = Array.from(document.querySelectorAll('.competency-child-subgroup'));
   const empty = document.getElementById('competencyChildEmpty');
-  if (search) search.addEventListener('input', () => {
-    const needle = String(search.value || '').trim().toLocaleLowerCase();
+  const expandAll = document.getElementById('expandAllGroups');
+  const collapseAll = document.getElementById('collapseAllGroups');
+  let aiReviewMode = false;
+
+  function openCardParents(card) {
+    let parent = card?.parentElement || null;
+    while (parent) {
+      if (parent.matches?.('details')) parent.open = true;
+      parent = parent.parentElement;
+    }
+  }
+
+  function applyVisibility() {
+    const needle = String(search?.value || '').trim().toLocaleLowerCase();
     let visible = 0;
     cards.forEach((card) => {
-      const show = needle === '' || String(card.dataset.search || '').includes(needle);
+      const matchesSearch = needle === '' || String(card.dataset.search || '').includes(needle);
+      const matchesReview = !aiReviewMode || card.classList.contains('ai-proposal');
+      const show = matchesSearch && matchesReview;
       card.hidden = !show;
-      if (show) visible++;
+      if (show) {
+        visible++;
+        if (needle !== '' || aiReviewMode) openCardParents(card);
+      }
+    });
+    subgroupDetails.forEach((details) => {
+      details.hidden = !Array.from(details.querySelectorAll('.competency-child-card')).some((card) => !card.hidden);
+    });
+    groupDetails.forEach((details) => {
+      details.hidden = !Array.from(details.querySelectorAll('.competency-child-card')).some((card) => !card.hidden);
     });
     if (empty) empty.hidden = visible !== 0;
+  }
+
+  search?.addEventListener('input', applyVisibility);
+  expandAll?.addEventListener('click', () => {
+    [...groupDetails, ...subgroupDetails].filter((details) => !details.hidden).forEach((details) => { details.open = true; });
   });
+  collapseAll?.addEventListener('click', () => {
+    [...subgroupDetails, ...groupDetails].forEach((details) => { details.open = false; });
+  });
+  const anchorCard = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+  if (anchorCard?.classList.contains('competency-child-card')) openCardParents(anchorCard);
   document.querySelectorAll('.competency-child-copy').forEach((button) => {
     button.addEventListener('click', () => {
       const form = button.closest('form');
@@ -338,7 +447,9 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
   });
 
   const aiGenerate = document.getElementById('aiGenerateAll');
+  const aiReview = document.getElementById('aiReviewAll');
   const aiSave = document.getElementById('aiSaveAll');
+  const aiMode = document.getElementById('aiMode');
   const aiReplaceExisting = document.getElementById('aiReplaceExisting');
   const aiStatus = document.getElementById('aiBatchStatus');
   const aiBatchSaveForm = document.getElementById('aiBatchSaveForm');
@@ -347,24 +458,56 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
   const aiMessages = {
     working: <?=json_encode(t('competency_child_texts.ai_working', 'KI-Vorschläge werden erstellt: {done} von {total} Kompetenzen …'), JSON_UNESCAPED_UNICODE)?>,
     ready: <?=json_encode(t('competency_child_texts.ai_ready', '{count} zweisprachige Vorschläge sind bereit. Bitte prüfen und anschließend gemeinsam speichern.'), JSON_UNESCAPED_UNICODE)?>,
-    nothing: <?=json_encode(t('competency_child_texts.ai_nothing', 'Für alle Kompetenzen sind bereits Kindertexte gespeichert. Aktiviere die Option zum Neuvorschlagen, wenn du sie ersetzen möchtest.'), JSON_UNESCAPED_UNICODE)?>,
+    nothing: <?=json_encode(t('competency_child_texts.ai_nothing', 'Für die gewählte KI-Aufgabe wurden keine passenden Texte gefunden. Prüfe die Ausgangssprache oder aktiviere das Überschreiben ausgefüllter Zieltexte.'), JSON_UNESCAPED_UNICODE)?>,
     failed: <?=json_encode(t('competency_child_texts.ai_failed', 'KI-Vorschläge konnten nicht erstellt werden: {error}'), JSON_UNESCAPED_UNICODE)?>,
-    confirmSave: <?=json_encode(t('competency_child_texts.ai_save_confirm', 'Alle geprüften KI-Vorschläge jetzt systemweit für diese Vorlage speichern?'), JSON_UNESCAPED_UNICODE)?>
+    confirmSave: <?=json_encode(t('competency_child_texts.ai_save_confirm', 'Alle geprüften KI-Vorschläge jetzt systemweit für diese Vorlage speichern?'), JSON_UNESCAPED_UNICODE)?>,
+    review: <?=json_encode(t('competency_child_texts.ai_review', 'KI-Vorschläge prüfen'), JSON_UNESCAPED_UNICODE)?>,
+    showAll: <?=json_encode(t('competency_child_texts.ai_show_all', 'Alle Kompetenzen anzeigen'), JSON_UNESCAPED_UNICODE)?>
   };
   const competencyForms = Array.from(document.querySelectorAll('.competency-child-form'));
   const formsByKey = new Map(competencyForms.map((form) => [String(form.querySelector('[name="competency_key"]')?.value || ''), form]));
 
+  function setAiReviewMode(active, scrollToFirst = false) {
+    aiReviewMode = active;
+    if (aiReview) aiReview.textContent = active ? aiMessages.showAll : aiMessages.review;
+    applyVisibility();
+    if (active && scrollToFirst) {
+      const first = cards.find((card) => card.classList.contains('ai-proposal'));
+      if (first) {
+        openCardParents(first);
+        first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        first.querySelector('[name="child_text_de"], [name="child_text_en"]')?.focus({ preventScroll: true });
+      }
+    }
+  }
+
   async function generateAiSuggestions() {
     if (!aiGenerate) return;
     const replaceExisting = !!aiReplaceExisting?.checked;
-    const targets = competencyForms.filter((form) => replaceExisting || form.dataset.hasChildText !== '1');
+    const mode = String(aiMode?.value || 'simplify_both');
+    const targets = competencyForms.filter((form) => {
+      const de = String(form.querySelector('[name="child_text_de"]')?.value || '').trim();
+      const en = String(form.querySelector('[name="child_text_en"]')?.value || '').trim();
+      if (mode === 'translate_to_en') return de !== '' && (replaceExisting || en === '');
+      if (mode === 'translate_to_de') return en !== '' && (replaceExisting || de === '');
+      return replaceExisting || form.dataset.hasChildText !== '1';
+    });
     if (!targets.length) {
       if (aiStatus) aiStatus.textContent = aiMessages.nothing;
       return;
     }
-    competencyForms.forEach((form) => { delete form.dataset.aiChanged; form.closest('.competency-child-card')?.classList.remove('ai-proposal'); });
+    setAiReviewMode(false);
+    competencyForms.forEach((form) => {
+      delete form.dataset.aiChanged;
+      const card = form.closest('.competency-child-card');
+      card?.classList.remove('ai-proposal');
+      const badge = card?.querySelector('.competency-child-ai-badge');
+      if (badge) badge.hidden = true;
+    });
+    if (aiReview) aiReview.hidden = true;
     if (aiSave) aiSave.hidden = true;
     aiGenerate.disabled = true;
+    if (aiMode) aiMode.disabled = true;
     if (aiReplaceExisting) aiReplaceExisting.disabled = true;
     let completed = 0;
     try {
@@ -380,7 +523,15 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
           body: JSON.stringify({
             csrf_token: csrf,
             template_id: templateId,
-            competency_keys: batch.map((form) => String(form.querySelector('[name="competency_key"]')?.value || ''))
+            mode,
+            competency_keys: batch.map((form) => String(form.querySelector('[name="competency_key"]')?.value || '')),
+            source_texts: Object.fromEntries(batch.map((form) => [
+              String(form.querySelector('[name="competency_key"]')?.value || ''),
+              {
+                de: String(form.querySelector('[name="child_text_de"]')?.value || '').trim(),
+                en: String(form.querySelector('[name="child_text_en"]')?.value || '').trim()
+              }
+            ]))
           })
         });
         const payload = await response.json().catch(() => ({}));
@@ -393,24 +544,33 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
           if (de) de.value = String(item.de || '');
           if (en) en.value = String(item.en || '');
           form.dataset.aiChanged = '1';
-          form.closest('.competency-child-card')?.classList.add('ai-proposal');
+          const card = form.closest('.competency-child-card');
+          card?.classList.add('ai-proposal');
+          const badge = card?.querySelector('.competency-child-ai-badge');
+          if (badge) badge.hidden = false;
         });
         completed += batch.length;
       }
       const changed = competencyForms.filter((form) => form.dataset.aiChanged === '1').length;
       if (aiStatus) aiStatus.textContent = aiMessages.ready.replace('{count}', String(changed));
+      if (aiReview) aiReview.hidden = changed === 0;
       if (aiSave) aiSave.hidden = changed === 0;
+      if (changed > 0) setAiReviewMode(true, true);
     } catch (error) {
       const changed = competencyForms.filter((form) => form.dataset.aiChanged === '1').length;
+      if (aiReview) aiReview.hidden = changed === 0;
       if (aiSave) aiSave.hidden = changed === 0;
       if (aiStatus) aiStatus.textContent = aiMessages.failed.replace('{error}', String(error?.message || error));
+      if (changed > 0) setAiReviewMode(true, true);
     } finally {
       aiGenerate.disabled = false;
+      if (aiMode) aiMode.disabled = false;
       if (aiReplaceExisting) aiReplaceExisting.disabled = false;
     }
   }
 
   aiGenerate?.addEventListener('click', () => { void generateAiSuggestions(); });
+  aiReview?.addEventListener('click', () => { setAiReviewMode(!aiReviewMode, aiReviewMode === false); });
   aiSave?.addEventListener('click', () => {
     if (!aiBatchSaveForm) return;
     const entries = competencyForms.filter((form) => form.dataset.aiChanged === '1').map((form) => ({
