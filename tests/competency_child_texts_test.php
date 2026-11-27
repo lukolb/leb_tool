@@ -106,6 +106,7 @@ competency_child_assert(
     && str_contains((string)$aiPage, 'form.dataset.hasChildText = saved')
     && str_contains((string)$aiPage, 'applyVisibility(openMatches = true)')
     && str_contains((string)$aiPage, 'applyVisibility(false)')
+    && str_contains((string)$aiPage, "if (card?.hidden) return false")
     && str_contains((string)$aiApi, 'competency_child_ai_chat')
     && str_contains((string)$aiApi, 'Ich-kann-Aussage')
     && str_contains((string)$aiApi, 'höchstens zwei kurze Sätze')
@@ -127,6 +128,7 @@ competency_child_assert(
     && str_contains((string)$handbook, 'Ich-kann-Erklärungen')
     && str_contains((string)$handbook, 'höchstens zwei kurzen Sätzen')
     && str_contains((string)$handbook, 'Die einzelne Speicherung erfolgt ohne Neuladen der Seite')
+    && str_contains((string)$handbook, 'ausschließlich die dadurch sichtbaren Kompetenzen')
     && str_contains((string)$handbook, '\\enquote{Alle Kindertexte zurücksetzen}'),
   'the bilingual UI and handbook must explain review, translation, grouping, and bulk reset workflows'
 );

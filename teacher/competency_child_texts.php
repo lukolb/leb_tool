@@ -312,7 +312,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
   <div class="card competency-child-ai-panel">
     <div>
       <h2><?=h(t('competency_child_texts.ai_title', 'Kindertexte mit KI vorbereiten'))?></h2>
-      <p class="muted"><?=h(t('competency_child_texts.ai_intro', 'Die hinterlegte KI erstellt gesammelt deutsche und englische Vorschläge. Prüfe und bearbeite sie vor dem gemeinsamen Speichern.'))?></p>
+      <p class="muted"><?=h(t('competency_child_texts.ai_intro', 'Die hinterlegte KI erstellt gesammelt deutsche und englische Vorschläge. Bei einem aktiven Suchfilter werden nur die sichtbaren Kompetenzen berücksichtigt. Prüfe und bearbeite die Vorschläge vor dem gemeinsamen Speichern.'))?></p>
       <p class="competency-child-ai-grade"><?=h(str_replace('{grade}', $aiGradeLabel, t('competency_child_texts.ai_grade', 'Zielgruppe: Klassenstufe {grade}')))?></p>
       <label for="aiMode"><strong><?=h(t('competency_child_texts.ai_mode', 'KI-Aufgabe'))?></strong></label>
       <select class="input" id="aiMode">
@@ -593,6 +593,8 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     const replaceExisting = !!aiReplaceExisting?.checked;
     const mode = String(aiMode?.value || 'simplify_both');
     const targets = competencyForms.filter((form) => {
+      const card = form.closest('.competency-child-card');
+      if (card?.hidden) return false;
       const de = String(form.querySelector('[name="child_text_de"]')?.value || '').trim();
       const en = String(form.querySelector('[name="child_text_en"]')?.value || '').trim();
       if (mode === 'translate_to_en') return de !== '' && (replaceExisting || en === '');
