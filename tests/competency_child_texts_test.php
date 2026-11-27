@@ -98,6 +98,11 @@ competency_child_assert(
     && str_contains((string)$aiPage, 'id="collapseAllGroups"')
     && str_contains((string)$aiPage, 'id="aiReviewAll"')
     && str_contains((string)$aiPage, 'setAiReviewMode(true, true)')
+    && str_contains((string)$aiPage, 'saveSingleChildText')
+    && str_contains((string)$aiPage, "event.preventDefault()")
+    && str_contains((string)$aiPage, "'X-Requested-With': 'XMLHttpRequest'")
+    && str_contains((string)$aiPage, 'competency_child_text_json_reply')
+    && str_contains((string)$aiPage, 'form.dataset.hasChildText = saved')
     && str_contains((string)$aiApi, 'competency_child_ai_chat')
     && str_contains((string)$aiApi, 'Ich-kann-Aussage')
     && str_contains((string)$aiApi, 'höchstens zwei kurze Sätze')
@@ -118,6 +123,7 @@ competency_child_assert(
     && str_contains((string)$handbook, '\\enquote{KI-Vorschläge prüfen}')
     && str_contains((string)$handbook, 'Ich-kann-Erklärungen')
     && str_contains((string)$handbook, 'höchstens zwei kurzen Sätzen')
+    && str_contains((string)$handbook, 'Die einzelne Speicherung erfolgt ohne Neuladen der Seite')
     && str_contains((string)$handbook, '\\enquote{Alle Kindertexte zurücksetzen}'),
   'the bilingual UI and handbook must explain review, translation, grouping, and bulk reset workflows'
 );

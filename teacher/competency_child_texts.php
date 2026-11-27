@@ -50,10 +50,18 @@ function competency_child_text_length(string $value): int {
   return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
 }
 
+function competency_child_text_json_reply(array $payload, int $status = 200): never {
+  http_response_code($status);
+  header('Content-Type: application/json; charset=utf-8');
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 $templates = competency_child_accessible_templates($pdo, $userId, $isAdmin);
 $requestedTemplateId = (int)($_POST['template_id'] ?? $_GET['template_id'] ?? 0);
 $templateId = isset($templates[$requestedTemplateId]) ? $requestedTemplateId : (int)(array_key_first($templates) ?? 0);
 $error = '';
+$isAjaxRequest = is_ajax_request();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   try {
@@ -171,12 +179,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ]);
     tts_audio_cleanup_template_classes($pdo, $templateId);
 
+    if ($isAjaxRequest) {
+      $saved = $childDe !== '' || $childEn !== '';
+      competency_child_text_json_reply([
+        'ok' => true,
+        'saved' => $saved,
+        'competency_key' => $competencyKey,
+        'child_text_de' => $childDe,
+        'child_text_en' => $childEn,
+        'message' => $saved
+          ? t('competency_child_texts.saved', 'Der gemeinsame Kindertext wurde gespeichert.')
+          : t('competency_child_texts.reset_saved', 'Der gemeinsame Kindertext wurde zurückgesetzt.'),
+        'csrf_token' => csrf_token(),
+      ]);
+    }
+
     $anchor = 'competency-' . substr(hash('sha256', $competencyKey), 0, 12);
     header('Location: ' . url('teacher/competency_child_texts.php?template_id=' . $templateId . '&saved=1#' . $anchor));
     exit;
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     $error = $e->getMessage();
+    if ($isAjaxRequest) {
+      competency_child_text_json_reply([
+        'ok' => false,
+        'error' => $error,
+        'csrf_token' => csrf_token(),
+      ], 400);
+    }
   }
 }
 
@@ -333,7 +363,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
           <?php if ((string)$item['code'] !== ''): ?><span class="chip"><?=h((string)$item['code'])?></span><?php endif; ?>
           <span class="competency-child-ai-badge" hidden><?=h(t('competency_child_texts.ai_badge', 'KI-Vorschlag – noch nicht gespeichert'))?></span>
         </div>
-        <?php if ($childDe !== '' || $childEn !== ''): ?><span class="competency-child-shared"><?=h(t('competency_child_texts.shared', 'Gemeinsam gespeichert'))?></span><?php endif; ?>
+        <span class="competency-child-shared" <?=($childDe !== '' || $childEn !== '')?'':'hidden'?>><?=h(t('competency_child_texts.shared', 'Gemeinsam gespeichert'))?></span>
       </div>
 
       <div class="competency-child-teacher-grid">
@@ -365,7 +395,8 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
         <?php endif; ?>
 
         <div class="actions competency-child-actions">
-          <?php if ($childDe !== '' || $childEn !== ''): ?><button class="btn secondary" type="submit" name="reset" value="1" onclick="return confirm(<?=h(json_encode(t('competency_child_texts.reset_confirm', 'Kindertext zurücksetzen und wieder den Lehrkrafttext verwenden?'), JSON_UNESCAPED_UNICODE))?>)"><?=h(t('competency_child_texts.reset', 'Zurücksetzen'))?></button><?php endif; ?>
+          <span class="competency-child-save-status" aria-live="polite"></span>
+          <button class="btn secondary competency-child-reset" type="submit" name="reset" value="1" <?=($childDe !== '' || $childEn !== '')?'':'hidden'?> onclick="return confirm(<?=h(json_encode(t('competency_child_texts.reset_confirm', 'Kindertext zurücksetzen und wieder den Lehrkrafttext verwenden?'), JSON_UNESCAPED_UNICODE))?>)"><?=h(t('competency_child_texts.reset', 'Zurücksetzen'))?></button>
           <button class="btn" type="submit"><?=h(t('competency_child_texts.save', 'Gemeinsam speichern'))?></button>
         </div>
       </form>
@@ -382,7 +413,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
 <?php endif; ?>
 
 <style>
-.competency-child-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(240px,.7fr);gap:16px;align-items:end}.competency-child-toolbar form,.competency-child-toolbar>div{display:grid;gap:6px}.competency-child-view-actions{display:flex;justify-content:space-between;gap:16px;align-items:center}.competency-child-view-actions p{margin:4px 0 0}.competency-child-view-actions .actions{margin:0;justify-content:flex-end}.competency-child-reset-all-form{margin:0}.competency-child-ai-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:center;border-left:4px solid #7c3aed}.competency-child-ai-panel h2{margin-top:0}.competency-child-ai-panel>div:first-child{display:grid;gap:7px}.competency-child-ai-panel>div:first-child>p{margin:0}.competency-child-ai-grade{font-weight:750;color:#5b21b6}.competency-child-ai-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.competency-child-ai-actions [hidden],.competency-child-ai-badge[hidden],.competency-child-card[hidden],.competency-child-group[hidden],.competency-child-subgroup[hidden],#competencyChildEmpty[hidden]{display:none!important}.competency-child-ai-status{grid-column:1/-1;margin:0;font-weight:650;color:#4c1d95}.competency-child-group,.competency-child-subgroup{border:1px solid #d9e0e8;border-radius:12px;background:#fff;margin:0 0 14px}.competency-child-subgroup{margin:0 0 10px;background:#f8fafc}.competency-child-group>summary,.competency-child-subgroup>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-weight:800;padding:14px 16px;list-style-position:inside}.competency-child-subgroup>summary{padding:11px 14px}.competency-child-group-body{padding:0 12px 2px}.competency-child-subgroup-body{padding:0 10px 2px}.competency-child-count{min-width:28px;text-align:center;padding:2px 8px;border-radius:999px;background:#e8eef8;color:#334155;font-size:12px}.competency-child-card{scroll-margin-top:150px;margin:0 0 10px}.competency-child-card.ai-proposal{border-color:#8b5cf6;box-shadow:0 0 0 2px rgba(124,58,237,.12);background:#fdfbff}.competency-child-ai-badge{display:inline-block;border-radius:999px;padding:3px 9px;background:#ede9fe;color:#5b21b6;font-size:12px;font-weight:800}.competency-child-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}.competency-child-shared{padding:4px 9px;border-radius:999px;background:#e8f5e9;color:#256029;font-size:12px;font-weight:700}.competency-child-teacher-grid,.competency-child-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.competency-child-label{display:block;font-size:13px;font-weight:750;color:#334155;margin-bottom:5px}.competency-child-readonly{min-height:58px;padding:10px 12px;border:1px solid #dbe2ea;border-radius:10px;background:#f6f8fb;color:#475569}.competency-child-form{margin-top:14px}.competency-child-editor-grid textarea{width:100%;box-sizing:border-box;resize:vertical}.competency-child-suggestions{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e6;border:1px solid #f4d58d}.competency-child-copy{margin:3px 6px 3px 0}.competency-child-actions{justify-content:flex-end;margin-top:12px}.chip{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;background:#eef5ff;margin-right:6px}@media(max-width:760px){.competency-child-toolbar,.competency-child-teacher-grid,.competency-child-editor-grid,.competency-child-ai-panel{grid-template-columns:1fr}.competency-child-view-actions{display:block}.competency-child-view-actions .actions{justify-content:flex-start;margin-top:12px}.competency-child-heading{display:block}.competency-child-shared{display:inline-block;margin-top:8px}.competency-child-ai-actions{justify-content:flex-start}}
+.competency-child-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) minmax(240px,.7fr);gap:16px;align-items:end}.competency-child-toolbar form,.competency-child-toolbar>div{display:grid;gap:6px}.competency-child-view-actions{display:flex;justify-content:space-between;gap:16px;align-items:center}.competency-child-view-actions p{margin:4px 0 0}.competency-child-view-actions .actions{margin:0;justify-content:flex-end}.competency-child-reset-all-form{margin:0}.competency-child-ai-panel{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 20px;align-items:center;border-left:4px solid #7c3aed}.competency-child-ai-panel h2{margin-top:0}.competency-child-ai-panel>div:first-child{display:grid;gap:7px}.competency-child-ai-panel>div:first-child>p{margin:0}.competency-child-ai-grade{font-weight:750;color:#5b21b6}.competency-child-ai-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.competency-child-ai-actions [hidden],.competency-child-ai-badge[hidden],.competency-child-shared[hidden],.competency-child-reset[hidden],.competency-child-card[hidden],.competency-child-group[hidden],.competency-child-subgroup[hidden],#competencyChildEmpty[hidden]{display:none!important}.competency-child-ai-status{grid-column:1/-1;margin:0;font-weight:650;color:#4c1d95}.competency-child-group,.competency-child-subgroup{border:1px solid #d9e0e8;border-radius:12px;background:#fff;margin:0 0 14px}.competency-child-subgroup{margin:0 0 10px;background:#f8fafc}.competency-child-group>summary,.competency-child-subgroup>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;font-weight:800;padding:14px 16px;list-style-position:inside}.competency-child-subgroup>summary{padding:11px 14px}.competency-child-group-body{padding:0 12px 2px}.competency-child-subgroup-body{padding:0 10px 2px}.competency-child-count{min-width:28px;text-align:center;padding:2px 8px;border-radius:999px;background:#e8eef8;color:#334155;font-size:12px}.competency-child-card{scroll-margin-top:150px;margin:0 0 10px}.competency-child-card.ai-proposal{border-color:#8b5cf6;box-shadow:0 0 0 2px rgba(124,58,237,.12);background:#fdfbff}.competency-child-ai-badge{display:inline-block;border-radius:999px;padding:3px 9px;background:#ede9fe;color:#5b21b6;font-size:12px;font-weight:800}.competency-child-heading{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}.competency-child-shared{padding:4px 9px;border-radius:999px;background:#e8f5e9;color:#256029;font-size:12px;font-weight:700}.competency-child-teacher-grid,.competency-child-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.competency-child-label{display:block;font-size:13px;font-weight:750;color:#334155;margin-bottom:5px}.competency-child-readonly{min-height:58px;padding:10px 12px;border:1px solid #dbe2ea;border-radius:10px;background:#f6f8fb;color:#475569}.competency-child-form{margin-top:14px}.competency-child-editor-grid textarea{width:100%;box-sizing:border-box;resize:vertical}.competency-child-suggestions{margin-top:12px;padding:10px 12px;border-radius:10px;background:#fff8e6;border:1px solid #f4d58d}.competency-child-copy{margin:3px 6px 3px 0}.competency-child-actions{justify-content:flex-end;margin-top:12px}.competency-child-save-status{margin-right:auto;font-size:13px;font-weight:700;color:#256029}.competency-child-save-status[data-state="error"]{color:#b42318}.chip{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;background:#eef5ff;margin-right:6px}@media(max-width:760px){.competency-child-toolbar,.competency-child-teacher-grid,.competency-child-editor-grid,.competency-child-ai-panel{grid-template-columns:1fr}.competency-child-view-actions{display:block}.competency-child-view-actions .actions{justify-content:flex-start;margin-top:12px}.competency-child-heading{display:block}.competency-child-shared{display:inline-block;margin-top:8px}.competency-child-ai-actions{justify-content:flex-start}}
 </style>
 <script>
 (() => {
@@ -462,7 +493,10 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     failed: <?=json_encode(t('competency_child_texts.ai_failed', 'KI-Vorschläge konnten nicht erstellt werden: {error}'), JSON_UNESCAPED_UNICODE)?>,
     confirmSave: <?=json_encode(t('competency_child_texts.ai_save_confirm', 'Alle geprüften KI-Vorschläge jetzt systemweit für diese Vorlage speichern?'), JSON_UNESCAPED_UNICODE)?>,
     review: <?=json_encode(t('competency_child_texts.ai_review', 'KI-Vorschläge prüfen'), JSON_UNESCAPED_UNICODE)?>,
-    showAll: <?=json_encode(t('competency_child_texts.ai_show_all', 'Alle Kompetenzen anzeigen'), JSON_UNESCAPED_UNICODE)?>
+    showAll: <?=json_encode(t('competency_child_texts.ai_show_all', 'Alle Kompetenzen anzeigen'), JSON_UNESCAPED_UNICODE)?>,
+    saving: <?=json_encode(t('competency_child_texts.saving', 'Wird gespeichert …'), JSON_UNESCAPED_UNICODE)?>,
+    resetSaved: <?=json_encode(t('competency_child_texts.reset_saved', 'Der gemeinsame Kindertext wurde zurückgesetzt.'), JSON_UNESCAPED_UNICODE)?>,
+    saveFailed: <?=json_encode(t('competency_child_texts.save_failed', 'Speichern fehlgeschlagen: {error}'), JSON_UNESCAPED_UNICODE)?>
   };
   const competencyForms = Array.from(document.querySelectorAll('.competency-child-form'));
   const formsByKey = new Map(competencyForms.map((form) => [String(form.querySelector('[name="competency_key"]')?.value || ''), form]));
@@ -480,6 +514,78 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
       }
     }
   }
+
+  function refreshAiProposalControls(updateStatus = false) {
+    const changed = competencyForms.filter((form) => form.dataset.aiChanged === '1').length;
+    if (aiReview) aiReview.hidden = changed === 0;
+    if (aiSave) aiSave.hidden = changed === 0;
+    if (updateStatus && aiStatus) aiStatus.textContent = changed > 0 ? aiMessages.ready.replace('{count}', String(changed)) : '';
+    if (changed === 0 && aiReviewMode) setAiReviewMode(false);
+    else applyVisibility();
+  }
+
+  async function saveSingleChildText(form, submitter) {
+    if (form.dataset.saving === '1') return;
+    form.dataset.saving = '1';
+    const status = form.querySelector('.competency-child-save-status');
+    const submitButtons = Array.from(form.querySelectorAll('button[type="submit"]'));
+    const formData = new FormData(form);
+    if (submitter?.name) formData.set(submitter.name, submitter.value);
+    submitButtons.forEach((button) => { button.disabled = true; });
+    if (status) {
+      status.dataset.state = 'working';
+      status.textContent = aiMessages.saving;
+    }
+    try {
+      const response = await fetch(form.action || window.location.href, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(String(payload.error || payload.message || response.statusText || 'HTTP ' + response.status));
+      const de = form.querySelector('[name="child_text_de"]');
+      const en = form.querySelector('[name="child_text_en"]');
+      if (de) de.value = String(payload.child_text_de || '');
+      if (en) en.value = String(payload.child_text_en || '');
+      const saved = payload.saved === true;
+      form.dataset.hasChildText = saved ? '1' : '0';
+      const card = form.closest('.competency-child-card');
+      const wasAiProposal = card?.classList.contains('ai-proposal') || form.dataset.aiChanged === '1';
+      const shared = card?.querySelector('.competency-child-shared');
+      const reset = form.querySelector('.competency-child-reset');
+      if (shared) shared.hidden = !saved;
+      if (reset) reset.hidden = !saved;
+      delete form.dataset.aiChanged;
+      card?.classList.remove('ai-proposal');
+      const badge = card?.querySelector('.competency-child-ai-badge');
+      if (badge) badge.hidden = true;
+      const csrf = String(payload.csrf_token || '');
+      if (csrf) document.querySelectorAll('input[name="csrf_token"]').forEach((input) => { input.value = csrf; });
+      if (status) {
+        status.dataset.state = 'success';
+        status.textContent = String(payload.message || (saved ? <?=json_encode(t('competency_child_texts.saved', 'Der gemeinsame Kindertext wurde gespeichert.'), JSON_UNESCAPED_UNICODE)?> : aiMessages.resetSaved));
+      }
+      if (wasAiProposal) refreshAiProposalControls(true);
+    } catch (error) {
+      if (status) {
+        status.dataset.state = 'error';
+        status.textContent = aiMessages.saveFailed.replace('{error}', String(error?.message || error));
+      }
+    } finally {
+      delete form.dataset.saving;
+      submitButtons.forEach((button) => { button.disabled = false; });
+    }
+  }
+
+  competencyForms.forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void saveSingleChildText(form, event.submitter || null);
+    });
+  });
 
   async function generateAiSuggestions() {
     if (!aiGenerate) return;
