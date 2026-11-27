@@ -371,7 +371,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
         <div><span class="competency-child-label"><?=h(t('competency_child_texts.teacher_en', 'Lehrkrafttext Englisch'))?></span><div class="competency-child-readonly"><?=nl2br(h((string)$item['teacher_text_en']))?></div></div>
       </div>
 
-      <form method="post" class="competency-child-form" data-has-child-text="<?=($childDe !== '' || $childEn !== '')?'1':'0'?>">
+      <form method="post" action="<?=h(url('teacher/competency_child_texts.php'))?>" class="competency-child-form" data-has-child-text="<?=($childDe !== '' || $childEn !== '')?'1':'0'?>">
         <input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>">
         <input type="hidden" name="template_id" value="<?= (int)$templateId ?>">
         <input type="hidden" name="action" value="save_single">
@@ -537,7 +537,8 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
       status.textContent = aiMessages.saving;
     }
     try {
-      const response = await fetch(form.action || window.location.href, {
+      const endpoint = form.getAttribute('action') || window.location.href;
+      const response = await fetch(endpoint, {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',

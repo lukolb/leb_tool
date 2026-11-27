@@ -101,6 +101,7 @@ competency_child_assert(
     && str_contains((string)$aiPage, 'saveSingleChildText')
     && str_contains((string)$aiPage, "event.preventDefault()")
     && str_contains((string)$aiPage, "'X-Requested-With': 'XMLHttpRequest'")
+    && str_contains((string)$aiPage, "form.getAttribute('action') || window.location.href")
     && str_contains((string)$aiPage, 'competency_child_text_json_reply')
     && str_contains((string)$aiPage, 'form.dataset.hasChildText = saved')
     && str_contains((string)$aiApi, 'competency_child_ai_chat')
