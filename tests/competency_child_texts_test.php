@@ -104,6 +104,8 @@ competency_child_assert(
     && str_contains((string)$aiPage, "form.getAttribute('action') || window.location.href")
     && str_contains((string)$aiPage, 'competency_child_text_json_reply')
     && str_contains((string)$aiPage, 'form.dataset.hasChildText = saved')
+    && str_contains((string)$aiPage, 'applyVisibility(openMatches = true)')
+    && str_contains((string)$aiPage, 'applyVisibility(false)')
     && str_contains((string)$aiApi, 'competency_child_ai_chat')
     && str_contains((string)$aiApi, 'Ich-kann-Aussage')
     && str_contains((string)$aiApi, 'höchstens zwei kurze Sätze')

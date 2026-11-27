@@ -434,7 +434,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     }
   }
 
-  function applyVisibility() {
+  function applyVisibility(openMatches = true) {
     const needle = String(search?.value || '').trim().toLocaleLowerCase();
     let visible = 0;
     cards.forEach((card) => {
@@ -444,7 +444,7 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
       card.hidden = !show;
       if (show) {
         visible++;
-        if (needle !== '' || aiReviewMode) openCardParents(card);
+        if (openMatches && (needle !== '' || aiReviewMode)) openCardParents(card);
       }
     });
     subgroupDetails.forEach((details) => {
@@ -501,10 +501,10 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
   const competencyForms = Array.from(document.querySelectorAll('.competency-child-form'));
   const formsByKey = new Map(competencyForms.map((form) => [String(form.querySelector('[name="competency_key"]')?.value || ''), form]));
 
-  function setAiReviewMode(active, scrollToFirst = false) {
+  function setAiReviewMode(active, scrollToFirst = false, openMatches = true) {
     aiReviewMode = active;
     if (aiReview) aiReview.textContent = active ? aiMessages.showAll : aiMessages.review;
-    applyVisibility();
+    applyVisibility(openMatches);
     if (active && scrollToFirst) {
       const first = cards.find((card) => card.classList.contains('ai-proposal'));
       if (first) {
@@ -520,8 +520,8 @@ render_teacher_header(t('competency_child_texts.title', 'Kindertexte für Kompet
     if (aiReview) aiReview.hidden = changed === 0;
     if (aiSave) aiSave.hidden = changed === 0;
     if (updateStatus && aiStatus) aiStatus.textContent = changed > 0 ? aiMessages.ready.replace('{count}', String(changed)) : '';
-    if (changed === 0 && aiReviewMode) setAiReviewMode(false);
-    else applyVisibility();
+    if (changed === 0 && aiReviewMode) setAiReviewMode(false, false, false);
+    else applyVisibility(false);
   }
 
   async function saveSingleChildText(form, submitter) {
